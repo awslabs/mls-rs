@@ -2,9 +2,13 @@ use crate::{
     cipher_suite::CipherSuite,
     client::MlsError,
     group::framing::MLSMessage,
-    key_package::{KeyPackageValidationOptions, KeyPackageValidationOutput, KeyPackageValidator},
+    key_package::validate_key_package_properties,
     protocol_version::ProtocolVersion,
     time::MlsTime,
+    tree_kem::{
+        leaf_node::LeafNodeSource,
+        leaf_node_validator::{LeafNodeValidator, ValidationContext},
+    },
     CryptoProvider, WireFormat,
 };
 
@@ -95,7 +99,7 @@ where
             MlsError::UnexpectedMessageType(vec![WireFormat::KeyPackage], wire_format)
         })?;
 
-        let cipher_suite_provider = self
+        let cs = self
             .config
             .crypto_provider()
             .cipher_suite_provider(cipher_suite)
@@ -103,18 +107,31 @@ where
 
         let id_provider = self.config.identity_provider();
 
-        let keypackage_validator =
-            KeyPackageValidator::new(protocol, &cipher_suite_provider, None, &id_provider, None);
+        let validator = LeafNodeValidator::new(&cs, None, &id_provider, None);
+        let context = ValidationContext::Add(Some(MlsTime::now()));
 
-        let options = KeyPackageValidationOptions {
-            apply_lifetime_check: Some(MlsTime::now()),
-        };
+        validator
+            .check_if_valid(&key_package.leaf_node, context)
+            .await?;
 
-        keypackage_validator
-            .check_if_valid(&key_package, options)
-            .await
-            .map_err(Into::into)
+        validate_key_package_properties(&key_package, protocol, &cs).await?;
+
+        let expiration_timestamp =
+            if let LeafNodeSource::KeyPackage(lifetime) = &key_package.leaf_node.leaf_node_source {
+                lifetime.not_after
+            } else {
+                return Err(MlsError::InvalidLeafNodeSource);
+            };
+
+        Ok(KeyPackageValidationOutput {
+            expiration_timestamp,
+        })
     }
+}
+
+#[derive(Debug)]
+pub struct KeyPackageValidationOutput {
+    pub expiration_timestamp: u64,
 }
 
 #[cfg(test)]

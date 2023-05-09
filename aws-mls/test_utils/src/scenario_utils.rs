@@ -141,9 +141,13 @@ pub async fn get_test_groups(
     #[cfg(not(feature = "state_update"))]
     creator_group.apply_pending_commit().await.unwrap();
 
-    assert!(receiver_clients.iter().all(|client| creator_group
-        .member_with_identity(client.identity.credential.as_basic().unwrap().identifier())
-        .is_ok()));
+    for client in &receiver_clients {
+        let res = creator_group
+            .member_with_identity(client.identity.credential.as_basic().unwrap().identifier())
+            .await;
+
+        assert!(res.is_ok());
+    }
 
     #[cfg(feature = "state_update")]
     assert!(commit_description

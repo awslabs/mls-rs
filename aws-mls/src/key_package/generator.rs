@@ -146,10 +146,11 @@ mod tests {
         group::test_utils::random_bytes,
         identity::basic::BasicIdentityProvider,
         identity::test_utils::get_test_signing_identity,
-        key_package::KeyPackageValidator,
+        key_package::validate_key_package_properties,
         protocol_version::ProtocolVersion,
         tree_kem::{
             leaf_node::{test_utils::get_test_capabilities, LeafNodeSource},
+            leaf_node_validator::{LeafNodeValidator, ValidationContext},
             Lifetime,
         },
         ExtensionList,
@@ -257,18 +258,24 @@ mod tests {
 
             assert_eq!(opened, test_data);
 
-            let validator = KeyPackageValidator::new(
-                protocol_version,
-                &cipher_suite_provider,
-                None,
-                &BasicIdentityProvider,
-                None,
-            );
+            let validator =
+                LeafNodeValidator::new(&cipher_suite_provider, None, &BasicIdentityProvider, None);
 
             validator
-                .check_if_valid(&generated.key_package, Default::default())
+                .check_if_valid(
+                    &generated.key_package.leaf_node,
+                    ValidationContext::Add(None),
+                )
                 .await
                 .unwrap();
+
+            validate_key_package_properties(
+                &generated.key_package,
+                protocol_version,
+                &cipher_suite_provider,
+            )
+            .await
+            .unwrap();
         }
     }
 

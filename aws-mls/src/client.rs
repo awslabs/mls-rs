@@ -227,19 +227,9 @@ pub enum MlsError {
     UnexpectedEmptyNode,
     #[cfg_attr(
         feature = "std",
-        error("credential signature keys must be unique, duplicate key found at index: {0:?}")
+        error("duplicate signature key, hpke key or identity found at index {0}")
     )]
-    DuplicateSignatureKeys(u32),
-    #[cfg_attr(
-        feature = "std",
-        error("hpke keys must be unique, duplicate key found at index: {0:?}")
-    )]
-    DuplicateHpkeKey(u32),
-    #[cfg_attr(
-        feature = "std",
-        error("identities must be unique, duplicate identity found at index {0:?}")
-    )]
-    DuplicateIdentity(u32),
+    DuplicateLeafData(u32),
     #[cfg_attr(
         feature = "std",
         error("In-use credential type {0:?} not supported by new leaf at index {1:?}")
@@ -377,6 +367,18 @@ pub enum MlsError {
     InvalidExternalSenderIndex(u32),
     #[cfg_attr(feature = "std", error("Proposal {0:?} not found"))]
     ProposalNotFound(ProposalRef),
+    #[cfg_attr(
+        feature = "std",
+        error("Removing non-existing member (or removing a member twice)")
+    )]
+    RemovingNonExistingMember,
+    #[cfg_attr(feature = "std", error("Updated identity not a valid successor"))]
+    InvalidSuccessor,
+    #[cfg_attr(
+        feature = "std",
+        error("Updating non-existing member (or updating a member twice)")
+    )]
+    UpdatingNonExistingMember,
 }
 
 impl IntoAnyError for MlsError {
@@ -704,6 +706,7 @@ where
             protocol_version,
             group_info,
             tree_data,
+            #[cfg(feature = "tree_index")]
             &self.config.identity_provider(),
             &cipher_suite_provider,
         )

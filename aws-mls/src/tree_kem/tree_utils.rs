@@ -85,13 +85,11 @@ mod tests {
 
     #[futures_test::test]
     async fn print_fully_populated_tree() {
-        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
-
         // Create a tree
         let mut tree = get_test_tree(TEST_CIPHER_SUITE).await.public;
         let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE).await;
 
-        tree.add_leaves(key_packages, &BasicIdentityProvider, &cipher_suite_provider)
+        tree.add_leaves(key_packages, &BasicIdentityProvider)
             .await
             .unwrap();
 
@@ -117,7 +115,7 @@ mod tests {
         let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE).await;
 
         let to_remove = tree
-            .add_leaves(key_packages, &BasicIdentityProvider, &cipher_suite_provider)
+            .add_leaves(key_packages, &BasicIdentityProvider)
             .await
             .unwrap()[0];
 
@@ -144,8 +142,6 @@ mod tests {
 
     #[futures_test::test]
     async fn print_tree_unmerged_leaves_on_parent() {
-        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
-
         // Create a tree
         let mut tree = get_test_tree(TEST_CIPHER_SUITE).await.public;
         let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE).await;
@@ -153,7 +149,6 @@ mod tests {
         tree.add_leaves(
             [key_packages[0].clone(), key_packages[1].clone()].to_vec(),
             &BasicIdentityProvider,
-            &cipher_suite_provider,
         )
         .await
         .unwrap();
@@ -165,13 +160,9 @@ mod tests {
         }
         .into();
 
-        tree.add_leaves(
-            [key_packages[2].clone()].to_vec(),
-            &BasicIdentityProvider,
-            &cipher_suite_provider,
-        )
-        .await
-        .unwrap();
+        tree.add_leaves([key_packages[2].clone()].to_vec(), &BasicIdentityProvider)
+            .await
+            .unwrap();
 
         let tree_str = concat!(
             "Root (3) unmerged leaves idxs: 3\n",

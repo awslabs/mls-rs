@@ -48,15 +48,43 @@ pub(crate) struct JoinContext {
     pub signer_index: LeafIndex,
 }
 
-pub(crate) async fn process_group_info<I, C>(
+#[cfg(not(feature = "tree_index"))]
+pub(crate) async fn process_group_info<C>(
     msg_protocol_version: ProtocolVersion,
     group_info: GroupInfo,
     tree_data: Option<&[u8]>,
-    identity_provider: &I,
+    cs: &C,
+) -> Result<JoinContext, MlsError>
+where
+    C: CipherSuiteProvider,
+{
+    let public_tree = find_tree(tree_data, group_info.extensions.get_as()?).await?;
+    process_group_info_with_tree(msg_protocol_version, group_info, public_tree, cs).await
+}
+
+#[cfg(feature = "tree_index")]
+pub(crate) async fn process_group_info<C, I>(
+    msg_protocol_version: ProtocolVersion,
+    group_info: GroupInfo,
+    tree_data: Option<&[u8]>,
+    id_provider: &I,
+    cs: &C,
+) -> Result<JoinContext, MlsError>
+where
+    C: CipherSuiteProvider,
+    I: IdentityProvider,
+{
+    let public_tree = find_tree(tree_data, group_info.extensions.get_as()?, id_provider).await?;
+    process_group_info_with_tree(msg_protocol_version, group_info, public_tree, cs).await
+}
+
+async fn process_group_info_with_tree<C>(
+    msg_protocol_version: ProtocolVersion,
+    group_info: GroupInfo,
+    public_tree: TreeKemPublic,
     cipher_suite_provider: &C,
 ) -> Result<JoinContext, MlsError>
 where
-    I: IdentityProvider,
     C: CipherSuiteProvider,
 {
     let group_protocol_version = group_info.group_context.protocol_version;
@@ -70,10 +98,6 @@ where
     if group_info.group_context.cipher_suite != cipher_suite {
         return Err(MlsError::CipherSuiteMismatch);
     }
-
-    let ratchet_tree_ext = group_info.extensions.get_as::<RatchetTreeExt>()?;
-
-    let public_tree = find_tree(tree_data, ratchet_tree_ext, identity_provider).await?;
 
     let sender_key_package = public_tree.get_leaf_node(group_info.signer)?;
 
@@ -116,6 +140,7 @@ pub(crate) async fn validate_group_info<I: IdentityProvider, C: CipherSuiteProvi
         msg_protocol_version,
         group_info,
         tree_data,
+        #[cfg(feature = "tree_index")]
         identity_provider,
         cipher_suite_provider,
     )
@@ -157,6 +182,7 @@ pub(crate) async fn validate_group_info<I: IdentityProvider, C: CipherSuiteProvi
     Ok(join_context)
 }
 
+#[cfg(feature = "tree_index")]
 pub(crate) async fn find_tree<C>(
     tree_data: Option<&[u8]>,
     extension: Option<RatchetTreeExt>,
@@ -165,19 +191,26 @@ pub(crate) async fn find_tree<C>(
 where
     C: IdentityProvider,
 {
+    TreeKemPublic::import_node_data(find_node_data(tree_data, extension)?, identity_provider).await
+}
+
+#[cfg(not(feature = "tree_index"))]
+pub(crate) async fn find_tree(
+    tree_data: Option<&[u8]>,
+    extension: Option<RatchetTreeExt>,
+) -> Result<TreeKemPublic, MlsError> {
+    TreeKemPublic::import_node_data(find_node_data(tree_data, extension)?).await
+}
+
+pub(crate) fn find_node_data(
+    tree_data: Option<&[u8]>,
+    extension: Option<RatchetTreeExt>,
+) -> Result<NodeVec, MlsError> {
     match tree_data {
-        Some(tree_data) => Ok(TreeKemPublic::import_node_data(
-            NodeVec::mls_decode(&mut &*tree_data)?,
-            identity_provider,
-        )
-        .await?),
+        Some(tree_data) => Ok(NodeVec::mls_decode(&mut &*tree_data)?),
         None => {
             let tree_extension = extension.ok_or(MlsError::RatchetTreeNotFound)?;
-
-            Ok(
-                TreeKemPublic::import_node_data(tree_extension.tree_data, identity_provider)
-                    .await?,
-            )
+            Ok(tree_extension.tree_data)
         }
     }
 }

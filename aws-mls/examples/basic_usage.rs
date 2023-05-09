@@ -91,11 +91,9 @@ async fn main() -> Result<(), Box<MlsError>> {
 
     println!("Received message: {:?}", msg);
 
-    // Alice and bob write the group state to their configured storage engine with
-    // `export_internals` set to `true`. This will write extra data to ensure optimal
-    // performance if the group needs to be loaded again.
-    alice_group.write_to_storage(true).await?;
-    bob_group.write_to_storage(true).await?;
+    // Alice and bob write the group state to their configured storage engine
+    alice_group.write_to_storage().await?;
+    bob_group.write_to_storage().await?;
 
     Ok(())
 }

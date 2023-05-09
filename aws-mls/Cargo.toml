@@ -6,7 +6,7 @@ edition = "2021"
 
 [features]
 benchmark = ["std", "serde_json", "aws-mls-crypto-openssl", "aws-mls-core/benchmark", "rfc_compliant"]
-default = ["std", "rayon", "rfc_compliant"]
+default = ["std", "rayon", "rfc_compliant", "tree_index"]
 arbitrary = ["std", "dep:arbitrary", "aws-mls-core/arbitrary"]
 rayon = ["std", "dep:rayon"]
 external_client = ["std"]
@@ -16,6 +16,7 @@ external_commit = ["aws-mls-core/external_commit"]
 state_update = []
 private_message = []
 custom_proposal = []
+tree_index = []
 external_proposal = ["aws-mls-core/external_proposal", "aws-mls-identity-x509/external_proposal"]
 rfc_compliant = ["external_commit", "state_update", "private_message", "custom_proposal", "external_proposal"]
 

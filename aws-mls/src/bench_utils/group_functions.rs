@@ -184,14 +184,14 @@ pub fn get_snapshot<C>(group: &Group<C>) -> Result<Vec<u8>, serde_json::Error>
 where
     C: ClientConfig + Clone,
 {
-    serde_json::to_vec(&group.snapshot(false))
+    serde_json::to_vec(&group.snapshot())
 }
 
 async fn get_group_states(cipher_suite: CipherSuite, size: usize) -> TestCase {
     let mut groups = create_group(cipher_suite, size).await;
 
     futures::stream::iter(groups.iter_mut())
-        .for_each(|group| async { group.write_to_storage(false).await.unwrap() })
+        .for_each(|group| async { group.write_to_storage().await.unwrap() })
         .await;
 
     let info = futures::stream::iter(groups.into_iter())

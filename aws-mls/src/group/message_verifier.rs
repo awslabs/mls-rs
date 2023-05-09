@@ -1,7 +1,10 @@
 #[cfg(feature = "external_proposal")]
 use alloc::{vec, vec::Vec};
 
-#[cfg(feature = "std")]
+#[cfg(all(
+    feature = "std",
+    any(feature = "secret_tree_access", feature = "private_message")
+))]
 use std::collections::HashMap;
 
 #[cfg(all(

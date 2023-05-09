@@ -6,7 +6,6 @@ use crate::{
         message_processor::MessageProcessor, message_signature::AuthenticatedContent,
         test_utils::GroupWithoutKeySchedule, Commit, GroupContext, Sender,
     },
-    identity::basic::BasicIdentityProvider,
     tree_kem::{
         node::{LeafIndex, NodeVec},
         path_secret::PathSecretGeneration,
@@ -18,6 +17,9 @@ use alloc::vec;
 use alloc::vec::Vec;
 use aws_mls_codec::MlsDecode;
 use aws_mls_core::{crypto::CipherSuiteProvider, extension::ExtensionList};
+
+#[cfg(feature = "tree_index")]
+use crate::identity::basic::BasicIdentityProvider;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Default, Clone)]
 struct TreeKemTestCase {
@@ -78,9 +80,13 @@ async fn tree_kem() {
         // Import the public ratchet tree
         let nodes = NodeVec::mls_decode(&mut &*test_case.ratchet_tree).unwrap();
 
-        let mut tree = TreeKemPublic::import_node_data(nodes, &BasicIdentityProvider)
-            .await
-            .unwrap();
+        let mut tree = TreeKemPublic::import_node_data(
+            nodes,
+            #[cfg(feature = "tree_index")]
+            &BasicIdentityProvider,
+        )
+        .await
+        .unwrap();
 
         // Construct GroupContext
         let group_context = GroupContext {

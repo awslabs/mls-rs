@@ -2,7 +2,7 @@ use super::*;
 use crate::{
     group::proposal_filter::{
         FailInvalidProposal, IgnoreInvalidByRefProposal, ProposalApplier, ProposalBundle,
-        ProposalInfo, ProposalRules, ProposalSource, ProposalState,
+        ProposalRules, ProposalSource, ProposalState,
     },
     time::MlsTime,
     tree_kem::leaf_node::LeafNode,
@@ -43,7 +43,7 @@ impl ProposalSetEffects {
         #[cfg(feature = "external_commit")] external_leaf: Option<LeafIndex>,
         #[cfg(feature = "state_update")] rejected_proposals: Vec<(ProposalRef, Proposal)>,
     ) -> Result<Self, MlsError> {
-        let init = ProposalSetEffects {
+        let mut init = ProposalSetEffects {
             tree,
             added_leaf_indexes,
             removed_leaves,
@@ -61,13 +61,37 @@ impl ProposalSetEffects {
             custom_proposals: Vec::new(),
         };
 
-        proposals.into_proposals().try_fold(init, |effects, item| {
-            effects.add(
-                item,
+        for item in proposals.into_proposals() {
+            match item.proposal {
+                Proposal::Add(add) => init.adds.push(add.key_package),
+                Proposal::Update(update) => {
+                    if let Sender::Member(package_to_replace) = item.sender {
+                        init.updates
+                            .push((LeafIndex(package_to_replace), update.leaf_node))
+                    }
+                }
+                Proposal::Remove(remove) => init.removes.push(remove.to_remove),
+                Proposal::GroupContextExtensions(list) => init.group_context_ext = Some(list),
+                Proposal::Psk(PreSharedKeyProposal { psk }) => {
+                    init.psks.push(psk);
+                }
+                Proposal::ReInit(reinit) => {
+                    init.reinit = Some(reinit);
+                }
                 #[cfg(feature = "external_commit")]
-                external_leaf,
-            )
-        })
+                Proposal::ExternalInit(external_init) => {
+                    let new_member_leaf_index = external_leaf.ok_or(MlsError::CommitMissingPath)?;
+
+                    init.external_init = Some((new_member_leaf_index, external_init));
+                }
+                #[cfg(all(feature = "state_update", feature = "custom_proposal"))]
+                Proposal::Custom(custom) => init.custom_proposals.push(custom),
+                #[cfg(all(not(feature = "state_update"), feature = "custom_proposal"))]
+                Proposal::Custom(_) => (),
+            };
+        }
+
+        Ok(init)
     }
 
     pub fn is_empty(&self) -> bool {
@@ -106,42 +130,6 @@ impl ProposalSetEffects {
             || self.group_context_ext.is_some()
             || !self.updates.is_empty()
             || !self.removes.is_empty()
-    }
-
-    fn add(
-        mut self,
-        item: ProposalInfo<Proposal>,
-        #[cfg(feature = "external_commit")] external_leaf: Option<LeafIndex>,
-    ) -> Result<Self, MlsError> {
-        match item.proposal {
-            Proposal::Add(add) => self.adds.push(add.key_package),
-            Proposal::Update(update) => {
-                if let Sender::Member(package_to_replace) = item.sender {
-                    self.updates
-                        .push((LeafIndex(package_to_replace), update.leaf_node))
-                }
-            }
-            Proposal::Remove(remove) => self.removes.push(remove.to_remove),
-            Proposal::GroupContextExtensions(list) => self.group_context_ext = Some(list),
-            Proposal::Psk(PreSharedKeyProposal { psk }) => {
-                self.psks.push(psk);
-            }
-            Proposal::ReInit(reinit) => {
-                self.reinit = Some(reinit);
-            }
-            #[cfg(feature = "external_commit")]
-            Proposal::ExternalInit(external_init) => {
-                let new_member_leaf_index = external_leaf.ok_or(MlsError::CommitMissingPath)?;
-
-                self.external_init = Some((new_member_leaf_index, external_init));
-            }
-            #[cfg(all(feature = "state_update", feature = "custom_proposal"))]
-            Proposal::Custom(custom) => self.custom_proposals.push(custom),
-            #[cfg(all(not(feature = "state_update"), feature = "custom_proposal"))]
-            Proposal::Custom(_) => (),
-        };
-
-        Ok(self)
     }
 }
 
@@ -229,7 +217,7 @@ impl ProposalCache {
 
         new_proposals
             .into_iter()
-            .for_each(|info| proposal_bundle.add_proposal(info));
+            .for_each(|info| proposal_bundle.add(info.proposal, info.sender, info.source));
 
         Ok(())
     }
@@ -697,7 +685,7 @@ mod tests {
                 ConfigProperties, LeafNodeSource,
             },
             parent_hash::ParentHash,
-            AccumulateBatchResults, Lifetime,
+            Lifetime,
         },
     };
 
@@ -715,7 +703,7 @@ mod tests {
     };
     use core::convert::Infallible;
     use futures::FutureExt;
-    use internal::proposal_filter::PassThroughProposalRules;
+    use internal::proposal_filter::{PassThroughProposalRules, ProposalInfo};
     use itertools::Itertools;
 
     #[cfg(target_arch = "wasm32")]
@@ -783,14 +771,9 @@ mod tests {
         )
         .await;
 
-        let (pub_tree, priv_tree) = TreeKemPublic::derive(
-            leaf,
-            secret,
-            &BasicIdentityProvider,
-            &test_cipher_suite_provider(TEST_CIPHER_SUITE),
-        )
-        .await
-        .unwrap();
+        let (pub_tree, priv_tree) = TreeKemPublic::derive(leaf, secret, &BasicIdentityProvider)
+            .await
+            .unwrap();
 
         (priv_tree.self_index, pub_tree)
     }
@@ -803,7 +786,6 @@ mod tests {
         tree.add_leaves(
             vec![get_basic_test_node(TEST_CIPHER_SUITE, name).await],
             &BasicIdentityProvider,
-            &test_cipher_suite_provider(TEST_CIPHER_SUITE),
         )
         .await
         .unwrap()[0]
@@ -843,26 +825,17 @@ mod tests {
 
         let sender = LeafIndex(0);
 
-        let (mut tree, _) = TreeKemPublic::derive(
-            sender_leaf,
-            sender_leaf_secret,
-            &BasicIdentityProvider,
-            &cipher_suite_provider,
-        )
-        .await
-        .unwrap();
+        let (mut tree, _) =
+            TreeKemPublic::derive(sender_leaf, sender_leaf_secret, &BasicIdentityProvider)
+                .await
+                .unwrap();
 
         let add_package = test_key_package(protocol_version, cipher_suite, "dave").await;
-        let update_leaf = update_leaf_node("alice", 0).await;
 
         let remove_leaf_index = add_member(&mut tree, "carol").await;
 
         let add = Proposal::Add(AddProposal {
             key_package: add_package.clone(),
-        });
-
-        let update = Proposal::Update(UpdateProposal {
-            leaf_node: update_leaf.clone(),
         });
 
         let remove = Proposal::Remove(RemoveProposal {
@@ -871,27 +844,34 @@ mod tests {
 
         let extensions = Proposal::GroupContextExtensions(ExtensionList::new());
 
-        let proposals = vec![add, update, remove, extensions];
+        let proposals = vec![add, remove, extensions];
 
         let test_sender = *tree
             .add_leaves(
                 vec![get_basic_test_node(cipher_suite, "charlie").await],
                 &BasicIdentityProvider,
-                &cipher_suite_provider,
             )
             .await
             .unwrap()[0];
 
         let mut expected_tree = tree.clone();
 
+        let mut bundle = ProposalBundle::default();
+
+        proposals.iter().cloned().for_each(|p| {
+            bundle.add(
+                p,
+                Sender::Member(test_sender),
+                ProposalSource::ByReference(ProposalRef::new_fake(vec![])),
+            )
+        });
+
         expected_tree
             .batch_edit(
-                NoopAccumulator,
-                &[(sender, update_leaf.clone())],
-                &[remove_leaf_index],
-                &[add_package.leaf_node.clone()],
+                &mut bundle,
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
+                true,
             )
             .await
             .unwrap();
@@ -904,7 +884,7 @@ mod tests {
                 tree.get_leaf_node(remove_leaf_index).unwrap().clone(),
             )],
             adds: vec![add_package],
-            updates: vec![(sender, update_leaf)],
+            updates: vec![],
             removes: vec![remove_leaf_index],
             group_context_ext: Some(ExtensionList::new()),
             psks: Vec::new(),
@@ -927,16 +907,6 @@ mod tests {
             test_proposals: plaintext,
             expected_effects: effects,
             tree,
-        }
-    }
-
-    struct NoopAccumulator;
-
-    impl AccumulateBatchResults for NoopAccumulator {
-        type Output = ();
-
-        fn finish(self) -> Result<Self::Output, MlsError> {
-            Ok(())
         }
     }
 
@@ -1091,16 +1061,11 @@ mod tests {
 
         expected_proposals.push(ProposalOrRef::Proposal(additional[0].clone()));
 
+        let leaf = vec![additional_key_package.leaf_node.clone()];
+
         expected_effects
             .tree
-            .batch_edit(
-                NoopAccumulator,
-                &[],
-                &[],
-                &[additional_key_package.leaf_node.clone()],
-                &BasicIdentityProvider,
-                &cipher_suite_provider,
-            )
+            .add_leaves(leaf, &BasicIdentityProvider)
             .await
             .unwrap();
 
@@ -1583,11 +1548,7 @@ mod tests {
         ];
 
         let test_leaf_node_indexes = public_tree
-            .add_leaves(
-                test_leaf_nodes,
-                &BasicIdentityProvider,
-                &cipher_suite_provider,
-            )
+            .add_leaves(test_leaf_nodes, &BasicIdentityProvider)
             .await
             .unwrap();
 
@@ -1633,11 +1594,7 @@ mod tests {
         let test_leaf_nodes = vec![get_basic_test_node(TEST_CIPHER_SUITE, "bar").await];
 
         let test_leaf_node_indexes = public_tree
-            .add_leaves(
-                test_leaf_nodes,
-                &BasicIdentityProvider,
-                &cipher_suite_provider,
-            )
+            .add_leaves(test_leaf_nodes, &BasicIdentityProvider)
             .await
             .unwrap();
 
@@ -1680,11 +1637,7 @@ mod tests {
         let test_leaf_nodes = vec![get_basic_test_node(TEST_CIPHER_SUITE, "foo").await];
 
         let test_leaf_node_indexes = public_tree
-            .add_leaves(
-                test_leaf_nodes,
-                &BasicIdentityProvider,
-                &cipher_suite_provider,
-            )
+            .add_leaves(test_leaf_nodes, &BasicIdentityProvider)
             .await
             .unwrap();
 
@@ -1860,20 +1813,14 @@ mod tests {
             get_basic_test_node_sig_key(TEST_CIPHER_SUITE, "alice").await;
         let alice = 0;
 
-        let (mut tree, _) = TreeKemPublic::derive(
-            alice_leaf,
-            alice_secret,
-            &BasicIdentityProvider,
-            &cipher_suite_provider,
-        )
-        .await
-        .unwrap();
+        let (mut tree, _) = TreeKemPublic::derive(alice_leaf, alice_secret, &BasicIdentityProvider)
+            .await
+            .unwrap();
 
         let bob = tree
             .add_leaves(
                 vec![get_basic_test_node(TEST_CIPHER_SUITE, "bob").await],
                 &BasicIdentityProvider,
-                &cipher_suite_provider,
             )
             .await
             .unwrap()[0];
@@ -2220,7 +2167,7 @@ mod tests {
             .send()
             .await;
 
-        assert_matches!(res, Err(MlsError::DuplicateHpkeKey(_)));
+        assert_matches!(res, Err(MlsError::DuplicateLeafData(_)));
     }
 
     #[test]
@@ -2610,7 +2557,7 @@ mod tests {
 
     async fn make_update_proposal(name: &str) -> UpdateProposal {
         UpdateProposal {
-            leaf_node: update_leaf_node(name, 0).await,
+            leaf_node: update_leaf_node(name, 1).await,
         }
     }
 
@@ -2752,12 +2699,7 @@ mod tests {
         .receive([update_ref, remove_ref])
         .await;
 
-        assert_matches!(
-            res,
-            Err(
-                MlsError::MoreThanOneProposalForLeaf(r)
-            ) if r == *bob
-        );
+        assert_matches!(res, Err(MlsError::UpdatingNonExistingMember));
     }
 
     #[test]
@@ -2836,7 +2778,7 @@ mod tests {
         ])
         .await;
 
-        assert_matches!(res, Err(MlsError::DuplicateIdentity(1)));
+        assert_matches!(res, Err(MlsError::DuplicateLeafData(1)));
     }
 
     #[test]
@@ -2851,7 +2793,7 @@ mod tests {
             .send()
             .await;
 
-        assert_matches!(res, Err(MlsError::DuplicateIdentity(1)));
+        assert_matches!(res, Err(MlsError::DuplicateLeafData(1)));
     }
 
     #[test]
@@ -2904,7 +2846,7 @@ mod tests {
         .receive([update_ref])
         .await;
 
-        assert_matches!(res, Err(MlsError::DifferentIdentityInUpdate(1)));
+        assert_matches!(res, Err(MlsError::InvalidSuccessor));
     }
 
     #[test]
@@ -2954,7 +2896,7 @@ mod tests {
         .receive([add])
         .await;
 
-        assert_matches!(res, Err(MlsError::DuplicateSignatureKeys(1)));
+        assert_matches!(res, Err(MlsError::DuplicateLeafData(1)));
     }
 
     #[test]
@@ -2977,7 +2919,7 @@ mod tests {
             .send()
             .await;
 
-        assert_matches!(res, Err(MlsError::DuplicateSignatureKeys(1)));
+        assert_matches!(res, Err(MlsError::DuplicateLeafData(1)));
     }
 
     #[test]
@@ -3158,10 +3100,9 @@ mod tests {
             .await
             .unwrap();
 
-            let (pub_tree, priv_tree) =
-                TreeKemPublic::derive(leaf, secret, &BasicIdentityProvider, &cipher_suite_provider)
-                    .await
-                    .unwrap();
+            let (pub_tree, priv_tree) = TreeKemPublic::derive(leaf, secret, &BasicIdentityProvider)
+                .await
+                .unwrap();
 
             (priv_tree.self_index, pub_tree)
         };
@@ -3470,19 +3411,13 @@ mod tests {
 
     #[test]
     async fn committing_update_from_pk1_to_pk2_and_update_from_pk2_to_pk3_works() {
-        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
-
         let (alice_leaf, alice_secret, alice_signer) =
             get_basic_test_node_sig_key(TEST_CIPHER_SUITE, "alice").await;
 
-        let (mut tree, priv_tree) = TreeKemPublic::derive(
-            alice_leaf.clone(),
-            alice_secret,
-            &BasicIdentityProvider,
-            &cipher_suite_provider,
-        )
-        .await
-        .unwrap();
+        let (mut tree, priv_tree) =
+            TreeKemPublic::derive(alice_leaf.clone(), alice_secret, &BasicIdentityProvider)
+                .await
+                .unwrap();
 
         let alice = priv_tree.self_index;
 
@@ -3544,14 +3479,10 @@ mod tests {
         let (alice_leaf, alice_secret, alice_signer) =
             get_basic_test_node_sig_key(TEST_CIPHER_SUITE, "alice").await;
 
-        let (mut tree, priv_tree) = TreeKemPublic::derive(
-            alice_leaf.clone(),
-            alice_secret,
-            &BasicIdentityProvider,
-            &cipher_suite_provider,
-        )
-        .await
-        .unwrap();
+        let (mut tree, priv_tree) =
+            TreeKemPublic::derive(alice_leaf.clone(), alice_secret, &BasicIdentityProvider)
+                .await
+                .unwrap();
 
         let alice = priv_tree.self_index;
 

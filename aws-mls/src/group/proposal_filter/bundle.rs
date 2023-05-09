@@ -17,7 +17,7 @@ use crate::group::proposal::CustomProposal;
 #[cfg(feature = "external_commit")]
 use crate::group::ExternalInit;
 
-use core::{iter::empty, marker::PhantomData};
+use core::iter::empty;
 
 #[derive(Clone, Debug, Default)]
 /// A collection of proposals.
@@ -84,10 +84,6 @@ impl ProposalBundle {
         }
     }
 
-    pub(crate) fn add_proposal(&mut self, p: ProposalInfo<Proposal>) {
-        self.add(p.proposal, p.sender, p.source)
-    }
-
     /// Remove the proposal of type `T` at `index`
     ///
     /// Type `T` can be any of the standard MLS proposal types defined in the
@@ -105,10 +101,6 @@ impl ProposalBundle {
     /// [`proposal`](crate::group::proposal) module.
     pub fn by_type<'a, T: Proposable + 'a>(&'a self) -> impl Iterator<Item = &'a ProposalInfo<T>> {
         T::filter(self).iter()
-    }
-
-    pub(crate) fn by_index<'a, T: Proposable + 'a>(&'a self) -> ProposalBundleIndex<'a, T> {
-        ProposalBundleIndex::new(self)
     }
 
     /// Retain proposals, filtered by type.
@@ -403,7 +395,7 @@ impl FromIterator<ProposalInfo<Proposal>> for ProposalBundle {
     {
         iter.into_iter()
             .fold(ProposalBundle::default(), |mut bundle, p| {
-                bundle.add_proposal(p);
+                bundle.add(p.proposal, p.sender, p.source);
                 bundle
             })
     }
@@ -414,30 +406,8 @@ impl Extend<ProposalInfo<Proposal>> for ProposalBundle {
     where
         T: IntoIterator<Item = ProposalInfo<Proposal>>,
     {
-        iter.into_iter().for_each(|p| self.add_proposal(p));
-    }
-}
-
-#[derive(Debug)]
-pub struct ProposalBundleIndex<'a, T> {
-    proposals: &'a ProposalBundle,
-    marker: PhantomData<&'a T>,
-}
-
-impl<'a, T> ProposalBundleIndex<'a, T> {
-    fn new(proposals: &'a ProposalBundle) -> Self {
-        Self {
-            proposals,
-            marker: PhantomData,
-        }
-    }
-}
-
-impl<T: Proposable> core::ops::Index<usize> for ProposalBundleIndex<'_, T> {
-    type Output = ProposalInfo<T>;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        &T::filter(self.proposals)[index]
+        iter.into_iter()
+            .for_each(|p| self.add(p.proposal, p.sender, p.source));
     }
 }
 

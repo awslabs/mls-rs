@@ -210,7 +210,7 @@ impl DerefMut for NodeVec {
 }
 
 impl NodeVec {
-    #[cfg(any(test, feature = "custom_proposal"))]
+    #[cfg(any(test, feature = "custom_proposal", feature = "tree_index"))]
     pub fn occupied_leaf_count(&self) -> u32 {
         self.non_empty_leaves().count() as u32
     }

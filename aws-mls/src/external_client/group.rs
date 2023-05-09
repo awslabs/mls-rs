@@ -25,9 +25,15 @@ use crate::{
         validate_group_info, Sender,
     },
     identity::SigningIdentity,
+    key_package::validate_key_package_properties,
     protocol_version::ProtocolVersion,
     psk::AlwaysFoundPskStorage,
-    tree_kem::{node::LeafIndex, path_secret::PathSecret, TreeKemPrivate},
+    tree_kem::{
+        leaf_node_validator::{LeafNodeValidator, ValidationContext},
+        node::LeafIndex,
+        path_secret::PathSecret,
+        TreeKemPrivate,
+    },
     CryptoProvider, MLSMessage,
 };
 
@@ -44,7 +50,6 @@ use aws_mls_core::{
 use crate::{
     extension::ExternalSendersExt,
     group::proposal::{AddProposal, PreSharedKeyProposal, ReInitProposal, RemoveProposal},
-    key_package::KeyPackageValidator,
     psk::{
         JustPreSharedKeyID, PreSharedKeyID, PskGroupId, PskNonce, ResumptionPSKUsage, ResumptionPsk,
     },
@@ -215,18 +220,16 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         // Check that this proposal has a valid lifetime and signature. Required capabilities are
         // not checked as they may be changed in another proposal in the same commit.
         let id_provider = self.config.identity_provider();
+        let cs = &self.cipher_suite_provider;
 
-        let key_package_validator = KeyPackageValidator::new(
-            self.protocol_version(),
-            &self.cipher_suite_provider,
-            None,
-            &id_provider,
-            Some(&self.state.context.extensions),
-        );
+        let validator =
+            LeafNodeValidator::new(cs, None, &id_provider, Some(&self.state.context.extensions));
 
-        key_package_validator
-            .check_if_valid(&key_package, Default::default())
+        validator
+            .check_if_valid(&key_package.leaf_node, ValidationContext::Add(None))
             .await?;
+
+        validate_key_package_properties(&key_package, self.protocol_version(), cs).await?;
 
         self.propose(
             Proposal::Add(AddProposal { key_package }),
@@ -527,12 +530,17 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             .await
             .map_err(|error| MlsError::IdentityProviderError(error.into_any_error()))?;
 
-        let index = self
-            .group_state()
-            .public_tree
-            .get_leaf_node_with_identity(&identity)
-            .ok_or(MlsError::MemberNotFound)?;
+        let tree = &self.group_state().public_tree;
 
+        #[cfg(feature = "tree_index")]
+        let index = tree.get_leaf_node_with_identity(&identity);
+
+        #[cfg(not(feature = "tree_index"))]
+        let index = tree
+            .get_leaf_node_with_identity(&identity, &self.identity_provider())
+            .await?;
+
+        let index = index.ok_or(MlsError::MemberNotFound)?;
         let node = self.group_state().public_tree.get_leaf_node(index)?;
 
         Ok(member_from_leaf_node(node, index))
@@ -641,9 +649,9 @@ where
     C: ExternalClientConfig + Clone,
 {
     /// Create a snapshot of this group's current internal state.
-    pub fn snapshot(&self, export_internals: bool) -> ExternalSnapshot {
+    pub fn snapshot(&self) -> ExternalSnapshot {
         ExternalSnapshot {
-            state: RawGroupState::export(self.group_state(), export_internals),
+            state: RawGroupState::export(self.group_state()),
             version: 1,
         }
     }
@@ -652,6 +660,7 @@ where
         config: C,
         snapshot: ExternalSnapshot,
     ) -> Result<Self, MlsError> {
+        #[cfg(feature = "tree_index")]
         let identity_provider = config.identity_provider();
 
         let cipher_suite_provider = cipher_suite_provider(
@@ -661,7 +670,13 @@ where
 
         Ok(ExternalGroup {
             config,
-            state: snapshot.state.import(&identity_provider).await?,
+            state: snapshot
+                .state
+                .import(
+                    #[cfg(feature = "tree_index")]
+                    &identity_provider,
+                )
+                .await?,
             cipher_suite_provider,
         })
     }
@@ -1233,7 +1248,7 @@ mod tests {
         let server =
             make_external_group(&test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await).await;
 
-        let snapshot = serde_json::to_vec(&server.snapshot(false)).unwrap();
+        let snapshot = serde_json::to_vec(&server.snapshot()).unwrap();
         let snapshot_restored = serde_json::from_slice(&snapshot).unwrap();
 
         let server_restored =

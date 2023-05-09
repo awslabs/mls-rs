@@ -2,11 +2,12 @@ use crate::{
     client::MlsError,
     extension::RequiredCapabilitiesExt,
     group::{
+        proposal::ReInitProposal,
         proposal_filter::{Proposable, ProposalBundle, ProposalInfo},
         AddProposal, BorrowedProposal, JustPreSharedKeyID, PreSharedKeyProposal, ProposalType,
-        ReInitProposal, RemoveProposal, ResumptionPSKUsage, ResumptionPsk, Sender, UpdateProposal,
+        RemoveProposal, ResumptionPSKUsage, ResumptionPsk, Sender, UpdateProposal,
     },
-    key_package::{KeyPackageValidationOptions, KeyPackageValidator},
+    key_package::validate_key_package_properties,
     protocol_version::ProtocolVersion,
     psk::PreSharedKeyID,
     time::MlsTime,
@@ -14,7 +15,7 @@ use crate::{
         leaf_node::LeafNode,
         leaf_node_validator::{LeafNodeValidator, ValidationContext},
         node::LeafIndex,
-        AccumulateBatchResults, TreeKemPublic,
+        TreeKemPublic,
     },
     CipherSuiteProvider, ExtensionList,
 };
@@ -27,7 +28,6 @@ use alloc::vec;
 
 use alloc::vec::Vec;
 use aws_mls_core::{error::IntoAnyError, identity::IdentityProvider, psk::PreSharedKeyStorage};
-use futures::TryStreamExt;
 
 #[cfg(feature = "custom_proposal")]
 use itertools::Itertools;
@@ -36,11 +36,9 @@ use itertools::Itertools;
 use crate::group::ExternalInit;
 
 #[cfg(feature = "std")]
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 #[cfg(not(feature = "std"))]
-use alloc::collections::BTreeMap;
-
 use alloc::collections::BTreeSet;
 
 #[derive(Clone, Debug)]
@@ -168,7 +166,6 @@ where
 
         let proposals = filter_out_update_for_committer(strategy, commit_sender, proposals)?;
         let proposals = filter_out_removal_of_committer(strategy, commit_sender, proposals)?;
-        let proposals = filter_out_extra_removal_or_update_for_same_leaf(strategy, proposals)?;
 
         let proposals = filter_out_invalid_psks(
             strategy,
@@ -246,13 +243,8 @@ where
             .apply_proposal_changes(&FailInvalidProposal, state, commit_time)
             .await?;
 
-        let state = insert_external_leaf(
-            state,
-            external_leaf.clone(),
-            self.identity_provider,
-            self.cipher_suite_provider,
-        )
-        .await?;
+        let state =
+            insert_external_leaf(state, external_leaf.clone(), self.identity_provider).await?;
 
         Ok(state)
     }
@@ -415,114 +407,22 @@ where
             )
             .await?;
 
-        let mut updates = Vec::new();
-        state
-            .proposals
-            .retain_by_type::<UpdateProposal, _, _>(|p| {
-                let r = leaf_index_of_update_sender(p);
-
-                if let Ok(leaf_index) = r {
-                    updates.push((leaf_index, p.proposal.leaf_node.clone()));
-                }
-
-                apply_strategy(strategy, p, r.map(|_| ()))
-            })?;
-
-        let removals = state
-            .proposals
-            .by_type::<RemoveProposal>()
-            .map(|p| p.proposal.to_remove)
-            .collect::<Vec<_>>();
-
-        let additions = state
-            .proposals
-            .by_type::<AddProposal>()
-            .map(|p| p.proposal.key_package.leaf_node.clone())
-            .collect::<Vec<_>>();
-
-        let accumulator = TreeBatchEditAccumulator::new(strategy, &state.proposals);
-
-        let accumulator = state
+        let res = state
             .tree
             .batch_edit(
-                accumulator,
-                &updates,
-                &removals,
-                &additions,
+                &mut state.proposals,
                 self.identity_provider,
                 self.cipher_suite_provider,
+                F::is_ignore(),
             )
             .await?;
 
-        let TreeBatchEditAccumulator {
-            strategy: _,
-            proposals: _,
-            new_leaf_indexes,
-            removed_leaves,
-            invalid_additions,
-            invalid_removals,
-            invalid_updates,
-        } = accumulator;
-
-        state.added_indexes = new_leaf_indexes;
-        state.removed_leaves = removed_leaves;
-
-        invalid_additions
-            .iter()
-            .rev()
-            .copied()
-            .for_each(|i| state.proposals.remove::<AddProposal>(i));
-
-        invalid_removals
-            .iter()
-            .rev()
-            .copied()
-            .for_each(|i| state.proposals.remove::<RemoveProposal>(i));
-
-        invalid_updates
-            .iter()
-            .rev()
-            .copied()
-            .for_each(|i| state.proposals.remove::<UpdateProposal>(i));
+        (state.removed_leaves, state.added_indexes) = (res.removed, res.added);
 
         Ok(state)
     }
 
     async fn validate_new_nodes<F>(
-        &self,
-        strategy: &F,
-        state: ProposalState,
-        group_extensions_in_use: &ExtensionList,
-        required_capabilities: Option<&RequiredCapabilitiesExt>,
-        commit_time: Option<MlsTime>,
-    ) -> Result<ProposalState, MlsError>
-    where
-        F: FilterStrategy,
-    {
-        let state = self
-            .validate_new_update_nodes(
-                strategy,
-                state,
-                group_extensions_in_use,
-                required_capabilities,
-                commit_time,
-            )
-            .await?;
-
-        let state = self
-            .validate_new_key_packages(
-                strategy,
-                state,
-                group_extensions_in_use,
-                required_capabilities,
-                commit_time,
-            )
-            .await?;
-
-        Ok(state)
-    }
-
-    async fn validate_new_update_nodes<F>(
         &self,
         strategy: &F,
         mut state: ProposalState,
@@ -537,89 +437,69 @@ where
             self.cipher_suite_provider,
             required_capabilities,
             self.identity_provider,
-            Some(self.original_group_extensions),
-        );
-
-        let proposals = &mut state.proposals;
-
-        let bad_update_indices =
-            futures::stream::iter(proposals.by_type::<UpdateProposal>().enumerate().map(Ok))
-                .try_filter_map(|(i, p)| async move {
-                    let sender_index = leaf_index_of_update_sender(p)?;
-
-                    let valid = leaf_node_validator
-                        .check_if_valid(
-                            &p.proposal.leaf_node,
-                            ValidationContext::Update((self.group_id, *sender_index, commit_time)),
-                        )
-                        .await
-                        .map_err(Into::into);
-
-                    let extensions_are_supported =
-                        leaf_supports_extensions(&p.proposal.leaf_node, group_extensions_in_use);
-
-                    let res = valid.and(extensions_are_supported);
-                    apply_strategy(strategy, p, res).map(|keep| (!keep).then_some(i))
-                })
-                .try_collect::<Vec<_>>()
-                .await?;
-
-        bad_update_indices
-            .into_iter()
-            .rev()
-            .for_each(|i| proposals.remove::<UpdateProposal>(i));
-
-        Ok(state)
-    }
-
-    async fn validate_new_key_packages<F>(
-        &self,
-        strategy: &F,
-        mut state: ProposalState,
-        group_extensions_in_use: &ExtensionList,
-        required_capabilities: Option<&RequiredCapabilitiesExt>,
-        commit_time: Option<MlsTime>,
-    ) -> Result<ProposalState, MlsError>
-    where
-        F: FilterStrategy,
-    {
-        let package_validator = &KeyPackageValidator::new(
-            self.protocol_version,
-            self.cipher_suite_provider,
-            required_capabilities,
-            self.identity_provider,
             Some(group_extensions_in_use),
         );
 
-        let proposals = &mut state.proposals;
+        let mut bad_indices = Vec::new();
 
-        let bad_add_indices =
-            futures::stream::iter(proposals.by_type::<AddProposal>().enumerate().map(Ok))
-                .try_filter_map(|(i, p)| async move {
-                    let options = KeyPackageValidationOptions {
-                        apply_lifetime_check: commit_time,
-                    };
+        for (i, p) in state.proposals.by_type::<UpdateProposal>().enumerate() {
+            let sender_index = leaf_index_of_update_sender(p)?;
 
-                    let valid = package_validator
-                        .check_if_valid(&p.proposal.key_package, options)
-                        .await
-                        .map_err(Into::into);
+            let valid = leaf_node_validator
+                .check_if_valid(
+                    &p.proposal.leaf_node,
+                    ValidationContext::Update((self.group_id, *sender_index, commit_time)),
+                )
+                .await;
 
-                    let extensions_are_supported = leaf_supports_extensions(
-                        &p.proposal.key_package.leaf_node,
-                        group_extensions_in_use,
-                    );
+            let extensions_are_supported =
+                leaf_supports_extensions(&p.proposal.leaf_node, group_extensions_in_use);
 
-                    let res = valid.and(extensions_are_supported);
-                    apply_strategy(strategy, p, res).map(|keep| (!keep).then_some(i))
-                })
-                .try_collect::<Vec<_>>()
-                .await?;
+            let res = valid.and(extensions_are_supported);
 
-        bad_add_indices
+            if !apply_strategy(strategy, p, res)? {
+                bad_indices.push(i);
+            }
+        }
+
+        bad_indices
             .into_iter()
             .rev()
-            .for_each(|i| proposals.remove::<AddProposal>(i));
+            .for_each(|i| state.proposals.remove::<UpdateProposal>(i));
+
+        let mut bad_indices = Vec::new();
+
+        for (i, p) in state.proposals.by_type::<AddProposal>().enumerate() {
+            let valid = leaf_node_validator
+                .check_if_valid(
+                    &p.proposal.key_package.leaf_node,
+                    ValidationContext::Add(commit_time),
+                )
+                .await;
+
+            let extensions_are_supported = leaf_supports_extensions(
+                &p.proposal.key_package.leaf_node,
+                group_extensions_in_use,
+            );
+
+            let res = valid.and(extensions_are_supported).and(
+                validate_key_package_properties(
+                    &p.proposal.key_package,
+                    self.protocol_version,
+                    self.cipher_suite_provider,
+                )
+                .await,
+            );
+
+            if !apply_strategy(strategy, p, res)? {
+                bad_indices.push(i);
+            }
+        }
+
+        bad_indices
+            .into_iter()
+            .rev()
+            .for_each(|i| state.proposals.remove::<AddProposal>(i));
 
         Ok(state)
     }
@@ -638,14 +518,19 @@ fn leaf_supports_extensions(leaf: &LeafNode, extensions: &ExtensionList) -> Resu
 
 pub trait FilterStrategy {
     fn ignore(&self, proposal: &ProposalInfo<BorrowedProposal<'_>>) -> bool;
+    fn is_ignore() -> bool;
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct IgnoreInvalidByRefProposal;
 
 impl FilterStrategy for IgnoreInvalidByRefProposal {
     fn ignore(&self, p: &ProposalInfo<BorrowedProposal<'_>>) -> bool {
         p.is_by_reference()
+    }
+
+    fn is_ignore() -> bool {
+        true
     }
 }
 
@@ -654,6 +539,10 @@ pub struct FailInvalidProposal;
 
 impl FilterStrategy for FailInvalidProposal {
     fn ignore(&self, _: &ProposalInfo<BorrowedProposal<'_>>) -> bool {
+        false
+    }
+
+    fn is_ignore() -> bool {
         false
     }
 }
@@ -712,70 +601,6 @@ where
     Ok(proposals)
 }
 
-fn filter_out_extra_removal_or_update_for_same_leaf<F>(
-    strategy: &F,
-    mut proposals: ProposalBundle,
-) -> Result<ProposalBundle, MlsError>
-where
-    F: FilterStrategy,
-{
-    #[cfg(feature = "std")]
-    let mut indexes = HashSet::new();
-
-    #[cfg(not(feature = "std"))]
-    let mut indexes = BTreeSet::new();
-
-    proposals.retain_by_type::<RemoveProposal, _, _>(|p| {
-        apply_strategy(
-            strategy,
-            p,
-            indexes
-                .insert(p.proposal.to_remove)
-                .then_some(())
-                .ok_or(MlsError::MoreThanOneProposalForLeaf(*p.proposal.to_remove)),
-        )
-    })?;
-
-    #[cfg(feature = "std")]
-    let per_leaf = HashMap::new();
-
-    #[cfg(not(feature = "std"))]
-    let per_leaf = BTreeMap::new();
-
-    let last_update_indexes_per_leaf = proposals.by_type::<UpdateProposal>().enumerate().fold(
-        per_leaf,
-        |mut last_per_leaf, (i, p)| {
-            if let Sender::Member(leaf_index) = p.sender {
-                last_per_leaf.insert(leaf_index, i);
-            }
-            last_per_leaf
-        },
-    );
-
-    let mut update_index = 0;
-
-    proposals.retain_by_type::<UpdateProposal, _, _>(|p| {
-        let index = update_index;
-        update_index += 1;
-        let leaf_index = match p.sender {
-            Sender::Member(i) => LeafIndex(i),
-            _ => return Ok(true),
-        };
-
-        let is_last_update = last_update_indexes_per_leaf.get(&leaf_index) == Some(&index);
-
-        apply_strategy(
-            strategy,
-            p,
-            (is_last_update && indexes.insert(leaf_index))
-                .then_some(())
-                .ok_or(MlsError::MoreThanOneProposalForLeaf(*leaf_index)),
-        )
-    })?;
-
-    Ok(proposals)
-}
-
 #[cfg(feature = "external_proposal")]
 async fn filter_out_invalid_group_extensions<F, C>(
     strategy: &F,
@@ -787,26 +612,24 @@ where
     F: FilterStrategy,
     C: IdentityProvider,
 {
-    let bad_indices =
-        futures::stream::iter(proposals.by_type::<ExtensionList>().enumerate().map(Ok))
-            .try_filter_map(|(i, p)| async move {
-                let res = match p
-                    .proposal
-                    .get_as::<ExternalSendersExt>()
-                    .map_err(Into::into)
-                {
-                    Ok(None) => Ok(()),
-                    Ok(Some(extension)) => extension
-                        .verify_all(identity_provider, commit_time, p.proposal())
-                        .await
-                        .map_err(|e| MlsError::IdentityProviderError(e.into_any_error())),
-                    Err(e) => Err(e),
-                };
+    let mut bad_indices = Vec::new();
 
-                apply_strategy(strategy, p, res).map(|keep| (!keep).then_some(i))
-            })
-            .try_collect::<Vec<_>>()
-            .await?;
+    for (i, p) in proposals.by_type::<ExtensionList>().enumerate() {
+        let ext = p.proposal.get_as::<ExternalSendersExt>();
+
+        let res = match ext {
+            Ok(None) => Ok(()),
+            Ok(Some(extension)) => extension
+                .verify_all(identity_provider, commit_time, p.proposal())
+                .await
+                .map_err(|e| MlsError::IdentityProviderError(e.into_any_error())),
+            Err(e) => Err(MlsError::ExtensionError(e)),
+        };
+
+        if !apply_strategy(strategy, p, res)? {
+            bad_indices.push(i);
+        }
+    }
 
     bad_indices
         .into_iter()
@@ -925,7 +748,6 @@ where
 {
     let kdf_extract_size = cipher_suite_provider.kdf_extract_size();
 
-    #[derive(Default)]
     struct ValidationState {
         #[cfg(feature = "std")]
         ids_seen: HashSet<PreSharedKeyID>,
@@ -934,13 +756,12 @@ where
         bad_indices: Vec<usize>,
     }
 
-    let state = futures::stream::iter(
-        proposals
-            .by_type::<PreSharedKeyProposal>()
-            .enumerate()
-            .map(Ok),
-    )
-    .try_fold(ValidationState::default(), |mut state, (i, p)| async move {
+    let mut state = ValidationState {
+        ids_seen: Default::default(),
+        bad_indices: Vec::new(),
+    };
+
+    for (i, p) in proposals.by_type::<PreSharedKeyProposal>().enumerate() {
         let valid = matches!(
             p.proposal.psk.key_id,
             JustPreSharedKeyID::External(_)
@@ -987,10 +808,7 @@ where
         if !is_invalid_index {
             state.bad_indices.push(i)
         }
-
-        Ok::<_, MlsError>(state)
-    })
-    .await?;
+    }
 
     state
         .bad_indices
@@ -1264,19 +1082,14 @@ fn leaf_index_of_update_sender(p: &ProposalInfo<UpdateProposal>) -> Result<LeafI
 }
 
 #[cfg(feature = "external_commit")]
-async fn insert_external_leaf<I, CP>(
+async fn insert_external_leaf<I: IdentityProvider>(
     mut state: ProposalState,
     leaf_node: LeafNode,
     identity_provider: &I,
-    cipher_suite_provider: &CP,
-) -> Result<ProposalState, MlsError>
-where
-    I: IdentityProvider,
-    CP: CipherSuiteProvider,
-{
+) -> Result<ProposalState, MlsError> {
     let leaf_indexes = state
         .tree
-        .add_leaves(vec![leaf_node], identity_provider, cipher_suite_provider)
+        .add_leaves(vec![leaf_node], identity_provider)
         .await?;
 
     state.external_leaf_index = leaf_indexes.first().copied();
@@ -1309,92 +1122,4 @@ where
     })?;
 
     Ok(state)
-}
-
-struct TreeBatchEditAccumulator<'a, F> {
-    strategy: &'a F,
-    proposals: &'a ProposalBundle,
-    new_leaf_indexes: Vec<LeafIndex>,
-    removed_leaves: Vec<(LeafIndex, LeafNode)>,
-    invalid_additions: BTreeSet<usize>,
-    invalid_removals: BTreeSet<usize>,
-    invalid_updates: BTreeSet<usize>,
-}
-
-impl<'a, F: FilterStrategy> TreeBatchEditAccumulator<'a, F> {
-    fn new(strategy: &'a F, proposals: &'a ProposalBundle) -> Self {
-        Self {
-            strategy,
-            proposals,
-            new_leaf_indexes: Default::default(),
-            removed_leaves: Default::default(),
-            invalid_additions: Default::default(),
-            invalid_removals: Default::default(),
-            invalid_updates: Default::default(),
-        }
-    }
-
-    fn apply_strategy<T>(&self, index: usize, r: Result<(), MlsError>) -> Result<(), MlsError>
-    where
-        T: Proposable,
-        for<'b> BorrowedProposal<'b>: From<&'b T>,
-    {
-        match r {
-            Ok(()) => Ok(()),
-            Err(e) => {
-                if self.strategy.ignore(
-                    &self.proposals.by_index::<T>()[index]
-                        .by_ref()
-                        .map(Into::into),
-                ) {
-                    Ok(())
-                } else {
-                    Err(e)
-                }
-            }
-        }
-    }
-}
-
-impl<F: FilterStrategy> AccumulateBatchResults for TreeBatchEditAccumulator<'_, F> {
-    type Output = Self;
-
-    fn on_update(&mut self, index: usize, r: Result<LeafIndex, MlsError>) -> Result<(), MlsError> {
-        if r.is_err() {
-            self.invalid_updates.insert(index);
-        }
-        self.apply_strategy::<UpdateProposal>(index, r.map(|_| ()))
-    }
-
-    fn on_remove(
-        &mut self,
-        index: usize,
-        r: Result<(LeafIndex, LeafNode), MlsError>,
-    ) -> Result<(), MlsError> {
-        let r = match r {
-            Ok(leaf) => {
-                self.removed_leaves.push(leaf);
-                Ok(())
-            }
-            Err(e) => {
-                self.invalid_removals.insert(index);
-                Err(e)
-            }
-        };
-        self.apply_strategy::<RemoveProposal>(index, r)
-    }
-
-    fn on_add(&mut self, index: usize, r: Result<LeafIndex, MlsError>) -> Result<(), MlsError> {
-        match r {
-            Ok(leaf_index) => self.new_leaf_indexes.push(leaf_index),
-            Err(_) => {
-                self.invalid_additions.insert(index);
-            }
-        }
-        self.apply_strategy::<AddProposal>(index, r.map(|_| ()))
-    }
-
-    fn finish(self) -> Result<Self::Output, MlsError> {
-        Ok(self)
-    }
 }

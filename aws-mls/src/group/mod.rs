@@ -287,13 +287,8 @@ where
         )
         .await?;
 
-        let (mut public_tree, private_tree) = TreeKemPublic::derive(
-            leaf_node,
-            leaf_node_secret,
-            &config.identity_provider(),
-            &cipher_suite_provider,
-        )
-        .await?;
+        let (mut public_tree, private_tree) =
+            TreeKemPublic::derive(leaf_node, leaf_node_secret, &config.identity_provider()).await?;
 
         let tree_hash = public_tree.tree_hash(&cipher_suite_provider)?;
 
@@ -1447,13 +1442,18 @@ where
     /// This function determines identity by calling the
     /// [`IdentityProvider`](crate::IdentityProvider)
     /// currently in use by the group.
-    pub fn member_with_identity(&self, identity: &[u8]) -> Result<Member, MlsError> {
-        let index = self
-            .state
-            .public_tree
-            .get_leaf_node_with_identity(identity)
-            .ok_or(MlsError::MemberNotFound)?;
+    pub async fn member_with_identity(&self, identity: &[u8]) -> Result<Member, MlsError> {
+        let tree = &self.state.public_tree;
 
+        #[cfg(feature = "tree_index")]
+        let index = tree.get_leaf_node_with_identity(identity);
+
+        #[cfg(not(feature = "tree_index"))]
+        let index = tree
+            .get_leaf_node_with_identity(identity, &self.identity_provider())
+            .await?;
+
+        let index = index.ok_or(MlsError::MemberNotFound)?;
         let node = self.state.public_tree.get_leaf_node(index)?;
 
         Ok(member_from_leaf_node(node, index))
@@ -3097,7 +3097,7 @@ mod tests {
             groups[7]
                 .process_message(commit_output.commit_message)
                 .await,
-            Err(MlsError::DuplicateHpkeKey(_))
+            Err(MlsError::DuplicateLeafData(_))
         );
     }
 
@@ -3139,7 +3139,7 @@ mod tests {
             groups[7]
                 .process_message(commit_output.commit_message)
                 .await,
-            Err(MlsError::DuplicateSignatureKeys(_))
+            Err(MlsError::DuplicateLeafData(_))
         );
     }
 

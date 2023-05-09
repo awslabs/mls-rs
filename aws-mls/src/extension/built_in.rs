@@ -7,9 +7,6 @@ use aws_mls_core::{
 };
 
 #[cfg(feature = "external_proposal")]
-use futures::TryStreamExt;
-
-#[cfg(feature = "external_proposal")]
 use aws_mls_core::{
     extension::ExtensionList,
     identity::{IdentityProvider, SigningIdentity},
@@ -171,11 +168,13 @@ impl ExternalSendersExt {
         timestamp: Option<MlsTime>,
         group_context_extensions: &ExtensionList,
     ) -> Result<(), I::Error> {
-        futures::stream::iter(self.allowed_senders.iter().map(Ok))
-            .try_for_each(|id| {
-                provider.validate_external_sender(id, timestamp, Some(group_context_extensions))
-            })
-            .await
+        for id in self.allowed_senders.iter() {
+            provider
+                .validate_external_sender(id, timestamp, Some(group_context_extensions))
+                .await?;
+        }
+
+        Ok(())
     }
 }
 

@@ -1,13 +1,11 @@
 use crate::cipher_suite::CipherSuite;
 use crate::client::MlsError;
 use crate::crypto::HpkePublicKey;
-use crate::extension::RequiredCapabilitiesExt;
 use crate::hash_reference::HashReference;
 use crate::identity::SigningIdentity;
 use crate::protocol_version::ProtocolVersion;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::signer::Signable;
-use crate::time::MlsTime;
 use crate::tree_kem::leaf_node::LeafNode;
 use crate::CipherSuiteProvider;
 use alloc::vec::Vec;

@@ -74,7 +74,7 @@ async fn interop_passive_client() {
             test_case.initial_epoch_authenticator
         );
 
-        for epoch in test_case.epochs.iter() {
+        for epoch in test_case.epochs {
             for proposal in epoch.proposals.iter() {
                 let message = MLSMessage::from_bytes(&proposal.0).unwrap();
                 group.process_incoming_message(message).await.unwrap();

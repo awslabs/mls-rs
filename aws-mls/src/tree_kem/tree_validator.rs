@@ -187,11 +187,7 @@ mod tests {
 
         test_tree
             .public
-            .add_leaves(
-                vec![leaf1, leaf2],
-                &BasicIdentityProvider,
-                &cipher_suite_provider,
-            )
+            .add_leaves(vec![leaf1, leaf2], &BasicIdentityProvider)
             .await
             .unwrap();
 

@@ -11,7 +11,10 @@ use aws_mls_core::{
 use super::{internal::ResumptionPsk, snapshot::Snapshot};
 
 #[cfg(feature = "std")]
-use std::collections::{hash_map::Entry, HashMap};
+use std::collections::HashMap;
+
+#[cfg(all(feature = "std", feature = "private_message"))]
+use std::collections::hash_map::Entry;
 
 #[cfg(all(not(feature = "std"), feature = "private_message"))]
 use alloc::collections::btree_map::Entry;

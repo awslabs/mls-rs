@@ -1,24 +1,30 @@
 use super::*;
 
-#[cfg(feature = "custom_proposal")]
+#[cfg(all(feature = "tree_index", feature = "custom_proposal"))]
 use crate::group::proposal::ProposalType;
 
-use crate::identity::CredentialType;
-use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
-#[cfg(feature = "std")]
+#[cfg(feature = "tree_index")]
+use crate::{identity::CredentialType, serde_utils::vec_u8_as_base64::VecAsBase64};
+
+#[cfg(all(feature = "tree_index", feature = "std"))]
 use itertools::Itertools;
+
+#[cfg(feature = "tree_index")]
 use serde_with::serde_as;
 
-#[cfg(not(feature = "std"))]
+#[cfg(all(feature = "tree_index", not(feature = "std")))]
 use alloc::collections::btree_map::Entry;
 
-#[cfg(feature = "std")]
+#[cfg(all(feature = "tree_index", feature = "std"))]
 use std::collections::hash_map::Entry;
 
-#[cfg(not(feature = "std"))]
+#[cfg(all(feature = "tree_index", not(feature = "std")))]
 use alloc::collections::BTreeSet;
 
-#[cfg(feature = "std")]
+#[cfg(feature = "tree_index")]
+use core::ops::Deref;
+
+#[cfg(all(feature = "tree_index", feature = "std"))]
 #[serde_as]
 #[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct TreeIndex {
@@ -35,7 +41,7 @@ pub struct TreeIndex {
     proposal_type_counter: HashMap<ProposalType, usize>,
 }
 
-#[cfg(not(feature = "std"))]
+#[cfg(all(feature = "tree_index", not(feature = "std")))]
 #[serde_as]
 #[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct TreeIndex {
@@ -52,6 +58,75 @@ pub struct TreeIndex {
     proposal_type_counter: BTreeMap<ProposalType, usize>,
 }
 
+#[cfg(feature = "tree_index")]
+pub(super) async fn index_insert<I: IdentityProvider>(
+    tree_index: &mut TreeIndex,
+    new_leaf: &LeafNode,
+    new_leaf_idx: LeafIndex,
+    id_provider: &I,
+) -> Result<(), MlsError> {
+    let new_id = id_provider
+        .identity(&new_leaf.signing_identity)
+        .await
+        .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?;
+
+    tree_index.insert(new_leaf_idx, new_leaf, new_id)
+}
+
+#[cfg(not(feature = "tree_index"))]
+pub(super) async fn index_insert<I: IdentityProvider>(
+    nodes: &NodeVec,
+    new_leaf: &LeafNode,
+    new_leaf_idx: LeafIndex,
+    id_provider: &I,
+) -> Result<(), MlsError> {
+    let new_id = id_provider
+        .identity(&new_leaf.signing_identity)
+        .await
+        .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?;
+
+    for (i, leaf) in nodes.non_empty_leaves().filter(|(i, _)| i != &new_leaf_idx) {
+        (new_leaf.public_key != leaf.public_key)
+            .then_some(())
+            .ok_or(MlsError::DuplicateLeafData(*i))?;
+
+        (new_leaf.signing_identity.signature_key != leaf.signing_identity.signature_key)
+            .then_some(())
+            .ok_or(MlsError::DuplicateLeafData(*i))?;
+
+        let id = id_provider
+            .identity(&leaf.signing_identity)
+            .await
+            .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?;
+
+        (new_id != id)
+            .then_some(())
+            .ok_or(MlsError::DuplicateLeafData(*i))?;
+
+        let cred_type = leaf.signing_identity.credential.credential_type();
+
+        new_leaf
+            .capabilities
+            .credentials
+            .contains(&cred_type)
+            .then_some(())
+            .ok_or(MlsError::InUseCredentialTypeUnsupportedByNewLeaf(
+                cred_type, *i,
+            ))?;
+
+        let new_cred_type = new_leaf.signing_identity.credential.credential_type();
+
+        leaf.capabilities
+            .credentials
+            .contains(&new_cred_type)
+            .then_some(())
+            .ok_or(MlsError::CredentialTypeOfNewLeafIsUnsupported(cred_type))?;
+    }
+
+    Ok(())
+}
+
+#[cfg(feature = "tree_index")]
 impl TreeIndex {
     pub fn new() -> Self {
         Default::default()
@@ -61,7 +136,7 @@ impl TreeIndex {
         !self.identities.is_empty()
     }
 
-    pub fn insert(
+    fn insert(
         &mut self,
         index: LeafIndex,
         leaf_node: &LeafNode,
@@ -73,19 +148,19 @@ impl TreeIndex {
         let credential_entry = self.credential_signature_key.entry(pub_key.to_vec());
 
         if let Entry::Occupied(entry) = credential_entry {
-            return Err(MlsError::DuplicateSignatureKeys(**entry.get()));
+            return Err(MlsError::DuplicateLeafData(**entry.get()));
         }
 
         let hpke_key = leaf_node.public_key.as_ref().to_vec();
         let hpke_entry = self.hpke_key.entry(hpke_key);
 
         if let Entry::Occupied(entry) = hpke_entry {
-            return Err(MlsError::DuplicateHpkeKey(**entry.get()));
+            return Err(MlsError::DuplicateLeafData(**entry.get()));
         }
 
         let identity_entry = self.identities.entry(identity);
         if let Entry::Occupied(entry) = identity_entry {
-            return Err(MlsError::DuplicateIdentity(**entry.get()));
+            return Err(MlsError::DuplicateLeafData(**entry.get()));
         }
 
         let in_use_cred_type_unsupported_by_new_leaf = self
@@ -222,12 +297,14 @@ impl TreeIndex {
     }
 }
 
+#[cfg(feature = "tree_index")]
 #[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
 struct TypeCounter {
     supported: usize,
     used: usize,
 }
 
+#[cfg(feature = "tree_index")]
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -316,7 +393,7 @@ mod tests {
             get_test_client_identity(&new_key_package),
         );
 
-        assert_matches!(res, Err(MlsError::DuplicateSignatureKeys(index))
+        assert_matches!(res, Err(MlsError::DuplicateLeafData(index))
                         if index == *test_data[1].index);
 
         assert_eq!(before_error, test_index);
@@ -337,7 +414,7 @@ mod tests {
             get_test_client_identity(&new_leaf_node),
         );
 
-        assert_matches!(res, Err(MlsError::DuplicateHpkeKey(index))
+        assert_matches!(res, Err(MlsError::DuplicateLeafData(index))
                         if index == *test_data[1].index);
 
         assert_eq!(before_error, test_index);

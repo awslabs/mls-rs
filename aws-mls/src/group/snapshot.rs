@@ -10,7 +10,9 @@ use crate::{
     tree_kem::TreeKemPrivate,
 };
 
+#[cfg(feature = "tree_index")]
 use aws_mls_core::identity::IdentityProvider;
+
 use serde_with::serde_as;
 
 #[cfg(feature = "std")]
@@ -64,10 +66,12 @@ pub(crate) struct RawGroupState {
 }
 
 impl RawGroupState {
-    pub(crate) fn export(state: &GroupState, export_tree_internals: bool) -> Self {
-        let public_tree = if export_tree_internals {
-            state.public_tree.clone()
-        } else {
+    pub(crate) fn export(state: &GroupState) -> Self {
+        #[cfg(feature = "tree_index")]
+        let public_tree = state.public_tree.clone();
+
+        #[cfg(not(feature = "tree_index"))]
+        let public_tree = {
             let mut tree = TreeKemPublic::new();
             tree.nodes = state.public_tree.export_node_data();
             tree
@@ -83,6 +87,7 @@ impl RawGroupState {
         }
     }
 
+    #[cfg(feature = "tree_index")]
     pub(crate) async fn import<C>(self, identity_provider: &C) -> Result<GroupState, MlsError>
     where
         C: IdentityProvider,
@@ -110,6 +115,26 @@ impl RawGroupState {
             confirmation_tag: self.confirmation_tag,
         })
     }
+
+    #[cfg(not(feature = "tree_index"))]
+    pub(crate) async fn import(self) -> Result<GroupState, MlsError> {
+        let context = self.context;
+
+        let proposals = ProposalCache::import(
+            context.protocol_version,
+            context.group_id.clone(),
+            self.proposals,
+        );
+
+        Ok(GroupState {
+            proposals,
+            context,
+            public_tree: self.public_tree,
+            interim_transcript_hash: self.interim_transcript_hash,
+            pending_reinit: self.pending_reinit,
+            confirmation_tag: self.confirmation_tag,
+        })
+    }
 }
 
 impl<C> Group<C>
@@ -119,16 +144,16 @@ where
     /// Write the current state of the group to the
     /// [`GroupStorageProvider`](crate::GroupStateStorage)
     /// that is currently in use by the group.
-    pub async fn write_to_storage(&mut self, export_internals: bool) -> Result<(), MlsError> {
+    pub async fn write_to_storage(&mut self) -> Result<(), MlsError> {
         self.state_repo
-            .write_to_storage(self.snapshot(export_internals))
+            .write_to_storage(self.snapshot())
             .await
             .map_err(Into::into)
     }
 
-    pub(crate) fn snapshot(&self, export_tree_internals: bool) -> Snapshot {
+    pub(crate) fn snapshot(&self) -> Snapshot {
         Snapshot {
-            state: RawGroupState::export(&self.state, export_tree_internals),
+            state: RawGroupState::export(&self.state),
             private_tree: self.private_tree.clone(),
             key_schedule: self.key_schedule.clone(),
             pending_updates: self.pending_updates.clone(),
@@ -144,6 +169,7 @@ where
             snapshot.state.context.cipher_suite,
         )?;
 
+        #[cfg(feature = "tree_index")]
         let identity_provider = config.identity_provider();
 
         let state_repo = GroupStateRepository::new(
@@ -157,7 +183,13 @@ where
 
         Ok(Group {
             config,
-            state: snapshot.state.import(&identity_provider).await?,
+            state: snapshot
+                .state
+                .import(
+                    #[cfg(feature = "tree_index")]
+                    &identity_provider,
+                )
+                .await?,
             private_tree: snapshot.private_tree,
             key_schedule: snapshot.key_schedule,
             pending_updates: snapshot.pending_updates,
@@ -223,8 +255,8 @@ mod tests {
 
     use super::Snapshot;
 
-    async fn serialize_to_json_test(group: TestGroup, export_internals: bool) {
-        let snapshot = group.group.snapshot(export_internals);
+    async fn serialize_to_json_test(group: TestGroup) {
+        let snapshot = group.group.snapshot();
         let json = serde_json::to_vec(&snapshot).unwrap();
         let snapshot_restored: Snapshot = serde_json::from_slice(&json).unwrap();
 
@@ -236,12 +268,11 @@ mod tests {
 
         assert!(Group::equal_group_state(&group.group, &group_restored));
 
-        if export_internals {
-            assert!(group_restored
-                .state
-                .public_tree
-                .equal_internals(&group.group.state.public_tree))
-        }
+        #[cfg(feature = "tree_index")]
+        assert!(group_restored
+            .state
+            .public_tree
+            .equal_internals(&group.group.state.public_tree))
     }
 
     #[futures_test::test]
@@ -249,7 +280,7 @@ mod tests {
         let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         group.group.commit(vec![]).await.unwrap();
 
-        serialize_to_json_test(group, false).await
+        serialize_to_json_test(group).await
     }
 
     #[futures_test::test]
@@ -262,13 +293,13 @@ mod tests {
         // This will insert the proposal into the internal proposal cache
         let _ = group.group.proposal_message(update_proposal, vec![]).await;
 
-        serialize_to_json_test(group, false).await
+        serialize_to_json_test(group).await
     }
 
     #[futures_test::test]
     async fn snapshot_can_be_serialized_to_json_with_internals() {
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
-        serialize_to_json_test(group, true).await
+        serialize_to_json_test(group).await
     }
 }
