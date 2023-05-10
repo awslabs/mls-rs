@@ -39,9 +39,10 @@ where
 
     let out = reader
         .get(..len)
-        .map(|head| head.to_vec().into())
-        .ok_or(crate::Error::UnexpectedEOF)?;
+        .ok_or(crate::Error::UnexpectedEOF)?
+        .to_vec();
 
     *reader = &reader[len..];
-    Ok(out)
+
+    Ok(out.into())
 }

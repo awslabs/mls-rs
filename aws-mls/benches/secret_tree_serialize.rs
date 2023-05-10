@@ -1,6 +1,7 @@
 use aws_mls::bench_utils::group_functions::load_test_cases;
 use aws_mls::group::secret_tree::SecretTree;
 use aws_mls::CipherSuite;
+use aws_mls_codec::MlsEncode;
 use criterion::{
     criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Criterion,
 };
@@ -38,7 +39,7 @@ fn bench_secret_tree_serialize(
         &key,
         |b, _| {
             b.iter(|| {
-                serde_json::to_vec(secret_tree).unwrap();
+                secret_tree.mls_encode_to_vec().unwrap();
             })
         },
     );

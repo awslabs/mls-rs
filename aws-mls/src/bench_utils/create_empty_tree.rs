@@ -1,3 +1,4 @@
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use aws_mls_core::crypto::{CipherSuiteProvider, SignatureSecretKey};
 
 use crate::cipher_suite::CipherSuite;
@@ -13,7 +14,7 @@ use crate::ExtensionList;
 use futures::StreamExt;
 use std::collections::HashMap;
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, MlsSize, MlsDecode, MlsEncode)]
 pub struct TestCase {
     pub private_keys: Vec<TreeKemPrivate>,
     pub test_tree: TreeKemPublic,
@@ -24,7 +25,7 @@ pub struct TestCase {
     pub encap_identity: SigningIdentity,
 }
 
-async fn generate_test_cases() -> HashMap<usize, TestCase> {
+async fn generate_test_cases() -> HashMap<u32, TestCase> {
     let cipher_suite = TEST_CIPHER_SUITE;
 
     futures::stream::iter([100, 1000, 10000])
@@ -33,12 +34,12 @@ async fn generate_test_cases() -> HashMap<usize, TestCase> {
         .await
 }
 
-pub async fn load_test_cases() -> HashMap<usize, TestCase> {
-    load_test_cases!(empty_trees, generate_test_cases().await, to_vec)
+pub async fn load_test_cases() -> HashMap<u32, TestCase> {
+    load_test_case_mls!(empty_trees, generate_test_cases().await, to_vec)
 }
 
 // Used code from kem.rs to create empty test trees and to begin doing encap/decap
-pub async fn create_stage(cipher_suite: CipherSuite, size: usize) -> TestCase {
+pub async fn create_stage(cipher_suite: CipherSuite, size: u32) -> TestCase {
     // Generate signing keys and key package generations, and private keys for multiple
     // participants in order to set up state
     let (leaf_nodes, private_keys): (_, Vec<TreeKemPrivate>) = futures::stream::iter(1..size)
@@ -46,8 +47,7 @@ pub async fn create_stage(cipher_suite: CipherSuite, size: usize) -> TestCase {
             let (leaf_node, hpke_secret, _) =
                 get_basic_test_node_sig_key(cipher_suite, &format!("{index}")).await;
 
-            let private_key =
-                TreeKemPrivate::new_self_leaf(LeafIndex::new(index as u32), hpke_secret);
+            let private_key = TreeKemPrivate::new_self_leaf(LeafIndex::new(index), hpke_secret);
 
             (leaf_node, private_key)
         })

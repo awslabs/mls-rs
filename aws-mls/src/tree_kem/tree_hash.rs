@@ -9,23 +9,31 @@ use crate::tree_kem::TreeKemPublic;
 use alloc::collections::VecDeque;
 use alloc::vec;
 use alloc::vec::Vec;
-use aws_mls_codec::{MlsEncode, MlsSize};
-use aws_mls_core::{error::IntoAnyError, serde_util::vec_u8_as_base64::VecAsBase64};
-use serde_with::serde_as;
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
+use aws_mls_core::error::IntoAnyError;
 
+use core::ops::Deref;
 #[cfg(feature = "std")]
 use std::collections::HashMap;
 
 #[cfg(not(feature = "std"))]
 use alloc::collections::BTreeMap;
 
-#[serde_as]
-#[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, Default, MlsSize, MlsEncode, MlsDecode, PartialEq)]
+pub(crate) struct TreeHash(#[mls_codec(with = "aws_mls_codec::byte_vec")] Vec<u8>);
+
+impl Deref for TreeHash {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+#[derive(Clone, Debug, Default, MlsSize, MlsEncode, MlsDecode, PartialEq)]
 pub(crate) struct TreeHashes {
-    #[serde_as(as = "Vec<VecAsBase64>")]
-    pub current: Vec<Vec<u8>>,
-    #[serde_as(as = "Vec<VecAsBase64>")]
-    pub original: Vec<Vec<u8>>,
+    pub current: Vec<TreeHash>,
+    pub original: Vec<TreeHash>,
 }
 
 #[derive(Debug, MlsSize, MlsEncode)]
@@ -105,7 +113,7 @@ impl TreeKemPublic {
     {
         self.initialize_hashes(cipher_suite_provider)?;
         let root = tree_math::root(self.total_leaf_count());
-        Ok(self.tree_hashes.current[root as usize].clone())
+        Ok(self.tree_hashes.current[root as usize].to_vec())
     }
 
     // Update hashes after `committer` makes changes to the tree. `path_blank` is the
@@ -137,7 +145,7 @@ impl TreeKemPublic {
         // Resize hashes in case the tree was extended or truncated.
         self.tree_hashes
             .original
-            .resize((num_leaves * 2 - 1) as usize, vec![]);
+            .resize((num_leaves * 2 - 1) as usize, TreeHash::default());
 
         // In case the tree was extended, we have to compute additional hashes on the right.
         let mut node_index: i32 = (2 * num_leaves - 2) as i32;
@@ -189,7 +197,7 @@ impl TreeKemPublic {
         // Resize the array in case the tree was extended or truncated
         self.tree_hashes
             .current
-            .resize((num_leaves * 2 - 1) as usize, vec![]);
+            .resize((num_leaves * 2 - 1) as usize, TreeHash::default());
 
         let mut nodes = VecDeque::from_iter(
             leaf_indices
@@ -206,11 +214,11 @@ impl TreeKemPublic {
 
             let leaf_index = LeafIndex(n / 2);
 
-            self.tree_hashes.current[n as usize] = self.tree_hashes.hash_for_leaf(
+            self.tree_hashes.current[n as usize] = TreeHash(self.tree_hashes.hash_for_leaf(
                 leaf_index,
                 self.nodes.borrow_as_leaf(leaf_index).ok(),
                 cipher_suite_provider,
-            )?;
+            )?);
 
             if n != root {
                 nodes.push_back(tree_math::parent(n, num_leaves)?);
@@ -220,13 +228,13 @@ impl TreeKemPublic {
         let mut hash_computed = vec![false; (2 * num_leaves - 1) as usize];
 
         while let Some(n) = nodes.pop_front() {
-            self.tree_hashes.current[n as usize] = self.tree_hashes.hash_for_parent(
+            self.tree_hashes.current[n as usize] = TreeHash(self.tree_hashes.hash_for_parent(
                 self.nodes.borrow_as_parent(n).ok(),
                 cipher_suite_provider,
                 &[],
                 &self.tree_hashes.current[tree_math::left(n)? as usize],
                 &self.tree_hashes.current[tree_math::right(n)? as usize],
-            )?;
+            )?);
 
             hash_computed[n as usize] = true;
 
@@ -349,13 +357,15 @@ impl TreeKemPublic {
         }
 
         // Set the `original_hashes` based on the computed `hashes`.
-        self.tree_hashes.original.resize(num_leaves * 2 - 1, vec![]);
+        self.tree_hashes
+            .original
+            .resize(num_leaves * 2 - 1, TreeHash::default());
         for (i, hash) in self.tree_hashes.original.iter_mut().enumerate() {
             let a = filtered_sets[i].last().unwrap();
             *hash = if self.nodes.is_blank(*a)? {
                 self.tree_hashes.current[i].clone()
             } else {
-                hashes[i][a].clone()
+                TreeHash(hashes[i][a].clone())
             }
         }
 
@@ -414,7 +424,7 @@ mod tests {
     }
 
     async fn load_test_cases() -> Vec<TestCase> {
-        load_test_cases!(tree_hash, TestCase::generate().await)
+        load_test_case_json!(tree_hash, TestCase::generate().await)
     }
 
     #[test]

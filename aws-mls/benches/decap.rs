@@ -34,7 +34,7 @@ fn decap_setup(c: &mut Criterion) {
 fn bench_decap(
     bench_group: &mut BenchmarkGroup<WallTime>,
     cipher_suite: CipherSuite,
-    map: HashMap<usize, TestCase>,
+    map: HashMap<u32, TestCase>,
     added_leaves: &[LeafIndex],
     capabilities: Option<Capabilities>,
     extensions: Option<ExtensionList>,

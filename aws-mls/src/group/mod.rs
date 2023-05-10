@@ -9,7 +9,6 @@ use aws_mls_core::keychain::KeychainStorage;
 use aws_mls_core::time::MlsTime;
 use core::ops::Deref;
 use core::option::Option::Some;
-use serde_with::serde_as;
 use zeroize::Zeroizing;
 
 use crate::cipher_suite::CipherSuite;
@@ -27,7 +26,6 @@ use crate::psk::{
     ExternalPskId, JustPreSharedKeyID, PreSharedKeyID, PskGroupId, PskNonce, ResumptionPSKUsage,
     ResumptionPsk,
 };
-use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::signer::Signable;
 use crate::tree_kem::hpke_encryption::HpkeEncryptable;
 use crate::tree_kem::kem::TreeKem;
@@ -1828,14 +1826,15 @@ where
         let signature_public_keys = self
             .state
             .public_tree
-            .non_empty_leaves()
-            .map(|(index, leaf)| (index, leaf.signing_identity.signature_key.clone()));
+            .leaves()
+            .map(|l| l.map(|n| n.signing_identity.signature_key.clone()))
+            .collect();
 
         let past_epoch = PriorEpoch {
             context: self.context().clone(),
             self_index: self.private_tree.self_index,
             secrets: self.epoch_secrets.clone(),
-            signature_public_keys: signature_public_keys.collect(),
+            signature_public_keys,
         };
 
         self.state_repo.insert(past_epoch).await?;

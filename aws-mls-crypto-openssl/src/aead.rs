@@ -154,7 +154,7 @@ mod test {
 
     #[derive(serde::Deserialize)]
     struct TestCase {
-        pub ciphersuite: CipherSuite,
+        pub ciphersuite: u16,
         #[serde(with = "hex::serde")]
         pub key: Vec<u8>,
         #[serde(with = "hex::serde")]
@@ -173,7 +173,7 @@ mod test {
         let test_cases: Vec<TestCase> = serde_json::from_str(test_case_file).unwrap();
 
         for case in test_cases {
-            let aead = Aead::new(case.ciphersuite).unwrap();
+            let aead = Aead::new(case.ciphersuite.into()).unwrap();
 
             let ciphertext = aead
                 .seal(&case.key, &case.pt, Some(&case.aad), &case.iv)

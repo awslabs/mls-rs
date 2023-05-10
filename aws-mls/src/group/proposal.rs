@@ -8,9 +8,7 @@ use proposal_ref::ProposalRef;
 pub use aws_mls_core::extension::ExtensionList;
 pub use aws_mls_core::group::ProposalType;
 
-#[derive(
-    Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode, serde::Deserialize, serde::Serialize,
-)]
+#[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// A proposal that adds a member to a [`Group`](super::Group).
 pub struct AddProposal {
@@ -62,9 +60,7 @@ impl TryFrom<MLSMessage> for AddProposal {
     }
 }
 
-#[derive(
-    Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode, serde::Deserialize, serde::Serialize,
-)]
+#[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// A proposal that will update an existing [`Member`](super::Member) of a
 /// [`Group`](super::Group)
@@ -92,9 +88,7 @@ impl UpdateProposal {
     }
 }
 
-#[derive(
-    Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode, serde::Deserialize, serde::Serialize,
-)]
+#[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// A proposal to remove an existing [`Member`](super::Member) of a
 /// [`Group`](super::Group).
@@ -118,9 +112,7 @@ impl From<u32> for RemoveProposal {
     }
 }
 
-#[derive(
-    Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode, serde::Deserialize, serde::Serialize,
-)]
+#[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// A proposal to add a pre-shared key to a group.
 pub struct PreSharedKeyProposal {
@@ -142,15 +134,11 @@ impl PreSharedKeyProposal {
     }
 }
 
-#[serde_as]
-#[derive(
-    Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode, serde::Deserialize, serde::Serialize,
-)]
+#[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// A proposal to reinitialize a group using new parameters.
 pub struct ReInitProposal {
     #[mls_codec(with = "aws_mls_codec::byte_vec")]
-    #[serde_as(as = "VecAsBase64")]
     pub(crate) group_id: Vec<u8>,
     pub(crate) version: ProtocolVersion,
     pub(crate) cipher_suite: CipherSuite,
@@ -180,21 +168,16 @@ impl ReInitProposal {
 }
 
 #[cfg(feature = "external_commit")]
-#[serde_as]
-#[derive(
-    Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode, serde::Deserialize, serde::Serialize,
-)]
+#[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// A proposal used for external commits.
 pub struct ExternalInit {
     #[mls_codec(with = "aws_mls_codec::byte_vec")]
-    #[serde_as(as = "VecAsBase64")]
     pub(crate) kem_output: Vec<u8>,
 }
 
 #[cfg(feature = "custom_proposal")]
-#[serde_as]
-#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// A user defined custom proposal.
 ///
@@ -255,7 +238,7 @@ pub trait MlsCustomProposal: MlsSize + MlsEncode + MlsDecode + Sized {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u16)]
 #[non_exhaustive]

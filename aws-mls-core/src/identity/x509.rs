@@ -5,32 +5,13 @@ use core::{
 
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
-use serde_with::serde_as;
 
 use super::{Credential, CredentialType, MlsCredential};
 
-#[serde_as]
-#[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    Eq,
-    Hash,
-    PartialOrd,
-    Ord,
-    MlsSize,
-    MlsEncode,
-    MlsDecode,
-    serde::Serialize,
-    serde::Deserialize,
-)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// X.509 certificate in DER format.
-pub struct DerCertificate(
-    #[serde_as(as = "crate::serde_util::vec_u8_as_base64::VecAsBase64")]
-    #[mls_codec(with = "aws_mls_codec::byte_vec")]
-    Vec<u8>,
-);
+pub struct DerCertificate(#[mls_codec(with = "aws_mls_codec::byte_vec")] Vec<u8>);
 
 impl DerCertificate {
     /// Create a der certificate from raw bytes.
@@ -64,20 +45,7 @@ impl AsRef<[u8]> for DerCertificate {
     }
 }
 
-#[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    Eq,
-    Hash,
-    PartialOrd,
-    Ord,
-    MlsSize,
-    MlsEncode,
-    MlsDecode,
-    serde::Serialize,
-    serde::Deserialize,
-)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// A chain of [`DerCertificate`] that is ordered from leaf to root.
 ///

@@ -27,18 +27,7 @@ impl From<&Content> for ContentType {
     }
 }
 
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    PartialEq,
-    Eq,
-    MlsSize,
-    MlsEncode,
-    MlsDecode,
-    serde::Deserialize,
-    serde::Serialize,
-)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
 #[non_exhaustive]

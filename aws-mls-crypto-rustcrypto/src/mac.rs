@@ -83,7 +83,7 @@ mod test {
 
     #[derive(Deserialize)]
     struct TestCase {
-        pub ciphersuite: CipherSuite,
+        pub ciphersuite: u16,
         #[serde(with = "hex::serde")]
         key: Vec<u8>,
         #[serde(with = "hex::serde")]
@@ -94,7 +94,7 @@ mod test {
 
     fn run_test_case(case: &TestCase) {
         // Test Sign
-        let hash = Hash::new(case.ciphersuite).unwrap();
+        let hash = Hash::new(case.ciphersuite.into()).unwrap();
         let tag = hash.mac(&case.key, &case.message).unwrap();
         assert_eq!(&tag, &case.tag);
 

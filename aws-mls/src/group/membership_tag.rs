@@ -112,7 +112,7 @@ mod tests {
     }
 
     fn load_test_cases() -> Vec<TestCase> {
-        load_test_cases!(membership_tag, generate_test_cases())
+        load_test_case_json!(membership_tag, generate_test_cases())
     }
 
     #[test]

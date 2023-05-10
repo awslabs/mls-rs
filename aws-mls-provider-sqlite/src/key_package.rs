@@ -1,5 +1,8 @@
 use async_trait::async_trait;
-use aws_mls_core::key_package::{KeyPackageData, KeyPackageStorage};
+use aws_mls_core::{
+    aws_mls_codec::{MlsDecode, MlsEncode},
+    key_package::{KeyPackageData, KeyPackageStorage},
+};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::sync::{Arc, Mutex};
 
@@ -30,7 +33,8 @@ impl SqLiteKeyPackageStorage {
                 "INSERT INTO key_package (id, data) VALUES (?,?)",
                 params![
                     id,
-                    bincode::serialize(&key_package)
+                    key_package
+                        .mls_encode_to_vec()
                         .map_err(|e| SqLiteDataStorageError::DataConversionError(e.into()))?
                 ],
             )
@@ -45,7 +49,12 @@ impl SqLiteKeyPackageStorage {
             .query_row(
                 "SELECT data FROM key_package WHERE id = ?",
                 params![id],
-                |row| Ok(bincode::deserialize(&row.get::<_, Vec<u8>>(0)?).unwrap()),
+                |row| {
+                    Ok(
+                        KeyPackageData::mls_decode(&mut row.get::<_, Vec<u8>>(0)?.as_slice())
+                            .unwrap(),
+                    )
+                },
             )
             .optional()
             .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))

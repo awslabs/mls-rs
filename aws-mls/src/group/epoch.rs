@@ -1,18 +1,11 @@
 use crate::crypto::SignaturePublicKey;
 use crate::group::GroupContext;
 use crate::psk::PreSharedKey;
-use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::tree_kem::node::LeafIndex;
 use alloc::vec::Vec;
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use core::ops::Deref;
-use serde_with::serde_as;
 use zeroize::Zeroizing;
-
-#[cfg(feature = "std")]
-use std::collections::HashMap;
-
-#[cfg(not(feature = "std"))]
-use alloc::collections::BTreeMap;
 
 #[cfg(feature = "private_message")]
 use super::ciphertext_processor::GroupStateProvider;
@@ -20,16 +13,12 @@ use super::ciphertext_processor::GroupStateProvider;
 #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
 use crate::group::secret_tree::SecretTree;
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[derive(Debug, Clone, MlsEncode, MlsDecode, MlsSize, PartialEq)]
 pub(crate) struct PriorEpoch {
     pub(crate) context: GroupContext,
     pub(crate) self_index: LeafIndex,
     pub(crate) secrets: EpochSecrets,
-
-    #[cfg(feature = "std")]
-    pub(crate) signature_public_keys: HashMap<LeafIndex, SignaturePublicKey>,
-    #[cfg(not(feature = "std"))]
-    pub(crate) signature_public_keys: BTreeMap<LeafIndex, SignaturePublicKey>,
+    pub(crate) signature_public_keys: Vec<Option<SignaturePublicKey>>,
 }
 
 impl PriorEpoch {
@@ -63,17 +52,26 @@ impl GroupStateProvider for PriorEpoch {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, MlsEncode, MlsDecode, MlsSize)]
 pub(crate) struct EpochSecrets {
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     pub(crate) resumption_secret: PreSharedKey,
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     pub(crate) sender_data_secret: SenderDataSecret,
     #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
     pub(crate) secret_tree: SecretTree,
 }
 
-#[serde_as]
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-pub(crate) struct SenderDataSecret(#[serde_as(as = "VecAsBase64")] Zeroizing<Vec<u8>>);
+#[derive(Clone, Debug, PartialEq, MlsEncode, MlsDecode, MlsSize)]
+pub(crate) struct SenderDataSecret(
+    #[mls_codec(with = "aws_mls_codec::byte_vec")] Zeroizing<Vec<u8>>,
+);
+
+impl AsRef<[u8]> for SenderDataSecret {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
 
 impl Deref for SenderDataSecret {
     type Target = Vec<u8>;

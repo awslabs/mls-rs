@@ -1,4 +1,4 @@
-use crate::{client::MlsError, serde_utils::vec_u8_as_base64::VecAsBase64, CipherSuiteProvider};
+use crate::{client::MlsError, CipherSuiteProvider};
 use alloc::vec::Vec;
 use aws_mls_core::error::IntoAnyError;
 
@@ -18,27 +18,12 @@ use aws_mls_core::psk::PreSharedKeyStorage;
 #[cfg(any(test, feature = "external_client"))]
 use core::convert::Infallible;
 
-use serde_with::serde_as;
-
 pub(crate) mod resolver;
 pub(crate) mod secret;
 
 pub use aws_mls_core::psk::{ExternalPskId, PreSharedKey};
 
-#[derive(
-    Clone,
-    Debug,
-    Eq,
-    Hash,
-    PartialEq,
-    PartialOrd,
-    Ord,
-    MlsSize,
-    MlsEncode,
-    MlsDecode,
-    serde::Deserialize,
-    serde::Serialize,
-)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, PartialOrd, Ord, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) struct PreSharedKeyID {
     pub key_id: JustPreSharedKeyID,
@@ -58,20 +43,7 @@ impl PreSharedKeyID {
     }
 }
 
-#[derive(
-    Clone,
-    Debug,
-    Eq,
-    Hash,
-    Ord,
-    PartialOrd,
-    PartialEq,
-    MlsSize,
-    MlsEncode,
-    MlsDecode,
-    serde::Deserialize,
-    serde::Serialize,
-)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialOrd, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
 pub(crate) enum JustPreSharedKeyID {
@@ -79,49 +51,13 @@ pub(crate) enum JustPreSharedKeyID {
     Resumption(ResumptionPsk) = 2u8,
 }
 
-#[serde_as]
-#[derive(
-    Clone,
-    Debug,
-    Eq,
-    Hash,
-    Ord,
-    PartialOrd,
-    PartialEq,
-    MlsSize,
-    MlsEncode,
-    MlsDecode,
-    serde::Deserialize,
-    serde::Serialize,
-)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialOrd, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub(crate) struct PskGroupId(
-    #[mls_codec(with = "aws_mls_codec::byte_vec")]
-    #[serde_as(as = "VecAsBase64")]
-    pub Vec<u8>,
-);
+pub(crate) struct PskGroupId(#[mls_codec(with = "aws_mls_codec::byte_vec")] pub Vec<u8>);
 
-#[serde_as]
-#[derive(
-    Clone,
-    Debug,
-    Eq,
-    Hash,
-    PartialEq,
-    PartialOrd,
-    Ord,
-    MlsSize,
-    MlsEncode,
-    MlsDecode,
-    serde::Deserialize,
-    serde::Serialize,
-)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, PartialOrd, Ord, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub(crate) struct PskNonce(
-    #[mls_codec(with = "aws_mls_codec::byte_vec")]
-    #[serde_as(as = "VecAsBase64")]
-    pub Vec<u8>,
-);
+pub(crate) struct PskNonce(#[mls_codec(with = "aws_mls_codec::byte_vec")] pub Vec<u8>);
 
 impl PskNonce {
     pub fn random<P: CipherSuiteProvider>(
@@ -133,20 +69,7 @@ impl PskNonce {
     }
 }
 
-#[derive(
-    Clone,
-    Debug,
-    Eq,
-    Hash,
-    Ord,
-    PartialOrd,
-    PartialEq,
-    MlsSize,
-    MlsEncode,
-    MlsDecode,
-    serde::Deserialize,
-    serde::Serialize,
-)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialOrd, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) struct ResumptionPsk {
     pub usage: ResumptionPSKUsage,
@@ -154,20 +77,7 @@ pub(crate) struct ResumptionPsk {
     pub psk_epoch: u64,
 }
 
-#[derive(
-    Clone,
-    Debug,
-    Eq,
-    Hash,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    MlsSize,
-    MlsEncode,
-    MlsDecode,
-    serde::Deserialize,
-    serde::Serialize,
-)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Ord, PartialOrd, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
 pub(crate) enum ResumptionPSKUsage {

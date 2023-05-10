@@ -1,10 +1,11 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use async_trait::async_trait;
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 
 use crate::{crypto::HpkeSecretKey, error::IntoAnyError};
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, MlsEncode, MlsDecode, MlsSize)]
 #[non_exhaustive]
 /// Representation of a generated key package and secret keys.
 pub struct KeyPackageData {

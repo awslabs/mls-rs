@@ -1,22 +1,13 @@
-use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::CipherSuiteProvider;
 use crate::{client::MlsError, group::transcript_hash::ConfirmedTranscriptHash};
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use aws_mls_core::error::IntoAnyError;
 use core::ops::Deref;
-use serde_with::serde_as;
 
-#[serde_as]
-#[derive(
-    Debug, Clone, PartialEq, MlsSize, MlsEncode, MlsDecode, serde::Deserialize, serde::Serialize,
-)]
+#[derive(Debug, Clone, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct ConfirmationTag(
-    #[mls_codec(with = "aws_mls_codec::byte_vec")]
-    #[serde_as(as = "VecAsBase64")]
-    Vec<u8>,
-);
+pub struct ConfirmationTag(#[mls_codec(with = "aws_mls_codec::byte_vec")] Vec<u8>);
 
 impl Deref for ConfirmationTag {
     type Target = Vec<u8>;

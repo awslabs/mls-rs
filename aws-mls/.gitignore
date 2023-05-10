@@ -1,3 +1,5 @@
 # Test data files stored in S3
 /test_data/empty_trees.json
 /test_data/group_state.json
+/test_data/empty_trees.mls
+/test_data/group_state.mls

@@ -13,10 +13,10 @@ pub mod key_package;
 pub mod keychain;
 pub mod protocol_version;
 pub mod psk;
-pub mod serde_util;
 pub mod time;
 
 pub use async_trait;
+pub use aws_mls_codec;
 
 #[cfg(feature = "arbitrary")]
 pub use arbitrary;

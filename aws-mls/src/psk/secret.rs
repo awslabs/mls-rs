@@ -160,7 +160,7 @@ mod tests {
         }
 
         fn load() -> Vec<TestScenario> {
-            load_test_cases!(psk_secret, TestScenario::generate())
+            load_test_case_json!(psk_secret, TestScenario::generate())
         }
 
         fn compute_psk_secret<P: CipherSuiteProvider>(

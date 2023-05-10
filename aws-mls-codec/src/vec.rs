@@ -1,19 +1,13 @@
 use alloc::vec::Vec;
 
-use crate::{varint::VarInt, MlsDecode, MlsEncode, MlsSize};
+use crate::{MlsDecode, MlsEncode, MlsSize};
 
 impl<T> MlsSize for [T]
 where
     T: MlsSize,
 {
     fn mls_encoded_len(&self) -> usize {
-        let len = self.iter().map(|x| x.mls_encoded_len()).sum::<usize>();
-
-        let header_length = VarInt::try_from(len)
-            .expect("exceeded max len of VarInt::MAX")
-            .mls_encoded_len();
-
-        header_length + len
+        crate::iter::mls_encoded_len(self.iter())
     }
 }
 
@@ -32,16 +26,7 @@ where
     T: MlsEncode,
 {
     fn mls_encode(&self, writer: &mut Vec<u8>) -> Result<(), crate::Error> {
-        let mut buffer = Vec::new();
-
-        self.iter().try_for_each(|x| x.mls_encode(&mut buffer))?;
-
-        let len = VarInt::try_from(buffer.len())?;
-
-        len.mls_encode(writer)?;
-        writer.extend(buffer);
-
-        Ok(())
+        crate::iter::mls_encode(self.iter(), writer)
     }
 }
 
@@ -60,21 +45,15 @@ where
     T: MlsDecode,
 {
     fn mls_decode(reader: &mut &[u8]) -> Result<Self, crate::Error> {
-        let len = VarInt::mls_decode(reader)?.0 as usize;
+        crate::iter::mls_decode_collection(reader, |data| {
+            let mut items = Vec::new();
 
-        (len <= reader.len())
-            .then_some(())
-            .ok_or(crate::Error::UnexpectedEOF)?;
+            while !data.is_empty() {
+                items.push(T::mls_decode(data)?);
+            }
 
-        let (mut data, rest) = reader.split_at(len);
-        *reader = rest;
-        let mut items = Vec::new();
-
-        while !data.is_empty() {
-            items.push(T::mls_decode(&mut data)?);
-        }
-
-        Ok(items)
+            Ok(items)
+        })
     }
 }
 

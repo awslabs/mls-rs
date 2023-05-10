@@ -133,7 +133,7 @@ impl ProposalSetEffects {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, MlsSize, MlsEncode, MlsDecode, PartialEq)]
 pub struct CachedProposal {
     proposal: Proposal,
     sender: Sender,

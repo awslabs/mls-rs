@@ -1,18 +1,6 @@
 #[cfg(feature = "external_proposal")]
 use alloc::{vec, vec::Vec};
 
-#[cfg(all(
-    feature = "std",
-    any(feature = "secret_tree_access", feature = "private_message")
-))]
-use std::collections::HashMap;
-
-#[cfg(all(
-    not(feature = "std"),
-    any(feature = "secret_tree_access", feature = "private_message")
-))]
-use alloc::collections::BTreeMap;
-
 use crate::{
     client::MlsError,
     crypto::SignaturePublicKey,
@@ -36,16 +24,8 @@ use super::{
 #[derive(Debug)]
 pub(crate) enum SignaturePublicKeysContainer<'a> {
     RatchetTree(&'a TreeKemPublic),
-    #[cfg(all(
-        feature = "std",
-        any(feature = "secret_tree_access", feature = "private_message")
-    ))]
-    List(&'a HashMap<LeafIndex, SignaturePublicKey>),
-    #[cfg(all(
-        not(feature = "std"),
-        any(feature = "secret_tree_access", feature = "private_message")
-    ))]
-    List(&'a BTreeMap<LeafIndex, SignaturePublicKey>),
+    #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
+    List(&'a [Option<SignaturePublicKey>]),
 }
 
 pub(crate) fn verify_plaintext_authentication<P: CipherSuiteProvider>(
@@ -176,9 +156,10 @@ fn signing_identity_for_member(
             .clone()), // TODO: We can probably get rid of this clone
         #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
         SignaturePublicKeysContainer::List(list) => list
-            .get(&leaf_index)
-            .ok_or(MlsError::LeafNotFound(*leaf_index))
-            .cloned(),
+            .get(leaf_index.0 as usize)
+            .cloned()
+            .flatten()
+            .ok_or(MlsError::LeafNotFound(*leaf_index)),
     }
 }
 

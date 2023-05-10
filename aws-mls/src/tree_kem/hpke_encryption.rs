@@ -102,7 +102,7 @@ pub(crate) mod test_utils {
     fn test_basic_crypto_test_vectors() {
         // The test vector can be found here https://github.com/mlswg/mls-implementations/blob/main/test-vectors/crypto-basics.json
         let test_cases: Vec<InteropTestCase> =
-            load_test_cases!(basic_crypto, Vec::<InteropTestCase>::new());
+            load_test_case_json!(basic_crypto, Vec::<InteropTestCase>::new());
 
         test_cases.into_iter().for_each(|test_case| {
             if let Some(cs) = try_test_cipher_suite_provider(test_case.cipher_suite) {

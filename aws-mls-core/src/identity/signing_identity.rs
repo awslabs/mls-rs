@@ -4,20 +4,7 @@ use crate::crypto::SignaturePublicKey;
 
 use super::Credential;
 
-#[derive(
-    Debug,
-    Clone,
-    Eq,
-    Hash,
-    PartialEq,
-    PartialOrd,
-    Ord,
-    MlsSize,
-    MlsEncode,
-    MlsDecode,
-    serde::Serialize,
-    serde::Deserialize,
-)]
+#[derive(Debug, Clone, Eq, Hash, PartialEq, PartialOrd, Ord, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(
     all(features = "ffi", not(test)),

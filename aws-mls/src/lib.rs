@@ -57,10 +57,10 @@ macro_rules! hex {
     };
 }
 
-#[cfg(any(test, feature = "benchmark"))]
-macro_rules! load_test_cases {
+#[cfg(test)]
+macro_rules! load_test_case_json {
     ($name:ident, $generate:expr) => {
-        load_test_cases!($name, $generate, to_vec_pretty)
+        load_test_case_json!($name, $generate, to_vec_pretty)
     };
     ($name:ident, $generate:expr, $to_json:ident) => {{
         #[cfg(any(target_arch = "wasm32", not(feature = "std")))]
@@ -89,6 +89,46 @@ macro_rules! load_test_cases {
                 std::fs::write(path, serde_json::$to_json(&$generate).unwrap()).unwrap();
             }
             serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
+        }
+    }};
+}
+
+#[cfg(feature = "benchmark")]
+macro_rules! load_test_case_mls {
+    ($name:ident, $generate:expr) => {
+        load_test_case_mls!($name, $generate, to_vec_pretty)
+    };
+    ($name:ident, $generate:expr, $to_json:ident) => {{
+        #[cfg(any(target_arch = "wasm32", not(feature = "std")))]
+        {
+            // Do not remove `async`! (The goal of this line is to remove warnings
+            // about `$generate` not being used. Actually calling it will make tests fail.)
+            let _ = async { $generate };
+
+            aws_mls_codec::MlsDecode::mls_decode(&mut &include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/test_data/",
+                stringify!($name),
+                ".mls"
+            )))
+            .unwrap()
+        }
+
+        #[cfg(all(not(target_arch = "wasm32"), feature = "std"))]
+        {
+            let path = concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/test_data/",
+                stringify!($name),
+                ".mls"
+            );
+
+            if !std::path::Path::new(path).exists() {
+                std::fs::write(path, $generate.mls_encode_to_vec().unwrap()).unwrap();
+            }
+
+            aws_mls_codec::MlsDecode::mls_decode(&mut std::fs::read(path).unwrap().as_slice())
+                .unwrap()
         }
     }};
 }
@@ -166,10 +206,6 @@ pub mod error {
 /// WASM compatible timestamp.
 pub mod time {
     pub use aws_mls_core::time::*;
-}
-
-mod serde_utils {
-    pub use aws_mls_core::serde_util::*;
 }
 
 #[cfg(feature = "benchmark")]

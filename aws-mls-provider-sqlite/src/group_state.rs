@@ -1,5 +1,8 @@
 use async_trait::async_trait;
-use aws_mls_core::group::{EpochRecord, GroupState, GroupStateStorage};
+use aws_mls_core::{
+    aws_mls_codec::{MlsDecode, MlsEncode},
+    group::{EpochRecord, GroupState, GroupStateStorage},
+};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::sync::{Arc, Mutex};
 
@@ -186,16 +189,19 @@ impl GroupStateStorage for SqLiteGroupStateStorage {
         delete_epoch_under: Option<u64>,
     ) -> Result<(), Self::Error>
     where
-        ST: GroupState + serde::Serialize + serde::de::DeserializeOwned + Send + Sync,
-        ET: EpochRecord + serde::Serialize + serde::de::DeserializeOwned + Send + Sync,
+        ST: GroupState + MlsEncode + MlsDecode + Send + Sync,
+        ET: EpochRecord + MlsEncode + MlsDecode + Send + Sync,
     {
         let group_id = state.id();
-        let snapshot_data = bincode::serialize(&state)
+
+        let snapshot_data = state
+            .mls_encode_to_vec()
             .map_err(|e| SqLiteDataStorageError::DataConversionError(e.into()))?;
+
         let inserts = epoch_inserts.iter().map(|e| {
             Ok(StoredEpoch::new(
                 e.id(),
-                bincode::serialize(e)
+                e.mls_encode_to_vec()
                     .map_err(|e| SqLiteDataStorageError::DataConversionError(e.into()))?,
             ))
         });
@@ -203,7 +209,7 @@ impl GroupStateStorage for SqLiteGroupStateStorage {
         let updates = epoch_updates.iter().map(|e| {
             Ok(StoredEpoch::new(
                 e.id(),
-                bincode::serialize(e)
+                e.mls_encode_to_vec()
                     .map_err(|err| SqLiteDataStorageError::DataConversionError(err.into()))?,
             ))
         });
@@ -219,10 +225,10 @@ impl GroupStateStorage for SqLiteGroupStateStorage {
 
     async fn state<T>(&self, group_id: &[u8]) -> Result<Option<T>, Self::Error>
     where
-        T: GroupState + serde::Serialize + serde::de::DeserializeOwned,
+        T: GroupState + MlsEncode + MlsDecode,
     {
         self.get_snapshot_data(group_id)?
-            .map(|v| bincode::deserialize::<T>(&v))
+            .map(|v| T::mls_decode(&mut v.as_slice()))
             .transpose()
             .map_err(|e| SqLiteDataStorageError::DataConversionError(e.into()))
     }
@@ -233,10 +239,10 @@ impl GroupStateStorage for SqLiteGroupStateStorage {
 
     async fn epoch<T>(&self, group_id: &[u8], epoch_id: u64) -> Result<Option<T>, Self::Error>
     where
-        T: EpochRecord + serde::Serialize + serde::de::DeserializeOwned,
+        T: EpochRecord + MlsEncode + MlsDecode,
     {
         self.get_epoch_data(group_id, epoch_id)?
-            .map(|v| bincode::deserialize::<T>(&v))
+            .map(|v| T::mls_decode(&mut v.as_slice()))
             .transpose()
             .map_err(|e| SqLiteDataStorageError::DataConversionError(e.into()))
     }

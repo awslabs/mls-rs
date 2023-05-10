@@ -1,20 +1,14 @@
-use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
-
 use crate::crypto::CipherSuiteProvider;
 
 use super::*;
 
-#[serde_as]
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
+#[derive(Clone, Debug, MlsEncode, MlsDecode, MlsSize, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct TreeKemPrivate {
     pub self_index: LeafIndex,
     #[cfg(feature = "std")]
-    #[serde_as(as = "Vec<(_,_)>")]
     pub secret_keys: HashMap<NodeIndex, HpkeSecretKey>,
     #[cfg(not(feature = "std"))]
-    #[serde_as(as = "Vec<(_,_)>")]
     pub secret_keys: BTreeMap<NodeIndex, HpkeSecretKey>,
 }
 

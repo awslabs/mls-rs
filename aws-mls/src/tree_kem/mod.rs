@@ -1,5 +1,6 @@
 use alloc::vec;
 use alloc::vec::Vec;
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 #[cfg(feature = "std")]
 use core::fmt::Display;
 use itertools::Itertools;
@@ -61,7 +62,7 @@ pub(crate) mod tree_utils;
 #[cfg(all(test, feature = "external_commit"))]
 mod interop_test_vectors;
 
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, Default)]
+#[derive(Clone, Debug, MlsEncode, MlsDecode, MlsSize, Default)]
 pub struct TreeKemPublic {
     #[cfg(feature = "tree_index")]
     index: TreeIndex,
@@ -195,8 +196,7 @@ impl TreeKemPublic {
     #[cfg(feature = "custom_proposal")]
     pub fn can_support_proposal(&self, proposal_type: ProposalType) -> bool {
         #[cfg(feature = "tree_index")]
-        return self.index.count_supporting_proposal(proposal_type) as u32
-            == self.occupied_leaf_count();
+        return self.index.count_supporting_proposal(proposal_type) == self.occupied_leaf_count();
 
         #[cfg(not(feature = "tree_index"))]
         self.nodes
@@ -253,6 +253,10 @@ impl TreeKemPublic {
 
     pub fn non_empty_leaves(&self) -> impl Iterator<Item = (LeafIndex, &LeafNode)> + '_ {
         self.nodes.non_empty_leaves()
+    }
+
+    pub fn leaves(&self) -> impl Iterator<Item = Option<&LeafNode>> + '_ {
+        self.nodes.leaves()
     }
 
     pub(crate) fn update_node(

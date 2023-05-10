@@ -1,36 +1,18 @@
 use crate::client::MlsError;
 use crate::crypto::{CipherSuiteProvider, HpkePublicKey, HpkeSecretKey};
 use crate::group::key_schedule::kdf_derive_secret;
-use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use alloc::vec;
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use aws_mls_core::error::IntoAnyError;
 use core::ops::Deref;
-use serde_with::serde_as;
 use zeroize::{Zeroize, Zeroizing};
 
 use super::hpke_encryption::HpkeEncryptable;
 
-#[serde_as]
-#[derive(
-    Debug,
-    Clone,
-    Zeroize,
-    Eq,
-    PartialEq,
-    MlsSize,
-    MlsEncode,
-    MlsDecode,
-    serde::Serialize,
-    serde::Deserialize,
-)]
+#[derive(Debug, Clone, Zeroize, Eq, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[zeroize(drop)]
-pub struct PathSecret(
-    #[mls_codec(with = "aws_mls_codec::byte_vec")]
-    #[serde_as(as = "VecAsBase64")]
-    Zeroizing<Vec<u8>>,
-);
+pub struct PathSecret(#[mls_codec(with = "aws_mls_codec::byte_vec")] Zeroizing<Vec<u8>>);
 
 impl Deref for PathSecret {
     type Target = Vec<u8>;
@@ -209,7 +191,7 @@ mod tests {
     }
 
     fn load_test_cases() -> Vec<TestCase> {
-        load_test_cases!(path_secret, TestCase::generate())
+        load_test_case_json!(path_secret, TestCase::generate())
     }
 
     #[test]

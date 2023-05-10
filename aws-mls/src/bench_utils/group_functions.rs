@@ -1,3 +1,4 @@
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use aws_mls_core::{
     crypto::SignatureSecretKey, group::GroupStateStorage, key_package::KeyPackageData,
 };
@@ -38,8 +39,7 @@ pub type TestClientConfig = WithIdentityProvider<
     WithKeychain<InMemoryKeychainStorage, WithCryptoProvider<OpensslCryptoProvider, BaseConfig>>,
 >;
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-
+#[derive(Debug, MlsEncode, MlsDecode, MlsSize)]
 struct GroupInfo {
     session: Snapshot,
     epochs: Vec<u8>,
@@ -47,7 +47,7 @@ struct GroupInfo {
     secrets: Vec<u8>,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, MlsEncode, MlsDecode, MlsSize)]
 pub struct TestCase {
     info: Vec<GroupInfo>,
 }
@@ -62,24 +62,25 @@ async fn generate_test_cases() -> Vec<TestCase> {
 }
 
 pub async fn load_test_cases() -> Vec<Vec<Group<TestClientConfig>>> {
-    let tests: Vec<TestCase> = load_test_cases!(group_state, generate_test_cases().await, to_vec);
+    let tests: Vec<TestCase> =
+        load_test_case_mls!(group_state, generate_test_cases().await, to_vec);
 
     futures::stream::iter(tests)
         .then(|test| {
             futures::stream::iter(test.info)
                 .then(|group_info| async move {
-                    let key_packages = serde_json::from_slice::<Vec<(Vec<u8>, KeyPackageData)>>(
-                        &group_info.key_packages,
+                    let key_packages = Vec::<(Vec<u8>, KeyPackageData)>::mls_decode(
+                        &mut group_info.key_packages.as_slice(),
                     )
                     .unwrap();
 
-                    let secrets = serde_json::from_slice::<
-                        Vec<(SigningIdentity, SignatureSecretKey)>,
-                    >(&group_info.secrets)
+                    let secrets = Vec::<(SigningIdentity, SignatureSecretKey)>::mls_decode(
+                        &mut group_info.secrets.as_slice(),
+                    )
                     .unwrap();
 
                     let epochs =
-                        serde_json::from_slice::<Vec<PriorEpoch>>(&group_info.epochs).unwrap();
+                        Vec::<PriorEpoch>::mls_decode(&mut group_info.epochs.as_slice()).unwrap();
 
                     let group_id = group_info.session.group_id().to_vec();
 
@@ -180,11 +181,11 @@ pub async fn create_group(cipher_suite: CipherSuite, size: usize) -> Vec<Group<T
     groups
 }
 
-pub fn get_snapshot<C>(group: &Group<C>) -> Result<Vec<u8>, serde_json::Error>
+pub fn get_snapshot<C>(group: &Group<C>) -> Result<Vec<u8>, aws_mls_codec::Error>
 where
     C: ClientConfig + Clone,
 {
-    serde_json::to_vec(&group.snapshot())
+    group.snapshot().mls_encode_to_vec()
 }
 
 async fn get_group_states(cipher_suite: CipherSuite, size: usize) -> TestCase {
@@ -203,15 +204,15 @@ async fn get_group_states(cipher_suite: CipherSuite, size: usize) -> TestCase {
 
             let group_state = epoch_repo.state(session.group_id()).await.unwrap().unwrap();
 
-            let epochs = serde_json::to_vec(&exported_epochs).unwrap();
+            let epochs = exported_epochs.mls_encode_to_vec().unwrap();
 
             let key_repo = config.key_package_repo();
             let exported_key_packages = key_repo.key_packages();
-            let key_packages = serde_json::to_vec(&exported_key_packages).unwrap();
+            let key_packages = exported_key_packages.mls_encode_to_vec().unwrap();
 
             let key_chain = config.keychain();
             let exported_key_chain = key_chain.identities();
-            let secrets = serde_json::to_vec(&exported_key_chain).unwrap();
+            let secrets = exported_key_chain.mls_encode_to_vec().unwrap();
 
             GroupInfo {
                 session: group_state,

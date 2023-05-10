@@ -87,7 +87,7 @@ async fn generate_tree_mods_tests() -> Vec<TreeModsTestCase> {
 async fn tree_modifications_interop() {
     // The test vector can be found here https://github.com/mlswg/mls-implementations/blob/main/test-vectors/tree-operations.json
     let test_cases: Vec<TreeModsTestCase> =
-        load_test_cases!(tree_modifications_interop, generate_tree_mods_tests().await);
+        load_test_case_json!(tree_modifications_interop, generate_tree_mods_tests().await);
 
     for test_case in test_cases.into_iter() {
         let nodes = NodeVec::mls_decode(&mut &*test_case.tree_before).unwrap();

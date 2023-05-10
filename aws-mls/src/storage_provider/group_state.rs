@@ -1,6 +1,6 @@
 use alloc::vec::Vec;
+use aws_mls_codec::MlsEncode;
 pub use aws_mls_core::group::{EpochRecord, GroupState};
-use bincode::config::Configuration;
 
 use crate::group::{epoch::PriorEpoch, snapshot::Snapshot};
 
@@ -16,23 +16,20 @@ impl GroupState for Snapshot {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct EpochData {
     pub(crate) id: u64,
     pub(crate) data: Vec<u8>,
 }
 
 impl EpochData {
-    pub(crate) fn new<T>(value: T) -> Result<Self, bincode::error::EncodeError>
+    pub(crate) fn new<T>(value: T) -> Result<Self, aws_mls_codec::Error>
     where
-        T: serde::Serialize + EpochRecord,
+        T: MlsEncode + EpochRecord,
     {
         Ok(Self {
             id: value.id(),
-            data: bincode::serde::encode_to_vec::<&T, Configuration>(
-                &value,
-                Configuration::default(),
-            )?,
+            data: value.mls_encode_to_vec()?,
         })
     }
 }

@@ -11,14 +11,20 @@ mod array;
 /// Compatible with derive macros by using `mls_codec(with = "aws_mls_codec::byte_vec")`
 pub mod byte_vec;
 
+pub mod iter;
+
+mod map;
 mod option;
 mod stdint;
+mod tuple;
 mod varint;
 mod vec;
 
 pub use array::*;
+pub use map::*;
 pub use option::*;
 pub use stdint::*;
+pub use tuple::*;
 pub use varint::*;
 pub use vec::*;
 

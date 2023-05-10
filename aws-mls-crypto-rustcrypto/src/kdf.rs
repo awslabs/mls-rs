@@ -127,7 +127,7 @@ mod test {
 
     #[derive(Deserialize)]
     struct TestCase {
-        pub ciphersuite: CipherSuite,
+        pub ciphersuite: u16,
         #[serde(with = "hex::serde")]
         pub ikm: Vec<u8>,
         #[serde(with = "hex::serde")]
@@ -142,7 +142,7 @@ mod test {
     }
 
     fn run_test_case(case: &TestCase) {
-        let kdf = Kdf::new(case.ciphersuite).unwrap();
+        let kdf = Kdf::new(case.ciphersuite.into()).unwrap();
 
         let extracted = kdf.extract(&case.salt, &case.ikm).unwrap();
         assert_eq!(extracted, case.prk);

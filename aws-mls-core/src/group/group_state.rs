@@ -2,6 +2,7 @@ use crate::error::IntoAnyError;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use async_trait::async_trait;
+use aws_mls_codec::{MlsDecode, MlsEncode};
 
 /// Generic representation of a group's state.
 pub trait GroupState {
@@ -37,12 +38,12 @@ pub trait GroupStateStorage: Send + Sync {
     /// Fetch a group state from storage.
     async fn state<T>(&self, group_id: &[u8]) -> Result<Option<T>, Self::Error>
     where
-        T: GroupState + serde::Serialize + serde::de::DeserializeOwned;
+        T: GroupState + MlsEncode + MlsDecode;
 
     /// Lazy load cached epoch data from a particular group.
     async fn epoch<T>(&self, group_id: &[u8], epoch_id: u64) -> Result<Option<T>, Self::Error>
     where
-        T: EpochRecord + serde::Serialize + serde::de::DeserializeOwned;
+        T: EpochRecord + MlsEncode + MlsDecode;
 
     /// Write pending state updates.
     ///
@@ -71,8 +72,8 @@ pub trait GroupStateStorage: Send + Sync {
         delete_epoch_under: Option<u64>,
     ) -> Result<(), Self::Error>
     where
-        ST: GroupState + serde::Serialize + serde::de::DeserializeOwned + Send + Sync,
-        ET: EpochRecord + serde::Serialize + serde::de::DeserializeOwned + Send + Sync;
+        ST: GroupState + MlsEncode + MlsDecode + Send + Sync,
+        ET: EpochRecord + MlsEncode + MlsDecode + Send + Sync;
 
     /// The [`EpochRecord::id`] value that is associated with a stored
     /// prior epoch for a particular group.

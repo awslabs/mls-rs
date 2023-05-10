@@ -1,7 +1,7 @@
 use alloc::format;
 use alloc::vec::Vec;
 
-use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize, VarInt};
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 
 #[cfg(feature = "std")]
 use indexmap::IndexMap;
@@ -30,11 +30,9 @@ impl<'a> arbitrary::Arbitrary<'a> for ExtensionList {
 /// # Warning
 ///
 /// Extension lists require that each type of extension has at most one entry.
-#[derive(Debug, Clone, PartialEq, Default, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct ExtensionList(
-    #[cfg(feature = "std")]
-    #[serde(with = "indexmap::serde_seq")]
-    IndexMap<ExtensionType, Extension>,
+    #[cfg(feature = "std")] IndexMap<ExtensionType, Extension>,
     #[cfg(not(feature = "std"))] BTreeMap<ExtensionType, Extension>,
 );
 
@@ -54,55 +52,34 @@ impl From<BTreeMap<ExtensionType, Extension>> for ExtensionList {
 
 impl MlsSize for ExtensionList {
     fn mls_encoded_len(&self) -> usize {
-        let len = self.iter().map(|x| x.mls_encoded_len()).sum::<usize>();
-
-        let header_length = VarInt::try_from(len)
-            .expect("exceeded max len of VarInt::MAX")
-            .mls_encoded_len();
-
-        header_length + len
+        aws_mls_codec::iter::mls_encoded_len(self.0.values())
     }
 }
 
 impl MlsEncode for ExtensionList {
     fn mls_encode(&self, writer: &mut Vec<u8>) -> Result<(), aws_mls_codec::Error> {
-        let mut buffer = Vec::new();
-
-        self.iter().try_for_each(|x| x.mls_encode(&mut buffer))?;
-
-        let len = VarInt::try_from(buffer.len())?;
-
-        len.mls_encode(writer)?;
-        writer.extend(buffer);
-
-        Ok(())
+        aws_mls_codec::iter::mls_encode(self.0.values(), writer)
     }
 }
 
 impl MlsDecode for ExtensionList {
     fn mls_decode(reader: &mut &[u8]) -> Result<Self, aws_mls_codec::Error> {
-        let len = VarInt::mls_decode(reader)?.0 as usize;
+        aws_mls_codec::iter::mls_decode_collection(reader, |data| {
+            let mut list = ExtensionList::new();
 
-        (len <= reader.len())
-            .then_some(())
-            .ok_or(aws_mls_codec::Error::UnexpectedEOF)?;
+            while !data.is_empty() {
+                let ext = Extension::mls_decode(data)?;
+                let ext_type = ext.extension_type;
 
-        let (mut data, rest) = reader.split_at(len);
-        *reader = rest;
-        let mut list = ExtensionList::new();
-
-        while !data.is_empty() {
-            let ext = Extension::mls_decode(&mut data)?;
-            let ext_type = ext.extension_type;
-
-            if list.0.insert(ext_type, ext).is_some() {
-                return Err(aws_mls_codec::Error::Custom(format!(
-                    "Extension list has duplicate extension of type {ext_type:?}"
-                )));
+                if list.0.insert(ext_type, ext).is_some() {
+                    return Err(aws_mls_codec::Error::Custom(format!(
+                        "Extension list has duplicate extension of type {ext_type:?}"
+                    )));
+                }
             }
-        }
 
-        Ok(list)
+            Ok(list)
+        })
     }
 }
 

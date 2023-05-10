@@ -10,10 +10,10 @@ use crate::{
     tree_kem::TreeKemPrivate,
 };
 
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
+
 #[cfg(feature = "tree_index")]
 use aws_mls_core::identity::IdentityProvider;
-
-use serde_with::serde_as;
 
 #[cfg(feature = "std")]
 use std::collections::HashMap;
@@ -26,8 +26,7 @@ use super::{cipher_suite_provider, epoch::EpochSecrets, state_repo::GroupStateRe
 #[cfg(feature = "benchmark")]
 use crate::cipher_suite::CipherSuite;
 
-#[serde_as]
-#[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, MlsEncode, MlsDecode, MlsSize)]
 pub(crate) struct Snapshot {
     version: u16,
     state: RawGroupState,
@@ -52,7 +51,7 @@ impl Snapshot {
     }
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Clone)]
+#[derive(Debug, MlsEncode, MlsDecode, MlsSize, PartialEq, Clone)]
 pub(crate) struct RawGroupState {
     pub(crate) context: GroupContext,
     #[cfg(feature = "std")]
@@ -253,16 +252,10 @@ mod tests {
         },
     };
 
-    use super::Snapshot;
-
-    async fn serialize_to_json_test(group: TestGroup) {
+    async fn snapshot_restore(group: TestGroup) {
         let snapshot = group.group.snapshot();
-        let json = serde_json::to_vec(&snapshot).unwrap();
-        let snapshot_restored: Snapshot = serde_json::from_slice(&json).unwrap();
 
-        assert_eq!(snapshot, snapshot_restored);
-
-        let group_restored = Group::from_snapshot(group.group.config.clone(), snapshot_restored)
+        let group_restored = Group::from_snapshot(group.group.config.clone(), snapshot)
             .await
             .unwrap();
 
@@ -280,7 +273,7 @@ mod tests {
         let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         group.group.commit(vec![]).await.unwrap();
 
-        serialize_to_json_test(group).await
+        snapshot_restore(group).await
     }
 
     #[futures_test::test]
@@ -293,13 +286,13 @@ mod tests {
         // This will insert the proposal into the internal proposal cache
         let _ = group.group.proposal_message(update_proposal, vec![]).await;
 
-        serialize_to_json_test(group).await
+        snapshot_restore(group).await
     }
 
     #[futures_test::test]
     async fn snapshot_can_be_serialized_to_json_with_internals() {
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
-        serialize_to_json_test(group).await
+        snapshot_restore(group).await
     }
 }

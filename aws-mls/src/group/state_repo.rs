@@ -229,7 +229,7 @@ where
 mod tests {
     use alloc::vec;
     use assert_matches::assert_matches;
-    use bincode::config::Configuration;
+    use aws_mls_codec::MlsEncode;
 
     use crate::{
         client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
@@ -339,11 +339,7 @@ mod tests {
 
         let stored = storage.get(TEST_GROUP).unwrap();
 
-        assert_eq!(
-            stored.state_data,
-            bincode::serde::encode_to_vec::<_, Configuration>(&snapshot, Configuration::default())
-                .unwrap()
-        );
+        assert_eq!(stored.state_data, snapshot.mls_encode_to_vec().unwrap());
 
         assert_eq!(stored.epoch_data.len(), 1);
 
@@ -494,11 +490,7 @@ mod tests {
 
         let stored = storage.get(TEST_GROUP).unwrap();
 
-        assert_eq!(
-            stored.state_data,
-            bincode::serde::encode_to_vec::<_, Configuration>(&snapshot, Configuration::default())
-                .unwrap()
-        );
+        assert_eq!(stored.state_data, snapshot.mls_encode_to_vec().unwrap());
 
         assert_eq!(stored.epoch_data.len(), 1);
 

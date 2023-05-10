@@ -124,7 +124,7 @@ impl From<InteropGroupContext> for GroupContext {
 #[futures_test::test]
 async fn framing_proposal() {
     let test_cases: Vec<FramingTestCase> =
-        load_test_cases!(framing, generate_framing_test_vector().await);
+        load_test_case_json!(framing, generate_framing_test_vector().await);
 
     for test_case in test_cases.into_iter() {
         let Some(cs) = try_test_cipher_suite_provider(test_case.context.cipher_suite) else {
@@ -166,7 +166,7 @@ async fn framing_proposal() {
 #[futures_test::test]
 async fn framing_application() {
     let test_cases: Vec<FramingTestCase> =
-        load_test_cases!(framing, generate_framing_test_vector().await);
+        load_test_case_json!(framing, generate_framing_test_vector().await);
 
     for test_case in test_cases.into_iter() {
         let Some(cs) = try_test_cipher_suite_provider(test_case.context.cipher_suite) else {
@@ -195,7 +195,7 @@ async fn framing_application() {
 #[futures_test::test]
 async fn framing_comit() {
     let test_cases: Vec<FramingTestCase> =
-        load_test_cases!(framing, generate_framing_test_vector().await);
+        load_test_case_json!(framing, generate_framing_test_vector().await);
 
     for test_case in test_cases.into_iter() {
         let Some(cs) = try_test_cipher_suite_provider(test_case.context.cipher_suite) else {

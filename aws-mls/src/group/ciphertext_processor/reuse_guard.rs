@@ -109,7 +109,7 @@ mod tests {
     }
 
     fn load_test_cases() -> Vec<TestCase> {
-        load_test_cases!(reuse_guard, generate_reuse_guard_test_cases())
+        load_test_case_json!(reuse_guard, generate_reuse_guard_test_cases())
     }
 
     #[test]

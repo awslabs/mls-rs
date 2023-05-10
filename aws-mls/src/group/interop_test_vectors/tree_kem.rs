@@ -70,7 +70,7 @@ async fn tree_kem() {
     // The test vector can be found here https://github.com/mlswg/mls-implementations/blob/main/test-vectors/treekem.json
 
     let test_cases: Vec<TreeKemTestCase> =
-        load_test_cases!(interop_tree_kem, Vec::<TreeKemTestCase>::new());
+        load_test_case_json!(interop_tree_kem, Vec::<TreeKemTestCase>::new());
 
     for test_case in test_cases {
         let Some(cs) = try_test_cipher_suite_provider(test_case.cipher_suite) else {

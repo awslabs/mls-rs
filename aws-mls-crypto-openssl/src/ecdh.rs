@@ -151,7 +151,7 @@ mod test {
 
     #[derive(Deserialize)]
     struct TestCase {
-        pub ciphersuite: CipherSuite,
+        pub ciphersuite: u16,
         #[serde(with = "hex::serde")]
         pub alice_pub: Vec<u8>,
         #[serde(with = "hex::serde")]
@@ -170,7 +170,7 @@ mod test {
             test_case.ciphersuite
         );
 
-        let ecdh = Ecdh::new(test_case.ciphersuite).unwrap();
+        let ecdh = Ecdh::new(test_case.ciphersuite.into()).unwrap();
 
         // Import the keys into their structures
         let alice_pub: HpkePublicKey = test_case.alice_pub.into();

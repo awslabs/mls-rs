@@ -33,10 +33,6 @@ where
 }
 
 #[derive(Clone, Debug)]
-#[cfg_attr(
-    any(test, feature = "benchmark"),
-    derive(serde::Deserialize, serde::Serialize)
-)]
 pub struct KeyPackageGeneration {
     pub(crate) reference: KeyPackageRef,
     pub(crate) key_package: KeyPackage,

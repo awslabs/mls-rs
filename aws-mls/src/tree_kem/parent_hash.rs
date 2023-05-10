@@ -1,6 +1,5 @@
 use crate::client::MlsError;
 use crate::crypto::{CipherSuiteProvider, HpkePublicKey};
-use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::node::{LeafIndex, Node, NodeIndex};
 use crate::tree_kem::TreeKemPublic;
@@ -9,7 +8,6 @@ use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use aws_mls_core::error::IntoAnyError;
 use core::ops::Deref;
-use serde_with::serde_as;
 
 use super::leaf_node::LeafNodeSource;
 use super::ValidatedUpdatePath;
@@ -30,16 +28,9 @@ struct ParentHashInput<'a> {
     original_sibling_tree_hash: &'a [u8],
 }
 
-#[serde_as]
-#[derive(
-    Clone, Debug, MlsSize, MlsEncode, MlsDecode, serde::Deserialize, serde::Serialize, PartialEq, Eq,
-)]
+#[derive(Clone, Debug, MlsSize, MlsEncode, MlsDecode, PartialEq, Eq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct ParentHash(
-    #[mls_codec(with = "aws_mls_codec::byte_vec")]
-    #[serde_as(as = "VecAsBase64")]
-    Vec<u8>,
-);
+pub struct ParentHash(#[mls_codec(with = "aws_mls_codec::byte_vec")] Vec<u8>);
 
 impl From<Vec<u8>> for ParentHash {
     fn from(v: Vec<u8>) -> Self {

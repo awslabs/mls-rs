@@ -1,7 +1,6 @@
 use async_trait::async_trait;
-use aws_mls_codec::MlsEncode;
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use aws_mls_core::{error::IntoAnyError, group::Member, identity::IdentityProvider};
-use serde_with::serde_as;
 
 use crate::{
     cipher_suite::CipherSuite,
@@ -637,8 +636,7 @@ where
 }
 
 /// Serializable snapshot of an [ExternalGroup](ExternalGroup) state.
-#[serde_as]
-#[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Clone)]
+#[derive(Debug, MlsEncode, MlsSize, MlsDecode, PartialEq, Clone)]
 pub struct ExternalSnapshot {
     version: u16,
     state: RawGroupState,
@@ -755,7 +753,7 @@ mod tests {
         external_client::{
             group::test_utils::make_external_group_with_config,
             tests_utils::{TestExternalClientBuilder, TestExternalClientConfig},
-            ExternalGroup, ExternalReceivedMessage,
+            ExternalGroup, ExternalReceivedMessage, ExternalSnapshot,
         },
         group::{
             framing::{Content, MLSMessagePayload},
@@ -770,6 +768,7 @@ mod tests {
         ExtensionList, MLSMessage,
     };
     use assert_matches::assert_matches;
+    use aws_mls_codec::{MlsDecode, MlsEncode};
     use futures::{future::BoxFuture, FutureExt};
 
     async fn test_group_with_one_commit(v: ProtocolVersion, cs: CipherSuite) -> TestGroup {
@@ -1244,12 +1243,12 @@ mod tests {
     }
 
     #[futures_test::test]
-    async fn external_group_can_be_serialized_to_json() {
+    async fn external_group_can_be_serialized_to_tls_encoding() {
         let server =
             make_external_group(&test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await).await;
 
-        let snapshot = serde_json::to_vec(&server.snapshot()).unwrap();
-        let snapshot_restored = serde_json::from_slice(&snapshot).unwrap();
+        let snapshot = server.snapshot().mls_encode_to_vec().unwrap();
+        let snapshot_restored = ExternalSnapshot::mls_decode(&mut snapshot.as_slice()).unwrap();
 
         let server_restored =
             ExternalGroup::from_snapshot(server.config.clone(), snapshot_restored)

@@ -3,19 +3,7 @@ use core::ops::Deref;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 
 #[derive(
-    Debug,
-    Clone,
-    Copy,
-    Eq,
-    Hash,
-    Ord,
-    PartialEq,
-    PartialOrd,
-    MlsSize,
-    MlsEncode,
-    MlsDecode,
-    serde::Deserialize,
-    serde::Serialize,
+    Debug, Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd, MlsSize, MlsEncode, MlsDecode,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// Wrapper type representing a protocol version identifier.

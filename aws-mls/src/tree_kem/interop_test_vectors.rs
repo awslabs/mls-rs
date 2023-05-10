@@ -37,6 +37,12 @@ struct ValidationTestCase {
 #[derive(serde::Serialize, serde::Deserialize, Debug, Default, Clone)]
 struct TreeHash(#[serde(with = "hex::serde")] pub Vec<u8>);
 
+impl From<crate::tree_kem::tree_hash::TreeHash> for TreeHash {
+    fn from(value: crate::tree_kem::tree_hash::TreeHash) -> Self {
+        TreeHash(value.to_vec())
+    }
+}
+
 impl ValidationTestCase {
     fn new<P: CipherSuiteProvider>(tree: TreeKemPublic, group_id: &[u8], cs: &P) -> Self {
         let tree_size = tree.total_leaf_count() * 2 - 1;
@@ -53,7 +59,12 @@ impl ValidationTestCase {
         Self {
             cipher_suite: cs.cipher_suite().into(),
             tree: tree.export_node_data().mls_encode_to_vec().unwrap(),
-            tree_hashes: tree.tree_hashes.current.into_iter().map(TreeHash).collect(),
+            tree_hashes: tree
+                .tree_hashes
+                .current
+                .into_iter()
+                .map(TreeHash::from)
+                .collect(),
             group_id: group_id.to_vec(),
             resolutions,
         }
@@ -62,7 +73,7 @@ impl ValidationTestCase {
 
 #[test]
 async fn validation() {
-    let test_cases: Vec<ValidationTestCase> = load_test_cases!(
+    let test_cases: Vec<ValidationTestCase> = load_test_case_json!(
         interop_tree_validation,
         generate_validation_test_vector().await
     );
@@ -86,7 +97,7 @@ async fn validation() {
             .current
             .iter()
             .zip_eq(test_case.tree_hashes.iter())
-            .for_each(|(l, r)| assert_eq!(l, &r.0));
+            .for_each(|(l, r)| assert_eq!(**l, *r.0));
 
         test_case
             .resolutions

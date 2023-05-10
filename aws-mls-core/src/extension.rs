@@ -3,26 +3,13 @@ use core::ops::Deref;
 use crate::error::{AnyError, IntoAnyError};
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
-use serde_with::serde_as;
 
 mod list;
 
 pub use list::*;
 
 #[derive(
-    Debug,
-    PartialEq,
-    Eq,
-    Hash,
-    Clone,
-    Copy,
-    PartialOrd,
-    Ord,
-    MlsSize,
-    MlsEncode,
-    MlsDecode,
-    serde::Serialize,
-    serde::Deserialize,
+    Debug, PartialEq, Eq, Hash, Clone, Copy, PartialOrd, Ord, MlsSize, MlsEncode, MlsDecode,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// Wrapper type representing an extension identifier along with default values
@@ -83,10 +70,7 @@ pub enum ExtensionError {
     IncorrectType(ExtensionType, ExtensionType),
 }
 
-#[serde_as]
-#[derive(
-    Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode, serde::Deserialize, serde::Serialize,
-)]
+#[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[non_exhaustive]
 /// An MLS protocol [extension](https://messaginglayersecurity.rocks/mls-protocol/draft-ietf-mls-protocol.html#name-extensions).
@@ -96,7 +80,6 @@ pub enum ExtensionError {
 pub struct Extension {
     pub(crate) extension_type: ExtensionType,
     #[mls_codec(with = "aws_mls_codec::byte_vec")]
-    #[serde_as(as = "crate::serde_util::vec_u8_as_base64::VecAsBase64")]
     pub(crate) extension_data: Vec<u8>,
 }
 

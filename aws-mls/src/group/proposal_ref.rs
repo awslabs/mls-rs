@@ -1,20 +1,7 @@
 use super::*;
 use crate::hash_reference::HashReference;
 
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    Hash,
-    PartialOrd,
-    Ord,
-    MlsSize,
-    MlsEncode,
-    MlsDecode,
-    serde::Deserialize,
-    serde::Serialize,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// Unique identifier for a proposal message.
 pub struct ProposalRef(HashReference);
@@ -184,7 +171,7 @@ mod test {
     }
 
     async fn load_test_cases() -> Vec<TestCase> {
-        load_test_cases!(proposal_ref, generate_proposal_test_cases().await)
+        load_test_case_json!(proposal_ref, generate_proposal_test_cases().await)
     }
 
     #[test]

@@ -61,7 +61,7 @@ struct TestCase {
 // https://github.com/mlswg/mls-implementations/blob/main/test-vectors/messages.json
 #[futures_test::test]
 async fn serialization() {
-    let test_cases: Vec<TestCase> = load_test_cases!(serialization, Vec::<TestCase>::new());
+    let test_cases: Vec<TestCase> = load_test_case_json!(serialization, Vec::<TestCase>::new());
 
     for test_case in test_cases.into_iter() {
         let message = MLSMessage::from_bytes(&test_case.mls_welcome).unwrap();

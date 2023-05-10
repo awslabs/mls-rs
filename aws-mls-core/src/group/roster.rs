@@ -11,9 +11,7 @@ use crate::{
 
 use super::ProposalType;
 
-#[derive(
-    Clone, PartialEq, Eq, Debug, MlsSize, MlsEncode, MlsDecode, serde::Deserialize, serde::Serialize,
-)]
+#[derive(Clone, PartialEq, Eq, Debug, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 ///  Capabilities of a MLS client
 pub struct Capabilities {
@@ -66,7 +64,7 @@ impl Default for Capabilities {
 }
 
 /// A member of a MLS group.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Member {
     index: u32,
     signing_identity: SigningIdentity,
@@ -138,7 +136,7 @@ impl Member {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 /// Update of a member due to a commit.
 pub struct MemberUpdate {
@@ -169,7 +167,7 @@ impl MemberUpdate {
 }
 
 /// A set of roster updates due to a commit.
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct RosterUpdate {
     pub(crate) added: Vec<Member>,

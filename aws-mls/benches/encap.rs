@@ -33,7 +33,7 @@ fn bench_encap(
     capabilities: Option<Capabilities>,
     extensions: Option<ExtensionList>,
     cipher_suite: CipherSuite,
-    map: HashMap<usize, TestCase>,
+    map: HashMap<u32, TestCase>,
 ) {
     for (key, value) in &map {
         bench_group.bench_with_input(

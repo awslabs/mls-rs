@@ -3,14 +3,14 @@ use super::*;
 #[cfg(all(feature = "tree_index", feature = "custom_proposal"))]
 use crate::group::proposal::ProposalType;
 
-#[cfg(feature = "tree_index")]
-use crate::{identity::CredentialType, serde_utils::vec_u8_as_base64::VecAsBase64};
+#[cfg(all(feature = "tree_index"))]
+use crate::identity::CredentialType;
+
+#[cfg(all(feature = "tree_index"))]
+use aws_mls_core::crypto::SignaturePublicKey;
 
 #[cfg(all(feature = "tree_index", feature = "std"))]
 use itertools::Itertools;
-
-#[cfg(feature = "tree_index")]
-use serde_with::serde_as;
 
 #[cfg(all(feature = "tree_index", not(feature = "std")))]
 use alloc::collections::btree_map::Entry;
@@ -21,41 +21,32 @@ use std::collections::hash_map::Entry;
 #[cfg(all(feature = "tree_index", not(feature = "std")))]
 use alloc::collections::BTreeSet;
 
-#[cfg(feature = "tree_index")]
-use core::ops::Deref;
+#[cfg(all(feature = "tree_index", feature = "std"))]
+#[derive(
+    Clone, Debug, Default, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode, Hash, PartialOrd, Ord,
+)]
+pub struct Identifier(#[mls_codec(with = "aws_mls_codec::byte_vec")] Vec<u8>);
 
 #[cfg(all(feature = "tree_index", feature = "std"))]
-#[serde_as]
-#[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 pub struct TreeIndex {
-    #[serde_as(as = "HashMap<VecAsBase64, _>")]
-    credential_signature_key: HashMap<Vec<u8>, LeafIndex>,
-    #[serde_as(as = "HashMap<VecAsBase64, _>")]
-    hpke_key: HashMap<Vec<u8>, LeafIndex>,
-    #[serde_as(as = "HashMap<VecAsBase64, _>")]
-    identities: HashMap<Vec<u8>, LeafIndex>,
-    #[serde_as(as = "Vec<(_,_)>")]
+    credential_signature_key: HashMap<SignaturePublicKey, LeafIndex>,
+    hpke_key: HashMap<HpkePublicKey, LeafIndex>,
+    identities: HashMap<Identifier, LeafIndex>,
     credential_type_counters: HashMap<CredentialType, TypeCounter>,
     #[cfg(feature = "custom_proposal")]
-    #[serde_as(as = "Vec<(_,_)>")]
-    proposal_type_counter: HashMap<ProposalType, usize>,
+    proposal_type_counter: HashMap<ProposalType, u32>,
 }
 
 #[cfg(all(feature = "tree_index", not(feature = "std")))]
-#[serde_as]
-#[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 pub struct TreeIndex {
-    #[serde_as(as = "BTreeMap<VecAsBase64, _>")]
-    credential_signature_key: BTreeMap<Vec<u8>, LeafIndex>,
-    #[serde_as(as = "BTreeMap<VecAsBase64, _>")]
-    hpke_key: BTreeMap<Vec<u8>, LeafIndex>,
-    #[serde_as(as = "BTreeMap<VecAsBase64, _>")]
-    identities: BTreeMap<Vec<u8>, LeafIndex>,
-    #[serde_as(as = "Vec<(_,_)>")]
+    credential_signature_key: BTreeMap<SignaturePublicKey, LeafIndex>,
+    hpke_key: BTreeMap<HpkePublicKey, LeafIndex>,
+    identities: BTreeMap<Identifier, LeafIndex>,
     credential_type_counters: BTreeMap<CredentialType, TypeCounter>,
     #[cfg(feature = "custom_proposal")]
-    #[serde_as(as = "Vec<(_,_)>")]
-    proposal_type_counter: BTreeMap<ProposalType, usize>,
+    proposal_type_counter: BTreeMap<ProposalType, u32>,
 }
 
 #[cfg(feature = "tree_index")]
@@ -145,20 +136,19 @@ impl TreeIndex {
         let old_leaf_count = self.credential_signature_key.len();
 
         let pub_key = leaf_node.signing_identity.signature_key.clone();
-        let credential_entry = self.credential_signature_key.entry(pub_key.to_vec());
+        let credential_entry = self.credential_signature_key.entry(pub_key);
 
         if let Entry::Occupied(entry) = credential_entry {
             return Err(MlsError::DuplicateLeafData(**entry.get()));
         }
 
-        let hpke_key = leaf_node.public_key.as_ref().to_vec();
-        let hpke_entry = self.hpke_key.entry(hpke_key);
+        let hpke_entry = self.hpke_key.entry(leaf_node.public_key.clone());
 
         if let Entry::Occupied(entry) = hpke_entry {
             return Err(MlsError::DuplicateLeafData(**entry.get()));
         }
 
-        let identity_entry = self.identities.entry(identity);
+        let identity_entry = self.identities.entry(Identifier(identity));
         if let Entry::Occupied(entry) = identity_entry {
             return Err(MlsError::DuplicateLeafData(**entry.get()));
         }
@@ -182,7 +172,7 @@ impl TreeIndex {
             .entry(new_leaf_cred_type)
             .or_default();
 
-        if cred_type_counters.supported != old_leaf_count {
+        if cred_type_counters.supported != old_leaf_count as u32 {
             return Err(MlsError::CredentialTypeOfNewLeafIsUnsupported(
                 new_leaf_cred_type,
             ));
@@ -230,14 +220,19 @@ impl TreeIndex {
     }
 
     pub(crate) fn get_leaf_index_with_identity(&self, identity: &[u8]) -> Option<LeafIndex> {
-        self.identities.get(identity).copied()
+        self.identities.get(&Identifier(identity.to_vec())).copied()
     }
 
     pub fn remove(&mut self, leaf_node: &LeafNode, identity: &[u8]) {
-        let existed = self.identities.remove(identity).is_some();
-        let pub_key = leaf_node.signing_identity.signature_key.deref();
-        self.credential_signature_key.remove(pub_key);
-        self.hpke_key.remove(leaf_node.public_key.as_ref());
+        let existed = self
+            .identities
+            .remove(&Identifier(identity.to_vec()))
+            .is_some();
+
+        self.credential_signature_key
+            .remove(&leaf_node.signing_identity.signature_key);
+
+        self.hpke_key.remove(&leaf_node.public_key);
 
         if !existed {
             return;
@@ -284,7 +279,7 @@ impl TreeIndex {
     }
 
     #[cfg(feature = "custom_proposal")]
-    pub fn count_supporting_proposal(&self, proposal_type: ProposalType) -> usize {
+    pub fn count_supporting_proposal(&self, proposal_type: ProposalType) -> u32 {
         self.proposal_type_counter
             .get(&proposal_type)
             .copied()
@@ -298,10 +293,10 @@ impl TreeIndex {
 }
 
 #[cfg(feature = "tree_index")]
-#[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, MlsEncode, MlsDecode, MlsSize)]
 struct TypeCounter {
-    supported: usize,
-    used: usize,
+    supported: u32,
+    used: u32,
 }
 
 #[cfg(feature = "tree_index")]
@@ -367,12 +362,12 @@ mod tests {
             let pub_key = d.leaf_node.signing_identity.signature_key;
 
             assert_eq!(
-                test_index.credential_signature_key.get(pub_key.deref()),
+                test_index.credential_signature_key.get(&pub_key),
                 Some(&LeafIndex(i as u32))
             );
 
             assert_eq!(
-                test_index.hpke_key.get(d.leaf_node.public_key.as_ref()),
+                test_index.hpke_key.get(&d.leaf_node.public_key),
                 Some(&LeafIndex(i as u32))
             );
         })
@@ -436,18 +431,15 @@ mod tests {
 
         assert_eq!(test_index.hpke_key.len(), test_data.len() - 1);
 
-        let pub_key = test_data[1]
-            .leaf_node
-            .signing_identity
-            .signature_key
-            .deref();
-
-        assert_eq!(test_index.credential_signature_key.get(pub_key), None);
-
         assert_eq!(
             test_index
-                .hpke_key
-                .get(test_data[1].leaf_node.public_key.as_ref()),
+                .credential_signature_key
+                .get(&test_data[1].leaf_node.signing_identity.signature_key),
+            None
+        );
+
+        assert_eq!(
+            test_index.hpke_key.get(&test_data[1].leaf_node.public_key),
             None
         );
     }

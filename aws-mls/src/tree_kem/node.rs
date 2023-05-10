@@ -8,7 +8,6 @@ use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use core::hash::Hash;
 use core::ops::{Deref, DerefMut};
-use serde_with::serde_as;
 
 #[cfg(feature = "std")]
 use std::collections::HashSet;
@@ -16,10 +15,7 @@ use std::collections::HashSet;
 #[cfg(not(feature = "std"))]
 use alloc::collections::BTreeSet;
 
-#[serde_as]
-#[derive(
-    Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode, serde::Deserialize, serde::Serialize,
-)]
+#[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 pub(crate) struct Parent {
     pub public_key: HpkePublicKey,
     pub parent_hash: ParentHash,
@@ -27,19 +23,7 @@ pub(crate) struct Parent {
 }
 
 #[derive(
-    Clone,
-    Copy,
-    Debug,
-    Ord,
-    PartialEq,
-    PartialOrd,
-    Hash,
-    Eq,
-    MlsSize,
-    MlsEncode,
-    MlsDecode,
-    serde::Deserialize,
-    serde::Serialize,
+    Clone, Copy, Debug, Ord, PartialEq, PartialOrd, Hash, Eq, MlsSize, MlsEncode, MlsDecode,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct LeafIndex(pub(crate) u32);
@@ -82,9 +66,7 @@ impl LeafIndex {
 
 pub(crate) type NodeIndex = u32;
 
-#[derive(
-    Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode, serde::Deserialize, serde::Serialize,
-)]
+#[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[allow(clippy::large_enum_variant)]
 #[repr(u8)]
 //TODO: Research if this should actually be a Box<Leaf> for memory / performance reasons
@@ -176,17 +158,7 @@ impl NodeTypeResolver for Option<Node> {
     }
 }
 
-#[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    MlsSize,
-    MlsEncode,
-    MlsDecode,
-    Default,
-    serde::Deserialize,
-    serde::Serialize,
-)]
+#[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode, Default)]
 pub(crate) struct NodeVec(Vec<Option<Node>>);
 
 impl From<Vec<Option<Node>>> for NodeVec {
@@ -250,11 +222,9 @@ impl NodeVec {
     }
 
     pub fn non_empty_leaves(&self) -> impl Iterator<Item = (LeafIndex, &LeafNode)> + '_ {
-        self.iter()
+        self.leaves()
             .enumerate()
-            .step_by(2)
-            .map(|(i, n)| (LeafIndex(i as u32 / 2), n))
-            .filter_map(|(i, n)| n.as_leaf().ok().map(|l| (i, l)))
+            .filter_map(|(i, l)| l.map(|l| (LeafIndex(i as u32), l)))
     }
 
     pub fn non_empty_parents(&self) -> impl Iterator<Item = (NodeIndex, &Parent)> + '_ {
@@ -264,6 +234,10 @@ impl NodeVec {
             .step_by(2)
             .map(|(i, n)| (i as NodeIndex, n))
             .filter_map(|(i, n)| n.as_parent().ok().map(|p| (i, p)))
+    }
+
+    pub fn leaves(&self) -> impl Iterator<Item = Option<&LeafNode>> + '_ {
+        self.iter().step_by(2).map(|n| n.as_leaf().ok())
     }
 
     #[inline]

@@ -4,7 +4,6 @@ use crate::crypto::HpkePublicKey;
 use crate::hash_reference::HashReference;
 use crate::identity::SigningIdentity;
 use crate::protocol_version::ProtocolVersion;
-use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::signer::Signable;
 use crate::tree_kem::leaf_node::LeafNode;
 use crate::CipherSuiteProvider;
@@ -14,7 +13,6 @@ use aws_mls_codec::MlsEncode;
 use aws_mls_codec::MlsSize;
 use aws_mls_core::extension::ExtensionList;
 use core::ops::Deref;
-use serde_with::serde_as;
 
 mod validator;
 pub(crate) use validator::*;
@@ -22,11 +20,8 @@ pub(crate) use validator::*;
 pub(crate) mod generator;
 pub(crate) use generator::*;
 
-#[serde_as]
 #[non_exhaustive]
-#[derive(
-    Clone, Debug, MlsSize, MlsEncode, MlsDecode, serde::Deserialize, serde::Serialize, PartialEq,
-)]
+#[derive(Clone, Debug, MlsSize, MlsEncode, MlsDecode, PartialEq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct KeyPackage {
     pub(crate) version: ProtocolVersion,
@@ -35,24 +30,10 @@ pub struct KeyPackage {
     pub(crate) leaf_node: LeafNode,
     pub(crate) extensions: ExtensionList,
     #[mls_codec(with = "aws_mls_codec::byte_vec")]
-    #[serde_as(as = "VecAsBase64")]
     pub(crate) signature: Vec<u8>,
 }
 
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    MlsSize,
-    MlsEncode,
-    MlsDecode,
-    serde::Serialize,
-    serde::Deserialize,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct KeyPackageRef(HashReference);
 
@@ -273,7 +254,7 @@ mod tests {
     }
 
     async fn load_test_cases() -> Vec<TestCase> {
-        load_test_cases!(key_package_ref, TestCase::generate().await)
+        load_test_case_json!(key_package_ref, TestCase::generate().await)
     }
 
     #[test]

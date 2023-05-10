@@ -1,14 +1,14 @@
 use crate::client::MlsError;
-use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::node::{LeafIndex, NodeIndex};
 use crate::CipherSuiteProvider;
 use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use aws_mls_core::error::IntoAnyError;
 use core::ops::{Deref, DerefMut};
-use serde_with::serde_as;
+use itertools::Itertools;
 use zeroize::Zeroizing;
 
 #[cfg(feature = "std")]
@@ -21,11 +21,11 @@ use super::key_schedule::kdf_expand_with_label;
 
 pub(crate) const MAX_RATCHET_BACK_HISTORY: u32 = 1024;
 
-#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[repr(u8)]
 enum SecretTreeNode {
-    Secret(TreeSecret),
-    Ratchet(SecretRatchets),
+    Secret(TreeSecret) = 0u8,
+    Ratchet(SecretRatchets) = 1u8,
 }
 
 impl SecretTreeNode {
@@ -46,9 +46,8 @@ impl SecretTreeNode {
     }
 }
 
-#[serde_as]
-#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
-struct TreeSecret(#[serde_as(as = "VecAsBase64")] Zeroizing<Vec<u8>>);
+#[derive(Clone, Debug, PartialEq, MlsEncode, MlsDecode, MlsSize)]
+struct TreeSecret(#[mls_codec(with = "aws_mls_codec::byte_vec")] Zeroizing<Vec<u8>>);
 
 impl Deref for TreeSecret {
     type Target = Vec<u8>;
@@ -82,7 +81,7 @@ impl From<Zeroizing<Vec<u8>>> for TreeSecret {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, MlsEncode, MlsDecode, MlsSize)]
 struct TreeSecretsVec(Vec<Option<SecretTreeNode>>);
 
 impl Deref for TreeSecretsVec {
@@ -119,7 +118,7 @@ impl TreeSecretsVec {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, MlsEncode, MlsDecode, MlsSize)]
 pub struct SecretTree {
     known_secrets: TreeSecretsVec,
     leaf_count: u32,
@@ -135,7 +134,7 @@ impl SecretTree {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 pub struct SecretRatchets {
     pub application: SecretKeyRatchet,
     pub handshake: SecretKeyRatchet,
@@ -316,13 +315,12 @@ impl ToString for KeyType {
     }
 }
 
-#[serde_as]
-#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, MlsEncode, MlsDecode, MlsSize)]
 /// AEAD key derived by the MLS secret tree.
 pub struct MessageKeyData {
-    #[serde_as(as = "VecAsBase64")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     pub(crate) nonce: Zeroizing<Vec<u8>>,
-    #[serde_as(as = "VecAsBase64")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     pub(crate) key: Zeroizing<Vec<u8>>,
     pub(crate) generation: u32,
 }
@@ -347,17 +345,51 @@ impl MessageKeyData {
     }
 }
 
-#[serde_as]
-#[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SecretKeyRatchet {
     secret: TreeSecret,
+    generation: u32,
     #[cfg(feature = "std")]
-    #[serde_as(as = "Vec<(_,_)>")]
     history: HashMap<u32, MessageKeyData>,
     #[cfg(not(feature = "std"))]
-    #[serde_as(as = "Vec<(_,_)>")]
     history: BTreeMap<u32, MessageKeyData>,
-    generation: u32,
+}
+
+impl MlsSize for SecretKeyRatchet {
+    fn mls_encoded_len(&self) -> usize {
+        aws_mls_codec::byte_vec::mls_encoded_len(&self.secret)
+            + self.generation.mls_encoded_len()
+            + self.history.values().collect_vec().mls_encoded_len()
+    }
+}
+
+impl MlsEncode for SecretKeyRatchet {
+    fn mls_encode(&self, writer: &mut Vec<u8>) -> Result<(), aws_mls_codec::Error> {
+        aws_mls_codec::byte_vec::mls_encode(&self.secret, writer)?;
+        self.generation.mls_encode(writer)?;
+        self.history.values().collect_vec().mls_encode(writer)
+    }
+}
+
+impl MlsDecode for SecretKeyRatchet {
+    fn mls_decode(reader: &mut &[u8]) -> Result<Self, aws_mls_codec::Error> {
+        Ok(Self {
+            secret: aws_mls_codec::byte_vec::mls_decode(reader)?,
+            generation: u32::mls_decode(reader)?,
+            #[cfg(feature = "std")]
+            history: HashMap::from_iter(
+                Vec::<MessageKeyData>::mls_decode(reader)?
+                    .into_iter()
+                    .map(|k| (k.generation, k)),
+            ),
+            #[cfg(not(feature = "std"))]
+            history: BTreeMap::from_iter(
+                Vec::<MessageKeyData>::mls_decode(reader)?
+                    .into_iter()
+                    .map(|k| (k.generation, k)),
+            ),
+        })
+    }
 }
 
 impl SecretKeyRatchet {
@@ -505,7 +537,7 @@ pub(crate) mod test_utils {
     #[test]
     fn test_basic_crypto_test_vectors() {
         let test_cases: Vec<InteropTestCase> =
-            load_test_cases!(basic_crypto, Vec::<InteropTestCase>::new());
+            load_test_case_json!(basic_crypto, Vec::<InteropTestCase>::new());
 
         test_cases.into_iter().for_each(|test_case| {
             if let Some(cs) = try_test_cipher_suite_provider(test_case.cipher_suite) {
@@ -720,8 +752,8 @@ mod tests {
 
     #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
     struct Ratchet {
-        application_keys: Vec<MessageKeyData>,
-        handshake_keys: Vec<MessageKeyData>,
+        application_keys: Vec<Vec<u8>>,
+        handshake_keys: Vec<Vec<u8>>,
     }
 
     #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -741,11 +773,25 @@ mod tests {
                     .unwrap();
 
                 let application_keys = (0..20)
-                    .map(|_| ratchets.handshake.next_message_key(&provider).unwrap())
+                    .map(|_| {
+                        ratchets
+                            .handshake
+                            .next_message_key(&provider)
+                            .unwrap()
+                            .mls_encode_to_vec()
+                            .unwrap()
+                    })
                     .collect();
 
                 let handshake_keys = (0..20)
-                    .map(|_| ratchets.handshake.next_message_key(&provider).unwrap())
+                    .map(|_| {
+                        ratchets
+                            .handshake
+                            .next_message_key(&provider)
+                            .unwrap()
+                            .mls_encode_to_vec()
+                            .unwrap()
+                    })
                     .collect();
 
                 Ratchet {
@@ -775,7 +821,7 @@ mod tests {
     }
 
     fn load_test_cases() -> Vec<TestCase> {
-        load_test_cases!(secret_tree, generate_secret_tree_test_vectors())
+        load_test_case_json!(secret_tree, generate_secret_tree_test_vectors())
     }
 
     #[test]
@@ -879,7 +925,7 @@ mod interop_tests {
     }
 
     fn load_interop_test_cases() -> Vec<InteropTestCase> {
-        load_test_cases!(secret_tree_interop, generate_interop_test_vectors())
+        load_test_case_json!(secret_tree_interop, generate_interop_test_vectors())
     }
 
     fn generate_interop_test_vectors() -> Vec<InteropTestCase> {

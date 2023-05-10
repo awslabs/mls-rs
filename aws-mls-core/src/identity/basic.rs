@@ -2,25 +2,10 @@ use core::convert::Infallible;
 
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
-use serde_with::serde_as;
 
 use super::{Credential, CredentialType, MlsCredential};
 
-#[serde_as]
-#[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    Eq,
-    Hash,
-    PartialOrd,
-    Ord,
-    MlsSize,
-    MlsEncode,
-    MlsDecode,
-    serde::Serialize,
-    serde::Deserialize,
-)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// Bare assertion of an identity without any additional information.
 ///
@@ -33,7 +18,6 @@ use super::{Credential, CredentialType, MlsCredential};
 /// properly validated. It is not recommended to use [`BasicCredential`]
 /// in production applications.
 pub struct BasicCredential {
-    #[serde_as(as = "crate::serde_util::vec_u8_as_base64::VecAsBase64")]
     #[mls_codec(with = "aws_mls_codec::byte_vec")]
     identifier: Vec<u8>,
 }

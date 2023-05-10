@@ -48,7 +48,7 @@ pub(crate) struct Commit {
     pub path: Option<UpdatePath>,
 }
 
-#[derive(Clone, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Debug, MlsEncode, MlsDecode, MlsSize)]
 pub(super) struct CommitGeneration {
     pub content: AuthenticatedContent,
     pub pending_secrets: Option<(TreeKemPrivate, PathSecret)>,

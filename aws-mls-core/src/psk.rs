@@ -6,15 +6,11 @@ use alloc::vec::Vec;
 use crate::error::IntoAnyError;
 use async_trait::async_trait;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
-use serde_with::serde_as;
 use zeroize::Zeroizing;
 
-#[serde_as]
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 /// Wrapper type that holds a pre-shared key value and zeroizes on drop.
-pub struct PreSharedKey(
-    #[serde_as(as = "crate::serde_util::vec_u8_as_base64::VecAsBase64")] Zeroizing<Vec<u8>>,
-);
+pub struct PreSharedKey(#[mls_codec(with = "aws_mls_codec::byte_vec")] Zeroizing<Vec<u8>>);
 
 impl PreSharedKey {
     /// Create a new PreSharedKey.
@@ -54,28 +50,10 @@ impl Deref for PreSharedKey {
     }
 }
 
-#[serde_as]
-#[derive(
-    Clone,
-    Debug,
-    Eq,
-    Hash,
-    Ord,
-    PartialOrd,
-    PartialEq,
-    MlsSize,
-    MlsEncode,
-    MlsDecode,
-    serde::Deserialize,
-    serde::Serialize,
-)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialOrd, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// An external pre-shared key identifier.
-pub struct ExternalPskId(
-    #[mls_codec(with = "aws_mls_codec::byte_vec")]
-    #[serde_as(as = "crate::serde_util::vec_u8_as_base64::VecAsBase64")]
-    Vec<u8>,
-);
+pub struct ExternalPskId(#[mls_codec(with = "aws_mls_codec::byte_vec")] Vec<u8>);
 
 impl ExternalPskId {
     pub fn new(id_data: Vec<u8>) -> Self {

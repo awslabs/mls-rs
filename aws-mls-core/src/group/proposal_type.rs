@@ -3,20 +3,7 @@ use core::ops::Deref;
 
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 
-#[derive(
-    Clone,
-    Copy,
-    Eq,
-    Hash,
-    PartialOrd,
-    Ord,
-    PartialEq,
-    MlsSize,
-    MlsEncode,
-    MlsDecode,
-    serde::Deserialize,
-    serde::Serialize,
-)]
+#[derive(Clone, Copy, Eq, Hash, PartialOrd, Ord, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// Wrapper type representing a proposal type identifier along with default
 /// values defined by the MLS RFC.

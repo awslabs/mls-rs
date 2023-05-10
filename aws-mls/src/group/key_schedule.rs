@@ -2,7 +2,6 @@ use crate::client::MlsError;
 use crate::group::{GroupContext, MembershipTag};
 use crate::psk::secret::PskSecret;
 use crate::psk::PreSharedKey;
-use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::tree_kem::path_secret::{PathSecret, PathSecretGenerator};
 use crate::CipherSuiteProvider;
 
@@ -13,7 +12,6 @@ use alloc::vec;
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use aws_mls_core::error::IntoAnyError;
-use serde_with::serde_as;
 use zeroize::{Zeroize, Zeroizing};
 
 #[cfg(feature = "external_commit")]
@@ -22,13 +20,16 @@ use crate::crypto::{HpkeContextR, HpkeContextS, HpkePublicKey, HpkeSecretKey};
 use super::epoch::{EpochSecrets, SenderDataSecret};
 use super::message_signature::AuthenticatedContent;
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, Zeroize, Default)]
-#[zeroize(drop)]
+#[derive(Debug, Clone, PartialEq, Eq, Zeroize, Default, MlsEncode, MlsDecode, MlsSize)]
 pub struct KeySchedule {
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     exporter_secret: Zeroizing<Vec<u8>>,
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     pub authentication_secret: Zeroizing<Vec<u8>>,
     #[cfg(feature = "external_commit")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     external_secret: Zeroizing<Vec<u8>>,
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     membership_key: Zeroizing<Vec<u8>>,
     init_secret: InitSecret,
 }
@@ -43,9 +44,10 @@ pub(crate) struct KeyScheduleDerivationResult {
 impl KeySchedule {
     #[cfg(feature = "external_commit")]
     pub fn new(init_secret: InitSecret) -> Self {
-        let mut key_schedule = KeySchedule::default();
-        key_schedule.init_secret = init_secret;
-        key_schedule
+        KeySchedule {
+            init_secret,
+            ..Default::default()
+        }
     }
 
     #[cfg(feature = "external_commit")]
@@ -303,9 +305,8 @@ impl<'a, P: CipherSuiteProvider> SecretsProducer<'a, P> {
 #[cfg(feature = "external_commit")]
 const EXPORTER_CONTEXT: &[u8] = b"MLS 1.0 external init secret";
 
-#[serde_as]
-#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize, Zeroize, Default)]
-pub struct InitSecret(#[serde_as(as = "VecAsBase64")] Zeroizing<Vec<u8>>);
+#[derive(Clone, Debug, Eq, PartialEq, MlsEncode, MlsDecode, MlsSize, Zeroize, Default)]
+pub struct InitSecret(#[mls_codec(with = "aws_mls_codec::byte_vec")] Zeroizing<Vec<u8>>);
 
 #[cfg(feature = "external_commit")]
 impl InitSecret {
@@ -572,7 +573,7 @@ mod tests {
     #[test]
     fn test_key_schedule() {
         let test_cases: Vec<KeyScheduleTestCase> =
-            load_test_cases!(key_schedule_test_vector, generate_key_schedule_tests());
+            load_test_case_json!(key_schedule_test_vector, generate_key_schedule_tests());
 
         for test_case in test_cases {
             let Some(cs_provider) = try_test_cipher_suite_provider(test_case.cipher_suite) else {
@@ -852,7 +853,7 @@ mod tests {
     fn test_basic_crypto_test_vectors() {
         // The test vector can be found here https://github.com/mlswg/mls-implementations/blob/main/test-vectors/crypto-basics.json
         let test_cases: Vec<InteropTestCase> =
-            load_test_cases!(basic_crypto, Vec::<InteropTestCase>::new());
+            load_test_case_json!(basic_crypto, Vec::<InteropTestCase>::new());
 
         test_cases.into_iter().for_each(|test_case| {
             if let Some(cs) = try_test_cipher_suite_provider(test_case.cipher_suite) {

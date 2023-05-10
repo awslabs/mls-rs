@@ -2,16 +2,9 @@ use super::*;
 use aws_mls_core::error::IntoAnyError;
 use core::ops::Deref;
 
-#[serde_as]
-#[derive(
-    Debug, Clone, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode, serde::Deserialize, serde::Serialize,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct ConfirmedTranscriptHash(
-    #[mls_codec(with = "aws_mls_codec::byte_vec")]
-    #[serde_as(as = "VecAsBase64")]
-    Vec<u8>,
-);
+pub struct ConfirmedTranscriptHash(#[mls_codec(with = "aws_mls_codec::byte_vec")] Vec<u8>);
 
 impl Deref for ConfirmedTranscriptHash {
     type Target = Vec<u8>;
@@ -59,15 +52,8 @@ impl ConfirmedTranscriptHash {
     }
 }
 
-#[serde_as]
-#[derive(
-    Debug, Clone, PartialEq, MlsSize, MlsEncode, MlsDecode, serde::Deserialize, serde::Serialize,
-)]
-pub(crate) struct InterimTranscriptHash(
-    #[mls_codec(with = "aws_mls_codec::byte_vec")]
-    #[serde_as(as = "VecAsBase64")]
-    Vec<u8>,
-);
+#[derive(Debug, Clone, PartialEq, MlsSize, MlsEncode, MlsDecode)]
+pub(crate) struct InterimTranscriptHash(#[mls_codec(with = "aws_mls_codec::byte_vec")] Vec<u8>);
 
 impl Deref for InterimTranscriptHash {
     type Target = Vec<u8>;
@@ -146,7 +132,7 @@ mod tests {
     #[futures_test::test]
     async fn transcript_hash() {
         let test_cases: Vec<TestCase> =
-            load_test_cases!(interop_transcript_hashes, generate_test_vector().await);
+            load_test_case_json!(interop_transcript_hashes, generate_test_vector().await);
 
         for test_case in test_cases.into_iter() {
             let Some(cs) = try_test_cipher_suite_provider(test_case.cipher_suite) else {

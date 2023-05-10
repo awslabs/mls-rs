@@ -1,9 +1,8 @@
-use crate::{error::IntoAnyError, serde_util::vec_u8_as_base64::VecAsBase64};
+use crate::error::IntoAnyError;
 use alloc::vec;
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use core::ops::Deref;
-use serde_with::serde_as;
 use zeroize::{Zeroize, Zeroizing};
 
 mod cipher_suite;
@@ -21,27 +20,9 @@ pub struct HpkeCiphertext {
 
 /// Byte representation of an HPKE public key. For ciphersuites using elliptic curves,
 /// the public key should be represented in the uncompressed format.
-#[serde_as]
-#[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    Eq,
-    Hash,
-    PartialOrd,
-    Ord,
-    MlsSize,
-    MlsDecode,
-    MlsEncode,
-    serde::Serialize,
-    serde::Deserialize,
-)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, MlsSize, MlsDecode, MlsEncode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct HpkePublicKey(
-    #[mls_codec(with = "aws_mls_codec::byte_vec")]
-    #[serde_as(as = "crate::serde_util::vec_u8_as_base64::VecAsBase64")]
-    Vec<u8>,
-);
+pub struct HpkePublicKey(#[mls_codec(with = "aws_mls_codec::byte_vec")] Vec<u8>);
 
 impl From<Vec<u8>> for HpkePublicKey {
     fn from(data: Vec<u8>) -> Self {
@@ -70,25 +51,9 @@ impl AsRef<[u8]> for HpkePublicKey {
 }
 
 /// Byte representation of an HPKE secret key.
-#[serde_as]
-#[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    Eq,
-    MlsSize,
-    MlsEncode,
-    MlsDecode,
-    Zeroize,
-    serde::Serialize,
-    serde::Deserialize,
-)]
+#[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode, Zeroize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct HpkeSecretKey(
-    #[mls_codec(with = "aws_mls_codec::byte_vec")]
-    #[serde_as(as = "crate::serde_util::vec_u8_as_base64::VecAsBase64")]
-    Vec<u8>,
-);
+pub struct HpkeSecretKey(#[mls_codec(with = "aws_mls_codec::byte_vec")] Vec<u8>);
 
 impl From<Vec<u8>> for HpkeSecretKey {
     fn from(data: Vec<u8>) -> Self {
@@ -142,27 +107,9 @@ pub trait HpkeContextR {
 
 /// Byte representation of a signature public key. For ciphersuites using elliptic curves,
 /// the public key should be represented in the uncompressed format.
-#[serde_as]
-#[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    Eq,
-    Hash,
-    Ord,
-    PartialOrd,
-    MlsSize,
-    MlsEncode,
-    MlsDecode,
-    serde::Deserialize,
-    serde::Serialize,
-)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct SignaturePublicKey(
-    #[mls_codec(with = "aws_mls_codec::byte_vec")]
-    #[serde_as(as = "VecAsBase64")]
-    Vec<u8>,
-);
+pub struct SignaturePublicKey(#[mls_codec(with = "aws_mls_codec::byte_vec")] Vec<u8>);
 
 impl Deref for SignaturePublicKey {
     type Target = [u8];
@@ -179,12 +126,10 @@ impl From<Vec<u8>> for SignaturePublicKey {
 }
 
 /// Byte representation of a signature key.
-#[serde_as]
 #[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::ffi_type(opaque))]
-#[derive(Clone, Debug, PartialEq, Eq, Zeroize, serde::Serialize, serde::Deserialize)]
-#[serde(transparent)]
+#[derive(Clone, Debug, PartialEq, Eq, Zeroize, MlsSize, MlsEncode, MlsDecode)]
 pub struct SignatureSecretKey {
-    #[serde_as(as = "VecAsBase64")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     bytes: Vec<u8>,
 }
 

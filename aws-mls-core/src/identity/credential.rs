@@ -2,24 +2,11 @@ use core::ops::Deref;
 
 use alloc::{string::ToString, vec::Vec};
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
-use serde_with::serde_as;
 
 use super::{BasicCredential, CertificateChain};
 
 #[derive(
-    Debug,
-    PartialEq,
-    Eq,
-    Hash,
-    Clone,
-    Copy,
-    PartialOrd,
-    Ord,
-    MlsSize,
-    MlsEncode,
-    MlsDecode,
-    serde::Serialize,
-    serde::Deserialize,
+    Debug, PartialEq, Eq, Hash, Clone, Copy, PartialOrd, Ord, MlsSize, MlsEncode, MlsDecode,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// Wrapper type representing a credential type identifier along with default
@@ -55,21 +42,7 @@ impl Deref for CredentialType {
     }
 }
 
-#[serde_as]
-#[derive(
-    Clone,
-    Debug,
-    MlsSize,
-    MlsEncode,
-    MlsDecode,
-    PartialEq,
-    Eq,
-    Hash,
-    PartialOrd,
-    Ord,
-    serde::Serialize,
-    serde::Deserialize,
-)]
+#[derive(Clone, Debug, MlsSize, MlsEncode, MlsDecode, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// Custom user created credential type.
 ///
@@ -81,7 +54,6 @@ impl Deref for CredentialType {
 pub struct CustomCredential {
     pub(crate) credential_type: CredentialType,
     #[mls_codec(with = "aws_mls_codec::byte_vec")]
-    #[serde_as(as = "crate::serde_util::vec_u8_as_base64::VecAsBase64")]
     pub(crate) data: Vec<u8>,
 }
 
@@ -110,9 +82,7 @@ impl CustomCredential {
     }
 }
 
-#[derive(
-    Clone, Debug, PartialEq, Ord, PartialOrd, Eq, Hash, serde::Deserialize, serde::Serialize,
-)]
+#[derive(Clone, Debug, PartialEq, Ord, PartialOrd, Eq, Hash)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// A MLS credential used to authenticate a group member.
 pub enum Credential {

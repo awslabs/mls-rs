@@ -1,12 +1,10 @@
 use core::ops::Deref;
 
 use crate::client::MlsError;
-use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::CipherSuiteProvider;
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use aws_mls_core::error::IntoAnyError;
-use serde_with::serde_as;
 
 #[derive(Debug, MlsSize, MlsEncode)]
 struct RefHashInput<'a> {
@@ -16,27 +14,9 @@ struct RefHashInput<'a> {
     pub value: &'a [u8],
 }
 
-#[serde_as]
-#[derive(
-    Debug,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Clone,
-    MlsSize,
-    MlsEncode,
-    MlsDecode,
-    serde::Deserialize,
-    serde::Serialize,
-)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct HashReference(
-    #[mls_codec(with = "aws_mls_codec::byte_vec")]
-    #[serde_as(as = "VecAsBase64")]
-    Vec<u8>,
-);
+pub struct HashReference(#[mls_codec(with = "aws_mls_codec::byte_vec")] Vec<u8>);
 
 impl Deref for HashReference {
     type Target = [u8];
@@ -134,7 +114,7 @@ mod tests {
     fn test_basic_crypto_test_vectors() {
         // The test vector can be found here https://github.com/mlswg/mls-implementations/blob/main/test-vectors/crypto-basics.json
         let test_cases: Vec<InteropTestCase> =
-            load_test_cases!(basic_crypto, generate_hash_reference_test_cases());
+            load_test_case_json!(basic_crypto, generate_hash_reference_test_cases());
 
         test_cases.into_iter().for_each(|test_case| {
             if let Some(cs) = try_test_cipher_suite_provider(test_case.cipher_suite) {

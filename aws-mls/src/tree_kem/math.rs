@@ -267,7 +267,7 @@ mod tests {
     }
 
     fn load_test_cases() -> Vec<TestCase> {
-        load_test_cases!(tree_math, generate_tree_math_test_cases())
+        load_test_case_json!(tree_math, generate_tree_math_test_cases())
     }
 
     #[test]

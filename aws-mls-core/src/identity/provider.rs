@@ -4,7 +4,7 @@ use async_trait::async_trait;
 
 use super::{CredentialType, SigningIdentity};
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 /// Customizable identity warning returned by an [`IdentityProvider`].
 pub struct IdentityWarning {

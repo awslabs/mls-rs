@@ -21,13 +21,13 @@ async fn interop_passive_client() {
     // * https://github.com/mlswg/mls-implementations/blob/main/test-vectors/passive-client-random.json
 
     let test_cases_wel: Vec<TestCase> =
-        load_test_cases!(interop_passive_client_welcome, Vec::<TestCase>::new());
+        load_test_case_json!(interop_passive_client_welcome, Vec::<TestCase>::new());
 
     let test_cases_com: Vec<TestCase> =
-        load_test_cases!(interop_passive_client_handle_commit, Vec::<TestCase>::new());
+        load_test_case_json!(interop_passive_client_handle_commit, Vec::<TestCase>::new());
 
     let test_cases_rand: Vec<TestCase> =
-        load_test_cases!(interop_passive_client_random, Vec::<TestCase>::new());
+        load_test_case_json!(interop_passive_client_random, Vec::<TestCase>::new());
 
     for test_case in vec![]
         .into_iter()

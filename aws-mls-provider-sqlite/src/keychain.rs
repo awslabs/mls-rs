@@ -1,14 +1,16 @@
 use crate::SqLiteDataStorageError;
 use async_trait::async_trait;
 use aws_mls_core::{
+    aws_mls_codec::{MlsDecode, MlsEncode},
     crypto::{CipherSuite, SignatureSecretKey},
     identity::SigningIdentity,
     keychain::KeychainStorage,
 };
 use openssl::sha::sha512;
 use rusqlite::{params, Connection, OptionalExtension};
-use serde::Serialize;
 use std::sync::{Arc, Mutex};
+
+use aws_mls_core::aws_mls_codec;
 
 #[derive(Debug, Clone)]
 /// SQLite storage for MLS identities and secret keys.
@@ -16,7 +18,15 @@ pub struct SqLiteKeychainStorage {
     connection: Arc<Mutex<Connection>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    aws_mls_codec::MlsEncode,
+    aws_mls_codec::MlsDecode,
+    aws_mls_codec::MlsSize,
+)]
 struct StoredSigningIdentity {
     identity: SigningIdentity,
     signer: SignatureSecretKey,
@@ -76,9 +86,11 @@ impl SqLiteKeychainStorage {
                 ) VALUES (?,?,?,?)",
                 params![
                     identifier,
-                    bincode::serialize(&identity)
+                    identity
+                        .mls_encode_to_vec()
                         .map_err(|e| SqLiteDataStorageError::DataConversionError(e.into()))?,
-                    bincode::serialize(&signer)
+                    signer
+                        .mls_encode_to_vec()
                         .map_err(|e| SqLiteDataStorageError::DataConversionError(e.into()))?,
                     u16::from(cipher_suite)
                 ],
@@ -112,7 +124,7 @@ impl SqLiteKeychainStorage {
 
         let identities = stmt
             .query_map(params![u16::from(cipher_suite)], |row| {
-                Ok(bincode::deserialize(&row.get::<_, Vec<u8>>(0)?).unwrap())
+                Ok(SigningIdentity::mls_decode(&mut row.get::<_, Vec<u8>>(0)?.as_slice()).unwrap())
             })
             .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))?
             .collect::<Result<Vec<_>, _>>()
@@ -131,7 +143,12 @@ impl SqLiteKeychainStorage {
             .query_row(
                 "SELECT signature_secret_key FROM keychain WHERE identifier = ?",
                 params![identifier],
-                |row| Ok(bincode::deserialize(&row.get::<_, Vec<u8>>(0)?).unwrap()),
+                |row| {
+                    Ok(
+                        SignatureSecretKey::mls_decode(&mut row.get::<_, Vec<u8>>(0)?.as_slice())
+                            .unwrap(),
+                    )
+                },
             )
             .optional()
             .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))
@@ -154,8 +171,10 @@ impl KeychainStorage for SqLiteKeychainStorage {
 fn identifier_hash(
     identity: &SigningIdentity,
 ) -> Result<(Vec<u8>, Vec<u8>), SqLiteDataStorageError> {
-    let serialized_identity = bincode::serialize(&identity)
+    let serialized_identity = identity
+        .mls_encode_to_vec()
         .map_err(|e| SqLiteDataStorageError::DataConversionError(e.into()))?;
+
     let identifier = sha512(&serialized_identity);
 
     Ok((identifier.into(), serialized_identity))

@@ -78,7 +78,7 @@ pub(crate) struct ProvisionalState {
 
 /// Representation of changes made by a [commit](crate::Group::commit).
 #[cfg(feature = "state_update")]
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct StateUpdate {
     pub(crate) roster_update: RosterUpdate,
     pub(crate) identity_warnings: Vec<IdentityWarning>,

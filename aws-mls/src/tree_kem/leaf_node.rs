@@ -1,16 +1,12 @@
 use super::{parent_hash::ParentHash, Capabilities, Lifetime};
 use crate::client::MlsError;
 use crate::crypto::{CipherSuiteProvider, HpkePublicKey, HpkeSecretKey, SignatureSecretKey};
-use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::{identity::SigningIdentity, signer::Signable, ExtensionList};
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use aws_mls_core::error::IntoAnyError;
-use serde_with::serde_as;
 
-#[derive(
-    Debug, Clone, MlsSize, MlsEncode, MlsDecode, PartialEq, Eq, serde::Deserialize, serde::Serialize,
-)]
+#[derive(Debug, Clone, MlsSize, MlsEncode, MlsDecode, PartialEq, Eq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
 pub enum LeafNodeSource {
@@ -19,10 +15,7 @@ pub enum LeafNodeSource {
     Commit(ParentHash) = 3u8,
 }
 
-#[serde_as]
-#[derive(
-    Debug, Clone, MlsSize, MlsEncode, MlsDecode, PartialEq, serde::Deserialize, serde::Serialize,
-)]
+#[derive(Debug, Clone, MlsSize, MlsEncode, MlsDecode, PartialEq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[non_exhaustive]
 pub struct LeafNode {
@@ -32,7 +25,6 @@ pub struct LeafNode {
     pub leaf_node_source: LeafNodeSource,
     pub extensions: ExtensionList,
     #[mls_codec(with = "aws_mls_codec::byte_vec")]
-    #[serde_as(as = "VecAsBase64")]
     pub signature: Vec<u8>,
 }
 

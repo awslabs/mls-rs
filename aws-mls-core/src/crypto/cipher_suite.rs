@@ -2,20 +2,7 @@ use core::ops::Deref;
 
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 
-#[derive(
-    Debug,
-    Copy,
-    Clone,
-    Eq,
-    PartialEq,
-    MlsSize,
-    MlsEncode,
-    MlsDecode,
-    serde::Deserialize,
-    serde::Serialize,
-    PartialOrd,
-    Ord,
-)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, MlsSize, MlsEncode, MlsDecode, PartialOrd, Ord)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// Wrapper type representing a ciphersuite identifier
 /// along with default values defined by the MLS RFC. Custom ciphersuites

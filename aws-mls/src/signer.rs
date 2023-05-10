@@ -104,7 +104,7 @@ pub(crate) mod test_utils {
     #[test]
     fn test_basic_crypto_test_vectors() {
         let test_cases: Vec<InteropTestCase> =
-            load_test_cases!(basic_crypto, Vec::<InteropTestCase>::new());
+            load_test_case_json!(basic_crypto, Vec::<InteropTestCase>::new());
 
         test_cases.into_iter().for_each(|test_case| {
             if let Some(cs) = try_test_cipher_suite_provider(test_case.cipher_suite) {
@@ -216,7 +216,7 @@ mod tests {
     }
 
     fn load_test_cases() -> Vec<TestCase> {
-        load_test_cases!(signatures, generate_test_cases())
+        load_test_case_json!(signatures, generate_test_cases())
     }
 
     #[test]
