@@ -243,8 +243,13 @@ where
             .apply_proposal_changes(&FailInvalidProposal, state, commit_time)
             .await?;
 
-        let state =
-            insert_external_leaf(state, external_leaf.clone(), self.identity_provider).await?;
+        let state = insert_external_leaf(
+            state,
+            external_leaf.clone(),
+            self.identity_provider,
+            self.cipher_suite_provider,
+        )
+        .await?;
 
         Ok(state)
     }
@@ -1082,14 +1087,15 @@ fn leaf_index_of_update_sender(p: &ProposalInfo<UpdateProposal>) -> Result<LeafI
 }
 
 #[cfg(feature = "external_commit")]
-async fn insert_external_leaf<I: IdentityProvider>(
+async fn insert_external_leaf<I: IdentityProvider, CP: CipherSuiteProvider>(
     mut state: ProposalState,
     leaf_node: LeafNode,
     identity_provider: &I,
+    cipher_suite_provider: &CP,
 ) -> Result<ProposalState, MlsError> {
     let leaf_indexes = state
         .tree
-        .add_leaves(vec![leaf_node], identity_provider)
+        .add_leaves(vec![leaf_node], identity_provider, cipher_suite_provider)
         .await?;
 
     state.external_leaf_index = leaf_indexes.first().copied();

@@ -153,14 +153,15 @@ impl TreeKemPublic {
         self.nodes.clone()
     }
 
-    pub async fn derive<I: IdentityProvider>(
+    pub async fn derive<I: IdentityProvider, CP: CipherSuiteProvider>(
         leaf_node: LeafNode,
         secret_key: HpkeSecretKey,
         identity_provider: &I,
+        cipher_suite_provider: &CP,
     ) -> Result<(TreeKemPublic, TreeKemPrivate), MlsError> {
         let mut public_tree = TreeKemPublic::new();
         public_tree
-            .add_leaves(vec![leaf_node], identity_provider)
+            .add_leaves(vec![leaf_node], identity_provider, cipher_suite_provider)
             .await?;
 
         let private_tree = TreeKemPrivate::new_self_leaf(LeafIndex(0), secret_key);
@@ -206,12 +207,14 @@ impl TreeKemPublic {
 
     // Note that a partial failure of this function will leave the tree in a bad state. Modifying a
     // tree should always be done on a clone of the tree, which is how commits are processed
-    pub async fn add_leaves<I: IdentityProvider>(
+    pub async fn add_leaves<I: IdentityProvider, CP: CipherSuiteProvider>(
         &mut self,
         leaf_nodes: Vec<LeafNode>,
         id_provider: &I,
+        cipher_suite_provider: &CP,
     ) -> Result<Vec<LeafIndex>, MlsError> {
         let mut added = self.add_leaves_internal(&leaf_nodes, id_provider).await?;
+        self.update_hashes(&mut Vec::new(), &added.added, cipher_suite_provider)?;
 
         if let Some(e) = added.errors.pop() {
             return Err(e);
@@ -777,7 +780,7 @@ pub(crate) mod test_utils {
     use crate::identity::test_utils::get_test_signing_identity;
     use crate::{
         cipher_suite::CipherSuite,
-        crypto::{HpkeSecretKey, SignatureSecretKey},
+        crypto::{test_utils::test_cipher_suite_provider, HpkeSecretKey, SignatureSecretKey},
         identity::basic::BasicIdentityProvider,
         tree_kem::leaf_node::test_utils::get_basic_test_node_sig_key,
     };
@@ -807,6 +810,7 @@ pub(crate) mod test_utils {
             creator_leaf.clone(),
             creator_hpke_secret.clone(),
             &BasicIdentityProvider,
+            &test_cipher_suite_provider(cipher_suite),
         )
         .await
         .unwrap();
@@ -1032,13 +1036,18 @@ mod tests {
 
     #[test]
     async fn test_import_export() {
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let mut test_tree = get_test_tree(TEST_CIPHER_SUITE).await;
 
         let additional_key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE).await;
 
         test_tree
             .public
-            .add_leaves(additional_key_packages, &BasicIdentityProvider)
+            .add_leaves(
+                additional_key_packages,
+                &BasicIdentityProvider,
+                &cipher_suite_provider,
+            )
             .await
             .unwrap();
 
@@ -1060,12 +1069,17 @@ mod tests {
 
     #[test]
     async fn test_add_leaf() {
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let mut tree = TreeKemPublic::new();
 
         let leaf_nodes = get_test_leaf_nodes(TEST_CIPHER_SUITE).await;
 
         let res = tree
-            .add_leaves(leaf_nodes.clone(), &BasicIdentityProvider)
+            .add_leaves(
+                leaf_nodes.clone(),
+                &BasicIdentityProvider,
+                &cipher_suite_provider,
+            )
             .await
             .unwrap();
 
@@ -1092,11 +1106,12 @@ mod tests {
 
     #[test]
     async fn test_get_key_packages() {
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let mut tree = TreeKemPublic::new();
 
         let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE).await;
 
-        tree.add_leaves(key_packages, &BasicIdentityProvider)
+        tree.add_leaves(key_packages, &BasicIdentityProvider, &cipher_suite_provider)
             .await
             .unwrap();
 
@@ -1106,33 +1121,49 @@ mod tests {
 
     #[test]
     async fn test_add_leaf_duplicate() {
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let mut tree = TreeKemPublic::new();
 
         let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE).await;
 
-        tree.add_leaves(key_packages.clone(), &BasicIdentityProvider)
-            .await
-            .unwrap();
+        tree.add_leaves(
+            key_packages.clone(),
+            &BasicIdentityProvider,
+            &cipher_suite_provider,
+        )
+        .await
+        .unwrap();
 
-        let res = tree.add_leaves(key_packages, &BasicIdentityProvider).await;
+        let res = tree
+            .add_leaves(key_packages, &BasicIdentityProvider, &cipher_suite_provider)
+            .await;
 
         assert_matches!(res, Err(MlsError::DuplicateLeafData(_)));
     }
 
     #[test]
     async fn test_add_leaf_empty_leaf() {
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let mut tree = get_test_tree(TEST_CIPHER_SUITE).await.public;
         let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE).await;
 
-        tree.add_leaves([key_packages[0].clone()].to_vec(), &BasicIdentityProvider)
-            .await
-            .unwrap();
+        tree.add_leaves(
+            [key_packages[0].clone()].to_vec(),
+            &BasicIdentityProvider,
+            &cipher_suite_provider,
+        )
+        .await
+        .unwrap();
 
         tree.nodes[0] = None; // Set the original first node to none
                               //
-        tree.add_leaves([key_packages[1].clone()].to_vec(), &BasicIdentityProvider)
-            .await
-            .unwrap();
+        tree.add_leaves(
+            [key_packages[1].clone()].to_vec(),
+            &BasicIdentityProvider,
+            &cipher_suite_provider,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(tree.nodes[0], key_packages[1].clone().into());
         assert_eq!(tree.nodes[1], None);
@@ -1142,12 +1173,14 @@ mod tests {
 
     #[test]
     async fn test_add_leaf_unmerged() {
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let mut tree = get_test_tree(TEST_CIPHER_SUITE).await.public;
         let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE).await;
 
         tree.add_leaves(
             [key_packages[0].clone(), key_packages[1].clone()].to_vec(),
             &BasicIdentityProvider,
+            &cipher_suite_provider,
         )
         .await
         .unwrap();
@@ -1159,9 +1192,13 @@ mod tests {
         }
         .into();
 
-        tree.add_leaves([key_packages[2].clone()].to_vec(), &BasicIdentityProvider)
-            .await
-            .unwrap();
+        tree.add_leaves(
+            [key_packages[2].clone()].to_vec(),
+            &BasicIdentityProvider,
+            &cipher_suite_provider,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(
             tree.nodes[3].as_parent().unwrap().unmerged_leaves,
@@ -1171,12 +1208,13 @@ mod tests {
 
     #[test]
     async fn test_update_leaf() {
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         // Create a tree
         let mut tree = get_test_tree(TEST_CIPHER_SUITE).await.public;
 
         let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE).await;
 
-        tree.add_leaves(key_packages, &BasicIdentityProvider)
+        tree.add_leaves(key_packages, &BasicIdentityProvider, &cipher_suite_provider)
             .await
             .unwrap();
 
@@ -1200,7 +1238,7 @@ mod tests {
             *original_leaf_index,
             updated_leaf.clone(),
             &BasicIdentityProvider,
-            &test_cipher_suite_provider(TEST_CIPHER_SUITE),
+            &cipher_suite_provider,
         )
         .await
         .unwrap();
@@ -1237,7 +1275,7 @@ mod tests {
 
         let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE).await;
 
-        tree.add_leaves(key_packages, &BasicIdentityProvider)
+        tree.add_leaves(key_packages, &BasicIdentityProvider, &cipher_suite_provider)
             .await
             .unwrap();
 
@@ -1264,7 +1302,11 @@ mod tests {
         let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE).await;
 
         let indexes = tree
-            .add_leaves(key_packages.clone(), &BasicIdentityProvider)
+            .add_leaves(
+                key_packages.clone(),
+                &BasicIdentityProvider,
+                &cipher_suite_provider,
+            )
             .await
             .unwrap();
 
@@ -1305,7 +1347,11 @@ mod tests {
         let leaf_nodes = get_test_leaf_nodes(TEST_CIPHER_SUITE).await;
 
         let to_remove = tree
-            .add_leaves(leaf_nodes.clone(), &BasicIdentityProvider)
+            .add_leaves(
+                leaf_nodes.clone(),
+                &BasicIdentityProvider,
+                &cipher_suite_provider,
+            )
             .await
             .unwrap()[0];
 
@@ -1341,7 +1387,7 @@ mod tests {
 
         let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE).await;
 
-        tree.add_leaves(key_packages, &BasicIdentityProvider)
+        tree.add_leaves(key_packages, &BasicIdentityProvider, &cipher_suite_provider)
             .await
             .unwrap();
 
@@ -1389,14 +1435,19 @@ mod tests {
 
     #[test]
     async fn test_find_leaf_node() {
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         // Create a tree
         let mut tree = get_test_tree(TEST_CIPHER_SUITE).await.public;
 
         let leaf_nodes = get_test_leaf_nodes(TEST_CIPHER_SUITE).await;
 
-        tree.add_leaves(leaf_nodes.clone(), &BasicIdentityProvider)
-            .await
-            .unwrap();
+        tree.add_leaves(
+            leaf_nodes.clone(),
+            &BasicIdentityProvider,
+            &cipher_suite_provider,
+        )
+        .await
+        .unwrap();
 
         // Find each node
         for (i, leaf_node) in leaf_nodes.iter().enumerate() {
@@ -1412,9 +1463,13 @@ mod tests {
         let mut tree = get_test_tree(TEST_CIPHER_SUITE).await.public;
         let leaf_nodes = get_test_leaf_nodes(TEST_CIPHER_SUITE).await;
 
-        tree.add_leaves(leaf_nodes.clone(), &BasicIdentityProvider)
-            .await
-            .unwrap();
+        tree.add_leaves(
+            leaf_nodes.clone(),
+            &BasicIdentityProvider,
+            &cipher_suite_provider,
+        )
+        .await
+        .unwrap();
 
         let mut bundle = ProposalBundle::default();
 
@@ -1454,6 +1509,7 @@ mod tests {
     #[cfg(feature = "custom_proposal")]
     #[test]
     async fn custom_proposal_support() {
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let mut tree = TreeKemPublic::new();
 
         let test_proposal_type = ProposalType::from(42);
@@ -1464,7 +1520,7 @@ mod tests {
             .iter_mut()
             .for_each(|n| n.capabilities.proposals.push(test_proposal_type));
 
-        tree.add_leaves(leaf_nodes, &BasicIdentityProvider)
+        tree.add_leaves(leaf_nodes, &BasicIdentityProvider, &cipher_suite_provider)
             .await
             .unwrap();
 
@@ -1474,6 +1530,7 @@ mod tests {
         tree.add_leaves(
             vec![get_basic_test_node(TEST_CIPHER_SUITE, "another").await],
             &BasicIdentityProvider,
+            &cipher_suite_provider,
         )
         .await
         .unwrap();

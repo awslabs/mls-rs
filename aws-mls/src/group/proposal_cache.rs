@@ -771,9 +771,14 @@ mod tests {
         )
         .await;
 
-        let (pub_tree, priv_tree) = TreeKemPublic::derive(leaf, secret, &BasicIdentityProvider)
-            .await
-            .unwrap();
+        let (pub_tree, priv_tree) = TreeKemPublic::derive(
+            leaf,
+            secret,
+            &BasicIdentityProvider,
+            &test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .await
+        .unwrap();
 
         (priv_tree.self_index, pub_tree)
     }
@@ -786,6 +791,7 @@ mod tests {
         tree.add_leaves(
             vec![get_basic_test_node(TEST_CIPHER_SUITE, name).await],
             &BasicIdentityProvider,
+            &test_cipher_suite_provider(TEST_CIPHER_SUITE),
         )
         .await
         .unwrap()[0]
@@ -825,10 +831,14 @@ mod tests {
 
         let sender = LeafIndex(0);
 
-        let (mut tree, _) =
-            TreeKemPublic::derive(sender_leaf, sender_leaf_secret, &BasicIdentityProvider)
-                .await
-                .unwrap();
+        let (mut tree, _) = TreeKemPublic::derive(
+            sender_leaf,
+            sender_leaf_secret,
+            &BasicIdentityProvider,
+            &cipher_suite_provider,
+        )
+        .await
+        .unwrap();
 
         let add_package = test_key_package(protocol_version, cipher_suite, "dave").await;
 
@@ -850,6 +860,7 @@ mod tests {
             .add_leaves(
                 vec![get_basic_test_node(cipher_suite, "charlie").await],
                 &BasicIdentityProvider,
+                &cipher_suite_provider,
             )
             .await
             .unwrap()[0];
@@ -1065,7 +1076,7 @@ mod tests {
 
         expected_effects
             .tree
-            .add_leaves(leaf, &BasicIdentityProvider)
+            .add_leaves(leaf, &BasicIdentityProvider, &cipher_suite_provider)
             .await
             .unwrap();
 
@@ -1548,7 +1559,11 @@ mod tests {
         ];
 
         let test_leaf_node_indexes = public_tree
-            .add_leaves(test_leaf_nodes, &BasicIdentityProvider)
+            .add_leaves(
+                test_leaf_nodes,
+                &BasicIdentityProvider,
+                &cipher_suite_provider,
+            )
             .await
             .unwrap();
 
@@ -1594,7 +1609,11 @@ mod tests {
         let test_leaf_nodes = vec![get_basic_test_node(TEST_CIPHER_SUITE, "bar").await];
 
         let test_leaf_node_indexes = public_tree
-            .add_leaves(test_leaf_nodes, &BasicIdentityProvider)
+            .add_leaves(
+                test_leaf_nodes,
+                &BasicIdentityProvider,
+                &cipher_suite_provider,
+            )
             .await
             .unwrap();
 
@@ -1637,7 +1656,11 @@ mod tests {
         let test_leaf_nodes = vec![get_basic_test_node(TEST_CIPHER_SUITE, "foo").await];
 
         let test_leaf_node_indexes = public_tree
-            .add_leaves(test_leaf_nodes, &BasicIdentityProvider)
+            .add_leaves(
+                test_leaf_nodes,
+                &BasicIdentityProvider,
+                &cipher_suite_provider,
+            )
             .await
             .unwrap();
 
@@ -1813,14 +1836,20 @@ mod tests {
             get_basic_test_node_sig_key(TEST_CIPHER_SUITE, "alice").await;
         let alice = 0;
 
-        let (mut tree, _) = TreeKemPublic::derive(alice_leaf, alice_secret, &BasicIdentityProvider)
-            .await
-            .unwrap();
+        let (mut tree, _) = TreeKemPublic::derive(
+            alice_leaf,
+            alice_secret,
+            &BasicIdentityProvider,
+            &cipher_suite_provider,
+        )
+        .await
+        .unwrap();
 
         let bob = tree
             .add_leaves(
                 vec![get_basic_test_node(TEST_CIPHER_SUITE, "bob").await],
                 &BasicIdentityProvider,
+                &cipher_suite_provider,
             )
             .await
             .unwrap()[0];
@@ -3100,9 +3129,10 @@ mod tests {
             .await
             .unwrap();
 
-            let (pub_tree, priv_tree) = TreeKemPublic::derive(leaf, secret, &BasicIdentityProvider)
-                .await
-                .unwrap();
+            let (pub_tree, priv_tree) =
+                TreeKemPublic::derive(leaf, secret, &BasicIdentityProvider, &cipher_suite_provider)
+                    .await
+                    .unwrap();
 
             (priv_tree.self_index, pub_tree)
         };
@@ -3414,10 +3444,14 @@ mod tests {
         let (alice_leaf, alice_secret, alice_signer) =
             get_basic_test_node_sig_key(TEST_CIPHER_SUITE, "alice").await;
 
-        let (mut tree, priv_tree) =
-            TreeKemPublic::derive(alice_leaf.clone(), alice_secret, &BasicIdentityProvider)
-                .await
-                .unwrap();
+        let (mut tree, priv_tree) = TreeKemPublic::derive(
+            alice_leaf.clone(),
+            alice_secret,
+            &BasicIdentityProvider,
+            &test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .await
+        .unwrap();
 
         let alice = priv_tree.self_index;
 
@@ -3479,10 +3513,14 @@ mod tests {
         let (alice_leaf, alice_secret, alice_signer) =
             get_basic_test_node_sig_key(TEST_CIPHER_SUITE, "alice").await;
 
-        let (mut tree, priv_tree) =
-            TreeKemPublic::derive(alice_leaf.clone(), alice_secret, &BasicIdentityProvider)
-                .await
-                .unwrap();
+        let (mut tree, priv_tree) = TreeKemPublic::derive(
+            alice_leaf.clone(),
+            alice_secret,
+            &BasicIdentityProvider,
+            &cipher_suite_provider,
+        )
+        .await
+        .unwrap();
 
         let alice = priv_tree.self_index;
 

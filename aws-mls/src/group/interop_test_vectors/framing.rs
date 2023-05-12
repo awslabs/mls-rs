@@ -356,7 +356,7 @@ async fn make_group<P: CipherSuiteProvider>(
     group
         .state
         .public_tree
-        .add_leaves(vec![leaf], &group.config.0.identity_provider)
+        .add_leaves(vec![leaf], &group.config.0.identity_provider, cs)
         .await
         .unwrap();
 

@@ -347,7 +347,7 @@ pub(crate) mod test_utils {
             .collect()
             .await;
 
-        tree.add_leaves(leaves, &BasicIdentityProvider)
+        tree.add_leaves(leaves, &BasicIdentityProvider, &cipher_suite_provider)
             .await
             .unwrap();
 

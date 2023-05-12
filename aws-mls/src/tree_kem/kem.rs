@@ -447,13 +447,17 @@ mod tests {
             get_basic_test_node_sig_key(cipher_suite, "encap").await;
 
         // Build a test tree we can clone for all leaf nodes
-        let (mut test_tree, mut encap_private_key) =
-            TreeKemPublic::derive(encap_node, encap_hpke_secret, &BasicIdentityProvider)
-                .await
-                .unwrap();
+        let (mut test_tree, mut encap_private_key) = TreeKemPublic::derive(
+            encap_node,
+            encap_hpke_secret,
+            &BasicIdentityProvider,
+            &cipher_suite_provider,
+        )
+        .await
+        .unwrap();
 
         test_tree
-            .add_leaves(leaf_nodes, &BasicIdentityProvider)
+            .add_leaves(leaf_nodes, &BasicIdentityProvider, &cipher_suite_provider)
             .await
             .unwrap();
 
