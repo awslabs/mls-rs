@@ -10,18 +10,6 @@ use aws_mls_core::{
 
 use super::{internal::ResumptionPsk, snapshot::Snapshot};
 
-#[cfg(feature = "std")]
-use std::collections::HashMap;
-
-#[cfg(all(feature = "std", feature = "private_message"))]
-use std::collections::hash_map::Entry;
-
-#[cfg(all(not(feature = "std"), feature = "private_message"))]
-use alloc::collections::btree_map::Entry;
-
-#[cfg(not(feature = "std"))]
-use alloc::collections::BTreeMap;
-
 pub(crate) const DEFAULT_EPOCH_RETENTION_LIMIT: u64 = 3;
 
 /// A set of changes to apply to a GroupStateStorage implementation. These changes MUST
@@ -29,10 +17,7 @@ pub(crate) const DEFAULT_EPOCH_RETENTION_LIMIT: u64 = 3;
 #[derive(Default, Clone, Debug)]
 struct EpochStorageCommit {
     pub(crate) inserts: VecDeque<PriorEpoch>,
-    #[cfg(feature = "std")]
-    pub(crate) updates: HashMap<u64, PriorEpoch>,
-    #[cfg(not(feature = "std"))]
-    pub(crate) updates: BTreeMap<u64, PriorEpoch>,
+    pub(crate) updates: Vec<PriorEpoch>,
     pub(crate) delete_under: Option<u64>,
 }
 
@@ -117,8 +102,15 @@ where
         }
 
         // Search the local updates cache
-        if let Some(pending) = self.pending_commit.updates.get(&psk_id.psk_epoch) {
-            return Ok(Some(pending.secrets.resumption_secret.clone()));
+        let maybe_pending = self.find_pending(psk_id.psk_epoch);
+
+        if let Some(pending) = maybe_pending {
+            return Ok(Some(
+                self.pending_commit.updates[pending]
+                    .secrets
+                    .resumption_secret
+                    .clone(),
+            ));
         }
 
         // Search the stored cache
@@ -158,14 +150,17 @@ where
 
         // Look in the cached updates map, and if not found look in disk storage
         // and insert into the updates map for future caching
-        Ok(match self.pending_commit.updates.entry(epoch_id) {
-            Entry::Vacant(entry) => self
+        Ok(match self.find_pending(epoch_id) {
+            Some(i) => self.pending_commit.updates.get_mut(i),
+            None => self
                 .storage
                 .epoch(&self.group_id, epoch_id)
                 .await
                 .map_err(|e| MlsError::GroupStorageError(e.into_any_error()))?
-                .map(|epoch| entry.insert(epoch)),
-            Entry::Occupied(entry) => Some(entry.into_mut()),
+                .and_then(|epoch| {
+                    self.pending_commit.updates.push(epoch);
+                    self.pending_commit.updates.last_mut()
+                }),
         })
     }
 
@@ -195,7 +190,15 @@ where
                 self.pending_commit.inserts.pop_front();
             }
 
-            self.pending_commit.updates.remove(&min);
+            let min = self
+                .pending_commit
+                .updates
+                .iter()
+                .position(|ep| ep.epoch_id() == min);
+
+            if let Some(min) = min {
+                self.pending_commit.updates.remove(min);
+            }
         }
 
         Ok(())
@@ -203,7 +206,7 @@ where
 
     pub async fn write_to_storage(&mut self, group_snapshot: Snapshot) -> Result<(), MlsError> {
         let inserts = self.pending_commit.inserts.iter().cloned().collect();
-        let updates = self.pending_commit.updates.values().cloned().collect();
+        let updates = self.pending_commit.updates.clone();
         let delete_under = self.pending_commit.delete_under;
 
         self.storage
@@ -222,6 +225,13 @@ where
         self.pending_commit.updates.clear();
 
         Ok(())
+    }
+
+    fn find_pending(&self, epoch_id: u64) -> Option<usize> {
+        self.pending_commit
+            .updates
+            .iter()
+            .position(|ep| ep.context.epoch == epoch_id)
     }
 }
 
@@ -458,10 +468,7 @@ mod tests {
         assert_eq!(test_repo.pending_commit.updates.len(), 1);
         assert!(test_repo.pending_commit.inserts.is_empty());
 
-        assert_eq!(
-            test_repo.pending_commit.updates.get(&0).unwrap(),
-            &to_update
-        );
+        assert_eq!(test_repo.pending_commit.updates.get(0).unwrap(), &to_update);
 
         // Make sure you can access an epoch pending update
         let psk_id = ResumptionPsk {

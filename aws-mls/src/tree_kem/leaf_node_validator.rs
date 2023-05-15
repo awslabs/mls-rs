@@ -160,7 +160,7 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
         self.validate_required_capabilities(leaf_node)?;
 
         // If there are extensions, make sure they are referenced in the capabilities field
-        for one_ext in &leaf_node.extensions {
+        for one_ext in &*leaf_node.extensions {
             if !leaf_node
                 .capabilities
                 .extensions

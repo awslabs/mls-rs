@@ -1,8 +1,8 @@
 #[cfg(feature = "std")]
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 #[cfg(not(feature = "std"))]
-use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::{vec, vec::Vec};
 
 use crate::client::MlsError;
 use crate::crypto::CipherSuiteProvider;
@@ -15,7 +15,7 @@ use aws_mls_core::extension::ExtensionList;
 use aws_mls_core::identity::IdentityProvider;
 use futures::TryStreamExt;
 
-use super::node::NodeIndex;
+use super::node::{Node, NodeIndex};
 
 pub(crate) struct TreeValidator<'a, C, CSP>
 where
@@ -91,17 +91,23 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> TreeValidator<'a, C, CSP
 }
 
 fn validate_unmerged(tree: &TreeKemPublic) -> Result<(), MlsError> {
-    let unmerged_sets = tree.nodes.non_empty_parents();
+    let unmerged_sets = tree.nodes.iter().map(|n| {
+        #[cfg(feature = "std")]
+        if let Some(Node::Parent(p)) = n {
+            HashSet::from_iter(p.unmerged_leaves.iter().cloned())
+        } else {
+            HashSet::new()
+        }
 
-    #[cfg(feature = "std")]
-    let mut unmerged_sets = unmerged_sets
-        .map(|(i, n)| (i, HashSet::from_iter(n.unmerged_leaves.iter().cloned())))
-        .collect::<HashMap<_, HashSet<_>>>();
+        #[cfg(not(feature = "std"))]
+        if let Some(Node::Parent(p)) = n {
+            p.unmerged_leaves.clone()
+        } else {
+            vec![]
+        }
+    });
 
-    #[cfg(not(feature = "std"))]
-    let mut unmerged_sets = unmerged_sets
-        .map(|(i, n)| (i, BTreeSet::from_iter(n.unmerged_leaves.iter().cloned())))
-        .collect::<BTreeMap<_, BTreeSet<_>>>();
+    let mut unmerged_sets = unmerged_sets.collect::<Vec<_>>();
 
     // For each leaf L, we search for the longest prefix P[1], P[2], ..., P[k] of the direct path of L
     // such that for each i=1..k, either L is in the unmerged leaves of P[i], or P[i] is blank. We will
@@ -118,7 +124,8 @@ fn validate_unmerged(tree: &TreeKemPublic) -> Result<(), MlsError> {
             let parent_node = tree.nodes.borrow_as_parent(parent)?;
 
             if parent_node.unmerged_leaves.contains(&index) {
-                unmerged_sets.get_mut(&parent).unwrap().remove(&index);
+                unmerged_sets[parent as usize].retain(|i| i != &index);
+
                 n = parent;
             } else {
                 break;
@@ -126,11 +133,7 @@ fn validate_unmerged(tree: &TreeKemPublic) -> Result<(), MlsError> {
         }
     }
 
-    #[cfg(feature = "std")]
-    let unmerged_sets = unmerged_sets.values().all(HashSet::is_empty);
-
-    #[cfg(not(feature = "std"))]
-    let unmerged_sets = unmerged_sets.values().all(BTreeSet::is_empty);
+    let unmerged_sets = unmerged_sets.iter().all(|set| set.is_empty());
 
     unmerged_sets
         .then_some(())

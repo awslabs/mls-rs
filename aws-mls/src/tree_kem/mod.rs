@@ -8,9 +8,6 @@ use itertools::Itertools;
 #[cfg(feature = "std")]
 use std::collections::HashMap;
 
-#[cfg(not(feature = "std"))]
-use alloc::collections::BTreeMap;
-
 use aws_mls_core::{error::IntoAnyError, identity::IdentityProvider};
 
 #[cfg(feature = "tree_index")]
@@ -22,7 +19,7 @@ use node::{LeafIndex, NodeIndex, NodeVec};
 use self::leaf_node::LeafNode;
 
 use crate::client::MlsError;
-use crate::crypto::{self, CipherSuiteProvider, HpkePublicKey, HpkeSecretKey};
+use crate::crypto::{self, CipherSuiteProvider, HpkeSecretKey};
 
 use crate::group::{
     proposal::{AddProposal, ProposalType, RemoveProposal, UpdateProposal},
@@ -281,7 +278,7 @@ impl TreeKemPublic {
         update_path: &ValidatedUpdatePath,
         identity_provider: IP,
         cipher_suite_provider: &CP,
-    ) -> Result<Vec<(u32, u32)>, MlsError>
+    ) -> Result<(), MlsError>
     where
         IP: IdentityProvider,
         CP: CipherSuiteProvider,
@@ -301,15 +298,13 @@ impl TreeKemPublic {
         *existing_leaf = update_path.leaf_node.clone();
 
         // Update the rest of the nodes on the direct path
-        let updated_pks = update_path
-            .nodes
-            .iter()
-            .map(|update| &update.public_key)
-            .collect::<Vec<_>>();
+        let path = self.nodes.direct_path(sender)?;
 
-        let filtered_direct_path_co_path = self.nodes.filtered_direct_path_co_path(sender)?;
-
-        self.apply_parent_node_updates(updated_pks, &filtered_direct_path_co_path)?;
+        for (node, dp) in update_path.nodes.iter().zip(path.into_iter()) {
+            node.as_ref()
+                .map(|n| self.update_node(n.public_key.clone(), dp))
+                .transpose()?;
+        }
 
         #[cfg(feature = "tree_index")]
         self.index.remove(&original_leaf_node, &original_identity);
@@ -327,22 +322,9 @@ impl TreeKemPublic {
 
         // Verify the parent hash of the new sender leaf node and update the parent hash values
         // in the local tree
-        self.update_parent_hashes(sender, Some(update_path), cipher_suite_provider)?;
+        self.update_parent_hashes(sender, Some(&update_path.leaf_node), cipher_suite_provider)?;
 
-        Ok(filtered_direct_path_co_path)
-    }
-
-    fn apply_parent_node_updates(
-        &mut self,
-        updated_pks: Vec<&HpkePublicKey>,
-        filtered_direct_path_co_path: &[(u32, u32)],
-    ) -> Result<(), MlsError> {
-        updated_pks
-            .into_iter()
-            .zip(filtered_direct_path_co_path)
-            .try_for_each(|(pub_key, (node_index, _))| {
-                self.update_node(pub_key.clone(), *node_index)
-            })
+        Ok(())
     }
 
     fn update_unmerged(&mut self, index: LeafIndex) -> Result<(), MlsError> {
@@ -591,7 +573,7 @@ impl TreeKemPublic {
         let mut errors = vec![];
 
         for (i, leaf) in additions.iter().enumerate() {
-            let index = self.nodes.insert_leaf(start, leaf.clone());
+            let index = self.nodes.next_empty_leaf(start);
 
             #[cfg(feature = "tree_index")]
             let res = index_insert(&mut self.index, leaf, index, id_provider).await;
@@ -600,10 +582,10 @@ impl TreeKemPublic {
             let res = index_insert(&self.nodes, leaf, index, id_provider).await;
 
             if let Err(e) = res {
-                self.nodes.blank_leaf_node(index)?;
                 bad_indices.push(i);
                 errors.push(e);
             } else {
+                self.nodes.insert_leaf(index, leaf.clone());
                 self.update_unmerged(index)?;
                 start = index;
                 added.push(index);
@@ -871,7 +853,8 @@ pub(crate) mod test_utils {
 
         pub async fn add_member<P: CipherSuiteProvider>(&mut self, name: &str, cs: &P) {
             let (leaf, signer) = make_leaf(name, cs).await;
-            let index = self.tree.nodes.insert_leaf(LeafIndex(0), leaf);
+            let index = self.tree.nodes.next_empty_leaf(LeafIndex(0));
+            self.tree.nodes.insert_leaf(index, leaf);
             self.tree.update_unmerged(index).unwrap();
             let index = *index as usize;
 
@@ -901,30 +884,28 @@ pub(crate) mod test_utils {
             committer: u32,
             cs: &P,
         ) {
-            let path = self
-                .tree
-                .nodes
-                .filtered_direct_path(LeafIndex(committer))
-                .unwrap();
+            let committer = LeafIndex(committer);
 
-            for i in path.into_iter() {
-                self.tree
-                    .update_node(cs.kem_generate().unwrap().1, i)
-                    .unwrap();
+            let path = self.tree.nodes.direct_path(committer).unwrap();
+            let filtered = self.tree.nodes.filtered(committer).unwrap();
+
+            for (i, f) in path.into_iter().zip(filtered) {
+                if !f {
+                    self.tree
+                        .update_node(cs.kem_generate().unwrap().1, i)
+                        .unwrap();
+                }
             }
 
             self.tree.tree_hashes.current = vec![];
             self.tree.tree_hashes.original = vec![];
             self.tree.tree_hash(cs).unwrap();
 
-            let parent_hash = self
-                .tree
-                .update_parent_hashes(LeafIndex(committer), None, cs)
-                .unwrap();
+            let parent_hash = self.tree.update_parent_hashes(committer, None, cs).unwrap();
 
             self.tree
                 .nodes
-                .borrow_as_leaf_mut(LeafIndex(committer))
+                .borrow_as_leaf_mut(committer)
                 .unwrap()
                 .leaf_node_source = LeafNodeSource::Commit(parent_hash);
 
@@ -934,14 +915,14 @@ pub(crate) mod test_utils {
 
             let context = LeafNodeSigningContext {
                 group_id: Some(&self.group_id),
-                leaf_index: Some(committer),
+                leaf_index: Some(*committer),
             };
 
-            let signer = self.signers[committer as usize].as_ref().unwrap();
+            let signer = self.signers[*committer as usize].as_ref().unwrap();
 
             self.tree
                 .nodes
-                .borrow_as_leaf_mut(LeafIndex(committer))
+                .borrow_as_leaf_mut(committer)
                 .unwrap()
                 .sign(cs, signer, &context)
                 .unwrap();
@@ -1028,8 +1009,8 @@ mod tests {
             assert_eq!(test_tree.private.self_index, LeafIndex(0));
 
             assert_eq!(
-                test_tree.private.secret_keys[&0],
-                test_tree.creator_hpke_secret
+                test_tree.private.secret_keys[0],
+                Some(test_tree.creator_hpke_secret)
             );
         }
     }

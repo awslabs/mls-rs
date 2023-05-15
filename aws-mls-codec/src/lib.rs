@@ -13,15 +13,19 @@ pub mod byte_vec;
 
 pub mod iter;
 
+#[cfg(feature = "std")]
 mod map;
+
 mod option;
 mod stdint;
 mod tuple;
 mod varint;
 mod vec;
 
-pub use array::*;
+#[cfg(feature = "std")]
 pub use map::*;
+
+pub use array::*;
 pub use option::*;
 pub use stdint::*;
 pub use tuple::*;

@@ -1,28 +1,11 @@
+use core::ops::{Deref, DerefMut};
+
 use alloc::format;
 use alloc::vec::Vec;
 
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 
-#[cfg(feature = "std")]
-use indexmap::IndexMap;
-
-#[cfg(not(feature = "std"))]
-use alloc::collections::BTreeMap;
-
 use super::{Extension, ExtensionError, ExtensionType, MlsExtension};
-
-#[cfg(feature = "arbitrary")]
-impl<'a> arbitrary::Arbitrary<'a> for ExtensionList {
-    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> Result<Self, arbitrary::Error> {
-        u.arbitrary_iter::<(ExtensionType, Extension)>()?
-            .try_fold(indexmap::IndexMap::new(), |mut map, item| {
-                let (ext_type, ext) = item?;
-                map.insert(ext_type, ext);
-                Ok(map)
-            })
-            .map(Self)
-    }
-}
 
 /// A collection of MLS [Extensions](super::Extension).
 ///
@@ -30,35 +13,21 @@ impl<'a> arbitrary::Arbitrary<'a> for ExtensionList {
 /// # Warning
 ///
 /// Extension lists require that each type of extension has at most one entry.
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct ExtensionList(
-    #[cfg(feature = "std")] IndexMap<ExtensionType, Extension>,
-    #[cfg(not(feature = "std"))] BTreeMap<ExtensionType, Extension>,
-);
+#[derive(Debug, Clone, PartialEq, Default, MlsSize, MlsEncode)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+pub struct ExtensionList(Vec<Extension>);
 
-#[cfg(feature = "std")]
-impl From<IndexMap<ExtensionType, Extension>> for ExtensionList {
-    fn from(map: IndexMap<ExtensionType, Extension>) -> Self {
-        Self(map)
+impl Deref for ExtensionList {
+    type Target = Vec<Extension>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
-#[cfg(not(feature = "std"))]
-impl From<BTreeMap<ExtensionType, Extension>> for ExtensionList {
-    fn from(map: BTreeMap<ExtensionType, Extension>) -> Self {
-        Self(map)
-    }
-}
-
-impl MlsSize for ExtensionList {
-    fn mls_encoded_len(&self) -> usize {
-        aws_mls_codec::iter::mls_encoded_len(self.0.values())
-    }
-}
-
-impl MlsEncode for ExtensionList {
-    fn mls_encode(&self, writer: &mut Vec<u8>) -> Result<(), aws_mls_codec::Error> {
-        aws_mls_codec::iter::mls_encode(self.0.values(), writer)
+impl DerefMut for ExtensionList {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }
 
@@ -71,11 +40,13 @@ impl MlsDecode for ExtensionList {
                 let ext = Extension::mls_decode(data)?;
                 let ext_type = ext.extension_type;
 
-                if list.0.insert(ext_type, ext).is_some() {
+                if list.0.iter().any(|e| e.extension_type == ext_type) {
                     return Err(aws_mls_codec::Error::Custom(format!(
                         "Extension list has duplicate extension of type {ext_type:?}"
                     )));
                 }
+
+                list.0.push(ext);
             }
 
             Ok(list)
@@ -85,39 +56,7 @@ impl MlsDecode for ExtensionList {
 
 impl From<Vec<Extension>> for ExtensionList {
     fn from(v: Vec<Extension>) -> Self {
-        Self(v.into_iter().map(|ext| (ext.extension_type, ext)).collect())
-    }
-}
-
-impl<const N: usize> From<[Extension; N]> for ExtensionList {
-    fn from(v: [Extension; N]) -> Self {
-        Self(v.into_iter().map(|ext| (ext.extension_type, ext)).collect())
-    }
-}
-
-impl<'a> IntoIterator for &'a ExtensionList {
-    type Item = &'a Extension;
-    type IntoIter = ExtensionListIter<'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        ExtensionListIter(self.0.values())
-    }
-}
-
-/// An iterator created by [ExtensionList::iter](ExtensionList::iter)
-#[cfg(feature = "std")]
-pub struct ExtensionListIter<'a>(indexmap::map::Values<'a, ExtensionType, Extension>);
-
-#[cfg(not(feature = "std"))]
-pub struct ExtensionListIter<'a>(
-    alloc::collections::btree_map::Values<'a, ExtensionType, Extension>,
-);
-
-impl<'a> Iterator for ExtensionListIter<'a> {
-    type Item = &'a Extension;
-
-    fn next(&mut self) -> Option<&'a Extension> {
-        self.0.next()
+        Self(v)
     }
 }
 
@@ -134,14 +73,16 @@ impl ExtensionList {
     /// data fails.
     pub fn get_as<E: MlsExtension>(&self) -> Result<Option<E>, ExtensionError> {
         self.0
-            .get(&E::extension_type())
+            .iter()
+            .find(|e| e.extension_type == E::extension_type())
             .map(E::from_extension)
             .transpose()
     }
 
     /// Determine if a specific extension exists within the list.
+    #[cfg(any(test, feature = "std"))]
     pub fn has_extension(&self, ext_id: ExtensionType) -> bool {
-        self.0.contains_key(&ext_id)
+        self.0.iter().any(|e| e.extension_type == ext_id)
     }
 
     /// Set an extension in the list based on a provided type that implements
@@ -164,38 +105,32 @@ impl ExtensionList {
     /// If there is already an entry in the list for the same extension type,
     /// then the prior value is removed as part of the insertion.
     pub fn set(&mut self, ext: Extension) {
-        self.0.insert(ext.extension_type, ext);
+        let mut found = self
+            .0
+            .iter_mut()
+            .find(|e| e.extension_type == ext.extension_type);
+
+        if let Some(found) = found.take() {
+            *found = ext;
+        } else {
+            self.0.push(ext);
+        }
     }
 
     /// Get a raw [Extension](super::Extension) value based on an
     /// [ExtensionType](super::ExtensionType).
+    #[cfg(any(test, feature = "std"))]
     pub fn get(&self, extension_type: ExtensionType) -> Option<Extension> {
-        self.0.get(&extension_type).cloned()
-    }
-
-    /// The current number of extensions in the list.
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    /// Determine if this extension list is empty.
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    /// Iterate over the raw [Extension](super::Extension) values contained
-    /// within the list.
-    pub fn iter(&self) -> ExtensionListIter<'_> {
-        self.into_iter()
+        self.0
+            .iter()
+            .find(|e| e.extension_type == extension_type)
+            .cloned()
     }
 
     /// Remove an extension from the list by
     /// [ExtensionType](super::ExtensionType)
     pub fn remove(&mut self, ext_type: ExtensionType) {
-        #[cfg(feature = "std")]
-        self.0.shift_remove(&ext_type);
-        #[cfg(not(feature = "std"))]
-        self.0.remove(&ext_type);
+        self.0.retain(|e| e.extension_type != ext_type)
     }
 
     /// Append another extension list to this one.

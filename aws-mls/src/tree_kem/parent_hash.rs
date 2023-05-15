@@ -9,14 +9,13 @@ use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use aws_mls_core::error::IntoAnyError;
 use core::ops::Deref;
 
-use super::leaf_node::LeafNodeSource;
-use super::ValidatedUpdatePath;
+use super::leaf_node::{LeafNode, LeafNodeSource};
 
 #[cfg(feature = "std")]
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 #[cfg(not(feature = "std"))]
-use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::collections::BTreeSet;
 
 #[derive(Clone, Debug, MlsSize, MlsEncode)]
 struct ParentHashInput<'a> {
@@ -125,8 +124,10 @@ impl TreeKemPublic {
 
         let mut filtered_direct_co_path = self
             .nodes
-            .filtered_direct_path_co_path(index)?
+            .direct_path_copath(index)?
             .into_iter()
+            .zip(self.nodes.filtered(index)?)
+            .filter_map(|(cpdp, f)| (!f).then_some(cpdp))
             .rev();
 
         // Calculate all the parent hash values along the direct path from root to leaf
@@ -150,22 +151,19 @@ impl TreeKemPublic {
     pub(crate) fn update_parent_hashes<P: CipherSuiteProvider>(
         &mut self,
         index: LeafIndex,
-        update_path: Option<&ValidatedUpdatePath>,
+        updated_leaf: Option<&LeafNode>,
         cipher_suite_provider: &P,
     ) -> Result<ParentHash, MlsError> {
         // First update the relevant original hashes used for parent hash computation.
         self.update_hashes(&mut vec![index], &[], cipher_suite_provider)?;
 
-        #[cfg(feature = "std")]
-        let mut changes = HashMap::new();
-        #[cfg(not(feature = "std"))]
-        let mut changes = BTreeMap::new();
+        let mut changes = Vec::new();
 
         // Since we can't mut borrow self here we will just collect the list of changes
         // and apply them later
         let leaf_hash =
             self.parent_hash_for_leaf(cipher_suite_provider, index, |index, hash| {
-                changes.insert(index, hash.clone());
+                changes.push((index, hash.clone()));
             })?;
 
         changes.into_iter().try_for_each(|(index, hash)| {
@@ -177,10 +175,10 @@ impl TreeKemPublic {
                 .map_err(MlsError::from)
         })?;
 
-        if let Some(update_path) = update_path {
+        if let Some(leaf) = updated_leaf {
             // Verify the parent hash of the new sender leaf node and update the parent hash values
             // in the local tree
-            if let LeafNodeSource::Commit(parent_hash) = &update_path.leaf_node.leaf_node_source {
+            if let LeafNodeSource::Commit(parent_hash) = &leaf.leaf_node_source {
                 if !leaf_hash.matches(parent_hash) {
                     return Err(MlsError::ParentHashMismatch);
                 }
@@ -384,6 +382,7 @@ mod tests {
     use crate::tree_kem::leaf_node::test_utils::get_basic_test_node;
     use crate::tree_kem::leaf_node::LeafNodeSource;
     use crate::tree_kem::test_utils::TreeWithSigners;
+    use crate::tree_kem::update_path::ValidatedUpdatePath;
     use crate::tree_kem::MlsError;
     use assert_matches::assert_matches;
 
@@ -407,7 +406,7 @@ mod tests {
 
         let missing_parent_hash_res = test_tree.update_parent_hashes(
             LeafIndex(0),
-            Some(&test_update_path),
+            Some(&test_update_path.leaf_node),
             &test_cipher_suite_provider(TEST_CIPHER_SUITE),
         );
 
@@ -434,7 +433,7 @@ mod tests {
 
         let invalid_parent_hash_res = test_tree.update_parent_hashes(
             LeafIndex(0),
-            Some(&test_update_path),
+            Some(&test_update_path.leaf_node),
             &test_cipher_suite_provider(TEST_CIPHER_SUITE),
         );
 

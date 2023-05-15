@@ -91,29 +91,6 @@ pub fn leaf_lca_level(x: u32, y: u32) -> u32 {
     k
 }
 
-pub fn common_ancestor_direct(x: u32, y: u32) -> u32 {
-    let lx = level(x) + 1;
-    let ly = level(y) + 1;
-
-    if lx <= ly && x >> ly == y >> ly {
-        y
-    } else if ly <= lx && x >> lx == y >> lx {
-        x
-    } else {
-        let mut xn = x;
-        let mut yn = y;
-        let mut k = 0;
-
-        while xn != yn {
-            xn >>= 1;
-            yn >>= 1;
-            k += 1;
-        }
-
-        (xn << k) + (1 << (k - 1)) - 1
-    }
-}
-
 pub fn subtree(x: u32) -> (LeafIndex, LeafIndex) {
     let breadth = 1 << level(x);
     (

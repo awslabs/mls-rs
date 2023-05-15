@@ -9,7 +9,6 @@ use crate::{
     },
     key_package::validate_key_package_properties,
     protocol_version::ProtocolVersion,
-    psk::PreSharedKeyID,
     time::MlsTime,
     tree_kem::{
         leaf_node::LeafNode,
@@ -37,9 +36,6 @@ use crate::group::ExternalInit;
 
 #[cfg(feature = "std")]
 use std::collections::HashSet;
-
-#[cfg(not(feature = "std"))]
-use alloc::collections::BTreeSet;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ProposalState {
@@ -753,18 +749,13 @@ where
 {
     let kdf_extract_size = cipher_suite_provider.kdf_extract_size();
 
-    struct ValidationState {
-        #[cfg(feature = "std")]
-        ids_seen: HashSet<PreSharedKeyID>,
-        #[cfg(not(feature = "std"))]
-        ids_seen: BTreeSet<PreSharedKeyID>,
-        bad_indices: Vec<usize>,
-    }
+    #[cfg(feature = "std")]
+    let mut ids_seen = HashSet::new();
 
-    let mut state = ValidationState {
-        ids_seen: Default::default(),
-        bad_indices: Vec::new(),
-    };
+    #[cfg(not(feature = "std"))]
+    let mut ids_seen = Vec::new();
+
+    let mut bad_indices = Vec::new();
 
     for (i, p) in proposals.by_type::<PreSharedKeyProposal>().enumerate() {
         let valid = matches!(
@@ -778,7 +769,12 @@ where
 
         let nonce_length = p.proposal.psk.psk_nonce.0.len();
         let nonce_valid = nonce_length == kdf_extract_size;
-        let is_new_id = state.ids_seen.insert(p.proposal.psk.clone());
+
+        #[cfg(feature = "std")]
+        let is_new_id = ids_seen.insert(p.proposal.psk.clone());
+
+        #[cfg(not(feature = "std"))]
+        let is_new_id = ids_seen.contains(&p.proposal.psk);
 
         let external_id_is_valid = match &p.proposal.psk.key_id {
             JustPreSharedKeyID::External(id) => psk_storage
@@ -808,15 +804,15 @@ where
             external_id_is_valid
         };
 
-        let is_invalid_index = apply_strategy(strategy, p, res)?;
-
-        if !is_invalid_index {
-            state.bad_indices.push(i)
+        if !apply_strategy(strategy, p, res)? {
+            bad_indices.push(i)
         }
+
+        #[cfg(not(feature = "std"))]
+        ids_seen.push(p.proposal.psk.clone());
     }
 
-    state
-        .bad_indices
+    bad_indices
         .into_iter()
         .rev()
         .for_each(|i| proposals.remove::<PreSharedKeyProposal>(i));

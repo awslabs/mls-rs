@@ -21,6 +21,9 @@ use std::collections::hash_map::Entry;
 #[cfg(all(feature = "tree_index", not(feature = "std")))]
 use alloc::collections::BTreeSet;
 
+#[cfg(feature = "tree_index")]
+use aws_mls_core::crypto::HpkePublicKey;
+
 #[cfg(all(feature = "tree_index", feature = "std"))]
 #[derive(
     Clone, Debug, Default, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode, Hash, PartialOrd, Ord,

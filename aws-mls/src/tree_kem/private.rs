@@ -6,19 +6,14 @@ use super::*;
 #[non_exhaustive]
 pub struct TreeKemPrivate {
     pub self_index: LeafIndex,
-    #[cfg(feature = "std")]
-    pub secret_keys: HashMap<NodeIndex, HpkeSecretKey>,
-    #[cfg(not(feature = "std"))]
-    pub secret_keys: BTreeMap<NodeIndex, HpkeSecretKey>,
+    pub secret_keys: Vec<Option<HpkeSecretKey>>,
 }
 
 impl TreeKemPrivate {
     pub fn new_self_leaf(self_index: LeafIndex, leaf_secret: HpkeSecretKey) -> Self {
         TreeKemPrivate {
             self_index,
-            secret_keys: [(NodeIndex::from(self_index), leaf_secret)]
-                .into_iter()
-                .collect(),
+            secret_keys: vec![Some(leaf_secret)],
         }
     }
 
@@ -40,69 +35,53 @@ impl TreeKemPrivate {
         // Identify the lowest common
         // ancestor of the leaves at index and at GroupInfo.signer_index. Set the private key
         // for this node to the private key derived from the path_secret.
-        let lca = tree_math::common_ancestor_direct(signer_index.into(), self.self_index.into());
+        let lca_index =
+            tree_math::leaf_lca_level(self.self_index.into(), signer_index.into()) as usize - 2;
 
         // For each parent of the common ancestor, up to the root of the tree, derive a new
         // path secret and set the private key for the node to the private key derived from the
         // path secret. The private key MUST be the private key that corresponds to the public
         // key in the node.
 
-        let path_secret_gen =
+        let mut node_secret_gen =
             PathSecretGenerator::starting_with(cipher_suite_provider, path_secret);
 
-        public_tree
-            .nodes
-            .filtered_direct_path(self.self_index)?
-            .iter()
-            .skip_while(|&&i| i != lca)
-            .zip(path_secret_gen)
-            .try_for_each(|(&index, secret_generation)| {
-                let expected_pub_key = public_tree
-                    .nodes
-                    .borrow_node(index)?
-                    .as_ref()
-                    .map(|n| n.public_key())
-                    .ok_or(MlsError::PubKeyMismatch)?;
+        let path = public_tree.nodes.direct_path(self.self_index)?;
+        let filtered = &public_tree.nodes.filtered(self.self_index)?;
+        self.secret_keys.resize(path.len() + 1, None);
 
-                let (secret_key, public_key) = secret_generation?.to_hpke_key_pair()?;
+        for (i, (dp, f)) in path.iter().zip(filtered).enumerate().skip(lca_index) {
+            if *f {
+                continue;
+            }
 
-                if expected_pub_key != &public_key {
-                    return Err(MlsError::PubKeyMismatch);
-                }
+            let secret = node_secret_gen
+                .next()
+                .ok_or(MlsError::CommitMissingPath)??;
 
-                self.secret_keys.insert(index, secret_key);
-                Ok::<_, MlsError>(())
-            })?;
+            let expected_pub_key = public_tree
+                .nodes
+                .borrow_node(*dp)?
+                .as_ref()
+                .map(|n| n.public_key())
+                .ok_or(MlsError::PubKeyMismatch)?;
 
-        Ok(())
-    }
+            let (secret_key, public_key) = secret.to_hpke_key_pair()?;
 
-    pub fn update_leaf(
-        &mut self,
-        num_leaves: u32,
-        new_leaf: HpkeSecretKey,
-    ) -> Result<(), MlsError> {
-        self.secret_keys
-            .insert(NodeIndex::from(self.self_index), new_leaf);
+            if expected_pub_key != &public_key {
+                return Err(MlsError::PubKeyMismatch);
+            }
 
-        self.self_index
-            .direct_path(num_leaves)?
-            .iter()
-            .for_each(|i| {
-                self.secret_keys.remove(i);
-            });
+            // It's ok to use index directly because of the resize above
+            self.secret_keys[i + 1] = Some(secret_key);
+        }
 
         Ok(())
     }
 
-    pub fn remove_leaf(&mut self, num_leaves: u32, index: LeafIndex) -> Result<(), MlsError> {
-        self.secret_keys.remove(&NodeIndex::from(index));
-
-        index.direct_path(num_leaves)?.iter().for_each(|i| {
-            self.secret_keys.remove(i);
-        });
-
-        Ok(())
+    pub fn update_leaf(&mut self, new_leaf: HpkeSecretKey) {
+        self.secret_keys = vec![None; self.secret_keys.len()];
+        self.secret_keys[0] = Some(new_leaf);
     }
 }
 
@@ -143,12 +122,6 @@ mod tests {
     #[cfg(not(target_arch = "wasm32"))]
     use futures_test::test;
 
-    #[cfg(feature = "std")]
-    use std::collections::HashSet;
-
-    #[cfg(not(feature = "std"))]
-    use alloc::collections::BTreeSet;
-
     fn random_hpke_secret_key() -> HpkeSecretKey {
         let (secret, _) = test_cipher_suite_provider(TEST_CIPHER_SUITE)
             .kem_derive(&random_bytes(32))
@@ -167,10 +140,7 @@ mod tests {
 
         assert_eq!(private_key.self_index, self_index);
         assert_eq!(private_key.secret_keys.len(), 1);
-        assert_eq!(
-            private_key.secret_keys.get(&self_index.into()).unwrap(),
-            &secret
-        )
+        assert_eq!(private_key.secret_keys[0].as_ref().unwrap(), &secret)
     }
 
     // Create a ratchet tree for Alice, Bob and Charlie. Alice generates an update path for
@@ -209,6 +179,9 @@ mod tests {
             .await
             .unwrap();
 
+        // Alice's secret key is longer now
+        alice_private.secret_keys.resize(3, None);
+
         // Generate an update path for Alice
         let encap_gen = TreeKem::new(&mut public_tree, &mut alice_private)
             .encap(
@@ -241,10 +214,7 @@ mod tests {
         let (public_tree, mut charlie_private, alice_private, path_secret) =
             update_secrets_setup(cipher_suite).await;
 
-        let existing_private = charlie_private
-            .secret_keys
-            .get(&charlie_private.self_index)
-            .cloned();
+        let existing_private = charlie_private.secret_keys.get(0).cloned().unwrap();
 
         // Add the secrets for Charlie to his private key
         charlie_private
@@ -256,33 +226,15 @@ mod tests {
             )
             .unwrap();
 
-        // Determine the private key values that should now match between Alice and Charlie
-        #[cfg(feature = "std")]
-        let alice_path: HashSet<u32> = HashSet::from_iter(LeafIndex(0).direct_path(4).unwrap());
-        #[cfg(feature = "std")]
-        let charlie_path: HashSet<u32> = HashSet::from_iter(LeafIndex(2).direct_path(4).unwrap());
-
-        #[cfg(not(feature = "std"))]
-        let alice_path: BTreeSet<u32> = BTreeSet::from_iter(LeafIndex(0).direct_path(4).unwrap());
-        #[cfg(not(feature = "std"))]
-        let charlie_path: BTreeSet<u32> = BTreeSet::from_iter(LeafIndex(2).direct_path(4).unwrap());
-
-        let intersection = alice_path
-            .intersection(&charlie_path)
-            .collect::<Vec<&u32>>();
-
-        for one_index in intersection.iter() {
-            assert_eq!(
-                alice_private.secret_keys.get(one_index).unwrap(),
-                charlie_private.secret_keys.get(one_index).unwrap()
-            );
-        }
-
         // Make sure that Charlie's private key didn't lose keys
-        assert_eq!(charlie_private.secret_keys.len(), intersection.len() + 1);
+        assert_eq!(charlie_private.secret_keys.len(), 3);
+
+        // Check that the intersection of the secret keys of Alice and Charlie matches.
+        // The intersection contains only the root.
+        assert_eq!(alice_private.secret_keys[2], charlie_private.secret_keys[2]);
 
         assert_eq!(
-            charlie_private.secret_keys.get(&charlie_private.self_index),
+            charlie_private.secret_keys[0].as_ref(),
             existing_private.as_ref()
         );
     }
@@ -315,16 +267,11 @@ mod tests {
     fn setup_direct_path(self_index: LeafIndex, leaf_count: u32) -> TreeKemPrivate {
         let secret = random_hpke_secret_key();
 
-        let mut private_key = TreeKemPrivate::new_self_leaf(self_index, secret);
+        let mut private_key = TreeKemPrivate::new_self_leaf(self_index, secret.clone());
 
-        self_index
-            .direct_path(leaf_count)
-            .unwrap()
-            .into_iter()
-            .for_each(|i| {
-                let secret = random_hpke_secret_key();
-                private_key.secret_keys.insert(i, secret);
-            });
+        private_key.secret_keys = (0..tree_math::direct_path(0, leaf_count).unwrap().len() + 1)
+            .map(|_| Some(secret.clone()))
+            .collect();
 
         private_key
     }
@@ -336,28 +283,13 @@ mod tests {
 
         let new_secret = random_hpke_secret_key();
 
-        private_key.update_leaf(128, new_secret.clone()).unwrap();
+        private_key.update_leaf(new_secret.clone());
 
         // The update operation should have removed all the other keys in our direct path we
         // previously added
-        assert_eq!(private_key.secret_keys.len(), 1);
+        assert!(private_key.secret_keys.iter().skip(1).all(|n| n.is_none()));
 
         // The secret key for our leaf should have been updated accordingly
-        assert_eq!(
-            private_key.secret_keys.get(&self_leaf.into()).unwrap(),
-            &new_secret
-        );
-    }
-
-    #[test]
-    async fn test_remove_leaf() {
-        let self_leaf = LeafIndex(42);
-        let mut private_key = setup_direct_path(self_leaf, 128);
-
-        private_key.remove_leaf(128, self_leaf).unwrap();
-
-        // Removing a leaf should remove the key for the leaf, as well as all the other keys on the
-        // direct path
-        assert_eq!(private_key.secret_keys.len(), 0);
+        assert_eq!(private_key.secret_keys.get(0).unwrap(), &Some(new_secret));
     }
 }

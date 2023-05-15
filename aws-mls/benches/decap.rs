@@ -64,7 +64,7 @@ fn bench_decap(
         // Apply the update path to the rest of the leaf nodes using the decap function
         let validated_update_path = &ValidatedUpdatePath {
             leaf_node: encap_gen.update_path.leaf_node,
-            nodes: encap_gen.update_path.nodes,
+            nodes: encap_gen.update_path.nodes.into_iter().map(Some).collect(),
         };
 
         // Create one receiver tree so decap is run once
@@ -87,7 +87,7 @@ fn bench_decap(
                         TreeKem::new(&mut receiver_tree, &mut private_key)
                             .decap(
                                 LeafIndex::new(0),
-                                validated_update_path,
+                                validated_update_path.clone(),
                                 added_leaves,
                                 &mut group_context,
                                 BasicIdentityProvider,

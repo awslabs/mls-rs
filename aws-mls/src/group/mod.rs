@@ -43,9 +43,6 @@ use crate::extension::ExternalPubExt;
 #[cfg(feature = "std")]
 use std::collections::HashMap;
 
-#[cfg(not(feature = "std"))]
-use alloc::collections::BTreeMap;
-
 #[cfg(feature = "private_message")]
 use ciphertext_processor::*;
 
@@ -244,7 +241,7 @@ pub(crate) mod internal {
         #[cfg(feature = "std")]
         pub(super) pending_updates: HashMap<HpkePublicKey, HpkeSecretKey>, // Hash of leaf node hpke public key to secret key
         #[cfg(not(feature = "std"))]
-        pub(super) pending_updates: BTreeMap<HpkePublicKey, HpkeSecretKey>, // Hash of leaf node hpke public key to secret key
+        pub(super) pending_updates: Vec<(HpkePublicKey, HpkeSecretKey)>,
         pub(super) pending_commit: Option<CommitGeneration>,
         pub(super) previous_psk: Option<PskSecretInput>,
         #[cfg(test)]
@@ -673,26 +670,42 @@ where
         &self,
         provisional_state: &ProvisionalState,
     ) -> Result<TreeKemPrivate, MlsError> {
-        // Update the private tree to create a provisional private tree
         let mut provisional_private_tree = self.private_tree.clone();
-        let total_leaf_count = self.current_epoch_tree().total_leaf_count();
+        let self_index = *provisional_private_tree.self_index;
 
-        // Apply updates to private tree
-        for (_, leaf_node) in &provisional_state.updated_leaves {
-            // Update the leaf in the private tree if this is our update
-            if let Some(new_leaf_sk) = self.pending_updates.get(&leaf_node.public_key).cloned() {
-                provisional_private_tree.update_leaf(total_leaf_count, new_leaf_sk)?;
-            }
+        // Blank nodes from updates and removes : we blank from the smallest LCA with any
+        // updated or removed node to the root.
+        let smallest_lca = provisional_state
+            .updated_leaves
+            .iter()
+            .chain(&provisional_state.removed_leaves)
+            .map(|(index, _)| tree_math::leaf_lca_level(**index, self_index))
+            .min();
+
+        if let Some(smallest_lca) = smallest_lca {
+            provisional_private_tree
+                .secret_keys
+                .iter_mut()
+                .skip(smallest_lca as usize)
+                .for_each(|n| *n = None);
         }
 
-        // Remove elements from the private tree
-        provisional_state
-            .removed_leaves
-            .iter()
-            .try_for_each(|(leaf_index, _)| {
-                provisional_private_tree.remove_leaf(total_leaf_count, *leaf_index)?;
-                Ok::<_, MlsError>(())
-            })?;
+        // Apply own update
+        for (_, leaf_node) in &provisional_state.updated_leaves {
+            // Update the leaf in the private tree if this is our update
+            #[cfg(feature = "std")]
+            let new_leaf_sk = self.pending_updates.get(&leaf_node.public_key).cloned();
+
+            #[cfg(not(feature = "std"))]
+            let new_leaf_sk = self
+                .pending_updates
+                .iter()
+                .find_map(|(pk, sk)| (pk == &leaf_node.public_key).then_some(sk.clone()));
+
+            if let Some(new_leaf_sk) = new_leaf_sk {
+                provisional_private_tree.update_leaf(new_leaf_sk);
+            }
+        }
 
         Ok(provisional_private_tree)
     }
@@ -1084,8 +1097,13 @@ where
         )?;
 
         // Store the secret key in the pending updates storage for later
+        #[cfg(feature = "std")]
         self.pending_updates
             .insert(new_leaf_node.public_key.clone(), secret_key);
+
+        #[cfg(not(feature = "std"))]
+        self.pending_updates
+            .push((new_leaf_node.public_key.clone(), secret_key));
 
         Ok(Proposal::Update(UpdateProposal {
             leaf_node: new_leaf_node,
@@ -1761,7 +1779,7 @@ where
             )
             .decap(
                 sender,
-                &update_path,
+                update_path,
                 &provisional_state
                     .added_leaves
                     .iter()
@@ -2761,9 +2779,47 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(alice.group.private_tree.secret_keys.contains_key(&1));
+        assert!(alice.group.private_tree.secret_keys[1].is_some());
         alice.process_pending_commit().await.unwrap();
-        assert!(!alice.group.private_tree.secret_keys.contains_key(&1));
+        assert!(alice.group.private_tree.secret_keys[1].is_none());
+    }
+
+    #[test]
+    async fn old_hpke_secrets_of_removed_are_removed() {
+        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        alice.join("bob").await;
+        let (mut charlie, _) = alice.join("charlie").await;
+
+        let commit = charlie
+            .group
+            .commit_builder()
+            .remove_member(1)
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+
+        assert!(alice.group.private_tree.secret_keys[1].is_some());
+        alice.process_message(commit.commit_message).await.unwrap();
+        assert!(alice.group.private_tree.secret_keys[1].is_none());
+    }
+
+    #[test]
+    async fn old_hpke_secrets_of_updated_are_removed() {
+        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (mut bob, _) = alice.join("bob").await;
+        let (mut charlie, commit) = alice.join("charlie").await;
+        bob.process_message(commit).await.unwrap();
+
+        let update = bob.group.propose_update(vec![]).await.unwrap();
+        charlie.process_message(update.clone()).await.unwrap();
+        alice.process_message(update).await.unwrap();
+
+        let commit = charlie.group.commit(vec![]).await.unwrap();
+
+        assert!(alice.group.private_tree.secret_keys[1].is_some());
+        alice.process_message(commit.commit_message).await.unwrap();
+        assert!(alice.group.private_tree.secret_keys[1].is_none());
     }
 
     #[test]

@@ -19,7 +19,7 @@ use aws_mls_core::identity::IdentityProvider;
 use std::collections::HashMap;
 
 #[cfg(not(feature = "std"))]
-use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
 
 use super::{cipher_suite_provider, epoch::EpochSecrets, state_repo::GroupStateRepository};
 
@@ -36,7 +36,7 @@ pub(crate) struct Snapshot {
     #[cfg(feature = "std")]
     pending_updates: HashMap<HpkePublicKey, HpkeSecretKey>,
     #[cfg(not(feature = "std"))]
-    pending_updates: BTreeMap<HpkePublicKey, HpkeSecretKey>,
+    pending_updates: Vec<(HpkePublicKey, HpkeSecretKey)>,
     pending_commit: Option<CommitGeneration>,
 }
 
@@ -57,7 +57,7 @@ pub(crate) struct RawGroupState {
     #[cfg(feature = "std")]
     pub(crate) proposals: HashMap<ProposalRef, CachedProposal>,
     #[cfg(not(feature = "std"))]
-    pub(crate) proposals: BTreeMap<ProposalRef, CachedProposal>,
+    pub(crate) proposals: Vec<(ProposalRef, CachedProposal)>,
     pub(crate) public_tree: TreeKemPublic,
     pub(crate) interim_transcript_hash: InterimTranscriptHash,
     pub(crate) pending_reinit: Option<ReInitProposal>,
@@ -78,7 +78,7 @@ impl RawGroupState {
 
         Self {
             context: state.context.clone(),
-            proposals: state.proposals.proposals().clone(),
+            proposals: state.proposals.proposals.clone(),
             public_tree,
             interim_transcript_hash: state.interim_transcript_hash.clone(),
             pending_reinit: state.pending_reinit.clone(),

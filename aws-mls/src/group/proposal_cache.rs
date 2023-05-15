@@ -11,8 +11,6 @@ use crate::{
 #[cfg(feature = "std")]
 use std::collections::HashMap;
 
-#[cfg(not(feature = "std"))]
-use alloc::collections::BTreeMap;
 use aws_mls_core::{error::IntoAnyError, psk::PreSharedKeyStorage};
 
 #[derive(Debug, PartialEq)]
@@ -144,9 +142,9 @@ pub(crate) struct ProposalCache {
     protocol_version: ProtocolVersion,
     group_id: Vec<u8>,
     #[cfg(feature = "std")]
-    proposals: HashMap<ProposalRef, CachedProposal>,
+    pub(crate) proposals: HashMap<ProposalRef, CachedProposal>,
     #[cfg(not(feature = "std"))]
-    proposals: BTreeMap<ProposalRef, CachedProposal>,
+    pub(crate) proposals: Vec<(ProposalRef, CachedProposal)>,
 }
 
 impl ProposalCache {
@@ -162,7 +160,7 @@ impl ProposalCache {
         protocol_version: ProtocolVersion,
         group_id: Vec<u8>,
         #[cfg(feature = "std")] proposals: HashMap<ProposalRef, CachedProposal>,
-        #[cfg(not(feature = "std"))] proposals: BTreeMap<ProposalRef, CachedProposal>,
+        #[cfg(not(feature = "std"))] proposals: Vec<(ProposalRef, CachedProposal)>,
     ) -> Self {
         Self {
             protocol_version,
@@ -184,19 +182,14 @@ impl ProposalCache {
 
     pub fn insert(&mut self, proposal_ref: ProposalRef, proposal: Proposal, sender: Sender) {
         let cached_proposal = CachedProposal { proposal, sender };
+
+        #[cfg(feature = "std")]
         self.proposals.insert(proposal_ref, cached_proposal);
-    }
 
-    #[cfg(feature = "std")]
-    #[inline]
-    pub fn proposals(&self) -> &HashMap<ProposalRef, CachedProposal> {
-        &self.proposals
-    }
-
-    #[cfg(not(feature = "std"))]
-    #[inline]
-    pub fn proposals(&self) -> &BTreeMap<ProposalRef, CachedProposal> {
-        &self.proposals
+        #[cfg(not(feature = "std"))]
+        if !self.proposals.iter().any(|(r, _)| r == &proposal_ref) {
+            self.proposals.push((proposal_ref, cached_proposal));
+        }
     }
 
     #[cfg(feature = "custom_proposal")]
@@ -334,9 +327,17 @@ impl ProposalCache {
     ) -> Result<CachedProposal, MlsError> {
         match proposal {
             ProposalOrRef::Proposal(proposal) => Ok(CachedProposal { proposal, sender }),
+            #[cfg(feature = "std")]
             ProposalOrRef::Reference(proposal_ref) => self
                 .proposals
                 .get(&proposal_ref)
+                .cloned()
+                .ok_or(MlsError::ProposalNotFound(proposal_ref)),
+            #[cfg(not(feature = "std"))]
+            ProposalOrRef::Reference(proposal_ref) => self
+                .proposals
+                .iter()
+                .find_map(|(r, p)| (r == &proposal_ref).then_some(p))
                 .cloned()
                 .ok_or(MlsError::ProposalNotFound(proposal_ref)),
         }
@@ -448,7 +449,7 @@ impl Extend<(ProposalRef, CachedProposal)> for ProposalCache {
 #[cfg(feature = "state_update")]
 fn rejected_proposals(
     #[cfg(feature = "std")] mut cache: HashMap<ProposalRef, CachedProposal>,
-    #[cfg(not(feature = "std"))] mut cache: BTreeMap<ProposalRef, CachedProposal>,
+    #[cfg(not(feature = "std"))] mut cache: Vec<(ProposalRef, CachedProposal)>,
     accepted_proposals: &ProposalBundle,
     sender: &Sender,
 ) -> Vec<(ProposalRef, Proposal)> {
@@ -459,7 +460,11 @@ fn rejected_proposals(
             _ => None,
         })
         .for_each(|r| {
+            #[cfg(feature = "std")]
             cache.remove(&r);
+
+            #[cfg(not(feature = "std"))]
+            cache.retain(|(pr, _)| pr != &r);
         });
 
     cache
@@ -3098,9 +3103,7 @@ mod tests {
     }
 
     fn make_extension_list(foo: u8) -> ExtensionList {
-        [TestExtension { foo }.into_extension().unwrap()]
-            .try_into()
-            .unwrap()
+        vec![TestExtension { foo }.into_extension().unwrap()].into()
     }
 
     #[test]
@@ -3168,7 +3171,7 @@ mod tests {
 
     #[cfg(feature = "external_proposal")]
     fn make_external_senders_extension() -> ExtensionList {
-        [ExternalSendersExt::new(vec![
+        vec![ExternalSendersExt::new(vec![
             get_test_signing_identity(TEST_CIPHER_SUITE, b"alice".to_vec()).0,
         ])
         .into_extension()
@@ -3377,9 +3380,9 @@ mod tests {
             ..Default::default()
         };
 
-        Proposal::GroupContextExtensions(Into::<ExtensionList>::into([required_capabilities
-            .into_extension()
-            .unwrap()]))
+        let ext = vec![required_capabilities.into_extension().unwrap()];
+
+        Proposal::GroupContextExtensions(ext.into())
     }
 
     #[test]
@@ -4195,7 +4198,7 @@ mod tests {
 
             #[cfg(feature = "external_proposal")]
             let extensions: ExtensionList =
-                [external_senders.clone().into_extension().unwrap()].into();
+                vec![external_senders.clone().into_extension().unwrap()].into();
 
             #[cfg(feature = "external_proposal")]
             let receiver = receiver.with_extensions(extensions);

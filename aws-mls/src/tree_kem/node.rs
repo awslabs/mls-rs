@@ -12,9 +12,6 @@ use core::ops::{Deref, DerefMut};
 #[cfg(feature = "std")]
 use std::collections::HashSet;
 
-#[cfg(not(feature = "std"))]
-use alloc::collections::BTreeSet;
-
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 pub(crate) struct Parent {
     pub public_key: HpkePublicKey,
@@ -204,21 +201,13 @@ impl NodeVec {
         }
     }
 
-    fn empty_leaves_from(
-        &mut self,
-        start: LeafIndex,
-    ) -> impl Iterator<Item = (LeafIndex, &mut Option<Node>)> {
+    #[cfg(test)]
+    fn empty_leaves(&mut self) -> impl Iterator<Item = (LeafIndex, &mut Option<Node>)> {
         self.iter_mut()
             .step_by(2)
             .enumerate()
-            .skip(start.0 as usize)
             .filter(|(_, n)| n.is_none())
             .map(|(i, n)| (LeafIndex(i as u32), n))
-    }
-
-    #[cfg(test)]
-    fn empty_leaves(&mut self) -> impl Iterator<Item = (LeafIndex, &mut Option<Node>)> {
-        self.empty_leaves_from(LeafIndex(0))
     }
 
     pub fn non_empty_leaves(&self) -> impl Iterator<Item = (LeafIndex, &LeafNode)> + '_ {
@@ -246,33 +235,26 @@ impl NodeVec {
         index.direct_path(self.total_leaf_count())
     }
 
-    pub fn filtered_direct_path(&self, index: LeafIndex) -> Result<Vec<NodeIndex>, MlsError> {
-        Ok(self
-            .filtered_direct_path_co_path(index)?
+    pub fn direct_path_copath(
+        &self,
+        index: LeafIndex,
+    ) -> Result<Vec<(NodeIndex, NodeIndex)>, MlsError> {
+        Ok(index
+            .direct_path(self.total_leaf_count())?
             .into_iter()
-            .map(|(dp, _)| dp)
+            .zip(index.copath(self.total_leaf_count())?)
             .collect())
     }
 
     // Section 8.4
     // The filtered direct path of a node is obtained from the node's direct path by removing
     // all nodes whose child on the nodes's copath has an empty resolution
-    pub fn filtered_direct_path_co_path(
-        &self,
-        index: LeafIndex,
-    ) -> Result<Vec<(NodeIndex, NodeIndex)>, MlsError> {
-        index
-            .direct_path(self.total_leaf_count())?
+    pub fn filtered(&self, index: LeafIndex) -> Result<Vec<bool>, MlsError> {
+        Ok(index
+            .copath(self.total_leaf_count())?
             .into_iter()
-            .zip(index.copath(self.total_leaf_count())?)
-            .filter_map(|(dp, cp)| {
-                if self.is_resolution_empty(cp) {
-                    None
-                } else {
-                    Some(Ok((dp, cp)))
-                }
-            })
-            .collect()
+            .map(|cp| self.is_resolution_empty(cp))
+            .collect())
     }
 
     #[inline]
@@ -316,11 +298,10 @@ impl NodeVec {
             .enumerate()
             .rev()
             .step_by(2)
-            .find(|(_, node)| node.is_some())
-            .map(|r| r.0);
+            .find(|(_, node)| node.is_some());
 
         // Truncate the node vector to the last full leaf
-        if let Some(last_full) = last_full {
+        if let Some((last_full, _)) = last_full {
             self.truncate(last_full + 1)
         }
     }
@@ -419,7 +400,7 @@ impl NodeVec {
         #[cfg(feature = "std")]
         let excluding = excluding.collect::<HashSet<NodeIndex>>();
         #[cfg(not(feature = "std"))]
-        let excluding = excluding.collect::<BTreeSet<NodeIndex>>();
+        let excluding = excluding.collect::<Vec<NodeIndex>>();
 
         self.get_resolution_index(node_index)?
             .into_iter()
@@ -440,23 +421,31 @@ impl NodeVec {
         }
     }
 
-    /// If `start` is a valid leaf index for the current tree, inserts a leaf at the first blank
-    /// leaf at or after `start`, extending the tree if necessary.
-    ///
-    /// If `start` is larger than or equal to the current number of leaves, inserts a leaf after the
-    /// last leaf.
-    pub fn insert_leaf(&mut self, start: LeafIndex, leaf: LeafNode) -> LeafIndex {
-        if let Some((i, node)) = self.empty_leaves_from(start).next() {
-            *node = Some(leaf.into());
-            return i;
-        }
+    pub(crate) fn next_empty_leaf(&self, start: LeafIndex) -> LeafIndex {
+        let i = self
+            .iter()
+            .step_by(2)
+            .enumerate()
+            .skip(start.0 as usize)
+            .find_map(|(i, n)| n.is_none().then_some(i))
+            .unwrap_or((self.len() + 1) >> 1);
 
-        if !self.is_empty() {
+        LeafIndex(i as u32)
+    }
+
+    /// If `index` fits in the current tree, inserts `leaf` at `index`. Else, inserts `leaf` as the
+    /// last leaf
+    pub fn insert_leaf(&mut self, index: LeafIndex, leaf: LeafNode) {
+        let node_index = (*index as usize) << 1;
+
+        if node_index > self.len() {
+            self.push(None);
+            self.push(None);
+        } else if self.is_empty() {
             self.push(None);
         }
 
-        self.push(Some(leaf.into()));
-        LeafIndex(self.len() as u32 / 2)
+        self.0[node_index] = Some(leaf.into());
     }
 }
 
@@ -540,18 +529,10 @@ mod tests {
     }
 
     #[test]
-    async fn test_filtered_direct_path() {
-        let test_vec = get_test_node_vec().await;
-        let expected = [3];
-        let actual = test_vec.filtered_direct_path(LeafIndex(0)).unwrap();
-        assert_eq!(actual, expected);
-    }
-
-    #[test]
     async fn test_filtered_direct_path_co_path() {
         let test_vec = get_test_node_vec().await;
-        let expected = [(3, 5)];
-        let actual = test_vec.filtered_direct_path_co_path(LeafIndex(0)).unwrap();
+        let expected = [true, false];
+        let actual = test_vec.filtered(LeafIndex(0)).unwrap();
         assert_eq!(actual, expected);
     }
 

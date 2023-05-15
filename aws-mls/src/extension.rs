@@ -1,6 +1,4 @@
-pub use aws_mls_core::extension::{
-    ExtensionListIter, ExtensionType, MlsCodecExtension, MlsExtension,
-};
+pub use aws_mls_core::extension::{ExtensionType, MlsCodecExtension, MlsExtension};
 
 pub(crate) use built_in::*;
 

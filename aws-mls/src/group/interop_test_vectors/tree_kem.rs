@@ -104,24 +104,34 @@ async fn tree_kem() {
             let mut tree_private = TreeKemPrivate::new(LeafIndex(leaf.index));
 
             // Set and validate HPKE keys on direct path
-            tree_private.secret_keys = leaf
-                .path_secrets
-                .iter()
-                .map(|secret| {
-                    let mut path_secret_gen = PathSecretGeneration::random(&cs).unwrap();
-                    path_secret_gen.path_secret = secret.path_secret.clone().into();
-                    let (secret_key, public_key) = path_secret_gen.to_hpke_key_pair().unwrap();
-                    let tree_public = &tree.nodes.borrow_as_parent(secret.node).unwrap().public_key;
-                    assert_eq!(&public_key, tree_public);
+            let path = tree.nodes.direct_path(tree_private.self_index).unwrap();
 
-                    (secret.node, secret_key)
+            tree_private.secret_keys = path
+                .into_iter()
+                .map(|dp| {
+                    let secret = leaf
+                        .path_secrets
+                        .iter()
+                        .find_map(|s| (s.node == dp).then_some(s.path_secret.clone()));
+
+                    if let Some(secret) = secret {
+                        let mut path_secret_gen = PathSecretGeneration::random(&cs).unwrap();
+                        path_secret_gen.path_secret = secret.into();
+                        let (secret_key, public_key) = path_secret_gen.to_hpke_key_pair().unwrap();
+                        let tree_public = &tree.nodes.borrow_as_parent(dp).unwrap().public_key;
+                        assert_eq!(&public_key, tree_public);
+
+                        Some(secret_key)
+                    } else {
+                        None
+                    }
                 })
                 .collect();
 
             // Set HPKE key for leaf
             tree_private
                 .secret_keys
-                .insert(2 * leaf.index, leaf.encryption_priv.clone().into());
+                .insert(0, Some(leaf.encryption_priv.clone().into()));
 
             let paths = test_case
                 .update_paths

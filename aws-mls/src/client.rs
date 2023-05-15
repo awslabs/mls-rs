@@ -379,6 +379,8 @@ pub enum MlsError {
         error("Updating non-existing member (or updating a member twice)")
     )]
     UpdatingNonExistingMember,
+    #[cfg_attr(feature = "std", error("Failed generating next path secret"))]
+    FailedGeneratingPathSecret,
 }
 
 impl IntoAnyError for MlsError {

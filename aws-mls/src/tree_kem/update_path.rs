@@ -1,4 +1,4 @@
-use alloc::vec::Vec;
+use alloc::{vec, vec::Vec};
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use aws_mls_core::{error::IntoAnyError, extension::ExtensionList, identity::IdentityProvider};
 
@@ -30,7 +30,7 @@ pub struct UpdatePath {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ValidatedUpdatePath {
     pub leaf_node: LeafNode,
-    pub nodes: Vec<UpdatePathNode>,
+    pub nodes: Vec<Option<UpdatePathNode>>,
 }
 
 pub(crate) async fn validate_update_path<C: IdentityProvider, CSP: CipherSuiteProvider>(
@@ -87,18 +87,25 @@ pub(crate) async fn validate_update_path<C: IdentityProvider, CSP: CipherSuitePr
             .ok_or(MlsError::SameHpkeKey(*sender))?;
     }
 
-    let path_copath = state
-        .public_tree
-        .nodes
-        .filtered_direct_path_co_path(sender)?;
+    // Unfilter the update path
+    let filtered = state.public_tree.nodes.filtered(sender)?;
+    let num_filtered = filtered.iter().filter(|v| !**v).count();
 
-    (path.nodes.len() == path_copath.len())
+    (path.nodes.len() == num_filtered)
         .then_some(())
-        .ok_or(MlsError::WrongPathLen(path.nodes.len(), path_copath.len()))?;
+        .ok_or(MlsError::WrongPathLen(path.nodes.len(), num_filtered))?;
+
+    let mut unfiltered_nodes = vec![None; filtered.len()];
+    let filtered_iter = filtered.into_iter().enumerate().filter(|(_, f)| !*f);
+
+    // TODO can we avoid clone?
+    for ((i, _), node) in filtered_iter.zip(path.nodes.iter()) {
+        unfiltered_nodes[i] = Some(node.clone());
+    }
 
     Ok(ValidatedUpdatePath {
         leaf_node: path.leaf_node.clone(),
-        nodes: path.nodes.clone(),
+        nodes: unfiltered_nodes,
     })
 }
 
@@ -208,7 +215,9 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(validated.nodes, update_path.nodes);
+        let expected = update_path.nodes.into_iter().map(Some).collect::<Vec<_>>();
+
+        assert_eq!(validated.nodes, expected);
         assert_eq!(validated.leaf_node, update_path.leaf_node);
     }
 

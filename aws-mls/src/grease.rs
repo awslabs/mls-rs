@@ -219,7 +219,7 @@ mod tests {
 
     fn is_ext_greased(extensions: &ExtensionList) -> bool {
         extensions
-            .into_iter()
+            .iter()
             .any(|ext| GREASE_VALUES.contains(&*ext.extension_type()))
     }
 }
