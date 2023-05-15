@@ -8,13 +8,12 @@ use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use aws_mls_core::error::IntoAnyError;
 use core::ops::{Deref, DerefMut};
-use itertools::Itertools;
 use zeroize::Zeroizing;
 
-#[cfg(feature = "std")]
+#[cfg(all(feature = "std", feature = "out_of_order"))]
 use std::collections::HashMap;
 
-#[cfg(not(feature = "std"))]
+#[cfg(all(not(feature = "std"), feature = "out_of_order"))]
 use alloc::collections::BTreeMap;
 
 use super::key_schedule::kdf_expand_with_label;
@@ -345,51 +344,14 @@ impl MessageKeyData {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 pub struct SecretKeyRatchet {
     secret: TreeSecret,
     generation: u32,
-    #[cfg(feature = "std")]
+    #[cfg(all(feature = "out_of_order", feature = "std"))]
     history: HashMap<u32, MessageKeyData>,
-    #[cfg(not(feature = "std"))]
+    #[cfg(all(feature = "out_of_order", not(feature = "std")))]
     history: BTreeMap<u32, MessageKeyData>,
-}
-
-impl MlsSize for SecretKeyRatchet {
-    fn mls_encoded_len(&self) -> usize {
-        aws_mls_codec::byte_vec::mls_encoded_len(&self.secret)
-            + self.generation.mls_encoded_len()
-            + self.history.values().collect_vec().mls_encoded_len()
-    }
-}
-
-impl MlsEncode for SecretKeyRatchet {
-    fn mls_encode(&self, writer: &mut Vec<u8>) -> Result<(), aws_mls_codec::Error> {
-        aws_mls_codec::byte_vec::mls_encode(&self.secret, writer)?;
-        self.generation.mls_encode(writer)?;
-        self.history.values().collect_vec().mls_encode(writer)
-    }
-}
-
-impl MlsDecode for SecretKeyRatchet {
-    fn mls_decode(reader: &mut &[u8]) -> Result<Self, aws_mls_codec::Error> {
-        Ok(Self {
-            secret: aws_mls_codec::byte_vec::mls_decode(reader)?,
-            generation: u32::mls_decode(reader)?,
-            #[cfg(feature = "std")]
-            history: HashMap::from_iter(
-                Vec::<MessageKeyData>::mls_decode(reader)?
-                    .into_iter()
-                    .map(|k| (k.generation, k)),
-            ),
-            #[cfg(not(feature = "std"))]
-            history: BTreeMap::from_iter(
-                Vec::<MessageKeyData>::mls_decode(reader)?
-                    .into_iter()
-                    .map(|k| (k.generation, k)),
-            ),
-        })
-    }
 }
 
 impl SecretKeyRatchet {
@@ -410,6 +372,7 @@ impl SecretKeyRatchet {
         Ok(Self {
             secret: TreeSecret::from(secret),
             generation: 0,
+            #[cfg(feature = "out_of_order")]
             history: Default::default(),
         })
     }
@@ -419,28 +382,41 @@ impl SecretKeyRatchet {
         cipher_suite_provider: &P,
         generation: u32,
     ) -> Result<MessageKeyData, MlsError> {
+        #[cfg(feature = "out_of_order")]
         if generation < self.generation {
-            self.history
+            return self
+                .history
                 .remove_entry(&generation)
                 .map(|(_, mk)| mk)
-                .ok_or(MlsError::KeyMissing(generation))
-        } else {
-            let max_generation_allowed = self.generation + MAX_RATCHET_BACK_HISTORY;
-
-            if generation > max_generation_allowed {
-                return Err(MlsError::InvalidFutureGeneration(
-                    generation,
-                    max_generation_allowed,
-                ));
-            }
-
-            while self.generation < generation {
-                let key_data = self.next_message_key(cipher_suite_provider)?;
-                self.history.insert(key_data.generation, key_data);
-            }
-
-            self.next_message_key(cipher_suite_provider)
+                .ok_or(MlsError::KeyMissing(generation));
         }
+
+        #[cfg(not(feature = "out_of_order"))]
+        if generation < self.generation {
+            return Err(MlsError::KeyMissing(generation));
+        }
+
+        let max_generation_allowed = self.generation + MAX_RATCHET_BACK_HISTORY;
+
+        if generation > max_generation_allowed {
+            return Err(MlsError::InvalidFutureGeneration(
+                generation,
+                max_generation_allowed,
+            ));
+        }
+
+        #[cfg(not(feature = "out_of_order"))]
+        while self.generation < generation {
+            self.next_message_key(cipher_suite_provider)?;
+        }
+
+        #[cfg(feature = "out_of_order")]
+        while self.generation < generation {
+            let key_data = self.next_message_key(cipher_suite_provider)?;
+            self.history.insert(key_data.generation, key_data);
+        }
+
+        self.next_message_key(cipher_suite_provider)
     }
 
     fn next_message_key<P: CipherSuiteProvider>(
@@ -699,6 +675,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "out_of_order")]
     #[test]
     fn test_out_of_order_keys() {
         let cipher_suite = TEST_CIPHER_SUITE;
@@ -728,6 +705,22 @@ mod tests {
             back_history_keys,
             ordered_keys[..(MAX_RATCHET_BACK_HISTORY as usize) - 1]
         );
+    }
+
+    #[cfg(not(feature = "out_of_order"))]
+    #[test]
+    fn out_of_order_keys_should_throw_error() {
+        let cipher_suite = TEST_CIPHER_SUITE;
+        let provider = test_cipher_suite_provider(cipher_suite);
+
+        let mut ratchet = SecretKeyRatchet::new(&provider, &[0u8; 32], KeyType::Handshake).unwrap();
+
+        ratchet.get_message_key(&provider, 10).unwrap();
+
+        assert_matches!(
+            ratchet.get_message_key(&provider, 9),
+            Err(MlsError::KeyMissing(9))
+        )
     }
 
     #[test]

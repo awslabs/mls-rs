@@ -370,7 +370,7 @@ async fn test_application_messages(
     }
 }
 
-#[cfg(feature = "private_message")]
+#[cfg(feature = "out_of_order")]
 #[test]
 async fn test_out_of_order_application_messages() {
     let mut groups = get_test_groups(

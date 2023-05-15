@@ -13,7 +13,6 @@ use crate::{
 };
 use aws_mls_core::extension::ExtensionList;
 use aws_mls_core::identity::IdentityProvider;
-use futures::TryStreamExt;
 
 use super::node::{Node, NodeIndex};
 
@@ -82,11 +81,13 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> TreeValidator<'a, C, CSP
     }
 
     async fn validate_leaves(&self, tree: &TreeKemPublic) -> Result<(), MlsError> {
-        // For each non-empty leaf node, verify the signature on the LeafNode.
-        futures::stream::iter(tree.nodes.non_empty_leaves().map(Ok))
-            .try_for_each(|(li, ln)| self.leaf_node_validator.revalidate(ln, self.group_id, *li))
-            .await
-            .map_err(Into::into)
+        for (index, leaf_node) in tree.nodes.non_empty_leaves() {
+            self.leaf_node_validator
+                .revalidate(leaf_node, self.group_id, *index)
+                .await?;
+        }
+
+        Ok(())
     }
 }
 

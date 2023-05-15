@@ -131,7 +131,7 @@ impl TreeKemPublic {
 
         // Update the current hashes for direct paths of all modified leaves.
         self.update_current_hashes(
-            path_blanked.iter().chain(leaves_added.iter()),
+            &[path_blanked, leaves_added].concat(),
             cipher_suite_provider,
         )?;
 
@@ -178,17 +178,19 @@ impl TreeKemPublic {
         P: CipherSuiteProvider,
     {
         if self.tree_hashes.current.is_empty() {
-            self.update_current_hashes(vec![].into_iter(), cipher_suite_provider)?;
+            self.update_current_hashes(&[], cipher_suite_provider)?;
+
             if self.nodes.len() > 1 {
                 self.initialize_original_hashes(cipher_suite_provider)?;
             }
         }
+
         Ok(())
     }
 
-    fn update_current_hashes<'a, P: CipherSuiteProvider>(
+    fn update_current_hashes<P: CipherSuiteProvider>(
         &mut self,
-        leaf_indices: impl Iterator<Item = &'a LeafIndex>,
+        leaf_indices: &[LeafIndex],
         cipher_suite_provider: &P,
     ) -> Result<(), MlsError> {
         let num_leaves = self.total_leaf_count();
@@ -201,6 +203,7 @@ impl TreeKemPublic {
 
         let mut nodes = VecDeque::from_iter(
             leaf_indices
+                .iter()
                 .filter_map(|l| (**l < num_leaves).then_some(**l * 2))
                 .chain((0..num_leaves).rev().map_while(|l| {
                     self.tree_hashes.current[2 * l as usize]
