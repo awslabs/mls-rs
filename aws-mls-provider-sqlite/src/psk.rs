@@ -1,5 +1,4 @@
 use crate::SqLiteDataStorageError;
-use async_trait::async_trait;
 use aws_mls_core::psk::{ExternalPskId, PreSharedKey, PreSharedKeyStorage};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::{
@@ -59,7 +58,7 @@ impl SqLitePreSharedKeyStorage {
     }
 }
 
-#[async_trait]
+#[maybe_async::maybe_async]
 impl PreSharedKeyStorage for SqLitePreSharedKeyStorage {
     type Error = SqLiteDataStorageError;
 

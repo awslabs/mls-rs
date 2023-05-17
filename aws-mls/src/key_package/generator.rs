@@ -81,6 +81,7 @@ where
             .map_err(Into::into)
     }
 
+    #[maybe_async::maybe_async]
     pub async fn generate(
         &self,
         lifetime: Lifetime,
@@ -157,9 +158,6 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    #[cfg(not(target_arch = "wasm32"))]
-    use futures_test::test;
-
     fn test_key_package_ext(val: u8) -> ExtensionList {
         let mut ext_list = ExtensionList::new();
         ext_list.set_from(TestExtension::from(val)).unwrap();
@@ -176,7 +174,7 @@ mod tests {
         Lifetime::years(1).unwrap()
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_key_generation() {
         for (protocol_version, cipher_suite) in ProtocolVersion::all().flat_map(|p| {
             TestCryptoProvider::all_supported_cipher_suites()
@@ -275,7 +273,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_randomness() {
         for (protocol_version, cipher_suite) in ProtocolVersion::all().flat_map(|p| {
             TestCryptoProvider::all_supported_cipher_suites()

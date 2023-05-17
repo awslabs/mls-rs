@@ -1,7 +1,6 @@
 use aws_mls::client_builder::Preferences;
 use aws_mls::group::{ReceivedMessage, StateUpdate};
 use aws_mls::{CipherSuite, ExtensionList, Group, MLSMessage, ProtocolVersion};
-use futures::StreamExt;
 
 use crate::test_client::{generate_client, TestClientConfig};
 
@@ -70,6 +69,7 @@ impl TestEpoch {
     }
 }
 
+#[maybe_async::maybe_async]
 pub async fn get_test_groups(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
@@ -102,32 +102,26 @@ pub async fn get_test_groups(
         })
         .collect::<Vec<_>>();
 
-    let receiver_keys = futures::stream::iter(&receiver_clients)
-        .then(|client| async {
-            client
-                .client
-                .generate_key_package_message(
-                    protocol_version,
-                    cipher_suite,
-                    client.identity.clone(),
-                )
-                .await
-                .unwrap()
-        })
-        .collect::<Vec<MLSMessage>>()
-        .await;
+    let mut receiver_keys = Vec::new();
+
+    for client in &receiver_clients {
+        let keys = client
+            .client
+            .generate_key_package_message(protocol_version, cipher_suite, client.identity.clone())
+            .await
+            .unwrap();
+
+        receiver_keys.push(keys);
+    }
 
     // Add the generated clients to the group the creator made
+    let mut commit_builder = creator_group.commit_builder();
 
-    let welcome = futures::stream::iter(&receiver_keys)
-        .fold(creator_group.commit_builder(), |builder, item| async move {
-            builder.add_member(item.clone()).unwrap()
-        })
-        .await
-        .build()
-        .await
-        .unwrap()
-        .welcome_message;
+    for key in &receiver_keys {
+        commit_builder = commit_builder.add_member(key.clone()).unwrap();
+    }
+
+    let welcome = commit_builder.build().await.unwrap().welcome_message;
 
     // Creator can confirm the commit was processed by the server
     #[cfg(feature = "state_update")]
@@ -160,17 +154,18 @@ pub async fn get_test_groups(
     let tree_data = creator_group.export_tree().unwrap();
 
     // All the receivers will be able to join the group
-    let mut receiver_groups = futures::stream::iter(&receiver_clients)
-        .then(|client| async {
-            client
-                .client
-                .join_group(Some(&tree_data), welcome.clone().unwrap())
-                .await
-                .unwrap()
-                .0
-        })
-        .collect::<Vec<_>>()
-        .await;
+    let mut receiver_groups = Vec::new();
+
+    for client in &receiver_clients {
+        let test_client = client
+            .client
+            .join_group(Some(&tree_data), welcome.clone().unwrap())
+            .await
+            .unwrap()
+            .0;
+
+        receiver_groups.push(test_client);
+    }
 
     for one_receiver in &receiver_groups {
         assert!(Group::equal_group_state(&creator_group, one_receiver));
@@ -181,13 +176,16 @@ pub async fn get_test_groups(
     receiver_groups
 }
 
+#[maybe_async::maybe_async]
 pub async fn all_process_commit_with_update(
     groups: &mut [Group<TestClientConfig>],
     commit: &MLSMessage,
     sender: usize,
 ) -> Vec<StateUpdate> {
-    let updates = groups.iter_mut().map(|g| async {
-        if sender != g.current_member_index() as usize {
+    let mut state_updates = Vec::new();
+
+    for g in groups {
+        let state_update = if sender != g.current_member_index() as usize {
             let processed_msg = g.process_incoming_message(commit.clone()).await.unwrap();
 
             match processed_msg {
@@ -196,29 +194,34 @@ pub async fn all_process_commit_with_update(
             }
         } else {
             g.apply_pending_commit().await.unwrap().state_update
-        }
-    });
+        };
 
-    futures::future::join_all(updates).await
+        state_updates.push(state_update);
+    }
+
+    state_updates
 }
 
+#[maybe_async::maybe_async]
 pub async fn all_process_message(
     groups: &mut [Group<TestClientConfig>],
     message: &MLSMessage,
     sender: usize,
     is_commit: bool,
 ) {
-    futures::stream::iter(groups)
-        .for_each(|g| async {
-            if sender != g.current_member_index() as usize {
-                g.process_incoming_message(message.clone()).await.unwrap();
-            } else if is_commit {
-                g.apply_pending_commit().await.unwrap();
-            }
-        })
-        .await;
+    for group in groups {
+        if sender != group.current_member_index() as usize {
+            group
+                .process_incoming_message(message.clone())
+                .await
+                .unwrap();
+        } else if is_commit {
+            group.apply_pending_commit().await.unwrap();
+        }
+    }
 }
 
+#[maybe_async::maybe_async]
 pub async fn add_random_members(
     first_id: usize,
     num_added: usize,
@@ -229,40 +232,43 @@ pub async fn add_random_members(
     let cipher_suite = groups[committer].cipher_suite();
     let committer_index = groups[committer].current_member_index() as usize;
 
-    let (key_packages, new_clients): (Vec<_>, Vec<_>) = futures::stream::iter(0..num_added)
-        .then(|i| {
-            let preferences = Preferences::default();
-            async move {
-                let id = first_id + i;
-                let new_client =
-                    generate_client(cipher_suite, format!("dave-{id}").into(), preferences);
+    let mut key_packages = Vec::new();
+    let mut new_clients = Vec::new();
 
-                let key_package = new_client
-                    .client
-                    .generate_key_package_message(
-                        ProtocolVersion::MLS_10,
-                        cipher_suite,
-                        new_client.identity.clone(),
-                    )
-                    .await
-                    .unwrap();
+    for i in 0..num_added {
+        let id = first_id + i;
+        let new_client = generate_client(
+            cipher_suite,
+            format!("dave-{id}").into(),
+            Preferences::default(),
+        );
 
-                (key_package, new_client)
-            }
-        })
-        .unzip()
-        .await;
+        let key_package = new_client
+            .client
+            .generate_key_package_message(
+                ProtocolVersion::MLS_10,
+                cipher_suite,
+                new_client.identity.clone(),
+            )
+            .await
+            .unwrap();
 
-    let add_proposals: Vec<MLSMessage> = futures::stream::iter(key_packages)
-        .fold(
-            (&mut groups[committer], Vec::new()),
-            |(group, mut acc), kp| async {
-                acc.push(group.propose_add(kp, vec![]).await.unwrap());
-                (group, acc)
-            },
-        )
-        .await
-        .1;
+        key_packages.push(key_package);
+        new_clients.push(new_client);
+    }
+
+    let mut add_proposals = Vec::new();
+
+    let committer_group = &mut groups[committer];
+
+    for key_package in key_packages {
+        add_proposals.push(
+            committer_group
+                .propose_add(key_package, vec![])
+                .await
+                .unwrap(),
+        );
+    }
 
     for p in &add_proposals {
         all_process_message(groups, p, committer_index, false).await;
@@ -281,26 +287,26 @@ pub async fn add_random_members(
 
     let tree_data = groups[committer].export_tree().unwrap();
 
-    let mut new_groups: Vec<Group<TestClientConfig>> = futures::stream::iter(&new_clients)
-        .then(|client| {
-            let tree_data = tree_data.clone();
-            let commit = commit_output.welcome_message.clone().unwrap();
+    let mut new_groups = Vec::new();
 
-            async move {
-                client
-                    .client
-                    .join_group(Some(&tree_data.clone()), commit)
-                    .await
-                    .unwrap()
-                    .0
-            }
-        })
-        .collect()
-        .await;
+    for client in &new_clients {
+        let tree_data = tree_data.clone();
+        let commit = commit_output.welcome_message.clone().unwrap();
+
+        let client = client
+            .client
+            .join_group(Some(&tree_data.clone()), commit)
+            .await
+            .unwrap()
+            .0;
+
+        new_groups.push(client);
+    }
 
     groups.append(&mut new_groups);
 }
 
+#[maybe_async::maybe_async]
 pub async fn remove_members(
     removed_members: Vec<usize>,
     committer: usize,
@@ -312,12 +318,11 @@ pub async fn remove_members(
         .map(|removed| groups[*removed].current_member_index())
         .collect::<Vec<u32>>();
 
-    let commit_builder = futures::stream::iter(remove_indexes)
-        .fold(
-            groups[committer].commit_builder(),
-            |builder, index| async move { builder.remove_member(index).unwrap() },
-        )
-        .await;
+    let mut commit_builder = groups[committer].commit_builder();
+
+    for index in remove_indexes {
+        commit_builder = commit_builder.remove_member(index).unwrap();
+    }
 
     let commit = commit_builder.build().await.unwrap().commit_message;
     let committer_index = groups[committer].current_member_index() as usize;

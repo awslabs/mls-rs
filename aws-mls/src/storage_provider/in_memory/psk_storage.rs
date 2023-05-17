@@ -1,5 +1,3 @@
-use alloc::boxed::Box;
-
 #[cfg(feature = "std")]
 use alloc::sync::Arc;
 
@@ -14,11 +12,12 @@ use std::collections::HashMap;
 #[cfg(not(feature = "std"))]
 use alloc::collections::BTreeMap;
 
-use async_trait::async_trait;
 use aws_mls_core::psk::{ExternalPskId, PreSharedKey, PreSharedKeyStorage};
 
 #[cfg(feature = "std")]
 use std::sync::Mutex;
+
+use alloc::boxed::Box;
 
 #[cfg(not(feature = "std"))]
 use spin::Mutex;
@@ -69,7 +68,7 @@ impl InMemoryPreSharedKeyStorage {
     }
 }
 
-#[async_trait]
+#[maybe_async::maybe_async]
 impl PreSharedKeyStorage for InMemoryPreSharedKeyStorage {
     type Error = Infallible;
 

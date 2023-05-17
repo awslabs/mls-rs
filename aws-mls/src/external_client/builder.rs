@@ -18,7 +18,6 @@ use crate::{
     tree_kem::Capabilities,
     CryptoProvider, Sealed,
 };
-use async_trait::async_trait;
 use std::collections::HashMap;
 
 /// Base client configuration type when instantiating `ExternalClientBuilder`
@@ -483,7 +482,7 @@ where
 ///
 /// It is not meant to be implemented by consuming crates. `T: MlsConfig` implies
 /// `T: ExternalClientConfig`.
-pub trait MlsConfig: Clone + Send + Sync + Sealed {
+pub trait MlsConfig: Send + Sync + Clone + Sealed {
     #[doc(hidden)]
     type Output: ExternalClientConfig;
 
@@ -492,7 +491,6 @@ pub trait MlsConfig: Clone + Send + Sync + Sealed {
 }
 
 /// Blanket implementation so that `T: MlsConfig` implies `T: ExternalClientConfig`
-#[async_trait]
 impl<T: MlsConfig> ExternalClientConfig for T {
     type Keychain = <T::Output as ExternalClientConfig>::Keychain;
     type IdentityProvider = <T::Output as ExternalClientConfig>::IdentityProvider;

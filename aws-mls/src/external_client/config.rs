@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use aws_mls_core::{identity::IdentityProvider, keychain::KeychainStorage};
 
 use crate::{
@@ -11,8 +10,7 @@ use crate::{
     CryptoProvider,
 };
 
-#[async_trait]
-pub trait ExternalClientConfig: Clone + Send + Sync {
+pub trait ExternalClientConfig: Send + Sync + Clone {
     type Keychain: KeychainStorage + Clone;
     type IdentityProvider: IdentityProvider + Clone;
     type ProposalRules: ProposalRules + Clone;

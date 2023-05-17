@@ -1,11 +1,10 @@
 use crate::{crypto::SignatureSecretKey, error::IntoAnyError, identity::SigningIdentity};
 use alloc::boxed::Box;
-use async_trait::async_trait;
 
 /// Storage trait that maintains secret signature keys
 /// indexed by public
 /// [`SigningIdentity`](aws_mls_core::identity::SigningIdentity).
-#[async_trait]
+#[maybe_async::maybe_async]
 pub trait KeychainStorage: Send + Sync {
     /// Error type that the underlying storage mechanism returns on internal
     /// failure.

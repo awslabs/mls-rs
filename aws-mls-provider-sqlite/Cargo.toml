@@ -16,6 +16,7 @@ async-trait = "0.1"
 rand = "0.8"
 hex = { version = "0.4" }
 openssl = "0.10"
+maybe-async = "0.2.7"
 
 [dev-dependencies]
 tempfile = "3"

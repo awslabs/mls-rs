@@ -32,7 +32,6 @@ use crate::{
     },
     ExtensionList,
 };
-use futures::StreamExt;
 
 pub type TestClientConfig = WithIdentityProvider<
     BasicWithCustomProvider,
@@ -52,69 +51,86 @@ pub struct TestCase {
     info: Vec<GroupInfo>,
 }
 
+#[maybe_async::maybe_async]
 async fn generate_test_cases() -> Vec<TestCase> {
     let cipher_suite = TEST_CIPHER_SUITE;
 
-    futures::stream::iter([10, 50, 100])
-        .then(|length| get_group_states(cipher_suite, length))
-        .collect()
-        .await
+    let mut cases = Vec::new();
+
+    for length in [10, 50, 100] {
+        cases.push(get_group_states(cipher_suite, length).await)
+    }
+
+    cases
 }
 
+#[maybe_async::async_impl]
+async fn load_or_generate() -> Vec<TestCase> {
+    load_test_case_mls!(group_state, generate_test_cases().await, to_vec)
+}
+
+#[maybe_async::sync_impl]
+fn load_or_generate() -> Vec<TestCase> {
+    load_test_case_mls!(group_state, generate_test_cases(), to_vec)
+}
+
+#[maybe_async::maybe_async]
 pub async fn load_test_cases() -> Vec<Vec<Group<TestClientConfig>>> {
-    let tests: Vec<TestCase> =
-        load_test_case_mls!(group_state, generate_test_cases().await, to_vec);
+    let tests: Vec<TestCase> = load_or_generate().await;
 
-    futures::stream::iter(tests)
-        .then(|test| {
-            futures::stream::iter(test.info)
-                .then(|group_info| async move {
-                    let key_packages = Vec::<(Vec<u8>, KeyPackageData)>::mls_decode(
-                        &mut group_info.key_packages.as_slice(),
+    let mut group_collection = Vec::new();
+
+    for test in tests {
+        let mut groups = Vec::new();
+
+        for group_info in test.info {
+            let key_packages = Vec::<(Vec<u8>, KeyPackageData)>::mls_decode(
+                &mut group_info.key_packages.as_slice(),
+            )
+            .unwrap();
+
+            let secrets = Vec::<(SigningIdentity, SignatureSecretKey)>::mls_decode(
+                &mut group_info.secrets.as_slice(),
+            )
+            .unwrap();
+
+            let epochs = Vec::<PriorEpoch>::mls_decode(&mut group_info.epochs.as_slice()).unwrap();
+
+            let group_id = group_info.session.group_id().to_vec();
+
+            let client_builder = secrets.into_iter().fold(
+                TestClientBuilder::new_for_test(),
+                |builder, (identity, secret_key)| {
+                    builder.signing_identity(
+                        identity,
+                        secret_key,
+                        group_info.session.cipher_suite(),
                     )
-                    .unwrap();
+                },
+            );
 
-                    let secrets = Vec::<(SigningIdentity, SignatureSecretKey)>::mls_decode(
-                        &mut group_info.secrets.as_slice(),
-                    )
-                    .unwrap();
+            let group = client_builder
+                .group_state_storage(InMemoryGroupStateStorage::from_benchmark_data(
+                    group_info.session,
+                    epochs,
+                ))
+                .key_package_repo(InMemoryKeyPackageStorage::from_benchmark_data(key_packages))
+                .build()
+                .load_group(&group_id)
+                .await
+                .unwrap();
 
-                    let epochs =
-                        Vec::<PriorEpoch>::mls_decode(&mut group_info.epochs.as_slice()).unwrap();
+            groups.push(group)
+        }
 
-                    let group_id = group_info.session.group_id().to_vec();
+        group_collection.push(groups);
+    }
 
-                    let client_builder = secrets.into_iter().fold(
-                        TestClientBuilder::new_for_test(),
-                        |builder, (identity, secret_key)| {
-                            builder.signing_identity(
-                                identity,
-                                secret_key,
-                                group_info.session.cipher_suite(),
-                            )
-                        },
-                    );
-
-                    client_builder
-                        .group_state_storage(InMemoryGroupStateStorage::from_benchmark_data(
-                            group_info.session,
-                            epochs,
-                        ))
-                        .key_package_repo(InMemoryKeyPackageStorage::from_benchmark_data(
-                            key_packages,
-                        ))
-                        .build()
-                        .load_group(&group_id)
-                        .await
-                        .unwrap()
-                })
-                .collect()
-        })
-        .collect()
-        .await
+    group_collection
 }
 
 // creates group modifying code found in client.rs
+#[maybe_async::maybe_async]
 pub async fn create_group(cipher_suite: CipherSuite, size: usize) -> Vec<Group<TestClientConfig>> {
     pub const TEST_GROUP: &[u8] = b"group";
 
@@ -188,45 +204,46 @@ where
     group.snapshot().mls_encode_to_vec()
 }
 
+#[maybe_async::maybe_async]
 async fn get_group_states(cipher_suite: CipherSuite, size: usize) -> TestCase {
-    let mut groups = create_group(cipher_suite, size).await;
+    let groups = create_group(cipher_suite, size).await;
 
-    futures::stream::iter(groups.iter_mut())
-        .for_each(|group| async { group.write_to_storage().await.unwrap() })
-        .await;
+    let mut group_info = Vec::new();
 
-    let info = futures::stream::iter(groups.into_iter())
-        .then(|session| async move {
-            let config = &session.config;
+    for mut group in groups {
+        group.write_to_storage().await.unwrap();
 
-            let epoch_repo = config.group_state_storage();
-            let exported_epochs = epoch_repo.export_epoch_data(session.group_id()).unwrap();
+        let config = &group.config;
 
-            let group_state = epoch_repo.state(session.group_id()).await.unwrap().unwrap();
+        let epoch_repo = config.group_state_storage();
+        let exported_epochs = epoch_repo.export_epoch_data(group.group_id()).unwrap();
 
-            let epochs = exported_epochs.mls_encode_to_vec().unwrap();
+        let group_state = epoch_repo.state(group.group_id()).await.unwrap().unwrap();
 
-            let key_repo = config.key_package_repo();
-            let exported_key_packages = key_repo.key_packages();
-            let key_packages = exported_key_packages.mls_encode_to_vec().unwrap();
+        let epochs = exported_epochs.mls_encode_to_vec().unwrap();
 
-            let key_chain = config.keychain();
-            let exported_key_chain = key_chain.identities();
-            let secrets = exported_key_chain.mls_encode_to_vec().unwrap();
+        let key_repo = config.key_package_repo();
+        let exported_key_packages = key_repo.key_packages();
+        let key_packages = exported_key_packages.mls_encode_to_vec().unwrap();
 
-            GroupInfo {
-                session: group_state,
-                epochs,
-                key_packages,
-                secrets,
-            }
-        })
-        .collect()
-        .await;
+        let key_chain = config.keychain();
+        let exported_key_chain = key_chain.identities();
+        let secrets = exported_key_chain.mls_encode_to_vec().unwrap();
 
-    TestCase { info }
+        let info = GroupInfo {
+            session: group_state,
+            epochs,
+            key_packages,
+            secrets,
+        };
+
+        group_info.push(info)
+    }
+
+    TestCase { info: group_info }
 }
 
+#[maybe_async::maybe_async]
 pub async fn commit_groups<C: ClientConfig>(
     mut container: Vec<Vec<Group<C>>>,
 ) -> Vec<Vec<Group<C>>> {
@@ -237,6 +254,7 @@ pub async fn commit_groups<C: ClientConfig>(
     container
 }
 
+#[maybe_async::maybe_async]
 pub async fn commit_group<C: ClientConfig>(container: &mut [Group<C>]) {
     for committer_index in 0..container.len() {
         let commit = container[committer_index]
@@ -255,6 +273,7 @@ pub async fn commit_group<C: ClientConfig>(container: &mut [Group<C>]) {
     }
 }
 
+#[maybe_async::maybe_async]
 pub async fn create_fuzz_commit_message<C>(
     group_id: Vec<u8>,
     epoch: u64,

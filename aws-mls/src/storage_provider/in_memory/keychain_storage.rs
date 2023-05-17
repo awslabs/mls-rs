@@ -4,7 +4,7 @@ use alloc::sync::Arc;
 #[cfg(not(feature = "std"))]
 use portable_atomic_util::Arc;
 
-use alloc::{boxed::Box, vec::Vec};
+use alloc::vec::Vec;
 use core::convert::Infallible;
 
 #[cfg(feature = "std")]
@@ -13,7 +13,6 @@ use std::collections::HashMap;
 #[cfg(not(feature = "std"))]
 use alloc::collections::BTreeMap;
 
-use async_trait::async_trait;
 use aws_mls_core::{
     crypto::{CipherSuite, SignatureSecretKey},
     identity::SigningIdentity,
@@ -25,6 +24,8 @@ use std::sync::Mutex;
 
 #[cfg(not(feature = "std"))]
 use spin::Mutex;
+
+use alloc::boxed::Box;
 
 /// In memory keychain backed by a HashMap.
 ///
@@ -121,7 +122,7 @@ impl InMemoryKeychainStorage {
     }
 }
 
-#[async_trait]
+#[maybe_async::maybe_async]
 impl KeychainStorage for InMemoryKeychainStorage {
     type Error = Infallible;
 

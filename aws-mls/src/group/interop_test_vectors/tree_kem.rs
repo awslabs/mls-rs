@@ -65,7 +65,7 @@ struct TestUpdatePath {
     commit_secret: Vec<u8>,
 }
 
-#[futures_test::test]
+#[maybe_async::test(sync, async(not(sync), futures_test::test))]
 async fn tree_kem() {
     // The test vector can be found here https://github.com/mlswg/mls-implementations/blob/main/test-vectors/treekem.json
 

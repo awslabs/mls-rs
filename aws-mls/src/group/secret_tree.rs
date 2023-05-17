@@ -344,7 +344,7 @@ impl MessageKeyData {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, MlsSize, MlsEncode, MlsDecode)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SecretKeyRatchet {
     secret: TreeSecret,
     generation: u32,
@@ -352,6 +352,66 @@ pub struct SecretKeyRatchet {
     history: HashMap<u32, MessageKeyData>,
     #[cfg(all(feature = "out_of_order", not(feature = "std")))]
     history: BTreeMap<u32, MessageKeyData>,
+}
+
+impl MlsSize for SecretKeyRatchet {
+    fn mls_encoded_len(&self) -> usize {
+        let len = aws_mls_codec::byte_vec::mls_encoded_len(&self.secret)
+            + self.generation.mls_encoded_len();
+
+        #[cfg(feature = "out_of_order")]
+        return len + aws_mls_codec::iter::mls_encoded_len(self.history.values());
+        #[cfg(not(feature = "out_of_order"))]
+        return len;
+    }
+}
+
+#[cfg(feature = "out_of_order")]
+impl MlsEncode for SecretKeyRatchet {
+    fn mls_encode(&self, writer: &mut Vec<u8>) -> Result<(), aws_mls_codec::Error> {
+        aws_mls_codec::byte_vec::mls_encode(&self.secret, writer)?;
+        self.generation.mls_encode(writer)?;
+        aws_mls_codec::iter::mls_encode(self.history.values(), writer)
+    }
+}
+
+#[cfg(not(feature = "out_of_order"))]
+impl MlsEncode for SecretKeyRatchet {
+    fn mls_encode(&self, writer: &mut Vec<u8>) -> Result<(), aws_mls_codec::Error> {
+        aws_mls_codec::byte_vec::mls_encode(&self.secret, writer)?;
+        self.generation.mls_encode(writer)
+    }
+}
+
+impl MlsDecode for SecretKeyRatchet {
+    fn mls_decode(reader: &mut &[u8]) -> Result<Self, aws_mls_codec::Error> {
+        Ok(Self {
+            secret: aws_mls_codec::byte_vec::mls_decode(reader)?,
+            generation: u32::mls_decode(reader)?,
+            #[cfg(all(feature = "std", feature = "out_of_order"))]
+            history: aws_mls_codec::iter::mls_decode_collection(reader, |data| {
+                let mut items = HashMap::default();
+
+                while !data.is_empty() {
+                    let item = MessageKeyData::mls_decode(data)?;
+                    items.insert(item.generation, item);
+                }
+
+                Ok(items)
+            })?,
+            #[cfg(all(not(feature = "std"), feature = "out_of_order"))]
+            history: aws_mls_codec::iter::mls_decode_collection(reader, |data| {
+                let mut items = alloc::collections::BTreeMap::default();
+
+                while !data.is_empty() {
+                    let item = MessageKeyData::mls_decode(data)?;
+                    items.insert(item.generation, item);
+                }
+
+                Ok(items)
+            })?,
+        })
+    }
 }
 
 impl SecretKeyRatchet {

@@ -162,6 +162,7 @@ impl ExternalSendersExt {
         &self.allowed_senders
     }
 
+    #[maybe_async::maybe_async]
     pub(crate) async fn verify_all<I: IdentityProvider>(
         &self,
         provider: &I,

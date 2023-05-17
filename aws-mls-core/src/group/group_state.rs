@@ -1,7 +1,6 @@
 use crate::error::IntoAnyError;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
-use async_trait::async_trait;
 use aws_mls_codec::{MlsDecode, MlsEncode};
 
 /// Generic representation of a group's state.
@@ -31,7 +30,7 @@ pub trait EpochRecord {
 /// to delete records that can be used by an application.
 ///
 
-#[async_trait]
+#[maybe_async::maybe_async]
 pub trait GroupStateStorage: Send + Sync {
     type Error: IntoAnyError;
 

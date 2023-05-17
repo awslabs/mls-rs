@@ -11,7 +11,6 @@ use crate::tree_kem::leaf_node::test_utils::get_basic_test_node_sig_key;
 use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::{TreeKemPrivate, TreeKemPublic};
 use crate::ExtensionList;
-use futures::StreamExt;
 use std::collections::HashMap;
 
 #[derive(Debug, MlsSize, MlsDecode, MlsEncode)]
@@ -25,34 +24,47 @@ pub struct TestCase {
     pub encap_identity: SigningIdentity,
 }
 
+#[maybe_async::maybe_async]
 async fn generate_test_cases() -> HashMap<u32, TestCase> {
     let cipher_suite = TEST_CIPHER_SUITE;
 
-    futures::stream::iter([100, 1000, 10000])
-        .then(|length| async move { (length, create_stage(cipher_suite, length).await) })
-        .collect::<HashMap<_, _>>()
-        .await
+    let mut cases = HashMap::new();
+
+    for length in [100, 1000, 10000] {
+        cases.insert(length, create_stage(cipher_suite, length).await);
+    }
+
+    cases
 }
 
+#[maybe_async::async_impl]
 pub async fn load_test_cases() -> HashMap<u32, TestCase> {
     load_test_case_mls!(empty_trees, generate_test_cases().await, to_vec)
 }
 
+#[maybe_async::sync_impl]
+pub fn load_test_cases() -> HashMap<u32, TestCase> {
+    load_test_case_mls!(empty_trees, generate_test_cases(), to_vec)
+}
+
 // Used code from kem.rs to create empty test trees and to begin doing encap/decap
+#[maybe_async::maybe_async]
 pub async fn create_stage(cipher_suite: CipherSuite, size: u32) -> TestCase {
     // Generate signing keys and key package generations, and private keys for multiple
     // participants in order to set up state
-    let (leaf_nodes, private_keys): (_, Vec<TreeKemPrivate>) = futures::stream::iter(1..size)
-        .then(|index| async move {
-            let (leaf_node, hpke_secret, _) =
-                get_basic_test_node_sig_key(cipher_suite, &format!("{index}")).await;
 
-            let private_key = TreeKemPrivate::new_self_leaf(LeafIndex::new(index), hpke_secret);
+    let mut leaf_nodes = Vec::new();
+    let mut private_keys = Vec::new();
 
-            (leaf_node, private_key)
-        })
-        .unzip()
-        .await;
+    for index in 1..size {
+        let (leaf_node, hpke_secret, _) =
+            get_basic_test_node_sig_key(cipher_suite, &format!("{index}")).await;
+
+        let private_key = TreeKemPrivate::new_self_leaf(LeafIndex::new(index), hpke_secret);
+
+        leaf_nodes.push(leaf_node);
+        private_keys.push(private_key)
+    }
 
     let (encap_node, encap_hpke_secret, encap_signer) =
         get_basic_test_node_sig_key(cipher_suite, "encap").await;

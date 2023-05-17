@@ -15,7 +15,6 @@ pub mod protocol_version;
 pub mod psk;
 pub mod time;
 
-pub use async_trait;
 pub use aws_mls_codec;
 
 #[cfg(feature = "arbitrary")]

@@ -121,8 +121,13 @@ impl From<InteropGroupContext> for GroupContext {
 
 // The test vector can be found here:
 // https://github.com/mlswg/mls-implementations/blob/main/test-vectors/message-protection.json
-#[futures_test::test]
+#[maybe_async::test(sync, async(not(sync), futures_test::test))]
 async fn framing_proposal() {
+    #[cfg(sync)]
+    let test_cases: Vec<FramingTestCase> =
+        load_test_case_json!(framing, generate_framing_test_vector());
+
+    #[cfg(not(sync))]
     let test_cases: Vec<FramingTestCase> =
         load_test_case_json!(framing, generate_framing_test_vector().await);
 
@@ -163,8 +168,13 @@ async fn framing_proposal() {
 
 // The test vector can be found here:
 // https://github.com/mlswg/mls-implementations/blob/main/test-vectors/message-protection.json
-#[futures_test::test]
+#[maybe_async::test(sync, async(not(sync), futures_test::test))]
 async fn framing_application() {
+    #[cfg(sync)]
+    let test_cases: Vec<FramingTestCase> =
+        load_test_case_json!(framing, generate_framing_test_vector());
+
+    #[cfg(not(sync))]
     let test_cases: Vec<FramingTestCase> =
         load_test_case_json!(framing, generate_framing_test_vector().await);
 
@@ -192,8 +202,13 @@ async fn framing_application() {
 
 // The test vector can be found here:
 // https://github.com/mlswg/mls-implementations/blob/main/test-vectors/message-protection.json
-#[futures_test::test]
+#[maybe_async::test(sync, async(not(sync), futures_test::test))]
 async fn framing_comit() {
+    #[cfg(sync)]
+    let test_cases: Vec<FramingTestCase> =
+        load_test_case_json!(framing, generate_framing_test_vector());
+
+    #[cfg(not(sync))]
     let test_cases: Vec<FramingTestCase> =
         load_test_case_json!(framing, generate_framing_test_vector().await);
 
@@ -245,6 +260,7 @@ async fn framing_comit() {
     }
 }
 
+#[maybe_async::maybe_async]
 async fn generate_framing_test_vector() -> Vec<FramingTestCase> {
     let mut test_vector = vec![];
 
@@ -327,6 +343,7 @@ async fn generate_framing_test_vector() -> Vec<FramingTestCase> {
     test_vector
 }
 
+#[maybe_async::maybe_async]
 async fn make_group<P: CipherSuiteProvider>(
     test_case: &FramingTestCase,
     for_send: bool,
@@ -393,6 +410,7 @@ async fn make_group<P: CipherSuiteProvider>(
     group
 }
 
+#[maybe_async::maybe_async]
 async fn process_message<P: CipherSuiteProvider>(
     test_case: &FramingTestCase,
     message: &[u8],

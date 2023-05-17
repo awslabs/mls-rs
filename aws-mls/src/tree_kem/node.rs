@@ -456,21 +456,21 @@ pub(crate) mod test_utils {
         client::test_utils::TEST_CIPHER_SUITE, tree_kem::leaf_node::test_utils::get_basic_test_node,
     };
 
+    #[maybe_async::maybe_async]
     pub(crate) async fn get_test_node_vec() -> NodeVec {
-        let nodes: Vec<Option<Node>> = vec![
-            get_basic_test_node(TEST_CIPHER_SUITE, "A").await.into(),
-            None,
-            None,
-            None,
-            get_basic_test_node(TEST_CIPHER_SUITE, "C").await.into(),
-            Parent {
-                public_key: b"CD".to_vec().into(),
-                parent_hash: ParentHash::empty(),
-                unmerged_leaves: vec![LeafIndex(2)],
-            }
-            .into(),
-            get_basic_test_node(TEST_CIPHER_SUITE, "D").await.into(),
-        ];
+        let mut nodes = vec![None; 7];
+
+        nodes[0] = get_basic_test_node(TEST_CIPHER_SUITE, "A").await.into();
+        nodes[4] = get_basic_test_node(TEST_CIPHER_SUITE, "C").await.into();
+
+        nodes[5] = Parent {
+            public_key: b"CD".to_vec().into(),
+            parent_hash: ParentHash::empty(),
+            unmerged_leaves: vec![LeafIndex(2)],
+        }
+        .into();
+
+        nodes[6] = get_basic_test_node(TEST_CIPHER_SUITE, "D").await.into();
 
         NodeVec::from(nodes)
     }
@@ -489,10 +489,7 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    #[cfg(not(target_arch = "wasm32"))]
-    use futures_test::test;
-
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn node_key_getters() {
         let test_node_parent: Node = Parent {
             public_key: b"pub".to_vec().into(),
@@ -508,7 +505,7 @@ mod tests {
         assert_eq!(test_node_leaf.public_key(), &test_leaf.public_key);
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_empty_leaves() {
         let mut test_vec = get_test_node_vec().await;
         let mut test_vec_clone = get_test_node_vec().await;
@@ -519,7 +516,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_direct_path() {
         let test_vec = get_test_node_vec().await;
         // Tree math is already tested in that module, just ensure equality
@@ -528,7 +525,7 @@ mod tests {
         assert_eq!(actual, expected);
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_filtered_direct_path_co_path() {
         let test_vec = get_test_node_vec().await;
         let expected = [true, false];
@@ -536,7 +533,7 @@ mod tests {
         assert_eq!(actual, expected);
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_get_parent_node() {
         let mut test_vec = get_test_node_vec().await;
 
@@ -558,7 +555,7 @@ mod tests {
         assert_eq!(test_vec.borrow_as_parent_mut(5).unwrap(), &mut expected);
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_get_resolution() {
         let test_vec = get_test_node_vec().await;
 
@@ -586,7 +583,7 @@ mod tests {
         assert_eq!(resolution_node_3, expected_3.iter().collect::<Vec<&Node>>());
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_resolution_filter() {
         let test_vec = get_test_node_vec().await;
         let resolution_node_5 = test_vec.get_resolution(5, &[LeafIndex(2)]).unwrap();
@@ -595,7 +592,7 @@ mod tests {
         assert_eq!(resolution_node_5, expected_5.iter().collect::<Vec<&Node>>());
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_get_or_fill_existing() {
         let mut test_vec = get_test_node_vec().await;
         let mut test_vec2 = test_vec.clone();
@@ -608,7 +605,7 @@ mod tests {
         assert_eq!(actual, expected);
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_get_or_fill_empty() {
         let mut test_vec = get_test_node_vec().await;
 
@@ -625,7 +622,7 @@ mod tests {
         assert_eq!(actual, &mut expected);
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_leaf_count() {
         let test_vec = get_test_node_vec().await;
         assert_eq!(test_vec.len(), 7);
@@ -636,7 +633,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_total_leaf_count() {
         let test_vec = get_test_node_vec().await;
         assert_eq!(test_vec.occupied_leaf_count(), 3);

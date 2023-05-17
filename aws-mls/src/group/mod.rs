@@ -1,6 +1,6 @@
+use alloc::boxed::Box;
 use alloc::vec;
-use alloc::{boxed::Box, vec::Vec};
-use async_trait::async_trait;
+use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use aws_mls_core::error::IntoAnyError;
 use aws_mls_core::extension::ExtensionList;
@@ -256,6 +256,7 @@ impl<C> Group<C>
 where
     C: ClientConfig + Clone,
 {
+    #[maybe_async::maybe_async]
     pub(crate) async fn new(
         config: C,
         group_id: Option<Vec<u8>>,
@@ -354,6 +355,7 @@ where
         self.config.preferences()
     }
 
+    #[maybe_async::maybe_async]
     pub(crate) async fn join(
         welcome: MLSMessage,
         tree_data: Option<&[u8]>,
@@ -362,6 +364,7 @@ where
         Self::from_welcome_message(welcome, tree_data, config, None).await
     }
 
+    #[maybe_async::maybe_async]
     async fn from_welcome_message(
         welcome: MLSMessage,
         tree_data: Option<&[u8]>,
@@ -515,6 +518,7 @@ where
         .await
     }
 
+    #[maybe_async::maybe_async]
     async fn join_with(
         config: C,
         cipher_suite_provider: <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider,
@@ -611,6 +615,7 @@ where
             .map(|ln| member_from_leaf_node(ln, leaf_index))
     }
 
+    #[maybe_async::maybe_async]
     async fn proposal_message(
         &mut self,
         proposal: Proposal,
@@ -640,10 +645,12 @@ where
         self.format_for_wire(auth_content)
     }
 
+    #[maybe_async::maybe_async]
     pub(crate) async fn signer(&self) -> Result<SignatureSecretKey, MlsError> {
         self.signer_for_identity(None).await
     }
 
+    #[maybe_async::maybe_async]
     pub(crate) async fn signer_for_identity(
         &self,
         signing_identity: Option<&SigningIdentity>,
@@ -763,6 +770,7 @@ where
     /// is determined using the
     /// [`IdentityProvider`](crate::IdentityProvider)
     /// that is currently in use by this group instance.
+    #[maybe_async::maybe_async]
     pub async fn branch(
         &self,
         sub_group_id: Vec<u8>,
@@ -788,6 +796,7 @@ where
     }
 
     /// Join a subgroup that was created by [`Group::branch`].
+    #[maybe_async::maybe_async]
     pub async fn join_subgroup(
         &self,
         welcome: MLSMessage,
@@ -827,6 +836,7 @@ where
     ///
     /// This function will fail if the number of members in the reinitialized
     /// group is not the same as the prior group roster.
+    #[maybe_async::maybe_async]
     pub async fn finish_reinit_commit(
         &self,
         new_key_packages: Vec<MLSMessage>,
@@ -858,6 +868,7 @@ where
 
     /// Join a reinitialized group that was created by
     /// [`Group::finish_reinit_commit`].
+    #[maybe_async::maybe_async]
     pub async fn finish_reinit_join(
         &self,
         welcome: MLSMessage,
@@ -886,10 +897,11 @@ where
         .await
     }
 
-    async fn resumption_create_group<'a>(
+    #[maybe_async::maybe_async]
+    async fn resumption_create_group(
         &self,
         new_key_packages: Vec<MLSMessage>,
-        new_group_params: &ResumptionGroupParameters<'a>,
+        new_group_params: &ResumptionGroupParameters<'_>,
         signing_identity: Option<SigningIdentity>,
         preferences: Option<Preferences>,
         usage: ResumptionPSKUsage,
@@ -931,11 +943,12 @@ where
         Ok((group, commit.welcome_message))
     }
 
-    async fn resumption_join_group<'a>(
+    #[maybe_async::maybe_async]
+    async fn resumption_join_group(
         &self,
         welcome: MLSMessage,
         tree_data: Option<&[u8]>,
-        expected_new_group_prams: ResumptionGroupParameters<'a>,
+        expected_new_group_prams: ResumptionGroupParameters<'_>,
         verify_group_id: bool,
         usage: ResumptionPSKUsage,
     ) -> Result<(Group<C>, NewMemberInfo), MlsError> {
@@ -1018,6 +1031,7 @@ where
     ///
     /// `authenticated_data` will be sent unencrypted along with the contents
     /// of the proposal message.
+    #[maybe_async::maybe_async]
     pub async fn propose_add(
         &mut self,
         key_package: MLSMessage,
@@ -1045,6 +1059,7 @@ where
     ///
     /// `authenticated_data` will be sent unencrypted along with the contents
     /// of the proposal message.
+    #[maybe_async::maybe_async]
     pub async fn propose_update(
         &mut self,
         authenticated_data: Vec<u8>,
@@ -1070,6 +1085,7 @@ where
     ///
     /// `authenticated_data` will be sent unencrypted along with the contents
     /// of the proposal message.
+    #[maybe_async::maybe_async]
     pub async fn propose_update_with_identity(
         &mut self,
         signing_identity: SigningIdentity,
@@ -1079,6 +1095,7 @@ where
         self.proposal_message(proposal, authenticated_data).await
     }
 
+    #[maybe_async::maybe_async]
     async fn update_proposal(
         &mut self,
         signing_identity: Option<SigningIdentity>,
@@ -1115,6 +1132,7 @@ where
     ///
     /// `authenticated_data` will be sent unencrypted along with the contents
     /// of the proposal message.
+    #[maybe_async::maybe_async]
     pub async fn propose_remove(
         &mut self,
         index: u32,
@@ -1145,6 +1163,7 @@ where
     ///
     /// `authenticated_data` will be sent unencrypted along with the contents
     /// of the proposal message.
+    #[maybe_async::maybe_async]
     pub async fn propose_external_psk(
         &mut self,
         psk: ExternalPskId,
@@ -1173,6 +1192,7 @@ where
     ///
     /// `authenticated_data` will be sent unencrypted along with the contents
     /// of the proposal message.
+    #[maybe_async::maybe_async]
     pub async fn propose_resumption_psk(
         &mut self,
         psk_epoch: u64,
@@ -1197,6 +1217,7 @@ where
     ///
     /// `authenticated_data` will be sent unencrypted along with the contents
     /// of the proposal message.
+    #[maybe_async::maybe_async]
     pub async fn propose_reinit(
         &mut self,
         group_id: Option<Vec<u8>>,
@@ -1243,6 +1264,7 @@ where
     ///
     /// `authenticated_data` will be sent unencrypted along with the contents
     /// of the proposal message.
+    #[maybe_async::maybe_async]
     pub async fn propose_group_context_extensions(
         &mut self,
         extensions: ExtensionList,
@@ -1261,6 +1283,7 @@ where
     /// `authenticated_data` will be sent unencrypted along with the contents
     /// of the proposal message.
     #[cfg(feature = "custom_proposal")]
+    #[maybe_async::maybe_async]
     pub async fn propose_custom(
         &mut self,
         proposal: CustomProposal,
@@ -1326,6 +1349,7 @@ where
     /// `authenticated_data` will be sent unencrypted along with the contents
     /// of the proposal message.
     #[cfg(feature = "private_message")]
+    #[maybe_async::maybe_async]
     pub async fn encrypt_application_message(
         &mut self,
         message: &[u8],
@@ -1353,6 +1377,7 @@ where
     }
 
     #[cfg(feature = "private_message")]
+    #[maybe_async::maybe_async]
     async fn decrypt_incoming_ciphertext(
         &mut self,
         message: PrivateMessage,
@@ -1400,6 +1425,7 @@ where
 
     /// Apply a pending commit that was created by [`Group::commit`] or
     /// [`CommitBuilder::build`].
+    #[maybe_async::maybe_async]
     pub async fn apply_pending_commit(&mut self) -> Result<CommitMessageDescription, MlsError> {
         let pending_commit = self
             .pending_commit
@@ -1426,6 +1452,7 @@ where
     /// not be persisted by the
     /// [`GroupStateStorage`](crate::GroupStateStorage)
     /// in use by this group until [`Group::write_to_storage`] is called.
+    #[maybe_async::maybe_async]
     pub async fn process_incoming_message(
         &mut self,
         message: MLSMessage,
@@ -1449,6 +1476,7 @@ where
     /// not be persisted by the
     /// [`GroupStateStorage`](crate::GroupStateStorage)
     /// in use by this group until [`Group::write_to_storage`] is called.
+    #[maybe_async::maybe_async]
     pub async fn process_incoming_message_with_time(
         &mut self,
         message: MLSMessage,
@@ -1463,6 +1491,7 @@ where
     /// This function determines identity by calling the
     /// [`IdentityProvider`](crate::IdentityProvider)
     /// currently in use by the group.
+    #[maybe_async::maybe_async]
     pub async fn member_with_identity(&self, identity: &[u8]) -> Result<Member, MlsError> {
         let tree = &self.state.public_tree;
 
@@ -1484,6 +1513,7 @@ where
     ///
     /// The returned `GroupInfo` is suitable for one external commit for the current epoch.
     #[cfg(feature = "external_commit")]
+    #[maybe_async::maybe_async]
     pub async fn group_info_message_allowing_ext_commit(&self) -> Result<MLSMessage, MlsError> {
         let mut extensions = ExtensionList::new();
 
@@ -1499,10 +1529,12 @@ where
     }
 
     /// Create a group info message that can be used for external proposals.
+    #[maybe_async::maybe_async]
     pub async fn group_info_message(&self) -> Result<MLSMessage, MlsError> {
         self.group_info_message_internal(ExtensionList::new()).await
     }
 
+    #[maybe_async::maybe_async]
     pub async fn group_info_message_internal(
         &self,
         mut initial_extensions: ExtensionList,
@@ -1631,6 +1663,7 @@ where
         &self.epoch_secrets.secret_tree
     }
 
+    #[maybe_async::maybe_async]
     async fn get_psk(&self, psks: &[PreSharedKeyID]) -> Result<PskSecret, MlsError> {
         if let Some(psk) = self.previous_psk.clone() {
             // TODO throw error if psks not empty
@@ -1707,7 +1740,7 @@ where
     }
 }
 
-#[async_trait]
+#[maybe_async::maybe_async]
 impl<C> MessageProcessor for Group<C>
 where
     C: ClientConfig + Clone,
@@ -1937,7 +1970,7 @@ mod tests {
     use crate::crypto::test_utils::TestCryptoProvider;
     use crate::group::test_utils::random_bytes;
     use crate::identity::test_utils::get_test_basic_credential;
-    use crate::key_package::test_utils::test_key_package_message;
+    use crate::key_package::test_utils::{test_key_package, test_key_package_message};
     use crate::time::MlsTime;
     use crate::tree_kem::leaf_node::test_utils::get_test_capabilities;
     use crate::{
@@ -1948,9 +1981,8 @@ mod tests {
         client_builder::{test_utils::TestClientConfig, Preferences},
         extension::{test_utils::TestExtension, RequiredCapabilitiesExt},
         identity::test_utils::get_test_signing_identity,
-        key_package::test_utils::test_key_package_custom,
         psk::PreSharedKey,
-        tree_kem::{leaf_node::LeafNodeSource, Lifetime, UpdatePathNode},
+        tree_kem::{leaf_node::LeafNodeSource, UpdatePathNode},
     };
 
     #[cfg(all(feature = "external_proposal", feature = "custom_proposal"))]
@@ -1968,7 +2000,6 @@ mod tests {
 
     use aws_mls_core::extension::{Extension, MlsExtension};
     use aws_mls_core::identity::{Credential, CredentialType, CustomCredential};
-    use futures::FutureExt;
 
     #[cfg(feature = "external_proposal")]
     use aws_mls_core::identity::CertificateChain;
@@ -1985,10 +2016,7 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    #[cfg(not(target_arch = "wasm32"))]
-    use futures_test::test;
-
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_create_group() {
         for (protocol_version, cipher_suite) in ProtocolVersion::all().flat_map(|p| {
             TestCryptoProvider::all_supported_cipher_suites()
@@ -2021,7 +2049,7 @@ mod tests {
     }
 
     #[cfg(feature = "private_message")]
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_pending_proposals_application_data() {
         let mut test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
@@ -2053,14 +2081,15 @@ mod tests {
 
         test_group.group.apply_pending_commit().await.unwrap();
 
-        assert!(test_group
+        let res = test_group
             .group
             .encrypt_application_message(b"test", vec![])
-            .await
-            .is_ok());
+            .await;
+
+        assert!(res.is_ok());
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_update_proposals() {
         let mut new_capabilities = get_test_capabilities();
         new_capabilities.extensions.push(42.into());
@@ -2099,7 +2128,7 @@ mod tests {
         assert_eq!(update.leaf_node.ungreased_capabilities(), new_capabilities);
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_invalid_commit_self_update() {
         let mut test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
@@ -2126,7 +2155,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn update_proposal_with_bad_key_package_is_ignored_when_committing() {
         let (mut alice_group, mut bob_group) =
             test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, true).await;
@@ -2184,6 +2213,7 @@ mod tests {
         );
     }
 
+    #[maybe_async::maybe_async]
     async fn test_two_member_group(
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
@@ -2208,17 +2238,17 @@ mod tests {
         (test_group, bob_test_group)
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_welcome_processing_exported_tree() {
         test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, false).await;
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_welcome_processing_tree_extension() {
         test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, true).await;
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_welcome_processing_missing_tree() {
         let mut test_group = test_group_custom(
             TEST_PROTOCOL_VERSION,
@@ -2254,7 +2284,7 @@ mod tests {
         assert_matches!(bob_group, Err(MlsError::RatchetTreeNotFound));
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_group_context_ext_proposal_create() {
         let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
@@ -2274,6 +2304,7 @@ mod tests {
         assert_matches!(proposal, Proposal::GroupContextExtensions(ext) if ext == extension_list);
     }
 
+    #[maybe_async::maybe_async]
     async fn group_context_extension_proposal_test(
         ext_list: ExtensionList,
     ) -> (TestGroup, Result<MLSMessage, MlsError>) {
@@ -2304,7 +2335,7 @@ mod tests {
         (test_group, commit)
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_group_context_ext_proposal_commit() {
         let mut extension_list = ExtensionList::new();
 
@@ -2331,7 +2362,7 @@ mod tests {
         assert_eq!(test_group.group.state.context.extensions, extension_list)
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_group_context_ext_proposal_invalid() {
         let mut extension_list = ExtensionList::new();
         extension_list
@@ -2351,7 +2382,7 @@ mod tests {
     }
 
     #[cfg(feature = "private_message")]
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_group_encrypt_plaintext_padding() {
         let protocol_version = TEST_PROTOCOL_VERSION;
         let cipher_suite = TEST_CIPHER_SUITE;
@@ -2390,7 +2421,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_commit")]
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn external_commit_requires_external_pub_extension() {
         let protocol_version = TEST_PROTOCOL_VERSION;
         let cipher_suite = TEST_CIPHER_SUITE;
@@ -2412,18 +2443,15 @@ mod tests {
             .unwrap()
             .clone();
 
-        let res = external_commit::ExternalCommitBuilder::new(
-            signing_identity,
-            group.group.config.clone(),
-        )
-        .build(info_msg)
-        .await
-        .map(|_| {});
+        let res = external_commit::ExternalCommitBuilder::new(signing_identity, group.group.config)
+            .build(info_msg)
+            .await
+            .map(|_| {});
 
         assert_matches!(res, Err(MlsError::MissingExternalPubExtension));
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_path_update_preference() {
         let protocol_version = TEST_PROTOCOL_VERSION;
         let cipher_suite = TEST_CIPHER_SUITE;
@@ -2482,7 +2510,7 @@ mod tests {
             .is_some());
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_path_update_preference_override() {
         let protocol_version = TEST_PROTOCOL_VERSION;
         let cipher_suite = TEST_CIPHER_SUITE;
@@ -2506,7 +2534,7 @@ mod tests {
             .is_some());
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn group_rejects_unencrypted_application_message() {
         let protocol_version = TEST_PROTOCOL_VERSION;
         let cipher_suite = TEST_CIPHER_SUITE;
@@ -2518,14 +2546,13 @@ mod tests {
             .make_plaintext(Content::Application(b"hello".to_vec().into()))
             .await;
 
-        assert_matches!(
-            bob.group.process_incoming_message(message).await,
-            Err(MlsError::UnencryptedApplicationMessage)
-        );
+        let res = bob.group.process_incoming_message(message).await;
+
+        assert_matches!(res, Err(MlsError::UnencryptedApplicationMessage));
     }
 
     #[cfg(feature = "state_update")]
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_state_update() {
         let protocol_version = TEST_PROTOCOL_VERSION;
         let cipher_suite = TEST_CIPHER_SUITE;
@@ -2653,7 +2680,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_commit")]
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn commit_description_external_commit() {
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
@@ -2691,7 +2718,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_commit")]
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn can_join_new_group_externally() {
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
@@ -2714,7 +2741,7 @@ mod tests {
         alice_group.process_message(commit).await.unwrap();
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_membership_tag_from_non_member() {
         let (mut alice_group, mut bob_group) =
             test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, true).await;
@@ -2728,15 +2755,14 @@ mod tests {
 
         plaintext.content.sender = Sender::NewMemberCommit;
 
-        assert_matches!(
-            bob_group
-                .process_message(commit_output.commit_message)
-                .await,
-            Err(MlsError::MembershipTagForNonMember)
-        );
+        let res = bob_group
+            .process_message(commit_output.commit_message)
+            .await;
+
+        assert_matches!(res, Err(MlsError::MembershipTagForNonMember));
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_partial_commits() {
         let protocol_version = TEST_PROTOCOL_VERSION;
         let cipher_suite = TEST_CIPHER_SUITE;
@@ -2764,7 +2790,7 @@ mod tests {
         bob.process_message(commit).await.unwrap();
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn old_hpke_secrets_are_removed() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         alice.join("bob").await;
@@ -2784,7 +2810,7 @@ mod tests {
         assert!(alice.group.private_tree.secret_keys[1].is_none());
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn old_hpke_secrets_of_removed_are_removed() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         alice.join("bob").await;
@@ -2804,7 +2830,7 @@ mod tests {
         assert!(alice.group.private_tree.secret_keys[1].is_none());
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn old_hpke_secrets_of_updated_are_removed() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let (mut bob, _) = alice.join("bob").await;
@@ -2822,7 +2848,7 @@ mod tests {
         assert!(alice.group.private_tree.secret_keys[1].is_none());
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn only_selected_members_of_the_original_group_can_join_subgroup() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let (mut bob, _) = alice.join("bob").await;
@@ -2853,14 +2879,14 @@ mod tests {
             .unwrap();
 
         // Carol can't join
-        assert_matches!(
-            carol
-                .group
-                .join_subgroup(welcome, Some(&alice_sub_group.export_tree().unwrap()))
-                .await
-                .map(|_| ()),
-            Err(_)
-        );
+
+        let res = carol
+            .group
+            .join_subgroup(welcome, Some(&alice_sub_group.export_tree().unwrap()))
+            .await
+            .map(|_| ());
+
+        assert_matches!(res, Err(_));
 
         // Alice and Bob can still talk
         let commit_output = alice_sub_group.commit(vec![]).await.unwrap();
@@ -2871,6 +2897,7 @@ mod tests {
             .unwrap();
     }
 
+    #[maybe_async::maybe_async]
     async fn joining_group_fails_if_unsupported<F>(
         f: F,
     ) -> Result<(TestGroup, MLSMessage), MlsError>
@@ -2881,7 +2908,7 @@ mod tests {
         alice_group.join_with_custom_config("alice", false, f).await
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn joining_group_fails_if_protocol_version_is_not_supported() {
         let res = joining_group_fails_if_unsupported(|config| {
             config.0.settings.protocol_versions.clear();
@@ -2896,7 +2923,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn joining_group_fails_if_cipher_suite_is_not_supported() {
         let res = joining_group_fails_if_unsupported(|config| {
             config
@@ -2915,7 +2942,7 @@ mod tests {
     }
 
     #[cfg(feature = "private_message")]
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn member_can_see_sender_creds() {
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let (mut bob_group, _) = alice_group.join("bob").await;
@@ -2941,7 +2968,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn members_of_a_group_have_identical_authentication_secrets() {
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let (bob_group, _) = alice_group.join("bob").await;
@@ -2953,7 +2980,7 @@ mod tests {
     }
 
     #[cfg(feature = "private_message")]
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn member_cannot_decrypt_same_message_twice() {
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let (mut bob_group, _) = alice_group.join("bob").await;
@@ -2980,7 +3007,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::KeyMissing(0)));
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn removing_requirements_allows_to_add() {
         let mut capabilities = get_test_capabilities();
         capabilities.extensions = vec![17.into()];
@@ -3014,25 +3041,8 @@ mod tests {
 
         alice_group.process_pending_commit().await.unwrap();
 
-        let test_key_package = test_key_package_custom(
-            &alice_group.group.cipher_suite_provider,
-            TEST_PROTOCOL_VERSION,
-            "bob",
-            |gen| {
-                async move {
-                    gen.generate(
-                        Lifetime::years(1).unwrap(),
-                        get_test_capabilities(),
-                        Default::default(),
-                        Default::default(),
-                    )
-                    .await
-                    .unwrap()
-                }
-                .boxed()
-            },
-        )
-        .await;
+        let test_key_package =
+            test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
 
         let test_key_package = MLSMessage::new(
             TEST_PROTOCOL_VERSION,
@@ -3073,7 +3083,7 @@ mod tests {
         assert_eq!(alice_group.group.roster().len(), 2);
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn commit_leaf_wrong_source() {
         // RFC, 13.4.2. "The leaf_node_source field MUST be set to commit."
         let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 3).await;
@@ -3085,15 +3095,14 @@ mod tests {
 
         let commit_output = groups[0].group.commit(vec![]).await.unwrap();
 
-        assert_matches!(
-            groups[2]
-                .process_message(commit_output.commit_message)
-                .await,
-            Err(MlsError::InvalidLeafNodeSource)
-        );
+        let res = groups[2]
+            .process_message(commit_output.commit_message)
+            .await;
+
+        assert_matches!(res, Err(MlsError::InvalidLeafNodeSource));
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn commit_leaf_same_hpke_key() {
         // RFC 13.4.2. "Verify that the encryption_key value in the LeafNode is different from the committer's current leaf node"
 
@@ -3115,15 +3124,14 @@ mod tests {
         // Group 0 tries to use the fixed key againd
         let commit_output = groups[0].group.commit(vec![]).await.unwrap();
 
-        assert_matches!(
-            groups[2]
-                .process_message(commit_output.commit_message)
-                .await,
-            Err(MlsError::SameHpkeKey(0))
-        );
+        let res = groups[2]
+            .process_message(commit_output.commit_message)
+            .await;
+
+        assert_matches!(res, Err(MlsError::SameHpkeKey(0)));
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn commit_leaf_duplicate_hpke_key() {
         // RFC 8.3 "Verify that the following fields are unique among the members of the group: `encryption_key`"
 
@@ -3153,15 +3161,14 @@ mod tests {
 
         let commit_output = groups[0].group.commit(vec![]).await.unwrap();
 
-        assert_matches!(
-            groups[7]
-                .process_message(commit_output.commit_message)
-                .await,
-            Err(MlsError::DuplicateLeafData(_))
-        );
+        let res = groups[7]
+            .process_message(commit_output.commit_message)
+            .await;
+
+        assert_matches!(res, Err(MlsError::DuplicateLeafData(_)));
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn commit_leaf_duplicate_signature_key() {
         // RFC 8.3 "Verify that the following fields are unique among the members of the group: `signature_key`"
 
@@ -3195,15 +3202,14 @@ mod tests {
 
         let commit_output = groups[0].group.commit(vec![]).await.unwrap();
 
-        assert_matches!(
-            groups[7]
-                .process_message(commit_output.commit_message)
-                .await,
-            Err(MlsError::DuplicateLeafData(_))
-        );
+        let res = groups[7]
+            .process_message(commit_output.commit_message)
+            .await;
+
+        assert_matches!(res, Err(MlsError::DuplicateLeafData(_)));
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn commit_leaf_incorrect_signature() {
         let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 3).await;
 
@@ -3213,15 +3219,14 @@ mod tests {
 
         let commit_output = groups[0].group.commit(vec![]).await.unwrap();
 
-        assert_matches!(
-            groups[2]
-                .process_message(commit_output.commit_message)
-                .await,
-            Err(MlsError::InvalidSignature)
-        );
+        let res = groups[2]
+            .process_message(commit_output.commit_message)
+            .await;
+
+        assert_matches!(res, Err(MlsError::InvalidSignature));
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn commit_leaf_not_supporting_used_context_extension() {
         // The new leaf of the committer doesn't support an extension set in group context
         let extension = Extension::new(999.into(), vec![]);
@@ -3235,13 +3240,15 @@ mod tests {
         };
 
         let commit_output = groups[0].commit(vec![]).await.unwrap();
-        assert!(groups[1]
+
+        let res = groups[1]
             .process_incoming_message(commit_output.commit_message)
-            .await
-            .is_err());
+            .await;
+
+        assert!(res.is_err());
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn commit_leaf_not_supporting_used_leaf_extension() {
         // The new leaf of the committer doesn't support an extension set in another leaf
         let extension = Extension::new(999.into(), vec![]);
@@ -3257,13 +3264,14 @@ mod tests {
 
         let commit_output = groups[0].commit(vec![]).await.unwrap();
 
-        assert!(groups[1]
+        let res = groups[1]
             .process_incoming_message(commit_output.commit_message)
-            .await
-            .is_err());
+            .await;
+
+        assert!(res.is_err());
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn commit_leaf_uses_extension_unsupported_by_another_leaf() {
         // The new leaf of the committer uses an extension unsupported by another leaf
         let mut groups =
@@ -3282,13 +3290,15 @@ mod tests {
         };
 
         let commit_output = groups[0].commit(vec![]).await.unwrap();
-        assert!(groups[1]
+
+        let res = groups[1]
             .process_incoming_message(commit_output.commit_message)
-            .await
-            .is_err());
+            .await;
+
+        assert!(res.is_err());
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn commit_leaf_not_supporting_required_extension() {
         // The new leaf of the committer doesn't support an extension required by group context
 
@@ -3308,13 +3318,15 @@ mod tests {
         };
 
         let commit_output = groups[0].commit(vec![]).await.unwrap();
-        assert!(groups[2]
+
+        let res = groups[2]
             .process_incoming_message(commit_output.commit_message)
-            .await
-            .is_err());
+            .await;
+
+        assert!(res.is_err());
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn commit_leaf_has_unsupported_credential() {
         // The new leaf of the committer has a credential unsupported by another leaf
         let mut groups =
@@ -3341,15 +3353,14 @@ mod tests {
 
         let commit_output = groups[0].commit(vec![]).await.unwrap();
 
-        assert_matches!(
-            groups[2]
-                .process_incoming_message(commit_output.commit_message)
-                .await,
-            Err(MlsError::CredentialTypeOfNewLeafIsUnsupported(_))
-        );
+        let res = groups[2]
+            .process_incoming_message(commit_output.commit_message)
+            .await;
+
+        assert_matches!(res, Err(MlsError::CredentialTypeOfNewLeafIsUnsupported(_)));
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn commit_leaf_not_supporting_credential_used_in_another_leaf() {
         // The new leaf of the committer doesn't support another leaf's credential
 
@@ -3364,15 +3375,17 @@ mod tests {
 
         let commit_output = groups[0].commit(vec![]).await.unwrap();
 
+        let res = groups[2]
+            .process_incoming_message(commit_output.commit_message)
+            .await;
+
         assert_matches!(
-            groups[2]
-                .process_incoming_message(commit_output.commit_message)
-                .await,
+            res,
             Err(MlsError::InUseCredentialTypeUnsupportedByNewLeaf(..))
         );
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn commit_leaf_not_supporting_required_credential() {
         // The new leaf of the committer doesn't support a credential required by group context
 
@@ -3394,16 +3407,15 @@ mod tests {
 
         let commit_output = groups[0].commit(vec![]).await.unwrap();
 
-        assert_matches!(
-            groups[2]
-                .process_incoming_message(commit_output.commit_message)
-                .await,
-            Err(MlsError::RequiredCredentialNotFound(_))
-        );
+        let res = groups[2]
+            .process_incoming_message(commit_output.commit_message)
+            .await;
+
+        assert_matches!(res, Err(MlsError::RequiredCredentialNotFound(_)));
     }
 
     #[cfg(feature = "external_proposal")]
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn commit_leaf_not_supporting_credential_used_by_external_sender() {
         // The new leaf of the committer doesn't support credential used by an external sender
         let (_, ext_sender_pk) = test_cipher_suite_provider(TEST_CIPHER_SUITE)
@@ -3430,17 +3442,18 @@ mod tests {
 
         let commit_output = groups[0].commit(vec![]).await.unwrap();
 
-        assert!(groups[2]
+        let res = groups[2]
             .process_incoming_message(commit_output.commit_message)
-            .await
-            .is_err());
+            .await;
+
+        assert!(res.is_err());
     }
 
     /*
      * Edge case paths
      */
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn committing_degenerate_path_succeeds() {
         let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 10).await;
 
@@ -3456,13 +3469,14 @@ mod tests {
 
         let commit_output = groups[0].group.commit(vec![]).await.unwrap();
 
-        assert!(groups[7]
+        let res = groups[7]
             .process_message(commit_output.commit_message)
-            .await
-            .is_ok());
+            .await;
+
+        assert!(res.is_ok());
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn inserting_key_in_filtered_node_fails() {
         let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 10).await;
 
@@ -3498,16 +3512,15 @@ mod tests {
 
         let commit_output = groups[0].group.commit(vec![]).await.unwrap();
 
+        let res = groups[7]
+            .process_message(commit_output.commit_message)
+            .await;
+
         // We should get a path validation error, since the path is too long
-        assert_matches!(
-            groups[7]
-                .process_message(commit_output.commit_message)
-                .await,
-            Err(MlsError::WrongPathLen(4, 3))
-        );
+        assert_matches!(res, Err(MlsError::WrongPathLen(4, 3)));
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn commit_with_too_short_path_fails() {
         let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 10).await;
 
@@ -3537,13 +3550,14 @@ mod tests {
 
         let commit_output = groups[0].group.commit(vec![]).await.unwrap();
 
-        assert!(groups[7]
+        let res = groups[7]
             .process_message(commit_output.commit_message)
-            .await
-            .is_err());
+            .await;
+
+        assert!(res.is_err());
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn update_proposal_can_change_credential() {
         let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 3).await;
         let (identity, secret_key) =
@@ -3598,7 +3612,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn receiving_commit_with_old_adds_fails() {
         let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 2).await;
 
@@ -3632,6 +3646,7 @@ mod tests {
     }
 
     #[cfg(feature = "custom_proposal")]
+    #[maybe_async::maybe_async]
     async fn custom_proposal_setup() -> (TestGroup, TestGroup) {
         let mut alice = test_group_custom_config(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, |b| {
             b.custom_proposal_type(ProposalType::new(42))
@@ -3651,7 +3666,7 @@ mod tests {
     }
 
     #[cfg(feature = "custom_proposal")]
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn custom_proposal_by_value() {
         let (mut alice, mut bob) = custom_proposal_setup().await;
 
@@ -3677,7 +3692,7 @@ mod tests {
     }
 
     #[cfg(feature = "custom_proposal")]
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn custom_proposal_by_reference() {
         let (mut alice, mut bob) = custom_proposal_setup().await;
 
@@ -3705,7 +3720,7 @@ mod tests {
         assert_matches!(res, ReceivedMessage::Commit(_));
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn can_join_with_psk() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
             .await
@@ -3726,7 +3741,7 @@ mod tests {
 
         let commit = alice
             .commit_builder()
-            .add_member(key_pkg.clone())
+            .add_member(key_pkg)
             .unwrap()
             .add_external_psk(psk_id)
             .unwrap()
@@ -3739,7 +3754,7 @@ mod tests {
             .unwrap();
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn signer_for_identity() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
             .await

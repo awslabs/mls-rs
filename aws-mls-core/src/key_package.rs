@@ -1,6 +1,5 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
-use async_trait::async_trait;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 
 use crate::{crypto::HpkeSecretKey, error::IntoAnyError};
@@ -29,7 +28,7 @@ impl KeyPackageData {
 }
 
 /// Storage trait that maintains key package secrets.
-#[async_trait]
+#[maybe_async::maybe_async]
 pub trait KeyPackageStorage: Send + Sync {
     /// Error type that the underlying storage mechanism returns on internal
     /// failure.

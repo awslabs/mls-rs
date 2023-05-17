@@ -1,5 +1,4 @@
 use crate::SqLiteDataStorageError;
-use async_trait::async_trait;
 use aws_mls_core::{
     aws_mls_codec::{MlsDecode, MlsEncode},
     crypto::{CipherSuite, SignatureSecretKey},
@@ -155,7 +154,7 @@ impl SqLiteKeychainStorage {
     }
 }
 
-#[async_trait]
+#[maybe_async::maybe_async]
 impl KeychainStorage for SqLiteKeychainStorage {
     type Error = SqLiteDataStorageError;
 
@@ -164,7 +163,7 @@ impl KeychainStorage for SqLiteKeychainStorage {
         identity: &SigningIdentity,
     ) -> Result<Option<SignatureSecretKey>, Self::Error> {
         let (identifier, _) = identifier_hash(identity)?;
-        Ok(self.signer(&identifier)?)
+        self.signer(&identifier)
     }
 }
 

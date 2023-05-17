@@ -1,10 +1,10 @@
 use core::convert::Infallible;
 
 use crate::{util::credential_to_chain, CertificateChain, X509IdentityError};
+use alloc::boxed::Box;
 use alloc::vec;
-use alloc::{boxed::Box, vec::Vec};
+use alloc::vec::Vec;
 use aws_mls_core::{
-    async_trait::async_trait,
     crypto::SignaturePublicKey,
     error::IntoAnyError,
     extension::ExtensionList,
@@ -177,7 +177,7 @@ where
     }
 }
 
-#[async_trait]
+#[maybe_async::maybe_async]
 impl<IE, V, IEP> IdentityProvider for X509IdentityProvider<IE, V, IEP>
 where
     IE: X509IdentityExtractor + Send + Sync,

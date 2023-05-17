@@ -8,14 +8,12 @@ use crate::{
     ExtensionList,
 };
 use alloc::vec::Vec;
-use async_trait::async_trait;
 use aws_mls_core::{
     crypto::CryptoProvider, group::GroupStateStorage, identity::IdentityProvider,
     key_package::KeyPackageStorage, keychain::KeychainStorage, psk::PreSharedKeyStorage,
 };
 
-#[async_trait]
-pub trait ClientConfig: Clone + Send + Sync {
+pub trait ClientConfig: Send + Sync + Clone {
     type KeyPackageRepository: KeyPackageStorage + Clone;
     type Keychain: KeychainStorage + Clone;
     type PskStore: PreSharedKeyStorage + Clone;

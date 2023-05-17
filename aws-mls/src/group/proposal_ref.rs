@@ -73,9 +73,6 @@ mod test {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    #[cfg(not(target_arch = "wasm32"))]
-    use futures_test::test;
-
     fn get_test_extension_list() -> ExtensionList {
         let test_extension = RequiredCapabilitiesExt {
             extensions: vec![42.into()],
@@ -98,6 +95,7 @@ mod test {
         output: Vec<u8>,
     }
 
+    #[maybe_async::maybe_async]
     async fn generate_proposal_test_cases() -> Vec<TestCase> {
         let mut test_cases = Vec::new();
 
@@ -170,11 +168,17 @@ mod test {
         test_cases
     }
 
+    #[maybe_async::async_impl]
     async fn load_test_cases() -> Vec<TestCase> {
         load_test_case_json!(proposal_ref, generate_proposal_test_cases().await)
     }
 
-    #[test]
+    #[maybe_async::sync_impl]
+    fn load_test_cases() -> Vec<TestCase> {
+        load_test_case_json!(proposal_ref, generate_proposal_test_cases())
+    }
+
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_proposal_ref() {
         let test_cases = load_test_cases().await;
 

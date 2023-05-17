@@ -28,9 +28,9 @@ use crate::{
     },
     CipherSuiteProvider,
 };
+use alloc::boxed::Box;
 use alloc::vec;
-use alloc::{boxed::Box, vec::Vec};
-use async_trait::async_trait;
+use alloc::vec::Vec;
 use aws_mls_core::{identity::IdentityProvider, psk::PreSharedKeyStorage};
 
 #[cfg(feature = "state_update")]
@@ -259,7 +259,7 @@ pub(crate) enum EventOrContent<E> {
     Content(AuthenticatedContent),
 }
 
-#[async_trait]
+#[maybe_async::maybe_async]
 pub(crate) trait MessageProcessor: Send + Sync {
     type OutputType: TryFrom<ApplicationMessageDescription, Error = MlsError>
         + From<CommitMessageDescription>

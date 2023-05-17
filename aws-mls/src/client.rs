@@ -454,6 +454,7 @@ where
     /// # Warning
     ///
     /// A key package message may only be used once.
+    #[maybe_async::maybe_async]
     pub async fn generate_key_package_message(
         &self,
         protocol_version: ProtocolVersion,
@@ -467,6 +468,7 @@ where
         Ok(key_package.key_package_message())
     }
 
+    #[maybe_async::maybe_async]
     async fn generate_key_package(
         &self,
         protocol_version: ProtocolVersion,
@@ -526,6 +528,7 @@ where
     /// It is recommended to use [create_group](Client::create_group)
     /// instead of this function because it guarantees that group_id values
     /// are globally unique.
+    #[maybe_async::maybe_async]
     pub async fn create_group_with_id(
         &self,
         protocol_version: ProtocolVersion,
@@ -555,6 +558,7 @@ where
     /// The [KeychainStorage](crate::KeychainStorage) used to configure
     /// the client will be searched for a secret key matching `signing_identity`
     /// that will be used to sign messages sent to this group.
+    #[maybe_async::maybe_async]
     pub async fn create_group(
         &self,
         protocol_version: ProtocolVersion,
@@ -583,6 +587,7 @@ where
     /// enabled at the time the welcome message was created. `tree_data` can
     /// be exported from a group using the
     /// [export tree function](crate::group::Group::export_tree).
+    #[maybe_async::maybe_async]
     pub async fn join_group(
         &self,
         tree_data: Option<&[u8]>,
@@ -630,6 +635,7 @@ where
     // TODO: Add a comment about forward secrecy and a pointer to the future
     // book chapter on this topic
     #[cfg(feature = "external_commit")]
+    #[maybe_async::maybe_async]
     pub async fn commit_external(
         &self,
         group_info_msg: MLSMessage,
@@ -657,6 +663,7 @@ where
     /// Load an existing group state into this client using the
     /// [GroupStateStorage](crate::GroupStateStorage) that
     /// this client was configured to use.
+    #[maybe_async::maybe_async]
     pub async fn load_group(&self, group_id: &[u8]) -> Result<Group<C>, MlsError> {
         let snapshot = self
             .config
@@ -678,6 +685,7 @@ where
     /// An existing group member will need to perform a
     /// [commit](crate::Group::commit) to complete the add and the resulting
     /// welcome message can be used by [join_group](Client::join_group).
+    #[maybe_async::maybe_async]
     pub async fn external_add_proposal(
         &self,
         group_info: MLSMessage,
@@ -782,6 +790,7 @@ pub(crate) mod test_utils {
         (builder, signing_identity)
     }
 
+    #[maybe_async::maybe_async]
     pub async fn test_client_with_key_pkg(
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
@@ -790,6 +799,7 @@ pub(crate) mod test_utils {
         test_client_with_key_pkg_custom(protocol_version, cipher_suite, identity, |_| {}).await
     }
 
+    #[maybe_async::maybe_async]
     pub async fn test_client_with_key_pkg_custom<F>(
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
@@ -836,13 +846,7 @@ mod tests {
 
     use aws_mls_codec::MlsEncode;
 
-    #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen_test::wasm_bindgen_test as test;
-
-    #[cfg(not(target_arch = "wasm32"))]
-    use futures_test::test;
-
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_keygen() {
         // This is meant to test the inputs to the internal key package generator
         // See KeyPackageGenerator tests for key generation specific tests
@@ -889,7 +893,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_commit")]
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn new_member_add_proposal_adds_to_group() {
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
@@ -935,6 +939,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_commit")]
+    #[maybe_async::maybe_async]
     async fn join_via_external_commit(do_remove: bool, with_psk: bool) -> Result<(), MlsError> {
         // An external commit cannot be the first commit in a group as it requires
         // interim_transcript_hash to be computed from the confirmed_transcript_hash and
@@ -1025,7 +1030,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_commit")]
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_external_commit() {
         // New member can join
         join_via_external_commit(false, false).await.unwrap();
@@ -1038,7 +1043,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_commit")]
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn creating_an_external_commit_requires_a_group_info_message() {
         let (alice, alice_identity) = get_basic_client_builder(TEST_CIPHER_SUITE, "alice");
         let alice = alice.build();
@@ -1058,7 +1063,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_commit")]
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn external_commit_with_invalid_group_info_fails() {
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let mut bob_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;

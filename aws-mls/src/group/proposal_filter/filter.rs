@@ -7,7 +7,6 @@ use crate::group::proposal::{CustomProposal, Proposal};
 use alloc::{vec, vec::Vec};
 
 use alloc::boxed::Box;
-use async_trait::async_trait;
 use aws_mls_core::{error::IntoAnyError, extension::ExtensionList, group::Member};
 use core::convert::Infallible;
 
@@ -24,7 +23,7 @@ use super::ProposalInfo;
 ///
 /// Each member of a group MUST apply the same proposal rules in order to
 /// maintain a working group.
-#[async_trait]
+#[maybe_async::maybe_async]
 pub trait ProposalRules: Send + Sync {
     type Error: IntoAnyError;
 
@@ -65,11 +64,12 @@ pub trait ProposalRules: Send + Sync {
 
 macro_rules! delegate_proposal_rules {
     ($implementer:ty) => {
-        #[async_trait]
+        #[maybe_async::maybe_async]
         impl<T: ProposalRules + ?Sized> ProposalRules for $implementer {
             type Error = T::Error;
 
             #[cfg(feature = "custom_proposal")]
+            #[maybe_async::maybe_async]
             async fn expand_custom_proposals(
                 &self,
                 current_roster: &[Member],
@@ -81,6 +81,7 @@ macro_rules! delegate_proposal_rules {
                     .await
             }
 
+            #[maybe_async::maybe_async]
             async fn validate(
                 &self,
                 commit_sender: Sender,
@@ -93,6 +94,7 @@ macro_rules! delegate_proposal_rules {
                     .await
             }
 
+            #[maybe_async::maybe_async]
             async fn filter(
                 &self,
                 commit_sender: Sender,
@@ -121,7 +123,7 @@ impl PassThroughProposalRules {
     }
 }
 
-#[async_trait]
+#[maybe_async::maybe_async]
 impl ProposalRules for PassThroughProposalRules {
     type Error = Infallible;
 

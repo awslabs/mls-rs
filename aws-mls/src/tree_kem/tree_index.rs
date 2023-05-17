@@ -53,6 +53,7 @@ pub struct TreeIndex {
 }
 
 #[cfg(feature = "tree_index")]
+#[maybe_async::maybe_async]
 pub(super) async fn index_insert<I: IdentityProvider>(
     tree_index: &mut TreeIndex,
     new_leaf: &LeafNode,
@@ -68,6 +69,7 @@ pub(super) async fn index_insert<I: IdentityProvider>(
 }
 
 #[cfg(not(feature = "tree_index"))]
+#[maybe_async::maybe_async]
 pub(super) async fn index_insert<I: IdentityProvider>(
     nodes: &NodeVec,
     new_leaf: &LeafNode,
@@ -312,13 +314,9 @@ mod tests {
     };
     use alloc::format;
     use assert_matches::assert_matches;
-    use futures::StreamExt;
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
-
-    #[cfg(not(target_arch = "wasm32"))]
-    use futures_test::test;
 
     #[derive(Clone, Debug)]
     struct TestData {
@@ -326,6 +324,7 @@ mod tests {
         pub index: LeafIndex,
     }
 
+    #[maybe_async::maybe_async]
     async fn get_test_data(index: LeafIndex) -> TestData {
         let cipher_suite = TEST_CIPHER_SUITE;
         let leaf_node = get_basic_test_node(cipher_suite, &format!("foo{}", index.0)).await;
@@ -333,11 +332,13 @@ mod tests {
         TestData { leaf_node, index }
     }
 
+    #[maybe_async::maybe_async]
     async fn test_setup() -> (Vec<TestData>, TreeIndex) {
-        let test_data = futures::stream::iter(0..10)
-            .then(|i| get_test_data(LeafIndex(i)))
-            .collect::<Vec<TestData>>()
-            .await;
+        let mut test_data = Vec::new();
+
+        for i in 0..10 {
+            test_data.push(get_test_data(LeafIndex(i)).await);
+        }
 
         let mut test_index = TreeIndex::new();
 
@@ -354,7 +355,7 @@ mod tests {
         (test_data, test_index)
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_insert() {
         let (test_data, test_index) = test_setup().await;
 
@@ -376,7 +377,7 @@ mod tests {
         })
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_insert_duplicate_credential_key() {
         let (test_data, mut test_index) = test_setup().await;
 
@@ -397,7 +398,7 @@ mod tests {
         assert_eq!(before_error, test_index);
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_insert_duplicate_hpke_key() {
         let cipher_suite = TEST_CIPHER_SUITE;
         let (test_data, mut test_index) = test_setup().await;
@@ -418,7 +419,7 @@ mod tests {
         assert_eq!(before_error, test_index);
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_remove() {
         let (test_data, mut test_index) = test_setup().await;
 
@@ -448,7 +449,7 @@ mod tests {
     }
 
     #[cfg(feature = "custom_proposal")]
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn custom_proposals() {
         let test_proposal_id = ProposalType::new(42);
         let other_proposal_id = ProposalType::new(45);

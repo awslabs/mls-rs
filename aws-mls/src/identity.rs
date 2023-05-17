@@ -17,7 +17,6 @@ pub(crate) mod test_utils {
     use alloc::boxed::Box;
     use alloc::vec;
     use alloc::vec::Vec;
-    use async_trait::async_trait;
     use aws_mls_core::{
         crypto::{CipherSuite, CipherSuiteProvider, SignatureSecretKey},
         error::IntoAnyError,
@@ -65,6 +64,7 @@ pub(crate) mod test_utils {
             }
         }
 
+        #[maybe_async::maybe_async]
         async fn resolve_custom_identity(
             &self,
             signing_id: &SigningIdentity,
@@ -90,7 +90,7 @@ pub(crate) mod test_utils {
         }
     }
 
-    #[async_trait]
+    #[maybe_async::maybe_async]
     impl IdentityProvider for BasicWithCustomProvider {
         type Error = BasicWithCustomProviderError;
 

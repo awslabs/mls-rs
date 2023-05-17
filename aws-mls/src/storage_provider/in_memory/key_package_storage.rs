@@ -11,8 +11,7 @@ use std::collections::HashMap;
 
 #[cfg(not(feature = "std"))]
 use alloc::collections::BTreeMap;
-use alloc::{boxed::Box, vec::Vec};
-use async_trait::async_trait;
+use alloc::vec::Vec;
 use aws_mls_core::key_package::{KeyPackageData, KeyPackageStorage};
 
 #[cfg(feature = "std")]
@@ -20,6 +19,8 @@ use std::sync::Mutex;
 
 #[cfg(not(feature = "std"))]
 use spin::Mutex;
+
+use alloc::boxed::Box;
 
 #[derive(Clone, Default, Debug)]
 /// In memory key package storage backed by a HashMap.
@@ -90,7 +91,7 @@ impl InMemoryKeyPackageStorage {
     }
 }
 
-#[async_trait]
+#[maybe_async::maybe_async]
 impl KeyPackageStorage for InMemoryKeyPackageStorage {
     type Error = Infallible;
 

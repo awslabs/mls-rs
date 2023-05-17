@@ -6,7 +6,6 @@ use aws_mls_core::{
     key_package::KeyPackageStorage,
     psk::{ExternalPskId, PreSharedKey, PreSharedKeyStorage},
 };
-use futures::{StreamExt, TryStreamExt};
 
 use crate::{
     client::MlsError,
@@ -46,6 +45,7 @@ impl<GS: GroupStateStorage, K: KeyPackageStorage, PS: PreSharedKeyStorage> Clone
 impl<GS: GroupStateStorage, K: KeyPackageStorage, PS: PreSharedKeyStorage>
     PskResolver<'_, GS, K, PS>
 {
+    #[maybe_async::maybe_async]
     async fn resolve_resumption(&self, psk_id: &ResumptionPsk) -> Result<PreSharedKey, MlsError> {
         if let Some(ctx) = self.group_context {
             if ctx.epoch == psk_id.psk_epoch && ctx.group_id == psk_id.psk_group_id.0 {
@@ -63,6 +63,7 @@ impl<GS: GroupStateStorage, K: KeyPackageStorage, PS: PreSharedKeyStorage>
         Err(MlsError::OldGroupStateNotFound)
     }
 
+    #[maybe_async::maybe_async]
     async fn resolve_external(&self, psk_id: &ExternalPskId) -> Result<PreSharedKey, MlsError> {
         self.psk_store
             .get(psk_id)
@@ -71,25 +72,28 @@ impl<GS: GroupStateStorage, K: KeyPackageStorage, PS: PreSharedKeyStorage>
             .ok_or_else(|| MlsError::NoPskForId(psk_id.clone()))
     }
 
+    #[maybe_async::maybe_async]
     async fn resolve(&self, id: &[PreSharedKeyID]) -> Result<Vec<PskSecretInput>, MlsError> {
-        futures::stream::iter(id.iter())
-            .then(|id| async {
-                let psk = match &id.key_id {
-                    JustPreSharedKeyID::External(external) => self.resolve_external(external).await,
-                    JustPreSharedKeyID::Resumption(resumption) => {
-                        self.resolve_resumption(resumption).await
-                    }
-                }?;
+        let mut secret_inputs = Vec::new();
 
-                Ok(PskSecretInput {
-                    id: id.clone(),
-                    psk,
-                })
+        for id in id {
+            let psk = match &id.key_id {
+                JustPreSharedKeyID::External(external) => self.resolve_external(external).await,
+                JustPreSharedKeyID::Resumption(resumption) => {
+                    self.resolve_resumption(resumption).await
+                }
+            }?;
+
+            secret_inputs.push(PskSecretInput {
+                id: id.clone(),
+                psk,
             })
-            .try_collect()
-            .await
+        }
+
+        Ok(secret_inputs)
     }
 
+    #[maybe_async::maybe_async]
     pub async fn resolve_to_secret<P: CipherSuiteProvider>(
         &self,
         id: &[PreSharedKeyID],

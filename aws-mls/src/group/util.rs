@@ -1,10 +1,8 @@
-use alloc::boxed::Box;
 use aws_mls_codec::MlsDecode;
 use aws_mls_core::{
     error::IntoAnyError, group::Member, identity::IdentityProvider, key_package::KeyPackageStorage,
     psk::PreSharedKeyStorage,
 };
-use futures::StreamExt;
 
 use crate::{
     cipher_suite::CipherSuite,
@@ -49,6 +47,7 @@ pub(crate) struct JoinContext {
 }
 
 #[cfg(not(feature = "tree_index"))]
+#[maybe_async::maybe_async]
 pub(crate) async fn process_group_info<C>(
     msg_protocol_version: ProtocolVersion,
     group_info: GroupInfo,
@@ -63,6 +62,7 @@ where
 }
 
 #[cfg(feature = "tree_index")]
+#[maybe_async::maybe_async]
 pub(crate) async fn process_group_info<C, I>(
     msg_protocol_version: ProtocolVersion,
     group_info: GroupInfo,
@@ -78,6 +78,7 @@ where
     process_group_info_with_tree(msg_protocol_version, group_info, public_tree, cs).await
 }
 
+#[maybe_async::maybe_async]
 async fn process_group_info_with_tree<C>(
     msg_protocol_version: ProtocolVersion,
     group_info: GroupInfo,
@@ -129,6 +130,7 @@ where
     })
 }
 
+#[maybe_async::maybe_async]
 pub(crate) async fn validate_group_info<I: IdentityProvider, C: CipherSuiteProvider>(
     msg_protocol_version: ProtocolVersion,
     group_info: GroupInfo,
@@ -183,6 +185,7 @@ pub(crate) async fn validate_group_info<I: IdentityProvider, C: CipherSuiteProvi
 }
 
 #[cfg(feature = "tree_index")]
+#[maybe_async::maybe_async]
 pub(crate) async fn find_tree<C>(
     tree_data: Option<&[u8]>,
     extension: Option<RatchetTreeExt>,
@@ -195,6 +198,7 @@ where
 }
 
 #[cfg(not(feature = "tree_index"))]
+#[maybe_async::maybe_async]
 pub(crate) async fn find_tree(
     tree_data: Option<&[u8]>,
     extension: Option<RatchetTreeExt>,
@@ -234,6 +238,7 @@ pub(crate) fn commit_sender(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[maybe_async::maybe_async]
 pub(crate) async fn proposal_effects<C, F, P, CSP>(
     #[cfg(feature = "state_update")] commit_receiver: Option<LeafIndex>,
     proposals: &ProposalCache,
@@ -300,33 +305,31 @@ pub(super) fn transcript_hashes<P: CipherSuiteProvider>(
     Ok((interim_transcript_hash, confirmed_transcript_hash))
 }
 
+#[maybe_async::maybe_async]
 pub(crate) async fn find_key_package_generation<'a, K: KeyPackageStorage>(
     key_package_repo: &K,
     secrets: &'a [EncryptedGroupSecrets],
 ) -> Result<(&'a EncryptedGroupSecrets, KeyPackageGeneration), MlsError> {
-    futures::stream::iter(secrets.iter())
-        .filter_map(|secrets| {
-            Box::pin(async move {
-                key_package_repo
-                    .get(&secrets.new_member)
-                    .await
-                    .map_err(|e| MlsError::KeyPackageRepoError(e.into_any_error()))
-                    .and_then(|maybe_data| {
-                        if let Some(data) = maybe_data {
-                            KeyPackageGeneration::from_storage(secrets.new_member.to_vec(), data)
-                                .map(|kpg| Some((secrets, kpg)))
-                                .map_err(MlsError::from)
-                        } else {
-                            Ok::<_, MlsError>(None)
-                        }
-                    })
-                    .transpose()
-            })
-        })
-        .next()
-        .await
-        .transpose()?
-        .ok_or(MlsError::WelcomeKeyPackageNotFound)
+    for secret in secrets {
+        if let Some(val) = key_package_repo
+            .get(&secret.new_member)
+            .await
+            .map_err(|e| MlsError::KeyPackageRepoError(e.into_any_error()))
+            .and_then(|maybe_data| {
+                if let Some(data) = maybe_data {
+                    KeyPackageGeneration::from_storage(secret.new_member.to_vec(), data)
+                        .map(|kpg| Some((secret, kpg)))
+                        .map_err(MlsError::from)
+                } else {
+                    Ok::<_, MlsError>(None)
+                }
+            })?
+        {
+            return Ok(val);
+        }
+    }
+
+    Err(MlsError::WelcomeKeyPackageNotFound)
 }
 
 pub(crate) fn cipher_suite_provider<P>(

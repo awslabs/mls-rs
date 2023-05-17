@@ -31,7 +31,6 @@ use crate::group::ControlEncryptionMode;
 use crate::time::MlsTime;
 
 use alloc::vec::Vec;
-use async_trait::async_trait;
 
 #[cfg(feature = "sqlite")]
 use aws_mls_provider_sqlite::{
@@ -776,7 +775,6 @@ pub trait MlsConfig: Clone + Send + Sync + Sealed {
 }
 
 /// Blanket implementation so that `T: MlsConfig` implies `T: ClientConfig`
-#[async_trait]
 impl<T: MlsConfig> ClientConfig for T {
     type KeyPackageRepository = <T::Output as ClientConfig>::KeyPackageRepository;
     type Keychain = <T::Output as ClientConfig>::Keychain;

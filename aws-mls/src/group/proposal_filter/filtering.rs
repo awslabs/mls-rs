@@ -106,6 +106,7 @@ where
         }
     }
 
+    #[maybe_async::maybe_async]
     pub(crate) async fn apply_proposals<F>(
         &self,
         strategy: &F,
@@ -142,6 +143,7 @@ where
         Ok(state)
     }
 
+    #[maybe_async::maybe_async]
     async fn apply_proposals_from_member<F>(
         &self,
         strategy: &F,
@@ -195,6 +197,7 @@ where
     }
 
     #[cfg(feature = "external_commit")]
+    #[maybe_async::maybe_async]
     async fn apply_proposals_from_new_member(
         &self,
         proposals: ProposalBundle,
@@ -250,6 +253,7 @@ where
         Ok(state)
     }
 
+    #[maybe_async::maybe_async]
     async fn apply_proposal_changes<F>(
         &self,
         strategy: &F,
@@ -304,6 +308,7 @@ where
         }
     }
 
+    #[maybe_async::maybe_async]
     async fn apply_proposals_with_new_capabilities<F>(
         &self,
         strategy: &F,
@@ -387,6 +392,7 @@ where
         }
     }
 
+    #[maybe_async::maybe_async]
     async fn apply_tree_changes<F>(
         &self,
         strategy: &F,
@@ -423,6 +429,7 @@ where
         Ok(state)
     }
 
+    #[maybe_async::maybe_async]
     async fn validate_new_nodes<F>(
         &self,
         strategy: &F,
@@ -603,6 +610,7 @@ where
 }
 
 #[cfg(feature = "external_proposal")]
+#[maybe_async::maybe_async]
 async fn filter_out_invalid_group_extensions<F, C>(
     strategy: &F,
     mut proposals: ProposalBundle,
@@ -736,6 +744,7 @@ where
     Ok(proposals)
 }
 
+#[maybe_async::maybe_async]
 async fn filter_out_invalid_psks<F, P, CP>(
     strategy: &F,
     cipher_suite_provider: &CP,
@@ -1021,6 +1030,7 @@ fn ensure_proposals_in_external_commit_are_allowed(
 }
 
 #[cfg(feature = "external_commit")]
+#[maybe_async::maybe_async]
 async fn ensure_at_most_one_removal_for_self<C>(
     proposals: &ProposalBundle,
     external_leaf: &LeafNode,
@@ -1043,6 +1053,7 @@ where
 }
 
 #[cfg(feature = "external_commit")]
+#[maybe_async::maybe_async]
 async fn ensure_removal_is_for_self<C>(
     removal: &RemoveProposal,
     external_leaf: &LeafNode,
@@ -1083,6 +1094,7 @@ fn leaf_index_of_update_sender(p: &ProposalInfo<UpdateProposal>) -> Result<LeafI
 }
 
 #[cfg(feature = "external_commit")]
+#[maybe_async::maybe_async]
 async fn insert_external_leaf<I: IdentityProvider, CP: CipherSuiteProvider>(
     mut state: ProposalState,
     leaf_node: LeafNode,

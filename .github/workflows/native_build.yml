@@ -22,6 +22,10 @@ jobs:
       run: cargo test --all-features --verbose --workspace
     - name: Test Bare Bones
       run: cargo test --no-default-features --features std --verbose --workspace
+    - name: Test Sync Full RFC
+      run: RUSTFLAGS='--cfg sync' cargo test --all-features --lib --verbose --workspace 
+    - name: Test Sync Bare Bones 
+      run: RUSTFLAGS='--cfg sync' cargo test --no-default-features --lib --features std --verbose --workspace
     - name: Examples
       working-directory: aws-mls
       run: cargo run --example basic_usage --features=tokio 

@@ -1,7 +1,6 @@
 use crate::{identity::CredentialType, identity::SigningIdentity, time::MlsTime};
 use alloc::vec;
 use alloc::{boxed::Box, vec::Vec};
-use async_trait::async_trait;
 pub use aws_mls_core::identity::BasicCredential;
 use aws_mls_core::{
     error::IntoAnyError,
@@ -61,7 +60,7 @@ fn resolve_basic_identity(
         .ok_or_else(|| BasicIdentityProviderError(signing_id.credential.credential_type()))
 }
 
-#[async_trait]
+#[maybe_async::maybe_async]
 impl IdentityProvider for BasicIdentityProvider {
     type Error = BasicIdentityProviderError;
 

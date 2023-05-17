@@ -49,6 +49,7 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> TreeValidator<'a, C, CSP
         }
     }
 
+    #[maybe_async::maybe_async]
     pub async fn validate(&self, tree: &mut TreeKemPublic) -> Result<(), MlsError> {
         self.validate_tree_hash(tree)?;
 
@@ -80,6 +81,7 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> TreeValidator<'a, C, CSP
         Ok(())
     }
 
+    #[maybe_async::maybe_async]
     async fn validate_leaves(&self, tree: &TreeKemPublic) -> Result<(), MlsError> {
         for (index, leaf_node) in tree.nodes.non_empty_leaves() {
             self.leaf_node_validator
@@ -166,9 +168,6 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    #[cfg(not(target_arch = "wasm32"))]
-    use futures_test::test;
-
     fn test_parent_node(cipher_suite: CipherSuite) -> Parent {
         let (_, public_key) = test_cipher_suite_provider(cipher_suite)
             .kem_generate()
@@ -181,6 +180,7 @@ mod tests {
         }
     }
 
+    #[maybe_async::maybe_async]
     async fn get_valid_tree(cipher_suite: CipherSuite) -> TreeKemPublic {
         let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
 
@@ -220,7 +220,7 @@ mod tests {
         test_tree.public
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_valid_tree() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
@@ -243,7 +243,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_tree_hash_mismatch() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let mut test_tree = get_valid_tree(cipher_suite).await;
@@ -261,14 +261,13 @@ mod tests {
                 &BasicIdentityProvider,
             );
 
-            assert_matches!(
-                validator.validate(&mut test_tree).await,
-                Err(MlsError::TreeHashMismatch)
-            );
+            let res = validator.validate(&mut test_tree).await;
+
+            assert_matches!(res, Err(MlsError::TreeHashMismatch));
         }
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_parent_hash_mismatch() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let mut test_tree = get_valid_tree(cipher_suite).await;
@@ -290,14 +289,13 @@ mod tests {
                 &BasicIdentityProvider,
             );
 
-            assert_matches!(
-                validator.validate(&mut test_tree).await,
-                Err(MlsError::ParentHashMismatch)
-            );
+            let res = validator.validate(&mut test_tree).await;
+
+            assert_matches!(res, Err(MlsError::ParentHashMismatch));
         }
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_key_package_validation_failure() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let mut test_tree = get_valid_tree(cipher_suite).await;
@@ -321,20 +319,19 @@ mod tests {
                 &BasicIdentityProvider,
             );
 
-            assert_matches!(
-                validator.validate(&mut test_tree).await,
-                Err(MlsError::InvalidSignature)
-            );
+            let res = validator.validate(&mut test_tree).await;
+
+            assert_matches!(res, Err(MlsError::InvalidSignature));
         }
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn verify_unmerged_with_correct_tree() {
         let tree = get_test_tree_fig_12(TEST_CIPHER_SUITE).await;
         validate_unmerged(&tree).unwrap();
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn verify_unmerged_with_blank_leaf() {
         let mut tree = get_test_tree_fig_12(TEST_CIPHER_SUITE).await;
 
@@ -347,7 +344,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn verify_unmerged_with_broken_path() {
         let mut tree = get_test_tree_fig_12(TEST_CIPHER_SUITE).await;
 
@@ -360,7 +357,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn verify_unmerged_with_leaf_outside_tree() {
         let mut tree = get_test_tree_fig_12(TEST_CIPHER_SUITE).await;
 

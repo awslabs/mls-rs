@@ -1,6 +1,6 @@
 use crate::{error::IntoAnyError, extension::ExtensionList, group::RosterUpdate, time::MlsTime};
-use alloc::{boxed::Box, vec::Vec};
-use async_trait::async_trait;
+use alloc::boxed::Box;
+use alloc::vec::Vec;
 
 use super::{CredentialType, SigningIdentity};
 
@@ -29,9 +29,9 @@ impl IdentityWarning {
     }
 }
 
-#[async_trait]
 /// Identity system that can be used to validate a
 /// [`SigningIdentity`](aws-mls-core::identity::SigningIdentity)
+#[maybe_async::maybe_async]
 pub trait IdentityProvider: Send + Sync {
     /// Error type that this provider returns on internal failure.
     type Error: IntoAnyError;

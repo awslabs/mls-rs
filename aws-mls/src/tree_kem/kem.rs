@@ -47,6 +47,7 @@ impl<'a> TreeKem<'a> {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[maybe_async::maybe_async]
     pub async fn encap<C, P>(
         self,
         context: &mut GroupContext,
@@ -190,6 +191,7 @@ impl<'a> TreeKem<'a> {
         })
     }
 
+    #[maybe_async::maybe_async]
     pub async fn decap<IP, CP>(
         self,
         sender_index: LeafIndex,
@@ -378,7 +380,6 @@ mod tests {
     };
     use alloc::{format, vec, vec::Vec};
     use aws_mls_core::crypto::CipherSuiteProvider;
-    use futures::StreamExt;
 
     // Verify that the tree is in the correct state after generating an update path
     fn verify_tree_update_path(
@@ -463,6 +464,7 @@ mod tests {
         }
     }
 
+    #[maybe_async::maybe_async]
     async fn encap_decap(
         cipher_suite: CipherSuite,
         size: usize,
@@ -473,19 +475,19 @@ mod tests {
 
         // Generate signing keys and key package generations, and private keys for multiple
         // participants in order to set up state
-        let (leaf_nodes, mut private_keys): (_, Vec<TreeKemPrivate>) =
-            futures::stream::iter(1..size)
-                .then(|index| async move {
-                    let (leaf_node, hpke_secret, _) =
-                        get_basic_test_node_sig_key(cipher_suite, &format!("{index}")).await;
 
-                    let private_key =
-                        TreeKemPrivate::new_self_leaf(LeafIndex(index as u32), hpke_secret);
+        let mut leaf_nodes = Vec::new();
+        let mut private_keys = Vec::new();
 
-                    (leaf_node, private_key)
-                })
-                .unzip()
-                .await;
+        for index in 1..size {
+            let (leaf_node, hpke_secret, _) =
+                get_basic_test_node_sig_key(cipher_suite, &format!("{index}")).await;
+
+            let private_key = TreeKemPrivate::new_self_leaf(LeafIndex(index as u32), hpke_secret);
+
+            leaf_nodes.push(leaf_node);
+            private_keys.push(private_key);
+        }
 
         let (encap_node, encap_hpke_secret, encap_signer) =
             get_basic_test_node_sig_key(cipher_suite, "encap").await;
@@ -584,14 +586,14 @@ mod tests {
         }
     }
 
-    #[futures_test::test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_encap_decap() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             encap_decap(cipher_suite, 10, None, None).await;
         }
     }
 
-    #[futures_test::test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_encap_capabilities() {
         let cipher_suite = TEST_CIPHER_SUITE;
         let mut capabilities = get_test_capabilities();
@@ -600,7 +602,7 @@ mod tests {
         encap_decap(cipher_suite, 10, Some(capabilities.clone()), None).await;
     }
 
-    #[futures_test::test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_encap_extensions() {
         let cipher_suite = TEST_CIPHER_SUITE;
         let mut extensions = ExtensionList::default();
@@ -609,7 +611,7 @@ mod tests {
         encap_decap(cipher_suite, 10, None, Some(extensions)).await;
     }
 
-    #[futures_test::test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_encap_capabilities_extensions() {
         let cipher_suite = TEST_CIPHER_SUITE;
         let mut capabilities = get_test_capabilities();

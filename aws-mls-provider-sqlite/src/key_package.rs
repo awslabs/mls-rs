@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use aws_mls_core::{
     aws_mls_codec::{MlsDecode, MlsEncode},
     key_package::{KeyPackageData, KeyPackageStorage},
@@ -71,7 +70,7 @@ impl SqLiteKeyPackageStorage {
     }
 }
 
-#[async_trait]
+#[maybe_async::maybe_async]
 impl KeyPackageStorage for SqLiteKeyPackageStorage {
     type Error = SqLiteDataStorageError;
 

@@ -19,9 +19,6 @@ use super::{
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen_test::wasm_bindgen_test as test;
 
-#[cfg(not(target_arch = "wasm32"))]
-use futures_test::test;
-
 #[derive(serde::Serialize, serde::Deserialize, Debug, Default, Clone)]
 struct ValidationTestCase {
     pub cipher_suite: u16,
@@ -71,12 +68,17 @@ impl ValidationTestCase {
     }
 }
 
-#[test]
+#[maybe_async::test(sync, async(not(sync), futures_test::test))]
 async fn validation() {
+    #[cfg(not(sync))]
     let test_cases: Vec<ValidationTestCase> = load_test_case_json!(
         interop_tree_validation,
         generate_validation_test_vector().await
     );
+
+    #[cfg(sync)]
+    let test_cases: Vec<ValidationTestCase> =
+        load_test_case_json!(interop_tree_validation, generate_validation_test_vector());
 
     for test_case in test_cases.into_iter() {
         let Some(cs) = try_test_cipher_suite_provider(test_case.cipher_suite) else {
@@ -121,6 +123,7 @@ async fn validation() {
     }
 }
 
+#[maybe_async::maybe_async]
 async fn generate_validation_test_vector() -> Vec<ValidationTestCase> {
     let mut test_cases = vec![];
 

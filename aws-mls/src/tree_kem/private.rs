@@ -119,9 +119,6 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    #[cfg(not(target_arch = "wasm32"))]
-    use futures_test::test;
-
     fn random_hpke_secret_key() -> HpkeSecretKey {
         let (secret, _) = test_cipher_suite_provider(TEST_CIPHER_SUITE)
             .kem_derive(&random_bytes(32))
@@ -130,7 +127,7 @@ mod tests {
         secret
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_create_self_leaf() {
         let secret = random_hpke_secret_key();
 
@@ -146,6 +143,7 @@ mod tests {
     // Create a ratchet tree for Alice, Bob and Charlie. Alice generates an update path for
     // Charlie. Return (Public Tree, Charlie's private key, update path, path secret)
     // The ratchet tree returned has leaf indexes as [alice, bob, charlie]
+    #[maybe_async::maybe_async]
     async fn update_secrets_setup(
         cipher_suite: CipherSuite,
     ) -> (TreeKemPublic, TreeKemPrivate, TreeKemPrivate, PathSecret) {
@@ -207,7 +205,7 @@ mod tests {
         (public_tree, charlie_private, alice_private, path_secret)
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_update_secrets() {
         let cipher_suite = TEST_CIPHER_SUITE;
 
@@ -239,7 +237,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_update_secrets_key_mismatch() {
         let cipher_suite = TEST_CIPHER_SUITE;
 
@@ -276,7 +274,7 @@ mod tests {
         private_key
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_update_leaf() {
         let self_leaf = LeafIndex(42);
         let mut private_key = setup_direct_path(self_leaf, 128);

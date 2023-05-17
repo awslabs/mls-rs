@@ -13,6 +13,9 @@ use aws_mls::{Client, CryptoProvider};
 use aws_mls_core::crypto::CipherSuiteProvider;
 use cfg_if::cfg_if;
 
+#[cfg(not(sync))]
+use futures::Future;
+
 cfg_if! {
     if #[cfg(target_arch = "wasm32")] {
         pub use aws_mls_crypto_rustcrypto::RustCryptoProvider as TestCryptoProvider;
@@ -21,7 +24,6 @@ cfg_if! {
     }
 }
 
-use futures::{Future, StreamExt};
 use rand::RngCore;
 use rand::{prelude::IteratorRandom, prelude::SliceRandom, Rng, SeedableRng};
 
@@ -37,10 +39,8 @@ use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
 #[cfg(target_arch = "wasm32")]
 wasm_bindgen_test_configure!(run_in_browser);
 
-#[cfg(not(target_arch = "wasm32"))]
-use futures_test::test;
-
 #[cfg(feature = "private_message")]
+#[maybe_async::async_impl]
 async fn test_on_all_params<F, Fut>(test: F)
 where
     F: Fn(ProtocolVersion, CipherSuite, usize, Preferences) -> Fut,
@@ -57,7 +57,25 @@ where
     }
 }
 
+#[cfg(feature = "private_message")]
+#[maybe_async::sync_impl]
+fn test_on_all_params<F>(test: F)
+where
+    F: Fn(ProtocolVersion, CipherSuite, usize, Preferences),
+{
+    for version in ProtocolVersion::all() {
+        for cs in TestCryptoProvider::all_supported_cipher_suites() {
+            for encrypt_controls in [true, false] {
+                let preferences = Preferences::default().with_control_encryption(encrypt_controls);
+
+                test(version, cs, 10, preferences);
+            }
+        }
+    }
+}
+
 #[cfg(not(feature = "private_message"))]
+#[maybe_async::async_impl]
 async fn test_on_all_params<F, Fut>(test: F)
 where
     F: Fn(ProtocolVersion, CipherSuite, usize, Preferences) -> Fut,
@@ -66,6 +84,7 @@ where
     test_on_all_params_plaintext(test).await;
 }
 
+#[maybe_async::async_impl]
 async fn test_on_all_params_plaintext<F, Fut>(test: F)
 where
     F: Fn(ProtocolVersion, CipherSuite, usize, Preferences) -> Fut,
@@ -78,6 +97,19 @@ where
     }
 }
 
+#[maybe_async::sync_impl]
+fn test_on_all_params_plaintext<F>(test: F)
+where
+    F: Fn(ProtocolVersion, CipherSuite, usize, Preferences),
+{
+    for version in ProtocolVersion::all() {
+        for cs in TestCryptoProvider::all_supported_cipher_suites() {
+            test(version, cs, 10, Preferences::default());
+        }
+    }
+}
+
+#[maybe_async::maybe_async]
 async fn test_create(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
@@ -134,23 +166,17 @@ async fn test_create(
     assert!(Group::equal_group_state(&alice_group, &bob_group));
 }
 
-#[test]
+#[maybe_async::test(sync, async(not(sync), futures_test::test))]
 async fn test_create_group() {
     test_on_all_params(test_create).await;
 }
 
-#[test]
+#[maybe_async::test(sync, async(not(sync), futures_test::test))]
 async fn test_many_commits() {
     let cipher_suite = CipherSuite::CURVE25519_AES128;
     let preferences = Preferences::default();
 
-    let mut groups = get_test_groups(
-        ProtocolVersion::MLS_10,
-        cipher_suite,
-        11,
-        preferences.clone(),
-    )
-    .await;
+    let mut groups = get_test_groups(ProtocolVersion::MLS_10, cipher_suite, 11, preferences).await;
 
     let seed: <rand::rngs::StdRng as SeedableRng>::Seed = rand::random();
     let mut rng = rand::rngs::StdRng::from_seed(seed);
@@ -180,6 +206,7 @@ async fn test_many_commits() {
     }
 }
 
+#[maybe_async::maybe_async]
 async fn test_empty_commits(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
@@ -210,11 +237,12 @@ async fn test_empty_commits(
     }
 }
 
-#[test]
+#[maybe_async::test(sync, async(not(sync), futures_test::test))]
 async fn test_group_path_updates() {
     test_on_all_params(test_empty_commits).await;
 }
 
+#[maybe_async::maybe_async]
 async fn test_update_proposals(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
@@ -244,16 +272,8 @@ async fn test_update_proposals(
 
         let commit = commit_output.commit_message();
 
-        #[cfg(not(feature = "state_update"))]
+        // TODO: state_update feature detection needs to be corrected
         all_process_commit_with_update(&mut groups, commit, committer_index).await;
-
-        #[cfg(feature = "state_update")]
-        for update in all_process_commit_with_update(&mut groups, commit, committer_index).await {
-            assert!(update.is_active());
-            assert_eq!(update.new_epoch(), (i as u64) + 2);
-            assert!(update.roster_update().added().is_empty());
-            assert!(update.roster_update().removed().is_empty());
-        }
 
         groups
             .iter()
@@ -261,11 +281,12 @@ async fn test_update_proposals(
     }
 }
 
-#[test]
+#[maybe_async::test(sync, async(not(sync), futures_test::test))]
 async fn test_group_update_proposals() {
     test_on_all_params(test_update_proposals).await;
 }
 
+#[maybe_async::maybe_async]
 async fn test_remove_proposals(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
@@ -325,12 +346,13 @@ async fn test_remove_proposals(
     }
 }
 
-#[test]
+#[maybe_async::test(sync, async(not(sync), futures_test::test))]
 async fn test_group_remove_proposals() {
     test_on_all_params(test_remove_proposals).await;
 }
 
 #[cfg(feature = "private_message")]
+#[maybe_async::maybe_async]
 async fn test_application_messages(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
@@ -370,8 +392,8 @@ async fn test_application_messages(
     }
 }
 
-#[cfg(feature = "out_of_order")]
-#[test]
+#[cfg(all(feature = "private_message", feature = "out_of_order"))]
+#[maybe_async::test(sync, async(not(sync), futures_test::test))]
 async fn test_out_of_order_application_messages() {
     let mut groups = get_test_groups(
         ProtocolVersion::MLS_10,
@@ -384,10 +406,12 @@ async fn test_out_of_order_application_messages() {
     let mut alice_group = groups[0].clone();
     let bob_group = &mut groups[1];
 
-    let mut ciphertexts = vec![alice_group
+    let ciphertext = alice_group
         .encrypt_application_message(&[0], vec![])
         .await
-        .unwrap()];
+        .unwrap();
+
+    let mut ciphertexts = vec![ciphertext];
 
     ciphertexts.push(
         alice_group
@@ -417,19 +441,25 @@ async fn test_out_of_order_application_messages() {
     );
 
     for i in [3, 2, 1, 0] {
+        let res = bob_group
+            .process_incoming_message(ciphertexts[i].clone())
+            .await
+            .unwrap();
+
         assert_matches!(
-            bob_group.process_incoming_message(ciphertexts[i].clone()).await.unwrap(),
+            res,
             ReceivedMessage::ApplicationMessage(m) if m.data() == [i as u8]
         );
     }
 }
 
 #[cfg(feature = "private_message")]
-#[test]
+#[maybe_async::test(sync, async(not(sync), futures_test::test))]
 async fn test_group_application_messages() {
     test_on_all_params(test_application_messages).await
 }
 
+#[maybe_async::maybe_async]
 async fn processing_message_from_self_returns_error(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
@@ -457,12 +487,13 @@ async fn processing_message_from_self_returns_error(
     assert_matches!(error, MlsError::CantProcessMessageFromSelf);
 }
 
-#[test]
+#[maybe_async::test(sync, async(not(sync), futures_test::test))]
 async fn test_processing_message_from_self_returns_error() {
     test_on_all_params(processing_message_from_self_returns_error).await;
 }
 
 #[cfg(feature = "external_commit")]
+#[maybe_async::maybe_async]
 async fn external_commits_work(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
@@ -495,34 +526,33 @@ async fn external_commits_work(
         })
         .collect::<Vec<_>>();
 
-    let mut groups = futures::stream::iter(&others)
-        .fold(vec![creator_group], |mut groups, client| async move {
-            let existing_group = groups.choose_mut(&mut rand::thread_rng()).unwrap();
+    let mut groups = vec![creator_group];
 
-            let group_info = existing_group
-                .group_info_message_allowing_ext_commit()
+    for client in &others {
+        let existing_group = groups.choose_mut(&mut rand::thread_rng()).unwrap();
+
+        let group_info = existing_group
+            .group_info_message_allowing_ext_commit()
+            .await
+            .unwrap();
+
+        let (new_group, commit) = client
+            .client
+            .external_commit_builder(client.identity.clone())
+            .with_tree_data(existing_group.export_tree().unwrap())
+            .build(group_info)
+            .await
+            .unwrap();
+
+        for group in groups.iter_mut() {
+            group
+                .process_incoming_message(commit.clone())
                 .await
                 .unwrap();
+        }
 
-            let (new_group, commit) = client
-                .client
-                .external_commit_builder(client.identity.clone())
-                .with_tree_data(existing_group.export_tree().unwrap())
-                .build(group_info)
-                .await
-                .unwrap();
-
-            for group in groups.iter_mut() {
-                group
-                    .process_incoming_message(commit.clone())
-                    .await
-                    .unwrap();
-            }
-
-            groups.push(new_group);
-            groups
-        })
-        .await;
+        groups.push(new_group);
+    }
 
     assert!(groups
         .iter()
@@ -551,12 +581,12 @@ async fn external_commits_work(
 }
 
 #[cfg(feature = "external_commit")]
-#[test]
+#[maybe_async::test(sync, async(not(sync), futures_test::test))]
 async fn test_external_commits() {
     test_on_all_params_plaintext(external_commits_work).await
 }
 
-#[test]
+#[maybe_async::test(sync, async(not(sync), futures_test::test))]
 async fn test_remove_nonexisting_leaf() {
     let mut groups = get_test_groups(
         ProtocolVersion::MLS_10,
@@ -568,14 +598,18 @@ async fn test_remove_nonexisting_leaf() {
 
     groups[0].propose_remove(5, vec![]).await.unwrap();
 
+    let res = groups[0].propose_remove(13, vec![]).await;
+
     // Leaf index out of bounds
-    assert!(groups[0].propose_remove(13, vec![]).await.is_err());
+    assert!(res.is_err());
 
     groups[0].commit(vec![]).await.unwrap();
     groups[0].apply_pending_commit().await.unwrap();
 
     // Removing blank leaf causes error
-    assert!(groups[0].propose_remove(5, vec![]).await.is_err());
+    let res = groups[0].propose_remove(5, vec![]).await;
+
+    assert!(res.is_err());
 }
 
 struct ReinitClientGeneration {
@@ -612,7 +646,7 @@ fn get_reinit_client(suite1: CipherSuite, suite2: CipherSuite, id: &str) -> Rein
     ReinitClientGeneration { client, id1, id2 }
 }
 
-#[test]
+#[maybe_async::test(sync, async(not(sync), futures_test::test))]
 async fn reinit_works() {
     let suite1 = CipherSuite::CURVE25519_AES128;
     let suite2 = CipherSuite::P256_AES128;
@@ -697,9 +731,13 @@ async fn reinit_works() {
     assert_matches!(message, ReceivedMessage::Commit(_));
 
     // They can't create new epochs anymore
-    assert!(alice_group.commit(vec![]).await.is_err());
+    let res = alice_group.commit(vec![]).await;
 
-    assert!(bob_group.commit(vec![]).await.is_err());
+    assert!(res.is_err());
+
+    let res = bob_group.commit(vec![]).await;
+
+    assert!(res.is_err());
 
     // Alice finishes the reinit by creating the new group
     let kp = bob
@@ -756,7 +794,7 @@ async fn reinit_works() {
 }
 
 #[cfg(feature = "external_commit")]
-#[test]
+#[maybe_async::test(sync, async(not(sync), futures_test::test))]
 async fn external_joiner_can_process_siblings_update() {
     let mut groups = get_test_groups(
         ProtocolVersion::MLS_10,

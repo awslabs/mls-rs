@@ -31,6 +31,7 @@ fn write_test_cases(name: &str, serialized_tests: &str) {
     }
 }
 
+#[maybe_async::maybe_async]
 async fn invite_passive_client<P: CipherSuiteProvider>(
     groups: &mut [Group<TestClientConfig>],
     with_psk: bool,
@@ -51,7 +52,7 @@ async fn invite_passive_client<P: CipherSuiteProvider>(
         .build();
 
     let key_pckg = client
-        .generate_key_package_message(ProtocolVersion::MLS_10, cs.cipher_suite(), identity.clone())
+        .generate_key_package_message(ProtocolVersion::MLS_10, cs.cipher_suite(), identity)
         .await
         .unwrap();
 
@@ -91,6 +92,7 @@ async fn invite_passive_client<P: CipherSuiteProvider>(
     }
 }
 
+#[maybe_async::maybe_async]
 pub async fn generate_passive_client_proposal_tests() {
     let mut test_cases: Vec<TestCase> = vec![];
 
@@ -260,6 +262,7 @@ pub async fn generate_passive_client_proposal_tests() {
     write_test_cases("interop_passive_client_handle_commit", &serialized_tests);
 }
 
+#[maybe_async::maybe_async]
 async fn commit_by_value<F>(
     group: &mut Group<TestClientConfig>,
     proposal_adder: F,
@@ -278,6 +281,7 @@ where
     test_case
 }
 
+#[maybe_async::maybe_async]
 async fn create_key_package(cs: CipherSuite) -> MLSMessage {
     let client = generate_client(cs, b"Roger".to_vec(), Preferences::default());
 
@@ -288,6 +292,7 @@ async fn create_key_package(cs: CipherSuite) -> MLSMessage {
         .unwrap()
 }
 
+#[maybe_async::maybe_async]
 pub async fn generate_passive_client_welcome_tests() {
     let mut test_cases: Vec<TestCase> = vec![];
 
@@ -328,6 +333,7 @@ pub async fn generate_passive_client_welcome_tests() {
     write_test_cases("interop_passive_client_welcome", &serialized_tests);
 }
 
+#[maybe_async::maybe_async]
 pub async fn generate_passive_client_random_tests() {
     let mut test_cases: Vec<TestCase> = vec![];
 

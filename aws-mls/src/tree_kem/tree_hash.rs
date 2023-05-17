@@ -379,7 +379,6 @@ impl TreeKemPublic {
 #[cfg(test)]
 mod tests {
     use aws_mls_codec::MlsDecode;
-    use futures::StreamExt;
 
     use crate::{
         cipher_suite::CipherSuite,
@@ -395,9 +394,6 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    #[cfg(not(target_arch = "wasm32"))]
-    use futures_test::test;
-
     #[derive(serde::Deserialize, serde::Serialize)]
     struct TestCase {
         cipher_suite: u16,
@@ -408,29 +404,37 @@ mod tests {
     }
 
     impl TestCase {
+        #[maybe_async::maybe_async]
         async fn generate() -> Vec<TestCase> {
-            futures::stream::iter(CipherSuite::all())
-                .then(|cipher_suite| async move {
-                    let mut tree = get_test_tree_fig_12(cipher_suite).await;
+            let mut test_cases = Vec::new();
 
-                    TestCase {
-                        cipher_suite: cipher_suite.into(),
-                        tree_data: tree.export_node_data().mls_encode_to_vec().unwrap(),
-                        tree_hash: tree
-                            .tree_hash(&test_cipher_suite_provider(cipher_suite))
-                            .unwrap(),
-                    }
+            for cipher_suite in CipherSuite::all() {
+                let mut tree = get_test_tree_fig_12(cipher_suite).await;
+
+                test_cases.push(TestCase {
+                    cipher_suite: cipher_suite.into(),
+                    tree_data: tree.export_node_data().mls_encode_to_vec().unwrap(),
+                    tree_hash: tree
+                        .tree_hash(&test_cipher_suite_provider(cipher_suite))
+                        .unwrap(),
                 })
-                .collect()
-                .await
+            }
+
+            test_cases
         }
     }
 
+    #[maybe_async::async_impl]
     async fn load_test_cases() -> Vec<TestCase> {
         load_test_case_json!(tree_hash, TestCase::generate().await)
     }
 
-    #[test]
+    #[maybe_async::sync_impl]
+    fn load_test_cases() -> Vec<TestCase> {
+        load_test_case_json!(tree_hash, TestCase::generate())
+    }
+
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_tree_hash() {
         let cases = load_test_cases().await;
 

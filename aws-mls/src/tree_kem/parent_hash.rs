@@ -310,7 +310,6 @@ pub(crate) mod test_utils {
         identity::basic::BasicIdentityProvider,
         tree_kem::{leaf_node::test_utils::get_basic_test_node, node::Parent},
     };
-    use futures::StreamExt;
 
     pub(crate) fn test_parent(
         cipher_suite: CipherSuite,
@@ -335,15 +334,17 @@ pub(crate) mod test_utils {
     }
 
     // Create figure 12 from MLS RFC
+    #[maybe_async::maybe_async]
     pub(crate) async fn get_test_tree_fig_12(cipher_suite: CipherSuite) -> TreeKemPublic {
         let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
 
         let mut tree = TreeKemPublic::new();
 
-        let leaves = futures::stream::iter(["A", "B", "C", "D", "E", "F", "G"])
-            .then(|l| get_basic_test_node(cipher_suite, l))
-            .collect()
-            .await;
+        let mut leaves = Vec::new();
+
+        for l in ["A", "B", "C", "D", "E", "F", "G"] {
+            leaves.push(get_basic_test_node(cipher_suite, l).await);
+        }
 
         tree.add_leaves(leaves, &BasicIdentityProvider, &cipher_suite_provider)
             .await
@@ -389,10 +390,7 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    #[cfg(not(target_arch = "wasm32"))]
-    use futures_test::test;
-
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_missing_parent_hash() {
         let cs = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let mut test_tree = TreeWithSigners::make_full_tree(8, &cs).await.tree;
@@ -416,7 +414,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_parent_hash_mismatch() {
         let cs = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let mut test_tree = TreeWithSigners::make_full_tree(8, &cs).await.tree;
@@ -440,7 +438,7 @@ mod tests {
         assert_matches!(invalid_parent_hash_res, Err(MlsError::ParentHashMismatch));
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_parent_hash_invalid() {
         let cs = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let mut test_tree = TreeWithSigners::make_full_tree(8, &cs).await.tree;

@@ -86,6 +86,7 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
     }
 
     /// Build the external commit using a GroupInfo message provided by an existing group member.
+    #[maybe_async::maybe_async]
     pub async fn build(self, group_info: MLSMessage) -> Result<(Group<C>, MLSMessage), MlsError> {
         let protocol_version = group_info.version;
 

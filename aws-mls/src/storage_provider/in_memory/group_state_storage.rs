@@ -1,4 +1,3 @@
-use alloc::boxed::Box;
 use alloc::collections::VecDeque;
 
 #[cfg(feature = "std")]
@@ -8,8 +7,8 @@ use aws_mls_codec::{MlsDecode, MlsEncode};
 #[cfg(not(feature = "std"))]
 use portable_atomic_util::Arc;
 
+use alloc::boxed::Box;
 use alloc::vec::Vec;
-use async_trait::async_trait;
 use aws_mls_core::group::{EpochRecord, GroupState, GroupStateStorage};
 
 use crate::storage_provider::group_state::EpochData;
@@ -165,7 +164,7 @@ impl Default for InMemoryGroupStateStorage {
     }
 }
 
-#[async_trait]
+#[maybe_async::maybe_async]
 impl GroupStateStorage for InMemoryGroupStateStorage {
     type Error = aws_mls_codec::Error;
 

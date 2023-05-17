@@ -133,8 +133,11 @@ pub(crate) mod test_utils {
         tree_kem::{leaf_node::test_utils::get_test_capabilities, Lifetime},
         CipherSuiteProvider, MLSMessage,
     };
-    use futures::{future::BoxFuture, FutureExt};
 
+    #[cfg(not(sync))]
+    use futures::FutureExt;
+
+    #[maybe_async::async_impl]
     pub(crate) async fn test_key_package_custom<F, CSP>(
         cipher_suite_provider: &CSP,
         protocol_version: ProtocolVersion,
@@ -145,7 +148,7 @@ pub(crate) mod test_utils {
         CSP: CipherSuiteProvider,
         F: FnOnce(
             KeyPackageGenerator<'_, BasicIdentityProvider, CSP>,
-        ) -> BoxFuture<'_, KeyPackageGeneration>,
+        ) -> futures::future::BoxFuture<'_, KeyPackageGeneration>,
     {
         let (signing_identity, secret_key) =
             get_test_signing_identity(cipher_suite_provider.cipher_suite(), id.as_bytes().to_vec());
@@ -161,6 +164,47 @@ pub(crate) mod test_utils {
         custom(generator).await.key_package
     }
 
+    #[maybe_async::sync_impl]
+    pub(crate) fn test_key_package_custom<F, CSP>(
+        cipher_suite_provider: &CSP,
+        protocol_version: ProtocolVersion,
+        id: &str,
+        custom: F,
+    ) -> KeyPackage
+    where
+        CSP: CipherSuiteProvider,
+        F: FnOnce(KeyPackageGenerator<'_, BasicIdentityProvider, CSP>) -> KeyPackageGeneration,
+    {
+        let (signing_identity, secret_key) =
+            get_test_signing_identity(cipher_suite_provider.cipher_suite(), id.as_bytes().to_vec());
+
+        let generator = KeyPackageGenerator {
+            protocol_version,
+            cipher_suite_provider,
+            signing_identity: &signing_identity,
+            signing_key: &secret_key,
+            identity_provider: &BasicIdentityProvider,
+        };
+
+        custom(generator).key_package
+    }
+
+    #[maybe_async::maybe_async]
+    pub(crate) async fn default_key_package<CSP: CipherSuiteProvider>(
+        generator: KeyPackageGenerator<'_, BasicIdentityProvider, CSP>,
+    ) -> KeyPackageGeneration {
+        generator
+            .generate(
+                Lifetime::years(1).unwrap(),
+                get_test_capabilities(),
+                ExtensionList::default(),
+                ExtensionList::default(),
+            )
+            .await
+            .unwrap()
+    }
+
+    #[maybe_async::async_impl]
     pub(crate) async fn test_key_package(
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
@@ -170,24 +214,26 @@ pub(crate) mod test_utils {
             &test_cipher_suite_provider(cipher_suite),
             protocol_version,
             id,
-            |generator| {
-                async move {
-                    generator
-                        .generate(
-                            Lifetime::years(1).unwrap(),
-                            get_test_capabilities(),
-                            ExtensionList::default(),
-                            ExtensionList::default(),
-                        )
-                        .await
-                        .unwrap()
-                }
-                .boxed()
-            },
+            |generator| async move { default_key_package(generator).await }.boxed(),
         )
         .await
     }
 
+    #[maybe_async::sync_impl]
+    pub(crate) fn test_key_package(
+        protocol_version: ProtocolVersion,
+        cipher_suite: CipherSuite,
+        id: &str,
+    ) -> KeyPackage {
+        test_key_package_custom(
+            &test_cipher_suite_provider(cipher_suite),
+            protocol_version,
+            id,
+            |generator| default_key_package(generator),
+        )
+    }
+
+    #[maybe_async::maybe_async]
     pub(crate) async fn test_key_package_message(
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
@@ -212,13 +258,9 @@ mod tests {
     use super::{test_utils::test_key_package, *};
     use alloc::format;
     use assert_matches::assert_matches;
-    use futures::StreamExt;
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
-
-    #[cfg(not(target_arch = "wasm32"))]
-    use futures_test::test;
 
     #[derive(serde::Deserialize, serde::Serialize)]
     struct TestCase {
@@ -230,34 +272,43 @@ mod tests {
     }
 
     impl TestCase {
+        #[maybe_async::maybe_async]
         async fn generate() -> Vec<TestCase> {
-            futures::stream::iter(
-                ProtocolVersion::all()
-                    .flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
-                    .enumerate(),
-            )
-            .then(|(i, (protocol_version, cipher_suite))| async move {
+            let mut test_cases = Vec::new();
+
+            for (i, (protocol_version, cipher_suite)) in ProtocolVersion::all()
+                .flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
+                .enumerate()
+            {
                 let pkg =
                     test_key_package(protocol_version, cipher_suite, &format!("alice{i}")).await;
                 let pkg_ref = pkg
                     .to_reference(&test_cipher_suite_provider(cipher_suite))
                     .unwrap();
-                TestCase {
+                let case = TestCase {
                     cipher_suite: cipher_suite.into(),
                     input: pkg.mls_encode_to_vec().unwrap(),
                     output: pkg_ref.to_vec(),
-                }
-            })
-            .collect()
-            .await
+                };
+
+                test_cases.push(case);
+            }
+
+            test_cases
         }
     }
 
+    #[maybe_async::async_impl]
     async fn load_test_cases() -> Vec<TestCase> {
         load_test_case_json!(key_package_ref, TestCase::generate().await)
     }
 
-    #[test]
+    #[maybe_async::sync_impl]
+    fn load_test_cases() -> Vec<TestCase> {
+        load_test_case_json!(key_package_ref, TestCase::generate())
+    }
+
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_key_package_ref() {
         let cases = load_test_cases().await;
 
@@ -275,7 +326,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn key_package_ref_fails_invalid_cipher_suite() {
         let key_package = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "test").await;
 

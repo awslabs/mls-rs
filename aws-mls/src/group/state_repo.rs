@@ -40,6 +40,7 @@ where
     S: GroupStateStorage,
     K: KeyPackageStorage,
 {
+    #[maybe_async::maybe_async]
     pub async fn new(
         group_id: Vec<u8>,
         max_epoch_retention: u64,
@@ -71,6 +72,7 @@ where
         })
     }
 
+    #[maybe_async::maybe_async]
     async fn find_max_id(&self) -> Result<Option<u64>, MlsError> {
         if let Some(max) = self.pending_commit.inserts.back().map(|e| e.epoch_id()) {
             Ok(Some(max))
@@ -82,6 +84,7 @@ where
         }
     }
 
+    #[maybe_async::maybe_async]
     pub async fn resumption_secret(
         &self,
         psk_id: &ResumptionPsk,
@@ -130,6 +133,7 @@ where
     }
 
     #[cfg(feature = "private_message")]
+    #[maybe_async::maybe_async]
     pub async fn get_epoch_mut(
         &mut self,
         epoch_id: u64,
@@ -164,6 +168,7 @@ where
         })
     }
 
+    #[maybe_async::maybe_async]
     pub async fn insert(&mut self, epoch: PriorEpoch) -> Result<(), MlsError> {
         if epoch.group_id() != self.group_id {
             return Err(MlsError::GroupIdMismatch);
@@ -204,6 +209,7 @@ where
         Ok(())
     }
 
+    #[maybe_async::maybe_async]
     pub async fn write_to_storage(&mut self, group_snapshot: Snapshot) -> Result<(), MlsError> {
         let inserts = self.pending_commit.inserts.iter().cloned().collect();
         let updates = self.pending_commit.updates.clone();
@@ -257,6 +263,7 @@ mod tests {
 
     use super::*;
 
+    #[maybe_async::maybe_async]
     async fn test_group_state_repo(
         retention_limit: u64,
     ) -> GroupStateRepository<InMemoryGroupStateStorage, InMemoryKeyPackageStorage> {
@@ -279,22 +286,21 @@ mod tests {
         get_test_snapshot(TEST_CIPHER_SUITE, epoch_id)
     }
 
-    #[futures_test::test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_zero_max_retention() {
-        assert_matches!(
-            GroupStateRepository::new(
-                TEST_GROUP.to_vec(),
-                0,
-                InMemoryGroupStateStorage::default(),
-                InMemoryKeyPackageStorage::default(),
-                None,
-            )
-            .await,
-            Err(MlsError::NonZeroRetentionRequired)
+        let res = GroupStateRepository::new(
+            TEST_GROUP.to_vec(),
+            0,
+            InMemoryGroupStateStorage::default(),
+            InMemoryKeyPackageStorage::default(),
+            None,
         )
+        .await;
+
+        assert_matches!(res, Err(MlsError::NonZeroRetentionRequired))
     }
 
-    #[futures_test::test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_epoch_inserts() {
         let mut test_repo = test_group_state_repo(1).await;
         let test_epoch = test_epoch(0);
@@ -359,7 +365,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_epoch_insert_over_limit() {
         let mut test_repo = test_group_state_repo(1).await;
         let test_epoch_0 = test_epoch(0);
@@ -401,7 +407,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_epoch_insert_over_limit_with_update() {
         let mut test_repo = test_group_state_repo(1).await;
         let test_epoch_0 = test_epoch(0);
@@ -448,7 +454,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_updates() {
         let mut test_repo = test_group_state_repo(2).await;
         let test_epoch_0 = test_epoch(0);
@@ -507,7 +513,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_insert_and_update() {
         let mut test_repo = test_group_state_repo(2).await;
         let test_epoch_0 = test_epoch(0);
@@ -554,7 +560,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_many_epochs_in_storage() {
         let epochs = (0..10).map(test_epoch).collect::<Vec<_>>();
 
@@ -567,14 +573,13 @@ mod tests {
         test_repo.write_to_storage(test_snapshot(9)).await.unwrap();
 
         for mut epoch in epochs {
-            assert_eq!(
-                test_repo.get_epoch_mut(epoch.epoch_id()).await.unwrap(),
-                Some(&mut epoch)
-            );
+            let res = test_repo.get_epoch_mut(epoch.epoch_id()).await.unwrap();
+
+            assert_eq!(res, Some(&mut epoch));
         }
     }
 
-    #[futures_test::test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_disallowed_access_to_pending_deletes() {
         let mut test_repo = test_group_state_repo(1).await;
         let test_epoch_0 = test_epoch(0);
@@ -583,7 +588,9 @@ mod tests {
         test_repo.insert(test_epoch_0).await.unwrap();
         test_repo.insert(test_epoch_1).await.unwrap();
 
-        assert!(test_repo.get_epoch_mut(0).await.unwrap().is_none());
+        let res = test_repo.get_epoch_mut(0).await.unwrap();
+
+        assert!(res.is_none());
 
         let psk_id = ResumptionPsk {
             psk_epoch: 0,
@@ -591,14 +598,12 @@ mod tests {
             usage: ResumptionPSKUsage::Application,
         };
 
-        assert!(test_repo
-            .resumption_secret(&psk_id)
-            .await
-            .unwrap()
-            .is_none());
+        let res = test_repo.resumption_secret(&psk_id).await.unwrap();
+
+        assert!(res.is_none());
     }
 
-    #[futures_test::test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_stored_groups_list() {
         let mut test_repo = test_group_state_repo(2).await;
         let test_epoch_0 = test_epoch(0);
@@ -613,7 +618,7 @@ mod tests {
         )
     }
 
-    #[futures_test::test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn reducing_retention_limit_takes_effect_on_epoch_access() {
         let mut repo = test_group_state_repo(1).await;
 
@@ -627,10 +632,12 @@ mod tests {
             ..test_group_state_repo(1).await
         };
 
-        assert!(repo.get_epoch_mut(0).await.unwrap().is_none());
+        let res = repo.get_epoch_mut(0).await.unwrap();
+
+        assert!(res.is_none());
     }
 
-    #[futures_test::test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn in_memory_storage_obeys_retention_limit_after_saving() {
         let mut repo = test_group_state_repo(1).await;
 
@@ -647,6 +654,7 @@ mod tests {
         assert_eq!(lock.get(TEST_GROUP).unwrap().epoch_data.len(), 1);
     }
 
+    #[maybe_async::maybe_async]
     async fn existing_storage_setup(
         count: u64,
     ) -> GroupStateRepository<InMemoryGroupStateStorage, InMemoryKeyPackageStorage> {
@@ -662,7 +670,7 @@ mod tests {
         repo
     }
 
-    #[futures_test::test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn existing_storage_can_be_imported_with_delete_under() {
         let mut repo = existing_storage_setup(3).await;
         repo.insert(test_epoch(3)).await.unwrap();
@@ -686,7 +694,7 @@ mod tests {
         assert_eq!(new_repo.pending_commit.delete_under.unwrap(), 1);
     }
 
-    #[futures_test::test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn existing_storage_can_have_larger_epoch_count() {
         let repo = existing_storage_setup(3).await;
 
@@ -713,7 +721,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn existing_storage_can_have_smaller_epoch_count() {
         let repo = existing_storage_setup(5).await;
 
@@ -738,7 +746,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn used_key_package_is_deleted() {
         let key_package_repo = InMemoryKeyPackageStorage::default();
 

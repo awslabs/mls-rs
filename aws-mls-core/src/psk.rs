@@ -4,7 +4,6 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 
 use crate::error::IntoAnyError;
-use async_trait::async_trait;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use zeroize::Zeroizing;
 
@@ -81,8 +80,8 @@ impl From<Vec<u8>> for ExternalPskId {
     }
 }
 
-#[async_trait]
 /// Storage trait to maintain a set of pre-shared key values.
+#[maybe_async::maybe_async]
 pub trait PreSharedKeyStorage: Send + Sync {
     /// Error type that the underlying storage mechanism returns on internal
     /// failure.

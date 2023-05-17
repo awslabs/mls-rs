@@ -236,11 +236,9 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    #[cfg(not(target_arch = "wasm32"))]
-    use futures_test::test;
-
     use super::{verify_auth_content_signature, verify_plaintext_authentication};
 
+    #[maybe_async::maybe_async]
     async fn make_signed_plaintext(group: &mut Group<TestClientConfig>) -> PublicMessage {
         group
             .commit(vec![])
@@ -257,6 +255,7 @@ mod tests {
     }
 
     impl TestEnv {
+        #[maybe_async::maybe_async]
         async fn new() -> Self {
             let mut alice = test_group_custom(
                 TEST_PROTOCOL_VERSION,
@@ -296,7 +295,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn valid_plaintext_is_verified() {
         let mut env = TestEnv::new().await;
 
@@ -312,7 +311,7 @@ mod tests {
         .unwrap();
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn valid_auth_content_is_verified() {
         let mut env = TestEnv::new().await;
 
@@ -329,7 +328,7 @@ mod tests {
         .unwrap();
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn invalid_plaintext_is_not_verified() {
         let mut env = TestEnv::new().await;
         let mut message = make_signed_plaintext(&mut env.alice.group).await;
@@ -358,7 +357,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::InvalidSignature));
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn plaintext_from_member_requires_membership_tag() {
         let mut env = TestEnv::new().await;
         let mut message = make_signed_plaintext(&mut env.alice.group).await;
@@ -375,7 +374,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::InvalidMembershipTag));
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn plaintext_fails_with_invalid_membership_tag() {
         let mut env = TestEnv::new().await;
         let mut message = make_signed_plaintext(&mut env.alice.group).await;
@@ -436,7 +435,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn valid_proposal_from_new_member_is_verified() {
         let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let (key_pkg_gen, signer) =
@@ -453,7 +452,7 @@ mod tests {
         .unwrap();
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn proposal_from_new_member_must_not_have_membership_tag() {
         let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let (key_pkg_gen, signer) =
@@ -473,7 +472,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::MembershipTagForNonMember));
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn new_member_proposal_sender_must_be_add_proposal() {
         let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let (key_pkg_gen, signer) =
@@ -497,7 +496,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_commit")]
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn new_member_commit_must_be_external_commit() {
         let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let (key_pkg_gen, signer) =
@@ -519,7 +518,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_proposal")]
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn valid_proposal_from_external_is_verified() {
         let (bob_key_pkg_gen, _) =
             test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob").await;
@@ -562,7 +561,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_proposal")]
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn external_proposal_must_be_from_valid_sender() {
         let (bob_key_pkg_gen, _) =
             test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob").await;
@@ -584,7 +583,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::UnknownSigningIdentityForExternalSender));
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn proposal_from_external_sender_must_not_have_membership_tag() {
         let (bob_key_pkg_gen, _) =
             test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob").await;
@@ -609,7 +608,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::MembershipTagForNonMember));
     }
 
-    #[test]
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn plaintext_from_self_fails_verification() {
         let mut env = TestEnv::new().await;
 
