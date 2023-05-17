@@ -7,7 +7,7 @@ use super::Credential;
 #[derive(Debug, Clone, Eq, Hash, PartialEq, PartialOrd, Ord, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(
-    all(features = "ffi", not(test)),
+    all(feature = "ffi", not(test)),
     safer_ffi_gen::ffi_type(clone, opaque)
 )]
 /// MLS group member identity represented as a combination of a
