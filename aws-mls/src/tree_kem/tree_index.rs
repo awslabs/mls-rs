@@ -3,10 +3,10 @@ use super::*;
 #[cfg(all(feature = "tree_index", feature = "custom_proposal"))]
 use crate::group::proposal::ProposalType;
 
-#[cfg(all(feature = "tree_index"))]
+#[cfg(feature = "tree_index")]
 use crate::identity::CredentialType;
 
-#[cfg(all(feature = "tree_index"))]
+#[cfg(feature = "tree_index")]
 use aws_mls_core::crypto::SignaturePublicKey;
 
 #[cfg(all(feature = "tree_index", feature = "std"))]

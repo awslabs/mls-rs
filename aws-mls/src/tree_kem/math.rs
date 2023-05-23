@@ -99,43 +99,6 @@ pub fn subtree(x: u32) -> (LeafIndex, LeafIndex) {
     )
 }
 
-pub struct BfsIterBottomUp {
-    level: usize,
-    mask: usize,
-    level_end: usize,
-    ctr: usize,
-}
-
-impl BfsIterBottomUp {
-    pub fn new(num_leaves: usize) -> Self {
-        Self {
-            level: 1,
-            mask: 0,
-            level_end: num_leaves,
-            ctr: 0,
-        }
-    }
-}
-
-impl Iterator for BfsIterBottomUp {
-    type Item = usize;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.ctr == self.level_end {
-            if self.level_end == 1 {
-                return None;
-            }
-            self.level_end = ((self.level_end - 1) >> 1) + 1;
-            self.level += 1;
-            self.ctr = 0;
-            self.mask = (self.mask << 1) | 1;
-        }
-        let res = Some((self.ctr << self.level) | self.mask);
-        self.ctr += 1;
-        res
-    }
-}
-
 pub struct BfsIterTopDown {
     level: usize,
     mask: usize,
@@ -203,10 +166,6 @@ mod tests {
 
     #[test]
     fn test_bfs_iterator() {
-        let expected = [0, 2, 4, 6, 8, 10, 12, 14, 1, 5, 9, 13, 3, 11, 7];
-        let bfs = BfsIterBottomUp::new(8);
-        assert_eq!(bfs.collect::<Vec<_>>(), expected);
-
         let expected = [7, 3, 11, 1, 5, 9, 13, 0, 2, 4, 6, 8, 10, 12, 14];
         let bfs = BfsIterTopDown::new(8);
         assert_eq!(bfs.collect::<Vec<_>>(), expected);
