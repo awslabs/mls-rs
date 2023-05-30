@@ -10,12 +10,10 @@ use aws_mls_core::{
 use crate::{
     client::MlsError,
     group::{epoch::EpochSecrets, state_repo::GroupStateRepository, GroupContext},
+    psk::secret::PskSecret,
 };
 
-use super::{
-    secret::{PskSecret, PskSecretInput},
-    JustPreSharedKeyID, PreSharedKeyID, ResumptionPsk,
-};
+use super::{secret::PskSecretInput, JustPreSharedKeyID, PreSharedKeyID, ResumptionPsk};
 
 pub(crate) struct PskResolver<'a, GS, K, PS>
 where

@@ -4,8 +4,7 @@ use crate::{
     group::{
         proposal::ReInitProposal,
         proposal_filter::{ProposalBundle, ProposalInfo},
-        AddProposal, JustPreSharedKeyID, PreSharedKeyProposal, ProposalType, RemoveProposal,
-        ResumptionPSKUsage, ResumptionPsk, Sender, UpdateProposal,
+        AddProposal, ProposalType, RemoveProposal, Sender, UpdateProposal,
     },
     key_package::validate_key_package_properties,
     protocol_version::ProtocolVersion,
@@ -26,7 +25,7 @@ use crate::extension::ExternalSendersExt;
 use alloc::vec;
 
 use alloc::vec::Vec;
-use aws_mls_core::{error::IntoAnyError, identity::IdentityProvider, psk::PreSharedKeyStorage};
+use aws_mls_core::{identity::IdentityProvider, psk::PreSharedKeyStorage};
 
 #[cfg(feature = "custom_proposal")]
 use itertools::Itertools;
@@ -34,8 +33,20 @@ use itertools::Itertools;
 #[cfg(feature = "external_commit")]
 use crate::group::ExternalInit;
 
-#[cfg(feature = "std")]
+#[cfg(feature = "psk")]
+use crate::group::{
+    proposal::PreSharedKeyProposal, JustPreSharedKeyID, ResumptionPSKUsage, ResumptionPsk,
+};
+
+#[cfg(all(feature = "std", feature = "psk"))]
 use std::collections::HashSet;
+
+#[cfg(any(
+    feature = "external_commit",
+    feature = "external_proposal",
+    feature = "psk"
+))]
+use aws_mls_core::error::IntoAnyError;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ProposalState {
@@ -720,6 +731,7 @@ where
     Ok(proposals)
 }
 
+#[cfg(feature = "psk")]
 #[maybe_async::maybe_async]
 async fn filter_out_invalid_psks<F, P, CP>(
     strategy: &F,
@@ -802,6 +814,22 @@ where
         .rev()
         .for_each(|i| proposals.remove::<PreSharedKeyProposal>(i));
 
+    Ok(proposals)
+}
+
+#[cfg(not(feature = "psk"))]
+#[maybe_async::maybe_async]
+async fn filter_out_invalid_psks<F, P, CP>(
+    _: &F,
+    _: &CP,
+    proposals: ProposalBundle,
+    _: &P,
+) -> Result<ProposalBundle, MlsError>
+where
+    F: FilterStrategy,
+    P: PreSharedKeyStorage,
+    CP: CipherSuiteProvider,
+{
     Ok(proposals)
 }
 
@@ -893,6 +921,7 @@ where
         }
     }
 
+    #[cfg(feature = "psk")]
     for i in (0..proposals.psk_proposals().len()).rev() {
         let p = &proposals.psk_proposals()[i];
         let res = proposer_can_propose(p.sender, ProposalType::PSK, p.is_by_reference());

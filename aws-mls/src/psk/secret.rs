@@ -1,14 +1,23 @@
 use alloc::vec;
 use alloc::vec::Vec;
-use aws_mls_codec::MlsEncode;
-use aws_mls_core::{crypto::CipherSuiteProvider, error::IntoAnyError, psk::PreSharedKey};
+use aws_mls_core::crypto::CipherSuiteProvider;
 use core::ops::Deref;
 use zeroize::Zeroizing;
 
-use crate::{client::MlsError, group::key_schedule::kdf_expand_with_label};
+#[cfg(feature = "psk")]
+use aws_mls_codec::MlsEncode;
 
-use super::{PSKLabel, PreSharedKeyID};
+#[cfg(feature = "psk")]
+use aws_mls_core::{error::IntoAnyError, psk::PreSharedKey};
 
+#[cfg(feature = "psk")]
+use crate::{
+    client::MlsError,
+    group::key_schedule::kdf_expand_with_label,
+    psk::{PSKLabel, PreSharedKeyID},
+};
+
+#[cfg(feature = "psk")]
 #[derive(Clone)]
 pub(crate) struct PskSecretInput {
     pub id: PreSharedKeyID,
@@ -38,6 +47,7 @@ impl PskSecret {
         PskSecret(Zeroizing::new(vec![0u8; provider.kdf_extract_size()]))
     }
 
+    #[cfg(feature = "psk")]
     pub(crate) fn calculate<P: CipherSuiteProvider>(
         input: &[PskSecretInput],
         cipher_suite_provider: &P,

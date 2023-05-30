@@ -19,7 +19,8 @@ custom_proposal = []
 tree_index = []
 out_of_order = ["private_message"]
 external_proposal = ["aws-mls-core/external_proposal", "aws-mls-identity-x509/external_proposal"]
-rfc_compliant = ["external_commit", "state_update", "private_message", "custom_proposal", "external_proposal", "out_of_order"]
+psk = []
+rfc_compliant = ["external_commit", "state_update", "private_message", "custom_proposal", "external_proposal", "out_of_order", "psk"]
 
 std = ["aws-mls-core/std", "aws-mls-codec/std", "aws-mls-identity-x509/std", "hex/std", "futures/std", "itertools/use_std", "zeroize/std", "dep:debug_tree", "dep:thiserror"]
 

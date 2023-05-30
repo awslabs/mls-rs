@@ -202,6 +202,7 @@ where
             epoch_secrets: snapshot.epoch_secrets,
             state_repo,
             cipher_suite_provider,
+            #[cfg(feature = "psk")]
             previous_psk: None,
         })
     }

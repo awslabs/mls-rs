@@ -1,5 +1,5 @@
 use super::*;
-use crate::{psk::PreSharedKeyID, tree_kem::leaf_node::LeafNode};
+use crate::tree_kem::leaf_node::LeafNode;
 use alloc::string::ToString;
 use core::fmt::Debug;
 
@@ -7,6 +7,9 @@ use proposal_ref::ProposalRef;
 
 pub use aws_mls_core::extension::ExtensionList;
 pub use aws_mls_core::group::ProposalType;
+
+#[cfg(feature = "psk")]
+use crate::psk::PreSharedKeyID;
 
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -112,6 +115,7 @@ impl From<u32> for RemoveProposal {
     }
 }
 
+#[cfg(feature = "psk")]
 #[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// A proposal to add a pre-shared key to a group.
@@ -119,6 +123,7 @@ pub struct PreSharedKeyProposal {
     pub(crate) psk: PreSharedKeyID,
 }
 
+#[cfg(feature = "psk")]
 impl PreSharedKeyProposal {
     /// The external pre-shared key id of this proposal.
     ///
@@ -247,6 +252,7 @@ pub enum Proposal {
     Add(AddProposal),
     Update(UpdateProposal),
     Remove(RemoveProposal),
+    #[cfg(feature = "psk")]
     Psk(PreSharedKeyProposal),
     ReInit(ReInitProposal),
     #[cfg(feature = "external_commit")]
@@ -262,6 +268,7 @@ impl MlsSize for Proposal {
             Proposal::Add(p) => p.mls_encoded_len(),
             Proposal::Update(p) => p.mls_encoded_len(),
             Proposal::Remove(p) => p.mls_encoded_len(),
+            #[cfg(feature = "psk")]
             Proposal::Psk(p) => p.mls_encoded_len(),
             Proposal::ReInit(p) => p.mls_encoded_len(),
             #[cfg(feature = "external_commit")]
@@ -283,6 +290,7 @@ impl MlsEncode for Proposal {
             Proposal::Add(p) => p.mls_encode(writer),
             Proposal::Update(p) => p.mls_encode(writer),
             Proposal::Remove(p) => p.mls_encode(writer),
+            #[cfg(feature = "psk")]
             Proposal::Psk(p) => p.mls_encode(writer),
             Proposal::ReInit(p) => p.mls_encode(writer),
             #[cfg(feature = "external_commit")]
@@ -309,6 +317,7 @@ impl MlsDecode for Proposal {
             ProposalType::ADD => Proposal::Add(AddProposal::mls_decode(reader)?),
             ProposalType::UPDATE => Proposal::Update(UpdateProposal::mls_decode(reader)?),
             ProposalType::REMOVE => Proposal::Remove(RemoveProposal::mls_decode(reader)?),
+            #[cfg(feature = "psk")]
             ProposalType::PSK => Proposal::Psk(PreSharedKeyProposal::mls_decode(reader)?),
             ProposalType::RE_INIT => Proposal::ReInit(ReInitProposal::mls_decode(reader)?),
             #[cfg(feature = "external_commit")]
@@ -338,6 +347,7 @@ impl Proposal {
             Proposal::Add(_) => ProposalType::ADD,
             Proposal::Update(_) => ProposalType::UPDATE,
             Proposal::Remove(_) => ProposalType::REMOVE,
+            #[cfg(feature = "psk")]
             Proposal::Psk(_) => ProposalType::PSK,
             Proposal::ReInit(_) => ProposalType::RE_INIT,
             #[cfg(feature = "external_commit")]
@@ -355,6 +365,7 @@ pub enum BorrowedProposal<'a> {
     Add(&'a AddProposal),
     Update(&'a UpdateProposal),
     Remove(&'a RemoveProposal),
+    #[cfg(feature = "psk")]
     Psk(&'a PreSharedKeyProposal),
     ReInit(&'a ReInitProposal),
     #[cfg(feature = "external_commit")]
@@ -370,6 +381,7 @@ impl<'a> From<BorrowedProposal<'a>> for Proposal {
             BorrowedProposal::Add(add) => Proposal::Add(add.clone()),
             BorrowedProposal::Update(update) => Proposal::Update(update.clone()),
             BorrowedProposal::Remove(remove) => Proposal::Remove(remove.clone()),
+            #[cfg(feature = "psk")]
             BorrowedProposal::Psk(psk) => Proposal::Psk(psk.clone()),
             BorrowedProposal::ReInit(reinit) => Proposal::ReInit(reinit.clone()),
             #[cfg(feature = "external_commit")]
@@ -389,6 +401,7 @@ impl BorrowedProposal<'_> {
             BorrowedProposal::Add(_) => ProposalType::ADD,
             BorrowedProposal::Update(_) => ProposalType::UPDATE,
             BorrowedProposal::Remove(_) => ProposalType::REMOVE,
+            #[cfg(feature = "psk")]
             BorrowedProposal::Psk(_) => ProposalType::PSK,
             BorrowedProposal::ReInit(_) => ProposalType::RE_INIT,
             #[cfg(feature = "external_commit")]
@@ -406,6 +419,7 @@ impl<'a> From<&'a Proposal> for BorrowedProposal<'a> {
             Proposal::Add(p) => BorrowedProposal::Add(p),
             Proposal::Update(p) => BorrowedProposal::Update(p),
             Proposal::Remove(p) => BorrowedProposal::Remove(p),
+            #[cfg(feature = "psk")]
             Proposal::Psk(p) => BorrowedProposal::Psk(p),
             Proposal::ReInit(p) => BorrowedProposal::ReInit(p),
             #[cfg(feature = "external_commit")]
@@ -435,6 +449,7 @@ impl<'a> From<&'a RemoveProposal> for BorrowedProposal<'a> {
     }
 }
 
+#[cfg(feature = "psk")]
 impl<'a> From<&'a PreSharedKeyProposal> for BorrowedProposal<'a> {
     fn from(p: &'a PreSharedKeyProposal) -> Self {
         Self::Psk(p)

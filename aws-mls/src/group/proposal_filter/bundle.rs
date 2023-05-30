@@ -5,11 +5,14 @@ use itertools::Itertools;
 
 use crate::{
     group::{
-        AddProposal, BorrowedProposal, PreSharedKeyProposal, Proposal, ProposalOrRef, ProposalRef,
-        ProposalType, ReInitProposal, RemoveProposal, Sender, UpdateProposal,
+        AddProposal, BorrowedProposal, Proposal, ProposalOrRef, ProposalRef, ProposalType,
+        ReInitProposal, RemoveProposal, Sender, UpdateProposal,
     },
     ExtensionList,
 };
+
+#[cfg(feature = "psk")]
+use crate::group::PreSharedKeyProposal;
 
 #[cfg(feature = "custom_proposal")]
 use crate::group::proposal::CustomProposal;
@@ -25,6 +28,7 @@ pub struct ProposalBundle {
     additions: Vec<ProposalInfo<AddProposal>>,
     updates: Vec<ProposalInfo<UpdateProposal>>,
     removals: Vec<ProposalInfo<RemoveProposal>>,
+    #[cfg(feature = "psk")]
     psks: Vec<ProposalInfo<PreSharedKeyProposal>>,
     pub(crate) reinitializations: Vec<ProposalInfo<ReInitProposal>>,
     #[cfg(feature = "external_commit")]
@@ -52,6 +56,7 @@ impl ProposalBundle {
                 sender,
                 source,
             }),
+            #[cfg(feature = "psk")]
             Proposal::Psk(proposal) => self.psks.push(ProposalInfo {
                 proposal,
                 sender,
@@ -165,6 +170,7 @@ impl ProposalBundle {
             f(&proposal.by_ref().map(BorrowedProposal::from))
         })?;
 
+        #[cfg(feature = "psk")]
         self.retain_by_type::<PreSharedKeyProposal, _, _>(|proposal| {
             f(&proposal.by_ref().map(BorrowedProposal::from))
         })?;
@@ -202,15 +208,17 @@ impl ProposalBundle {
                     .map(|p| p.by_ref().map(BorrowedProposal::Remove)),
             )
             .chain(
-                self.psks
-                    .iter()
-                    .map(|p| p.by_ref().map(BorrowedProposal::Psk)),
-            )
-            .chain(
                 self.reinitializations
                     .iter()
                     .map(|p| p.by_ref().map(BorrowedProposal::ReInit)),
             );
+
+        #[cfg(feature = "psk")]
+        let res = res.chain(
+            self.psks
+                .iter()
+                .map(|p| p.by_ref().map(BorrowedProposal::Psk)),
+        );
 
         #[cfg(feature = "external_commit")]
         let res = res.chain(
@@ -253,10 +261,12 @@ impl ProposalBundle {
                 .map(|p| p.map(Proposal::ExternalInit)),
         );
 
+        #[cfg(feature = "psk")]
+        let res = res.chain(self.psks.into_iter().map(|p| p.map(Proposal::Psk)));
+
         res.chain(self.additions.into_iter().map(|p| p.map(Proposal::Add)))
             .chain(self.updates.into_iter().map(|p| p.map(Proposal::Update)))
             .chain(self.removals.into_iter().map(|p| p.map(Proposal::Remove)))
-            .chain(self.psks.into_iter().map(|p| p.map(Proposal::Psk)))
             .chain(
                 self.reinitializations
                     .into_iter()
@@ -302,6 +312,7 @@ impl ProposalBundle {
     }
 
     /// Pre-shared key proposals in the bundle.
+    #[cfg(feature = "psk")]
     pub fn psk_proposals(&self) -> &[ProposalInfo<PreSharedKeyProposal>] {
         &self.psks
     }
@@ -364,8 +375,10 @@ impl ProposalBundle {
             .into_iter()
             .chain((!self.updates.is_empty()).then_some(ProposalType::UPDATE))
             .chain((!self.removals.is_empty()).then_some(ProposalType::REMOVE))
-            .chain((!self.psks.is_empty()).then_some(ProposalType::PSK))
             .chain((!self.reinitializations.is_empty()).then_some(ProposalType::RE_INIT));
+
+        #[cfg(feature = "psk")]
+        let res = res.chain((!self.psks.is_empty()).then_some(ProposalType::PSK));
 
         #[cfg(feature = "external_commit")]
         let res = res.chain(
@@ -554,6 +567,7 @@ macro_rules! impl_proposable {
 impl_proposable!(AddProposal, ADD, additions);
 impl_proposable!(UpdateProposal, UPDATE, updates);
 impl_proposable!(RemoveProposal, REMOVE, removals);
+#[cfg(feature = "psk")]
 impl_proposable!(PreSharedKeyProposal, PSK, psks);
 impl_proposable!(ReInitProposal, RE_INIT, reinitializations);
 #[cfg(feature = "external_commit")]

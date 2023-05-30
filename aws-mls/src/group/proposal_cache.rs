@@ -22,6 +22,7 @@ pub(crate) struct ProposalSetEffects {
     pub updates: Vec<(LeafIndex, LeafNode)>,
     pub removes: Vec<LeafIndex>,
     pub group_context_ext: Option<ExtensionList>,
+    #[cfg(feature = "psk")]
     pub psks: Vec<PreSharedKeyID>,
     pub reinit: Option<ReInitProposal>,
     #[cfg(feature = "external_commit")]
@@ -49,6 +50,7 @@ impl ProposalSetEffects {
             updates: Vec::new(),
             removes: Vec::new(),
             group_context_ext: None,
+            #[cfg(feature = "psk")]
             psks: Vec::new(),
             reinit: None,
             #[cfg(feature = "external_commit")]
@@ -70,6 +72,7 @@ impl ProposalSetEffects {
                 }
                 Proposal::Remove(remove) => init.removes.push(remove.to_remove),
                 Proposal::GroupContextExtensions(list) => init.group_context_ext = Some(list),
+                #[cfg(feature = "psk")]
                 Proposal::Psk(PreSharedKeyProposal { psk }) => {
                     init.psks.push(psk);
                 }
@@ -99,11 +102,13 @@ impl ProposalSetEffects {
         #[cfg(feature = "external_commit")]
         let res = self.external_init.is_none();
 
+        #[cfg(feature = "psk")]
+        let res = res && self.psks.is_empty();
+
         res && self.adds.is_empty()
             && self.updates.is_empty()
             && self.removes.is_empty()
             && self.group_context_ext.is_none()
-            && self.psks.is_empty()
             && self.reinit.is_none()
     }
 
@@ -917,6 +922,7 @@ mod tests {
             updates: vec![],
             removes: vec![remove_leaf_index],
             group_context_ext: Some(ExtensionList::new()),
+            #[cfg(feature = "psk")]
             psks: Vec::new(),
             reinit: None,
             #[cfg(feature = "external_commit")]
@@ -1913,6 +1919,7 @@ mod tests {
         assert!(effects.path_update_required())
     }
 
+    #[cfg(feature = "psk")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_path_update_not_required() {
         let (alice, tree) = new_tree("alice").await;
@@ -2390,6 +2397,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "psk")]
     fn make_external_psk(id: &[u8], nonce: PskNonce) -> PreSharedKeyProposal {
         PreSharedKeyProposal {
             psk: PreSharedKeyID {
@@ -2399,6 +2407,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "psk")]
     fn new_external_psk(id: &[u8]) -> PreSharedKeyProposal {
         make_external_psk(
             id,
@@ -2406,6 +2415,7 @@ mod tests {
         )
     }
 
+    #[cfg(feature = "psk")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn receiving_psk_with_invalid_nonce_fails() {
         let invalid_nonce = PskNonce(vec![0, 1, 2]);
@@ -2431,6 +2441,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "psk")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn sending_additional_psk_with_invalid_nonce_fails() {
         let invalid_nonce = PskNonce(vec![0, 1, 2]);
@@ -2452,6 +2463,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "psk")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn sending_psk_with_invalid_nonce_filters_it_out() {
         let invalid_nonce = PskNonce(vec![0, 1, 2]);
@@ -2475,6 +2487,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "psk")]
     fn make_resumption_psk(usage: ResumptionPSKUsage) -> PreSharedKeyProposal {
         PreSharedKeyProposal {
             psk: PreSharedKeyID {
@@ -2489,6 +2502,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "psk")]
     #[maybe_async::maybe_async]
     async fn receiving_resumption_psk_with_bad_usage_fails(usage: ResumptionPSKUsage) {
         let (alice, tree) = new_tree("alice").await;
@@ -2505,6 +2519,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::InvalidTypeOrUsageInPreSharedKeyProposal));
     }
 
+    #[cfg(feature = "psk")]
     #[maybe_async::maybe_async]
     async fn sending_additional_resumption_psk_with_bad_usage_fails(usage: ResumptionPSKUsage) {
         let (alice, tree) = new_tree("alice").await;
@@ -2517,6 +2532,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::InvalidTypeOrUsageInPreSharedKeyProposal));
     }
 
+    #[cfg(feature = "psk")]
     #[maybe_async::maybe_async]
     async fn sending_resumption_psk_with_bad_usage_filters_it_out(usage: ResumptionPSKUsage) {
         let (alice, tree) = new_tree("alice").await;
@@ -2539,31 +2555,37 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "psk")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn receiving_resumption_psk_with_reinit_usage_fails() {
         receiving_resumption_psk_with_bad_usage_fails(ResumptionPSKUsage::Reinit).await;
     }
 
+    #[cfg(feature = "psk")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn sending_additional_resumption_psk_with_reinit_usage_fails() {
         sending_additional_resumption_psk_with_bad_usage_fails(ResumptionPSKUsage::Reinit).await;
     }
 
+    #[cfg(feature = "psk")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn sending_resumption_psk_with_reinit_usage_filters_it_out() {
         sending_resumption_psk_with_bad_usage_filters_it_out(ResumptionPSKUsage::Reinit).await;
     }
 
+    #[cfg(feature = "psk")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn receiving_resumption_psk_with_branch_usage_fails() {
         receiving_resumption_psk_with_bad_usage_fails(ResumptionPSKUsage::Branch).await;
     }
 
+    #[cfg(feature = "psk")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn sending_additional_resumption_psk_with_branch_usage_fails() {
         sending_additional_resumption_psk_with_bad_usage_fails(ResumptionPSKUsage::Branch).await;
     }
 
+    #[cfg(feature = "psk")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn sending_resumption_psk_with_branch_usage_filters_it_out() {
         sending_resumption_psk_with_bad_usage_filters_it_out(ResumptionPSKUsage::Branch).await;

@@ -3,12 +3,15 @@ use crate::{group::PriorEpoch, key_package::KeyPackageRef};
 
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
-use aws_mls_core::{
-    error::IntoAnyError, group::GroupStateStorage, key_package::KeyPackageStorage,
-    psk::PreSharedKey,
-};
+use aws_mls_core::{error::IntoAnyError, group::GroupStateStorage, key_package::KeyPackageStorage};
 
-use super::{internal::ResumptionPsk, snapshot::Snapshot};
+use super::snapshot::Snapshot;
+
+#[cfg(feature = "psk")]
+use crate::group::internal::ResumptionPsk;
+
+#[cfg(feature = "psk")]
+use aws_mls_core::psk::PreSharedKey;
 
 pub(crate) const DEFAULT_EPOCH_RETENTION_LIMIT: u64 = 3;
 
@@ -84,6 +87,7 @@ where
         }
     }
 
+    #[cfg(feature = "psk")]
     #[maybe_async::maybe_async]
     pub async fn resumption_secret(
         &self,
@@ -124,6 +128,7 @@ where
             .map(|e| e.map(|e| e.secrets.resumption_secret))
     }
 
+    #[cfg(any(feature = "psk", feature = "private_message"))]
     fn epoch_pending_delete(&self, epoch_id: u64) -> bool {
         // Epochs pending deletion should not be found
         self.pending_commit
@@ -233,6 +238,7 @@ where
         Ok(())
     }
 
+    #[cfg(any(feature = "psk", feature = "private_message"))]
     fn find_pending(&self, epoch_id: u64) -> Option<usize> {
         self.pending_commit
             .updates

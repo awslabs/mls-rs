@@ -13,19 +13,13 @@ use zeroize::Zeroizing;
 
 use crate::cipher_suite::CipherSuite;
 use crate::client::MlsError;
-use crate::client_builder::Preferences;
 use crate::client_config::ClientConfig;
 use crate::crypto::{HpkeCiphertext, HpkePublicKey, HpkeSecretKey, SignatureSecretKey};
 use crate::extension::RatchetTreeExt;
 use crate::identity::SigningIdentity;
 use crate::key_package::{KeyPackage, KeyPackageRef};
 use crate::protocol_version::ProtocolVersion;
-use crate::psk::resolver::PskResolver;
-use crate::psk::secret::{PskSecret, PskSecretInput};
-use crate::psk::{
-    ExternalPskId, JustPreSharedKeyID, PreSharedKeyID, PskGroupId, PskNonce, ResumptionPSKUsage,
-    ResumptionPsk,
-};
+use crate::psk::secret::PskSecret;
 use crate::signer::Signable;
 use crate::tree_kem::hpke_encryption::HpkeEncryptable;
 use crate::tree_kem::kem::TreeKem;
@@ -39,6 +33,15 @@ use crate::{CipherSuiteProvider, CryptoProvider};
 
 #[cfg(feature = "external_commit")]
 use crate::extension::ExternalPubExt;
+
+#[cfg(feature = "psk")]
+use crate::psk::{
+    resolver::PskResolver, secret::PskSecretInput, ExternalPskId, JustPreSharedKeyID,
+    PreSharedKeyID, PskGroupId, PskNonce, ResumptionPSKUsage, ResumptionPsk,
+};
+
+#[cfg(any(feature = "benchmark", feature = "psk"))]
+use crate::client_builder::Preferences;
 
 #[cfg(feature = "std")]
 use std::collections::HashMap;
@@ -145,6 +148,7 @@ mod interop_test_vectors;
 struct GroupSecrets {
     joiner_secret: JoinerSecret,
     path_secret: Option<PathSecret>,
+    #[cfg(feature = "psk")]
     psks: Vec<PreSharedKeyID>,
 }
 
@@ -243,6 +247,7 @@ pub(crate) mod internal {
         #[cfg(not(feature = "std"))]
         pub(super) pending_updates: Vec<(HpkePublicKey, HpkeSecretKey)>,
         pub(super) pending_commit: Option<CommitGeneration>,
+        #[cfg(feature = "psk")]
         pub(super) previous_psk: Option<PskSecretInput>,
         #[cfg(test)]
         pub(crate) commit_modifiers:
@@ -346,6 +351,7 @@ where
             epoch_secrets: key_schedule_result.epoch_secrets,
             state_repo,
             cipher_suite_provider,
+            #[cfg(feature = "psk")]
             previous_psk: None,
         })
     }
@@ -361,7 +367,14 @@ where
         tree_data: Option<&[u8]>,
         config: C,
     ) -> Result<(Self, NewMemberInfo), MlsError> {
-        Self::from_welcome_message(welcome, tree_data, config, None).await
+        Self::from_welcome_message(
+            welcome,
+            tree_data,
+            config,
+            #[cfg(feature = "psk")]
+            None,
+        )
+        .await
     }
 
     #[maybe_async::maybe_async]
@@ -369,7 +382,7 @@ where
         welcome: MLSMessage,
         tree_data: Option<&[u8]>,
         config: C,
-        additional_psk: Option<PskSecretInput>,
+        #[cfg(feature = "psk")] additional_psk: Option<PskSecretInput>,
     ) -> Result<(Self, NewMemberInfo), MlsError> {
         let protocol_version = welcome.version;
 
@@ -406,8 +419,7 @@ where
             &encrypted_group_secrets.encrypted_group_secrets,
         )?;
 
-        let psk_store = config.secret_store();
-
+        #[cfg(feature = "psk")]
         let psk_secret = if let Some(psk) = additional_psk {
             let psk_id = group_secrets
                 .psks
@@ -433,11 +445,14 @@ where
                 group_context: None,
                 current_epoch: None,
                 prior_epochs: None,
-                psk_store: &psk_store,
+                psk_store: &config.secret_store(),
             }
             .resolve_to_secret(&group_secrets.psks, &cipher_suite_provider)
             .await?
         };
+
+        #[cfg(not(feature = "psk"))]
+        let psk_secret = PskSecret::new(&cipher_suite_provider);
 
         // From the joiner_secret in the decrypted GroupSecrets object and the PSKs specified in
         // the GroupSecrets, derive the welcome_secret and using that the welcome_key and
@@ -564,6 +579,7 @@ where
             epoch_secrets,
             state_repo,
             cipher_suite_provider,
+            #[cfg(feature = "psk")]
             previous_psk: None,
         };
 
@@ -723,7 +739,7 @@ where
         joiner_secret: &JoinerSecret,
         psk_secret: &PskSecret,
         path_secrets: Option<&Vec<Option<PathSecret>>>,
-        psks: Vec<PreSharedKeyID>,
+        #[cfg(feature = "psk")] psks: Vec<PreSharedKeyID>,
         group_info: &GroupInfo,
     ) -> Result<Option<MLSMessage>, MlsError> {
         // Encrypt the GroupInfo using the key and nonce derived from the joiner_secret for
@@ -745,6 +761,7 @@ where
                     leaf_index,
                     joiner_secret,
                     path_secrets,
+                    #[cfg(feature = "psk")]
                     psks.clone(),
                     &encrypted_group_info,
                 )
@@ -770,6 +787,7 @@ where
     /// is determined using the
     /// [`IdentityProvider`](crate::IdentityProvider)
     /// that is currently in use by this group instance.
+    #[cfg(feature = "psk")]
     #[maybe_async::maybe_async]
     pub async fn branch(
         &self,
@@ -796,6 +814,7 @@ where
     }
 
     /// Join a subgroup that was created by [`Group::branch`].
+    #[cfg(feature = "psk")]
     #[maybe_async::maybe_async]
     pub async fn join_subgroup(
         &self,
@@ -836,6 +855,7 @@ where
     ///
     /// This function will fail if the number of members in the reinitialized
     /// group is not the same as the prior group roster.
+    #[cfg(feature = "psk")]
     #[maybe_async::maybe_async]
     pub async fn finish_reinit_commit(
         &self,
@@ -868,6 +888,7 @@ where
 
     /// Join a reinitialized group that was created by
     /// [`Group::finish_reinit_commit`].
+    #[cfg(feature = "psk")]
     #[maybe_async::maybe_async]
     pub async fn finish_reinit_join(
         &self,
@@ -897,6 +918,7 @@ where
         .await
     }
 
+    #[cfg(feature = "psk")]
     #[maybe_async::maybe_async]
     async fn resumption_create_group(
         &self,
@@ -943,12 +965,13 @@ where
         Ok((group, commit.welcome_message))
     }
 
+    #[cfg(feature = "psk")]
     #[maybe_async::maybe_async]
     async fn resumption_join_group(
         &self,
         welcome: MLSMessage,
         tree_data: Option<&[u8]>,
-        expected_new_group_prams: ResumptionGroupParameters<'_>,
+        expected_new_group_params: ResumptionGroupParameters<'_>,
         verify_group_id: bool,
         usage: ResumptionPSKUsage,
     ) -> Result<(Group<C>, NewMemberInfo), MlsError> {
@@ -957,22 +980,23 @@ where
         let (group, new_member_info) =
             Self::from_welcome_message(welcome, tree_data, self.config.clone(), psk_input).await?;
 
-        if group.protocol_version() != expected_new_group_prams.version {
+        if group.protocol_version() != expected_new_group_params.version {
             Err(MlsError::ProtocolVersionMismatch)
-        } else if group.cipher_suite() != expected_new_group_prams.cipher_suite {
+        } else if group.cipher_suite() != expected_new_group_params.cipher_suite {
             Err(MlsError::CipherSuiteMismatch)
-        } else if verify_group_id && group.group_id() != expected_new_group_prams.group_id {
+        } else if verify_group_id && group.group_id() != expected_new_group_params.group_id {
             Err(MlsError::GroupIdMismatch)
-        } else if group.context_extensions() != expected_new_group_prams.extensions {
+        } else if group.context_extensions() != expected_new_group_params.extensions {
             Err(MlsError::ReInitExtensionsMismatch(
                 group.context_extensions().clone(),
-                expected_new_group_prams.extensions.clone(),
+                expected_new_group_params.extensions.clone(),
             ))
         } else {
             Ok((group, new_member_info))
         }
     }
 
+    #[cfg(feature = "psk")]
     fn resumption_psk_input(&self, usage: ResumptionPSKUsage) -> Result<PskSecretInput, MlsError> {
         let psk = self.epoch_secrets.resumption_secret.clone();
 
@@ -992,7 +1016,7 @@ where
         leaf_index: LeafIndex,
         joiner_secret: &JoinerSecret,
         path_secrets: Option<&Vec<Option<PathSecret>>>,
-        psks: Vec<PreSharedKeyID>,
+        #[cfg(feature = "psk")] psks: Vec<PreSharedKeyID>,
         encrypted_group_info: &[u8],
     ) -> Result<EncryptedGroupSecrets, MlsError> {
         let path_secret = path_secrets
@@ -1012,6 +1036,7 @@ where
         let group_secrets = GroupSecrets {
             joiner_secret: joiner_secret.clone(),
             path_secret,
+            #[cfg(feature = "psk")]
             psks,
         };
 
@@ -1163,6 +1188,7 @@ where
     ///
     /// `authenticated_data` will be sent unencrypted along with the contents
     /// of the proposal message.
+    #[cfg(feature = "psk")]
     #[maybe_async::maybe_async]
     pub async fn propose_external_psk(
         &mut self,
@@ -1173,6 +1199,7 @@ where
         self.proposal_message(proposal, authenticated_data).await
     }
 
+    #[cfg(feature = "psk")]
     fn psk_proposal(&self, key_id: JustPreSharedKeyID) -> Result<Proposal, MlsError> {
         Ok(Proposal::Psk(PreSharedKeyProposal {
             psk: PreSharedKeyID {
@@ -1192,6 +1219,7 @@ where
     ///
     /// `authenticated_data` will be sent unencrypted along with the contents
     /// of the proposal message.
+    #[cfg(feature = "psk")]
     #[maybe_async::maybe_async]
     pub async fn propose_resumption_psk(
         &mut self,
@@ -1663,6 +1691,7 @@ where
         &self.epoch_secrets.secret_tree
     }
 
+    #[cfg(feature = "psk")]
     #[maybe_async::maybe_async]
     async fn get_psk(&self, psks: &[PreSharedKeyID]) -> Result<PskSecret, MlsError> {
         if let Some(psk) = self.previous_psk.clone() {
@@ -1679,6 +1708,11 @@ where
             .await
             .map_err(Into::into)
         }
+    }
+
+    #[cfg(not(feature = "psk"))]
+    fn get_psk(&self) -> PskSecret {
+        PskSecret::new(self.cipher_suite_provider())
     }
 
     #[cfg(feature = "secret_tree_access")]
@@ -1711,6 +1745,7 @@ where
     }
 }
 
+#[cfg(feature = "psk")]
 struct ResumptionGroupParameters<'a> {
     group_id: &'a [u8],
     cipher_suite: CipherSuite,
@@ -1856,13 +1891,19 @@ where
             _ => self.key_schedule.clone(),
         };
 
+        #[cfg(feature = "psk")]
+        let psk = self.get_psk(&provisional_state.psks).await?;
+
+        #[cfg(not(feature = "psk"))]
+        let psk = self.get_psk();
+
         let key_schedule_result = KeySchedule::from_key_schedule(
             &key_schedule,
             &commit_secret,
             &provisional_state.group_context,
             #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
             provisional_state.public_tree.total_leaf_count(),
-            &self.get_psk(&provisional_state.psks).await?,
+            &psk,
             &self.cipher_suite_provider,
         )?;
 

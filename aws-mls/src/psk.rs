@@ -1,6 +1,4 @@
-use crate::{client::MlsError, CipherSuiteProvider};
 use alloc::vec::Vec;
-use aws_mls_core::error::IntoAnyError;
 
 #[cfg(any(test, feature = "external_client"))]
 use alloc::vec;
@@ -13,6 +11,13 @@ use aws_mls_core::psk::PreSharedKeyStorage;
 #[cfg(any(test, feature = "external_client"))]
 use core::convert::Infallible;
 
+#[cfg(feature = "psk")]
+use crate::{client::MlsError, CipherSuiteProvider};
+
+#[cfg(feature = "psk")]
+use aws_mls_core::error::IntoAnyError;
+
+#[cfg(feature = "psk")]
 pub(crate) mod resolver;
 pub(crate) mod secret;
 
@@ -26,6 +31,7 @@ pub(crate) struct PreSharedKeyID {
 }
 
 impl PreSharedKeyID {
+    #[cfg(feature = "psk")]
     pub(crate) fn new<P: CipherSuiteProvider>(
         key_id: JustPreSharedKeyID,
         cs: &P,
@@ -54,6 +60,7 @@ pub(crate) struct PskGroupId(#[mls_codec(with = "aws_mls_codec::byte_vec")] pub 
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) struct PskNonce(#[mls_codec(with = "aws_mls_codec::byte_vec")] pub Vec<u8>);
 
+#[cfg(feature = "psk")]
 impl PskNonce {
     pub fn random<P: CipherSuiteProvider>(
         cipher_suite_provider: &P,

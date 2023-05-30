@@ -1,9 +1,4 @@
-use aws_mls_core::{
-    error::IntoAnyError,
-    identity::SigningIdentity,
-    keychain::KeychainStorage,
-    psk::{ExternalPskId, PreSharedKey},
-};
+use aws_mls_core::{error::IntoAnyError, identity::SigningIdentity, keychain::KeychainStorage};
 
 use crate::{
     client_config::ClientConfig,
@@ -11,21 +6,25 @@ use crate::{
         cipher_suite_provider,
         internal::{EpochSecrets, ExternalPubExt, LeafIndex, LeafNode, TreeKemPrivate},
         key_schedule::{InitSecret, KeySchedule},
-        proposal::{ExternalInit, PreSharedKeyProposal, Proposal, RemoveProposal},
+        proposal::{ExternalInit, Proposal, RemoveProposal},
         validate_group_info,
     },
     Group, MLSMessage, WireFormat,
 };
 
-use super::{
-    epoch::SenderDataSecret,
-    internal::{JustPreSharedKeyID, PreSharedKeyID, PskNonce},
-    secret_tree::SecretTree,
-    MlsError,
-};
+use super::{epoch::SenderDataSecret, secret_tree::SecretTree, MlsError};
 
 use alloc::vec;
 use alloc::vec::Vec;
+
+#[cfg(feature = "psk")]
+use aws_mls_core::psk::{ExternalPskId, PreSharedKey};
+
+#[cfg(feature = "psk")]
+use crate::group::{
+    internal::{JustPreSharedKeyID, PreSharedKeyID, PskNonce},
+    PreSharedKeyProposal,
+};
 
 /// A builder that aids with the construction of an external commit.
 pub struct ExternalCommitBuilder<C: ClientConfig> {
@@ -33,6 +32,7 @@ pub struct ExternalCommitBuilder<C: ClientConfig> {
     config: C,
     tree_data: Option<Vec<u8>>,
     to_remove: Option<u32>,
+    #[cfg(feature = "psk")]
     external_psks: Vec<ExternalPskId>,
     authenticated_data: Vec<u8>,
 }
@@ -45,6 +45,7 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
             authenticated_data: Vec::new(),
             signing_identity,
             config,
+            #[cfg(feature = "psk")]
             external_psks: Vec::new(),
         }
     }
@@ -78,6 +79,7 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
         }
     }
 
+    #[cfg(feature = "psk")]
     #[must_use]
     /// Add an external psk to the group as part of the external commit.
     pub fn with_external_psk(mut self, psk: ExternalPskId) -> Self {
@@ -142,6 +144,7 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
         )?;
 
         let epoch_secrets = EpochSecrets {
+            #[cfg(feature = "psk")]
             resumption_secret: PreSharedKey::new(vec![]),
             sender_data_secret: SenderDataSecret::from(vec![]),
             secret_tree: SecretTree::empty(),
@@ -158,6 +161,7 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
         )
         .await?;
 
+        #[cfg(feature = "psk")]
         let psk_ids = self
             .external_psks
             .into_iter()
@@ -170,10 +174,18 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
             })
             .collect::<Result<Vec<_>, MlsError>>()?;
 
+        let external_init = Proposal::ExternalInit(ExternalInit { kem_output });
+
+        #[cfg(feature = "psk")]
         let proposals = psk_ids
             .into_iter()
             .map(|psk| Proposal::Psk(PreSharedKeyProposal { psk }))
-            .chain([Proposal::ExternalInit(ExternalInit { kem_output })])
+            .chain([external_init]);
+
+        #[cfg(not(feature = "psk"))]
+        let proposals = [external_init].into_iter();
+
+        let proposals = proposals
             .chain(self.to_remove.map(|r| {
                 Proposal::Remove(RemoveProposal {
                     to_remove: LeafIndex(r),

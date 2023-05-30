@@ -1,6 +1,7 @@
 use crate::client::MlsError;
 use crate::group::{GroupContext, MembershipTag};
 use crate::psk::secret::PskSecret;
+#[cfg(feature = "psk")]
 use crate::psk::PreSharedKey;
 use crate::tree_kem::path_secret::{PathSecret, PathSecretGenerator};
 use crate::CipherSuiteProvider;
@@ -154,6 +155,7 @@ impl KeySchedule {
         let secrets_producer = SecretsProducer::new(cipher_suite_provider, epoch_secret);
 
         let epoch_secrets = EpochSecrets {
+            #[cfg(feature = "psk")]
             resumption_secret: PreSharedKey::from(secrets_producer.derive("resumption")?),
             sender_data_secret: SenderDataSecret::from(secrets_producer.derive("sender data")?),
             #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]

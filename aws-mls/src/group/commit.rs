@@ -10,7 +10,6 @@ use crate::{
     extension::RatchetTreeExt,
     identity::SigningIdentity,
     protocol_version::ProtocolVersion,
-    psk::ExternalPskId,
     signer::Signable,
     tree_kem::{
         kem::TreeKem, node::LeafIndex, path_secret::PathSecret, TreeKemPrivate, UpdatePath,
@@ -24,10 +23,15 @@ use crate::tree_kem::leaf_node::LeafNode;
 #[cfg(not(feature = "private_message"))]
 use crate::WireFormat;
 
+#[cfg(feature = "psk")]
+use crate::{
+    group::internal::{JustPreSharedKeyID, PskGroupId, ResumptionPSKUsage, ResumptionPsk},
+    psk::ExternalPskId,
+};
+
 use super::{
     confirmation_tag::ConfirmationTag,
     framing::{Content, MLSMessage, Sender},
-    internal::{JustPreSharedKeyID, PskGroupId, ResumptionPSKUsage, ResumptionPsk},
     key_schedule::{CommitSecret, KeySchedule},
     message_processor::MessageProcessor,
     message_signature::AuthenticatedContent,
@@ -163,6 +167,7 @@ where
     /// Insert a
     /// [`PreSharedKeyProposal`](crate::group::proposal::PreSharedKeyProposal) with
     /// an external PSK into the current commit that is being built.
+    #[cfg(feature = "psk")]
     pub fn add_external_psk(mut self, psk_id: ExternalPskId) -> Result<Self, MlsError> {
         let key_id = JustPreSharedKeyID::External(psk_id);
         let proposal = self.group.psk_proposal(key_id)?;
@@ -173,6 +178,7 @@ where
     /// Insert a
     /// [`PreSharedKeyProposal`](crate::group::proposal::PreSharedKeyProposal) with
     /// a resumption PSK into the current commit that is being built.
+    #[cfg(feature = "psk")]
     pub fn add_resumption_psk(mut self, psk_epoch: u64) -> Result<Self, MlsError> {
         let psk_id = ResumptionPsk {
             psk_epoch,
@@ -515,13 +521,18 @@ where
         let commit_secret =
             CommitSecret::from_root_secret(&self.cipher_suite_provider, root_secret.as_ref())?;
 
+        #[cfg(feature = "psk")]
         let psks = if let Some(psk) = &self.previous_psk {
             vec![psk.id.clone()]
         } else {
             provisional_state.psks.clone()
         };
 
+        #[cfg(feature = "psk")]
         let psk_secret = self.get_psk(&provisional_state.psks).await?;
+
+        #[cfg(not(feature = "psk"))]
+        let psk_secret = self.get_psk();
 
         let commit = Commit {
             proposals: commit_proposals,
@@ -603,6 +614,7 @@ where
             &key_schedule_result.joiner_secret,
             &psk_secret,
             path_secrets.as_ref(),
+            #[cfg(feature = "psk")]
             psks,
             &group_info,
         )?;
@@ -676,7 +688,6 @@ pub(crate) mod test_utils {
 
 #[cfg(test)]
 mod tests {
-
     use alloc::boxed::Box;
 
     use aws_mls_core::{
@@ -703,14 +714,19 @@ mod tests {
             RequiredCapabilitiesExt,
         },
         group::{
-            proposal::{PreSharedKeyProposal, ProposalType},
+            proposal::ProposalType,
             test_utils::{test_group_custom_config, test_n_member_group},
         },
         identity::test_utils::get_test_signing_identity,
         identity::{basic::BasicIdentityProvider, test_utils::get_test_basic_credential},
         key_package::test_utils::test_key_package_message,
-        psk::{JustPreSharedKeyID, PreSharedKey, PreSharedKeyID},
         storage_provider::in_memory::InMemoryKeychainStorage,
+    };
+
+    #[cfg(feature = "psk")]
+    use crate::{
+        group::proposal::PreSharedKeyProposal,
+        psk::{JustPreSharedKeyID, PreSharedKey, PreSharedKeyID},
     };
 
     use super::*;
@@ -745,6 +761,7 @@ mod tests {
                 ProposalOrRef::Reference(_) => panic!("found proposal reference"),
             };
 
+            #[cfg(feature = "psk")]
             if let Some(psk_id) = match &proposal {
                 Proposal::Psk(PreSharedKeyProposal { psk: PreSharedKeyID { key_id: JustPreSharedKeyID::External(psk_id), .. },}) => Some(psk_id),
                 _ => None,
@@ -755,6 +772,9 @@ mod tests {
             } else {
                 assert!(expected.contains(&proposal));
             }
+
+            #[cfg(not(feature = "psk"))]
+            assert!(expected.contains(&proposal));
         });
 
         if welcome_count > 0 {

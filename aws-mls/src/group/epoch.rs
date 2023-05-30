@@ -1,5 +1,6 @@
 use crate::crypto::SignaturePublicKey;
 use crate::group::GroupContext;
+#[cfg(feature = "psk")]
 use crate::psk::PreSharedKey;
 use crate::tree_kem::node::LeafIndex;
 use alloc::vec::Vec;
@@ -54,6 +55,7 @@ impl GroupStateProvider for PriorEpoch {
 
 #[derive(Debug, Clone, PartialEq, MlsEncode, MlsDecode, MlsSize)]
 pub(crate) struct EpochSecrets {
+    #[cfg(feature = "psk")]
     #[mls_codec(with = "aws_mls_codec::byte_vec")]
     pub(crate) resumption_secret: PreSharedKey,
     #[mls_codec(with = "aws_mls_codec::byte_vec")]
@@ -113,6 +115,7 @@ pub(crate) mod test_utils {
         let secret_tree = get_test_tree(random_bytes(cs_provider.kdf_extract_size()), 2);
 
         EpochSecrets {
+            #[cfg(feature = "psk")]
             resumption_secret: random_bytes(cs_provider.kdf_extract_size()).into(),
             sender_data_secret: random_bytes(cs_provider.kdf_extract_size()).into(),
             #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]

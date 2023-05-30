@@ -47,7 +47,12 @@ use aws_mls_core::{
 #[cfg(feature = "external_proposal")]
 use crate::{
     extension::ExternalSendersExt,
-    group::proposal::{AddProposal, PreSharedKeyProposal, ReInitProposal, RemoveProposal},
+    group::proposal::{AddProposal, ReInitProposal, RemoveProposal},
+};
+
+#[cfg(all(feature = "external_proposal", feature = "psk"))]
+use crate::{
+    group::proposal::PreSharedKeyProposal,
     psk::{
         JustPreSharedKeyID, PreSharedKeyID, PskGroupId, PskNonce, ResumptionPSKUsage, ResumptionPsk,
     },
@@ -278,7 +283,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     /// committed, the group needs to have `signing_identity` as an entry
     /// within an [ExternalSendersExt](crate::extension::built_in::ExternalSendersExt)
     /// as part of its group context extensions.
-    #[cfg(feature = "external_proposal")]
+    #[cfg(all(feature = "external_proposal", feature = "psk"))]
     #[maybe_async::maybe_async]
     pub async fn propose_external_psk(
         &mut self,
@@ -300,7 +305,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     /// committed, the group needs to have `signing_identity` as an entry
     /// within an [ExternalSendersExt](crate::extension::built_in::ExternalSendersExt)
     /// as part of its group context extensions.
-    #[cfg(feature = "external_proposal")]
+    #[cfg(all(feature = "external_proposal", feature = "psk"))]
     #[maybe_async::maybe_async]
     pub async fn propose_resumption_psk(
         &mut self,
@@ -319,7 +324,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             .await
     }
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(all(feature = "external_proposal", feature = "psk"))]
     fn psk_proposal(&self, key_id: JustPreSharedKeyID) -> Result<Proposal, MlsError> {
         Ok(Proposal::Psk(PreSharedKeyProposal {
             psk: PreSharedKeyID {

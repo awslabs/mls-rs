@@ -20,7 +20,6 @@ use super::{
 use crate::{
     client::MlsError,
     key_package::KeyPackage,
-    psk::PreSharedKeyID,
     time::MlsTime,
     tree_kem::{
         leaf_node::LeafNode, node::LeafIndex, path_secret::PathSecret, validate_update_path,
@@ -42,11 +41,16 @@ use aws_mls_core::{
     error::IntoAnyError,
     group::{MemberUpdate, RosterUpdate},
     identity::IdentityWarning,
-    psk::ExternalPskId,
 };
 
+#[cfg(all(feature = "state_update", feature = "psk"))]
+use crate::psk::JustPreSharedKeyID;
+
+#[cfg(all(feature = "state_update", feature = "psk"))]
+use aws_mls_core::psk::ExternalPskId;
+
 #[cfg(feature = "state_update")]
-use crate::{psk::JustPreSharedKeyID, tree_kem::UpdatePath};
+use crate::tree_kem::UpdatePath;
 
 #[cfg(feature = "state_update")]
 use super::{member_from_key_package, member_from_leaf_node};
@@ -57,6 +61,9 @@ use super::proposal::CustomProposal;
 #[cfg(feature = "private_message")]
 use crate::group::framing::PrivateMessage;
 
+#[cfg(feature = "psk")]
+use crate::psk::PreSharedKeyID;
+
 #[derive(Debug)]
 pub(crate) struct ProvisionalState {
     pub(crate) public_tree: TreeKemPublic,
@@ -66,6 +73,7 @@ pub(crate) struct ProvisionalState {
     pub(crate) group_context: GroupContext,
     pub(crate) epoch: u64,
     pub(crate) path_update_required: bool,
+    #[cfg(feature = "psk")]
     pub(crate) psks: Vec<PreSharedKeyID>,
     pub(crate) reinit: Option<ReInitProposal>,
     #[cfg(feature = "external_commit")]
@@ -82,6 +90,7 @@ pub(crate) struct ProvisionalState {
 pub struct StateUpdate {
     pub(crate) roster_update: RosterUpdate,
     pub(crate) identity_warnings: Vec<IdentityWarning>,
+    #[cfg(feature = "psk")]
     pub(crate) added_psks: Vec<ExternalPskId>,
     pub(crate) pending_reinit: Option<CipherSuite>,
     pub(crate) active: bool,
@@ -110,6 +119,7 @@ impl StateUpdate {
         &self.identity_warnings
     }
 
+    #[cfg(feature = "psk")]
     /// Pre-shared keys that have been added to the group.
     pub fn added_psks(&self) -> &[ExternalPskId] {
         &self.added_psks
@@ -464,6 +474,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
             }
         }
 
+        #[cfg(feature = "psk")]
         let psks = provisional
             .psks
             .iter()
@@ -484,6 +495,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
         let update = StateUpdate {
             roster_update,
             identity_warnings,
+            #[cfg(feature = "psk")]
             added_psks: psks,
             pending_reinit: provisional.reinit.as_ref().map(|ri| ri.new_cipher_suite()),
             active: true,
@@ -767,6 +779,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
             epoch: provisional_group_context.epoch + 1,
             path_update_required,
             group_context: provisional_group_context,
+            #[cfg(feature = "psk")]
             psks: proposals.psks,
             reinit: proposals.reinit,
             #[cfg(feature = "external_commit")]
