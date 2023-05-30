@@ -26,7 +26,7 @@ pub struct ProposalBundle {
     updates: Vec<ProposalInfo<UpdateProposal>>,
     removals: Vec<ProposalInfo<RemoveProposal>>,
     psks: Vec<ProposalInfo<PreSharedKeyProposal>>,
-    reinitializations: Vec<ProposalInfo<ReInitProposal>>,
+    pub(crate) reinitializations: Vec<ProposalInfo<ReInitProposal>>,
     #[cfg(feature = "external_commit")]
     external_initializations: Vec<ProposalInfo<ExternalInit>>,
     group_context_extensions: Vec<ProposalInfo<ExtensionList>>,

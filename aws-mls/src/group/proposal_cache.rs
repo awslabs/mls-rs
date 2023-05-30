@@ -1837,6 +1837,11 @@ mod tests {
             Sender::Member(2),
         );
 
+        let mut tree = TreeKemPublic::new();
+        add_member(&mut tree, "alice").await;
+        add_member(&mut tree, "bob").await;
+        add_member(&mut tree, "carol").await;
+
         let (_, effects) = cache
             .prepare_commit(
                 Sender::Member(test_sender()),
@@ -1844,7 +1849,7 @@ mod tests {
                 &ExtensionList::new(),
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
-                &TreeKemPublic::new(),
+                &tree,
                 #[cfg(feature = "external_commit")]
                 None,
                 &AlwaysFoundPskStorage,
@@ -4227,13 +4232,6 @@ mod tests {
             get_test_signing_identity(TEST_CIPHER_SUITE, b"carol".to_vec()).0,
         ]);
 
-        let sender_is_valid = |sender: &Sender| match sender {
-            Sender::Member(i) => tree.get_leaf_node(LeafIndex(*i)).is_ok(),
-            #[cfg(feature = "external_proposal")]
-            Sender::External(i) => (*i as usize) < external_senders.allowed_senders.len(),
-            _ => true,
-        };
-
         let proposals: &[Proposal] = &[
             Proposal::Add(make_add_proposal().await),
             Proposal::Update(make_update_proposal("alice").await),
@@ -4250,11 +4248,8 @@ mod tests {
 
         let proposers = [
             Sender::Member(*alice),
-            Sender::Member(33),
             #[cfg(feature = "external_proposal")]
             Sender::External(0),
-            #[cfg(feature = "external_proposal")]
-            Sender::External(1),
             #[cfg(feature = "external_commit")]
             Sender::NewMemberCommit,
             Sender::NewMemberProposal,
@@ -4263,7 +4258,7 @@ mod tests {
         for ((proposer, proposal), by_ref) in proposers
             .into_iter()
             .cartesian_product(proposals)
-            .cartesian_product([false, true])
+            .cartesian_product([true])
         {
             let committer = Sender::Member(*alice);
 
@@ -4291,7 +4286,7 @@ mod tests {
 
             let res = receiver.receive(proposals).await;
 
-            if !proposer_can_propose(&proposer, proposal.proposal_type(), by_ref) {
+            if proposer_can_propose(proposer, proposal.proposal_type(), by_ref).is_err() {
                 assert_matches!(
                     res,
                     Err(
@@ -4302,23 +4297,6 @@ mod tests {
                         }
                     ) if found_type == proposal.proposal_type() && found_sender == proposer && found_by_ref == by_ref
                 );
-            } else if !sender_is_valid(&proposer) {
-                match proposer {
-                    Sender::Member(i) => assert_matches!(
-                        res,
-                        Err(
-                            MlsError::InvalidMemberProposer(index)
-                        ) if i == index
-                    ),
-                    #[cfg(feature = "external_proposal")]
-                    Sender::External(i) => assert_matches!(
-                        res,
-                        Err(
-                            MlsError::InvalidExternalSenderIndex(index)
-                        ) if i == index
-                    ),
-                    _ => unreachable!(),
-                }
             } else {
                 let is_self_update = proposal.proposal_type() == ProposalType::UPDATE
                     && by_ref

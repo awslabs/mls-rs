@@ -361,10 +361,6 @@ pub enum MlsError {
     UnsupportedGroupExtension(ExtensionType),
     #[cfg_attr(feature = "std", error("Unsupported custom proposal type {0:?}"))]
     UnsupportedCustomProposal(ProposalType),
-    #[cfg_attr(feature = "std", error("Invalid index {0:?} for member proposer"))]
-    InvalidMemberProposer(u32),
-    #[cfg_attr(feature = "std", error("Invalid external sender index {0}"))]
-    InvalidExternalSenderIndex(u32),
     #[cfg_attr(feature = "std", error("Proposal {0:?} not found"))]
     ProposalNotFound(ProposalRef),
     #[cfg_attr(
