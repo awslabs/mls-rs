@@ -176,7 +176,6 @@ async fn generate_validation_test_vector() -> Vec<ValidationTestCase> {
         tree.update_committer_path(4, &cs).await;
         tree.add_member("Bob", &cs).await;
         tree.tree.tree_hashes.current = vec![];
-        tree.tree.tree_hashes.original = vec![];
         tree.tree.tree_hash(&cs).unwrap();
         trees.push(tree);
 

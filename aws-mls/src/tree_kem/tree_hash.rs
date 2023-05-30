@@ -29,7 +29,6 @@ impl Deref for TreeHash {
 #[derive(Clone, Debug, Default, MlsSize, MlsEncode, MlsDecode, PartialEq)]
 pub(crate) struct TreeHashes {
     pub current: Vec<TreeHash>,
-    pub original: Vec<TreeHash>,
 }
 
 #[derive(Debug, MlsSize, MlsEncode)]
@@ -101,40 +100,6 @@ impl TreeKemPublic {
             cipher_suite_provider,
         )?;
 
-        // Update original hashes for the committer and nodes with blanked paths.
-        if self.nodes.len() <= 1 {
-            return Ok(());
-        }
-
-        // Resize hashes in case the tree was extended or truncated.
-        self.tree_hashes
-            .original
-            .resize((num_leaves * 2 - 1) as usize, TreeHash::default());
-
-        // In case the tree was extended, we have to compute additional hashes on the right.
-        let mut node_index: i32 = (2 * num_leaves - 2) as i32;
-
-        while node_index >= 0 && self.tree_hashes.current[node_index as usize].is_empty() {
-            path_blanked.push(LeafIndex((node_index / 2) as u32));
-            node_index -= 2;
-        }
-
-        // For each affected leaf, the original hashes on its path and copath become the current hashes,
-        // at the time of the current commit.
-        for &LeafIndex(leaf_index) in path_blanked.iter() {
-            if leaf_index >= self.nodes.total_leaf_count() {
-                continue;
-            }
-            let node_index = 2 * (leaf_index);
-            let path = tree_math::direct_path(node_index, num_leaves)?.into_iter();
-            let copath = tree_math::copath(node_index, num_leaves)?.into_iter();
-
-            for n in path.chain(copath).chain([node_index].into_iter()) {
-                self.tree_hashes.original[n as usize] =
-                    self.tree_hashes.current[n as usize].clone();
-            }
-        }
-
         Ok(())
     }
 
@@ -154,10 +119,6 @@ impl TreeKemPublic {
                 num_leaves,
                 cipher_suite_provider,
             )?;
-
-            if self.nodes.len() > 1 {
-                self.initialize_original_hashes(cipher_suite_provider)?;
-            }
         }
 
         Ok(())
@@ -188,10 +149,10 @@ impl TreeKemPublic {
                 != self.nodes.borrow_as_parent(descendant)?.unmerged_leaves)
     }
 
-    fn initialize_original_hashes<P: CipherSuiteProvider>(
-        &mut self,
+    pub(crate) fn compute_original_hashes<P: CipherSuiteProvider>(
+        &self,
         cipher_suite: &P,
-    ) -> Result<(), MlsError> {
+    ) -> Result<Vec<TreeHash>, MlsError> {
         let num_leaves = self.nodes.total_leaf_count() as usize;
         let root = tree_math::root(num_leaves as u32);
 
@@ -226,12 +187,10 @@ impl TreeKemPublic {
         }
 
         // Set the `original_hashes` based on the computed `hashes`.
-        self.tree_hashes
-            .original
-            .resize(num_leaves * 2 - 1, TreeHash::default());
+        let mut original_hashes = vec![TreeHash::default(); num_leaves * 2 - 1];
 
         // If root has unmerged leaves, we recompute it's original hash. Else, we can use the current hash.
-        let root_original = if !self.nodes.is_blank(root)? {
+        let root_original = if !self.nodes.is_blank(root)? && !self.nodes.is_leaf(root) {
             let root_unmerged = &self.nodes.borrow_as_parent(root)?.unmerged_leaves;
 
             (!root_unmerged.is_empty())
@@ -254,7 +213,7 @@ impl TreeKemPublic {
             None
         };
 
-        for (i, hash) in self.tree_hashes.original.iter_mut().enumerate() {
+        for (i, hash) in original_hashes.iter_mut().enumerate() {
             let a = filtered_sets[i].last().unwrap();
             *hash = if self.nodes.is_blank(*a)? || a == &root {
                 if let Some(root_original) = &root_original {
@@ -267,7 +226,7 @@ impl TreeKemPublic {
             }
         }
 
-        Ok(())
+        Ok(original_hashes)
     }
 }
 

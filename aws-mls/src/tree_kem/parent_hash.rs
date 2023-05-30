@@ -10,6 +10,7 @@ use aws_mls_core::error::IntoAnyError;
 use core::ops::Deref;
 
 use super::leaf_node::{LeafNode, LeafNodeSource};
+use super::tree_hash::TreeHash;
 
 #[cfg(feature = "std")]
 use std::collections::HashSet;
@@ -96,14 +97,16 @@ impl TreeKemPublic {
         node_index: NodeIndex,
         co_path_child_index: NodeIndex,
         cipher_suite_provider: &P,
+        original_hashes: Option<&[TreeHash]>,
     ) -> Result<ParentHash, MlsError> {
         let node = self.nodes.borrow_as_parent(node_index)?;
+        let original_hashes = original_hashes.unwrap_or(&self.tree_hashes.current);
 
         ParentHash::new(
             cipher_suite_provider,
             &node.public_key,
             parent_parent_hash,
-            &self.tree_hashes.original[co_path_child_index as usize],
+            &original_hashes[co_path_child_index as usize],
         )
         .map_err(MlsError::from)
     }
@@ -138,8 +141,13 @@ impl TreeKemPublic {
                     on_node_calculation(index, &last_hash);
                 }
 
-                let calculated =
-                    self.parent_hash(&last_hash, index, sibling_index, cipher_suite_provider)?;
+                let calculated = self.parent_hash(
+                    &last_hash,
+                    index,
+                    sibling_index,
+                    cipher_suite_provider,
+                    None,
+                )?;
 
                 Ok(calculated)
             },
@@ -197,6 +205,8 @@ impl TreeKemPublic {
         &self,
         cipher_suite_provider: &P,
     ) -> Result<(), MlsError> {
+        let original_hashes = self.compute_original_hashes(cipher_suite_provider)?;
+
         let nodes_to_validate = self
             .nodes
             .non_empty_parents()
@@ -245,6 +255,7 @@ impl TreeKemPublic {
                                 p,
                                 s,
                                 cipher_suite_provider,
+                                Some(&original_hashes),
                             )?)
                         {
                             // Check that "n is in the resolution of c, and the intersection of p's unmerged_leaves with the subtree

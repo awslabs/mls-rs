@@ -915,7 +915,6 @@ pub(crate) mod test_utils {
             }
 
             self.tree.tree_hashes.current = vec![];
-            self.tree.tree_hashes.original = vec![];
             self.tree.tree_hash(cs).unwrap();
 
             let parent_hash = self.tree.update_parent_hashes(committer, None, cs).unwrap();
@@ -927,7 +926,6 @@ pub(crate) mod test_utils {
                 .leaf_node_source = LeafNodeSource::Commit(parent_hash);
 
             self.tree.tree_hashes.current = vec![];
-            self.tree.tree_hashes.original = vec![];
             self.tree.tree_hash(cs).unwrap();
 
             let context = LeafNodeSigningContext {
@@ -945,7 +943,6 @@ pub(crate) mod test_utils {
                 .unwrap();
 
             self.tree.tree_hashes.current = vec![];
-            self.tree.tree_hashes.original = vec![];
             self.tree.tree_hash(cs).unwrap();
         }
     }
