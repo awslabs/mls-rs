@@ -1,9 +1,12 @@
 use core::ops::Deref;
 
-use alloc::{string::ToString, vec::Vec};
+use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 
-use super::{BasicCredential, CertificateChain};
+use super::BasicCredential;
+
+#[cfg(feature = "x509")]
+use super::CertificateChain;
 
 #[derive(
     Debug, PartialEq, Eq, Hash, Clone, Copy, PartialOrd, Ord, MlsSize, MlsEncode, MlsDecode,
@@ -16,6 +19,8 @@ pub struct CredentialType(u16);
 impl CredentialType {
     /// Basic identity.
     pub const BASIC: CredentialType = CredentialType(1);
+
+    #[cfg(feature = "x509")]
     /// X509 Certificate Identity.
     pub const X509: CredentialType = CredentialType(2);
 
@@ -85,6 +90,7 @@ impl CustomCredential {
 #[derive(Clone, Debug, PartialEq, Ord, PartialOrd, Eq, Hash)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// A MLS credential used to authenticate a group member.
+#[non_exhaustive]
 pub enum Credential {
     /// Basic identifier-only credential.
     ///
@@ -94,6 +100,7 @@ pub enum Credential {
     /// properly validated. It is not recommended to use [`BasicCredential`]
     /// in production applications.
     Basic(BasicCredential),
+    #[cfg(feature = "x509")]
     /// X.509 Certificate chain.
     X509(CertificateChain),
     /// User provided custom credential.
@@ -105,6 +112,7 @@ impl Credential {
     pub fn credential_type(&self) -> CredentialType {
         match self {
             Credential::Basic(_) => CredentialType::BASIC,
+            #[cfg(feature = "x509")]
             Credential::X509(_) => CredentialType::X509,
             Credential::Custom(c) => c.credential_type,
         }
@@ -123,6 +131,7 @@ impl Credential {
     /// Convert this enum into a [`CertificateChain`]
     ///
     /// Returns `None` if this credential is any other type.
+    #[cfg(feature = "x509")]
     pub fn as_x509(&self) -> Option<&CertificateChain> {
         match self {
             Credential::X509(chain) => Some(chain),
@@ -145,6 +154,7 @@ impl MlsSize for Credential {
     fn mls_encoded_len(&self) -> usize {
         let inner_len = match self {
             Credential::Basic(c) => c.mls_encoded_len(),
+            #[cfg(feature = "x509")]
             Credential::X509(c) => c.mls_encoded_len(),
             Credential::Custom(c) => aws_mls_codec::byte_vec::mls_encoded_len(&c.data),
         };
@@ -159,17 +169,9 @@ impl MlsEncode for Credential {
 
         match self {
             Credential::Basic(c) => c.mls_encode(writer),
+            #[cfg(feature = "x509")]
             Credential::X509(c) => c.mls_encode(writer),
-            Credential::Custom(c) => {
-                if c.credential_type.raw_value() <= 2 {
-                    return Err(aws_mls_codec::Error::Custom(
-                        "custom credential types can not be set to defined values of 0-2"
-                            .to_string(),
-                    ));
-                }
-
-                aws_mls_codec::byte_vec::mls_encode(&c.data, writer)
-            }
+            Credential::Custom(c) => aws_mls_codec::byte_vec::mls_encode(&c.data, writer),
         }
     }
 }
@@ -180,6 +182,7 @@ impl MlsDecode for Credential {
 
         Ok(match credential_type {
             CredentialType::BASIC => Credential::Basic(BasicCredential::mls_decode(reader)?),
+            #[cfg(feature = "x509")]
             CredentialType::X509 => Credential::X509(CertificateChain::mls_decode(reader)?),
             custom => Credential::Custom(CustomCredential {
                 credential_type: custom,

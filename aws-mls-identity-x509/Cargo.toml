@@ -10,7 +10,7 @@ external_proposal = []
 
 [dependencies]
 async-trait = "0.1.68"
-aws-mls-core = { path = "../aws-mls-core", default-features = false, version = "*" }
+aws-mls-core = { path = "../aws-mls-core", default-features = false, features = ["x509"], version = "*" }
 maybe-async = "0.2.7"
 thiserror = { version = "1.0.40", optional = true }
 

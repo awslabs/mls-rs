@@ -2,6 +2,7 @@
 pub mod basic;
 
 /// X.509 certificate identity provider.
+#[cfg(feature = "x509")]
 pub mod x509 {
     pub use aws_mls_identity_x509::*;
 }

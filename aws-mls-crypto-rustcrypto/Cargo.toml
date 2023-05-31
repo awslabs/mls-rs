@@ -4,7 +4,7 @@ version = "0.4.0"
 edition = "2021"
 
 [features]
-x509 = ["std", "aws-mls-identity-x509", "x509-cert", "spki", "sha1", "const-oid"]
+x509 = ["std", "aws-mls-identity-x509", "x509-cert", "spki", "sha1", "const-oid", "aws-mls-core/x509"]
 default = ["std", "x509"]
 browser = ["getrandom/js"]
 
