@@ -5,8 +5,8 @@ use itertools::Itertools;
 
 use crate::{
     group::{
-        AddProposal, BorrowedProposal, Proposal, ProposalOrRef, ProposalRef, ProposalType,
-        ReInitProposal, RemoveProposal, Sender, UpdateProposal,
+        internal::LeafIndex, AddProposal, BorrowedProposal, Proposal, ProposalOrRef, ProposalRef,
+        ProposalType, ReInitProposal, RemoveProposal, Sender, UpdateProposal,
     },
     ExtensionList,
 };
@@ -25,15 +25,16 @@ use core::iter::empty;
 #[derive(Clone, Debug, Default)]
 /// A collection of proposals.
 pub struct ProposalBundle {
-    additions: Vec<ProposalInfo<AddProposal>>,
-    updates: Vec<ProposalInfo<UpdateProposal>>,
-    removals: Vec<ProposalInfo<RemoveProposal>>,
+    pub(crate) additions: Vec<ProposalInfo<AddProposal>>,
+    pub(crate) updates: Vec<ProposalInfo<UpdateProposal>>,
+    pub(crate) update_senders: Vec<LeafIndex>,
+    pub(crate) removals: Vec<ProposalInfo<RemoveProposal>>,
     #[cfg(feature = "psk")]
-    psks: Vec<ProposalInfo<PreSharedKeyProposal>>,
+    pub(crate) psks: Vec<ProposalInfo<PreSharedKeyProposal>>,
     pub(crate) reinitializations: Vec<ProposalInfo<ReInitProposal>>,
     #[cfg(feature = "external_commit")]
-    external_initializations: Vec<ProposalInfo<ExternalInit>>,
-    group_context_extensions: Vec<ProposalInfo<ExtensionList>>,
+    pub(crate) external_initializations: Vec<ProposalInfo<ExternalInit>>,
+    pub(crate) group_context_extensions: Vec<ProposalInfo<ExtensionList>>,
     #[cfg(feature = "custom_proposal")]
     pub(crate) custom_proposals: Vec<ProposalInfo<CustomProposal>>,
 }
@@ -280,20 +281,24 @@ impl ProposalBundle {
     }
 
     #[cfg(feature = "custom_proposal")]
-    pub(crate) fn into_proposals_or_refs(self) -> impl Iterator<Item = ProposalOrRef> {
-        self.into_proposals().filter_map(|p| match p.source {
-            ProposalSource::ByValue => Some(ProposalOrRef::Proposal(p.proposal)),
-            ProposalSource::ByReference(reference) => Some(ProposalOrRef::Reference(reference)),
-            _ => None,
-        })
+    pub(crate) fn into_proposals_or_refs(self) -> Vec<ProposalOrRef> {
+        self.into_proposals()
+            .filter_map(|p| match p.source {
+                ProposalSource::ByValue => Some(ProposalOrRef::Proposal(p.proposal)),
+                ProposalSource::ByReference(reference) => Some(ProposalOrRef::Reference(reference)),
+                _ => None,
+            })
+            .collect()
     }
 
     #[cfg(not(feature = "custom_proposal"))]
-    pub(crate) fn into_proposals_or_refs(self) -> impl Iterator<Item = ProposalOrRef> {
-        self.into_proposals().map(|p| match p.source {
-            ProposalSource::ByValue => ProposalOrRef::Proposal(p.proposal),
-            ProposalSource::ByReference(reference) => ProposalOrRef::Reference(reference),
-        })
+    pub(crate) fn into_proposals_or_refs(self) -> Vec<ProposalOrRef> {
+        self.into_proposals()
+            .map(|p| match p.source {
+                ProposalSource::ByValue => ProposalOrRef::Proposal(p.proposal),
+                ProposalSource::ByReference(reference) => ProposalOrRef::Reference(reference),
+            })
+            .collect()
     }
 
     /// Add proposals in the bundle.
@@ -304,6 +309,11 @@ impl ProposalBundle {
     /// Update proposals in the bundle.
     pub fn update_proposals(&self) -> &[ProposalInfo<UpdateProposal>] {
         &self.updates
+    }
+
+    /// Senders of update proposals in the bundle.
+    pub fn update_proposal_senders(&self) -> &[LeafIndex] {
+        &self.update_senders
     }
 
     /// Remove proposals in the bundle.
@@ -414,17 +424,7 @@ impl FromIterator<ProposalInfo<Proposal>> for ProposalBundle {
     }
 }
 
-impl Extend<ProposalInfo<Proposal>> for ProposalBundle {
-    fn extend<T>(&mut self, iter: T)
-    where
-        T: IntoIterator<Item = ProposalInfo<Proposal>>,
-    {
-        iter.into_iter()
-            .for_each(|p| self.add(p.proposal, p.sender, p.source));
-    }
-}
-
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ProposalSource {
     ByValue,
     ByReference(ProposalRef),
@@ -434,6 +434,7 @@ pub enum ProposalSource {
 }
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "custom_proposal", derive(PartialEq))]
 /// Proposal description used as input to a
 /// [`ProposalRules`](crate::ProposalRules).
 pub struct ProposalInfo<T> {

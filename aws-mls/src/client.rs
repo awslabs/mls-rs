@@ -377,6 +377,8 @@ pub enum MlsError {
     UpdatingNonExistingMember,
     #[cfg_attr(feature = "std", error("Failed generating next path secret"))]
     FailedGeneratingPathSecret,
+    #[cfg_attr(feature = "std", error("Internal proposal filter error"))]
+    InternalProposalFilterError,
 }
 
 impl IntoAnyError for MlsError {

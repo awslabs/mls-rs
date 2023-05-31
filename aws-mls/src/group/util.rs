@@ -1,7 +1,6 @@
 use aws_mls_codec::MlsDecode;
 use aws_mls_core::{
-    error::IntoAnyError, group::Member, identity::IdentityProvider, key_package::KeyPackageStorage,
-    psk::PreSharedKeyStorage,
+    error::IntoAnyError, identity::IdentityProvider, key_package::KeyPackageStorage,
 };
 
 use crate::{
@@ -11,7 +10,6 @@ use crate::{
     key_package::KeyPackageGeneration,
     protocol_version::ProtocolVersion,
     signer::Signable,
-    time::MlsTime,
     tree_kem::{
         node::{LeafIndex, NodeVec},
         tree_validator::TreeValidator,
@@ -24,13 +22,9 @@ use crate::{
 use crate::extension::ExternalSendersExt;
 
 use super::{
-    confirmation_tag::ConfirmationTag,
-    framing::Sender,
-    message_signature::AuthenticatedContent,
-    proposal_cache::{ProposalCache, ProposalSetEffects},
-    proposal_filter::ProposalRules,
-    transcript_hash::InterimTranscriptHash,
-    Commit, ConfirmedTranscriptHash, EncryptedGroupSecrets, GroupContext, GroupInfo,
+    confirmation_tag::ConfirmationTag, framing::Sender, message_signature::AuthenticatedContent,
+    transcript_hash::InterimTranscriptHash, ConfirmedTranscriptHash, EncryptedGroupSecrets,
+    GroupContext, GroupInfo,
 };
 
 #[cfg(feature = "external_commit")]
@@ -230,53 +224,9 @@ pub(crate) fn commit_sender(
         Sender::NewMemberProposal => Err(MlsError::ExpectedAddProposalForNewMemberProposal),
         #[cfg(feature = "external_commit")]
         Sender::NewMemberCommit => provisional_state
-            .external_init
-            .as_ref()
-            .map(|(index, _)| *index)
+            .external_init_index
             .ok_or(MlsError::ExternalCommitMissingExternalInit),
     }
-}
-
-#[allow(clippy::too_many_arguments)]
-#[maybe_async::maybe_async]
-pub(crate) async fn proposal_effects<C, F, P, CSP>(
-    #[cfg(feature = "state_update")] commit_receiver: Option<LeafIndex>,
-    proposals: &ProposalCache,
-    commit: &Commit,
-    sender: &Sender,
-    group_extensions: &ExtensionList,
-    identity_provider: &C,
-    cipher_suite_provider: &CSP,
-    public_tree: &TreeKemPublic,
-    psk_storage: P,
-    user_filter: F,
-    commit_time: Option<MlsTime>,
-    roster: &[Member],
-) -> Result<ProposalSetEffects, MlsError>
-where
-    C: IdentityProvider,
-    F: ProposalRules,
-    P: PreSharedKeyStorage,
-    CSP: CipherSuiteProvider,
-{
-    proposals
-        .resolve_for_commit(
-            *sender,
-            #[cfg(feature = "state_update")]
-            commit_receiver,
-            commit.proposals.clone(),
-            #[cfg(feature = "external_commit")]
-            commit.path.as_ref().map(|path| &path.leaf_node),
-            group_extensions,
-            identity_provider,
-            cipher_suite_provider,
-            public_tree,
-            &psk_storage,
-            user_filter,
-            commit_time,
-            roster,
-        )
-        .await
 }
 
 pub(super) fn transcript_hashes<P: CipherSuiteProvider>(

@@ -131,7 +131,7 @@ async fn apply_proposal(
         .receive(vec![ProposalOrRef::Reference(p_ref)])
         .await
         .unwrap()
-        .tree
+        .public_tree
 }
 
 #[maybe_async::maybe_async]

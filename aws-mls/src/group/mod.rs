@@ -66,6 +66,9 @@ pub(crate) use self::commit::test_utils::CommitModifiers;
 #[cfg(all(test, feature = "private_message"))]
 pub use self::framing::PrivateMessage;
 
+#[cfg(feature = "psk")]
+use self::proposal_filter::ProposalInfo;
+
 #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
 use secret_tree::*;
 
@@ -698,11 +701,12 @@ where
 
         // Blank nodes from updates and removes : we blank from the smallest LCA with any
         // updated or removed node to the root.
-        let smallest_lca = provisional_state
-            .updated_leaves
-            .iter()
-            .chain(&provisional_state.removed_leaves)
-            .map(|(index, _)| tree_math::leaf_lca_level(**index, self_index))
+        let removed = provisional_state.applied_proposals.removals.iter();
+        let updated = provisional_state.applied_proposals.update_senders.iter();
+
+        let smallest_lca = updated
+            .chain(removed.map(|p| &p.proposal.to_remove))
+            .map(|index| tree_math::leaf_lca_level(**index, self_index))
             .min();
 
         if let Some(smallest_lca) = smallest_lca {
@@ -714,16 +718,18 @@ where
         }
 
         // Apply own update
-        for (_, leaf_node) in &provisional_state.updated_leaves {
+        for p in &provisional_state.applied_proposals.updates {
+            let leaf_pk = &p.proposal.leaf_node.public_key;
+
             // Update the leaf in the private tree if this is our update
             #[cfg(feature = "std")]
-            let new_leaf_sk = self.pending_updates.get(&leaf_node.public_key).cloned();
+            let new_leaf_sk = self.pending_updates.get(leaf_pk).cloned();
 
             #[cfg(not(feature = "std"))]
             let new_leaf_sk = self
                 .pending_updates
                 .iter()
-                .find_map(|(pk, sk)| (pk == &leaf_node.public_key).then_some(sk.clone()));
+                .find_map(|(pk, sk)| (pk == leaf_pk).then_some(sk.clone()));
 
             if let Some(new_leaf_sk) = new_leaf_sk {
                 provisional_private_tree.update_leaf(new_leaf_sk);
@@ -733,9 +739,11 @@ where
         Ok(provisional_private_tree)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn make_welcome_message(
         &self,
-        new_members: Vec<(KeyPackage, LeafIndex)>,
+        new_members_kpkgs: Vec<KeyPackage>,
+        new_members_indexes: Vec<LeafIndex>,
         joiner_secret: &JoinerSecret,
         psk_secret: &PskSecret,
         path_secrets: Option<&Vec<Option<PathSecret>>>,
@@ -753,8 +761,9 @@ where
         let group_info_data = group_info.mls_encode_to_vec()?;
         let encrypted_group_info = welcome_secret.encrypt(&group_info_data)?;
 
-        let secrets = new_members
+        let secrets = new_members_kpkgs
             .into_iter()
+            .zip(new_members_indexes.into_iter())
             .map(|(key_package, leaf_index)| {
                 self.encrypt_group_secrets(
                     &key_package,
@@ -1693,20 +1702,32 @@ where
 
     #[cfg(feature = "psk")]
     #[maybe_async::maybe_async]
-    async fn get_psk(&self, psks: &[PreSharedKeyID]) -> Result<PskSecret, MlsError> {
+    async fn get_psk(
+        &self,
+        psks: &[ProposalInfo<PreSharedKeyProposal>],
+    ) -> Result<(PskSecret, Vec<PreSharedKeyID>), MlsError> {
         if let Some(psk) = self.previous_psk.clone() {
-            // TODO throw error if psks not empty
-            Ok(PskSecret::calculate(&[psk], self.cipher_suite_provider())?)
+            // TODO consider throwing error if psks not empty
+            let psk_id = vec![psk.id.clone()];
+            let psk = PskSecret::calculate(&[psk], self.cipher_suite_provider())?;
+
+            Ok((psk, psk_id))
         } else {
-            PskResolver {
+            let psks = psks
+                .iter()
+                .map(|psk| psk.proposal.psk.clone())
+                .collect::<Vec<_>>();
+
+            let psk = PskResolver {
                 group_context: Some(self.context()),
                 current_epoch: Some(&self.epoch_secrets),
                 prior_epochs: Some(&self.state_repo),
                 psk_store: &self.config.secret_store(),
             }
-            .resolve_to_secret(psks, self.cipher_suite_provider())
-            .await
-            .map_err(Into::into)
+            .resolve_to_secret(&psks, self.cipher_suite_provider())
+            .await?;
+
+            Ok((psk, psks))
         }
     }
 
@@ -1848,11 +1869,7 @@ where
             .decap(
                 sender,
                 update_path,
-                &provisional_state
-                    .added_leaves
-                    .iter()
-                    .map(|(_, index)| *index)
-                    .collect::<Vec<LeafIndex>>(),
+                &provisional_state.indexes_of_added_kpkgs,
                 &mut provisional_state.group_context,
                 self.config.identity_provider(),
                 &self.cipher_suite_provider,
@@ -1884,15 +1901,22 @@ where
         let key_schedule = self.key_schedule.clone();
 
         #[cfg(feature = "external_commit")]
-        let key_schedule = match provisional_state.external_init {
-            Some((_, ExternalInit { kem_output })) if self.pending_commit.is_none() => self
+        let key_schedule = match provisional_state
+            .applied_proposals
+            .external_initializations
+            .get(0)
+            .cloned()
+        {
+            Some(ext_init) if self.pending_commit.is_none() => self
                 .key_schedule
-                .derive_for_external(&kem_output, &self.cipher_suite_provider)?,
+                .derive_for_external(&ext_init.proposal.kem_output, &self.cipher_suite_provider)?,
             _ => self.key_schedule.clone(),
         };
 
         #[cfg(feature = "psk")]
-        let psk = self.get_psk(&provisional_state.psks).await?;
+        let (psk, _) = self
+            .get_psk(&provisional_state.applied_proposals.psks)
+            .await?;
 
         #[cfg(not(feature = "psk"))]
         let psk = self.get_psk();
@@ -1985,9 +2009,10 @@ where
 
     fn can_continue_processing(&self, provisional_state: &ProvisionalState) -> bool {
         !(provisional_state
-            .removed_leaves
+            .applied_proposals
+            .removals
             .iter()
-            .any(|(i, _)| *i == self.private_tree.self_index)
+            .any(|p| p.proposal.to_remove == self.private_tree.self_index)
             && self.pending_commit.is_none())
     }
 
@@ -3726,7 +3751,7 @@ mod tests {
 
         #[cfg(feature = "state_update")]
         assert_matches!(res, ReceivedMessage::Commit(CommitMessageDescription { state_update: StateUpdate { custom_proposals, .. }, .. })
-            if custom_proposals == vec![custom_proposal]);
+            if custom_proposals.len() == 1 && custom_proposals[0].proposal == custom_proposal);
 
         #[cfg(not(feature = "state_update"))]
         assert_matches!(res, ReceivedMessage::Commit(_));
@@ -3755,7 +3780,7 @@ mod tests {
 
         #[cfg(feature = "state_update")]
         assert_matches!(res, ReceivedMessage::Commit(CommitMessageDescription { state_update: StateUpdate { custom_proposals, .. }, .. })
-            if custom_proposals == vec![custom_proposal]);
+            if custom_proposals.len() == 1 && custom_proposals[0].proposal == custom_proposal);
 
         #[cfg(not(feature = "state_update"))]
         assert_matches!(res, ReceivedMessage::Commit(_));

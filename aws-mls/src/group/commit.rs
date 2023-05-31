@@ -11,9 +11,7 @@ use crate::{
     identity::SigningIdentity,
     protocol_version::ProtocolVersion,
     signer::Signable,
-    tree_kem::{
-        kem::TreeKem, node::LeafIndex, path_secret::PathSecret, TreeKemPrivate, UpdatePath,
-    },
+    tree_kem::{kem::TreeKem, path_secret::PathSecret, TreeKemPrivate, UpdatePath},
     ExtensionList,
 };
 
@@ -33,7 +31,7 @@ use super::{
     confirmation_tag::ConfirmationTag,
     framing::{Content, MLSMessage, Sender},
     key_schedule::{CommitSecret, KeySchedule},
-    message_processor::MessageProcessor,
+    message_processor::{path_update_required, MessageProcessor},
     message_signature::AuthenticatedContent,
     proposal::{Proposal, ProposalOrRef},
     ConfirmedTranscriptHash, Group, GroupInfo,
@@ -380,6 +378,10 @@ where
             return Err(MlsError::ExistingPendingCommit);
         }
 
+        if self.state.pending_reinit.is_some() {
+            return Err(MlsError::GroupUsedAfterReInit);
+        }
+
         let preferences = preferences.unwrap_or(self.config.preferences());
 
         let options = CommitOptions {
@@ -429,13 +431,13 @@ where
         #[cfg(not(feature = "external_commit"))]
         let old_signer = self.signer().await?;
 
-        let (commit_proposals, proposal_effects) = self
+        let mut provisional_state = self
             .state
             .proposals
             .prepare_commit(
                 sender,
                 proposals,
-                &self.context().extensions,
+                self.context(),
                 &self.config.identity_provider(),
                 &self.cipher_suite_provider,
                 &self.state.public_tree,
@@ -447,29 +449,24 @@ where
             )
             .await?;
 
-        let mut provisional_state = self.calculate_provisional_state(proposal_effects)?;
         let mut provisional_private_tree = self.provisional_private_tree(&provisional_state)?;
 
         #[cfg(feature = "external_commit")]
         if is_external {
             provisional_private_tree.self_index = provisional_state
-                .external_init
-                .ok_or(MlsError::ExternalCommitMissingExternalInit)?
-                .0;
+                .external_init_index
+                .ok_or(MlsError::ExternalCommitMissingExternalInit)?;
 
             self.private_tree.self_index = provisional_private_tree.self_index;
         }
 
         let mut provisional_group_context = provisional_state.group_context;
-        provisional_group_context.epoch += 1;
 
         // Decide whether to populate the path field: If the path field is required based on the
         // proposals that are in the commit (see above), then it MUST be populated. Otherwise, the
         // sender MAY omit the path field at its discretion.
-        let perform_path_update =
-            options.prefer_path_update || provisional_state.path_update_required;
-
-        let added_leaves = provisional_state.added_leaves;
+        let perform_path_update = options.prefer_path_update
+            || path_update_required(&provisional_state.applied_proposals);
 
         let (update_path, path_secrets, root_secret) = if perform_path_update {
             // If populating the path field: Create an UpdatePath using the new tree. Any new
@@ -484,10 +481,7 @@ where
             )
             .encap(
                 &mut provisional_group_context,
-                &added_leaves
-                    .iter()
-                    .map(|(_, leaf_index)| *leaf_index)
-                    .collect::<Vec<LeafIndex>>(),
+                &provisional_state.indexes_of_added_kpkgs,
                 &new_signer,
                 self.config.leaf_properties(),
                 signing_identity,
@@ -521,21 +515,23 @@ where
         let commit_secret =
             CommitSecret::from_root_secret(&self.cipher_suite_provider, root_secret.as_ref())?;
 
-        #[cfg(feature = "psk")]
-        let psks = if let Some(psk) = &self.previous_psk {
-            vec![psk.id.clone()]
-        } else {
-            provisional_state.psks.clone()
-        };
+        let added_key_pkgs = provisional_state
+            .applied_proposals
+            .additions
+            .iter()
+            .map(|info| info.proposal.key_package.clone())
+            .collect();
 
         #[cfg(feature = "psk")]
-        let psk_secret = self.get_psk(&provisional_state.psks).await?;
+        let (psk_secret, psks) = self
+            .get_psk(&provisional_state.applied_proposals.psks)
+            .await?;
 
         #[cfg(not(feature = "psk"))]
         let psk_secret = self.get_psk();
 
         let commit = Commit {
-            proposals: commit_proposals,
+            proposals: provisional_state.applied_proposals.into_proposals_or_refs(),
             path: update_path,
         };
 
@@ -610,7 +606,8 @@ where
         group_info.sign(&self.cipher_suite_provider, &new_signer, &())?;
 
         let welcome_message = self.make_welcome_message(
-            added_leaves,
+            added_key_pkgs,
+            provisional_state.indexes_of_added_kpkgs,
             &key_schedule_result.joiner_secret,
             &psk_secret,
             path_secrets.as_ref(),
