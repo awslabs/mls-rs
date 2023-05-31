@@ -9,9 +9,7 @@ where
 {
     let len = data.as_ref().len();
 
-    let header_length = VarInt::try_from(len)
-        .expect("exceeded max len of VarInt::MAX")
-        .mls_encoded_len();
+    let header_length = VarInt::try_from(len).unwrap_or(VarInt(0)).mls_encoded_len();
 
     header_length + len
 }

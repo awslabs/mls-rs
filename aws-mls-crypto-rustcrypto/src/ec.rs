@@ -27,19 +27,6 @@ pub enum EcPrivateKey {
     P256(p256::SecretKey),
 }
 
-impl Clone for EcPrivateKey {
-    fn clone(&self) -> Self {
-        match self {
-            Self::X25519(key) => Self::X25519(key.clone()),
-            Self::Ed25519(key) => Self::Ed25519(
-                ed25519_dalek::SecretKey::from_bytes(key.as_bytes())
-                    .expect("The bytes represent a secret key"),
-            ),
-            Self::P256(key) => Self::P256(key.clone()),
-        }
-    }
-}
-
 #[derive(Debug)]
 #[cfg_attr(feature = "std", derive(thiserror::Error))]
 pub enum EcError {

@@ -415,8 +415,8 @@ impl NodeVec {
             _ if self.is_leaf(index) => true,
             _ => {
                 // Left and right return an error only if `index` is a leaf, so it's safe to unwrap.
-                self.is_resolution_empty(tree_math::left(index).unwrap())
-                    && self.is_resolution_empty(tree_math::right(index).unwrap())
+                self.is_resolution_empty(tree_math::left(index).unwrap_or_default())
+                    && self.is_resolution_empty(tree_math::right(index).unwrap_or_default())
             }
         }
     }
