@@ -6,7 +6,7 @@ edition = "2021"
 [features]
 default = ["std"]
 std = ["aws-mls-core/std", "dep:thiserror"]
-external_proposal = []
+external_proposal = ["aws-mls-core/external_proposal"]
 
 [dependencies]
 async-trait = "0.1.68"

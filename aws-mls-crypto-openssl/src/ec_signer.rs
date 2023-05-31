@@ -1,10 +1,11 @@
 use std::ops::Deref;
 
 use aws_mls_core::crypto::{CipherSuite, SignaturePublicKey, SignatureSecretKey};
-use openssl::{
-    hash::MessageDigest,
-    pkey::{PKey, Private, Public},
-};
+use openssl::hash::MessageDigest;
+
+#[cfg(feature = "x509")]
+use openssl::pkey::{PKey, Private, Public};
+
 use thiserror::Error;
 
 use crate::ec::{
@@ -81,6 +82,7 @@ impl EcSigner {
         Ok(private_key_bytes_to_public(secret_key, self.0)?.into())
     }
 
+    #[cfg(feature = "x509")]
     pub(crate) fn pkey_from_secret_key(
         &self,
         key: &SignatureSecretKey,
@@ -88,6 +90,7 @@ impl EcSigner {
         private_key_from_bytes(key, self.0).map_err(Into::into)
     }
 
+    #[cfg(feature = "x509")]
     pub(crate) fn pkey_from_public_key(
         &self,
         key: &SignaturePublicKey,

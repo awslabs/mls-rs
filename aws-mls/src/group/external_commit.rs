@@ -4,15 +4,17 @@ use crate::{
     client_config::ClientConfig,
     group::{
         cipher_suite_provider,
+        epoch::SenderDataSecret,
         internal::{EpochSecrets, ExternalPubExt, LeafIndex, LeafNode, TreeKemPrivate},
         key_schedule::{InitSecret, KeySchedule},
         proposal::{ExternalInit, Proposal, RemoveProposal},
-        validate_group_info,
+        validate_group_info, MlsError,
     },
     Group, MLSMessage, WireFormat,
 };
 
-use super::{epoch::SenderDataSecret, secret_tree::SecretTree, MlsError};
+#[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
+use crate::group::secret_tree::SecretTree;
 
 use alloc::vec;
 use alloc::vec::Vec;
@@ -147,6 +149,7 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
             #[cfg(feature = "psk")]
             resumption_secret: PreSharedKey::new(vec![]),
             sender_data_secret: SenderDataSecret::from(vec![]),
+            #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
             secret_tree: SecretTree::empty(),
         };
 

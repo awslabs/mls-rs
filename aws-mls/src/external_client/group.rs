@@ -23,15 +23,9 @@ use crate::{
         validate_group_info, Sender,
     },
     identity::SigningIdentity,
-    key_package::validate_key_package_properties,
     protocol_version::ProtocolVersion,
     psk::AlwaysFoundPskStorage,
-    tree_kem::{
-        leaf_node_validator::{LeafNodeValidator, ValidationContext},
-        node::LeafIndex,
-        path_secret::PathSecret,
-        TreeKemPrivate,
-    },
+    tree_kem::{node::LeafIndex, path_secret::PathSecret, TreeKemPrivate},
     CryptoProvider, MLSMessage,
 };
 
@@ -48,6 +42,8 @@ use aws_mls_core::{
 use crate::{
     extension::ExternalSendersExt,
     group::proposal::{AddProposal, ReInitProposal, RemoveProposal},
+    key_package::validate_key_package_properties,
+    tree_kem::leaf_node_validator::{LeafNodeValidator, ValidationContext},
 };
 
 #[cfg(all(feature = "external_proposal", feature = "psk"))]

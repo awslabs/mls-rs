@@ -271,7 +271,10 @@ pub struct ProposalMessageDescription {
 
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum EventOrContent<E> {
-    #[cfg_attr(not(feature = "external_client"), allow(dead_code))]
+    #[cfg_attr(
+        not(all(feature = "private_message", feature = "external_client")),
+        allow(dead_code)
+    )]
     Event(E),
     Content(AuthenticatedContent),
 }

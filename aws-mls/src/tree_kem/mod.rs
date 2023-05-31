@@ -5,9 +5,6 @@ use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use core::fmt::Display;
 use itertools::Itertools;
 
-#[cfg(feature = "std")]
-use std::collections::HashMap;
-
 use aws_mls_core::{error::IntoAnyError, identity::IdentityProvider};
 
 #[cfg(feature = "tree_index")]
@@ -178,7 +175,7 @@ impl TreeKemPublic {
         self.nodes.total_leaf_count()
     }
 
-    #[cfg(any(test, feature = "custom_proposal", feature = "tree_index"))]
+    #[cfg(any(test, all(feature = "custom_proposal", feature = "tree_index")))]
     pub fn occupied_leaf_count(&self) -> u32 {
         self.nodes.occupied_leaf_count()
     }

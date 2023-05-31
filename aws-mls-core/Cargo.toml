@@ -5,7 +5,7 @@ edition = "2021"
 
 [features]
 default = ["std", "rfc_compliant"]
-arbitrary = ["dep:arbitrary"]
+arbitrary = ["std", "dep:arbitrary"]
 benchmark = []
 external_commit = []
 external_proposal = []

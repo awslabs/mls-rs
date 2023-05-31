@@ -13,10 +13,10 @@ use aws_mls_core::crypto::SignaturePublicKey;
 use itertools::Itertools;
 
 #[cfg(all(feature = "tree_index", not(feature = "std")))]
-use alloc::collections::btree_map::Entry;
+use alloc::collections::{btree_map::Entry, BTreeMap};
 
 #[cfg(all(feature = "tree_index", feature = "std"))]
-use std::collections::hash_map::Entry;
+use std::collections::{hash_map::Entry, HashMap};
 
 #[cfg(all(feature = "tree_index", not(feature = "std")))]
 use alloc::collections::BTreeSet;
@@ -24,7 +24,7 @@ use alloc::collections::BTreeSet;
 #[cfg(feature = "tree_index")]
 use aws_mls_core::crypto::HpkePublicKey;
 
-#[cfg(all(feature = "tree_index", feature = "std"))]
+#[cfg(feature = "tree_index")]
 #[derive(
     Clone, Debug, Default, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode, Hash, PartialOrd, Ord,
 )]
