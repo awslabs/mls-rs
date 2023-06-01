@@ -50,7 +50,7 @@ impl<'a, CP: CipherSuiteProvider> SenderDataKey<'a, CP> {
         let key = kdf_expand_with_label(
             cipher_suite_provider,
             sender_data_secret,
-            "key",
+            b"key",
             ciphertext_sample,
             Some(cipher_suite_provider.aead_key_size()),
         )?;
@@ -58,7 +58,7 @@ impl<'a, CP: CipherSuiteProvider> SenderDataKey<'a, CP> {
         let nonce = kdf_expand_with_label(
             cipher_suite_provider,
             sender_data_secret,
-            "nonce",
+            b"nonce",
             ciphertext_sample,
             Some(cipher_suite_provider.aead_nonce_size()),
         )?;

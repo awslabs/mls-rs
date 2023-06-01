@@ -1,6 +1,5 @@
 use super::*;
 use crate::tree_kem::leaf_node::LeafNode;
-use alloc::string::ToString;
 use core::fmt::Debug;
 
 use proposal_ref::ProposalRef;
@@ -234,9 +233,13 @@ pub trait MlsCustomProposal: MlsSize + MlsEncode + MlsDecode + Sized {
 
     fn from_custom_proposal(proposal: &CustomProposal) -> Result<Self, aws_mls_codec::Error> {
         if proposal.proposal_type() != Self::proposal_type() {
+            #[cfg(feature = "std")]
             return Err(aws_mls_codec::Error::Custom(
                 "invalid proposal type".to_string(),
             ));
+
+            #[cfg(not(feature = "std"))]
+            return Err(aws_mls_codec::Error::Custom(4));
         }
 
         Self::mls_decode(&mut proposal.data())
@@ -299,9 +302,13 @@ impl MlsEncode for Proposal {
             #[cfg(feature = "custom_proposal")]
             Proposal::Custom(p) => {
                 if p.proposal_type.raw_value() <= 7 {
+                    #[cfg(feature = "std")]
                     return Err(aws_mls_codec::Error::Custom(
                         "custom proposal types can not be set to defined values of 0-7".to_string(),
                     ));
+
+                    #[cfg(not(feature = "std"))]
+                    return Err(aws_mls_codec::Error::Custom(2));
                 }
                 aws_mls_codec::byte_vec::mls_encode(&p.data, writer)
             }
@@ -332,11 +339,13 @@ impl MlsDecode for Proposal {
                 proposal_type: custom,
                 data: aws_mls_codec::byte_vec::mls_decode(reader)?,
             }),
-            #[cfg(not(feature = "custom_proposal"))]
+            #[cfg(all(not(feature = "custom_proposal"), feature = "std"))]
             _ => return Err(aws_mls_codec::Error::Custom(
                 "Custom proposals not supported. Use the custom_proposal feature to enable them"
                     .to_string(),
             )),
+            #[cfg(all(not(feature = "custom_proposal"), not(feature = "std")))]
+            _ => return Err(aws_mls_codec::Error::Custom(3)),
         })
     }
 }

@@ -22,5 +22,5 @@ impl<'a> arbitrary::Arbitrary<'a> for USize {
 }
 
 fuzz_target!(|data: (&str, &[u8], USize)| {
-    let _ = GLOBAL_DATA[1].export_secret(data.0, data.1, data.2 .0);
+    let _ = GLOBAL_DATA[1].export_secret(data.0.as_bytes(), data.1, data.2 .0);
 });

@@ -2,7 +2,6 @@ use crate::client::MlsError;
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::node::{LeafIndex, NodeIndex};
 use crate::CipherSuiteProvider;
-use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
@@ -191,11 +190,11 @@ impl SecretTree {
             let right_index = tree_math::right(index)?;
 
             let left_secret =
-                kdf_expand_with_label(cipher_suite_provider, &secret, "tree", b"left", None)
+                kdf_expand_with_label(cipher_suite_provider, &secret, b"tree", b"left", None)
                     .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
             let right_secret =
-                kdf_expand_with_label(cipher_suite_provider, &secret, "tree", b"right", None)
+                kdf_expand_with_label(cipher_suite_provider, &secret, b"tree", b"right", None)
                     .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
             self.write_node(left_index, Some(SecretTreeNode::Secret(left_secret.into())))?;
@@ -305,15 +304,6 @@ pub enum KeyType {
     Application,
 }
 
-impl ToString for KeyType {
-    fn to_string(&self) -> String {
-        match self {
-            Self::Handshake => "handshake".to_string(),
-            Self::Application => "application".to_string(),
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, MlsEncode, MlsDecode, MlsSize)]
 /// AEAD key derived by the MLS secret tree.
 pub struct MessageKeyData {
@@ -420,14 +410,13 @@ impl SecretKeyRatchet {
         secret: &[u8],
         key_type: KeyType,
     ) -> Result<Self, MlsError> {
-        let secret = kdf_expand_with_label(
-            cipher_suite_provider,
-            secret,
-            &key_type.to_string(),
-            &[],
-            None,
-        )
-        .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
+        let label = match key_type {
+            KeyType::Handshake => b"handshake".as_slice(),
+            KeyType::Application => b"application".as_slice(),
+        };
+
+        let secret = kdf_expand_with_label(cipher_suite_provider, secret, label, &[], None)
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
         Ok(Self {
             secret: TreeSecret::from(secret),
@@ -488,12 +477,12 @@ impl SecretKeyRatchet {
         let key = MessageKeyData {
             nonce: self.derive_secret(
                 cipher_suite_provider,
-                "nonce",
+                b"nonce",
                 cipher_suite_provider.aead_nonce_size(),
             )?,
             key: self.derive_secret(
                 cipher_suite_provider,
-                "key",
+                b"key",
                 cipher_suite_provider.aead_key_size(),
             )?,
             generation,
@@ -501,7 +490,7 @@ impl SecretKeyRatchet {
 
         self.secret = TreeSecret::from(self.derive_secret(
             cipher_suite_provider,
-            "secret",
+            b"secret",
             cipher_suite_provider.kdf_extract_size(),
         )?);
 
@@ -513,7 +502,7 @@ impl SecretKeyRatchet {
     fn derive_secret<P: CipherSuiteProvider>(
         &self,
         cipher_suite_provider: &P,
-        label: &str,
+        label: &[u8],
         len: usize,
     ) -> Result<Zeroizing<Vec<u8>>, MlsError> {
         kdf_expand_with_label(
@@ -589,7 +578,9 @@ pub(crate) mod test_utils {
 
             ratchet.secret = self.secret.clone().into();
             ratchet.generation = self.generation;
-            let computed = ratchet.derive_secret(cs, &self.label, self.length).unwrap();
+            let computed = ratchet
+                .derive_secret(cs, self.label.as_bytes(), self.length)
+                .unwrap();
 
             assert_eq!(&computed.to_vec(), &self.out);
         }

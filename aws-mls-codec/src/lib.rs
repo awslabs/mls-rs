@@ -1,7 +1,6 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 extern crate alloc;
 
-use alloc::string::String;
 pub use alloc::vec::Vec;
 
 mod array;
@@ -45,7 +44,10 @@ pub enum Error {
     #[cfg_attr(feature = "std", error("Unsupported enum discriminant"))]
     UnsupportedEnumDiscriminant,
     #[cfg_attr(feature = "std", error("mls codec error: {0}"))]
+    #[cfg(feature = "std")]
     Custom(String),
+    #[cfg(not(feature = "std"))]
+    Custom(u8),
 }
 
 /// Trait that determines the encoded length in MLS encoding.

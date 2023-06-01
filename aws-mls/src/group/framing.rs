@@ -204,9 +204,13 @@ impl PrivateContentTBE {
         let padding = reader.to_vec();
 
         if padding.iter().any(|&i| i != 0u8) {
+            #[cfg(feature = "std")]
             return Err(aws_mls_codec::Error::Custom(
                 "non-zero padding bytes discovered".to_string(),
             ));
+
+            #[cfg(not(feature = "std"))]
+            return Err(aws_mls_codec::Error::Custom(5));
         }
 
         Ok(Self {
@@ -494,6 +498,6 @@ mod tests {
         let decoded =
             PrivateContentTBE::mls_decode(&mut &*encoded, (&ciphertext_content.content).into());
 
-        assert_matches!(decoded, Err(aws_mls_codec::Error::Custom(e)) if e == "non-zero padding bytes discovered");
+        assert_matches!(decoded, Err(aws_mls_codec::Error::Custom(_)));
     }
 }

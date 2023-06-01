@@ -75,7 +75,7 @@ impl PskSecret {
                 let psk_input = kdf_expand_with_label(
                     cipher_suite_provider,
                     &psk_extracted,
-                    "derived psk",
+                    b"derived psk",
                     &label.mls_encode_to_vec()?,
                     None,
                 )?;

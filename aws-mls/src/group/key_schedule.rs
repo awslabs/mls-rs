@@ -80,7 +80,7 @@ impl KeySchedule {
         let joiner_secret = kdf_expand_with_label(
             cipher_suite_provider,
             &joiner_seed,
-            "joiner",
+            b"joiner",
             &context.mls_encode_to_vec()?,
             None,
         )
@@ -116,7 +116,7 @@ impl KeySchedule {
         let context = context.mls_encode_to_vec()?;
 
         let epoch_secret =
-            kdf_expand_with_label(cipher_suite_provider, &epoch_seed, "epoch", &context, None)
+            kdf_expand_with_label(cipher_suite_provider, &epoch_seed, b"epoch", &context, None)
                 .map(Zeroizing::new)
                 .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
@@ -156,24 +156,24 @@ impl KeySchedule {
 
         let epoch_secrets = EpochSecrets {
             #[cfg(feature = "psk")]
-            resumption_secret: PreSharedKey::from(secrets_producer.derive("resumption")?),
-            sender_data_secret: SenderDataSecret::from(secrets_producer.derive("sender data")?),
+            resumption_secret: PreSharedKey::from(secrets_producer.derive(b"resumption")?),
+            sender_data_secret: SenderDataSecret::from(secrets_producer.derive(b"sender data")?),
             #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
-            secret_tree: SecretTree::new(secret_tree_size, secrets_producer.derive("encryption")?),
+            secret_tree: SecretTree::new(secret_tree_size, secrets_producer.derive(b"encryption")?),
         };
 
         let key_schedule = Self {
-            exporter_secret: secrets_producer.derive("exporter")?,
-            authentication_secret: secrets_producer.derive("authentication")?,
+            exporter_secret: secrets_producer.derive(b"exporter")?,
+            authentication_secret: secrets_producer.derive(b"authentication")?,
             #[cfg(feature = "external_commit")]
-            external_secret: secrets_producer.derive("external")?,
-            membership_key: secrets_producer.derive("membership")?,
-            init_secret: InitSecret(secrets_producer.derive("init")?),
+            external_secret: secrets_producer.derive(b"external")?,
+            membership_key: secrets_producer.derive(b"membership")?,
+            init_secret: InitSecret(secrets_producer.derive(b"init")?),
         };
 
         Ok(KeyScheduleDerivationResult {
             key_schedule,
-            confirmation_key: secrets_producer.derive("confirm")?,
+            confirmation_key: secrets_producer.derive(b"confirm")?,
             joiner_secret: Zeroizing::new(vec![]).into(),
             epoch_secrets,
         })
@@ -181,7 +181,7 @@ impl KeySchedule {
 
     pub fn export_secret<P: CipherSuiteProvider>(
         &self,
-        label: &str,
+        label: &[u8],
         context: &[u8],
         len: usize,
         cipher_suite: &P,
@@ -192,7 +192,7 @@ impl KeySchedule {
             .hash(context)
             .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
-        kdf_expand_with_label(cipher_suite, &secret, "exported", &context_hash, Some(len))
+        kdf_expand_with_label(cipher_suite, &secret, b"exported", &context_hash, Some(len))
     }
 
     pub fn get_membership_tag<P: CipherSuiteProvider>(
@@ -230,10 +230,10 @@ struct Label<'a> {
 }
 
 impl<'a> Label<'a> {
-    fn new(length: u16, label: &'a str, context: &'a [u8]) -> Self {
+    fn new(length: u16, label: &'a [u8], context: &'a [u8]) -> Self {
         Self {
             length,
-            label: [b"MLS 1.0 ", label.as_bytes()].concat(),
+            label: [b"MLS 1.0 ", label].concat(),
             context,
         }
     }
@@ -242,7 +242,7 @@ impl<'a> Label<'a> {
 pub(crate) fn kdf_expand_with_label<P: CipherSuiteProvider>(
     cipher_suite_provider: &P,
     secret: &[u8],
-    label: &str,
+    label: &[u8],
     context: &[u8],
     len: Option<usize>,
 ) -> Result<Zeroizing<Vec<u8>>, MlsError> {
@@ -258,7 +258,7 @@ pub(crate) fn kdf_expand_with_label<P: CipherSuiteProvider>(
 pub(crate) fn kdf_derive_secret<P: CipherSuiteProvider>(
     cipher_suite_provider: &P,
     secret: &[u8],
-    label: &str,
+    label: &[u8],
 ) -> Result<Zeroizing<Vec<u8>>, MlsError> {
     kdf_expand_with_label(cipher_suite_provider, secret, label, &[], None)
 }
@@ -298,7 +298,7 @@ impl<'a, P: CipherSuiteProvider> SecretsProducer<'a, P> {
     // TODO document somewhere in the crypto provider that the RFC defines the length of all secrets as
     // KDF extract size but then inputs secrets as MAC keys etc, therefore, we require that these
     // lengths match in the crypto provider
-    fn derive(&self, label: &str) -> Result<Zeroizing<Vec<u8>>, MlsError> {
+    fn derive(&self, label: &[u8]) -> Result<Zeroizing<Vec<u8>>, MlsError> {
         kdf_derive_secret(self.cipher_suite_provider, self.epoch_secret, label)
             .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
     }
@@ -385,12 +385,17 @@ impl<'a, P: CipherSuiteProvider> WelcomeSecret<'a, P> {
         let welcome_secret = get_welcome_secret(cipher_suite, joiner_secret, psk_secret)?;
 
         let key_len = cipher_suite.aead_key_size();
-        let key = kdf_expand_with_label(cipher_suite, &welcome_secret, "key", &[], Some(key_len))?;
+        let key = kdf_expand_with_label(cipher_suite, &welcome_secret, b"key", &[], Some(key_len))?;
 
         let nonce_len = cipher_suite.aead_nonce_size();
 
-        let nonce =
-            kdf_expand_with_label(cipher_suite, &welcome_secret, "nonce", &[], Some(nonce_len))?;
+        let nonce = kdf_expand_with_label(
+            cipher_suite,
+            &welcome_secret,
+            b"nonce",
+            &[],
+            Some(nonce_len),
+        )?;
 
         Ok(Self {
             cipher_suite,
@@ -418,7 +423,7 @@ fn get_welcome_secret<P: CipherSuiteProvider>(
     psk_secret: &PskSecret,
 ) -> Result<Zeroizing<Vec<u8>>, MlsError> {
     let epoch_seed = get_pre_epoch_secret(cipher_suite, psk_secret, joiner_secret)?;
-    kdf_derive_secret(cipher_suite, &epoch_seed, "welcome")
+    kdf_derive_secret(cipher_suite, &epoch_seed, b"welcome")
 }
 
 #[cfg(test)]
@@ -667,7 +672,7 @@ mod tests {
                 let exp = epoch.exporter;
 
                 let exported = key_schedule
-                    .export_secret(&exp.label, &exp.context, exp.length, &cs_provider)
+                    .export_secret(exp.label.as_bytes(), &exp.context, exp.length, &cs_provider)
                     .unwrap();
 
                 assert_eq!(exported.to_vec(), exp.secret);
@@ -788,7 +793,12 @@ mod tests {
 
             exporter.secret = key_schedule_res
                 .key_schedule
-                .export_secret(&exporter.label, &exporter.context, exporter.length, cs)
+                .export_secret(
+                    exporter.label.as_bytes(),
+                    &exporter.context,
+                    exporter.length,
+                    cs,
+                )
                 .unwrap()
                 .to_vec();
 
@@ -864,7 +874,7 @@ mod tests {
                 let computed = kdf_expand_with_label(
                     &cs,
                     &test_exp.secret,
-                    &test_exp.label,
+                    test_exp.label.as_bytes(),
                     &test_exp.context,
                     Some(test_exp.length),
                 )
@@ -875,7 +885,8 @@ mod tests {
                 let test_derive = &test_case.derive_secret;
 
                 let computed =
-                    kdf_derive_secret(&cs, &test_derive.secret, &test_derive.label).unwrap();
+                    kdf_derive_secret(&cs, &test_derive.secret, test_derive.label.as_bytes())
+                        .unwrap();
 
                 assert_eq!(&computed.to_vec(), &test_derive.out);
             }

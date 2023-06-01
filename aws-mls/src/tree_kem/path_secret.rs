@@ -80,7 +80,7 @@ impl<'a, P: CipherSuiteProvider> PathSecretGeneration<'a, P> {
         let node_secret = Zeroizing::new(kdf_derive_secret(
             self.cipher_suite_provider,
             &self.path_secret,
-            "node",
+            b"node",
         )?);
 
         self.cipher_suite_provider
@@ -123,7 +123,7 @@ impl<'a, P: CipherSuiteProvider> PathSecretGenerator<'a, P> {
         let secret = if let Some(starting_with) = self.starting_with.take() {
             Ok(starting_with)
         } else if let Some(last) = self.last.take() {
-            kdf_derive_secret(self.cipher_suite_provider, &last, "path")
+            kdf_derive_secret(self.cipher_suite_provider, &last, b"path")
                 .map(PathSecret::from)
                 .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
         } else {

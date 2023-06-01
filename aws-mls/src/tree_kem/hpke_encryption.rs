@@ -1,4 +1,3 @@
-use alloc::format;
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsEncode, MlsSize};
 use aws_mls_core::{
@@ -20,7 +19,7 @@ struct EncryptContext<'a> {
 impl<'a> EncryptContext<'a> {
     pub fn new(label: &str, context: &'a [u8]) -> Self {
         Self {
-            label: format!("MLS 1.0 {label}").into_bytes(),
+            label: [b"MLS 1.0 ", label.as_bytes()].concat(),
             context,
         }
     }

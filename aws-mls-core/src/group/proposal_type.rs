@@ -3,7 +3,9 @@ use core::ops::Deref;
 
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 
-#[derive(Clone, Copy, Eq, Hash, PartialOrd, Ord, PartialEq, MlsSize, MlsEncode, MlsDecode)]
+#[derive(
+    Clone, Copy, Eq, Hash, PartialOrd, Ord, PartialEq, MlsSize, MlsEncode, MlsDecode, Debug,
+)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// Wrapper type representing a proposal type identifier along with default
 /// values defined by the MLS RFC.
@@ -48,20 +50,4 @@ impl ProposalType {
     #[cfg(feature = "external_commit")]
     pub const EXTERNAL_INIT: ProposalType = ProposalType(6);
     pub const GROUP_CONTEXT_EXTENSIONS: ProposalType = ProposalType(7);
-}
-
-impl Debug for ProposalType {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match *self {
-            Self::ADD => f.write_str("Add"),
-            Self::UPDATE => f.write_str("Update"),
-            Self::REMOVE => f.write_str("Remove"),
-            Self::PSK => f.write_str("Psk"),
-            Self::RE_INIT => f.write_str("ReInit"),
-            #[cfg(feature = "external_commit")]
-            Self::EXTERNAL_INIT => f.write_str("ExternalInit"),
-            Self::GROUP_CONTEXT_EXTENSIONS => f.write_str("GroupContextExtensions"),
-            _ => write!(f, "ProposalType({})", self.0),
-        }
-    }
 }

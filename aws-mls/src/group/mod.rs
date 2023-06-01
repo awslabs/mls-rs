@@ -1622,7 +1622,7 @@ where
 
     pub fn export_secret(
         &self,
-        label: &str,
+        label: &[u8],
         context: &[u8],
         len: usize,
     ) -> Result<Zeroizing<Vec<u8>>, MlsError> {
