@@ -58,6 +58,9 @@ pub type BaseConfig = Config<
     Missing,
 >;
 
+pub type EmptyConfig =
+    Config<Missing, Missing, Missing, Missing, Missing, PassThroughProposalRules, Missing>;
+
 /// Base client configuration that is backed by SQLite storage.
 #[cfg(feature = "sqlite")]
 pub type BaseSqlConfig = Config<
@@ -172,6 +175,21 @@ impl ClientBuilder<BaseConfig> {
             keychain: Default::default(),
             psk_store: Default::default(),
             group_state_storage: Default::default(),
+            identity_provider: Missing,
+            proposal_rules: PassThroughProposalRules,
+            crypto_provider: Missing,
+        }))
+    }
+}
+
+impl ClientBuilder<EmptyConfig> {
+    pub fn new_empty() -> Self {
+        Self(Config(ConfigInner {
+            settings: Default::default(),
+            key_package_repo: Missing,
+            keychain: Missing,
+            psk_store: Missing,
+            group_state_storage: Missing,
             identity_provider: Missing,
             proposal_rules: PassThroughProposalRules,
             crypto_provider: Missing,
