@@ -63,18 +63,37 @@ pub fn direct_path(x: u32, n: u32) -> Result<Vec<u32>, MlsError> {
     Ok(d)
 }
 
-pub fn copath(x: u32, n: u32) -> Result<Vec<u32>, MlsError> {
-    let mut d = Vec::new();
-
-    if x == root(n) {
-        return Ok(d);
+pub fn copath(mut x: u32, n: u32) -> Result<Vec<u32>, MlsError> {
+    if x > 2 * n - 1 {
+        return Err(MlsError::InvalidTreeIndex);
     }
 
-    d = direct_path(x, n)?;
-    d.insert(0, x);
-    d.pop();
+    let mut d = Vec::new();
 
-    d.into_iter().map(|y| sibling(y, n)).collect()
+    while x != root(n) {
+        let p = parent(x, n)?;
+        d.push(if x < p { right(p)? } else { left(p)? });
+        x = p;
+    }
+
+    Ok(d)
+}
+
+pub fn path_copath(mut x: u32, n: u32) -> Result<Vec<(u32, u32)>, MlsError> {
+    if x > 2 * n - 1 {
+        return Err(MlsError::InvalidTreeIndex);
+    }
+
+    let mut d = Vec::new();
+
+    while x != root(n) {
+        let p = parent(x, n)?;
+        let s = if x < p { right(p)? } else { left(p)? };
+        d.push((p, s));
+        x = p;
+    }
+
+    Ok(d)
 }
 
 pub fn leaf_lca_level(x: u32, y: u32) -> u32 {

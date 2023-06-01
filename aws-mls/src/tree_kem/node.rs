@@ -55,10 +55,6 @@ impl LeafIndex {
     pub(crate) fn direct_path(&self, leaf_count: u32) -> Result<Vec<NodeIndex>, MlsError> {
         tree_math::direct_path(NodeIndex::from(self), leaf_count)
     }
-
-    fn copath(&self, leaf_count: u32) -> Result<Vec<NodeIndex>, MlsError> {
-        tree_math::copath(NodeIndex::from(self), leaf_count)
-    }
 }
 
 pub(crate) type NodeIndex = u32;
@@ -239,22 +235,19 @@ impl NodeVec {
         &self,
         index: LeafIndex,
     ) -> Result<Vec<(NodeIndex, NodeIndex)>, MlsError> {
-        Ok(index
-            .direct_path(self.total_leaf_count())?
-            .into_iter()
-            .zip(index.copath(self.total_leaf_count())?)
-            .collect())
+        tree_math::path_copath(NodeIndex::from(index), self.total_leaf_count())
     }
 
     // Section 8.4
     // The filtered direct path of a node is obtained from the node's direct path by removing
     // all nodes whose child on the nodes's copath has an empty resolution
     pub fn filtered(&self, index: LeafIndex) -> Result<Vec<bool>, MlsError> {
-        Ok(index
-            .copath(self.total_leaf_count())?
-            .into_iter()
-            .map(|cp| self.is_resolution_empty(cp))
-            .collect())
+        Ok(
+            tree_math::copath(NodeIndex::from(index), self.total_leaf_count())?
+                .into_iter()
+                .map(|cp| self.is_resolution_empty(cp))
+                .collect(),
+        )
     }
 
     #[inline]
@@ -359,35 +352,23 @@ impl NodeVec {
     }
 
     pub fn get_resolution_index(&self, index: NodeIndex) -> Result<Vec<NodeIndex>, MlsError> {
-        match self.get(index as usize) {
-            None | Some(None) => {
-                // This node is blank
-                if tree_math::level(index) == 0 {
-                    // Node is a leaf {
-                    Ok(Vec::new()) // Resolution of a blank leaf node is empty list
-                } else {
-                    // Resolution of a blank intermediate is is the result of concatenating the
-                    // resolution of its left and right children
-                    Ok([
-                        self.get_resolution_index(tree_math::left(index)?)?,
-                        self.get_resolution_index(tree_math::right(index)?)?,
-                    ]
-                    .concat())
+        let mut indexes = vec![index];
+        let mut resolution = vec![];
+
+        while let Some(index) = indexes.pop() {
+            if let Some(Some(node)) = self.get(index as usize) {
+                resolution.push(index);
+
+                if let Node::Parent(p) = node {
+                    resolution.extend(p.unmerged_leaves.iter().map(NodeIndex::from));
                 }
-            }
-            Some(Some(node)) => {
-                // Resolution of a non blank node comprises the node itself + unmerged leaves
-                match node {
-                    Node::Parent(parent) => {
-                        let mut ret = vec![index];
-                        let unmerged = parent.unmerged_leaves.iter().map(NodeIndex::from);
-                        ret.extend(unmerged);
-                        Ok(ret)
-                    }
-                    Node::Leaf(_) => Ok(vec![index]),
-                }
+            } else if index & 1 == 1 {
+                indexes.push(tree_math::right(index)?);
+                indexes.push(tree_math::left(index)?);
             }
         }
+
+        Ok(resolution)
     }
 
     pub fn get_resolution(

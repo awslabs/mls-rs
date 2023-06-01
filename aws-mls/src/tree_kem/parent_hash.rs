@@ -111,16 +111,11 @@ impl TreeKemPublic {
         .map_err(MlsError::from)
     }
 
-    fn parent_hash_for_leaf<P, T>(
-        &self,
+    fn parent_hash_for_leaf<P: CipherSuiteProvider>(
+        &mut self,
         cipher_suite_provider: &P,
         index: LeafIndex,
-        mut on_node_calculation: T,
-    ) -> Result<ParentHash, MlsError>
-    where
-        P: CipherSuiteProvider,
-        T: FnMut(NodeIndex, &ParentHash),
-    {
+    ) -> Result<ParentHash, MlsError> {
         if self.total_leaf_count() <= 1 {
             return Ok(ParentHash::empty());
         }
@@ -137,10 +132,6 @@ impl TreeKemPublic {
         filtered_direct_co_path.try_fold(
             ParentHash::empty(),
             |last_hash, (index, sibling_index)| {
-                if !self.nodes.is_leaf(index) {
-                    on_node_calculation(index, &last_hash);
-                }
-
                 let calculated = self.parent_hash(
                     &last_hash,
                     index,
@@ -148,6 +139,10 @@ impl TreeKemPublic {
                     cipher_suite_provider,
                     None,
                 )?;
+
+                if !self.nodes.is_leaf(index) {
+                    self.nodes.borrow_as_parent_mut(index)?.parent_hash = last_hash;
+                }
 
                 Ok(calculated)
             },
@@ -165,23 +160,7 @@ impl TreeKemPublic {
         // First update the relevant original hashes used for parent hash computation.
         self.update_hashes(&mut vec![index], &[], cipher_suite_provider)?;
 
-        let mut changes = Vec::new();
-
-        // Since we can't mut borrow self here we will just collect the list of changes
-        // and apply them later
-        let leaf_hash =
-            self.parent_hash_for_leaf(cipher_suite_provider, index, |index, hash| {
-                changes.push((index, hash.clone()));
-            })?;
-
-        changes.into_iter().try_for_each(|(index, hash)| {
-            self.nodes
-                .borrow_as_parent_mut(index)
-                .map(|p| {
-                    p.parent_hash = hash;
-                })
-                .map_err(MlsError::from)
-        })?;
+        let leaf_hash = self.parent_hash_for_leaf(cipher_suite_provider, index)?;
 
         if let Some(leaf) = updated_leaf {
             // Verify the parent hash of the new sender leaf node and update the parent hash values

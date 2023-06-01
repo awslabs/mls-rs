@@ -719,20 +719,23 @@ where
 
         // Apply own update
         for p in &provisional_state.applied_proposals.updates {
-            let leaf_pk = &p.proposal.leaf_node.public_key;
+            if p.sender == Sender::Member(self_index) {
+                let leaf_pk = &p.proposal.leaf_node.public_key;
 
-            // Update the leaf in the private tree if this is our update
-            #[cfg(feature = "std")]
-            let new_leaf_sk = self.pending_updates.get(leaf_pk).cloned();
+                // Update the leaf in the private tree if this is our update
+                #[cfg(feature = "std")]
+                let new_leaf_sk = self.pending_updates.get(leaf_pk).cloned();
 
-            #[cfg(not(feature = "std"))]
-            let new_leaf_sk = self
-                .pending_updates
-                .iter()
-                .find_map(|(pk, sk)| (pk == leaf_pk).then_some(sk.clone()));
+                #[cfg(not(feature = "std"))]
+                let new_leaf_sk = self
+                    .pending_updates
+                    .iter()
+                    .find_map(|(pk, sk)| (pk == leaf_pk).then_some(sk.clone()));
 
-            if let Some(new_leaf_sk) = new_leaf_sk {
-                provisional_private_tree.update_leaf(new_leaf_sk);
+                provisional_private_tree
+                    .update_leaf(new_leaf_sk.ok_or(MlsError::UpdateErrorNoSecretKey)?);
+
+                break;
             }
         }
 

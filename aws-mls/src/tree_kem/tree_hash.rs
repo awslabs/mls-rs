@@ -244,7 +244,7 @@ fn tree_hash<P: CipherSuiteProvider>(
     // Resize the array in case the tree was extended or truncated
     hashes.resize(num_leaves as usize * 2 - 1, TreeHash::default());
 
-    let mut node_queue = VecDeque::new();
+    let mut node_queue = VecDeque::with_capacity(leaves_to_update.len());
 
     for l in leaves_to_update.iter().filter(|l| ***l < num_leaves) {
         let leaf = (!filtered_leaves.contains(l))
