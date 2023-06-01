@@ -27,6 +27,7 @@ use crate::{
 
 pub const TEST_GROUP: &[u8] = b"group";
 
+#[derive(Clone)]
 pub(crate) struct TestGroup {
     pub group: Group<TestClientConfig>,
 }
@@ -171,6 +172,7 @@ pub(crate) fn get_test_group_context(epoch: u64, cipher_suite: CipherSuite) -> G
     }
 }
 
+#[cfg(feature = "prior_epoch")]
 pub(crate) fn get_test_group_context_with_id(
     group_id: Vec<u8>,
     epoch: u64,

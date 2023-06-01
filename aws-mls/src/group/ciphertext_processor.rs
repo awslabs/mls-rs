@@ -242,22 +242,21 @@ where
 mod test {
     use crate::{
         cipher_suite::CipherSuite,
-        client::test_utils::TEST_CIPHER_SUITE,
+        client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         crypto::{
             test_utils::{test_cipher_suite_provider, TestCryptoProvider},
             CipherSuiteProvider,
         },
         group::{
-            epoch::{test_utils::get_test_epoch, PriorEpoch},
             framing::{ApplicationData, Content, Sender, WireFormat},
             message_signature::AuthenticatedContent,
             padding::PaddingMode,
-            test_utils::random_bytes,
+            test_utils::{random_bytes, test_group, TestGroup},
         },
         tree_kem::node::LeafIndex,
     };
 
-    use super::{CiphertextProcessor, MlsError};
+    use super::{CiphertextProcessor, GroupStateProvider, MlsError};
 
     use alloc::vec;
     use assert_matches::assert_matches;
@@ -266,68 +265,63 @@ mod test {
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
     struct TestData {
-        epoch: PriorEpoch,
+        group: TestGroup,
         content: AuthenticatedContent,
     }
 
     fn test_processor(
-        epoch: &mut PriorEpoch,
+        group: &mut TestGroup,
         cipher_suite: CipherSuite,
-    ) -> CiphertextProcessor<'_, PriorEpoch, impl CipherSuiteProvider> {
-        CiphertextProcessor::new(epoch, test_cipher_suite_provider(cipher_suite))
+    ) -> CiphertextProcessor<'_, impl GroupStateProvider, impl CipherSuiteProvider> {
+        CiphertextProcessor::new(&mut group.group, test_cipher_suite_provider(cipher_suite))
     }
 
-    fn test_data(cipher_suite: CipherSuite) -> TestData {
+    #[maybe_async::maybe_async]
+    async fn test_data(cipher_suite: CipherSuite) -> TestData {
         let provider = test_cipher_suite_provider(cipher_suite);
 
-        let test_epoch = get_test_epoch(cipher_suite);
-        let (test_signer, _) = provider.signature_key_generate().unwrap();
+        let group = test_group(TEST_PROTOCOL_VERSION, cipher_suite).await;
 
-        let test_content = AuthenticatedContent::new_signed(
+        let content = AuthenticatedContent::new_signed(
             &provider,
-            &test_epoch.context,
+            group.group.context(),
             Sender::Member(0),
             Content::Application(ApplicationData::from(b"test".to_vec())),
-            &test_signer,
+            &group.group.signer().await.unwrap(),
             WireFormat::PrivateMessage,
             vec![],
         )
         .unwrap();
 
-        TestData {
-            epoch: test_epoch,
-            content: test_content,
+        TestData { group, content }
+    }
+
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    async fn test_encrypt_decrypt() {
+        for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
+            let mut test_data = test_data(cipher_suite).await;
+            let mut receiver_group = test_data.group.clone();
+
+            let mut ciphertext_processor = test_processor(&mut test_data.group, cipher_suite);
+
+            let ciphertext = ciphertext_processor
+                .seal(test_data.content.clone(), PaddingMode::StepFunction)
+                .unwrap();
+
+            receiver_group.group.private_tree.self_index = LeafIndex::new(1);
+
+            let mut receiver_processor = test_processor(&mut receiver_group, cipher_suite);
+
+            let decrypted = receiver_processor.open(ciphertext).unwrap();
+
+            assert_eq!(decrypted, test_data.content);
         }
     }
 
-    #[test]
-    fn test_encrypt_decrypt() {
-        TestCryptoProvider::all_supported_cipher_suites()
-            .into_iter()
-            .for_each(|cipher_suite| {
-                let mut test_data = test_data(cipher_suite);
-                let mut receiver_epoch = test_data.epoch.clone();
-
-                let mut ciphertext_processor = test_processor(&mut test_data.epoch, cipher_suite);
-
-                let ciphertext = ciphertext_processor
-                    .seal(test_data.content.clone(), PaddingMode::StepFunction)
-                    .unwrap();
-
-                receiver_epoch.self_index = LeafIndex::new(1);
-
-                let mut receiver_processor = test_processor(&mut receiver_epoch, cipher_suite);
-
-                let decrypted = receiver_processor.open(ciphertext).unwrap();
-
-                assert_eq!(decrypted, test_data.content);
-            })
-    }
-
-    #[test]
-    fn test_padding_use() {
-        let mut test_data = test_data(TEST_CIPHER_SUITE);
-        let mut ciphertext_processor = test_processor(&mut test_data.epoch, TEST_CIPHER_SUITE);
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    async fn test_padding_use() {
+        let mut test_data = test_data(TEST_CIPHER_SUITE).await;
+        let mut ciphertext_processor = test_processor(&mut test_data.group, TEST_CIPHER_SUITE);
 
         let ciphertext_step = ciphertext_processor
             .seal(test_data.content.clone(), PaddingMode::StepFunction)
@@ -340,23 +334,23 @@ mod test {
         assert!(ciphertext_step.ciphertext.len() > ciphertext_no_pad.ciphertext.len());
     }
 
-    #[test]
-    fn test_invalid_sender() {
-        let mut test_data = test_data(TEST_CIPHER_SUITE);
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    async fn test_invalid_sender() {
+        let mut test_data = test_data(TEST_CIPHER_SUITE).await;
         test_data.content.content.sender = Sender::Member(3);
 
-        let mut ciphertext_processor = test_processor(&mut test_data.epoch, TEST_CIPHER_SUITE);
+        let mut ciphertext_processor = test_processor(&mut test_data.group, TEST_CIPHER_SUITE);
 
         let res = ciphertext_processor.seal(test_data.content, PaddingMode::None);
 
         assert_matches!(res, Err(MlsError::InvalidSender(..)))
     }
 
-    #[test]
-    fn test_cant_process_from_self() {
-        let mut test_data = test_data(TEST_CIPHER_SUITE);
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    async fn test_cant_process_from_self() {
+        let mut test_data = test_data(TEST_CIPHER_SUITE).await;
 
-        let mut ciphertext_processor = test_processor(&mut test_data.epoch, TEST_CIPHER_SUITE);
+        let mut ciphertext_processor = test_processor(&mut test_data.group, TEST_CIPHER_SUITE);
 
         let ciphertext = ciphertext_processor
             .seal(test_data.content, PaddingMode::None)
@@ -367,18 +361,18 @@ mod test {
         assert_matches!(res, Err(MlsError::CantProcessMessageFromSelf))
     }
 
-    #[test]
-    fn test_decryption_error() {
-        let mut test_data = test_data(TEST_CIPHER_SUITE);
-        let mut receiver_epoch = test_data.epoch.clone();
-        let mut ciphertext_processor = test_processor(&mut test_data.epoch, TEST_CIPHER_SUITE);
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    async fn test_decryption_error() {
+        let mut test_data = test_data(TEST_CIPHER_SUITE).await;
+        let mut receiver_group = test_data.group.clone();
+        let mut ciphertext_processor = test_processor(&mut test_data.group, TEST_CIPHER_SUITE);
 
         let mut ciphertext = ciphertext_processor
             .seal(test_data.content.clone(), PaddingMode::StepFunction)
             .unwrap();
 
         ciphertext.ciphertext = random_bytes(ciphertext.ciphertext.len());
-        receiver_epoch.self_index = LeafIndex::new(1);
+        receiver_group.group.private_tree.self_index = LeafIndex::new(1);
 
         let res = ciphertext_processor.open(ciphertext);
 

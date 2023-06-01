@@ -10,7 +10,6 @@ use crate::{
     group::{
         proposal::ProposalType,
         proposal_filter::{PassThroughProposalRules, ProposalRules},
-        state_repo::DEFAULT_EPOCH_RETENTION_LIMIT,
     },
     identity::CredentialType,
     identity::SigningIdentity,
@@ -23,6 +22,9 @@ use crate::{
     tree_kem::{Capabilities, Lifetime},
     Sealed,
 };
+
+#[cfg(feature = "prior_epoch")]
+use crate::group::state_repo::DEFAULT_EPOCH_RETENTION_LIMIT;
 
 #[cfg(feature = "private_message")]
 use crate::group::ControlEncryptionMode;
@@ -906,6 +908,7 @@ pub struct Preferences {
     #[cfg(feature = "private_message")]
     pub padding_mode: PaddingMode,
     pub force_commit_path_update: bool,
+    #[cfg(feature = "prior_epoch")]
     pub max_epoch_retention: u64,
 }
 
@@ -918,6 +921,7 @@ impl Default for Preferences {
             #[cfg(feature = "private_message")]
             padding_mode: Default::default(),
             force_commit_path_update: true,
+            #[cfg(feature = "prior_epoch")]
             max_epoch_retention: DEFAULT_EPOCH_RETENTION_LIMIT,
         }
     }

@@ -258,7 +258,6 @@ mod tests {
         group::{
             epoch::{test_utils::get_test_epoch_with_id, SenderDataSecret},
             internal::{PskGroupId, ResumptionPSKUsage},
-            snapshot::test_utils::get_test_snapshot,
             test_utils::{random_bytes, test_member, TEST_GROUP},
         },
         storage_provider::{
@@ -289,7 +288,7 @@ mod tests {
     }
 
     fn test_snapshot(epoch_id: u64) -> Snapshot {
-        get_test_snapshot(TEST_CIPHER_SUITE, epoch_id)
+        crate::group::snapshot::test_utils::get_test_snapshot(TEST_CIPHER_SUITE, epoch_id)
     }
 
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]

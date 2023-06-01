@@ -2,8 +2,12 @@ use alloc::vec::Vec;
 use aws_mls_codec::MlsEncode;
 pub use aws_mls_core::group::{EpochRecord, GroupState};
 
-use crate::group::{epoch::PriorEpoch, snapshot::Snapshot};
+use crate::group::snapshot::Snapshot;
 
+#[cfg(feature = "prior_epoch")]
+use crate::group::epoch::PriorEpoch;
+
+#[cfg(feature = "prior_epoch")]
 impl EpochRecord for PriorEpoch {
     fn id(&self) -> u64 {
         self.epoch_id()

@@ -72,7 +72,10 @@ use self::proposal_filter::ProposalInfo;
 #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
 use secret_tree::*;
 
-use self::epoch::{EpochSecrets, PriorEpoch};
+#[cfg(feature = "prior_epoch")]
+use self::epoch::PriorEpoch;
+
+use self::epoch::EpochSecrets;
 pub use self::message_processor::{
     ApplicationMessageDescription, CommitMessageDescription, ProposalMessageDescription,
     ProposalSender, ReceivedMessage, StateUpdate,
@@ -123,7 +126,14 @@ pub(crate) mod proposal_ref;
 mod roster;
 pub(crate) mod snapshot;
 pub(crate) mod state;
+
+#[cfg(feature = "prior_epoch")]
 pub(crate) mod state_repo;
+#[cfg(not(feature = "prior_epoch"))]
+pub(crate) mod state_repo_light;
+#[cfg(not(feature = "prior_epoch"))]
+pub(crate) use state_repo_light as state_repo;
+
 pub(crate) mod transcript_hash;
 mod util;
 
@@ -316,7 +326,9 @@ where
         );
 
         let state_repo = GroupStateRepository::new(
+            #[cfg(feature = "prior_epoch")]
             context.group_id.clone(),
+            #[cfg(feature = "prior_epoch")]
             config.preferences().max_epoch_retention,
             config.group_state_storage(),
             config.key_package_repo(),
@@ -555,7 +567,9 @@ where
         )?;
 
         let state_repo = GroupStateRepository::new(
+            #[cfg(feature = "prior_epoch")]
             join_context.group_context.group_id.clone(),
+            #[cfg(feature = "prior_epoch")]
             config.preferences().max_epoch_retention,
             config.group_state_storage(),
             config.key_package_repo(),
@@ -1439,25 +1453,31 @@ where
 
             Ok::<_, MlsError>(content)
         } else {
-            let epoch = self
-                .state_repo
-                .get_epoch_mut(epoch_id)
-                .await?
-                .ok_or(MlsError::EpochNotFound(epoch_id))?;
+            #[cfg(feature = "prior_epoch")]
+            {
+                let epoch = self
+                    .state_repo
+                    .get_epoch_mut(epoch_id)
+                    .await?
+                    .ok_or(MlsError::EpochNotFound(epoch_id))?;
 
-            let content = CiphertextProcessor::new(epoch, self.cipher_suite_provider.clone())
-                .open(message)?;
+                let content = CiphertextProcessor::new(epoch, self.cipher_suite_provider.clone())
+                    .open(message)?;
 
-            verify_auth_content_signature(
-                &self.cipher_suite_provider,
-                SignaturePublicKeysContainer::List(&epoch.signature_public_keys),
-                &epoch.context,
-                &content,
-                #[cfg(feature = "external_proposal")]
-                &[],
-            )?;
+                verify_auth_content_signature(
+                    &self.cipher_suite_provider,
+                    SignaturePublicKeysContainer::List(&epoch.signature_public_keys),
+                    &epoch.context,
+                    &content,
+                    #[cfg(feature = "external_proposal")]
+                    &[],
+                )?;
 
-            Ok(content)
+                Ok(content)
+            }
+
+            #[cfg(not(feature = "prior_epoch"))]
+            Err(MlsError::EpochNotFound(epoch_id))
         }?;
 
         Ok(auth_content)
@@ -1947,6 +1967,7 @@ where
             return Err(MlsError::InvalidConfirmationTag);
         }
 
+        #[cfg(feature = "prior_epoch")]
         let signature_public_keys = self
             .state
             .public_tree
@@ -1954,6 +1975,7 @@ where
             .map(|l| l.map(|n| n.signing_identity.signature_key.clone()))
             .collect();
 
+        #[cfg(feature = "prior_epoch")]
         let past_epoch = PriorEpoch {
             context: self.context().clone(),
             self_index: self.private_tree.self_index,
@@ -1961,6 +1983,7 @@ where
             signature_public_keys,
         };
 
+        #[cfg(feature = "prior_epoch")]
         self.state_repo.insert(past_epoch).await?;
 
         self.epoch_secrets = key_schedule_result.epoch_secrets;

@@ -1,19 +1,19 @@
-use crate::crypto::SignaturePublicKey;
-use crate::group::GroupContext;
 #[cfg(feature = "psk")]
 use crate::psk::PreSharedKey;
-use crate::tree_kem::node::LeafIndex;
+#[cfg(feature = "prior_epoch")]
+use crate::{crypto::SignaturePublicKey, group::GroupContext, tree_kem::node::LeafIndex};
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use core::ops::Deref;
 use zeroize::Zeroizing;
 
-#[cfg(feature = "private_message")]
+#[cfg(all(feature = "prior_epoch", feature = "private_message"))]
 use super::ciphertext_processor::GroupStateProvider;
 
 #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
 use crate::group::secret_tree::SecretTree;
 
+#[cfg(feature = "prior_epoch")]
 #[derive(Debug, Clone, MlsEncode, MlsDecode, MlsSize, PartialEq)]
 pub(crate) struct PriorEpoch {
     pub(crate) context: GroupContext,
@@ -22,6 +22,7 @@ pub(crate) struct PriorEpoch {
     pub(crate) signature_public_keys: Vec<Option<SignaturePublicKey>>,
 }
 
+#[cfg(feature = "prior_epoch")]
 impl PriorEpoch {
     #[inline(always)]
     pub(crate) fn epoch_id(&self) -> u64 {
@@ -34,7 +35,7 @@ impl PriorEpoch {
     }
 }
 
-#[cfg(feature = "private_message")]
+#[cfg(all(feature = "private_message", feature = "prior_epoch"))]
 impl GroupStateProvider for PriorEpoch {
     fn group_context(&self) -> &GroupContext {
         &self.context
@@ -106,7 +107,10 @@ pub(crate) mod test_utils {
     #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
     use crate::group::secret_tree::test_utils::get_test_tree;
 
-    use crate::group::test_utils::{get_test_group_context_with_id, random_bytes};
+    #[cfg(feature = "prior_epoch")]
+    use crate::group::test_utils::get_test_group_context_with_id;
+
+    use crate::group::test_utils::random_bytes;
 
     pub(crate) fn get_test_epoch_secrets(cipher_suite: CipherSuite) -> EpochSecrets {
         let cs_provider = test_cipher_suite_provider(cipher_suite);
@@ -123,10 +127,7 @@ pub(crate) mod test_utils {
         }
     }
 
-    pub(crate) fn get_test_epoch(cipher_suite: CipherSuite) -> PriorEpoch {
-        get_test_epoch_with_id(Vec::new(), cipher_suite, 0)
-    }
-
+    #[cfg(feature = "prior_epoch")]
     pub(crate) fn get_test_epoch_with_id(
         group_id: Vec<u8>,
         cipher_suite: CipherSuite,

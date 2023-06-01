@@ -52,6 +52,7 @@ impl<GS: GroupStateStorage, K: KeyPackageStorage, PS: PreSharedKeyStorage>
             }
         }
 
+        #[cfg(feature = "prior_epoch")]
         if let Some(eps) = self.prior_epochs {
             if let Some(psk) = eps.resumption_secret(psk_id).await? {
                 return Ok(psk);

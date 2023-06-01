@@ -262,6 +262,7 @@ impl TreeKemPublic {
         self.nodes.non_empty_leaves()
     }
 
+    #[cfg(feature = "prior_epoch")]
     pub fn leaves(&self) -> impl Iterator<Item = Option<&LeafNode>> + '_ {
         self.nodes.leaves()
     }

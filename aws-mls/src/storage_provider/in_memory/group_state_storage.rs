@@ -13,7 +13,7 @@ use aws_mls_core::group::{EpochRecord, GroupState, GroupStateStorage};
 
 use crate::storage_provider::group_state::EpochData;
 
-#[cfg(any(feature = "benchmark", test))]
+#[cfg(any(feature = "benchmark", all(feature = "prior_epoch", test)))]
 use crate::group::epoch::PriorEpoch;
 
 #[cfg(feature = "benchmark")]
@@ -104,7 +104,7 @@ impl InMemoryGroupStateStorage {
         }
     }
 
-    #[cfg(any(feature = "benchmark", test))]
+    #[cfg(any(feature = "benchmark", all(feature = "prior_epoch", test)))]
     pub(crate) fn export_epoch_data(&self, group_id: &[u8]) -> Option<Vec<PriorEpoch>> {
         #[cfg(feature = "std")]
         let lock = self.inner.lock().unwrap();
