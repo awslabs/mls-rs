@@ -36,17 +36,23 @@ pub fn mls_decode_collection<T, F>(reader: &mut &[u8], item_decode: F) -> Result
 where
     F: Fn(&mut &[u8]) -> Result<T, crate::Error>,
 {
-    let len = VarInt::mls_decode(reader)?.0 as usize;
-
-    (len <= reader.len())
-        .then_some(())
-        .ok_or(crate::Error::UnexpectedEOF)?;
-
-    let (mut data, rest) = reader.split_at(len);
+    let (mut data, rest) = mls_decode_split_on_collection(reader)?;
 
     let items = item_decode(&mut data)?;
 
     *reader = rest;
 
     Ok(items)
+}
+
+pub fn mls_decode_split_on_collection<'b>(
+    reader: &mut &'b [u8],
+) -> Result<(&'b [u8], &'b [u8]), crate::Error> {
+    let len = VarInt::mls_decode(reader)?.0 as usize;
+
+    if len > reader.len() {
+        return Err(crate::Error::UnexpectedEOF);
+    }
+
+    Ok(reader.split_at(len))
 }

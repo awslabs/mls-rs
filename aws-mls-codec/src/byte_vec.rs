@@ -1,4 +1,4 @@
-use crate::{Error, MlsDecode, MlsEncode, MlsSize, VarInt};
+use crate::{iter::mls_decode_split_on_collection, Error, MlsEncode, MlsSize, VarInt};
 
 use alloc::vec::Vec;
 
@@ -7,11 +7,14 @@ pub fn mls_encoded_len<T>(data: &T) -> usize
 where
     T: AsRef<[u8]>,
 {
-    let len = data.as_ref().len();
+    fn slice_len(data: &[u8]) -> usize {
+        let len = data.len();
+        let header_length = VarInt::try_from(len).unwrap_or(VarInt(0)).mls_encoded_len();
 
-    let header_length = VarInt::try_from(len).unwrap_or(VarInt(0)).mls_encoded_len();
+        header_length + len
+    }
 
-    header_length + len
+    slice_len(data.as_ref())
 }
 
 /// Optimized encoding for types that can be represented as u8 slices.
@@ -19,13 +22,16 @@ pub fn mls_encode<T>(data: &T, writer: &mut Vec<u8>) -> Result<(), Error>
 where
     T: AsRef<[u8]>,
 {
-    let data = data.as_ref();
-    let len = VarInt::try_from(data.len())?;
+    fn encode_slice(data: &[u8], writer: &mut Vec<u8>) -> Result<(), Error> {
+        let len = VarInt::try_from(data.len())?;
 
-    len.mls_encode(writer)?;
-    writer.extend_from_slice(data);
+        len.mls_encode(writer)?;
+        writer.extend_from_slice(data);
 
-    Ok(())
+        Ok(())
+    }
+
+    encode_slice(data.as_ref(), writer)
 }
 
 /// Optimized decoding for types that can be represented as Vec<u8>
@@ -33,14 +39,14 @@ pub fn mls_decode<T>(reader: &mut &[u8]) -> Result<T, crate::Error>
 where
     T: From<Vec<u8>>,
 {
-    let len = VarInt::mls_decode(reader)?.0 as usize;
+    fn decode_vec(reader: &mut &[u8]) -> Result<Vec<u8>, crate::Error> {
+        let (data, rest) = mls_decode_split_on_collection(reader)?;
 
-    let out = reader
-        .get(..len)
-        .ok_or(crate::Error::UnexpectedEOF)?
-        .to_vec();
+        *reader = rest;
 
-    *reader = &reader[len..];
+        Ok(data.to_vec())
+    }
 
+    let out = decode_vec(reader)?;
     Ok(out.into())
 }
