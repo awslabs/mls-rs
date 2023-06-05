@@ -158,14 +158,10 @@ mod tests {
             get_basic_test_node_sig_key(cipher_suite, "charlie").await;
 
         // Create a new public tree with Alice
-        let (mut public_tree, mut alice_private) = TreeKemPublic::derive(
-            alice_leaf,
-            alice_hpke_secret,
-            &BasicIdentityProvider,
-            &cipher_suite_provider,
-        )
-        .await
-        .unwrap();
+        let (mut public_tree, mut alice_private) =
+            TreeKemPublic::derive(alice_leaf, alice_hpke_secret, &BasicIdentityProvider)
+                .await
+                .unwrap();
 
         // Add bob and charlie to the tree
         public_tree

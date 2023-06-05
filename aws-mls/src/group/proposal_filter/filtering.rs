@@ -21,9 +21,6 @@ use crate::{
 #[cfg(feature = "external_proposal")]
 use crate::extension::ExternalSendersExt;
 
-#[cfg(feature = "external_commit")]
-use alloc::vec;
-
 use alloc::vec::Vec;
 use aws_mls_core::{error::IntoAnyError, identity::IdentityProvider, psk::PreSharedKeyStorage};
 
@@ -243,7 +240,6 @@ where
                 &mut output.new_tree,
                 external_leaf.clone(),
                 self.identity_provider,
-                self.cipher_suite_provider,
             )
             .await?,
         );
@@ -413,7 +409,7 @@ where
 
         let mut new_tree = self.original_tree.clone();
 
-        let res = new_tree
+        let added = new_tree
             .batch_edit(
                 &mut applied_proposals,
                 self.identity_provider,
@@ -425,7 +421,7 @@ where
         Ok(ApplyProposalsOutput {
             applied_proposals,
             new_tree,
-            indexes_of_added_kpkgs: res.added,
+            indexes_of_added_kpkgs: added,
             #[cfg(feature = "external_commit")]
             external_init_index: None,
         })
@@ -1072,17 +1068,12 @@ fn leaf_index_of_update_sender(p: &ProposalInfo<UpdateProposal>) -> Result<LeafI
 
 #[cfg(feature = "external_commit")]
 #[maybe_async::maybe_async]
-async fn insert_external_leaf<I: IdentityProvider, CP: CipherSuiteProvider>(
+async fn insert_external_leaf<I: IdentityProvider>(
     tree: &mut TreeKemPublic,
     leaf_node: LeafNode,
     identity_provider: &I,
-    cipher_suite_provider: &CP,
 ) -> Result<LeafIndex, MlsError> {
-    tree.add_leaves(vec![leaf_node], identity_provider, cipher_suite_provider)
-        .await?
-        .first()
-        .copied()
-        .ok_or(MlsError::InvalidTreeIndex)
+    tree.add_leaf(leaf_node, identity_provider, None).await
 }
 
 #[cfg(feature = "custom_proposal")]

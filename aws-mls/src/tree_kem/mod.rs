@@ -155,15 +155,15 @@ impl TreeKemPublic {
     }
 
     #[maybe_async::maybe_async]
-    pub async fn derive<I: IdentityProvider, CP: CipherSuiteProvider>(
+    pub async fn derive<I: IdentityProvider>(
         leaf_node: LeafNode,
         secret_key: HpkeSecretKey,
         identity_provider: &I,
-        cipher_suite_provider: &CP,
     ) -> Result<(TreeKemPublic, TreeKemPrivate), MlsError> {
         let mut public_tree = TreeKemPublic::new();
+
         public_tree
-            .add_leaves(vec![leaf_node], identity_provider, cipher_suite_provider)
+            .add_leaf(leaf_node, identity_provider, None)
             .await?;
 
         let private_tree = TreeKemPrivate::new_self_leaf(LeafIndex(0), secret_key);
@@ -207,8 +207,7 @@ impl TreeKemPublic {
             .all(|(_, l)| l.capabilities.proposals.contains(&proposal_type))
     }
 
-    // Note that a partial failure of this function will leave the tree in a bad state. Modifying a
-    // tree should always be done on a clone of the tree, which is how commits are processed
+    #[cfg(any(test, feature = "benchmark"))]
     #[maybe_async::maybe_async]
     pub async fn add_leaves<I: IdentityProvider, CP: CipherSuiteProvider>(
         &mut self,
@@ -216,14 +215,17 @@ impl TreeKemPublic {
         id_provider: &I,
         cipher_suite_provider: &CP,
     ) -> Result<Vec<LeafIndex>, MlsError> {
-        let mut added = self.add_leaves_internal(&leaf_nodes, id_provider).await?;
-        self.update_hashes(&mut Vec::new(), &added.added, cipher_suite_provider)?;
+        let mut start = LeafIndex(0);
+        let mut added = vec![];
 
-        if let Some(e) = added.errors.pop() {
-            return Err(e);
+        for leaf in leaf_nodes.into_iter() {
+            start = self.add_leaf(leaf, id_provider, Some(start)).await?;
+            added.push(start);
         }
 
-        Ok(added.added)
+        self.update_hashes(&mut Vec::new(), &added, cipher_suite_provider)?;
+
+        Ok(added)
     }
 
     #[maybe_async::maybe_async]
@@ -354,37 +356,35 @@ impl TreeKemPublic {
         id_provider: &I,
         cipher_suite_provider: &CP,
         filter: bool,
-    ) -> Result<BatchEditOutput, MlsError>
+    ) -> Result<Vec<LeafIndex>, MlsError>
     where
         I: IdentityProvider,
         CP: CipherSuiteProvider,
     {
         // Apply removes (they commute with updates because they don't touch the same leaves)
-        let mut removed = vec![];
-
         for i in (0..proposal_bundle.remove_proposals().len()).rev() {
             let index = proposal_bundle.remove_proposals()[i].proposal.to_remove;
             let res = self.nodes.blank_leaf_node(index);
 
             let res = match res {
+                #[cfg(feature = "tree_index")]
                 Ok(Some(old_leaf)) => {
-                    // This shouldn't fail if `blank_leaf_node` succedded.
-                    self.nodes.blank_direct_path(index)?;
-
-                    #[cfg(feature = "tree_index")]
-                    {
-                        // If this fails, it's not because the proposal is bad.
-                        let identity = identity(&old_leaf.signing_identity, id_provider).await?;
-                        self.index.remove(&old_leaf, &identity);
-                    }
-
-                    removed.push((index, old_leaf));
+                    // If this fails, it's not because the proposal is bad.
+                    let identity = identity(&old_leaf.signing_identity, id_provider).await?;
+                    self.index.remove(&old_leaf, &identity);
 
                     Ok(())
                 }
+                #[cfg(not(feature = "tree_index"))]
+                Ok(Some(_)) => Ok(()),
                 Ok(None) => Err(MlsError::RemovingNonExistingMember),
                 _ => res.map(|_| ()),
             };
+
+            if res.is_ok() {
+                // This shouldn't fail if `blank_leaf_node` succedded.
+                self.nodes.blank_direct_path(index)?;
+            }
 
             if proposal_bundle.remove_proposals()[i].is_by_value() || !filter {
                 res?;
@@ -486,24 +486,31 @@ impl TreeKemPublic {
         }
 
         // Apply adds
-        let additions = proposal_bundle
-            .by_type::<AddProposal>()
-            .map(|p| p.proposal.key_package.leaf_node.clone())
-            .collect::<Vec<_>>();
+        let mut start = LeafIndex(0);
+        let mut added = vec![];
+        let mut bad_indexes = vec![];
 
-        let added_info = self.add_leaves_internal(&additions, id_provider).await?;
+        for i in 0..proposal_bundle.additions.len() {
+            let leaf = proposal_bundle.additions[i]
+                .proposal
+                .key_package
+                .leaf_node
+                .clone();
 
-        for (i, e) in added_info
-            .bad_indices
-            .into_iter()
-            .zip(added_info.errors.into_iter())
-            .rev()
-        {
-            if !filter || proposal_bundle.add_proposals()[i].is_by_value() {
-                return Err(e);
+            let res = self.add_leaf(leaf, id_provider, Some(start)).await;
+
+            if let Ok(index) = res {
+                start = index;
+                added.push(start);
+            } else if proposal_bundle.additions[i].is_by_value() || !filter {
+                res?;
             } else {
-                proposal_bundle.remove::<AddProposal>(i);
+                bad_indexes.push(i);
             }
+        }
+
+        for i in bad_indexes.into_iter().rev() {
+            proposal_bundle.remove::<AddProposal>(i);
         }
 
         self.nodes.trim();
@@ -515,62 +522,31 @@ impl TreeKemPublic {
             .chain(updated_indices.into_iter())
             .collect_vec();
 
-        self.update_hashes(&mut path_blanked, &added_info.added, cipher_suite_provider)?;
+        self.update_hashes(&mut path_blanked, &added, cipher_suite_provider)?;
 
-        Ok(BatchEditOutput {
-            removed,
-            added: added_info.added,
-        })
+        Ok(added)
     }
 
     #[maybe_async::maybe_async]
-    async fn add_leaves_internal<I: IdentityProvider>(
+    pub(crate) async fn add_leaf<I: IdentityProvider>(
         &mut self,
-        additions: &[LeafNode],
+        leaf: LeafNode,
         id_provider: &I,
-    ) -> Result<AddedLeavesInfo, MlsError> {
-        let mut bad_indices = vec![];
-        let mut start = LeafIndex(0);
-        let mut added = vec![];
-        let mut errors = vec![];
+        start: Option<LeafIndex>,
+    ) -> Result<LeafIndex, MlsError> {
+        let index = self.nodes.next_empty_leaf(start.unwrap_or(LeafIndex(0)));
 
-        for (i, leaf) in additions.iter().enumerate() {
-            let index = self.nodes.next_empty_leaf(start);
+        #[cfg(feature = "tree_index")]
+        index_insert(&mut self.index, &leaf, index, id_provider).await?;
 
-            #[cfg(feature = "tree_index")]
-            let res = index_insert(&mut self.index, leaf, index, id_provider).await;
+        #[cfg(not(feature = "tree_index"))]
+        index_insert(&self.nodes, &leaf, index, id_provider).await?;
 
-            #[cfg(not(feature = "tree_index"))]
-            let res = index_insert(&self.nodes, leaf, index, id_provider).await;
+        self.nodes.insert_leaf(index, leaf);
+        self.update_unmerged(index)?;
 
-            if let Err(e) = res {
-                bad_indices.push(i);
-                errors.push(e);
-            } else {
-                self.nodes.insert_leaf(index, leaf.clone());
-                self.update_unmerged(index)?;
-                start = index;
-                added.push(index);
-            }
-        }
-
-        Ok(AddedLeavesInfo {
-            bad_indices,
-            added,
-            errors,
-        })
+        Ok(index)
     }
-}
-
-struct AddedLeavesInfo {
-    pub bad_indices: Vec<usize>,
-    pub added: Vec<LeafIndex>,
-    pub errors: Vec<MlsError>,
-}
-
-pub struct BatchEditOutput {
-    pub removed: Vec<(LeafIndex, LeafNode)>,
-    pub added: Vec<LeafIndex>,
 }
 
 #[cfg(feature = "tree_index")]
@@ -632,6 +608,8 @@ impl TreeKemPublic {
         I: IdentityProvider,
         CP: CipherSuiteProvider,
     {
+        let old_tree = self.clone();
+
         let proposals = indexes
             .iter()
             .copied()
@@ -644,8 +622,17 @@ impl TreeKemPublic {
         }
 
         self.batch_edit(&mut bundle, identity_provider, cipher_suite_provider, true)
-            .await
-            .map(|res| res.removed)
+            .await?;
+
+        bundle
+            .removals
+            .iter()
+            .map(|p| {
+                let index = p.proposal.to_remove;
+                let leaf = old_tree.get_leaf_node(index)?.clone();
+                Ok((index, leaf))
+            })
+            .collect()
     }
 
     pub fn get_leaf_nodes(&self) -> Vec<&LeafNode> {
@@ -666,7 +653,7 @@ pub(crate) mod test_utils {
     use crate::identity::test_utils::get_test_signing_identity;
     use crate::{
         cipher_suite::CipherSuite,
-        crypto::{test_utils::test_cipher_suite_provider, HpkeSecretKey, SignatureSecretKey},
+        crypto::{HpkeSecretKey, SignatureSecretKey},
         identity::basic::BasicIdentityProvider,
         tree_kem::leaf_node::test_utils::get_basic_test_node_sig_key,
     };
@@ -697,7 +684,6 @@ pub(crate) mod test_utils {
             creator_leaf.clone(),
             creator_hpke_secret.clone(),
             &BasicIdentityProvider,
-            &test_cipher_suite_provider(cipher_suite),
         )
         .await
         .unwrap();
