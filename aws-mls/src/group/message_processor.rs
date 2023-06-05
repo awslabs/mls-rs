@@ -85,7 +85,7 @@ pub(crate) fn path_update_required(proposals: &ProposalBundle) -> bool {
     #[cfg(not(feature = "external_commit"))]
     let res = false;
 
-    res || proposals.iter_proposals().next().is_none()
+    res || proposals.length() == 0
         || proposals.group_context_extensions_proposal().is_some()
         || !proposals.update_proposals().is_empty()
         || !proposals.remove_proposals().is_empty()
@@ -792,7 +792,6 @@ pub(crate) trait MessageProcessor: Send + Sync {
             )
             .await
             .map(|_| None)
-            .map_err(Into::into)
     }
 
     async fn update_key_schedule(

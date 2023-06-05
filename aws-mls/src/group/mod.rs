@@ -622,7 +622,6 @@ where
     fn current_user_leaf_node(&self) -> Result<&LeafNode, MlsError> {
         self.current_epoch_tree()
             .get_leaf_node(self.private_tree.self_index)
-            .map_err(Into::into)
     }
 
     /// Signing identity currently in use by the local group instance.
@@ -1388,9 +1387,7 @@ where
 
         let mut encryptor = CiphertextProcessor::new(self, self.cipher_suite_provider.clone());
 
-        encryptor
-            .seal(auth_content, preferences.padding_mode)
-            .map_err(Into::into)
+        encryptor.seal(auth_content, preferences.padding_mode)
     }
 
     /// Encrypt an application message using the current group state.
@@ -1756,14 +1753,11 @@ where
 
     #[cfg(feature = "secret_tree_access")]
     pub fn next_encryption_key(&mut self) -> Result<MessageKey, MlsError> {
-        self.epoch_secrets
-            .secret_tree
-            .next_message_key(
-                &self.cipher_suite_provider,
-                self.private_tree.self_index,
-                KeyType::Application,
-            )
-            .map_err(Into::into)
+        self.epoch_secrets.secret_tree.next_message_key(
+            &self.cipher_suite_provider,
+            self.private_tree.self_index,
+            KeyType::Application,
+        )
     }
 
     #[cfg(feature = "secret_tree_access")]
@@ -1772,15 +1766,12 @@ where
         sender: u32,
         generation: u32,
     ) -> Result<MessageKey, MlsError> {
-        self.epoch_secrets
-            .secret_tree
-            .message_key_generation(
-                &self.cipher_suite_provider,
-                LeafIndex(sender),
-                KeyType::Application,
-                generation,
-            )
-            .map_err(Into::into)
+        self.epoch_secrets.secret_tree.message_key_generation(
+            &self.cipher_suite_provider,
+            LeafIndex(sender),
+            KeyType::Application,
+            generation,
+        )
     }
 }
 

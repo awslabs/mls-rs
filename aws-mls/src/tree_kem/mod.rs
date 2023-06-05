@@ -366,24 +366,16 @@ impl TreeKemPublic {
             let index = proposal_bundle.remove_proposals()[i].proposal.to_remove;
             let res = self.nodes.blank_leaf_node(index);
 
-            let res = match res {
-                #[cfg(feature = "tree_index")]
-                Ok(Some(old_leaf)) => {
-                    // If this fails, it's not because the proposal is bad.
-                    let identity = identity(&old_leaf.signing_identity, id_provider).await?;
-                    self.index.remove(&old_leaf, &identity);
-
-                    Ok(())
-                }
-                #[cfg(not(feature = "tree_index"))]
-                Ok(Some(_)) => Ok(()),
-                Ok(None) => Err(MlsError::RemovingNonExistingMember),
-                _ => res.map(|_| ()),
-            };
-
             if res.is_ok() {
                 // This shouldn't fail if `blank_leaf_node` succedded.
                 self.nodes.blank_direct_path(index)?;
+            }
+
+            #[cfg(feature = "tree_index")]
+            if let Ok(old_leaf) = &res {
+                // If this fails, it's not because the proposal is bad.
+                let identity = identity(&old_leaf.signing_identity, id_provider).await?;
+                self.index.remove(old_leaf, &identity);
             }
 
             if proposal_bundle.remove_proposals()[i].is_by_value() || !filter {
@@ -400,9 +392,8 @@ impl TreeKemPublic {
         for (i, (p, index)) in proposal_bundle.updates.iter().zip(senders).enumerate() {
             let new_leaf = p.proposal.leaf_node.clone();
 
-            // `blank_leaf_node` shouldn't fail because we already found the leaf when verifying the proposal
-            match self.nodes.blank_leaf_node(index)? {
-                Some(old_leaf) => {
+            match self.nodes.blank_leaf_node(index) {
+                Ok(old_leaf) => {
                     #[cfg(feature = "tree_index")]
                     let old_id = identity(&old_leaf.signing_identity, id_provider).await?;
                     #[cfg(feature = "tree_index")]
@@ -410,7 +401,7 @@ impl TreeKemPublic {
 
                     partial_updates.push((index, old_leaf, new_leaf, i));
                 }
-                None => {
+                _ => {
                     if !filter || !p.is_by_reference() {
                         return Err(MlsError::UpdatingNonExistingMember);
                     }
@@ -1161,7 +1152,7 @@ mod tests {
             )
             .await;
 
-        assert_matches!(res, Err(MlsError::InvalidNodeIndex(256)));
+        assert_matches!(res, Err(MlsError::UpdatingNonExistingMember));
     }
 
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]

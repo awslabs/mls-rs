@@ -117,9 +117,7 @@ pub(crate) fn verify_auth_content_signature<P: CipherSuiteProvider>(
         protocol_version: context.protocol_version,
     };
 
-    auth_content
-        .verify(cipher_suite_provider, &sender_public_key, &context)
-        .map_err(|_| MlsError::InvalidSignature)?;
+    auth_content.verify(cipher_suite_provider, &sender_public_key, &context)?;
 
     Ok(())
 }

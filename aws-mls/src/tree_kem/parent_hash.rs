@@ -108,7 +108,6 @@ impl TreeKemPublic {
             parent_parent_hash,
             &original_hashes[co_path_child_index as usize],
         )
-        .map_err(MlsError::from)
     }
 
     fn parent_hash_for_leaf<P: CipherSuiteProvider>(

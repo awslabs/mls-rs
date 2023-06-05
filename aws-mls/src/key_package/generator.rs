@@ -76,9 +76,7 @@ where
     CP: CipherSuiteProvider,
 {
     pub(super) fn sign(&self, package: &mut KeyPackage) -> Result<(), MlsError> {
-        package
-            .sign(self.cipher_suite_provider, self.signing_key, &())
-            .map_err(Into::into)
+        package.sign(self.cipher_suite_provider, self.signing_key, &())
     }
 
     #[maybe_async::maybe_async]

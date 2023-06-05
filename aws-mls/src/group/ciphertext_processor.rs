@@ -66,7 +66,6 @@ where
             .epoch_secrets_mut()
             .secret_tree
             .next_message_key(&self.cipher_suite_provider, self_index, key_type)
-            .map_err(Into::into)
     }
 
     pub fn decryption_key(
@@ -79,7 +78,6 @@ where
             .epoch_secrets_mut()
             .secret_tree
             .message_key_generation(&self.cipher_suite_provider, sender, key_type, generation)
-            .map_err(Into::into)
     }
 
     pub fn seal(

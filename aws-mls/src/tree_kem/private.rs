@@ -55,9 +55,7 @@ impl TreeKemPrivate {
                 continue;
             }
 
-            let secret = node_secret_gen
-                .next()
-                .ok_or(MlsError::CommitMissingPath)??;
+            let secret = node_secret_gen.next_secret()?;
 
             let expected_pub_key = public_tree
                 .nodes
@@ -66,7 +64,7 @@ impl TreeKemPrivate {
                 .map(|n| n.public_key())
                 .ok_or(MlsError::PubKeyMismatch)?;
 
-            let (secret_key, public_key) = secret.to_hpke_key_pair()?;
+            let (secret_key, public_key) = secret.to_hpke_key_pair(cipher_suite_provider)?;
 
             if expected_pub_key != &public_key {
                 return Err(MlsError::PubKeyMismatch);

@@ -52,10 +52,7 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> TreeValidator<'a, C, CSP
     #[maybe_async::maybe_async]
     pub async fn validate(&self, tree: &mut TreeKemPublic) -> Result<(), MlsError> {
         self.validate_tree_hash(tree)?;
-
-        tree.validate_parent_hashes(self.cipher_suite_provider)
-            .map_err(|_| MlsError::ParentHashMismatch)?;
-
+        tree.validate_parent_hashes(self.cipher_suite_provider)?;
         self.validate_no_trailing_blanks(tree)?;
         self.validate_leaves(tree).await?;
         validate_unmerged(tree)
@@ -336,7 +333,7 @@ mod tests {
         let mut tree = get_test_tree_fig_12(TEST_CIPHER_SUITE).await;
 
         // Blank leaf D unmerged at nodes 3, 7
-        tree.nodes.blank_node(6).unwrap();
+        tree.nodes[6] = None;
 
         assert_matches!(
             validate_unmerged(&tree),

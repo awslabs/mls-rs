@@ -261,26 +261,23 @@ impl NodeVec {
     }
 
     // Blank a previously filled leaf node, and return the existing leaf
-    pub fn blank_leaf_node(&mut self, leaf_index: LeafIndex) -> Result<Option<LeafNode>, MlsError> {
-        let node_index = NodeIndex::from(leaf_index);
-        let blanked_leaf = self.blank_node(node_index)?.and_then(|node| match node {
-            Node::Leaf(l) => Some(l),
-            Node::Parent(_) => None,
-        });
+    pub fn blank_leaf_node(&mut self, leaf_index: LeafIndex) -> Result<LeafNode, MlsError> {
+        let node_index = self.validate_index(leaf_index.into())?;
 
-        Ok(blanked_leaf)
+        match self.get_mut(node_index).and_then(Option::take) {
+            Some(Node::Leaf(l)) => Ok(l),
+            _ => Err(MlsError::RemovingNonExistingMember),
+        }
     }
 
-    pub fn blank_node(&mut self, node_index: NodeIndex) -> Result<Option<Node>, MlsError> {
-        let index = self.validate_index(node_index)?;
-        Ok(self.get_mut(index).and_then(Option::take))
-    }
+    pub fn blank_direct_path(&mut self, leaf: LeafIndex) -> Result<(), MlsError> {
+        for i in self.direct_path(leaf)? {
+            if let Some(n) = self.get_mut(i as usize) {
+                *n = None
+            }
+        }
 
-    pub fn blank_direct_path(&mut self, leaf: LeafIndex) -> Result<Vec<Option<Node>>, MlsError> {
-        self.direct_path(leaf)?
-            .iter()
-            .map(|&index| self.blank_node(index))
-            .collect()
+        Ok(())
     }
 
     // Remove elements until the last leaf is non-blank

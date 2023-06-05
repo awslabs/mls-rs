@@ -544,7 +544,6 @@ where
             group_context_extensions,
         )
         .await
-        .map_err(Into::into)
     }
 
     /// Create a MLS group.
@@ -573,7 +572,6 @@ where
             group_context_extensions,
         )
         .await
-        .map_err(Into::into)
     }
 
     /// Join a MLS group via a welcome message created by a
@@ -591,9 +589,7 @@ where
         tree_data: Option<&[u8]>,
         welcome_message: MLSMessage,
     ) -> Result<(Group<C>, NewMemberInfo), MlsError> {
-        Group::join(welcome_message, tree_data, self.config.clone())
-            .await
-            .map_err(Into::into)
+        Group::join(welcome_message, tree_data, self.config.clone()).await
     }
 
     /// 0-RTT add to an existing [group](crate::group::Group)

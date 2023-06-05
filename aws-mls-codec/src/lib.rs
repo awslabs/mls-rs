@@ -1,6 +1,8 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 extern crate alloc;
 
+use alloc::boxed::Box;
+
 pub use alloc::vec::Vec;
 
 mod array;
@@ -65,6 +67,16 @@ where
     }
 }
 
+impl<T> MlsSize for Box<T>
+where
+    T: MlsSize + ?Sized,
+{
+    #[inline]
+    fn mls_encoded_len(&self) -> usize {
+        self.as_ref().mls_encoded_len()
+    }
+}
+
 /// Trait to support serializing a type with MLS encoding.
 pub trait MlsEncode: MlsSize {
     fn mls_encode(&self, writer: &mut Vec<u8>) -> Result<(), Error>;
@@ -88,7 +100,27 @@ where
     }
 }
 
+impl<T> MlsEncode for Box<T>
+where
+    T: MlsEncode + ?Sized,
+{
+    #[inline]
+    fn mls_encode(&self, writer: &mut Vec<u8>) -> Result<(), Error> {
+        self.as_ref().mls_encode(writer)
+    }
+}
+
 /// Trait to support deserialzing to a type using MLS encoding.
 pub trait MlsDecode: Sized {
     fn mls_decode(reader: &mut &[u8]) -> Result<Self, Error>;
+}
+
+impl<T> MlsDecode for Box<T>
+where
+    T: MlsDecode + ?Sized,
+{
+    #[inline]
+    fn mls_decode(reader: &mut &[u8]) -> Result<Self, Error> {
+        T::mls_decode(reader).map(Box::new)
+    }
 }

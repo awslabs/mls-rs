@@ -269,7 +269,6 @@ pub(crate) async fn find_key_package_generation<'a, K: KeyPackageStorage>(
                 if let Some(data) = maybe_data {
                     KeyPackageGeneration::from_storage(secret.new_member.to_vec(), data)
                         .map(|kpg| Some((secret, kpg)))
-                        .map_err(MlsError::from)
                 } else {
                     Ok::<_, MlsError>(None)
                 }

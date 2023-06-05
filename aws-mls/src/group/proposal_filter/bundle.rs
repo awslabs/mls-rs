@@ -1,3 +1,4 @@
+use alloc::boxed::Box;
 use alloc::vec::Vec;
 
 #[cfg(feature = "custom_proposal")]
@@ -192,6 +193,26 @@ impl ProposalBundle {
         Ok(())
     }
 
+    /// The number of proposals in the bundle
+    pub fn length(&self) -> usize {
+        let len = 0;
+
+        #[cfg(feature = "psk")]
+        let len = len + self.psks.len();
+
+        #[cfg(feature = "external_commit")]
+        let len = len + self.external_initializations.len();
+
+        #[cfg(feature = "custom_proposal")]
+        let len = len + self.custom_proposals.len();
+
+        len + self.additions.len()
+            + self.updates.len()
+            + self.removals.len()
+            + self.reinitializations.len()
+            + self.group_context_extensions.len()
+    }
+
     /// Iterate over all proposals inside the bundle.
     pub fn iter_proposals(&self) -> impl Iterator<Item = ProposalInfo<BorrowedProposal<'_>>> {
         let res = self
@@ -284,7 +305,7 @@ impl ProposalBundle {
     pub(crate) fn into_proposals_or_refs(self) -> Vec<ProposalOrRef> {
         self.into_proposals()
             .filter_map(|p| match p.source {
-                ProposalSource::ByValue => Some(ProposalOrRef::Proposal(p.proposal)),
+                ProposalSource::ByValue => Some(ProposalOrRef::Proposal(Box::new(p.proposal))),
                 ProposalSource::ByReference(reference) => Some(ProposalOrRef::Reference(reference)),
                 _ => None,
             })
@@ -295,7 +316,7 @@ impl ProposalBundle {
     pub(crate) fn into_proposals_or_refs(self) -> Vec<ProposalOrRef> {
         self.into_proposals()
             .map(|p| match p.source {
-                ProposalSource::ByValue => ProposalOrRef::Proposal(p.proposal),
+                ProposalSource::ByValue => ProposalOrRef::Proposal(Box::new(p.proposal)),
                 ProposalSource::ByReference(reference) => ProposalOrRef::Reference(reference),
             })
             .collect()

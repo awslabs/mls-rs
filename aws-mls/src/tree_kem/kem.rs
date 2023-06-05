@@ -6,7 +6,7 @@ use crate::tree_kem::math as tree_math;
 use alloc::vec;
 use alloc::vec::Vec;
 use aws_mls_codec::MlsEncode;
-use aws_mls_core::{error::IntoAnyError, identity::IdentityProvider};
+use aws_mls_core::identity::IdentityProvider;
 use cfg_if::cfg_if;
 
 #[cfg(feature = "rayon")]
@@ -17,7 +17,7 @@ use super::leaf_node::ConfigProperties;
 use super::node::Node;
 use super::{
     node::{LeafIndex, NodeIndex},
-    path_secret::{PathSecret, PathSecretGeneration, PathSecretGenerator},
+    path_secret::{PathSecret, PathSecretGenerator},
     TreeKemPrivate, TreeKemPublic, UpdatePath, UpdatePathNode, ValidatedUpdatePath,
 };
 
@@ -76,10 +76,10 @@ impl<'a> TreeKem<'a> {
         for (i, ((dp, _), f)) in path.iter().zip(&filtered).enumerate() {
             if !f {
                 let secret = secret_generator.next_secret()?;
-                let (secret_key, public_key) = secret.to_hpke_key_pair()?;
+                let (secret_key, public_key) = secret.to_hpke_key_pair(cipher_suite_provider)?;
                 self.private_key.secret_keys[i + 1] = Some(secret_key);
                 self.tree_kem_public.update_node(public_key, *dp)?;
-                path_secrets.push(Some(secret.path_secret));
+                path_secrets.push(Some(secret));
             } else {
                 self.private_key.secret_keys[i + 1] = None;
                 path_secrets.push(None);
@@ -182,7 +182,7 @@ impl<'a> TreeKem<'a> {
             .rev()
             .cloned()
             .find_map(|secret| secret)
-            .unwrap_or(PathSecretGeneration::random(cipher_suite_provider)?.path_secret);
+            .unwrap_or(PathSecret::random(cipher_suite_provider)?);
 
         Ok(EncapGeneration {
             update_path,
@@ -261,13 +261,11 @@ impl<'a> TreeKem<'a> {
 
         for (i, update) in update_path.nodes.iter().enumerate().skip(lca_index) {
             if let Some(update) = update {
-                let secret = node_secret_gen
-                    .next()
-                    .ok_or(MlsError::FailedGeneratingPathSecret)??;
+                let secret = node_secret_gen.next_secret()?;
 
                 // Verify the private key we calculated properly matches the public key we inserted into the tree. This guarantees
                 // that we will be able to decrypt later.
-                let (hpke_private, hpke_public) = secret.to_hpke_key_pair()?;
+                let (hpke_private, hpke_public) = secret.to_hpke_key_pair(cipher_suite_provider)?;
 
                 if hpke_public != update.public_key {
                     return Err(MlsError::PubKeyMismatch);
@@ -275,7 +273,7 @@ impl<'a> TreeKem<'a> {
 
                 self.private_key.secret_keys[i + 1] = Some(hpke_private);
 
-                root_secret = Some(secret.path_secret);
+                root_secret = Some(secret);
             } else {
                 self.private_key.secret_keys[i + 1] = None;
             }
@@ -300,7 +298,6 @@ fn encrypt_copath_node_resolution<P: CipherSuiteProvider>(
             path_secret.encrypt(cipher_suite_provider, copath_node.public_key(), context)
         })
         .collect::<Result<Vec<HpkeCiphertext>, _>>()
-        .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
 }
 
 fn decrypt_parent_path_secret<P: CipherSuiteProvider>(

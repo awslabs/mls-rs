@@ -494,15 +494,14 @@ impl<'a> From<&'a CustomProposal> for BorrowedProposal<'a> {
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
-#[allow(clippy::large_enum_variant)]
 pub(crate) enum ProposalOrRef {
-    Proposal(Proposal) = 1u8,
+    Proposal(Box<Proposal>) = 1u8,
     Reference(ProposalRef) = 2u8,
 }
 
 impl From<Proposal> for ProposalOrRef {
     fn from(proposal: Proposal) -> Self {
-        Self::Proposal(proposal)
+        Self::Proposal(Box::new(proposal))
     }
 }
 

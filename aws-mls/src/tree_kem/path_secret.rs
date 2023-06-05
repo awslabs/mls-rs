@@ -62,29 +62,14 @@ impl HpkeEncryptable for PathSecret {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct PathSecretGeneration<'a, P> {
-    pub path_secret: PathSecret,
-    cipher_suite_provider: &'a P,
-}
+impl PathSecret {
+    pub fn to_hpke_key_pair<P: CipherSuiteProvider>(
+        &self,
+        cs: &P,
+    ) -> Result<(HpkeSecretKey, HpkePublicKey), MlsError> {
+        let node_secret = Zeroizing::new(kdf_derive_secret(cs, self, b"node")?);
 
-impl<'a, P: CipherSuiteProvider> PathSecretGeneration<'a, P> {
-    pub fn random(cipher_suite_provider: &'a P) -> Result<Self, MlsError> {
-        Ok(Self {
-            path_secret: PathSecret::random(cipher_suite_provider)?,
-            cipher_suite_provider,
-        })
-    }
-
-    pub fn to_hpke_key_pair(&self) -> Result<(HpkeSecretKey, HpkePublicKey), MlsError> {
-        let node_secret = Zeroizing::new(kdf_derive_secret(
-            self.cipher_suite_provider,
-            &self.path_secret,
-            b"node",
-        )?);
-
-        self.cipher_suite_provider
-            .kem_derive(&node_secret)
+        cs.kem_derive(&node_secret)
             .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
     }
 }
@@ -119,31 +104,18 @@ impl<'a, P: CipherSuiteProvider> PathSecretGenerator<'a, P> {
         }
     }
 
-    pub fn next_secret(&mut self) -> Result<PathSecretGeneration<'a, P>, MlsError> {
+    pub fn next_secret(&mut self) -> Result<PathSecret, MlsError> {
         let secret = if let Some(starting_with) = self.starting_with.take() {
             Ok(starting_with)
         } else if let Some(last) = self.last.take() {
-            kdf_derive_secret(self.cipher_suite_provider, &last, b"path")
-                .map(PathSecret::from)
-                .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
+            kdf_derive_secret(self.cipher_suite_provider, &last, b"path").map(PathSecret::from)
         } else {
             PathSecret::random(self.cipher_suite_provider)
         }?;
 
         self.last = Some(secret.clone());
 
-        Ok(PathSecretGeneration {
-            path_secret: secret,
-            cipher_suite_provider: self.cipher_suite_provider,
-        })
-    }
-}
-
-impl<'a, P: CipherSuiteProvider> Iterator for PathSecretGenerator<'a, P> {
-    type Item = Result<PathSecretGeneration<'a, P>, MlsError>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        Some(self.next_secret())
+        Ok(secret)
     }
 }
 
@@ -160,6 +132,7 @@ mod tests {
     use super::*;
 
     use alloc::string::String;
+    use itertools::Itertools;
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
@@ -174,11 +147,10 @@ mod tests {
             CipherSuite::all()
                 .map(|cipher_suite| {
                     let cs_provider = test_cipher_suite_provider(cipher_suite);
-                    let generator = PathSecretGenerator::new(&cs_provider);
-                    let generations = generator
-                        .into_iter()
-                        .take(10)
-                        .map(|res| hex::encode(&*res.unwrap().path_secret))
+                    let mut generator = PathSecretGenerator::new(&cs_provider);
+
+                    let generations = (0..10)
+                        .map(|_| hex::encode(&*generator.next_secret().unwrap()))
                         .collect();
 
                     TestCase {
@@ -204,14 +176,13 @@ mod tests {
             };
 
             let first_secret = PathSecret::from(hex::decode(&one_case.generations[0]).unwrap());
-            let generator = PathSecretGenerator::starting_with(&cs_provider, first_secret);
+            let mut generator = PathSecretGenerator::starting_with(&cs_provider, first_secret);
 
-            let generated_results = generator
-                .take(one_case.generations.len())
-                .map(|r| hex::encode(&*r.unwrap().path_secret))
-                .collect::<Vec<String>>();
+            let generated_results = (0..one_case.generations.len())
+                .map(|_| hex::encode(&*generator.next_secret().unwrap()))
+                .collect_vec();
 
-            assert_eq!(generated_results, one_case.generations);
+            assert_eq!(one_case.generations, generated_results);
         }
     }
 
@@ -225,22 +196,8 @@ mod tests {
         for _ in 0..100 {
             let mut next_generator = PathSecretGenerator::new(&cs_provider);
             let next_secret = next_generator.next_secret().unwrap();
-            assert_ne!(first_secret.path_secret, next_secret.path_secret);
+            assert_ne!(first_secret, next_secret);
         }
-    }
-
-    #[test]
-    fn test_iterator() {
-        let cs_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
-        let secret = PathSecret::random(&cs_provider).unwrap();
-
-        let mut generator = PathSecretGenerator::starting_with(&cs_provider, secret);
-
-        let mut cloned_generator = generator.clone();
-        let expected = generator.next_secret().unwrap().path_secret;
-        let actual = cloned_generator.next().unwrap().unwrap().path_secret;
-
-        assert_eq!(actual, expected);
     }
 
     #[test]
@@ -253,12 +210,8 @@ mod tests {
         let first_secret = generator.next_secret().unwrap();
         let second_secret = generator.next_secret().unwrap();
 
-        assert_eq!(
-            first_secret.cipher_suite_provider.cipher_suite(),
-            TEST_CIPHER_SUITE
-        );
-        assert_eq!(secret, first_secret.path_secret);
-        assert_ne!(first_secret.path_secret, second_secret.path_secret);
+        assert_eq!(secret, first_secret);
+        assert_ne!(first_secret, second_secret);
     }
 
     #[test]
@@ -271,12 +224,9 @@ mod tests {
         let second_secret = generator.next_secret().unwrap();
 
         let mut from_first_generator =
-            PathSecretGenerator::starting_from(&cs_provider, first_secret.path_secret);
+            PathSecretGenerator::starting_from(&cs_provider, first_secret);
 
-        assert_eq!(
-            second_secret.path_secret,
-            from_first_generator.next_secret().unwrap().path_secret
-        );
+        assert_eq!(second_secret, from_first_generator.next_secret().unwrap());
     }
 
     #[test]
@@ -299,18 +249,6 @@ mod tests {
         for _ in 0..100 {
             let next = PathSecret::random(&cs_provider).unwrap();
             assert_ne!(next, initial);
-        }
-    }
-
-    #[test]
-    fn test_random_path_secret_generation() {
-        let cs_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
-
-        let initial = PathSecretGeneration::random(&cs_provider).unwrap();
-
-        for _ in 0..100 {
-            let next = PathSecretGeneration::random(&cs_provider).unwrap();
-            assert_ne!(next.path_secret, initial.path_secret);
         }
     }
 }

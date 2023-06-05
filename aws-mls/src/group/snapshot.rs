@@ -147,10 +147,7 @@ where
     /// that is currently in use by the group.
     #[maybe_async::maybe_async]
     pub async fn write_to_storage(&mut self) -> Result<(), MlsError> {
-        self.state_repo
-            .write_to_storage(self.snapshot())
-            .await
-            .map_err(Into::into)
+        self.state_repo.write_to_storage(self.snapshot()).await
     }
 
     pub(crate) fn snapshot(&self) -> Snapshot {

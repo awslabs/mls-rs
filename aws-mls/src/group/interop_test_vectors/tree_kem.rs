@@ -2,13 +2,13 @@ use crate::{
     client::test_utils::TEST_PROTOCOL_VERSION,
     crypto::test_utils::try_test_cipher_suite_provider,
     group::{
-        confirmation_tag::ConfirmationTag, framing::Content, key_schedule::CommitSecret,
-        message_processor::MessageProcessor, message_signature::AuthenticatedContent,
-        test_utils::GroupWithoutKeySchedule, Commit, GroupContext, Sender,
+        confirmation_tag::ConfirmationTag, framing::Content, internal::PathSecret,
+        key_schedule::CommitSecret, message_processor::MessageProcessor,
+        message_signature::AuthenticatedContent, test_utils::GroupWithoutKeySchedule, Commit,
+        GroupContext, Sender,
     },
     tree_kem::{
         node::{LeafIndex, NodeVec},
-        path_secret::PathSecretGeneration,
         TreeKemPrivate, TreeKemPublic, UpdatePath,
     },
     WireFormat,
@@ -115,9 +115,9 @@ async fn tree_kem() {
                         .find_map(|s| (s.node == dp).then_some(s.path_secret.clone()));
 
                     if let Some(secret) = secret {
-                        let mut path_secret_gen = PathSecretGeneration::random(&cs).unwrap();
-                        path_secret_gen.path_secret = secret.into();
-                        let (secret_key, public_key) = path_secret_gen.to_hpke_key_pair().unwrap();
+                        let (secret_key, public_key) =
+                            PathSecret::from(secret).to_hpke_key_pair(&cs).unwrap();
+
                         let tree_public = &tree.nodes.borrow_as_parent(dp).unwrap().public_key;
                         assert_eq!(&public_key, tree_public);
 

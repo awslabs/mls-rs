@@ -190,18 +190,18 @@ impl SecretTree {
             let right_index = tree_math::right(index)?;
 
             let left_secret =
-                kdf_expand_with_label(cipher_suite_provider, &secret, b"tree", b"left", None)
-                    .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
+                kdf_expand_with_label(cipher_suite_provider, &secret, b"tree", b"left", None)?;
 
             let right_secret =
-                kdf_expand_with_label(cipher_suite_provider, &secret, b"tree", b"right", None)
-                    .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
+                kdf_expand_with_label(cipher_suite_provider, &secret, b"tree", b"right", None)?;
 
             self.write_node(left_index, Some(SecretTreeNode::Secret(left_secret.into())))?;
+
             self.write_node(
                 right_index,
                 Some(SecretTreeNode::Secret(right_secret.into())),
             )?;
+
             self.write_node(index, None)
         } else {
             Ok(()) // If the node is empty we can just skip it

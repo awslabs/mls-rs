@@ -341,7 +341,6 @@ where
                     .new_tree
                     .non_empty_leaves()
                     .try_for_each(|(_, leaf)| leaf_validator.validate_required_capabilities(leaf))
-                    .map_err(MlsError::from)
             });
 
         let new_extensions_supported = group_context_extensions_proposal
@@ -703,9 +702,7 @@ fn filter_out_reinit_if_other_proposals(
     filter: bool,
     mut proposals: ProposalBundle,
 ) -> Result<ProposalBundle, MlsError> {
-    let has_other_types = proposals
-        .proposal_types()
-        .any(|t| t != ProposalType::RE_INIT);
+    let has_other_types = proposals.length() > proposals.reinitializations.len();
 
     if has_other_types {
         let any_by_val = proposals.reinit_proposals().iter().any(|p| p.is_by_value());

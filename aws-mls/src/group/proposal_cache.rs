@@ -70,9 +70,8 @@ impl ProposalCache {
         self.proposals.insert(proposal_ref, cached_proposal);
 
         #[cfg(not(feature = "std"))]
-        if !self.proposals.iter().any(|(r, _)| r == &proposal_ref) {
-            self.proposals.push((proposal_ref, cached_proposal));
-        }
+        // This may result in dups but it does not matter
+        self.proposals.push((proposal_ref, cached_proposal));
     }
 
     #[cfg(feature = "custom_proposal")]
@@ -213,29 +212,6 @@ impl ProposalCache {
         Ok(state)
     }
 
-    fn resolve_item(
-        &self,
-        sender: Sender,
-        proposal: ProposalOrRef,
-    ) -> Result<CachedProposal, MlsError> {
-        match proposal {
-            ProposalOrRef::Proposal(proposal) => Ok(CachedProposal { proposal, sender }),
-            #[cfg(feature = "std")]
-            ProposalOrRef::Reference(proposal_ref) => self
-                .proposals
-                .get(&proposal_ref)
-                .cloned()
-                .ok_or(MlsError::ProposalNotFound(proposal_ref)),
-            #[cfg(not(feature = "std"))]
-            ProposalOrRef::Reference(proposal_ref) => self
-                .proposals
-                .iter()
-                .find_map(|(r, p)| (r == &proposal_ref).then_some(p))
-                .cloned()
-                .ok_or(MlsError::ProposalNotFound(proposal_ref)),
-        }
-    }
-
     #[allow(clippy::too_many_arguments)]
     #[maybe_async::maybe_async]
     pub async fn resolve_for_commit<C, F, P, CSP>(
@@ -259,19 +235,30 @@ impl ProposalCache {
         P: PreSharedKeyStorage,
         CSP: CipherSuiteProvider,
     {
-        let proposals = proposal_list.into_iter().try_fold(
-            ProposalBundle::default(),
-            |mut proposals, proposal| {
-                let proposal_source = match &proposal {
-                    ProposalOrRef::Reference(r) => ProposalSource::ByReference(r.clone()),
-                    ProposalOrRef::Proposal(_) => ProposalSource::ByValue,
-                };
+        let mut proposals = ProposalBundle::default();
 
-                let proposal = self.resolve_item(sender, proposal)?;
-                proposals.add(proposal.proposal, proposal.sender, proposal_source);
-                Ok::<_, MlsError>(proposals)
-            },
-        )?;
+        for p in proposal_list {
+            match p {
+                ProposalOrRef::Proposal(p) => proposals.add(*p, sender, ProposalSource::ByValue),
+                ProposalOrRef::Reference(r) => {
+                    #[cfg(feature = "std")]
+                    let p = self
+                        .proposals
+                        .get(&r)
+                        .ok_or_else(|| MlsError::ProposalNotFound(r.clone()))?
+                        .clone();
+                    #[cfg(not(feature = "std"))]
+                    let p = self
+                        .proposals
+                        .iter()
+                        .find_map(|(rr, p)| (rr == &r).then_some(p))
+                        .ok_or_else(|| MlsError::ProposalNotFound(r.clone()))?
+                        .clone();
+
+                    proposals.add(p.proposal, p.sender, ProposalSource::ByReference(r));
+                }
+            };
+        }
 
         let group_extensions = &group_context.extensions;
 
@@ -1305,9 +1292,9 @@ mod tests {
                 Sender::NewMemberCommit,
                 #[cfg(feature = "state_update")]
                 None,
-                vec![ProposalOrRef::Proposal(Proposal::ExternalInit(
+                vec![ProposalOrRef::Proposal(Box::new(Proposal::ExternalInit(
                     ExternalInit { kem_output },
-                ))],
+                )))],
                 None,
                 &group.group.context().extensions,
                 &BasicIdentityProvider,
@@ -1383,7 +1370,7 @@ mod tests {
                     Proposal::ExternalInit(ExternalInit { kem_output }),
                 ]
                 .into_iter()
-                .map(ProposalOrRef::Proposal)
+                .map(|p| ProposalOrRef::Proposal(Box::new(p)))
                 .collect(),
                 Some(&test_node().await),
                 &group.group.context().extensions,
@@ -1420,7 +1407,7 @@ mod tests {
                     proposal,
                 ]
                 .into_iter()
-                .map(ProposalOrRef::Proposal)
+                .map(|p| ProposalOrRef::Proposal(Box::new(p)))
                 .collect(),
                 Some(&test_node().await),
                 &group.group.context().extensions,
@@ -1489,7 +1476,10 @@ mod tests {
                 Sender::NewMemberCommit,
                 #[cfg(feature = "state_update")]
                 None,
-                proposals.into_iter().map(ProposalOrRef::Proposal).collect(),
+                proposals
+                    .into_iter()
+                    .map(|p| ProposalOrRef::Proposal(Box::new(p)))
+                    .collect(),
                 Some(&test_node().await),
                 &group_extensions,
                 &BasicIdentityProvider,
@@ -1538,7 +1528,10 @@ mod tests {
                 Sender::NewMemberCommit,
                 #[cfg(feature = "state_update")]
                 None,
-                proposals.into_iter().map(ProposalOrRef::Proposal).collect(),
+                proposals
+                    .into_iter()
+                    .map(|p| ProposalOrRef::Proposal(Box::new(p)))
+                    .collect(),
                 Some(&test_node().await),
                 &group_extensions,
                 &BasicIdentityProvider,
@@ -1587,7 +1580,10 @@ mod tests {
                 Sender::NewMemberCommit,
                 #[cfg(feature = "state_update")]
                 None,
-                proposals.into_iter().map(ProposalOrRef::Proposal).collect(),
+                proposals
+                    .into_iter()
+                    .map(|p| ProposalOrRef::Proposal(Box::new(p)))
+                    .collect(),
                 Some(&test_node().await),
                 &group_extensions,
                 &BasicIdentityProvider,
@@ -4042,9 +4038,9 @@ mod tests {
 
         assert_eq!(
             processed_proposals.0,
-            vec![ProposalOrRef::Proposal(Proposal::Custom(
+            vec![ProposalOrRef::Proposal(Box::new(Proposal::Custom(
                 custom_proposal.clone()
-            ))]
+            )))]
         );
 
         #[cfg(feature = "state_update")]

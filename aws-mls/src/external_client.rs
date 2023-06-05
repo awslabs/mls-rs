@@ -70,9 +70,7 @@ where
         group_info: MLSMessage,
         tree_data: Option<&[u8]>,
     ) -> Result<ExternalGroup<C>, MlsError> {
-        ExternalGroup::join(self.config.clone(), group_info, tree_data)
-            .await
-            .map_err(Into::into)
+        ExternalGroup::join(self.config.clone(), group_info, tree_data).await
     }
 
     /// Load an existing observed group by loading a snapshot that was
@@ -83,9 +81,7 @@ where
         &self,
         snapshot: ExternalSnapshot,
     ) -> Result<ExternalGroup<C>, MlsError> {
-        ExternalGroup::from_snapshot(self.config.clone(), snapshot)
-            .await
-            .map_err(Into::into)
+        ExternalGroup::from_snapshot(self.config.clone(), snapshot).await
     }
 
     /// Utility function to validate key packages

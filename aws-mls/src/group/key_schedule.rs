@@ -83,8 +83,7 @@ impl KeySchedule {
             b"joiner",
             &context.mls_encode_to_vec()?,
             None,
-        )
-        .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?
+        )?
         .into();
 
         let key_schedule_result = Self::from_joiner(
@@ -116,9 +115,7 @@ impl KeySchedule {
         let context = context.mls_encode_to_vec()?;
 
         let epoch_secret =
-            kdf_expand_with_label(cipher_suite_provider, &epoch_seed, b"epoch", &context, None)
-                .map(Zeroizing::new)
-                .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
+            kdf_expand_with_label(cipher_suite_provider, &epoch_seed, b"epoch", &context, None)?;
 
         Self::from_epoch_secret(
             cipher_suite_provider,
@@ -300,7 +297,6 @@ impl<'a, P: CipherSuiteProvider> SecretsProducer<'a, P> {
     // lengths match in the crypto provider
     fn derive(&self, label: &[u8]) -> Result<Zeroizing<Vec<u8>>, MlsError> {
         kdf_derive_secret(self.cipher_suite_provider, self.epoch_secret, label)
-            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
     }
 }
 
@@ -359,7 +355,7 @@ impl CommitSecret {
                 let mut generator =
                     PathSecretGenerator::starting_from(cipher_suite_provider, root_secret.clone());
 
-                Ok(CommitSecret(generator.next_secret()?.path_secret))
+                Ok(CommitSecret(generator.next_secret()?))
             }
             None => Ok(Self::empty(cipher_suite_provider)),
         }

@@ -759,7 +759,7 @@ mod tests {
             };
 
             #[cfg(feature = "psk")]
-            if let Some(psk_id) = match &proposal {
+            if let Some(psk_id) = match proposal.as_ref() {
                 Proposal::Psk(PreSharedKeyProposal { psk: PreSharedKeyID { key_id: JustPreSharedKeyID::External(psk_id), .. },}) => Some(psk_id),
                 _ => None,
             } {
