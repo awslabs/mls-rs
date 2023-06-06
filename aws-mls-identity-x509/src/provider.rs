@@ -81,7 +81,7 @@ impl X509WarningProvider for NoOpWarningProvider {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 #[non_exhaustive]
 /// A customizable generic X.509 certificate identity provider.
 ///

@@ -90,6 +90,10 @@ maybe-async = { version = "0.2.7", features = ["is_sync"] }
 name = "basic_usage"
 required-features = ["tokio"]
 
+[[example]]
+name = "x509"
+required-features = ["tokio", "x509"]
+
 [[bench]]
 name = "encap"
 harness = false
