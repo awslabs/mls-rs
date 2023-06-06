@@ -184,7 +184,7 @@ where
         let proposals = filter_out_reinit_if_other_proposals(F::is_ignore(), proposals)?;
 
         #[cfg(feature = "external_commit")]
-        let proposals = filter_out_external_init(strategy, commit_sender, proposals)?;
+        let proposals = filter_out_external_init(strategy, proposals)?;
 
         self.apply_proposal_changes(strategy, proposals, commit_time)
             .await
@@ -354,9 +354,7 @@ where
                     .non_empty_leaves()
                     .all(|(_, leaf)| leaf.capabilities.extensions.contains(ext_type))
             })
-            .map_or(Ok(()), |ext_type| {
-                Err(MlsError::UnsupportedGroupExtension(ext_type))
-            });
+            .map_or(Ok(()), |ext| Err(MlsError::UnsupportedGroupExtension(ext)));
 
         let group_extensions_supported = new_capabilities_supported.and(new_extensions_supported);
 
@@ -529,9 +527,7 @@ fn leaf_supports_extensions(leaf: &LeafNode, extensions: &ExtensionList) -> Resu
         .map(|ext| ext.extension_type())
         .filter(|&ext_type| !ext_type.is_default())
         .find(|ext_type| !leaf.capabilities.extensions.contains(ext_type))
-        .map_or(Ok(()), |ext_type| {
-            Err(MlsError::UnsupportedGroupExtension(ext_type))
-        })
+        .map_or(Ok(()), |ext| Err(MlsError::UnsupportedGroupExtension(ext)))
 }
 
 pub trait FilterStrategy {
@@ -688,10 +684,7 @@ where
             p.is_by_reference(),
             (p.proposal.version >= protocol_version)
                 .then_some(())
-                .ok_or(MlsError::InvalidProtocolVersionInReInit {
-                    proposed: p.proposal.version,
-                    original: protocol_version,
-                }),
+                .ok_or(MlsError::InvalidProtocolVersionInReInit),
         )
     })?;
 
@@ -720,7 +713,6 @@ fn filter_out_reinit_if_other_proposals(
 #[cfg(feature = "external_commit")]
 fn filter_out_external_init<F>(
     strategy: &F,
-    commit_sender: LeafIndex,
     mut proposals: ProposalBundle,
 ) -> Result<ProposalBundle, MlsError>
 where
@@ -730,11 +722,7 @@ where
         apply_strategy(
             strategy,
             p.is_by_reference(),
-            Err(MlsError::InvalidProposalTypeForSender {
-                proposal_type: ProposalType::EXTERNAL_INIT,
-                sender: Sender::Member(*commit_sender),
-                by_ref: p.is_by_reference(),
-            }),
+            Err(MlsError::InvalidProposalTypeForSender),
         )
     })?;
 
@@ -792,7 +780,7 @@ where
                     if found {
                         Ok(())
                     } else {
-                        Err(MlsError::NoPskForId(id.clone()))
+                        Err(MlsError::MissingRequiredPsk)
                     }
                 }),
             JustPreSharedKeyID::Resumption(_) => Ok(()),
@@ -801,10 +789,7 @@ where
         let res = if !valid {
             Err(MlsError::InvalidTypeOrUsageInPreSharedKeyProposal)
         } else if !nonce_valid {
-            Err(MlsError::InvalidPskNonceLength {
-                expected: kdf_extract_size,
-                found: nonce_length,
-            })
+            Err(MlsError::InvalidPskNonceLength)
         } else if !is_new_id {
             Err(MlsError::DuplicatePskIds)
         } else {
@@ -890,11 +875,7 @@ pub(crate) fn proposer_can_propose(
 
     can_propose
         .then_some(())
-        .ok_or(MlsError::InvalidProposalTypeForSender {
-            proposal_type,
-            sender: proposer,
-            by_ref,
-        })
+        .ok_or(MlsError::InvalidProposalTypeForSender)
 }
 
 fn filter_out_invalid_proposers<F>(
@@ -1055,11 +1036,7 @@ fn ensure_no_proposal_by_ref(proposals: &ProposalBundle) -> Result<(), MlsError>
 fn leaf_index_of_update_sender(p: &ProposalInfo<UpdateProposal>) -> Result<LeafIndex, MlsError> {
     match p.sender {
         Sender::Member(i) => Ok(LeafIndex(i)),
-        _ => Err(MlsError::InvalidProposalTypeForSender {
-            proposal_type: ProposalType::UPDATE,
-            sender: p.sender,
-            by_ref: p.is_by_reference(),
-        }),
+        _ => Err(MlsError::InvalidProposalTypeForSender),
     }
 }
 
@@ -1088,13 +1065,15 @@ where
         .collect_vec();
 
     proposals.retain_custom(|p| {
+        let proposal_type = p.proposal.proposal_type();
+
         apply_strategy(
             strategy,
             p.is_by_reference(),
             supported_types
-                .contains(&p.proposal.proposal_type())
+                .contains(&proposal_type)
                 .then_some(())
-                .ok_or_else(|| MlsError::UnsupportedCustomProposal(p.proposal.proposal_type())),
+                .ok_or(MlsError::UnsupportedCustomProposal(proposal_type)),
         )
     })
 }

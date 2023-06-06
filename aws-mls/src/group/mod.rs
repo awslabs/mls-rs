@@ -400,11 +400,9 @@ where
             return Err(MlsError::UnsupportedProtocolVersion(protocol_version));
         }
 
-        let wire_format = welcome.wire_format();
-
-        let welcome = welcome.into_welcome().ok_or_else(|| {
-            MlsError::UnexpectedMessageType(vec![WireFormat::Welcome], wire_format)
-        })?;
+        let welcome = welcome
+            .into_welcome()
+            .ok_or(MlsError::UnexpectedMessageType)?;
 
         let cipher_suite_provider =
             cipher_suite_provider(config.crypto_provider(), welcome.cipher_suite)?;
@@ -1007,10 +1005,7 @@ where
         } else if verify_group_id && group.group_id() != expected_new_group_params.group_id {
             Err(MlsError::GroupIdMismatch)
         } else if group.context_extensions() != expected_new_group_params.extensions {
-            Err(MlsError::ReInitExtensionsMismatch(
-                group.context_extensions().clone(),
-                expected_new_group_params.extensions.clone(),
-            ))
+            Err(MlsError::ReInitExtensionsMismatch)
         } else {
             Ok((group, new_member_info))
         }
@@ -1087,12 +1082,10 @@ where
     }
 
     fn add_proposal(&self, key_package: MLSMessage) -> Result<Proposal, MlsError> {
-        let wire_format = key_package.wire_format();
-
         Ok(Proposal::Add(AddProposal {
-            key_package: key_package.into_key_package().ok_or_else(|| {
-                MlsError::UnexpectedMessageType(vec![WireFormat::KeyPackage], wire_format)
-            })?,
+            key_package: key_package
+                .into_key_package()
+                .ok_or(MlsError::UnexpectedMessageType)?,
         }))
     }
 
@@ -1451,7 +1444,7 @@ where
                     .state_repo
                     .get_epoch_mut(epoch_id)
                     .await?
-                    .ok_or(MlsError::EpochNotFound(epoch_id))?;
+                    .ok_or(MlsError::EpochNotFound)?;
 
                 let content = CiphertextProcessor::new(epoch, self.cipher_suite_provider.clone())
                     .open(message)?;
@@ -1469,7 +1462,7 @@ where
             }
 
             #[cfg(not(feature = "prior_epoch"))]
-            Err(MlsError::EpochNotFound(epoch_id))
+            Err(MlsError::EpochNotFound)
         }?;
 
         Ok(auth_content)
@@ -3435,7 +3428,7 @@ mod tests {
             .process_incoming_message(commit_output.commit_message)
             .await;
 
-        assert_matches!(res, Err(MlsError::CredentialTypeOfNewLeafIsUnsupported(_)));
+        assert_matches!(res, Err(MlsError::CredentialTypeOfNewLeafIsUnsupported));
     }
 
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
@@ -3457,10 +3450,7 @@ mod tests {
             .process_incoming_message(commit_output.commit_message)
             .await;
 
-        assert_matches!(
-            res,
-            Err(MlsError::InUseCredentialTypeUnsupportedByNewLeaf(..))
-        );
+        assert_matches!(res, Err(MlsError::InUseCredentialTypeUnsupportedByNewLeaf));
     }
 
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
@@ -3595,7 +3585,7 @@ mod tests {
             .await;
 
         // We should get a path validation error, since the path is too long
-        assert_matches!(res, Err(MlsError::WrongPathLen(4, 3)));
+        assert_matches!(res, Err(MlsError::WrongPathLen));
     }
 
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
@@ -3720,7 +3710,7 @@ mod tests {
             .process_incoming_message_with_time(commit, future_time)
             .await;
 
-        assert_matches!(res, Err(MlsError::InvalidLifetime(_, _)));
+        assert_matches!(res, Err(MlsError::InvalidLifetime));
     }
 
     #[cfg(feature = "custom_proposal")]

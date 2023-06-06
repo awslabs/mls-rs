@@ -9,7 +9,7 @@ use crate::{
         leaf_node::LeafNodeSource,
         leaf_node_validator::{LeafNodeValidator, ValidationContext},
     },
-    CryptoProvider, WireFormat,
+    CryptoProvider,
 };
 
 pub mod builder;
@@ -92,11 +92,9 @@ where
         protocol: ProtocolVersion,
         cipher_suite: CipherSuite,
     ) -> Result<KeyPackageValidationOutput, MlsError> {
-        let wire_format = package.wire_format();
-
-        let key_package = package.into_key_package().ok_or_else(|| {
-            MlsError::UnexpectedMessageType(vec![WireFormat::KeyPackage], wire_format)
-        })?;
+        let key_package = package
+            .into_key_package()
+            .ok_or(MlsError::UnexpectedMessageType)?;
 
         let cs = self
             .config

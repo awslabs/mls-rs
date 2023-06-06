@@ -10,7 +10,7 @@ use crate::{
         proposal::{ExternalInit, Proposal, RemoveProposal},
         validate_group_info, MlsError,
     },
-    Group, MLSMessage, WireFormat,
+    Group, MLSMessage,
 };
 
 #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
@@ -98,11 +98,9 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
             return Err(MlsError::UnsupportedProtocolVersion(protocol_version));
         }
 
-        let wire_format = group_info.wire_format();
-
-        let group_info = group_info.into_group_info().ok_or_else(|| {
-            MlsError::UnexpectedMessageType(vec![WireFormat::GroupInfo], wire_format)
-        })?;
+        let group_info = group_info
+            .into_group_info()
+            .ok_or(MlsError::UnexpectedMessageType)?;
 
         let cipher_suite_provider = cipher_suite_provider(
             self.config.crypto_provider(),

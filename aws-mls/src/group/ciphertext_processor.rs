@@ -86,10 +86,7 @@ where
         padding: PaddingMode,
     ) -> Result<PrivateMessage, MlsError> {
         if Sender::Member(*self.group_state.self_index()) != auth_content.content.sender {
-            return Err(MlsError::InvalidSender(
-                auth_content.content.sender,
-                ContentType::Application,
-            ));
+            return Err(MlsError::InvalidSender);
         }
 
         let content_type = ContentType::from(&auth_content.content.content);
@@ -341,7 +338,7 @@ mod test {
 
         let res = ciphertext_processor.seal(test_data.content, PaddingMode::None);
 
-        assert_matches!(res, Err(MlsError::InvalidSender(..)))
+        assert_matches!(res, Err(MlsError::InvalidSender))
     }
 
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]

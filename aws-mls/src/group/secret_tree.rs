@@ -448,10 +448,7 @@ impl SecretKeyRatchet {
         let max_generation_allowed = self.generation + MAX_RATCHET_BACK_HISTORY;
 
         if generation > max_generation_allowed {
-            return Err(MlsError::InvalidFutureGeneration(
-                generation,
-                max_generation_allowed,
-            ));
+            return Err(MlsError::InvalidFutureGeneration(generation));
         }
 
         #[cfg(not(feature = "out_of_order"))]
@@ -786,11 +783,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(MlsError::InvalidFutureGeneration(
-                invalid,
-                expected
-            ))
-            if invalid == invalid_generation && expected == MAX_RATCHET_BACK_HISTORY
+            Err(MlsError::InvalidFutureGeneration(invalid))
+            if invalid == invalid_generation
         )
     }
 

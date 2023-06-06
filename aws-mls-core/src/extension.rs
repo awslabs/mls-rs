@@ -63,11 +63,8 @@ pub enum ExtensionError {
     SerializationError(AnyError),
     #[cfg_attr(feature = "std", error(transparent))]
     DeserializationError(AnyError),
-    #[cfg_attr(
-        feature = "std",
-        error("incorrect extension type: {0:?}, expecting: {1:?}")
-    )]
-    IncorrectType(ExtensionType, ExtensionType),
+    #[cfg_attr(feature = "std", error("incorrect extension type: {0:?}"))]
+    IncorrectType(ExtensionType),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
@@ -132,10 +129,7 @@ pub trait MlsExtension: Sized {
     /// Create this type from an [Extension](self::Extension).
     fn from_extension(ext: &Extension) -> Result<Self, ExtensionError> {
         if ext.extension_type != Self::extension_type() {
-            return Err(ExtensionError::IncorrectType(
-                ext.extension_type,
-                Self::extension_type(),
-            ));
+            return Err(ExtensionError::IncorrectType(ext.extension_type));
         }
 
         Self::from_bytes(&ext.extension_data)
@@ -220,6 +214,6 @@ mod tests {
     fn incorrect_type_is_discovered() {
         let ext = Extension::new(42.into(), vec![0]);
 
-        assert_matches!(AnotherTestExtension::from_extension(&ext), Err(ExtensionError::IncorrectType(found, expected)) if found == 42.into() && expected == 43.into());
+        assert_matches!(AnotherTestExtension::from_extension(&ext), Err(ExtensionError::IncorrectType(found)) if found == 42.into());
     }
 }

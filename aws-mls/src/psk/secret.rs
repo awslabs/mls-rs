@@ -52,7 +52,7 @@ impl PskSecret {
         input: &[PskSecretInput],
         cipher_suite_provider: &P,
     ) -> Result<PskSecret, MlsError> {
-        let len = u16::try_from(input.len()).map_err(|_| MlsError::TooManyPskIds(input.len()))?;
+        let len = u16::try_from(input.len()).map_err(|_| MlsError::TooManyPskIds)?;
 
         input.iter().enumerate().try_fold(
             PskSecret::new(cipher_suite_provider),

@@ -94,7 +94,7 @@ pub(crate) async fn validate_update_path<C: IdentityProvider, CSP: CipherSuitePr
 
     (path.nodes.len() == num_filtered)
         .then_some(())
-        .ok_or(MlsError::WrongPathLen(path.nodes.len(), num_filtered))?;
+        .ok_or(MlsError::WrongPathLen)?;
 
     let mut unfiltered_nodes = vec![None; filtered.len()];
     let filtered_iter = filtered.into_iter().enumerate().filter(|(_, f)| !*f);

@@ -106,9 +106,7 @@ pub(super) async fn index_insert<I: IdentityProvider>(
             .credentials
             .contains(&cred_type)
             .then_some(())
-            .ok_or(MlsError::InUseCredentialTypeUnsupportedByNewLeaf(
-                cred_type, *i,
-            ))?;
+            .ok_or(MlsError::InUseCredentialTypeUnsupportedByNewLeaf)?;
 
         let new_cred_type = new_leaf.signing_identity.credential.credential_type();
 
@@ -116,7 +114,7 @@ pub(super) async fn index_insert<I: IdentityProvider>(
             .credentials
             .contains(&new_cred_type)
             .then_some(())
-            .ok_or(MlsError::CredentialTypeOfNewLeafIsUnsupported(cred_type))?;
+            .ok_or(MlsError::CredentialTypeOfNewLeafIsUnsupported)?;
     }
 
     Ok(())
@@ -164,10 +162,8 @@ impl TreeIndex {
             .filter_map(|(cred_type, counters)| Some(*cred_type).filter(|_| counters.used > 0))
             .find(|cred_type| !leaf_node.capabilities.credentials.contains(cred_type));
 
-        if let Some(cred_type) = in_use_cred_type_unsupported_by_new_leaf {
-            return Err(MlsError::InUseCredentialTypeUnsupportedByNewLeaf(
-                cred_type, *index,
-            ));
+        if in_use_cred_type_unsupported_by_new_leaf.is_some() {
+            return Err(MlsError::InUseCredentialTypeUnsupportedByNewLeaf);
         }
 
         let new_leaf_cred_type = leaf_node.signing_identity.credential.credential_type();
@@ -178,9 +174,7 @@ impl TreeIndex {
             .or_default();
 
         if cred_type_counters.supported != old_leaf_count as u32 {
-            return Err(MlsError::CredentialTypeOfNewLeafIsUnsupported(
-                new_leaf_cred_type,
-            ));
+            return Err(MlsError::CredentialTypeOfNewLeafIsUnsupported);
         }
 
         cred_type_counters.used += 1;

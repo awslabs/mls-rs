@@ -183,10 +183,7 @@ where
 
         if let Some(expected_id) = self.find_max_id().await?.map(|id| id + 1) {
             if epoch_id != expected_id {
-                return Err(MlsError::UnexpectedEpochId {
-                    expected: expected_id,
-                    found: epoch_id,
-                });
+                return Err(MlsError::InvalidEpoch);
             }
         }
 

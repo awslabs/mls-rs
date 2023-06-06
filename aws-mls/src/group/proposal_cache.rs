@@ -245,14 +245,14 @@ impl ProposalCache {
                     let p = self
                         .proposals
                         .get(&r)
-                        .ok_or_else(|| MlsError::ProposalNotFound(r.clone()))?
+                        .ok_or(MlsError::ProposalNotFound)?
                         .clone();
                     #[cfg(not(feature = "std"))]
                     let p = self
                         .proposals
                         .iter()
                         .find_map(|(rr, p)| (rr == &r).then_some(p))
-                        .ok_or_else(|| MlsError::ProposalNotFound(r.clone()))?
+                        .ok_or(MlsError::ProposalNotFound)?
                         .clone();
 
                     proposals.add(p.proposal, p.sender, ProposalSource::ByReference(r));
@@ -642,7 +642,7 @@ mod tests {
     use aws_mls_core::psk::PreSharedKey;
     use aws_mls_core::{
         extension::MlsExtension,
-        identity::{BasicCredential, Credential, CredentialType, CustomCredential},
+        identity::{Credential, CredentialType, CustomCredential},
     };
     use core::convert::Infallible;
     use internal::proposal_filter::{PassThroughProposalRules, ProposalInfo};
@@ -1012,14 +1012,7 @@ mod tests {
             )
             .await;
 
-        assert_matches!(
-            res,
-            Err(MlsError::InvalidProposalTypeForSender {
-                proposal_type: ProposalType::UPDATE,
-                sender: Sender::Member(_),
-                by_ref: false,
-            })
-        );
+        assert_matches!(res, Err(MlsError::InvalidProposalTypeForSender));
     }
 
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
@@ -2304,12 +2297,7 @@ mod tests {
         ))])
         .await;
 
-        assert_matches!(
-            res,
-            Err(
-                MlsError::InvalidPskNonceLength { expected, found },
-            ) if expected == test_cipher_suite_provider(TEST_CIPHER_SUITE).kdf_extract_size() && found == invalid_nonce.0.len()
-        );
+        assert_matches!(res, Err(MlsError::InvalidPskNonceLength,));
     }
 
     #[cfg(feature = "psk")]
@@ -2326,12 +2314,7 @@ mod tests {
             .send()
             .await;
 
-        assert_matches!(
-            res,
-            Err(
-                MlsError::InvalidPskNonceLength { expected, found },
-            ) if expected == test_cipher_suite_provider(TEST_CIPHER_SUITE).kdf_extract_size() && found == invalid_nonce.0.len()
-        );
+        assert_matches!(res, Err(MlsError::InvalidPskNonceLength));
     }
 
     #[cfg(feature = "psk")]
@@ -2485,13 +2468,7 @@ mod tests {
         .receive([Proposal::ReInit(make_reinit(smaller_protocol_version))])
         .await;
 
-        assert_matches!(
-            res,
-            Err(MlsError::InvalidProtocolVersionInReInit {
-                proposed,
-                original,
-            }) if proposed == smaller_protocol_version && original == TEST_PROTOCOL_VERSION
-        );
+        assert_matches!(res, Err(MlsError::InvalidProtocolVersionInReInit));
     }
 
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
@@ -2504,13 +2481,7 @@ mod tests {
             .send()
             .await;
 
-        assert_matches!(
-            res,
-            Err(MlsError::InvalidProtocolVersionInReInit {
-                proposed,
-                original,
-            }) if proposed == smaller_protocol_version && original == TEST_PROTOCOL_VERSION
-        );
+        assert_matches!(res, Err(MlsError::InvalidProtocolVersionInReInit));
     }
 
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
@@ -2564,14 +2535,7 @@ mod tests {
             .send()
             .await;
 
-        assert_matches!(
-            res,
-            Err(MlsError::InvalidProposalTypeForSender {
-                proposal_type: ProposalType::UPDATE,
-                sender: Sender::Member(_),
-                by_ref: false,
-            })
-        );
+        assert_matches!(res, Err(MlsError::InvalidProposalTypeForSender));
     }
 
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
@@ -3286,14 +3250,7 @@ mod tests {
         .receive([Proposal::ExternalInit(make_external_init())])
         .await;
 
-        assert_matches!(
-            res,
-            Err(MlsError::InvalidProposalTypeForSender {
-                proposal_type: ProposalType::EXTERNAL_INIT,
-                sender: Sender::Member(_),
-                by_ref: false,
-            })
-        );
+        assert_matches!(res, Err(MlsError::InvalidProposalTypeForSender));
     }
 
     #[cfg(feature = "external_commit")]
@@ -3306,14 +3263,7 @@ mod tests {
             .send()
             .await;
 
-        assert_matches!(
-            res,
-            Err(MlsError::InvalidProposalTypeForSender {
-                proposal_type: ProposalType::EXTERNAL_INIT,
-                sender: Sender::Member(_),
-                by_ref: false,
-            })
-        );
+        assert_matches!(res, Err(MlsError::InvalidProposalTypeForSender));
     }
 
     #[cfg(feature = "external_commit")]
@@ -3603,10 +3553,7 @@ mod tests {
         })])
         .await;
 
-        assert_matches!(
-            res,
-            Err(MlsError::InUseCredentialTypeUnsupportedByNewLeaf(c, _)) if c == BasicCredential::credential_type()
-        );
+        assert_matches!(res, Err(MlsError::InUseCredentialTypeUnsupportedByNewLeaf));
     }
 
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
@@ -3620,11 +3567,7 @@ mod tests {
             .send()
             .await;
 
-        assert_matches!(
-            res,
-            Err(MlsError::InUseCredentialTypeUnsupportedByNewLeaf(c,_)
-            ) if c == BasicCredential::credential_type()
-        );
+        assert_matches!(res, Err(MlsError::InUseCredentialTypeUnsupportedByNewLeaf));
     }
 
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
@@ -3807,7 +3750,7 @@ mod tests {
         .receive([Proposal::Psk(new_external_psk(b"abc"))])
         .await;
 
-        assert_matches!(res, Err(MlsError::NoPskForId(_)));
+        assert_matches!(res, Err(MlsError::MissingRequiredPsk));
     }
 
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
@@ -3820,7 +3763,7 @@ mod tests {
             .send()
             .await;
 
-        assert_matches!(res, Err(MlsError::NoPskForId(_)));
+        assert_matches!(res, Err(MlsError::MissingRequiredPsk));
     }
 
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
@@ -4200,16 +4143,7 @@ mod tests {
             let res = receiver.receive(proposals).await;
 
             if proposer_can_propose(proposer, proposal.proposal_type(), by_ref).is_err() {
-                assert_matches!(
-                    res,
-                    Err(
-                        MlsError::InvalidProposalTypeForSender {
-                            proposal_type: found_type,
-                            sender: found_sender,
-                            by_ref: found_by_ref,
-                        }
-                    ) if found_type == proposal.proposal_type() && found_sender == proposer && found_by_ref == by_ref
-                );
+                assert_matches!(res, Err(MlsError::InvalidProposalTypeForSender));
             } else {
                 let is_self_update = proposal.proposal_type() == ProposalType::UPDATE
                     && by_ref

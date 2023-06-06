@@ -253,7 +253,7 @@ impl TryFrom<Sender> for ProposalSender {
             Sender::External(index) => Ok(Self::External(index)),
             Sender::NewMemberProposal => Ok(Self::NewMember),
             #[cfg(feature = "external_commit")]
-            Sender::NewMemberCommit => Err(MlsError::InvalidSender(value, ContentType::Proposal)),
+            Sender::NewMemberCommit => Err(MlsError::InvalidSender),
         }
     }
 }
@@ -318,20 +318,11 @@ pub(crate) trait MessageProcessor: Send + Sync {
     ) -> Result<EventOrContent<Self::OutputType>, MlsError> {
         self.check_metadata(&message)?;
 
-        let wire_format = message.wire_format();
-
         match message.payload {
             MLSMessagePayload::Plain(plaintext) => self.verify_plaintext_authentication(plaintext),
             #[cfg(feature = "private_message")]
             MLSMessagePayload::Cipher(cipher_text) => self.process_ciphertext(cipher_text).await,
-            _ => Err(MlsError::UnexpectedMessageType(
-                vec![
-                    WireFormat::PublicMessage,
-                    #[cfg(feature = "private_message")]
-                    WireFormat::PrivateMessage,
-                ],
-                wire_format,
-            )),
+            _ => Err(MlsError::UnexpectedMessageType),
         }
     }
 
@@ -385,7 +376,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
         authenticated_data: Vec<u8>,
     ) -> Result<ApplicationMessageDescription, MlsError> {
         let Sender::Member(sender_index) = sender else {
-            return Err(MlsError::InvalidSender(sender, ContentType::Application));
+            return Err(MlsError::InvalidSender);
         };
 
         Ok(ApplicationMessageDescription {
@@ -550,9 +541,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
 
         let commit = match auth_content.content.content {
             Content::Commit(ref commit) => Ok(commit),
-            _ => Err(MlsError::NotCommitContent(
-                auth_content.content.content_type(),
-            )),
+            _ => Err(MlsError::UnexpectedMessageType),
         }?;
 
         let group_state = self.group_state();
@@ -730,7 +719,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
             match content_type {
                 ContentType::Proposal | ContentType::Commit => {
                     if context.epoch != epoch {
-                        Err(MlsError::InvalidEpoch(epoch))
+                        Err(MlsError::InvalidEpoch)
                     } else {
                         Ok(())
                     }
@@ -738,7 +727,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
                 ContentType::Application => {
                     if let Some(min) = self.min_epoch_available() {
                         if epoch < min {
-                            Err(MlsError::InvalidEpoch(epoch))
+                            Err(MlsError::InvalidEpoch)
                         } else {
                             Ok(())
                         }
@@ -752,7 +741,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
             if (content_type == ContentType::Proposal || content_type == ContentType::Commit)
                 && epoch != context.epoch
             {
-                return Err(MlsError::InvalidEpoch(epoch));
+                return Err(MlsError::InvalidEpoch);
             }
 
             // Unencrypted application messages are not allowed

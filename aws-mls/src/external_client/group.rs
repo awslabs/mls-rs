@@ -89,16 +89,15 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         group_info: MLSMessage,
         tree_data: Option<&[u8]>,
     ) -> Result<Self, MlsError> {
-        let wire_format = group_info.wire_format();
         let protocol_version = group_info.version;
 
         if !config.version_supported(protocol_version) {
             return Err(MlsError::UnsupportedProtocolVersion(protocol_version));
         }
 
-        let group_info = group_info.into_group_info().ok_or_else(|| {
-            MlsError::UnexpectedMessageType(vec![WireFormat::GroupInfo], wire_format)
-        })?;
+        let group_info = group_info
+            .into_group_info()
+            .ok_or(MlsError::UnexpectedMessageType)?;
 
         let cipher_suite_provider = cipher_suite_provider(
             config.crypto_provider(),
@@ -164,10 +163,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     pub fn insert_proposal_from_message(&mut self, message: MLSMessage) -> Result<(), MlsError> {
         let ptxt = match message.payload {
             MLSMessagePayload::Plain(p) => Ok(p),
-            _ => Err(MlsError::UnexpectedMessageType(
-                vec![WireFormat::PublicMessage],
-                message.wire_format(),
-            )),
+            _ => Err(MlsError::UnexpectedMessageType),
         }?;
 
         let auth_content: AuthenticatedContent = ptxt.into();
@@ -176,7 +172,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
 
         let proposal = match auth_content.content.content {
             Content::Proposal(p) => Ok(p),
-            content => Err(MlsError::NotProposalContent(content.content_type())),
+            _ => Err(MlsError::UnexpectedMessageType),
         }?;
 
         self.insert_proposal(proposal, proposal_ref, sender);
@@ -213,11 +209,9 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         signing_identity: &SigningIdentity,
         authenticated_data: Vec<u8>,
     ) -> Result<MLSMessage, MlsError> {
-        let wire_format = key_package.wire_format();
-
-        let key_package = key_package.into_key_package().ok_or_else(|| {
-            MlsError::UnexpectedMessageType(vec![WireFormat::KeyPackage], wire_format)
-        })?;
+        let key_package = key_package
+            .into_key_package()
+            .ok_or(MlsError::UnexpectedMessageType)?;
 
         // Check that this proposal has a valid lifetime and signature. Required capabilities are
         // not checked as they may be changed in another proposal in the same commit.
@@ -930,7 +924,7 @@ mod tests {
             .process_incoming_message(commit_output.commit_message)
             .await;
 
-        assert_matches!(res, Err(MlsError::InvalidEpoch(0)));
+        assert_matches!(res, Err(MlsError::InvalidEpoch));
     }
 
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
@@ -1204,7 +1198,7 @@ mod tests {
 
         let res = server.process_incoming_message(old_application_msg).await;
 
-        assert_matches!(res, Err(MlsError::InvalidEpoch(1)));
+        assert_matches!(res, Err(MlsError::InvalidEpoch));
     }
 
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]

@@ -68,7 +68,7 @@ impl<GS: GroupStateStorage, K: KeyPackageStorage, PS: PreSharedKeyStorage>
             .get(psk_id)
             .await
             .map_err(|e| MlsError::PskStoreError(e.into_any_error()))?
-            .ok_or_else(|| MlsError::NoPskForId(psk_id.clone()))
+            .ok_or(MlsError::MissingRequiredPsk)
     }
 
     #[maybe_async::maybe_async]

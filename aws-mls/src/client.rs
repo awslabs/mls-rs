@@ -2,18 +2,15 @@ use crate::cipher_suite::CipherSuite;
 use crate::client_builder::{BaseConfig, ClientBuilder};
 use crate::client_config::ClientConfig;
 use crate::group::framing::{
-    Content, ContentType, MLSMessage, MLSMessagePayload, PublicMessage, Sender, WireFormat,
+    Content, MLSMessage, MLSMessagePayload, PublicMessage, Sender, WireFormat,
 };
 use crate::group::message_signature::AuthenticatedContent;
 use crate::group::proposal::{AddProposal, Proposal};
-use crate::group::proposal_ref::ProposalRef;
 use crate::group::{process_group_info, Group, NewMemberInfo};
 use crate::identity::SigningIdentity;
 use crate::key_package::{KeyPackageGeneration, KeyPackageGenerator};
 use crate::protocol_version::ProtocolVersion;
 use crate::tree_kem::node::NodeIndex;
-use crate::tree_kem::Lifetime;
-use alloc::vec;
 use alloc::vec::Vec;
 use aws_mls_core::crypto::CryptoProvider;
 use aws_mls_core::error::{AnyError, IntoAnyError};
@@ -22,8 +19,6 @@ use aws_mls_core::group::{GroupStateStorage, ProposalType};
 use aws_mls_core::identity::CredentialType;
 use aws_mls_core::key_package::KeyPackageStorage;
 use aws_mls_core::keychain::KeychainStorage;
-use aws_mls_core::psk::ExternalPskId;
-use aws_mls_core::time::MlsTime;
 
 #[derive(Debug)]
 #[cfg_attr(feature = "std", derive(thiserror::Error))]
@@ -46,15 +41,15 @@ pub enum MlsError {
     #[cfg_attr(feature = "std", error(transparent))]
     SerializationError(aws_mls_codec::Error),
     #[cfg_attr(feature = "std", error(transparent))]
-    ExtensionError(ExtensionError),
+    ExtensionError(aws_mls_core::extension::ExtensionError),
     #[cfg_attr(feature = "std", error(transparent))]
-    SystemTimeError(crate::time::SystemTimeError),
+    SystemTimeError(aws_mls_core::time::SystemTimeError),
     #[cfg_attr(feature = "std", error("Cipher suite does not match"))]
     CipherSuiteMismatch,
     #[cfg_attr(feature = "std", error("Invalid commit, missing required path"))]
     CommitMissingPath,
     #[cfg_attr(feature = "std", error("plaintext message for incorrect epoch"))]
-    InvalidEpoch(u64),
+    InvalidEpoch,
     #[cfg_attr(feature = "std", error("invalid signature found"))]
     InvalidSignature,
     #[cfg_attr(feature = "std", error("invalid confirmation tag"))]
@@ -105,8 +100,8 @@ pub enum MlsError {
         error("Missing ExternalPub extension")
     )]
     MissingExternalPubExtension,
-    #[cfg_attr(feature = "std", error("Epoch {0} not found"))]
-    EpochNotFound(u64),
+    #[cfg_attr(feature = "std", error("Epoch not found"))]
+    EpochNotFound,
     #[cfg_attr(feature = "std", error("Unencrypted application message"))]
     UnencryptedApplicationMessage,
     #[cfg(feature = "external_commit")]
@@ -137,29 +132,17 @@ pub enum MlsError {
     PendingReInitNotFound,
     #[cfg_attr(
         feature = "std",
-        error("A commit after ReIinit did not output a welcome message.")
+        error("The extensions in the welcome message and in the reinit do not match.")
     )]
-    ReInitCommitDidNotOutputWelcome,
-    #[cfg_attr(
-        feature = "std",
-        error("The extensions in the welcome message {0:?} and in the reinit {1:?} do not match.")
-    )]
-    ReInitExtensionsMismatch(ExtensionList, ExtensionList),
-    #[cfg_attr(feature = "std", error("Expected commit message, found: {0:?}"))]
-    NotCommitContent(ContentType),
-    #[cfg_attr(feature = "std", error("Expected proposal message, found: {0:?}"))]
-    NotProposalContent(ContentType),
+    ReInitExtensionsMismatch,
     #[cfg_attr(feature = "std", error("signer not found for given identity"))]
     SignerNotFound,
     #[cfg_attr(feature = "std", error("commit already pending"))]
     ExistingPendingCommit,
     #[cfg_attr(feature = "std", error("pending commit not found"))]
     PendingCommitNotFound,
-    #[cfg_attr(
-        feature = "std",
-        error("unexpected message type, expected {0:?}, found {1:?}")
-    )]
-    UnexpectedMessageType(Vec<WireFormat>, WireFormat),
+    #[cfg_attr(feature = "std", error("unexpected message type for action"))]
+    UnexpectedMessageType,
     #[cfg_attr(
         feature = "std",
         error("membership tag on MLSPlaintext for non-member sender")
@@ -167,25 +150,20 @@ pub enum MlsError {
     MembershipTagForNonMember,
     #[cfg_attr(feature = "std", error("No member found for given identity id."))]
     MemberNotFound,
-    #[cfg_attr(feature = "std", error("group not found: {0:?}"))]
-    GroupNotFound(Vec<u8>),
+    #[cfg_attr(feature = "std", error("group not found"))]
+    GroupNotFound,
     #[cfg_attr(feature = "std", error("unexpected PSK ID"))]
     UnexpectedPskId,
-    #[cfg_attr(feature = "std", error("invalid sender {0:?} for content type {1:?}"))]
-    InvalidSender(Sender, ContentType),
+    #[cfg_attr(feature = "std", error("invalid sender for content type"))]
+    InvalidSender,
     #[cfg_attr(feature = "std", error("GroupID mismatch"))]
     GroupIdMismatch,
-    #[cfg_attr(
-        feature = "std",
-        error("invalid insert: expected {expected} found {found}")
-    )]
-    UnexpectedEpochId { expected: u64, found: u64 },
     #[cfg_attr(feature = "std", error("storage retention can not be zero"))]
     NonZeroRetentionRequired,
-    #[cfg_attr(feature = "std", error("Too many PSK IDs ({0}) to compute PSK secret"))]
-    TooManyPskIds(usize),
-    #[cfg_attr(feature = "std", error("No PSK for ID {0:?}"))]
-    NoPskForId(ExternalPskId),
+    #[cfg_attr(feature = "std", error("Too many PSK IDs to compute PSK secret"))]
+    TooManyPskIds,
+    #[cfg_attr(feature = "std", error("Missing required Psk"))]
+    MissingRequiredPsk,
     #[cfg_attr(feature = "std", error("Old group state not found"))]
     OldGroupStateNotFound,
     #[cfg_attr(feature = "std", error("leaf secret already consumed"))]
@@ -194,9 +172,9 @@ pub enum MlsError {
     KeyMissing(u32),
     #[cfg_attr(
         feature = "std",
-        error("requested generation {0} is too far ahead of current generation {1}")
+        error("requested generation {0} is too far ahead of current generation")
     )]
-    InvalidFutureGeneration(u32, u32),
+    InvalidFutureGeneration(u32),
     #[cfg_attr(feature = "std", error("leaf node has no children"))]
     LeafNodeNoChildren,
     #[cfg_attr(feature = "std", error("root node has no parent"))]
@@ -207,8 +185,8 @@ pub enum MlsError {
     TimeOverflow,
     #[cfg_attr(feature = "std", error("invalid leaf_node_source"))]
     InvalidLeafNodeSource,
-    #[cfg_attr(feature = "std", error("{0:?} is not within lifetime {1:?}"))]
-    InvalidLifetime(MlsTime, Lifetime),
+    #[cfg_attr(feature = "std", error("key package has expired or is not valid yet"))]
+    InvalidLifetime,
     #[cfg_attr(feature = "std", error("required extension not found"))]
     RequiredExtensionNotFound(ExtensionType),
     #[cfg_attr(feature = "std", error("required proposal not found"))]
@@ -232,28 +210,24 @@ pub enum MlsError {
     DuplicateLeafData(u32),
     #[cfg_attr(
         feature = "std",
-        error("In-use credential type {0:?} not supported by new leaf at index {1:?}")
+        error("In-use credential type not supported by new leaf at index")
     )]
-    InUseCredentialTypeUnsupportedByNewLeaf(CredentialType, u32),
+    InUseCredentialTypeUnsupportedByNewLeaf,
     #[cfg_attr(
         feature = "std",
         error("Not all members support the credential type used by new leaf")
     )]
-    CredentialTypeOfNewLeafIsUnsupported(CredentialType),
+    CredentialTypeOfNewLeafIsUnsupported,
     #[cfg_attr(
         feature = "std",
-        error(
-            "the length of the update path {0} different than the length of the direct path {1}"
-        )
+        error("the length of the update path is different than the length of the direct path")
     )]
-    WrongPathLen(usize, usize),
+    WrongPathLen,
     #[cfg_attr(
         feature = "std",
-        error("same HPKE leaf key before and after applying the update path for leaf {0:?}")
+        error("same HPKE leaf key before and after applying the update path for leaf {0}")
     )]
     SameHpkeKey(u32),
-    #[cfg_attr(feature = "std", error("{0:?} is not within lifetime {1:?}"))]
-    InvalidKeyLifetime(MlsTime, Lifetime),
     #[cfg_attr(feature = "std", error("init key is not valid for cipher suite"))]
     InvalidInitKey,
     #[cfg_attr(
@@ -261,7 +235,7 @@ pub enum MlsError {
         error("init key can not be equal to leaf node public key")
     )]
     InitLeafKeyEquality,
-    #[cfg_attr(feature = "std", error("different identity in update for leaf {0:?}"))]
+    #[cfg_attr(feature = "std", error("different identity in update for leaf {0}"))]
     DifferentIdentityInUpdate(u32),
     #[cfg_attr(feature = "std", error("update path pub key mismatch"))]
     PubKeyMismatch,
@@ -287,35 +261,22 @@ pub enum MlsError {
     InvalidCommitSelfUpdate,
     #[cfg_attr(feature = "std", error("A PreSharedKey proposal must have a PSK of type External or type Resumption and usage Application"))]
     InvalidTypeOrUsageInPreSharedKeyProposal,
+    #[cfg_attr(feature = "std", error("psk nonce length does not match cipher suite"))]
+    InvalidPskNonceLength,
     #[cfg_attr(
         feature = "std",
-        error("Expected PSK nonce with length {expected} but found length {found}")
+        error("ReInit proposal protocol version is less than the version of the original group")
     )]
-    InvalidPskNonceLength { expected: usize, found: usize },
-    #[cfg_attr(feature = "std", error("Protocol version {proposed:?} in ReInit proposal is less than version {original:?} in original group"))]
-    InvalidProtocolVersionInReInit {
-        proposed: ProtocolVersion,
-        original: ProtocolVersion,
-    },
-    #[cfg_attr(
-        feature = "std",
-        error("More than one proposal applying to leaf {0:?}")
-    )]
+    InvalidProtocolVersionInReInit,
+    #[cfg_attr(feature = "std", error("More than one proposal applying to leaf: {0}"))]
     MoreThanOneProposalForLeaf(u32),
     #[cfg_attr(
         feature = "std",
         error("More than one GroupContextExtensions proposal")
     )]
     MoreThanOneGroupContextExtensionsProposal,
-    #[cfg_attr(
-        feature = "std",
-        error("Invalid proposal of type {proposal_type:?} for sender {sender:?}")
-    )]
-    InvalidProposalTypeForSender {
-        proposal_type: ProposalType,
-        sender: Sender,
-        by_ref: bool,
-    },
+    #[cfg_attr(feature = "std", error("Invalid proposal type for sender"))]
+    InvalidProposalTypeForSender,
     #[cfg(feature = "external_commit")]
     #[cfg_attr(
         all(feature = "external_commit", feature = "std"),
@@ -361,8 +322,8 @@ pub enum MlsError {
     UnsupportedGroupExtension(ExtensionType),
     #[cfg_attr(feature = "std", error("Unsupported custom proposal type {0:?}"))]
     UnsupportedCustomProposal(ProposalType),
-    #[cfg_attr(feature = "std", error("Proposal {0:?} not found"))]
-    ProposalNotFound(ProposalRef),
+    #[cfg_attr(feature = "std", error("by-ref proposal not found"))]
+    ProposalNotFound,
     #[cfg_attr(
         feature = "std",
         error("Removing non-existing member (or removing a member twice)")
@@ -389,18 +350,21 @@ impl IntoAnyError for MlsError {
 }
 
 impl From<aws_mls_codec::Error> for MlsError {
+    #[inline]
     fn from(e: aws_mls_codec::Error) -> Self {
         MlsError::SerializationError(e)
     }
 }
 
 impl From<ExtensionError> for MlsError {
+    #[inline]
     fn from(e: ExtensionError) -> Self {
         MlsError::ExtensionError(e)
     }
 }
 
 impl From<crate::time::SystemTimeError> for MlsError {
+    #[inline]
     fn from(e: crate::time::SystemTimeError) -> Self {
         MlsError::SystemTimeError(e)
     }
@@ -665,7 +629,7 @@ where
             .state(group_id)
             .await
             .map_err(|e| MlsError::GroupStorageError(e.into_any_error()))?
-            .ok_or(MlsError::GroupNotFound(group_id.to_vec()))?;
+            .ok_or(MlsError::GroupNotFound)?;
 
         Group::from_snapshot(self.config.clone(), snapshot).await
     }
@@ -688,23 +652,23 @@ where
         authenticated_data: Vec<u8>,
     ) -> Result<MLSMessage, MlsError> {
         let protocol_version = group_info.version;
-        let wire_format = group_info.wire_format();
+        //let wire_format = group_info.wire_format();
 
         if !self.config.version_supported(protocol_version) {
-            return Err(MlsError::UnsupportedProtocolVersion(group_info.version));
+            return Err(MlsError::UnsupportedProtocolVersion(protocol_version));
         }
 
-        let group_info = group_info.into_group_info().ok_or_else(|| {
-            MlsError::UnexpectedMessageType(vec![WireFormat::GroupInfo], wire_format)
-        })?;
+        let group_info = group_info
+            .into_group_info()
+            .ok_or(MlsError::UnexpectedMessageType)?;
+
+        let cipher_suite = group_info.group_context.cipher_suite;
 
         let cipher_suite_provider = self
             .config
             .crypto_provider()
-            .cipher_suite_provider(group_info.group_context.cipher_suite)
-            .ok_or(MlsError::UnsupportedCipherSuite(
-                group_info.group_context.cipher_suite,
-            ))?;
+            .cipher_suite_provider(cipher_suite)
+            .ok_or(MlsError::UnsupportedCipherSuite(cipher_suite))?;
 
         let group_context = process_group_info(
             protocol_version,
@@ -1053,7 +1017,7 @@ mod tests {
 
         let res = alice.commit_external(msg, alice_identity).await.map(|_| ());
 
-        assert_matches!(res, Err(MlsError::UnexpectedMessageType(_, _)));
+        assert_matches!(res, Err(MlsError::UnexpectedMessageType));
     }
 
     #[cfg(feature = "external_commit")]

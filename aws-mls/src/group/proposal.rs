@@ -53,11 +53,9 @@ impl TryFrom<MLSMessage> for AddProposal {
     type Error = MlsError;
 
     fn try_from(value: MLSMessage) -> Result<Self, Self::Error> {
-        let format = value.wire_format();
-
         value
             .into_key_package()
-            .ok_or_else(|| MlsError::UnexpectedMessageType(vec![WireFormat::KeyPackage], format))
+            .ok_or(MlsError::UnexpectedMessageType)
             .map(Into::into)
     }
 }
