@@ -64,6 +64,10 @@ struct CommitOptions {
     pub ratchet_tree_extension: bool,
 }
 
+#[cfg_attr(
+    all(feature = "ffi", not(test)),
+    safer_ffi_gen::ffi_type(clone, opaque)
+)]
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 /// Result of MLS commit operation using
