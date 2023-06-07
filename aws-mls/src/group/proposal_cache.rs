@@ -1,7 +1,7 @@
-use super::{proposal_filter::FailInvalidProposal, *};
+use super::*;
 use crate::{
     group::proposal_filter::{
-        IgnoreInvalidByRefProposal, ProposalApplier, ProposalBundle, ProposalRules, ProposalSource,
+        FilterStrategy, ProposalApplier, ProposalBundle, ProposalRules, ProposalSource,
     },
     time::MlsTime,
 };
@@ -178,7 +178,7 @@ impl ProposalCache {
         let time = None;
 
         let applier_output = applier
-            .apply_proposals(&IgnoreInvalidByRefProposal, &sender, proposals, time)
+            .apply_proposals(FilterStrategy::IgnoreByRef, &sender, proposals, time)
             .await?;
 
         #[cfg(feature = "state_update")]
@@ -290,7 +290,7 @@ impl ProposalCache {
         );
 
         let applier_output = applier
-            .apply_proposals(&FailInvalidProposal, &sender, proposals, commit_time)
+            .apply_proposals(FilterStrategy::IgnoreNone, &sender, proposals, commit_time)
             .await?;
 
         #[cfg(feature = "state_update")]

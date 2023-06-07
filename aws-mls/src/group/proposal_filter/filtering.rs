@@ -94,16 +94,13 @@ where
     }
 
     #[maybe_async::maybe_async]
-    pub(crate) async fn apply_proposals<F>(
+    pub(crate) async fn apply_proposals(
         &self,
-        strategy: &F,
+        strategy: FilterStrategy,
         commit_sender: &Sender,
         proposals: ProposalBundle,
         commit_time: Option<MlsTime>,
-    ) -> Result<ApplyProposalsOutput, MlsError>
-    where
-        F: FilterStrategy,
-    {
+    ) -> Result<ApplyProposalsOutput, MlsError> {
         let output = match commit_sender {
             Sender::Member(sender) => {
                 self.apply_proposals_from_member(
@@ -138,16 +135,13 @@ where
     }
 
     #[maybe_async::maybe_async]
-    async fn apply_proposals_from_member<F>(
+    async fn apply_proposals_from_member(
         &self,
-        strategy: &F,
+        strategy: FilterStrategy,
         commit_sender: LeafIndex,
         proposals: ProposalBundle,
         commit_time: Option<MlsTime>,
-    ) -> Result<ApplyProposalsOutput, MlsError>
-    where
-        F: FilterStrategy,
-    {
+    ) -> Result<ApplyProposalsOutput, MlsError> {
         let proposals = filter_out_invalid_proposers(strategy, proposals)?;
 
         let mut proposals: ProposalBundle =
@@ -181,7 +175,7 @@ where
 
         let proposals = filter_out_extra_group_context_extensions(strategy, proposals)?;
         let proposals = filter_out_invalid_reinit(strategy, proposals, self.protocol_version)?;
-        let proposals = filter_out_reinit_if_other_proposals(F::is_ignore(), proposals)?;
+        let proposals = filter_out_reinit_if_other_proposals(strategy.is_ignore(), proposals)?;
 
         #[cfg(feature = "external_commit")]
         let proposals = filter_out_external_init(strategy, proposals)?;
@@ -214,7 +208,7 @@ where
         ensure_proposals_in_external_commit_are_allowed(&proposals)?;
         ensure_no_proposal_by_ref(&proposals)?;
 
-        let mut proposals = filter_out_invalid_proposers(&FailInvalidProposal, proposals)?;
+        let mut proposals = filter_out_invalid_proposers(FilterStrategy::IgnoreNone, proposals)?;
 
         // We ignore the strategy here because the check above ensures all updates are from members
         proposals.update_senders = proposals
@@ -224,7 +218,7 @@ where
             .collect::<Result<_, _>>()?;
 
         let proposals = filter_out_invalid_psks(
-            &FailInvalidProposal,
+            FilterStrategy::IgnoreNone,
             self.cipher_suite_provider,
             proposals,
             self.psk_storage,
@@ -232,7 +226,7 @@ where
         .await?;
 
         let mut output = self
-            .apply_proposal_changes(&FailInvalidProposal, proposals, commit_time)
+            .apply_proposal_changes(FilterStrategy::IgnoreNone, proposals, commit_time)
             .await?;
 
         output.external_init_index = Some(
@@ -248,15 +242,12 @@ where
     }
 
     #[maybe_async::maybe_async]
-    async fn apply_proposal_changes<F>(
+    async fn apply_proposal_changes(
         &self,
-        strategy: &F,
+        strategy: FilterStrategy,
         mut proposals: ProposalBundle,
         commit_time: Option<MlsTime>,
-    ) -> Result<ApplyProposalsOutput, MlsError>
-    where
-        F: FilterStrategy,
-    {
+    ) -> Result<ApplyProposalsOutput, MlsError> {
         let extensions_proposal_and_capabilities = proposals
             .group_context_extensions_proposal()
             .cloned()
@@ -302,16 +293,15 @@ where
     }
 
     #[maybe_async::maybe_async]
-    async fn apply_proposals_with_new_capabilities<F>(
+    async fn apply_proposals_with_new_capabilities(
         &self,
-        strategy: &F,
+        strategy: FilterStrategy,
         mut proposals: ProposalBundle,
         group_context_extensions_proposal: ProposalInfo<ExtensionList>,
         new_required_capabilities: Option<RequiredCapabilitiesExt>,
         commit_time: Option<MlsTime>,
     ) -> Result<ApplyProposalsOutput, MlsError>
     where
-        F: FilterStrategy,
         C: IdentityProvider,
     {
         // Apply adds, updates etc. in the context of new extensions
@@ -383,17 +373,14 @@ where
     }
 
     #[maybe_async::maybe_async]
-    async fn apply_tree_changes<F>(
+    async fn apply_tree_changes(
         &self,
-        strategy: &F,
+        strategy: FilterStrategy,
         proposals: ProposalBundle,
         group_extensions_in_use: &ExtensionList,
         required_capabilities: Option<&RequiredCapabilitiesExt>,
         commit_time: Option<MlsTime>,
-    ) -> Result<ApplyProposalsOutput, MlsError>
-    where
-        F: FilterStrategy,
-    {
+    ) -> Result<ApplyProposalsOutput, MlsError> {
         let mut applied_proposals = self
             .validate_new_nodes(
                 strategy,
@@ -411,7 +398,7 @@ where
                 &mut applied_proposals,
                 self.identity_provider,
                 self.cipher_suite_provider,
-                F::is_ignore(),
+                strategy.is_ignore(),
             )
             .await?;
 
@@ -425,17 +412,14 @@ where
     }
 
     #[maybe_async::maybe_async]
-    async fn validate_new_nodes<F>(
+    async fn validate_new_nodes(
         &self,
-        strategy: &F,
+        strategy: FilterStrategy,
         mut proposals: ProposalBundle,
         group_extensions_in_use: &ExtensionList,
         required_capabilities: Option<&RequiredCapabilitiesExt>,
         commit_time: Option<MlsTime>,
-    ) -> Result<ProposalBundle, MlsError>
-    where
-        F: FilterStrategy,
-    {
+    ) -> Result<ProposalBundle, MlsError> {
         let leaf_node_validator = &LeafNodeValidator::new(
             self.cipher_suite_provider,
             required_capabilities,
@@ -530,53 +514,42 @@ fn leaf_supports_extensions(leaf: &LeafNode, extensions: &ExtensionList) -> Resu
         .map_or(Ok(()), |ext| Err(MlsError::UnsupportedGroupExtension(ext)))
 }
 
-pub trait FilterStrategy {
-    fn ignore(&self, by_ref: bool) -> bool;
-    fn is_ignore() -> bool;
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct IgnoreInvalidByRefProposal;
-
-impl FilterStrategy for IgnoreInvalidByRefProposal {
-    fn ignore(&self, by_ref: bool) -> bool {
-        by_ref
-    }
-
-    fn is_ignore() -> bool {
-        true
-    }
-}
-
 #[derive(Clone, Copy, Debug)]
-pub struct FailInvalidProposal;
+pub enum FilterStrategy {
+    IgnoreByRef,
+    IgnoreNone,
+}
 
-impl FilterStrategy for FailInvalidProposal {
-    fn ignore(&self, _: bool) -> bool {
-        false
+impl FilterStrategy {
+    fn ignore(self, by_ref: bool) -> bool {
+        match self {
+            FilterStrategy::IgnoreByRef => by_ref,
+            FilterStrategy::IgnoreNone => false,
+        }
     }
 
-    fn is_ignore() -> bool {
-        false
+    fn is_ignore(self) -> bool {
+        match self {
+            FilterStrategy::IgnoreByRef => true,
+            FilterStrategy::IgnoreNone => false,
+        }
     }
 }
 
-fn apply_strategy<F>(strategy: &F, by_ref: bool, r: Result<(), MlsError>) -> Result<bool, MlsError>
-where
-    F: FilterStrategy,
-{
+fn apply_strategy(
+    strategy: FilterStrategy,
+    by_ref: bool,
+    r: Result<(), MlsError>,
+) -> Result<bool, MlsError> {
     r.map(|_| true)
         .or_else(|error| strategy.ignore(by_ref).then_some(false).ok_or(error))
 }
 
-fn filter_out_update_for_committer<F>(
-    strategy: &F,
+fn filter_out_update_for_committer(
+    strategy: FilterStrategy,
     commit_sender: LeafIndex,
     mut proposals: ProposalBundle,
-) -> Result<ProposalBundle, MlsError>
-where
-    F: FilterStrategy,
-{
+) -> Result<ProposalBundle, MlsError> {
     proposals.retain_by_type::<UpdateProposal, _, _>(|p| {
         apply_strategy(
             strategy,
@@ -589,14 +562,11 @@ where
     Ok(proposals)
 }
 
-fn filter_out_removal_of_committer<F>(
-    strategy: &F,
+fn filter_out_removal_of_committer(
+    strategy: FilterStrategy,
     commit_sender: LeafIndex,
     mut proposals: ProposalBundle,
-) -> Result<ProposalBundle, MlsError>
-where
-    F: FilterStrategy,
-{
+) -> Result<ProposalBundle, MlsError> {
     proposals.retain_by_type::<RemoveProposal, _, _>(|p| {
         apply_strategy(
             strategy,
@@ -611,14 +581,13 @@ where
 
 #[cfg(feature = "external_proposal")]
 #[maybe_async::maybe_async]
-async fn filter_out_invalid_group_extensions<F, C>(
-    strategy: &F,
+async fn filter_out_invalid_group_extensions<C>(
+    strategy: FilterStrategy,
     mut proposals: ProposalBundle,
     identity_provider: &C,
     commit_time: Option<MlsTime>,
 ) -> Result<ProposalBundle, MlsError>
 where
-    F: FilterStrategy,
     C: IdentityProvider,
 {
     let mut bad_indices = Vec::new();
@@ -648,13 +617,10 @@ where
     Ok(proposals)
 }
 
-fn filter_out_extra_group_context_extensions<F>(
-    strategy: &F,
+fn filter_out_extra_group_context_extensions(
+    strategy: FilterStrategy,
     mut proposals: ProposalBundle,
-) -> Result<ProposalBundle, MlsError>
-where
-    F: FilterStrategy,
-{
+) -> Result<ProposalBundle, MlsError> {
     let mut found = false;
 
     proposals.retain_by_type::<ExtensionList, _, _>(|p| {
@@ -670,14 +636,11 @@ where
     Ok(proposals)
 }
 
-fn filter_out_invalid_reinit<F>(
-    strategy: &F,
+fn filter_out_invalid_reinit(
+    strategy: FilterStrategy,
     mut proposals: ProposalBundle,
     protocol_version: ProtocolVersion,
-) -> Result<ProposalBundle, MlsError>
-where
-    F: FilterStrategy,
-{
+) -> Result<ProposalBundle, MlsError> {
     proposals.retain_by_type::<ReInitProposal, _, _>(|p| {
         apply_strategy(
             strategy,
@@ -711,13 +674,10 @@ fn filter_out_reinit_if_other_proposals(
 }
 
 #[cfg(feature = "external_commit")]
-fn filter_out_external_init<F>(
-    strategy: &F,
+fn filter_out_external_init(
+    strategy: FilterStrategy,
     mut proposals: ProposalBundle,
-) -> Result<ProposalBundle, MlsError>
-where
-    F: FilterStrategy,
-{
+) -> Result<ProposalBundle, MlsError> {
     proposals.retain_by_type::<ExternalInit, _, _>(|p| {
         apply_strategy(
             strategy,
@@ -731,14 +691,13 @@ where
 
 #[cfg(feature = "psk")]
 #[maybe_async::maybe_async]
-async fn filter_out_invalid_psks<F, P, CP>(
-    strategy: &F,
+async fn filter_out_invalid_psks<P, CP>(
+    strategy: FilterStrategy,
     cipher_suite_provider: &CP,
     mut proposals: ProposalBundle,
     psk_storage: &P,
 ) -> Result<ProposalBundle, MlsError>
 where
-    F: FilterStrategy,
     P: PreSharedKeyStorage,
     CP: CipherSuiteProvider,
 {
@@ -814,14 +773,13 @@ where
 
 #[cfg(not(feature = "psk"))]
 #[maybe_async::maybe_async]
-async fn filter_out_invalid_psks<F, P, CP>(
-    _: &F,
+async fn filter_out_invalid_psks<P, CP>(
+    _: FilterStrategy,
     _: &CP,
     proposals: ProposalBundle,
     _: &P,
 ) -> Result<ProposalBundle, MlsError>
 where
-    F: FilterStrategy,
     P: PreSharedKeyStorage,
     CP: CipherSuiteProvider,
 {
@@ -878,13 +836,10 @@ pub(crate) fn proposer_can_propose(
         .ok_or(MlsError::InvalidProposalTypeForSender)
 }
 
-fn filter_out_invalid_proposers<F>(
-    strategy: &F,
+fn filter_out_invalid_proposers(
+    strategy: FilterStrategy,
     mut proposals: ProposalBundle,
-) -> Result<ProposalBundle, MlsError>
-where
-    F: FilterStrategy,
-{
+) -> Result<ProposalBundle, MlsError> {
     for i in (0..proposals.add_proposals().len()).rev() {
         let p = &proposals.add_proposals()[i];
         let res = proposer_can_propose(p.sender, ProposalType::ADD, p.is_by_reference());
@@ -1051,14 +1006,11 @@ async fn insert_external_leaf<I: IdentityProvider>(
 }
 
 #[cfg(feature = "custom_proposal")]
-fn filter_out_unsupported_custom_proposals<F>(
+fn filter_out_unsupported_custom_proposals(
     proposals: &mut ProposalBundle,
     tree: &TreeKemPublic,
-    strategy: &F,
-) -> Result<(), MlsError>
-where
-    F: FilterStrategy,
-{
+    strategy: FilterStrategy,
+) -> Result<(), MlsError> {
     let supported_types = proposals
         .custom_proposal_types()
         .filter(|t| tree.can_support_proposal(*t))
