@@ -39,9 +39,9 @@ pub enum MlsError {
     #[cfg_attr(feature = "std", error(transparent))]
     UserDefinedProposalFilterError(AnyError),
     #[cfg_attr(feature = "std", error(transparent))]
-    SerializationError(aws_mls_codec::Error),
+    SerializationError(AnyError),
     #[cfg_attr(feature = "std", error(transparent))]
-    ExtensionError(aws_mls_core::extension::ExtensionError),
+    ExtensionError(AnyError),
     #[cfg_attr(feature = "std", error(transparent))]
     SystemTimeError(aws_mls_core::time::SystemTimeError),
     #[cfg_attr(feature = "std", error("Cipher suite does not match"))]
@@ -352,14 +352,14 @@ impl IntoAnyError for MlsError {
 impl From<aws_mls_codec::Error> for MlsError {
     #[inline]
     fn from(e: aws_mls_codec::Error) -> Self {
-        MlsError::SerializationError(e)
+        MlsError::SerializationError(e.into_any_error())
     }
 }
 
 impl From<ExtensionError> for MlsError {
     #[inline]
     fn from(e: ExtensionError) -> Self {
-        MlsError::ExtensionError(e)
+        MlsError::ExtensionError(e.into_any_error())
     }
 }
 
@@ -622,6 +622,7 @@ where
     /// [GroupStateStorage](crate::GroupStateStorage) that
     /// this client was configured to use.
     #[maybe_async::maybe_async]
+    #[inline(never)]
     pub async fn load_group(&self, group_id: &[u8]) -> Result<Group<C>, MlsError> {
         let snapshot = self
             .config

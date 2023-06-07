@@ -54,6 +54,7 @@ enum TreeHashInput<'a> {
 }
 
 impl TreeKemPublic {
+    #[inline(never)]
     pub fn tree_hash<P: CipherSuiteProvider>(
         &mut self,
         cipher_suite_provider: &P,

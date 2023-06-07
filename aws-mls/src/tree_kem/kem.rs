@@ -48,6 +48,7 @@ impl<'a> TreeKem<'a> {
 
     #[allow(clippy::too_many_arguments)]
     #[maybe_async::maybe_async]
+    #[inline(never)]
     pub async fn encap<C, P>(
         self,
         context: &mut GroupContext,

@@ -213,6 +213,7 @@ pub(crate) fn find_node_data(
     }
 }
 
+#[inline(never)]
 pub(crate) fn commit_sender(
     sender: &Sender,
     #[cfg(feature = "external_commit")] provisional_state: &ProvisionalState,

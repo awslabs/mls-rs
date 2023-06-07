@@ -693,7 +693,6 @@ where
     }
 
     /// Unique identifier for this group.
-    #[inline(always)]
     pub fn group_id(&self) -> &[u8] {
         &self.context().group_id
     }
@@ -1498,6 +1497,7 @@ where
     /// [`GroupStateStorage`](crate::GroupStateStorage)
     /// in use by this group until [`Group::write_to_storage`] is called.
     #[maybe_async::maybe_async]
+    #[inline(never)]
     pub async fn process_incoming_message(
         &mut self,
         message: MLSMessage,
@@ -1745,6 +1745,7 @@ where
     }
 
     #[cfg(feature = "secret_tree_access")]
+    #[inline(never)]
     pub fn next_encryption_key(&mut self) -> Result<MessageKey, MlsError> {
         self.epoch_secrets.secret_tree.next_message_key(
             &self.cipher_suite_provider,

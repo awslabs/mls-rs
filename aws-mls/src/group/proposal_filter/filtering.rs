@@ -68,6 +68,7 @@ where
     CSP: CipherSuiteProvider,
 {
     #[allow(clippy::too_many_arguments)]
+    #[inline(never)]
     pub(crate) fn new(
         original_tree: &'a TreeKemPublic,
         protocol_version: ProtocolVersion,
@@ -601,7 +602,7 @@ where
                 .verify_all(identity_provider, commit_time, p.proposal())
                 .await
                 .map_err(|e| MlsError::IdentityProviderError(e.into_any_error())),
-            Err(e) => Err(MlsError::ExtensionError(e)),
+            Err(e) => Err(MlsError::from(e)),
         };
 
         if !apply_strategy(strategy, p.is_by_reference(), res)? {

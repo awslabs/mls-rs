@@ -96,6 +96,7 @@ impl AuthenticatedContent {
         }
     }
 
+    #[inline(never)]
     pub(crate) fn new_signed<P: CipherSuiteProvider>(
         signature_provider: &P,
         context: &GroupContext,

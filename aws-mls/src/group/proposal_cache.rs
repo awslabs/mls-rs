@@ -100,6 +100,7 @@ impl ProposalCache {
 
     #[allow(clippy::too_many_arguments)]
     #[maybe_async::maybe_async]
+    #[inline(never)]
     pub async fn prepare_commit<C, F, P, CSP>(
         &self,
         sender: Sender,
@@ -214,6 +215,7 @@ impl ProposalCache {
 
     #[allow(clippy::too_many_arguments)]
     #[maybe_async::maybe_async]
+    #[inline(never)]
     pub async fn resolve_for_commit<C, F, P, CSP>(
         &self,
         sender: Sender,

@@ -352,6 +352,7 @@ impl MLSMessage {
     }
 
     /// Deserialize a message from transport.
+    #[inline(never)]
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, MlsError> {
         Self::mls_decode(&mut &*bytes).map_err(Into::into)
     }
