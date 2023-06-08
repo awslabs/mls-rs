@@ -45,7 +45,6 @@ pub(crate) struct ProposalApplier<'a, C, P, CSP> {
     cipher_suite_provider: &'a CSP,
     group_id: &'a [u8],
     original_group_extensions: &'a ExtensionList,
-    original_required_capabilities: Option<&'a RequiredCapabilitiesExt>,
     #[cfg(feature = "external_commit")]
     external_leaf: Option<&'a LeafNode>,
     identity_provider: &'a C,
@@ -75,7 +74,6 @@ where
         cipher_suite_provider: &'a CSP,
         group_id: &'a [u8],
         original_group_extensions: &'a ExtensionList,
-        original_required_capabilities: Option<&'a RequiredCapabilitiesExt>,
         #[cfg(feature = "external_commit")] external_leaf: Option<&'a LeafNode>,
         identity_provider: &'a C,
         psk_storage: &'a P,
@@ -86,7 +84,6 @@ where
             cipher_suite_provider,
             group_id,
             original_group_extensions,
-            original_required_capabilities,
             #[cfg(feature = "external_commit")]
             external_leaf,
             identity_provider,
@@ -285,7 +282,6 @@ where
                     strategy,
                     proposals,
                     self.original_group_extensions,
-                    self.original_required_capabilities,
                     commit_time,
                 )
                 .await
@@ -311,7 +307,6 @@ where
                 strategy,
                 proposals.clone(),
                 group_context_extensions_proposal.proposal(),
-                new_required_capabilities.as_ref(),
                 commit_time,
             )
             .await?;
@@ -362,7 +357,6 @@ where
                         strategy,
                         proposals,
                         self.original_group_extensions,
-                        self.original_required_capabilities,
                         commit_time,
                     )
                     .await
@@ -379,17 +373,10 @@ where
         strategy: FilterStrategy,
         proposals: ProposalBundle,
         group_extensions_in_use: &ExtensionList,
-        required_capabilities: Option<&RequiredCapabilitiesExt>,
         commit_time: Option<MlsTime>,
     ) -> Result<ApplyProposalsOutput, MlsError> {
         let mut applied_proposals = self
-            .validate_new_nodes(
-                strategy,
-                proposals,
-                group_extensions_in_use,
-                required_capabilities,
-                commit_time,
-            )
+            .validate_new_nodes(strategy, proposals, group_extensions_in_use, commit_time)
             .await?;
 
         let mut new_tree = self.original_tree.clone();
@@ -418,12 +405,13 @@ where
         strategy: FilterStrategy,
         mut proposals: ProposalBundle,
         group_extensions_in_use: &ExtensionList,
-        required_capabilities: Option<&RequiredCapabilitiesExt>,
         commit_time: Option<MlsTime>,
     ) -> Result<ProposalBundle, MlsError> {
+        let capabilities = group_extensions_in_use.get_as()?;
+
         let leaf_node_validator = &LeafNodeValidator::new(
             self.cipher_suite_provider,
-            required_capabilities,
+            capabilities.as_ref(),
             self.identity_provider,
             Some(group_extensions_in_use),
         );

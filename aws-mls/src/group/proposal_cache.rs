@@ -111,7 +111,7 @@ impl ProposalCache {
         public_tree: &TreeKemPublic,
         #[cfg(feature = "external_commit")] external_leaf: Option<&LeafNode>,
         psk_storage: &P,
-        user_filter: F,
+        user_rules: F,
         roster: &[Member],
     ) -> Result<ProvisionalState, MlsError>
     where
@@ -120,57 +120,19 @@ impl ProposalCache {
         P: PreSharedKeyStorage,
         CSP: CipherSuiteProvider,
     {
-        let proposals = self
-            .proposals
-            .iter()
-            .map(|(proposal_ref, proposal)| {
-                (
-                    proposal.proposal.clone(),
-                    proposal.sender,
-                    ProposalSource::ByReference(proposal_ref.clone()),
-                )
-            })
-            .chain(
-                additional_proposals
-                    .into_iter()
-                    .map(|p| (p, sender, ProposalSource::ByValue)),
-            )
-            .fold(
-                ProposalBundle::default(),
-                |mut proposals, (proposal, sender, proposal_ref)| {
-                    proposals.add(proposal, sender, proposal_ref);
-                    proposals
-                },
+        let mut proposals = ProposalBundle::default();
+
+        for (r, p) in &self.proposals {
+            proposals.add(
+                p.proposal.clone(),
+                p.sender,
+                ProposalSource::ByReference(r.clone()),
             );
+        }
 
-        let group_extensions = &group_context.extensions;
-
-        let proposals = user_filter
-            .filter(sender, roster, group_extensions, proposals)
-            .await
-            .map_err(|e| MlsError::UserDefinedProposalFilterError(e.into_any_error()))?;
-
-        #[cfg(feature = "custom_proposal")]
-        let mut proposals = proposals;
-
-        #[cfg(feature = "custom_proposal")]
-        self.expand_custom_proposals(roster, group_extensions, &mut proposals, &user_filter)
-            .await?;
-
-        let required_capabilities = group_extensions.get_as()?;
-
-        let applier = ProposalApplier::new(
-            public_tree,
-            self.protocol_version,
-            cipher_suite_provider,
-            &self.group_id,
-            group_extensions,
-            required_capabilities.as_ref(),
-            #[cfg(feature = "external_commit")]
-            external_leaf,
-            identity_provider,
-            psk_storage,
-        );
+        for p in additional_proposals.into_iter() {
+            proposals.add(p, sender, ProposalSource::ByValue);
+        }
 
         #[cfg(feature = "std")]
         let time = Some(MlsTime::now());
@@ -178,39 +140,24 @@ impl ProposalCache {
         #[cfg(not(feature = "std"))]
         let time = None;
 
-        let applier_output = applier
-            .apply_proposals(FilterStrategy::IgnoreByRef, &sender, proposals, time)
-            .await?;
-
-        #[cfg(feature = "state_update")]
-        let rejected_proposals = rejected_proposals(
-            self.proposals.clone(),
-            &applier_output.applied_proposals,
-            &sender,
-        );
-
-        let mut group_context = group_context.clone();
-        group_context.epoch += 1;
-
-        if let Some(ext) = applier_output
-            .applied_proposals
-            .group_context_extensions_proposal()
-        {
-            group_context.extensions = ext.proposal.clone();
-        }
-
-        let state = ProvisionalState {
-            public_tree: applier_output.new_tree,
-            group_context,
-            applied_proposals: applier_output.applied_proposals,
-            #[cfg(feature = "external_commit")]
-            external_init_index: applier_output.external_init_index,
-            indexes_of_added_kpkgs: applier_output.indexes_of_added_kpkgs,
+        self.apply_resolved(
+            sender,
             #[cfg(feature = "state_update")]
-            rejected_proposals,
-        };
-
-        Ok(state)
+            Some(sender),
+            proposals,
+            #[cfg(feature = "external_commit")]
+            external_leaf,
+            group_context,
+            identity_provider,
+            cipher_suite_provider,
+            public_tree,
+            psk_storage,
+            user_rules,
+            time,
+            roster,
+            true,
+        )
+        .await
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -262,12 +209,64 @@ impl ProposalCache {
             };
         }
 
+        self.apply_resolved(
+            sender,
+            #[cfg(feature = "state_update")]
+            receiver.map(|i| Sender::Member(*i)),
+            proposals,
+            #[cfg(feature = "external_commit")]
+            external_leaf,
+            group_context,
+            identity_provider,
+            cipher_suite_provider,
+            public_tree,
+            psk_storage,
+            user_rules,
+            commit_time,
+            roster,
+            false,
+        )
+        .await
+    }
+
+    #[inline(never)]
+    #[allow(clippy::too_many_arguments)]
+    #[maybe_async::maybe_async]
+    pub async fn apply_resolved<C, F, P, CSP>(
+        &self,
+        sender: Sender,
+        #[cfg(feature = "state_update")] receiver: Option<Sender>,
+        mut proposals: ProposalBundle,
+        #[cfg(feature = "external_commit")] external_leaf: Option<&LeafNode>,
+        group_context: &GroupContext,
+        identity_provider: &C,
+        cipher_suite_provider: &CSP,
+        public_tree: &TreeKemPublic,
+        psk_storage: &P,
+        user_rules: F,
+        commit_time: Option<MlsTime>,
+        roster: &[Member],
+        for_prepare_commit: bool,
+    ) -> Result<ProvisionalState, MlsError>
+    where
+        C: IdentityProvider,
+        F: ProposalRules,
+        P: PreSharedKeyStorage,
+        CSP: CipherSuiteProvider,
+    {
         let group_extensions = &group_context.extensions;
 
-        user_rules
-            .validate(sender, roster, group_extensions, &proposals)
-            .await
-            .map_err(|e| MlsError::UserDefinedProposalFilterError(e.into_any_error()))?;
+        if for_prepare_commit {
+            proposals = user_rules
+                .filter(sender, roster, group_extensions, proposals)
+                .await
+                .map_err(|e| MlsError::UserDefinedProposalFilterError(e.into_any_error()))?;
+        } else {
+            user_rules
+                .validate(sender, roster, group_extensions, &proposals)
+                .await
+                .map_err(|e| MlsError::UserDefinedProposalFilterError(e.into_any_error()))?;
+        }
 
         #[cfg(feature = "custom_proposal")]
         let mut proposals = proposals;
@@ -276,32 +275,35 @@ impl ProposalCache {
         self.expand_custom_proposals(roster, group_extensions, &mut proposals, &user_rules)
             .await?;
 
-        let required_capabilities = group_extensions.get_as()?;
-
         let applier = ProposalApplier::new(
             public_tree,
             self.protocol_version,
             cipher_suite_provider,
             &self.group_id,
             group_extensions,
-            required_capabilities.as_ref(),
             #[cfg(feature = "external_commit")]
             external_leaf,
             identity_provider,
             psk_storage,
         );
 
-        let applier_output = applier
-            .apply_proposals(FilterStrategy::IgnoreNone, &sender, proposals, commit_time)
-            .await?;
+        let applier_output = if for_prepare_commit {
+            applier
+                .apply_proposals(FilterStrategy::IgnoreByRef, &sender, proposals, commit_time)
+                .await?
+        } else {
+            applier
+                .apply_proposals(FilterStrategy::IgnoreNone, &sender, proposals, commit_time)
+                .await?
+        };
 
         #[cfg(feature = "state_update")]
         let rejected_proposals = receiver
-            .map(|index| {
+            .map(|sender| {
                 rejected_proposals(
                     self.proposals.clone(),
                     &applier_output.applied_proposals,
-                    &Sender::Member(*index),
+                    &sender,
                 )
             })
             .unwrap_or_default();
