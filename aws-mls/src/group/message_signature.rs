@@ -49,7 +49,9 @@ impl FramedContentAuthData {
             signature: MessageSignature::mls_decode(reader)?,
             confirmation_tag: match content_type {
                 ContentType::Commit => Some(ConfirmationTag::mls_decode(reader)?),
-                ContentType::Application | ContentType::Proposal => None,
+                ContentType::Application => None,
+                #[cfg(feature = "by_ref_proposal")]
+                ContentType::Proposal => None,
             },
         })
     }
@@ -185,6 +187,7 @@ impl<'a> AuthenticatedContentTBS<'a> {
                 Sender::Member(_) => group_context,
                 #[cfg(feature = "external_proposal")]
                 Sender::External(_) => None,
+                #[cfg(feature = "by_ref_proposal")]
                 Sender::NewMemberProposal => None,
             },
         }

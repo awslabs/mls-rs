@@ -188,7 +188,7 @@ mod tests {
                 &cs,
                 &context,
                 Sender::Member(0),
-                Content::Commit(commit),
+                Content::Commit(alloc::boxed::Box::new(commit)),
                 &signer,
                 WireFormat::PublicMessage,
                 vec![],

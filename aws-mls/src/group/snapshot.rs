@@ -3,12 +3,17 @@ use crate::{
     client_config::ClientConfig,
     crypto::{HpkePublicKey, HpkeSecretKey},
     group::{
-        key_schedule::KeySchedule, CachedProposal, CommitGeneration, ConfirmationTag, Group,
-        GroupContext, GroupState, InterimTranscriptHash, ProposalCache, ProposalRef,
-        ReInitProposal, TreeKemPublic,
+        key_schedule::KeySchedule, CommitGeneration, ConfirmationTag, Group, GroupContext,
+        GroupState, InterimTranscriptHash, ReInitProposal, TreeKemPublic,
     },
     tree_kem::TreeKemPrivate,
 };
+
+#[cfg(feature = "by_ref_proposal")]
+use crate::group::ProposalRef;
+
+#[cfg(feature = "by_ref_proposal")]
+use super::proposal_cache::{CachedProposal, ProposalCache};
 
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 
@@ -54,9 +59,9 @@ impl Snapshot {
 #[derive(Debug, MlsEncode, MlsDecode, MlsSize, PartialEq, Clone)]
 pub(crate) struct RawGroupState {
     pub(crate) context: GroupContext,
-    #[cfg(feature = "std")]
+    #[cfg(all(feature = "std", feature = "by_ref_proposal"))]
     pub(crate) proposals: HashMap<ProposalRef, CachedProposal>,
-    #[cfg(not(feature = "std"))]
+    #[cfg(all(not(feature = "std"), feature = "by_ref_proposal"))]
     pub(crate) proposals: Vec<(ProposalRef, CachedProposal)>,
     pub(crate) public_tree: TreeKemPublic,
     pub(crate) interim_transcript_hash: InterimTranscriptHash,
@@ -78,6 +83,7 @@ impl RawGroupState {
 
         Self {
             context: state.context.clone(),
+            #[cfg(feature = "by_ref_proposal")]
             proposals: state.proposals.proposals.clone(),
             public_tree,
             interim_transcript_hash: state.interim_transcript_hash.clone(),
@@ -94,6 +100,7 @@ impl RawGroupState {
     {
         let context = self.context;
 
+        #[cfg(feature = "by_ref_proposal")]
         let proposals = ProposalCache::import(
             context.protocol_version,
             context.group_id.clone(),
@@ -107,6 +114,7 @@ impl RawGroupState {
             .await?;
 
         Ok(GroupState {
+            #[cfg(feature = "by_ref_proposal")]
             proposals,
             context,
             public_tree,
@@ -121,6 +129,7 @@ impl RawGroupState {
     pub(crate) async fn import(self) -> Result<GroupState, MlsError> {
         let context = self.context;
 
+        #[cfg(feature = "by_ref_proposal")]
         let proposals = ProposalCache::import(
             context.protocol_version,
             context.group_id.clone(),
@@ -128,6 +137,7 @@ impl RawGroupState {
         );
 
         Ok(GroupState {
+            #[cfg(feature = "by_ref_proposal")]
             proposals,
             context,
             public_tree: self.public_tree,
@@ -228,6 +238,7 @@ pub(crate) mod test_utils {
         Snapshot {
             state: RawGroupState {
                 context: get_test_group_context(epoch_id, cipher_suite),
+                #[cfg(feature = "by_ref_proposal")]
                 proposals: Default::default(),
                 public_tree: Default::default(),
                 interim_transcript_hash: InterimTranscriptHash::from(vec![]),

@@ -18,11 +18,10 @@ use self::leaf_node::LeafNode;
 use crate::client::MlsError;
 use crate::crypto::{self, CipherSuiteProvider, HpkeSecretKey};
 
-use crate::group::proposal::RemoveProposal;
-use crate::group::{
-    proposal::{AddProposal, UpdateProposal},
-    proposal_filter::ProposalBundle,
-};
+#[cfg(feature = "by_ref_proposal")]
+use crate::group::proposal::{AddProposal, RemoveProposal, UpdateProposal};
+
+use crate::group::proposal_filter::ProposalBundle;
 use crate::tree_kem::tree_hash::TreeHashes;
 
 mod capabilities;
@@ -349,6 +348,7 @@ impl TreeKemPublic {
         Ok(())
     }
 
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::maybe_async]
     pub async fn batch_edit<I, CP>(
         &mut self,
@@ -518,6 +518,59 @@ impl TreeKemPublic {
         Ok(added)
     }
 
+    #[cfg(not(feature = "by_ref_proposal"))]
+    #[maybe_async::maybe_async]
+    pub async fn batch_edit_lite<I, CP>(
+        &mut self,
+        proposal_bundle: &ProposalBundle,
+        id_provider: &I,
+        cipher_suite_provider: &CP,
+    ) -> Result<Vec<LeafIndex>, MlsError>
+    where
+        I: IdentityProvider,
+        CP: CipherSuiteProvider,
+    {
+        // Apply removes
+        for p in &proposal_bundle.removals {
+            let index = p.proposal.to_remove;
+
+            self.nodes.blank_direct_path(index)?;
+
+            #[cfg(feature = "tree_index")]
+            {
+                // If this fails, it's not because the proposal is bad.
+                let old_leaf = self.nodes.blank_leaf_node(index)?;
+                let identity = identity(&old_leaf.signing_identity, id_provider).await?;
+                self.index.remove(&old_leaf, &identity);
+            }
+
+            #[cfg(not(feature = "tree_index"))]
+            self.nodes.blank_leaf_node(index)?;
+        }
+
+        // Apply adds
+        let mut start = LeafIndex(0);
+        let mut added = vec![];
+
+        for p in &proposal_bundle.additions {
+            let leaf = p.proposal.key_package.leaf_node.clone();
+            start = self.add_leaf(leaf, id_provider, Some(start)).await?;
+            added.push(start);
+        }
+
+        self.nodes.trim();
+
+        let mut path_blanked = proposal_bundle
+            .remove_proposals()
+            .iter()
+            .map(|p| p.proposal().to_remove)
+            .collect_vec();
+
+        self.update_hashes(&mut path_blanked, &added, cipher_suite_provider)?;
+
+        Ok(added)
+    }
+
     #[maybe_async::maybe_async]
     pub(crate) async fn add_leaf<I: IdentityProvider>(
         &mut self,
@@ -579,7 +632,7 @@ impl TreeKemPublic {
         let p = Proposal::Update(UpdateProposal { leaf_node });
 
         let mut bundle = ProposalBundle::default();
-        bundle.add(p, Sender::Member(leaf_index), ProposalSource::ByValue);
+        bundle.add(p, Sender::Member(leaf_index), ProposalSource::ByValue)?;
         bundle.update_senders = vec![LeafIndex(leaf_index)];
 
         self.batch_edit(&mut bundle, identity_provider, cipher_suite_provider, true)
@@ -609,7 +662,7 @@ impl TreeKemPublic {
         let mut bundle = ProposalBundle::default();
 
         for p in proposals {
-            bundle.add(p, Sender::Member(0), ProposalSource::ByValue)
+            bundle.add(p, Sender::Member(0), ProposalSource::ByValue)?;
         }
 
         self.batch_edit(&mut bundle, identity_provider, cipher_suite_provider, true)
@@ -1334,8 +1387,10 @@ mod tests {
         let mut bundle = ProposalBundle::default();
 
         let kp = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "D").await;
-        let add = Proposal::Add(kp.into());
-        bundle.add(add, Sender::Member(0), ProposalSource::ByValue);
+        let add = Proposal::Add(Box::new(kp.into()));
+        bundle
+            .add(add, Sender::Member(0), ProposalSource::ByValue)
+            .unwrap();
 
         let update = UpdateProposal {
             leaf_node: get_basic_test_node(TEST_CIPHER_SUITE, "A").await,
@@ -1343,7 +1398,9 @@ mod tests {
 
         let update = Proposal::Update(update);
         let pref = ProposalRef::new_fake(vec![1, 2, 3]);
-        bundle.add(update, Sender::Member(1), ProposalSource::ByReference(pref));
+        bundle
+            .add(update, Sender::Member(1), ProposalSource::ByReference(pref))
+            .unwrap();
         bundle.update_senders = vec![LeafIndex(1)];
 
         let remove = RemoveProposal {
@@ -1351,7 +1408,9 @@ mod tests {
         };
 
         let remove = Proposal::Remove(remove);
-        bundle.add(remove, Sender::Member(0), ProposalSource::ByValue);
+        bundle
+            .add(remove, Sender::Member(0), ProposalSource::ByValue)
+            .unwrap();
 
         tree.batch_edit(
             &mut bundle,

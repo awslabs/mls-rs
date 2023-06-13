@@ -8,7 +8,6 @@ use super::{
     message_signature::AuthenticatedContent,
     proposal::Proposal,
     proposal_filter::{ProposalBundle, ProposalRules},
-    proposal_ref::ProposalRef,
     state::GroupState,
     transcript_hash::InterimTranscriptHash,
     transcript_hashes, GroupContext,
@@ -27,7 +26,13 @@ use alloc::vec;
 use alloc::vec::Vec;
 use aws_mls_core::{identity::IdentityProvider, psk::PreSharedKeyStorage};
 
-#[cfg(feature = "state_update")]
+#[cfg(feature = "by_ref_proposal")]
+use super::proposal_ref::ProposalRef;
+
+#[cfg(not(feature = "by_ref_proposal"))]
+use crate::group::proposal_cache::resolve_for_commit;
+
+#[cfg(all(feature = "state_update", feature = "by_ref_proposal"))]
 use itertools::Itertools;
 
 #[cfg(all(feature = "state_update", feature = "custom_proposal"))]
@@ -64,7 +69,7 @@ pub(crate) struct ProvisionalState {
     #[cfg(feature = "external_commit")]
     pub(crate) external_init_index: Option<LeafIndex>,
     pub(crate) indexes_of_added_kpkgs: Vec<LeafIndex>,
-    #[cfg(feature = "state_update")]
+    #[cfg(all(feature = "state_update", feature = "by_ref_proposal"))]
     pub(crate) rejected_proposals: Vec<(ProposalRef, Proposal)>,
 }
 
@@ -85,9 +90,11 @@ pub(crate) fn path_update_required(proposals: &ProposalBundle) -> bool {
     #[cfg(not(feature = "external_commit"))]
     let res = false;
 
+    #[cfg(feature = "by_ref_proposal")]
+    let res = res || !proposals.update_proposals().is_empty();
+
     res || proposals.length() == 0
         || proposals.group_context_extensions_proposal().is_some()
-        || !proposals.update_proposals().is_empty()
         || !proposals.remove_proposals().is_empty()
 }
 
@@ -251,6 +258,7 @@ impl TryFrom<Sender> for ProposalSender {
             Sender::Member(index) => Ok(Self::Member(index)),
             #[cfg(feature = "external_proposal")]
             Sender::External(index) => Ok(Self::External(index)),
+            #[cfg(feature = "by_ref_proposal")]
             Sender::NewMemberProposal => Ok(Self::NewMember),
             #[cfg(feature = "external_commit")]
             Sender::NewMemberCommit => Err(MlsError::InvalidSender),
@@ -294,22 +302,32 @@ pub(crate) trait MessageProcessor: Send + Sync {
     async fn process_incoming_message(
         &mut self,
         message: MLSMessage,
-        cache_proposal: bool,
+        #[cfg(feature = "by_ref_proposal")] cache_proposal: bool,
     ) -> Result<Self::OutputType, MlsError> {
-        self.process_incoming_message_with_time(message, cache_proposal, None)
-            .await
+        self.process_incoming_message_with_time(
+            message,
+            #[cfg(feature = "by_ref_proposal")]
+            cache_proposal,
+            None,
+        )
+        .await
     }
 
     async fn process_incoming_message_with_time(
         &mut self,
         message: MLSMessage,
-        cache_proposal: bool,
+        #[cfg(feature = "by_ref_proposal")] cache_proposal: bool,
         time_sent: Option<MlsTime>,
     ) -> Result<Self::OutputType, MlsError> {
         let event_or_content = self.get_event_from_incoming_message(message).await?;
 
-        self.process_event_or_content(event_or_content, cache_proposal, time_sent)
-            .await
+        self.process_event_or_content(
+            event_or_content,
+            #[cfg(feature = "by_ref_proposal")]
+            cache_proposal,
+            time_sent,
+        )
+        .await
     }
 
     async fn get_event_from_incoming_message(
@@ -329,14 +347,19 @@ pub(crate) trait MessageProcessor: Send + Sync {
     async fn process_event_or_content(
         &mut self,
         event_or_content: EventOrContent<Self::OutputType>,
-        cache_proposal: bool,
+        #[cfg(feature = "by_ref_proposal")] cache_proposal: bool,
         time_sent: Option<MlsTime>,
     ) -> Result<Self::OutputType, MlsError> {
         let msg = match event_or_content {
             EventOrContent::Event(event) => event,
             EventOrContent::Content(content) => {
-                self.process_auth_content(content, cache_proposal, time_sent)
-                    .await?
+                self.process_auth_content(
+                    content,
+                    #[cfg(feature = "by_ref_proposal")]
+                    cache_proposal,
+                    time_sent,
+                )
+                .await?
             }
         };
 
@@ -346,7 +369,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
     async fn process_auth_content(
         &mut self,
         auth_content: AuthenticatedContent,
-        cache_proposal: bool,
+        #[cfg(feature = "by_ref_proposal")] cache_proposal: bool,
         time_sent: Option<MlsTime>,
     ) -> Result<Self::OutputType, MlsError> {
         let authenticated_data = auth_content.content.authenticated_data.clone();
@@ -361,6 +384,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
                 .process_commit(auth_content, time_sent)
                 .await
                 .map(Self::OutputType::from),
+            #[cfg(feature = "by_ref_proposal")]
             Content::Proposal(ref proposal) => self
                 .process_proposal(&auth_content, proposal, cache_proposal)
                 .map(Self::OutputType::from),
@@ -375,9 +399,20 @@ pub(crate) trait MessageProcessor: Send + Sync {
         sender: Sender,
         authenticated_data: Vec<u8>,
     ) -> Result<ApplicationMessageDescription, MlsError> {
-        let Sender::Member(sender_index) = sender else {
+        #[cfg(any(
+            feature = "external_proposal",
+            feature = "by_ref_proposal",
+            feature = "external_commit"
+        ))] let Sender::Member(sender_index) = sender else {
             return Err(MlsError::InvalidSender);
         };
+
+        #[cfg(all(
+            not(feature = "external_proposal"),
+            not(feature = "by_ref_proposal"),
+            not(feature = "external_commit")
+        ))]
+        let Sender::Member(sender_index) = sender;
 
         Ok(ApplicationMessageDescription {
             authenticated_data,
@@ -386,6 +421,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
         })
     }
 
+    #[cfg(feature = "by_ref_proposal")]
     fn process_proposal(
         &mut self,
         auth_content: &AuthenticatedContent,
@@ -442,6 +478,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
             })
             .collect::<Result<_, MlsError>>()?;
 
+        #[cfg(feature = "by_ref_proposal")]
         let mut updated = provisional
             .applied_proposals
             .update_senders
@@ -459,6 +496,9 @@ pub(crate) trait MessageProcessor: Send + Sync {
                 Ok::<_, MlsError>(MemberUpdate::new(prior, new))
             })
             .collect::<Result<Vec<_>, _>>()?;
+
+        #[cfg(not(feature = "by_ref_proposal"))]
+        let mut updated = Vec::new();
 
         if let Some(path) = path {
             #[cfg(feature = "external_commit")]
@@ -520,11 +560,14 @@ pub(crate) trait MessageProcessor: Send + Sync {
             epoch: provisional.group_context.epoch,
             #[cfg(feature = "custom_proposal")]
             custom_proposals: provisional.applied_proposals.custom_proposals.clone(),
+            #[cfg(feature = "by_ref_proposal")]
             unused_proposals: provisional
                 .rejected_proposals
                 .iter()
                 .map(|(_, p)| p.clone())
                 .collect_vec(),
+            #[cfg(not(feature = "by_ref_proposal"))]
+            unused_proposals: Default::default(),
         };
 
         Ok(update)
@@ -547,24 +590,29 @@ pub(crate) trait MessageProcessor: Send + Sync {
         let group_state = self.group_state();
         let id_provider = self.identity_provider();
 
-        // Calculate the diff that the commit will apply
-        let mut provisional_state = group_state
+        #[cfg(feature = "by_ref_proposal")]
+        let proposals = group_state
             .proposals
-            .resolve_for_commit(
+            .resolve_for_commit(auth_content.content.sender, commit.proposals.clone())?;
+
+        #[cfg(not(feature = "by_ref_proposal"))]
+        let proposals = resolve_for_commit(auth_content.content.sender, commit.proposals.clone())?;
+
+        let mut provisional_state = group_state
+            .apply_resolved(
                 auth_content.content.sender,
-                #[cfg(feature = "state_update")]
-                self.self_index(),
-                commit.proposals.clone(),
+                #[cfg(all(feature = "by_ref_proposal", feature = "state_update"))]
+                None,
+                proposals.clone(),
                 #[cfg(feature = "external_commit")]
                 commit.path.as_ref().map(|path| &path.leaf_node),
-                &group_state.context,
                 &id_provider,
                 self.cipher_suite_provider(),
-                &group_state.public_tree,
                 &self.psk_storage(),
                 self.proposal_rules(),
                 time_sent,
-                &group_state.roster(),
+                #[cfg(feature = "by_ref_proposal")]
+                false,
             )
             .await?;
 
@@ -717,7 +765,15 @@ pub(crate) trait MessageProcessor: Send + Sync {
             }
 
             match content_type {
-                ContentType::Proposal | ContentType::Commit => {
+                ContentType::Commit => {
+                    if context.epoch != epoch {
+                        Err(MlsError::InvalidEpoch)
+                    } else {
+                        Ok(())
+                    }
+                }
+                #[cfg(feature = "by_ref_proposal")]
+                ContentType::Proposal => {
                     if context.epoch != epoch {
                         Err(MlsError::InvalidEpoch)
                     } else {
@@ -738,9 +794,12 @@ pub(crate) trait MessageProcessor: Send + Sync {
             }?;
 
             // Proposal and commit messages must be sent in the current epoch
-            if (content_type == ContentType::Proposal || content_type == ContentType::Commit)
-                && epoch != context.epoch
-            {
+            let check_epoch = content_type == ContentType::Commit;
+
+            #[cfg(feature = "by_ref_proposal")]
+            let check_epoch = check_epoch || content_type == ContentType::Proposal;
+
+            if check_epoch && epoch != context.epoch {
                 return Err(MlsError::InvalidEpoch);
             }
 

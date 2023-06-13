@@ -77,6 +77,7 @@ impl TreeKemPrivate {
         Ok(())
     }
 
+    #[cfg(feature = "by_ref_proposal")]
     pub fn update_leaf(&mut self, new_leaf: HpkeSecretKey) {
         self.secret_keys = vec![None; self.secret_keys.len()];
         self.secret_keys[0] = Some(new_leaf);

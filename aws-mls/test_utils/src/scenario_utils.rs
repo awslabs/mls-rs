@@ -257,29 +257,19 @@ pub async fn add_random_members(
         new_clients.push(new_client);
     }
 
-    let mut add_proposals = Vec::new();
-
     let committer_group = &mut groups[committer];
+    let mut commit = committer_group.commit_builder();
 
     for key_package in key_packages {
-        add_proposals.push(
-            committer_group
-                .propose_add(key_package, vec![])
-                .await
-                .unwrap(),
-        );
+        commit = commit.add_member(key_package).unwrap();
     }
 
-    for p in &add_proposals {
-        all_process_message(groups, p, committer_index, false).await;
-    }
-
-    let commit_output = groups[committer].commit(vec![]).await.unwrap();
+    let commit_output = commit.build().await.unwrap();
 
     all_process_message(groups, &commit_output.commit_message, committer_index, true).await;
 
     let auth = groups[committer].epoch_authenticator().unwrap().to_vec();
-    let epoch = TestEpoch::new(add_proposals, &commit_output.commit_message, auth);
+    let epoch = TestEpoch::new(vec![], &commit_output.commit_message, auth);
 
     if let Some(tc) = test_case {
         tc.epochs.push(epoch)

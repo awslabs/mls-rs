@@ -56,6 +56,7 @@ use membership_tag::*;
 use message_signature::*;
 use message_verifier::*;
 use proposal::*;
+#[cfg(feature = "by_ref_proposal")]
 use proposal_cache::*;
 use state::*;
 use transcript_hash::*;
@@ -83,6 +84,7 @@ pub use self::message_processor::{
 use self::message_processor::{EventOrContent, MessageProcessor, ProvisionalState};
 #[cfg(feature = "private_message")]
 use self::padding::PaddingMode;
+#[cfg(feature = "by_ref_proposal")]
 use self::proposal_ref::ProposalRef;
 use self::state_repo::GroupStateRepository;
 pub(crate) use group_info::GroupInfo;
@@ -122,6 +124,7 @@ pub(crate) mod padding;
 pub mod proposal;
 mod proposal_cache;
 pub(crate) mod proposal_filter;
+#[cfg(feature = "by_ref_proposal")]
 pub(crate) mod proposal_ref;
 mod roster;
 pub(crate) mod snapshot;
@@ -640,6 +643,7 @@ where
             .map(|ln| member_from_leaf_node(ln, leaf_index))
     }
 
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::maybe_async]
     async fn proposal_message(
         &mut self,
@@ -652,7 +656,7 @@ where
             &self.cipher_suite_provider,
             self.context(),
             Sender::Member(*self.private_tree.self_index),
-            Content::Proposal(proposal.clone()),
+            Content::Proposal(alloc::boxed::Box::new(proposal.clone())),
             &signer,
             #[cfg(feature = "private_message")]
             self.config.preferences().encryption_mode().into(),
@@ -702,29 +706,28 @@ where
         provisional_state: &ProvisionalState,
     ) -> Result<TreeKemPrivate, MlsError> {
         let mut provisional_private_tree = self.private_tree.clone();
-        let self_index = *provisional_private_tree.self_index;
+        let self_index = provisional_private_tree.self_index;
 
-        // Blank nodes from updates and removes : we blank from the smallest LCA with any
-        // updated or removed node to the root.
-        let removed = provisional_state.applied_proposals.removals.iter();
-        let updated = provisional_state.applied_proposals.update_senders.iter();
+        // Remove secret keys for blanked nodes
+        let path = provisional_state
+            .public_tree
+            .nodes
+            .direct_path(self_index)?;
 
-        let smallest_lca = updated
-            .chain(removed.map(|p| &p.proposal.to_remove))
-            .map(|index| tree_math::leaf_lca_level(**index, self_index))
-            .min();
+        provisional_private_tree
+            .secret_keys
+            .resize(path.len() + 1, None);
 
-        if let Some(smallest_lca) = smallest_lca {
-            provisional_private_tree
-                .secret_keys
-                .iter_mut()
-                .skip(smallest_lca as usize)
-                .for_each(|n| *n = None);
+        for (i, n) in path.iter().enumerate() {
+            if provisional_state.public_tree.nodes.is_blank(*n)? {
+                provisional_private_tree.secret_keys[i + 1] = None;
+            }
         }
 
         // Apply own update
+        #[cfg(feature = "by_ref_proposal")]
         for p in &provisional_state.applied_proposals.updates {
-            if p.sender == Sender::Member(self_index) {
+            if p.sender == Sender::Member(*self_index) {
                 let leaf_pk = &p.proposal.leaf_node.public_key;
 
                 // Update the leaf in the private tree if this is our update
@@ -1070,6 +1073,7 @@ where
     ///
     /// `authenticated_data` will be sent unencrypted along with the contents
     /// of the proposal message.
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::maybe_async]
     pub async fn propose_add(
         &mut self,
@@ -1081,11 +1085,11 @@ where
     }
 
     fn add_proposal(&self, key_package: MLSMessage) -> Result<Proposal, MlsError> {
-        Ok(Proposal::Add(AddProposal {
+        Ok(Proposal::Add(alloc::boxed::Box::new(AddProposal {
             key_package: key_package
                 .into_key_package()
                 .ok_or(MlsError::UnexpectedMessageType)?,
-        }))
+        })))
     }
 
     /// Create a proposal message that updates your own public keys.
@@ -1096,6 +1100,7 @@ where
     ///
     /// `authenticated_data` will be sent unencrypted along with the contents
     /// of the proposal message.
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::maybe_async]
     pub async fn propose_update(
         &mut self,
@@ -1122,6 +1127,7 @@ where
     ///
     /// `authenticated_data` will be sent unencrypted along with the contents
     /// of the proposal message.
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::maybe_async]
     pub async fn propose_update_with_identity(
         &mut self,
@@ -1132,6 +1138,7 @@ where
         self.proposal_message(proposal, authenticated_data).await
     }
 
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::maybe_async]
     async fn update_proposal(
         &mut self,
@@ -1169,6 +1176,7 @@ where
     ///
     /// `authenticated_data` will be sent unencrypted along with the contents
     /// of the proposal message.
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::maybe_async]
     pub async fn propose_remove(
         &mut self,
@@ -1200,7 +1208,7 @@ where
     ///
     /// `authenticated_data` will be sent unencrypted along with the contents
     /// of the proposal message.
-    #[cfg(feature = "psk")]
+    #[cfg(all(feature = "by_ref_proposal", feature = "psk"))]
     #[maybe_async::maybe_async]
     pub async fn propose_external_psk(
         &mut self,
@@ -1231,7 +1239,7 @@ where
     ///
     /// `authenticated_data` will be sent unencrypted along with the contents
     /// of the proposal message.
-    #[cfg(feature = "psk")]
+    #[cfg(all(feature = "by_ref_proposal", feature = "psk"))]
     #[maybe_async::maybe_async]
     pub async fn propose_resumption_psk(
         &mut self,
@@ -1257,6 +1265,7 @@ where
     ///
     /// `authenticated_data` will be sent unencrypted along with the contents
     /// of the proposal message.
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::maybe_async]
     pub async fn propose_reinit(
         &mut self,
@@ -1304,6 +1313,7 @@ where
     ///
     /// `authenticated_data` will be sent unencrypted along with the contents
     /// of the proposal message.
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::maybe_async]
     pub async fn propose_group_context_extensions(
         &mut self,
@@ -1322,7 +1332,7 @@ where
     ///
     /// `authenticated_data` will be sent unencrypted along with the contents
     /// of the proposal message.
-    #[cfg(feature = "custom_proposal")]
+    #[cfg(all(feature = "custom_proposal", feature = "by_ref_proposal"))]
     #[maybe_async::maybe_async]
     pub async fn propose_custom(
         &mut self,
@@ -1397,6 +1407,7 @@ where
 
         // A group member that has observed one or more proposals within an epoch MUST send a Commit message
         // before sending application data
+        #[cfg(feature = "by_ref_proposal")]
         if !self.state.proposals.is_empty() {
             return Err(MlsError::CommitRequired);
         }
@@ -1502,7 +1513,13 @@ where
         &mut self,
         message: MLSMessage,
     ) -> Result<ReceivedMessage, MlsError> {
-        MessageProcessor::process_incoming_message(self, message, true).await
+        MessageProcessor::process_incoming_message(
+            self,
+            message,
+            #[cfg(feature = "by_ref_proposal")]
+            true,
+        )
+        .await
     }
 
     /// Process an inbound message for this group, providing additional context
@@ -1527,7 +1544,14 @@ where
         message: MLSMessage,
         time: MlsTime,
     ) -> Result<ReceivedMessage, MlsError> {
-        MessageProcessor::process_incoming_message_with_time(self, message, true, Some(time)).await
+        MessageProcessor::process_incoming_message_with_time(
+            self,
+            message,
+            #[cfg(feature = "by_ref_proposal")]
+            true,
+            Some(time),
+        )
+        .await
     }
 
     /// Find a group member by
@@ -1984,6 +2008,7 @@ where
         self.state.confirmation_tag = new_confirmation_tag;
 
         // Clear the proposals list
+        #[cfg(feature = "by_ref_proposal")]
         self.state.proposals.clear();
 
         // Clear the pending updates list
@@ -2212,7 +2237,7 @@ mod tests {
             _ => panic!("found non-proposal message"),
         };
 
-        let update_leaf = match proposal {
+        let update_leaf = match *proposal {
             Proposal::Update(u) => u.leaf_node,
             _ => panic!("found proposal message that isn't an update"),
         };
@@ -2272,16 +2297,13 @@ mod tests {
                 payload: MLSMessagePayload::Plain(
                     PublicMessage {
                         content: FramedContent {
-                            content: Content::Commit(Commit {
-                                proposals,
-                                ..
-                            }),
+                            content: Content::Commit(c),
                             ..
                         },
                         ..
                     }),
                 ..
-            } if proposals.is_empty()
+            } if c.proposals.is_empty()
         );
     }
 

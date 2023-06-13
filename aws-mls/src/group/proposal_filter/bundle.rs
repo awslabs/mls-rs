@@ -5,12 +5,16 @@ use alloc::vec::Vec;
 use itertools::Itertools;
 
 use crate::{
+    client::MlsError,
     group::{
-        internal::LeafIndex, AddProposal, BorrowedProposal, Proposal, ProposalOrRef, ProposalRef,
-        ProposalType, ReInitProposal, RemoveProposal, Sender, UpdateProposal,
+        AddProposal, BorrowedProposal, Proposal, ProposalOrRef, ProposalType, ReInitProposal,
+        RemoveProposal, Sender,
     },
     ExtensionList,
 };
+
+#[cfg(feature = "by_ref_proposal")]
+use crate::group::{internal::LeafIndex, ProposalRef, UpdateProposal};
 
 #[cfg(feature = "psk")]
 use crate::group::PreSharedKeyProposal;
@@ -27,7 +31,9 @@ use core::iter::empty;
 /// A collection of proposals.
 pub struct ProposalBundle {
     pub(crate) additions: Vec<ProposalInfo<AddProposal>>,
+    #[cfg(feature = "by_ref_proposal")]
     pub(crate) updates: Vec<ProposalInfo<UpdateProposal>>,
+    #[cfg(feature = "by_ref_proposal")]
     pub(crate) update_senders: Vec<LeafIndex>,
     pub(crate) removals: Vec<ProposalInfo<RemoveProposal>>,
     #[cfg(feature = "psk")]
@@ -41,13 +47,19 @@ pub struct ProposalBundle {
 }
 
 impl ProposalBundle {
-    pub(crate) fn add(&mut self, proposal: Proposal, sender: Sender, source: ProposalSource) {
+    pub(crate) fn add(
+        &mut self,
+        proposal: Proposal,
+        sender: Sender,
+        source: ProposalSource,
+    ) -> Result<(), MlsError> {
         match proposal {
             Proposal::Add(proposal) => self.additions.push(ProposalInfo {
-                proposal,
+                proposal: *proposal,
                 sender,
                 source,
             }),
+            #[cfg(feature = "by_ref_proposal")]
             Proposal::Update(proposal) => self.updates.push(ProposalInfo {
                 proposal,
                 sender,
@@ -88,7 +100,9 @@ impl ProposalBundle {
                 sender,
                 source,
             }),
-        }
+        };
+
+        Ok(())
     }
 
     /// Remove the proposal of type `T` at `index`
@@ -164,6 +178,7 @@ impl ProposalBundle {
             f(&proposal.by_ref().map(BorrowedProposal::from))
         })?;
 
+        #[cfg(feature = "by_ref_proposal")]
         self.retain_by_type::<UpdateProposal, _, _>(|proposal| {
             f(&proposal.by_ref().map(BorrowedProposal::from))
         })?;
@@ -206,8 +221,10 @@ impl ProposalBundle {
         #[cfg(feature = "custom_proposal")]
         let len = len + self.custom_proposals.len();
 
+        #[cfg(feature = "by_ref_proposal")]
+        let len = len + self.updates.len();
+
         len + self.additions.len()
-            + self.updates.len()
             + self.removals.len()
             + self.reinitializations.len()
             + self.group_context_extensions.len()
@@ -220,11 +237,6 @@ impl ProposalBundle {
             .iter()
             .map(|p| p.by_ref().map(BorrowedProposal::Add))
             .chain(
-                self.updates
-                    .iter()
-                    .map(|p| p.by_ref().map(BorrowedProposal::Update)),
-            )
-            .chain(
                 self.removals
                     .iter()
                     .map(|p| p.by_ref().map(BorrowedProposal::Remove)),
@@ -234,6 +246,13 @@ impl ProposalBundle {
                     .iter()
                     .map(|p| p.by_ref().map(BorrowedProposal::ReInit)),
             );
+
+        #[cfg(feature = "by_ref_proposal")]
+        let res = res.chain(
+            self.updates
+                .iter()
+                .map(|p| p.by_ref().map(BorrowedProposal::Update)),
+        );
 
         #[cfg(feature = "psk")]
         let res = res.chain(
@@ -286,19 +305,25 @@ impl ProposalBundle {
         #[cfg(feature = "psk")]
         let res = res.chain(self.psks.into_iter().map(|p| p.map(Proposal::Psk)));
 
-        res.chain(self.additions.into_iter().map(|p| p.map(Proposal::Add)))
-            .chain(self.updates.into_iter().map(|p| p.map(Proposal::Update)))
-            .chain(self.removals.into_iter().map(|p| p.map(Proposal::Remove)))
-            .chain(
-                self.reinitializations
-                    .into_iter()
-                    .map(|p| p.map(Proposal::ReInit)),
-            )
-            .chain(
-                self.group_context_extensions
-                    .into_iter()
-                    .map(|p| p.map(Proposal::GroupContextExtensions)),
-            )
+        #[cfg(feature = "by_ref_proposal")]
+        let res = res.chain(self.updates.into_iter().map(|p| p.map(Proposal::Update)));
+
+        res.chain(
+            self.additions
+                .into_iter()
+                .map(|p| p.map(|p| Proposal::Add(alloc::boxed::Box::new(p)))),
+        )
+        .chain(self.removals.into_iter().map(|p| p.map(Proposal::Remove)))
+        .chain(
+            self.reinitializations
+                .into_iter()
+                .map(|p| p.map(Proposal::ReInit)),
+        )
+        .chain(
+            self.group_context_extensions
+                .into_iter()
+                .map(|p| p.map(Proposal::GroupContextExtensions)),
+        )
     }
 
     #[cfg(feature = "custom_proposal")]
@@ -306,6 +331,7 @@ impl ProposalBundle {
         self.into_proposals()
             .filter_map(|p| match p.source {
                 ProposalSource::ByValue => Some(ProposalOrRef::Proposal(Box::new(p.proposal))),
+                #[cfg(feature = "by_ref_proposal")]
                 ProposalSource::ByReference(reference) => Some(ProposalOrRef::Reference(reference)),
                 _ => None,
             })
@@ -317,6 +343,7 @@ impl ProposalBundle {
         self.into_proposals()
             .map(|p| match p.source {
                 ProposalSource::ByValue => ProposalOrRef::Proposal(Box::new(p.proposal)),
+                #[cfg(feature = "by_ref_proposal")]
                 ProposalSource::ByReference(reference) => ProposalOrRef::Reference(reference),
             })
             .collect()
@@ -328,11 +355,13 @@ impl ProposalBundle {
     }
 
     /// Update proposals in the bundle.
+    #[cfg(feature = "by_ref_proposal")]
     pub fn update_proposals(&self) -> &[ProposalInfo<UpdateProposal>] {
         &self.updates
     }
 
     /// Senders of update proposals in the bundle.
+    #[cfg(feature = "by_ref_proposal")]
     pub fn update_proposal_senders(&self) -> &[LeafIndex] {
         &self.update_senders
     }
@@ -374,6 +403,7 @@ impl ProposalBundle {
         self.group_context_extensions.first()
     }
 
+    #[cfg(feature = "by_ref_proposal")]
     pub(crate) fn clear_group_context_extensions(&mut self) {
         self.group_context_extensions.clear();
     }
@@ -404,9 +434,11 @@ impl ProposalBundle {
         let res = (!self.additions.is_empty())
             .then_some(ProposalType::ADD)
             .into_iter()
-            .chain((!self.updates.is_empty()).then_some(ProposalType::UPDATE))
             .chain((!self.removals.is_empty()).then_some(ProposalType::REMOVE))
             .chain((!self.reinitializations.is_empty()).then_some(ProposalType::RE_INIT));
+
+        #[cfg(feature = "by_ref_proposal")]
+        let res = res.chain((!self.updates.is_empty()).then_some(ProposalType::UPDATE));
 
         #[cfg(feature = "psk")]
         let res = res.chain((!self.psks.is_empty()).then_some(ProposalType::PSK));
@@ -432,22 +464,10 @@ impl ProposalBundle {
     }
 }
 
-impl FromIterator<ProposalInfo<Proposal>> for ProposalBundle {
-    fn from_iter<T>(iter: T) -> Self
-    where
-        T: IntoIterator<Item = ProposalInfo<Proposal>>,
-    {
-        iter.into_iter()
-            .fold(ProposalBundle::default(), |mut bundle, p| {
-                bundle.add(p.proposal, p.sender, p.source);
-                bundle
-            })
-    }
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub enum ProposalSource {
     ByValue,
+    #[cfg(feature = "by_ref_proposal")]
     ByReference(ProposalRef),
     /// True if originally by value.
     #[cfg(feature = "custom_proposal")]
@@ -480,6 +500,7 @@ impl ProposalInfo<CustomProposal> {
                 sender: self.sender,
                 source: match self.source {
                     ProposalSource::ByValue => ProposalSource::CustomRule(true),
+                    #[cfg(feature = "by_ref_proposal")]
                     ProposalSource::ByReference(_) => ProposalSource::CustomRule(false),
                     ProposalSource::CustomRule(value) => ProposalSource::CustomRule(value),
                 },
@@ -496,11 +517,21 @@ impl ProposalInfo<Proposal> {
     /// a custom rule either by-value or by-reference depending on the value of
     /// `by_value`. This function is useful when implementing custom
     /// [`ProposalRules`].
+    #[cfg(feature = "by_ref_proposal")]
     pub fn new(proposal: Proposal, sender: Sender, by_value: bool) -> ProposalInfo<Proposal> {
         ProposalInfo {
             proposal,
             sender,
             source: ProposalSource::CustomRule(by_value),
+        }
+    }
+
+    #[cfg(not(feature = "by_ref_proposal"))]
+    pub fn new(proposal: Proposal, sender: Sender, _by_value: bool) -> ProposalInfo<Proposal> {
+        ProposalInfo {
+            proposal,
+            sender,
+            source: ProposalSource::CustomRule(true),
         }
     }
 }
@@ -529,6 +560,7 @@ impl<T> ProposalInfo<T> {
     pub fn is_by_value(&self) -> bool {
         match self.source {
             ProposalSource::ByValue => true,
+            #[cfg(feature = "by_ref_proposal")]
             ProposalSource::ByReference(_) => false,
             #[cfg(feature = "custom_proposal")]
             ProposalSource::CustomRule(by_value) => by_value,
@@ -587,6 +619,7 @@ macro_rules! impl_proposable {
 }
 
 impl_proposable!(AddProposal, ADD, additions);
+#[cfg(feature = "by_ref_proposal")]
 impl_proposable!(UpdateProposal, UPDATE, updates);
 impl_proposable!(RemoveProposal, REMOVE, removals);
 #[cfg(feature = "psk")]

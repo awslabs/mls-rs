@@ -1,7 +1,9 @@
 use super::*;
+#[cfg(feature = "by_ref_proposal")]
 use crate::tree_kem::leaf_node::LeafNode;
 use core::fmt::Debug;
 
+#[cfg(feature = "by_ref_proposal")]
 use proposal_ref::ProposalRef;
 
 pub use aws_mls_core::extension::ExtensionList;
@@ -60,6 +62,7 @@ impl TryFrom<MLSMessage> for AddProposal {
     }
 }
 
+#[cfg(feature = "by_ref_proposal")]
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// A proposal that will update an existing [`Member`](super::Member) of a
@@ -68,6 +71,7 @@ pub struct UpdateProposal {
     pub(crate) leaf_node: LeafNode,
 }
 
+#[cfg(feature = "by_ref_proposal")]
 impl UpdateProposal {
     /// The new [`SigningIdentity`](crate::identity::SigningIdentity)
     /// of the [`Member`](super::Member) that is being updated by this proposal.
@@ -244,13 +248,15 @@ pub trait MlsCustomProposal: MlsSize + MlsEncode + MlsDecode + Sized {
     }
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u16)]
 #[non_exhaustive]
 /// An enum that represents all possible types of proposals.
 pub enum Proposal {
-    Add(AddProposal),
+    Add(alloc::boxed::Box<AddProposal>),
+    #[cfg(feature = "by_ref_proposal")]
     Update(UpdateProposal),
     Remove(RemoveProposal),
     #[cfg(feature = "psk")]
@@ -267,6 +273,7 @@ impl MlsSize for Proposal {
     fn mls_encoded_len(&self) -> usize {
         let inner_len = match self {
             Proposal::Add(p) => p.mls_encoded_len(),
+            #[cfg(feature = "by_ref_proposal")]
             Proposal::Update(p) => p.mls_encoded_len(),
             Proposal::Remove(p) => p.mls_encoded_len(),
             #[cfg(feature = "psk")]
@@ -289,6 +296,7 @@ impl MlsEncode for Proposal {
 
         match self {
             Proposal::Add(p) => p.mls_encode(writer),
+            #[cfg(feature = "by_ref_proposal")]
             Proposal::Update(p) => p.mls_encode(writer),
             Proposal::Remove(p) => p.mls_encode(writer),
             #[cfg(feature = "psk")]
@@ -319,7 +327,10 @@ impl MlsDecode for Proposal {
         let proposal_type = ProposalType::mls_decode(reader)?;
 
         Ok(match proposal_type {
-            ProposalType::ADD => Proposal::Add(AddProposal::mls_decode(reader)?),
+            ProposalType::ADD => {
+                Proposal::Add(alloc::boxed::Box::new(AddProposal::mls_decode(reader)?))
+            }
+            #[cfg(feature = "by_ref_proposal")]
             ProposalType::UPDATE => Proposal::Update(UpdateProposal::mls_decode(reader)?),
             ProposalType::REMOVE => Proposal::Remove(RemoveProposal::mls_decode(reader)?),
             #[cfg(feature = "psk")]
@@ -352,6 +363,7 @@ impl Proposal {
     pub fn proposal_type(&self) -> ProposalType {
         match self {
             Proposal::Add(_) => ProposalType::ADD,
+            #[cfg(feature = "by_ref_proposal")]
             Proposal::Update(_) => ProposalType::UPDATE,
             Proposal::Remove(_) => ProposalType::REMOVE,
             #[cfg(feature = "psk")]
@@ -370,6 +382,7 @@ impl Proposal {
 /// An enum that represents a borrowed version of [`Proposal`].
 pub enum BorrowedProposal<'a> {
     Add(&'a AddProposal),
+    #[cfg(feature = "by_ref_proposal")]
     Update(&'a UpdateProposal),
     Remove(&'a RemoveProposal),
     #[cfg(feature = "psk")]
@@ -385,7 +398,8 @@ pub enum BorrowedProposal<'a> {
 impl<'a> From<BorrowedProposal<'a>> for Proposal {
     fn from(value: BorrowedProposal<'a>) -> Self {
         match value {
-            BorrowedProposal::Add(add) => Proposal::Add(add.clone()),
+            BorrowedProposal::Add(add) => Proposal::Add(alloc::boxed::Box::new(add.clone())),
+            #[cfg(feature = "by_ref_proposal")]
             BorrowedProposal::Update(update) => Proposal::Update(update.clone()),
             BorrowedProposal::Remove(remove) => Proposal::Remove(remove.clone()),
             #[cfg(feature = "psk")]
@@ -406,6 +420,7 @@ impl BorrowedProposal<'_> {
     pub fn proposal_type(&self) -> ProposalType {
         match self {
             BorrowedProposal::Add(_) => ProposalType::ADD,
+            #[cfg(feature = "by_ref_proposal")]
             BorrowedProposal::Update(_) => ProposalType::UPDATE,
             BorrowedProposal::Remove(_) => ProposalType::REMOVE,
             #[cfg(feature = "psk")]
@@ -424,6 +439,7 @@ impl<'a> From<&'a Proposal> for BorrowedProposal<'a> {
     fn from(p: &'a Proposal) -> Self {
         match p {
             Proposal::Add(p) => BorrowedProposal::Add(p),
+            #[cfg(feature = "by_ref_proposal")]
             Proposal::Update(p) => BorrowedProposal::Update(p),
             Proposal::Remove(p) => BorrowedProposal::Remove(p),
             #[cfg(feature = "psk")]
@@ -444,6 +460,7 @@ impl<'a> From<&'a AddProposal> for BorrowedProposal<'a> {
     }
 }
 
+#[cfg(feature = "by_ref_proposal")]
 impl<'a> From<&'a UpdateProposal> for BorrowedProposal<'a> {
     fn from(p: &'a UpdateProposal) -> Self {
         Self::Update(p)
@@ -494,6 +511,7 @@ impl<'a> From<&'a CustomProposal> for BorrowedProposal<'a> {
 #[repr(u8)]
 pub(crate) enum ProposalOrRef {
     Proposal(Box<Proposal>) = 1u8,
+    #[cfg(feature = "by_ref_proposal")]
     Reference(ProposalRef) = 2u8,
 }
 
@@ -503,6 +521,7 @@ impl From<Proposal> for ProposalOrRef {
     }
 }
 
+#[cfg(feature = "by_ref_proposal")]
 impl From<ProposalRef> for ProposalOrRef {
     fn from(r: ProposalRef) -> Self {
         Self::Reference(r)

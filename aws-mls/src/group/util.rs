@@ -213,7 +213,6 @@ pub(crate) fn find_node_data(
     }
 }
 
-#[inline(never)]
 pub(crate) fn commit_sender(
     sender: &Sender,
     #[cfg(feature = "external_commit")] provisional_state: &ProvisionalState,
@@ -222,6 +221,7 @@ pub(crate) fn commit_sender(
         Sender::Member(index) => Ok(LeafIndex(*index)),
         #[cfg(feature = "external_proposal")]
         Sender::External(_) => Err(MlsError::ExternalSenderCannotCommit),
+        #[cfg(feature = "by_ref_proposal")]
         Sender::NewMemberProposal => Err(MlsError::ExpectedAddProposalForNewMemberProposal),
         #[cfg(feature = "external_commit")]
         Sender::NewMemberCommit => provisional_state

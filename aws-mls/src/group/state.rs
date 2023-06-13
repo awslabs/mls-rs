@@ -2,12 +2,13 @@ use super::{
     confirmation_tag::ConfirmationTag, proposal::ReInitProposal,
     transcript_hash::InterimTranscriptHash,
 };
-use crate::group::{GroupContext, ProposalCache, TreeKemPublic};
+use crate::group::{GroupContext, TreeKemPublic};
 
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct GroupState {
-    pub(crate) proposals: ProposalCache,
+    #[cfg(feature = "by_ref_proposal")]
+    pub(crate) proposals: crate::group::ProposalCache,
     pub(crate) context: GroupContext,
     pub(crate) public_tree: TreeKemPublic,
     pub(crate) interim_transcript_hash: InterimTranscriptHash,
@@ -23,7 +24,11 @@ impl GroupState {
         confirmation_tag: ConfirmationTag,
     ) -> Self {
         Self {
-            proposals: ProposalCache::new(context.protocol_version, context.group_id.clone()),
+            #[cfg(feature = "by_ref_proposal")]
+            proposals: crate::group::ProposalCache::new(
+                context.protocol_version,
+                context.group_id.clone(),
+            ),
             context,
             public_tree: current_tree,
             interim_transcript_hash,

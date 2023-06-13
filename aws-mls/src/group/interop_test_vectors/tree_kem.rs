@@ -154,7 +154,7 @@ async fn tree_kem() {
                 let mut auth_content = AuthenticatedContent::new(
                     &group_context,
                     Sender::Member(update_path.sender),
-                    Content::Commit(commit),
+                    Content::Commit(alloc::boxed::Box::new(commit)),
                     vec![],
                     WireFormat::PublicMessage,
                 );

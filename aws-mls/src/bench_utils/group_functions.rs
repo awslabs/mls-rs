@@ -301,10 +301,10 @@ where
         group.cipher_suite_provider(),
         &context,
         Sender::Member(0),
-        Content::Commit(Commit {
+        Content::Commit(alloc::boxed::Box::new(Commit {
             proposals: Vec::new(),
             path: None,
-        }),
+        })),
         &group.signer().await?,
         wire_format,
         authenticated_data,

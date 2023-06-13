@@ -1,12 +1,16 @@
 use crate::cipher_suite::CipherSuite;
 use crate::client_builder::{BaseConfig, ClientBuilder};
 use crate::client_config::ClientConfig;
-use crate::group::framing::{
-    Content, MLSMessage, MLSMessagePayload, PublicMessage, Sender, WireFormat,
+use crate::group::framing::MLSMessage;
+
+#[cfg(feature = "by_ref_proposal")]
+use crate::group::{
+    framing::{Content, MLSMessagePayload, PublicMessage, Sender, WireFormat},
+    message_signature::AuthenticatedContent,
+    process_group_info,
+    proposal::{AddProposal, Proposal},
 };
-use crate::group::message_signature::AuthenticatedContent;
-use crate::group::proposal::{AddProposal, Proposal};
-use crate::group::{process_group_info, Group, NewMemberInfo};
+use crate::group::{Group, NewMemberInfo};
 use crate::identity::SigningIdentity;
 use crate::key_package::{KeyPackageGeneration, KeyPackageGenerator};
 use crate::protocol_version::ProtocolVersion;
@@ -19,6 +23,9 @@ use aws_mls_core::group::{GroupStateStorage, ProposalType};
 use aws_mls_core::identity::CredentialType;
 use aws_mls_core::key_package::KeyPackageStorage;
 use aws_mls_core::keychain::KeychainStorage;
+
+#[cfg(feature = "by_ref_proposal")]
+use alloc::boxed::Box;
 
 #[derive(Debug)]
 #[cfg_attr(feature = "std", derive(thiserror::Error))]
@@ -644,6 +651,7 @@ where
     /// An existing group member will need to perform a
     /// [commit](crate::Group::commit) to complete the add and the resulting
     /// welcome message can be used by [join_group](Client::join_group).
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::maybe_async]
     pub async fn external_add_proposal(
         &self,
@@ -703,7 +711,9 @@ where
             &cipher_suite_provider,
             &group_context,
             Sender::NewMemberProposal,
-            Content::Proposal(Proposal::Add(AddProposal { key_package })),
+            Content::Proposal(Box::new(Proposal::Add(Box::new(AddProposal {
+                key_package,
+            })))),
             &signer,
             WireFormat::PublicMessage,
             authenticated_data,
@@ -792,7 +802,7 @@ mod tests {
         crypto::test_utils::TestCryptoProvider,
         group::{
             message_processor::ProposalMessageDescription,
-            proposal::{AddProposal, Proposal},
+            proposal::Proposal,
             test_utils::{test_group, test_group_custom_config},
             ReceivedMessage,
         },
@@ -882,8 +892,8 @@ mod tests {
         assert_matches!(
             message,
             ReceivedMessage::Proposal(ProposalMessageDescription {
-                proposal: Proposal::Add(AddProposal { key_package }), ..}
-            ) if key_package.leaf_node.signing_identity == bob_identity
+                proposal: Proposal::Add(p), ..}
+            ) if p.key_package.leaf_node.signing_identity == bob_identity
         );
 
         alice_group.group.commit(vec![]).await.unwrap();

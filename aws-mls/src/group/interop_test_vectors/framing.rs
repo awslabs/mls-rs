@@ -159,7 +159,7 @@ async fn framing_proposal() {
 
         for message in to_check {
             match process_message(&test_case, &message, &cs).await {
-                Content::Proposal(p) => assert_eq!(&p, &proposal),
+                Content::Proposal(p) => assert_eq!(p.as_ref(), &proposal),
                 _ => panic!("received value not proposal"),
             };
         }
@@ -223,7 +223,7 @@ async fn framing_comit() {
             &cs,
             &test_case.context.clone().into(),
             Sender::Member(1),
-            Content::Commit(commit.clone()),
+            Content::Commit(alloc::boxed::Box::new(commit.clone())),
             &test_case.signature_priv.clone().into(),
             WireFormat::PublicMessage,
             vec![],
@@ -247,14 +247,14 @@ async fn framing_comit() {
 
         for message in to_check {
             match process_message(&test_case, &message, &cs).await {
-                Content::Commit(c) => assert_eq!(&c, &commit),
+                Content::Commit(c) => assert_eq!(&*c, &commit),
                 _ => panic!("received value not commit"),
             };
         }
         let commit = Commit::mls_decode(&mut &*test_case.commit).unwrap();
 
         match process_message(&test_case, &test_case.commit_priv.clone(), &cs).await {
-            Content::Commit(c) => assert_eq!(&c, &commit),
+            Content::Commit(c) => assert_eq!(&*c, &commit),
             _ => panic!("received value not commit"),
         };
     }
@@ -307,7 +307,7 @@ async fn generate_framing_test_vector() -> Vec<FramingTestCase> {
             &cs,
             group.context(),
             Sender::Member(1),
-            Content::Commit(commit.clone()),
+            Content::Commit(alloc::boxed::Box::new(commit.clone())),
             &group.signer().await.unwrap(),
             WireFormat::PublicMessage,
             vec![],
@@ -324,7 +324,7 @@ async fn generate_framing_test_vector() -> Vec<FramingTestCase> {
             &cs,
             group.context(),
             Sender::Member(1),
-            Content::Commit(commit),
+            Content::Commit(alloc::boxed::Box::new(commit)),
             &group.signer().await.unwrap(),
             WireFormat::PrivateMessage,
             vec![],

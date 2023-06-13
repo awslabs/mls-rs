@@ -37,6 +37,9 @@ use super::{
     ConfirmedTranscriptHash, Group, GroupInfo,
 };
 
+#[cfg(not(feature = "by_ref_proposal"))]
+use super::proposal_cache::prepare_commit;
+
 #[cfg(feature = "custom_proposal")]
 use super::proposal::CustomProposal;
 
@@ -435,21 +438,34 @@ where
         #[cfg(not(feature = "external_commit"))]
         let old_signer = self.signer().await?;
 
+        #[cfg(feature = "std")]
+        let time = Some(crate::time::MlsTime::now());
+
+        #[cfg(not(feature = "std"))]
+        let time = None;
+
+        #[cfg(feature = "by_ref_proposal")]
+        let proposals = self.state.proposals.prepare_commit(sender, proposals)?;
+
+        #[cfg(not(feature = "by_ref_proposal"))]
+        let proposals = prepare_commit(sender, proposals)?;
+
         let mut provisional_state = self
             .state
-            .proposals
-            .prepare_commit(
+            .apply_resolved(
                 sender,
+                #[cfg(all(feature = "by_ref_proposal", feature = "state_update"))]
+                Some(sender),
                 proposals,
-                self.context(),
-                &self.config.identity_provider(),
-                &self.cipher_suite_provider,
-                &self.state.public_tree,
                 #[cfg(feature = "external_commit")]
                 external_leaf,
+                &self.config.identity_provider(),
+                &self.cipher_suite_provider,
                 &self.config.secret_store(),
                 self.config.proposal_rules(),
-                &self.state.roster(),
+                time,
+                #[cfg(feature = "by_ref_proposal")]
+                true,
             )
             .await?;
 
@@ -543,7 +559,7 @@ where
             &self.cipher_suite_provider,
             self.context(),
             sender,
-            Content::Commit(commit),
+            Content::Commit(alloc::boxed::Box::new(commit)),
             &old_signer,
             #[cfg(feature = "private_message")]
             options.encryption_mode.into(),

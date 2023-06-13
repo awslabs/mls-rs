@@ -137,7 +137,7 @@ async fn apply_proposal(
 #[maybe_async::maybe_async]
 async fn generate_add() -> Proposal {
     let key_package = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "Roger").await;
-    Proposal::Add(AddProposal { key_package })
+    Proposal::Add(Box::new(AddProposal { key_package }))
 }
 
 fn generate_remove(i: u32) -> Proposal {

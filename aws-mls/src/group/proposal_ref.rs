@@ -49,7 +49,7 @@ pub(crate) mod test_utils {
                 epoch: 0,
                 sender: sender.into(),
                 authenticated_data: vec![],
-                content: Content::Proposal(proposal),
+                content: Content::Proposal(Box::new(proposal)),
             },
             auth: FramedContentAuthData {
                 signature: MessageSignature::from(random_bytes(128)),
@@ -105,9 +105,9 @@ mod test {
             let sender = LeafIndex(0);
 
             let add = auth_content_from_proposal(
-                Proposal::Add(AddProposal {
+                Proposal::Add(Box::new(AddProposal {
                     key_package: test_key_package(protocol_version, cipher_suite, "alice").await,
-                }),
+                })),
                 sender,
             );
 

@@ -1,3 +1,4 @@
+#[cfg(feature = "by_ref_proposal")]
 use super::proposal::Proposal;
 use super::*;
 use crate::{client::MlsError, protocol_version::ProtocolVersion};
@@ -6,13 +7,14 @@ use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use zeroize::Zeroize;
 
 #[cfg(feature = "private_message")]
-use alloc::string::ToString;
+use alloc::{boxed::Box, string::ToString};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
 pub enum ContentType {
     Application = 1u8,
+    #[cfg(feature = "by_ref_proposal")]
     Proposal = 2u8,
     Commit = 3u8,
 }
@@ -21,6 +23,7 @@ impl From<&Content> for ContentType {
     fn from(content: &Content) -> Self {
         match content {
             Content::Application(_) => ContentType::Application,
+            #[cfg(feature = "by_ref_proposal")]
             Content::Proposal(_) => ContentType::Proposal,
             Content::Commit(_) => ContentType::Commit,
         }
@@ -42,6 +45,7 @@ pub enum Sender {
     #[cfg(feature = "external_proposal")]
     External(u32) = 2u8,
     /// A new member proposing their own addition to the group.
+    #[cfg(feature = "by_ref_proposal")]
     NewMemberProposal = 3u8,
     /// A member sending an external commit.
     #[cfg(feature = "external_commit")]
@@ -91,8 +95,9 @@ impl ApplicationData {
 #[repr(u8)]
 pub(crate) enum Content {
     Application(ApplicationData) = 1u8,
-    Proposal(Proposal) = 2u8,
-    Commit(Commit) = 3u8,
+    #[cfg(feature = "by_ref_proposal")]
+    Proposal(alloc::boxed::Box<Proposal>) = 2u8,
+    Commit(alloc::boxed::Box<Commit>) = 3u8,
 }
 
 impl Content {
@@ -138,6 +143,11 @@ impl MlsDecode for PublicMessage {
 
         let membership_tag = match content.sender {
             Sender::Member(_) => Some(MembershipTag::mls_decode(reader)?),
+            #[cfg(any(
+                feature = "external_proposal",
+                feature = "by_ref_proposal",
+                feature = "external_commit"
+            ))]
             _ => None,
         };
 
@@ -162,6 +172,7 @@ impl MlsSize for PrivateContentTBE {
     fn mls_encoded_len(&self) -> usize {
         let content_len_without_type = match &self.content {
             Content::Application(c) => c.mls_encoded_len(),
+            #[cfg(feature = "by_ref_proposal")]
             Content::Proposal(c) => c.mls_encoded_len(),
             Content::Commit(c) => c.mls_encoded_len(),
         };
@@ -176,6 +187,7 @@ impl MlsEncode for PrivateContentTBE {
     fn mls_encode(&self, writer: &mut Vec<u8>) -> Result<(), aws_mls_codec::Error> {
         match &self.content {
             Content::Application(c) => c.mls_encode(writer),
+            #[cfg(feature = "by_ref_proposal")]
             Content::Proposal(c) => c.mls_encode(writer),
             Content::Commit(c) => c.mls_encode(writer),
         }?;
@@ -195,8 +207,11 @@ impl PrivateContentTBE {
     ) -> Result<Self, aws_mls_codec::Error> {
         let content = match content_type {
             ContentType::Application => Content::Application(ApplicationData::mls_decode(reader)?),
-            ContentType::Proposal => Content::Proposal(Proposal::mls_decode(reader)?),
-            ContentType::Commit => Content::Commit(Commit::mls_decode(reader)?),
+            #[cfg(feature = "by_ref_proposal")]
+            ContentType::Proposal => Content::Proposal(Box::new(Proposal::mls_decode(reader)?)),
+            ContentType::Commit => {
+                Content::Commit(alloc::boxed::Box::new(Commit::mls_decode(reader)?))
+            }
         };
 
         let auth = FramedContentAuthData::mls_decode(reader, content.content_type())?;

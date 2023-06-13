@@ -1,6 +1,5 @@
 use crate::{
     client::MlsError,
-    extension::RequiredCapabilitiesExt,
     group::{
         proposal::ReInitProposal,
         proposal_filter::{ProposalBundle, ProposalInfo},
@@ -10,12 +9,15 @@ use crate::{
     protocol_version::ProtocolVersion,
     time::MlsTime,
     tree_kem::{
-        leaf_node::LeafNode,
         leaf_node_validator::{LeafNodeValidator, ValidationContext},
         node::LeafIndex,
         TreeKemPublic,
     },
     CipherSuiteProvider, ExtensionList,
+};
+
+use super::filtering_common::{
+    filter_out_invalid_psks, leaf_supports_extensions, ApplyProposalsOutput, ProposalApplier,
 };
 
 #[cfg(feature = "external_proposal")]
@@ -31,34 +33,7 @@ use itertools::Itertools;
 use crate::group::ExternalInit;
 
 #[cfg(feature = "psk")]
-use crate::group::{
-    proposal::PreSharedKeyProposal, JustPreSharedKeyID, ResumptionPSKUsage, ResumptionPsk,
-};
-
-#[cfg(all(feature = "std", feature = "psk"))]
-use std::collections::HashSet;
-
-#[derive(Debug)]
-pub(crate) struct ProposalApplier<'a, C, P, CSP> {
-    original_tree: &'a TreeKemPublic,
-    protocol_version: ProtocolVersion,
-    cipher_suite_provider: &'a CSP,
-    group_id: &'a [u8],
-    original_group_extensions: &'a ExtensionList,
-    #[cfg(feature = "external_commit")]
-    external_leaf: Option<&'a LeafNode>,
-    identity_provider: &'a C,
-    psk_storage: &'a P,
-}
-
-#[derive(Debug)]
-pub(crate) struct ApplyProposalsOutput {
-    pub(crate) applied_proposals: ProposalBundle,
-    pub(crate) new_tree: TreeKemPublic,
-    pub(crate) indexes_of_added_kpkgs: Vec<LeafIndex>,
-    #[cfg(feature = "external_commit")]
-    pub(crate) external_init_index: Option<LeafIndex>,
-}
+use crate::group::proposal::PreSharedKeyProposal;
 
 impl<'a, C, P, CSP> ProposalApplier<'a, C, P, CSP>
 where
@@ -66,74 +41,8 @@ where
     P: PreSharedKeyStorage,
     CSP: CipherSuiteProvider,
 {
-    #[allow(clippy::too_many_arguments)]
-    #[inline(never)]
-    pub(crate) fn new(
-        original_tree: &'a TreeKemPublic,
-        protocol_version: ProtocolVersion,
-        cipher_suite_provider: &'a CSP,
-        group_id: &'a [u8],
-        original_group_extensions: &'a ExtensionList,
-        #[cfg(feature = "external_commit")] external_leaf: Option<&'a LeafNode>,
-        identity_provider: &'a C,
-        psk_storage: &'a P,
-    ) -> Self {
-        Self {
-            original_tree,
-            protocol_version,
-            cipher_suite_provider,
-            group_id,
-            original_group_extensions,
-            #[cfg(feature = "external_commit")]
-            external_leaf,
-            identity_provider,
-            psk_storage,
-        }
-    }
-
     #[maybe_async::maybe_async]
-    pub(crate) async fn apply_proposals(
-        &self,
-        strategy: FilterStrategy,
-        commit_sender: &Sender,
-        proposals: ProposalBundle,
-        commit_time: Option<MlsTime>,
-    ) -> Result<ApplyProposalsOutput, MlsError> {
-        let output = match commit_sender {
-            Sender::Member(sender) => {
-                self.apply_proposals_from_member(
-                    strategy,
-                    LeafIndex(*sender),
-                    proposals,
-                    commit_time,
-                )
-                .await
-            }
-            #[cfg(feature = "external_commit")]
-            Sender::NewMemberCommit => {
-                self.apply_proposals_from_new_member(proposals, commit_time)
-                    .await
-            }
-            #[cfg(feature = "external_proposal")]
-            Sender::External(_) => Err(MlsError::ExternalSenderCannotCommit),
-            Sender::NewMemberProposal => Err(MlsError::ExternalSenderCannotCommit),
-        }?;
-
-        #[cfg(feature = "custom_proposal")]
-        let mut output = output;
-
-        #[cfg(feature = "custom_proposal")]
-        filter_out_unsupported_custom_proposals(
-            &mut output.applied_proposals,
-            &output.new_tree,
-            strategy,
-        )?;
-
-        Ok(output)
-    }
-
-    #[maybe_async::maybe_async]
-    async fn apply_proposals_from_member(
+    pub(super) async fn apply_proposals_from_member(
         &self,
         strategy: FilterStrategy,
         commit_sender: LeafIndex,
@@ -152,12 +61,12 @@ where
             .map(leaf_index_of_update_sender)
             .collect::<Result<_, _>>()?;
 
-        let proposals = filter_out_removal_of_committer(strategy, commit_sender, proposals)?;
+        let mut proposals = filter_out_removal_of_committer(strategy, commit_sender, proposals)?;
 
-        let proposals = filter_out_invalid_psks(
+        filter_out_invalid_psks(
             strategy,
             self.cipher_suite_provider,
-            proposals,
+            &mut proposals,
             self.psk_storage,
         )
         .await?;
@@ -182,65 +91,8 @@ where
             .await
     }
 
-    #[cfg(feature = "external_commit")]
     #[maybe_async::maybe_async]
-    async fn apply_proposals_from_new_member(
-        &self,
-        proposals: ProposalBundle,
-        commit_time: Option<MlsTime>,
-    ) -> Result<ApplyProposalsOutput, MlsError> {
-        let external_leaf = self
-            .external_leaf
-            .ok_or(MlsError::ExternalCommitMustHaveNewLeaf)?;
-
-        ensure_exactly_one_external_init(&proposals)?;
-
-        ensure_at_most_one_removal_for_self(
-            &proposals,
-            external_leaf,
-            self.original_tree,
-            self.identity_provider,
-        )
-        .await?;
-
-        ensure_proposals_in_external_commit_are_allowed(&proposals)?;
-        ensure_no_proposal_by_ref(&proposals)?;
-
-        let mut proposals = filter_out_invalid_proposers(FilterStrategy::IgnoreNone, proposals)?;
-
-        // We ignore the strategy here because the check above ensures all updates are from members
-        proposals.update_senders = proposals
-            .updates
-            .iter()
-            .map(leaf_index_of_update_sender)
-            .collect::<Result<_, _>>()?;
-
-        let proposals = filter_out_invalid_psks(
-            FilterStrategy::IgnoreNone,
-            self.cipher_suite_provider,
-            proposals,
-            self.psk_storage,
-        )
-        .await?;
-
-        let mut output = self
-            .apply_proposal_changes(FilterStrategy::IgnoreNone, proposals, commit_time)
-            .await?;
-
-        output.external_init_index = Some(
-            insert_external_leaf(
-                &mut output.new_tree,
-                external_leaf.clone(),
-                self.identity_provider,
-            )
-            .await?,
-        );
-
-        Ok(output)
-    }
-
-    #[maybe_async::maybe_async]
-    async fn apply_proposal_changes(
+    pub(super) async fn apply_proposal_changes(
         &self,
         strategy: FilterStrategy,
         mut proposals: ProposalBundle,
@@ -290,85 +142,7 @@ where
     }
 
     #[maybe_async::maybe_async]
-    async fn apply_proposals_with_new_capabilities(
-        &self,
-        strategy: FilterStrategy,
-        mut proposals: ProposalBundle,
-        group_context_extensions_proposal: ProposalInfo<ExtensionList>,
-        new_required_capabilities: Option<RequiredCapabilitiesExt>,
-        commit_time: Option<MlsTime>,
-    ) -> Result<ApplyProposalsOutput, MlsError>
-    where
-        C: IdentityProvider,
-    {
-        // Apply adds, updates etc. in the context of new extensions
-        let output = self
-            .apply_tree_changes(
-                strategy,
-                proposals.clone(),
-                group_context_extensions_proposal.proposal(),
-                commit_time,
-            )
-            .await?;
-
-        // Verify that capabilities and extensions are supported after modifications.
-        // TODO: The newly inserted nodes have already been validated by `apply_tree_changes`
-        // above. We should investigate if there is an easy way to avoid the double check.
-        let new_capabilities_supported =
-            new_required_capabilities.map_or(Ok(()), |new_required_capabilities| {
-                let leaf_validator = LeafNodeValidator::new(
-                    self.cipher_suite_provider,
-                    Some(&new_required_capabilities),
-                    self.identity_provider,
-                    Some(group_context_extensions_proposal.proposal()),
-                );
-
-                output
-                    .new_tree
-                    .non_empty_leaves()
-                    .try_for_each(|(_, leaf)| leaf_validator.validate_required_capabilities(leaf))
-            });
-
-        let new_extensions_supported = group_context_extensions_proposal
-            .proposal
-            .iter()
-            .map(|extension| extension.extension_type())
-            .filter(|&ext_type| !ext_type.is_default())
-            .find(|ext_type| {
-                !output
-                    .new_tree
-                    .non_empty_leaves()
-                    .all(|(_, leaf)| leaf.capabilities.extensions.contains(ext_type))
-            })
-            .map_or(Ok(()), |ext| Err(MlsError::UnsupportedGroupExtension(ext)));
-
-        let group_extensions_supported = new_capabilities_supported.and(new_extensions_supported);
-
-        // If extensions are good, return `Ok`. If not and the strategy is to filter, remove the group
-        // context extensions proposal and try applying all proposals again in the context of the old
-        // extensions. Else, return an error.
-        match group_extensions_supported {
-            Ok(()) => Ok(output),
-            Err(e) => {
-                if strategy.ignore(group_context_extensions_proposal.is_by_reference()) {
-                    proposals.clear_group_context_extensions();
-
-                    self.apply_tree_changes(
-                        strategy,
-                        proposals,
-                        self.original_group_extensions,
-                        commit_time,
-                    )
-                    .await
-                } else {
-                    Err(e)
-                }
-            }
-        }
-    }
-
-    #[maybe_async::maybe_async]
-    async fn apply_tree_changes(
+    pub(super) async fn apply_tree_changes(
         &self,
         strategy: FilterStrategy,
         proposals: ProposalBundle,
@@ -494,15 +268,6 @@ where
     }
 }
 
-fn leaf_supports_extensions(leaf: &LeafNode, extensions: &ExtensionList) -> Result<(), MlsError> {
-    extensions
-        .iter()
-        .map(|ext| ext.extension_type())
-        .filter(|&ext_type| !ext_type.is_default())
-        .find(|ext_type| !leaf.capabilities.extensions.contains(ext_type))
-        .map_or(Ok(()), |ext| Err(MlsError::UnsupportedGroupExtension(ext)))
-}
-
 #[derive(Clone, Copy, Debug)]
 pub enum FilterStrategy {
     IgnoreByRef,
@@ -510,7 +275,7 @@ pub enum FilterStrategy {
 }
 
 impl FilterStrategy {
-    fn ignore(self, by_ref: bool) -> bool {
+    pub(super) fn ignore(self, by_ref: bool) -> bool {
         match self {
             FilterStrategy::IgnoreByRef => by_ref,
             FilterStrategy::IgnoreNone => false,
@@ -525,7 +290,7 @@ impl FilterStrategy {
     }
 }
 
-fn apply_strategy(
+pub(crate) fn apply_strategy(
     strategy: FilterStrategy,
     by_ref: bool,
     r: Result<(), MlsError>,
@@ -678,103 +443,6 @@ fn filter_out_external_init(
     Ok(proposals)
 }
 
-#[cfg(feature = "psk")]
-#[maybe_async::maybe_async]
-async fn filter_out_invalid_psks<P, CP>(
-    strategy: FilterStrategy,
-    cipher_suite_provider: &CP,
-    mut proposals: ProposalBundle,
-    psk_storage: &P,
-) -> Result<ProposalBundle, MlsError>
-where
-    P: PreSharedKeyStorage,
-    CP: CipherSuiteProvider,
-{
-    let kdf_extract_size = cipher_suite_provider.kdf_extract_size();
-
-    #[cfg(feature = "std")]
-    let mut ids_seen = HashSet::new();
-
-    #[cfg(not(feature = "std"))]
-    let mut ids_seen = Vec::new();
-
-    let mut bad_indices = Vec::new();
-
-    for (i, p) in proposals.by_type::<PreSharedKeyProposal>().enumerate() {
-        let valid = matches!(
-            p.proposal.psk.key_id,
-            JustPreSharedKeyID::External(_)
-                | JustPreSharedKeyID::Resumption(ResumptionPsk {
-                    usage: ResumptionPSKUsage::Application,
-                    ..
-                })
-        );
-
-        let nonce_length = p.proposal.psk.psk_nonce.0.len();
-        let nonce_valid = nonce_length == kdf_extract_size;
-
-        #[cfg(feature = "std")]
-        let is_new_id = ids_seen.insert(p.proposal.psk.clone());
-
-        #[cfg(not(feature = "std"))]
-        let is_new_id = ids_seen.contains(&p.proposal.psk);
-
-        let external_id_is_valid = match &p.proposal.psk.key_id {
-            JustPreSharedKeyID::External(id) => psk_storage
-                .contains(id)
-                .await
-                .map_err(|e| MlsError::PskStoreError(e.into_any_error()))
-                .and_then(|found| {
-                    if found {
-                        Ok(())
-                    } else {
-                        Err(MlsError::MissingRequiredPsk)
-                    }
-                }),
-            JustPreSharedKeyID::Resumption(_) => Ok(()),
-        };
-
-        let res = if !valid {
-            Err(MlsError::InvalidTypeOrUsageInPreSharedKeyProposal)
-        } else if !nonce_valid {
-            Err(MlsError::InvalidPskNonceLength)
-        } else if !is_new_id {
-            Err(MlsError::DuplicatePskIds)
-        } else {
-            external_id_is_valid
-        };
-
-        if !apply_strategy(strategy, p.is_by_reference(), res)? {
-            bad_indices.push(i)
-        }
-
-        #[cfg(not(feature = "std"))]
-        ids_seen.push(p.proposal.psk.clone());
-    }
-
-    bad_indices
-        .into_iter()
-        .rev()
-        .for_each(|i| proposals.remove::<PreSharedKeyProposal>(i));
-
-    Ok(proposals)
-}
-
-#[cfg(not(feature = "psk"))]
-#[maybe_async::maybe_async]
-async fn filter_out_invalid_psks<P, CP>(
-    _: FilterStrategy,
-    _: &CP,
-    proposals: ProposalBundle,
-    _: &P,
-) -> Result<ProposalBundle, MlsError>
-where
-    P: PreSharedKeyStorage,
-    CP: CipherSuiteProvider,
-{
-    Ok(proposals)
-}
-
 pub(crate) fn proposer_can_propose(
     proposer: Sender,
     proposal_type: ProposalType,
@@ -825,7 +493,7 @@ pub(crate) fn proposer_can_propose(
         .ok_or(MlsError::InvalidProposalTypeForSender)
 }
 
-fn filter_out_invalid_proposers(
+pub(crate) fn filter_out_invalid_proposers(
     strategy: FilterStrategy,
     mut proposals: ProposalBundle,
 ) -> Result<ProposalBundle, MlsError> {
@@ -898,85 +566,6 @@ fn filter_out_invalid_proposers(
     Ok(proposals)
 }
 
-#[cfg(feature = "external_commit")]
-fn ensure_exactly_one_external_init(proposals: &ProposalBundle) -> Result<(), MlsError> {
-    (proposals.by_type::<ExternalInit>().count() == 1)
-        .then_some(())
-        .ok_or(MlsError::ExternalCommitMustHaveExactlyOneExternalInit)
-}
-
-#[cfg(feature = "external_commit")]
-fn ensure_proposals_in_external_commit_are_allowed(
-    proposals: &ProposalBundle,
-) -> Result<(), MlsError> {
-    let unsupported_type = proposals.proposal_types().find(|ty| {
-        ![
-            ProposalType::EXTERNAL_INIT,
-            ProposalType::REMOVE,
-            ProposalType::PSK,
-        ]
-        .contains(ty)
-    });
-
-    match unsupported_type {
-        Some(kind) => Err(MlsError::InvalidProposalTypeInExternalCommit(kind)),
-        None => Ok(()),
-    }
-}
-
-#[cfg(feature = "external_commit")]
-#[maybe_async::maybe_async]
-async fn ensure_at_most_one_removal_for_self<C>(
-    proposals: &ProposalBundle,
-    external_leaf: &LeafNode,
-    tree: &TreeKemPublic,
-    identity_provider: &C,
-) -> Result<(), MlsError>
-where
-    C: IdentityProvider,
-{
-    let mut removals = proposals.by_type::<RemoveProposal>();
-
-    match (removals.next(), removals.next()) {
-        (Some(removal), None) => {
-            ensure_removal_is_for_self(&removal.proposal, external_leaf, tree, identity_provider)
-                .await
-        }
-        (Some(_), Some(_)) => Err(MlsError::ExternalCommitWithMoreThanOneRemove),
-        (None, _) => Ok(()),
-    }
-}
-
-#[cfg(feature = "external_commit")]
-#[maybe_async::maybe_async]
-async fn ensure_removal_is_for_self<C>(
-    removal: &RemoveProposal,
-    external_leaf: &LeafNode,
-    tree: &TreeKemPublic,
-    identity_provider: &C,
-) -> Result<(), MlsError>
-where
-    C: IdentityProvider,
-{
-    let existing_signing_id = &tree.get_leaf_node(removal.to_remove)?.signing_identity;
-
-    identity_provider
-        .valid_successor(existing_signing_id, &external_leaf.signing_identity)
-        .await
-        .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?
-        .then_some(())
-        .ok_or(MlsError::ExternalCommitRemovesOtherIdentity)
-}
-
-#[cfg(feature = "external_commit")]
-fn ensure_no_proposal_by_ref(proposals: &ProposalBundle) -> Result<(), MlsError> {
-    proposals
-        .iter_proposals()
-        .all(|p| p.is_by_value())
-        .then_some(())
-        .ok_or(MlsError::OnlyMembersCanCommitProposalsByRef)
-}
-
 fn leaf_index_of_update_sender(p: &ProposalInfo<UpdateProposal>) -> Result<LeafIndex, MlsError> {
     match p.sender {
         Sender::Member(i) => Ok(LeafIndex(i)),
@@ -984,18 +573,8 @@ fn leaf_index_of_update_sender(p: &ProposalInfo<UpdateProposal>) -> Result<LeafI
     }
 }
 
-#[cfg(feature = "external_commit")]
-#[maybe_async::maybe_async]
-async fn insert_external_leaf<I: IdentityProvider>(
-    tree: &mut TreeKemPublic,
-    leaf_node: LeafNode,
-    identity_provider: &I,
-) -> Result<LeafIndex, MlsError> {
-    tree.add_leaf(leaf_node, identity_provider, None).await
-}
-
 #[cfg(feature = "custom_proposal")]
-fn filter_out_unsupported_custom_proposals(
+pub(super) fn filter_out_unsupported_custom_proposals(
     proposals: &mut ProposalBundle,
     tree: &TreeKemPublic,
     strategy: FilterStrategy,

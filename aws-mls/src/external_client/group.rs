@@ -8,19 +8,16 @@ use crate::{
     group::{
         cipher_suite_provider,
         confirmation_tag::ConfirmationTag,
-        framing::{Content, MLSMessagePayload, PublicMessage, WireFormat},
+        framing::PublicMessage,
         member_from_leaf_node,
         message_processor::{
             ApplicationMessageDescription, CommitMessageDescription, EventOrContent,
             MessageProcessor, ProposalMessageDescription, ProvisionalState,
         },
-        message_signature::AuthenticatedContent,
-        proposal::Proposal,
-        proposal_ref::ProposalRef,
         snapshot::RawGroupState,
         state::GroupState,
         transcript_hash::InterimTranscriptHash,
-        validate_group_info, Sender,
+        validate_group_info,
     },
     identity::SigningIdentity,
     protocol_version::ProtocolVersion,
@@ -29,7 +26,23 @@ use crate::{
     CryptoProvider, MLSMessage,
 };
 
-#[cfg(all(feature = "external_proposal", feature = "custom_proposal"))]
+#[cfg(feature = "by_ref_proposal")]
+use crate::{
+    group::{
+        framing::{Content, MLSMessagePayload},
+        message_signature::AuthenticatedContent,
+        proposal::Proposal,
+        proposal_ref::ProposalRef,
+        Sender,
+    },
+    WireFormat,
+};
+
+#[cfg(all(
+    feature = "by_ref_proposal",
+    feature = "external_proposal",
+    feature = "custom_proposal"
+))]
 use crate::group::proposal::CustomProposal;
 
 #[cfg(feature = "external_proposal")]
@@ -56,6 +69,8 @@ use crate::{
 
 #[cfg(feature = "private_message")]
 use crate::group::framing::PrivateMessage;
+
+use alloc::boxed::Box;
 
 /// The result of processing an [ExternalGroup](ExternalGroup) message using
 /// [process_incoming_message](ExternalGroup::process_incoming_message)
@@ -155,11 +170,17 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         &mut self,
         message: MLSMessage,
     ) -> Result<ExternalReceivedMessage, MlsError> {
-        MessageProcessor::process_incoming_message(self, message, self.config.cache_proposals())
-            .await
+        MessageProcessor::process_incoming_message(
+            self,
+            message,
+            #[cfg(feature = "by_ref_proposal")]
+            self.config.cache_proposals(),
+        )
+        .await
     }
 
     /// Replay a proposal message into the group skipping all validation steps.
+    #[cfg(feature = "by_ref_proposal")]
     pub fn insert_proposal_from_message(&mut self, message: MLSMessage) -> Result<(), MlsError> {
         let ptxt = match message.payload {
             MLSMessagePayload::Plain(p) => Ok(p),
@@ -175,13 +196,14 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             _ => Err(MlsError::UnexpectedMessageType),
         }?;
 
-        self.insert_proposal(proposal, proposal_ref, sender);
+        self.insert_proposal(*proposal, proposal_ref, sender);
 
         Ok(())
     }
 
     /// Force insert a proposal directly into the internal state of the group
     /// with no validation.
+    #[cfg(feature = "by_ref_proposal")]
     pub fn insert_proposal(
         &mut self,
         proposal: Proposal,
@@ -228,7 +250,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         validate_key_package_properties(&key_package, self.protocol_version(), cs).await?;
 
         self.propose(
-            Proposal::Add(AddProposal { key_package }),
+            Proposal::Add(alloc::boxed::Box::new(AddProposal { key_package })),
             signing_identity,
             authenticated_data,
         )
@@ -442,7 +464,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             &self.cipher_suite_provider,
             &self.state.context,
             sender,
-            Content::Proposal(proposal.clone()),
+            Content::Proposal(Box::new(proposal.clone())),
             &signer,
             WireFormat::PublicMessage,
             authenticated_data,
@@ -601,6 +623,7 @@ where
         provisional_public_state: ProvisionalState,
     ) -> Result<(), MlsError> {
         self.state.context = provisional_public_state.group_context;
+        #[cfg(feature = "by_ref_proposal")]
         self.state.proposals.clear();
         self.state.interim_transcript_hash = interim_transcript_hash;
         self.state.public_tree = provisional_public_state.public_tree;
@@ -855,9 +878,9 @@ mod tests {
         let bob_key_package =
             test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
 
-        let add_proposal = Proposal::Add(AddProposal {
+        let add_proposal = Proposal::Add(Box::new(AddProposal {
             key_package: bob_key_package,
-        });
+        }));
 
         let packet = alice.propose(add_proposal.clone()).await;
 

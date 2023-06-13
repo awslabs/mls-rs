@@ -14,12 +14,13 @@ use crate::{
 use crate::{extension::ExternalSendersExt, identity::SigningIdentity};
 
 use super::{
-    framing::Content,
     key_schedule::KeySchedule,
     message_signature::{AuthenticatedContent, MessageSigningContext},
-    proposal::{AddProposal, Proposal},
     state::GroupState,
 };
+
+#[cfg(feature = "by_ref_proposal")]
+use super::proposal::Proposal;
 
 #[derive(Debug)]
 pub(crate) enum SignaturePublicKeysContainer<'a> {
@@ -65,6 +66,11 @@ pub(crate) fn verify_plaintext_authentication<P: CipherSuiteProvider>(
                 return Err(MlsError::CantProcessMessageFromSelf);
             }
         }
+        #[cfg(any(
+            feature = "external_proposal",
+            feature = "by_ref_proposal",
+            feature = "external_commit"
+        ))]
         _ => {
             tag.is_none()
                 .then_some(())
@@ -107,6 +113,11 @@ pub(crate) fn verify_auth_content_signature<P: CipherSuiteProvider>(
     let sender_public_key = signing_identity_for_sender(
         signature_keys_container,
         &auth_content.content.sender,
+        #[cfg(any(
+            feature = "external_proposal",
+            feature = "by_ref_proposal",
+            feature = "external_commit"
+        ))]
         &auth_content.content.content,
         #[cfg(feature = "external_proposal")]
         external_signers,
@@ -125,7 +136,12 @@ pub(crate) fn verify_auth_content_signature<P: CipherSuiteProvider>(
 fn signing_identity_for_sender(
     signature_keys_container: SignaturePublicKeysContainer,
     sender: &Sender,
-    content: &Content,
+    #[cfg(any(
+        feature = "external_proposal",
+        feature = "by_ref_proposal",
+        feature = "external_commit"
+    ))]
+    content: &super::framing::Content,
     #[cfg(feature = "external_proposal")] external_signers: &[SigningIdentity],
 ) -> Result<SignaturePublicKey, MlsError> {
     match sender {
@@ -138,6 +154,7 @@ fn signing_identity_for_sender(
         }
         #[cfg(feature = "external_commit")]
         Sender::NewMemberCommit => signing_identity_for_new_member_commit(content),
+        #[cfg(feature = "by_ref_proposal")]
         Sender::NewMemberProposal => signing_identity_for_new_member_proposal(content),
     }
 }
@@ -174,10 +191,10 @@ fn signing_identity_for_external(
 
 #[cfg(feature = "external_commit")]
 fn signing_identity_for_new_member_commit(
-    content: &Content,
+    content: &super::framing::Content,
 ) -> Result<SignaturePublicKey, MlsError> {
     match content {
-        Content::Commit(commit) => {
+        super::framing::Content::Commit(commit) => {
             if let Some(path) = &commit.path {
                 Ok(path.leaf_node.signing_identity.signature_key.clone())
             } else {
@@ -188,13 +205,18 @@ fn signing_identity_for_new_member_commit(
     }
 }
 
+#[cfg(feature = "by_ref_proposal")]
 fn signing_identity_for_new_member_proposal(
-    content: &Content,
+    content: &super::framing::Content,
 ) -> Result<SignaturePublicKey, MlsError> {
     match content {
-        Content::Proposal(proposal) => {
-            if let Proposal::Add(AddProposal { key_package }) = proposal {
-                Ok(key_package.leaf_node.signing_identity.signature_key.clone())
+        super::framing::Content::Proposal(proposal) => {
+            if let Proposal::Add(p) = proposal.as_ref() {
+                Ok(p.key_package
+                    .leaf_node
+                    .signing_identity
+                    .signature_key
+                    .clone())
             } else {
                 Err(MlsError::ExpectedAddProposalForNewMemberProposal)
             }
@@ -402,9 +424,9 @@ mod tests {
             &test_group.group.cipher_suite_provider,
             test_group.group.context(),
             Sender::NewMemberProposal,
-            Content::Proposal(Proposal::Add(AddProposal {
+            Content::Proposal(Box::new(Proposal::Add(Box::new(AddProposal {
                 key_package: key_pkg_gen.key_package,
-            })),
+            })))),
             signer,
             WireFormat::PublicMessage,
             vec![],
@@ -477,9 +499,9 @@ mod tests {
             test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob").await;
 
         let message = test_new_member_proposal(key_pkg_gen, &signer, &test_group, |msg| {
-            msg.content.content = Content::Proposal(Proposal::Remove(RemoveProposal {
+            msg.content.content = Content::Proposal(Box::new(Proposal::Remove(RemoveProposal {
                 to_remove: LeafIndex(0),
-            }))
+            })))
         });
 
         let res = verify_plaintext_authentication(
