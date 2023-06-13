@@ -94,6 +94,10 @@ required-features = ["tokio"]
 name = "x509"
 required-features = ["tokio", "x509"]
 
+[[example]]
+name = "large_group"
+required-features = ["tokio"]
+
 [[bench]]
 name = "encap"
 harness = false

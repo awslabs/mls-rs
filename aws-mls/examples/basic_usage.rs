@@ -14,7 +14,7 @@ const PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::MLS_10;
 fn make_client<P: CryptoProvider + Clone>(
     crypto_provider: P,
     name: &str,
-) -> Result<(SigningIdentity, Client<impl MlsConfig>), Box<MlsError>> {
+) -> Result<(SigningIdentity, Client<impl MlsConfig>), MlsError> {
     let cipher_suite = crypto_provider.cipher_suite_provider(CIPHERSUITE).unwrap();
 
     // Generate a signature key pair.
@@ -42,7 +42,7 @@ fn make_client<P: CryptoProvider + Clone>(
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<MlsError>> {
+async fn main() -> Result<(), MlsError> {
     let crypto_provider = aws_mls_crypto_openssl::OpensslCryptoProvider::default();
 
     // Create clients for Alice and Bob
