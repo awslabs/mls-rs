@@ -3,11 +3,13 @@ use std::{net::IpAddr, ops::Deref};
 use aws_mls_core::{
     crypto::{SignaturePublicKey, SignatureSecretKey},
     error::IntoAnyError,
+    identity::{CertificateChain, SigningIdentity},
     time::{MlsTime, SystemTimeError},
 };
 use aws_mls_identity_x509::{
     CertificateGeneration, CertificateParameters, CertificateRequest, DerCertificate,
-    SubjectAltName, SubjectComponent, X509CertificateWriter, X509CredentialValidator,
+    NoOpWarningProvider, SubjectAltName, SubjectComponent, SubjectIdentityExtractor,
+    X509CertificateWriter, X509CredentialValidator, X509IdentityProvider,
 };
 use openssl::{
     asn1::Asn1Time,
@@ -580,6 +582,64 @@ impl X509CertificateWriter for X509Writer {
             subjet_seckey,
         ))
     }
+}
+
+/// Returns a signature secret key from a key in DER or PEM format
+pub fn signature_secret_key_from_bytes(data: &[u8]) -> Result<SignatureSecretKey, X509Error> {
+    let secret_key = if looks_like_der(data) {
+        PKey::private_key_from_der(data)
+    } else {
+        PKey::private_key_from_pem(data)
+    }?;
+
+    Ok(SignatureSecretKey::from(
+        if let Ok(ec_key) = secret_key.ec_key() {
+            ec_key.private_key().to_vec()
+        } else {
+            secret_key.raw_private_key()?
+        },
+    ))
+}
+
+/// Returns a signing identity from a certificate in DER or PEM format
+pub fn signing_identity_from_certificate(certificate: &[u8]) -> Result<SigningIdentity, X509Error> {
+    let certificate = if looks_like_der(certificate) {
+        X509::from_der(certificate)
+    } else {
+        X509::from_pem(certificate)
+    }?;
+
+    let public_key = pub_key_to_uncompressed(certificate.public_key()?)?.into();
+
+    Ok(SigningIdentity::new(
+        CertificateChain::from(vec![certificate.to_der()?]).into_credential(),
+        public_key,
+    ))
+}
+
+/// Returns a X509 identity provider from a root CA certificate in DER or PEM format
+pub fn identity_provider_from_certificate(
+    certificate: &[u8],
+) -> Result<
+    X509IdentityProvider<SubjectIdentityExtractor<X509Reader>, X509Validator, NoOpWarningProvider>,
+    X509Error,
+> {
+    let certificate = if looks_like_der(certificate) {
+        X509::from_der(certificate)
+    } else {
+        X509::from_pem(certificate)
+    }?
+    .to_der()?;
+
+    Ok(X509IdentityProvider::new(
+        SubjectIdentityExtractor::new(0, X509Reader::new()),
+        X509Validator::new(vec![certificate.into()])?,
+        NoOpWarningProvider::new(),
+    ))
+}
+
+fn looks_like_der(data: &[u8]) -> bool {
+    data.starts_with(&[0x30])
 }
 
 #[cfg(test)]
