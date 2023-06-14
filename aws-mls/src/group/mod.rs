@@ -2076,11 +2076,14 @@ mod tests {
             Client,
         },
         client_builder::{test_utils::TestClientConfig, Preferences},
-        extension::{test_utils::TestExtension, RequiredCapabilitiesExt},
+        extension::test_utils::TestExtension,
         identity::test_utils::get_test_signing_identity,
         psk::PreSharedKey,
         tree_kem::{leaf_node::LeafNodeSource, UpdatePathNode},
     };
+
+    #[cfg(feature = "all_extensions")]
+    use crate::extension::RequiredCapabilitiesExt;
 
     #[cfg(all(feature = "external_proposal", feature = "custom_proposal"))]
     use super::test_utils::test_group_custom_config;
@@ -2378,6 +2381,7 @@ mod tests {
         assert_matches!(bob_group, Err(MlsError::RatchetTreeNotFound));
     }
 
+    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_group_context_ext_proposal_create() {
         let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
@@ -2398,6 +2402,7 @@ mod tests {
         assert_matches!(proposal, Proposal::GroupContextExtensions(ext) if ext == extension_list);
     }
 
+    #[cfg(feature = "all_extensions")]
     #[maybe_async::maybe_async]
     async fn group_context_extension_proposal_test(
         ext_list: ExtensionList,
@@ -2429,6 +2434,7 @@ mod tests {
         (test_group, commit)
     }
 
+    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_group_context_ext_proposal_commit() {
         let mut extension_list = ExtensionList::new();
@@ -2456,6 +2462,7 @@ mod tests {
         assert_eq!(test_group.group.state.context.extensions, extension_list)
     }
 
+    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_group_context_ext_proposal_invalid() {
         let mut extension_list = ExtensionList::new();
@@ -3101,6 +3108,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::KeyMissing(0)));
     }
 
+    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn removing_requirements_allows_to_add() {
         let mut capabilities = get_test_capabilities();
@@ -3392,6 +3400,7 @@ mod tests {
         assert!(res.is_err());
     }
 
+    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn commit_leaf_not_supporting_required_extension() {
         // The new leaf of the committer doesn't support an extension required by group context
@@ -3476,6 +3485,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::InUseCredentialTypeUnsupportedByNewLeaf));
     }
 
+    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn commit_leaf_not_supporting_required_credential() {
         // The new leaf of the committer doesn't support a credential required by group context

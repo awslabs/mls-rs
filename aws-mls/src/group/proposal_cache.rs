@@ -641,7 +641,7 @@ mod tests {
     use crate::{
         client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         crypto::{self, test_utils::test_cipher_suite_provider},
-        extension::{test_utils::TestExtension, RequiredCapabilitiesExt},
+        extension::test_utils::TestExtension,
         group::{
             message_processor::path_update_required,
             proposal_filter::proposer_can_propose,
@@ -665,6 +665,9 @@ mod tests {
             Lifetime,
         },
     };
+
+    #[cfg(feature = "all_extensions")]
+    use crate::extension::RequiredCapabilitiesExt;
 
     #[cfg(feature = "external_proposal")]
     use crate::{
@@ -3314,6 +3317,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "all_extensions")]
     fn required_capabilities_proposal(extension: u16) -> Proposal {
         let required_capabilities = RequiredCapabilitiesExt {
             extensions: vec![extension.into()],
@@ -3325,6 +3329,7 @@ mod tests {
         Proposal::GroupContextExtensions(ext.into())
     }
 
+    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn receiving_required_capabilities_not_supported_by_member_fails() {
         let (alice, tree) = new_tree("alice").await;
@@ -3344,6 +3349,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn sending_required_capabilities_not_supported_by_member_fails() {
         let (alice, tree) = new_tree("alice").await;
@@ -3359,6 +3365,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn sending_additional_required_capabilities_not_supported_by_member_filters_it_out() {
         let (alice, tree) = new_tree("alice").await;
@@ -3688,6 +3695,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn receiving_group_extension_unsupported_by_leaf_fails() {
         let (alice, tree) = new_tree("alice").await;
@@ -3709,6 +3717,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn sending_additional_group_extension_unsupported_by_leaf_fails() {
         let (alice, tree) = new_tree("alice").await;
@@ -3726,6 +3735,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn sending_group_extension_unsupported_by_leaf_filters_it_out() {
         let (alice, tree) = new_tree("alice").await;
@@ -3849,7 +3859,7 @@ mod tests {
                 _: &ExtensionList,
                 mut proposals: ProposalBundle,
             ) -> Result<ProposalBundle, Self::Error> {
-                proposals.clear_group_context_extensions();
+                proposals.group_context_extensions.clear();
                 Ok(proposals)
             }
         }

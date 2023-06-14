@@ -43,10 +43,12 @@ pub(crate) async fn validate_update_path<C: IdentityProvider, CSP: CipherSuitePr
     commit_time: Option<MlsTime>,
     group_context_extensions: &ExtensionList,
 ) -> Result<ValidatedUpdatePath, MlsError> {
+    #[cfg(feature = "all_extensions")]
     let required_capabilities = state.group_context.extensions.get_as()?;
 
     let leaf_validator = LeafNodeValidator::new(
         cipher_suite_provider,
+        #[cfg(feature = "all_extensions")]
         required_capabilities.as_ref(),
         identity_provider,
         Some(group_context_extensions),

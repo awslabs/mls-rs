@@ -403,11 +403,6 @@ impl ProposalBundle {
         self.group_context_extensions.first()
     }
 
-    #[cfg(feature = "by_ref_proposal")]
-    pub(crate) fn clear_group_context_extensions(&mut self) {
-        self.group_context_extensions.clear();
-    }
-
     /// Custom proposal types that are in use within this bundle.
     #[cfg(feature = "custom_proposal")]
     pub fn custom_proposal_types(&self) -> impl Iterator<Item = ProposalType> + '_ {

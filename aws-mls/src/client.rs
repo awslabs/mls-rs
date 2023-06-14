@@ -735,7 +735,9 @@ where
 #[cfg(any(test, feature = "benchmark"))]
 pub(crate) mod test_utils {
     use super::*;
-    use crate::identity::test_utils::get_test_signing_identity;
+    use crate::{
+        extension::test_utils::TEST_EXTENSION_TYPE, identity::test_utils::get_test_signing_identity,
+    };
 
     #[cfg(features = "benchmark")]
     use crate::client_config::ClientConfig;
@@ -754,7 +756,8 @@ pub(crate) mod test_utils {
 
         let builder = TestClientBuilder::new_for_test()
             .signing_identity(signing_identity.clone(), secret_key, cipher_suite)
-            .key_package_lifetime(10000);
+            .key_package_lifetime(10000)
+            .extension_type(TEST_EXTENSION_TYPE.into());
 
         (builder, signing_identity)
     }

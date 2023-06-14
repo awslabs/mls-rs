@@ -1,8 +1,11 @@
 use super::leaf_node::{LeafNode, LeafNodeSigningContext, LeafNodeSource};
 use crate::client::MlsError;
 use crate::CipherSuiteProvider;
-use crate::{extension::RequiredCapabilitiesExt, signer::Signable, time::MlsTime};
+use crate::{signer::Signable, time::MlsTime};
 use aws_mls_core::{error::IntoAnyError, extension::ExtensionList, identity::IdentityProvider};
+
+#[cfg(feature = "all_extensions")]
+use crate::extension::RequiredCapabilitiesExt;
 
 pub enum ValidationContext<'a> {
     Add(Option<MlsTime>),
@@ -36,6 +39,7 @@ where
 {
     cipher_suite_provider: &'a CP,
     identity_provider: &'a C,
+    #[cfg(feature = "all_extensions")]
     required_capabilities: Option<&'a RequiredCapabilitiesExt>,
     group_context_extensions: Option<&'a ExtensionList>,
 }
@@ -43,12 +47,15 @@ where
 impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, CP> {
     pub fn new(
         cipher_suite_provider: &'a CP,
-        required_capabilities: Option<&'a RequiredCapabilitiesExt>,
+        #[cfg(feature = "all_extensions")] required_capabilities: Option<
+            &'a RequiredCapabilitiesExt,
+        >,
         identity_provider: &'a C,
         group_context_extensions: Option<&'a ExtensionList>,
     ) -> Self {
         Self {
             cipher_suite_provider,
+            #[cfg(feature = "all_extensions")]
             required_capabilities,
             identity_provider,
             group_context_extensions,
@@ -108,6 +115,7 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
         self.check_if_valid(leaf_node, context).await
     }
 
+    #[cfg(feature = "all_extensions")]
     pub fn validate_required_capabilities(&self, leaf_node: &LeafNode) -> Result<(), MlsError> {
         if let Some(required_capabilities) = self.required_capabilities {
             for extension in &required_capabilities.extensions {
@@ -159,6 +167,7 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
         )?;
 
         // If required capabilities are specified, verify the leaf node meets the requirements
+        #[cfg(feature = "all_extensions")]
         self.validate_required_capabilities(leaf_node)?;
 
         // If there are extensions, make sure they are referenced in the capabilities field
@@ -183,6 +192,7 @@ mod tests {
     use alloc::vec;
     use assert_matches::assert_matches;
     use aws_mls_core::crypto::CipherSuite;
+    #[cfg(feature = "all_extensions")]
     use aws_mls_core::group::ProposalType;
     use core::time::Duration;
 
@@ -223,8 +233,13 @@ mod tests {
 
         let (leaf_node, _) = get_test_add_node().await;
 
-        let test_validator =
-            LeafNodeValidator::new(&cipher_suite_provider, None, &BasicIdentityProvider, None);
+        let test_validator = LeafNodeValidator::new(
+            &cipher_suite_provider,
+            #[cfg(feature = "all_extensions")]
+            None,
+            &BasicIdentityProvider,
+            None,
+        );
 
         let res = test_validator
             .check_if_valid(&leaf_node, ValidationContext::Add(None))
@@ -238,8 +253,13 @@ mod tests {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let (leaf_node, _) = get_test_add_node().await;
 
-        let fail_test_validator =
-            LeafNodeValidator::new(&cipher_suite_provider, None, &FailureIdentityProvider, None);
+        let fail_test_validator = LeafNodeValidator::new(
+            &cipher_suite_provider,
+            #[cfg(feature = "all_extensions")]
+            None,
+            &FailureIdentityProvider,
+            None,
+        );
 
         let res = fail_test_validator
             .check_if_valid(&leaf_node, ValidationContext::Add(None))
@@ -267,8 +287,13 @@ mod tests {
             )
             .unwrap();
 
-        let test_validator =
-            LeafNodeValidator::new(&cipher_suite_provider, None, &BasicIdentityProvider, None);
+        let test_validator = LeafNodeValidator::new(
+            &cipher_suite_provider,
+            #[cfg(feature = "all_extensions")]
+            None,
+            &BasicIdentityProvider,
+            None,
+        );
 
         let res = test_validator
             .check_if_valid(&leaf_node, ValidationContext::Update((group_id, 0, None)))
@@ -296,8 +321,13 @@ mod tests {
             )
             .unwrap();
 
-        let test_validator =
-            LeafNodeValidator::new(&cipher_suite_provider, None, &BasicIdentityProvider, None);
+        let test_validator = LeafNodeValidator::new(
+            &cipher_suite_provider,
+            #[cfg(feature = "all_extensions")]
+            None,
+            &BasicIdentityProvider,
+            None,
+        );
 
         let res = test_validator
             .check_if_valid(&leaf_node, ValidationContext::Commit((group_id, 0, None)))
@@ -310,8 +340,13 @@ mod tests {
     async fn test_incorrect_context() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
-        let test_validator =
-            LeafNodeValidator::new(&cipher_suite_provider, None, &BasicIdentityProvider, None);
+        let test_validator = LeafNodeValidator::new(
+            &cipher_suite_provider,
+            #[cfg(feature = "all_extensions")]
+            None,
+            &BasicIdentityProvider,
+            None,
+        );
 
         let (mut leaf_node, secret) = get_test_add_node().await;
 
@@ -388,8 +423,13 @@ mod tests {
 
             leaf_node.signature = random_bytes(leaf_node.signature.len());
 
-            let test_validator =
-                LeafNodeValidator::new(&cipher_suite_provider, None, &BasicIdentityProvider, None);
+            let test_validator = LeafNodeValidator::new(
+                &cipher_suite_provider,
+                #[cfg(feature = "all_extensions")]
+                None,
+                &BasicIdentityProvider,
+                None,
+            );
 
             let res = test_validator
                 .check_if_valid(&leaf_node, ValidationContext::Add(None))
@@ -424,8 +464,13 @@ mod tests {
 
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
-        let test_validator =
-            LeafNodeValidator::new(&cipher_suite_provider, None, &BasicIdentityProvider, None);
+        let test_validator = LeafNodeValidator::new(
+            &cipher_suite_provider,
+            #[cfg(feature = "all_extensions")]
+            None,
+            &BasicIdentityProvider,
+            None,
+        );
 
         let res = test_validator
             .check_if_valid(&leaf_node, ValidationContext::Add(None))
@@ -441,8 +486,13 @@ mod tests {
 
         let (leaf_node, _) = get_test_add_node().await;
 
-        let test_validator =
-            LeafNodeValidator::new(&cipher_suite_provider, None, &BasicIdentityProvider, None);
+        let test_validator = LeafNodeValidator::new(
+            &cipher_suite_provider,
+            #[cfg(feature = "all_extensions")]
+            None,
+            &BasicIdentityProvider,
+            None,
+        );
 
         let res = test_validator
             .check_if_valid(&leaf_node, ValidationContext::Add(None))
@@ -451,6 +501,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::InvalidSignature));
     }
 
+    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_required_extension() {
         let required_capabilities = RequiredCapabilitiesExt {
@@ -479,6 +530,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_required_proposal() {
         let required_capabilities = RequiredCapabilitiesExt {
@@ -507,6 +559,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_required_credential() {
         let required_capabilities = RequiredCapabilitiesExt {
@@ -541,8 +594,13 @@ mod tests {
 
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
-        let test_validator =
-            LeafNodeValidator::new(&cipher_suite_provider, None, &BasicIdentityProvider, None);
+        let test_validator = LeafNodeValidator::new(
+            &cipher_suite_provider,
+            #[cfg(feature = "all_extensions")]
+            None,
+            &BasicIdentityProvider,
+            None,
+        );
 
         let good_lifetime = MlsTime::now();
 

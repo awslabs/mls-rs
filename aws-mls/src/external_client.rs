@@ -104,7 +104,13 @@ where
 
         let id_provider = self.config.identity_provider();
 
-        let validator = LeafNodeValidator::new(&cs, None, &id_provider, None);
+        let validator = LeafNodeValidator::new(
+            &cs,
+            #[cfg(feature = "all_extensions")]
+            None,
+            &id_provider,
+            None,
+        );
         let context = ValidationContext::Add(Some(MlsTime::now()));
 
         validator

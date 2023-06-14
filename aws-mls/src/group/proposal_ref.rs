@@ -65,14 +65,17 @@ mod test {
     use super::*;
     use crate::{
         crypto::test_utils::{test_cipher_suite_provider, try_test_cipher_suite_provider},
-        extension::RequiredCapabilitiesExt,
         key_package::test_utils::test_key_package,
         tree_kem::leaf_node::test_utils::get_basic_test_node,
     };
 
+    #[cfg(feature = "all_extensions")]
+    use crate::extension::RequiredCapabilitiesExt;
+
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
+    #[cfg(feature = "all_extensions")]
     fn get_test_extension_list() -> ExtensionList {
         let test_extension = RequiredCapabilitiesExt {
             extensions: vec![42.into()],
@@ -84,6 +87,11 @@ mod test {
         extension_list.set_from(test_extension).unwrap();
 
         extension_list
+    }
+
+    #[cfg(not(feature = "all_extensions"))]
+    fn get_test_extension_list() -> ExtensionList {
+        ExtensionList::new()
     }
 
     #[derive(serde::Serialize, serde::Deserialize)]

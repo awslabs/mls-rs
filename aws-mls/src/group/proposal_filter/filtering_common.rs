@@ -1,17 +1,23 @@
 use crate::{
     client::MlsError,
-    extension::RequiredCapabilitiesExt,
-    group::{
-        proposal_filter::{ProposalBundle, ProposalInfo},
-        Sender,
-    },
+    group::{proposal_filter::ProposalBundle, Sender},
     protocol_version::ProtocolVersion,
     time::MlsTime,
-    tree_kem::{
-        leaf_node::LeafNode, leaf_node_validator::LeafNodeValidator, node::LeafIndex, TreeKemPublic,
-    },
+    tree_kem::{node::LeafIndex, TreeKemPublic},
     CipherSuiteProvider, ExtensionList,
 };
+
+#[cfg(any(feature = "external_commit", feature = "all_extensions"))]
+use crate::tree_kem::leaf_node::LeafNode;
+
+#[cfg(feature = "all_extensions")]
+use crate::tree_kem::leaf_node_validator::LeafNodeValidator;
+
+#[cfg(feature = "all_extensions")]
+use super::ProposalInfo;
+
+#[cfg(feature = "all_extensions")]
+use crate::extension::RequiredCapabilitiesExt;
 
 #[cfg(any(
     feature = "external_proposal",
@@ -204,6 +210,7 @@ where
         Ok(output)
     }
 
+    #[cfg(feature = "all_extensions")]
     #[maybe_async::maybe_async]
     pub(super) async fn apply_proposals_with_new_capabilities(
         &self,
@@ -276,7 +283,7 @@ where
             Ok(()) => Ok(output),
             Err(e) => {
                 if strategy.ignore(group_context_extensions_proposal.is_by_reference()) {
-                    proposals_clone.clear_group_context_extensions();
+                    proposals_clone.group_context_extensions.clear();
 
                     self.apply_tree_changes(
                         strategy,
@@ -293,6 +300,7 @@ where
     }
 }
 
+#[cfg(feature = "all_extensions")]
 pub(super) fn leaf_supports_extensions(
     leaf: &LeafNode,
     extensions: &ExtensionList,

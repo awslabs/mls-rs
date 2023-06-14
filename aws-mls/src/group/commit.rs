@@ -726,10 +726,7 @@ mod tests {
             WithIdentityProvider, WithKeychain,
         },
         client_config::ClientConfig,
-        extension::{
-            test_utils::{TestExtension, TEST_EXTENSION_TYPE},
-            RequiredCapabilitiesExt,
-        },
+        extension::test_utils::{TestExtension, TEST_EXTENSION_TYPE},
         group::{
             proposal::ProposalType,
             test_utils::{test_group_custom_config, test_n_member_group},
@@ -739,6 +736,9 @@ mod tests {
         key_package::test_utils::test_key_package_message,
         storage_provider::in_memory::InMemoryKeychainStorage,
     };
+
+    #[cfg(feature = "all_extensions")]
+    use crate::extension::RequiredCapabilitiesExt;
 
     #[cfg(feature = "psk")]
     use crate::{
@@ -752,6 +752,7 @@ mod tests {
     async fn test_commit_builder_group() -> Group<TestClientConfig> {
         test_group_custom_config(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, |b| {
             b.custom_proposal_type(ProposalType::from(42))
+                .extension_type(TEST_EXTENSION_TYPE.into())
         })
         .await
         .group
@@ -917,6 +918,7 @@ mod tests {
         assert_commit_builder_output(group, commit_output, vec![expected_psk], 0)
     }
 
+    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_commit_builder_group_context_ext() {
         let mut group = test_commit_builder_group().await;
@@ -938,6 +940,7 @@ mod tests {
         assert_commit_builder_output(group, commit_output, vec![expected_ext], 0);
     }
 
+    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_commit_builder_reinit() {
         let mut group = test_commit_builder_group().await;

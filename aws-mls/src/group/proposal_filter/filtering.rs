@@ -16,9 +16,10 @@ use crate::{
     CipherSuiteProvider, ExtensionList,
 };
 
-use super::filtering_common::{
-    filter_out_invalid_psks, leaf_supports_extensions, ApplyProposalsOutput, ProposalApplier,
-};
+use super::filtering_common::{filter_out_invalid_psks, ApplyProposalsOutput, ProposalApplier};
+
+#[cfg(feature = "all_extensions")]
+use super::filtering_common::leaf_supports_extensions;
 
 #[cfg(feature = "external_proposal")]
 use crate::extension::ExternalSendersExt;
@@ -91,6 +92,32 @@ where
             .await
     }
 
+    #[cfg(not(feature = "all_extensions"))]
+    #[maybe_async::maybe_async]
+    pub(super) async fn apply_proposal_changes(
+        &self,
+        strategy: FilterStrategy,
+        proposals: ProposalBundle,
+        commit_time: Option<MlsTime>,
+    ) -> Result<ApplyProposalsOutput, MlsError> {
+        match proposals.group_context_extensions_proposal().cloned() {
+            Some(p) => {
+                self.apply_tree_changes(strategy, proposals, &p.proposal, commit_time)
+                    .await
+            }
+            None => {
+                self.apply_tree_changes(
+                    strategy,
+                    proposals,
+                    self.original_group_extensions,
+                    commit_time,
+                )
+                .await
+            }
+        }
+    }
+
+    #[cfg(feature = "all_extensions")]
     #[maybe_async::maybe_async]
     pub(super) async fn apply_proposal_changes(
         &self,
@@ -115,7 +142,7 @@ where
 
         // If the extensions proposal is ignored, remove it from the list of proposals.
         if extensions_proposal_and_capabilities.is_none() {
-            proposals.clear_group_context_extensions();
+            proposals.group_context_extensions.clear();
         }
 
         match extensions_proposal_and_capabilities {
@@ -181,10 +208,12 @@ where
         group_extensions_in_use: &ExtensionList,
         commit_time: Option<MlsTime>,
     ) -> Result<ProposalBundle, MlsError> {
+        #[cfg(feature = "all_extensions")]
         let capabilities = group_extensions_in_use.get_as()?;
 
         let leaf_node_validator = &LeafNodeValidator::new(
             self.cipher_suite_provider,
+            #[cfg(feature = "all_extensions")]
             capabilities.as_ref(),
             self.identity_provider,
             Some(group_extensions_in_use),
@@ -199,15 +228,15 @@ where
             let res = {
                 let leaf = &proposals.update_proposals()[i].proposal.leaf_node;
 
-                let valid = leaf_node_validator
+                let res = leaf_node_validator
                     .check_if_valid(
                         leaf,
                         ValidationContext::Update((self.group_id, *sender_index, commit_time)),
                     )
                     .await;
 
-                let extensions_are_supported =
-                    leaf_supports_extensions(leaf, group_extensions_in_use);
+                #[cfg(feature = "all_extensions")]
+                let res = res.and(leaf_supports_extensions(leaf, group_extensions_in_use));
 
                 let old_leaf = self.original_tree.get_leaf_node(sender_index)?;
 
@@ -218,7 +247,7 @@ where
                     .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))
                     .and_then(|valid| valid.then_some(()).ok_or(MlsError::InvalidSuccessor));
 
-                valid.and(extensions_are_supported).and(valid_successor)
+                res.and(valid_successor)
             };
 
             if !apply_strategy(
@@ -233,19 +262,20 @@ where
         let mut bad_indices = Vec::new();
 
         for (i, p) in proposals.by_type::<AddProposal>().enumerate() {
-            let valid = leaf_node_validator
+            let res = leaf_node_validator
                 .check_if_valid(
                     &p.proposal.key_package.leaf_node,
                     ValidationContext::Add(commit_time),
                 )
                 .await;
 
-            let extensions_are_supported = leaf_supports_extensions(
+            #[cfg(feature = "all_extensions")]
+            let res = res.and(leaf_supports_extensions(
                 &p.proposal.key_package.leaf_node,
                 group_extensions_in_use,
-            );
+            ));
 
-            let res = valid.and(extensions_are_supported).and(
+            let res = res.and(
                 validate_key_package_properties(
                     &p.proposal.key_package,
                     self.protocol_version,

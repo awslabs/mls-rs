@@ -1,6 +1,5 @@
 use crate::{
     client::MlsError,
-    extension::RequiredCapabilitiesExt,
     group::{proposal_filter::ProposalBundle, AddProposal},
     key_package::validate_key_package_properties,
     protocol_version::ProtocolVersion,
@@ -12,9 +11,13 @@ use crate::{
     CipherSuiteProvider, ExtensionList,
 };
 
-use super::filtering_common::{
-    filter_out_invalid_psks, leaf_supports_extensions, ApplyProposalsOutput, ProposalApplier,
-};
+#[cfg(feature = "all_extensions")]
+use crate::extension::RequiredCapabilitiesExt;
+
+#[cfg(feature = "all_extensions")]
+use super::filtering_common::leaf_supports_extensions;
+
+use super::filtering_common::{filter_out_invalid_psks, ApplyProposalsOutput, ProposalApplier};
 
 #[cfg(feature = "external_proposal")]
 use crate::extension::ExternalSendersExt;
@@ -77,12 +80,17 @@ where
         proposals: &ProposalBundle,
         commit_time: Option<MlsTime>,
     ) -> Result<ApplyProposalsOutput, MlsError> {
-        let ext = proposals.group_context_extensions_proposal().cloned();
-
-        match ext {
+        match proposals.group_context_extensions_proposal().cloned() {
             Some(p) => {
-                let ext = p.proposal.get_as::<RequiredCapabilitiesExt>()?;
-                self.apply_proposals_with_new_capabilities(proposals, p, ext, commit_time)
+                #[cfg(feature = "all_extensions")]
+                {
+                    let ext = p.proposal.get_as::<RequiredCapabilitiesExt>()?;
+                    self.apply_proposals_with_new_capabilities(proposals, p, ext, commit_time)
+                        .await
+                }
+
+                #[cfg(not(feature = "all_extensions"))]
+                self.apply_tree_changes(proposals, &p.proposal, commit_time)
                     .await
             }
             None => {
@@ -127,10 +135,12 @@ where
         group_extensions_in_use: &ExtensionList,
         commit_time: Option<MlsTime>,
     ) -> Result<(), MlsError> {
+        #[cfg(feature = "all_extensions")]
         let capabilities = group_extensions_in_use.get_as()?;
 
         let leaf_node_validator = LeafNodeValidator::new(
             self.cipher_suite_provider,
+            #[cfg(feature = "all_extensions")]
             capabilities.as_ref(),
             self.identity_provider,
             Some(group_extensions_in_use),
@@ -144,6 +154,7 @@ where
                 )
                 .await?;
 
+            #[cfg(feature = "all_extensions")]
             leaf_supports_extensions(&p.proposal.key_package.leaf_node, group_extensions_in_use)?;
 
             validate_key_package_properties(

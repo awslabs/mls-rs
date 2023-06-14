@@ -1,10 +1,10 @@
+#[cfg(any(feature = "external_proposal", feature = "all_extensions"))]
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
-use aws_mls_core::{
-    extension::{ExtensionType, MlsCodecExtension},
-    group::ProposalType,
-    identity::CredentialType,
-};
+use aws_mls_core::extension::{ExtensionType, MlsCodecExtension};
+
+#[cfg(feature = "all_extensions")]
+use aws_mls_core::{group::ProposalType, identity::CredentialType};
 
 #[cfg(feature = "external_proposal")]
 use aws_mls_core::{
@@ -22,12 +22,14 @@ use aws_mls_core::crypto::HpkePublicKey;
 ///
 /// A custom application level identifier that can be optionally stored
 /// within the `leaf_node_extensions` of a group [Member](crate::group::Member).
+#[cfg(feature = "all_extensions")]
 #[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 pub struct ApplicationIdExt {
     #[mls_codec(with = "aws_mls_codec::byte_vec")]
     pub(crate) identifier: Vec<u8>,
 }
 
+#[cfg(feature = "all_extensions")]
 impl ApplicationIdExt {
     /// Create a new application level identifier extension.
     pub fn new(identifier: Vec<u8>) -> Self {
@@ -40,6 +42,7 @@ impl ApplicationIdExt {
     }
 }
 
+#[cfg(feature = "all_extensions")]
 impl MlsCodecExtension for ApplicationIdExt {
     fn extension_type() -> ExtensionType {
         ExtensionType::APPLICATION_ID
@@ -75,6 +78,7 @@ impl MlsCodecExtension for RatchetTreeExt {
 /// Extension, proposal, and credential types defined by the MLS RFC and
 /// provided are considered required by default and should NOT be used
 /// within this extension.
+#[cfg(feature = "all_extensions")]
 #[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode, Default)]
 pub struct RequiredCapabilitiesExt {
     pub extensions: Vec<ExtensionType>,
@@ -82,6 +86,7 @@ pub struct RequiredCapabilitiesExt {
     pub credentials: Vec<CredentialType>,
 }
 
+#[cfg(feature = "all_extensions")]
 impl RequiredCapabilitiesExt {
     /// Create a required capabilities extension.
     pub fn new(
@@ -112,6 +117,7 @@ impl RequiredCapabilitiesExt {
     }
 }
 
+#[cfg(feature = "all_extensions")]
 impl MlsCodecExtension for RequiredCapabilitiesExt {
     fn extension_type() -> ExtensionType {
         ExtensionType::REQUIRED_CAPABILITIES
@@ -200,6 +206,7 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
+    #[cfg(feature = "all_extensions")]
     #[test]
     fn test_application_id_extension() {
         let test_id = vec![0u8; 32];
@@ -228,6 +235,7 @@ mod tests {
         assert_eq!(ext, restored)
     }
 
+    #[cfg(feature = "all_extensions")]
     #[test]
     fn test_required_capabilities() {
         let ext = RequiredCapabilitiesExt {
