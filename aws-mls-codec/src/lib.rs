@@ -83,7 +83,12 @@ pub trait MlsEncode: MlsSize {
 
     #[inline]
     fn mls_encode_to_vec(&self) -> Result<Vec<u8>, Error> {
+        #[cfg(feature = "preallocate")]
         let mut vec = Vec::with_capacity(self.mls_encoded_len());
+
+        #[cfg(not(feature = "preallocate"))]
+        let mut vec = Vec::new();
+
         self.mls_encode(&mut vec)?;
 
         Ok(vec)

@@ -1,7 +1,3 @@
-use aws_mls_codec::MlsSize;
-
-use super::framing::PrivateContentTBE;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 /// Padding used when sending an encrypted group message.
 pub enum PaddingMode {
@@ -15,30 +11,28 @@ pub enum PaddingMode {
 }
 
 impl PaddingMode {
-    pub(super) fn apply_padding(&self, content: &mut PrivateContentTBE) {
-        content.padding.clear();
+    pub(super) fn padded_size(&self, content_size: usize) -> usize {
         match self {
             PaddingMode::StepFunction => {
-                let len = content.mls_encoded_len();
-                content.padding.resize(step_padded_len(len) - len, 0);
+                // The padding hides all but 2 most significant bits of `length`. The hidden bits are replaced
+                // by zeros and then the next number is taken to make sure the message fits.
+                let blind = 1
+                    << ((content_size + 1)
+                        .next_power_of_two()
+                        .max(256)
+                        .trailing_zeros()
+                        - 3);
+
+                (content_size | (blind - 1)) + 1
             }
-            PaddingMode::None => {}
+            PaddingMode::None => content_size,
         }
     }
 }
 
-// The padding hides all but 2 most significant bits of `length`. The hidden bits are replaced
-// by zeros and then the next number is taken to make sure the message fits.
-fn step_padded_len(length: usize) -> usize {
-    let blind = 1 << ((length + 1).next_power_of_two().max(256).trailing_zeros() - 3);
-    (length | (blind - 1)) + 1
-}
-
 #[cfg(test)]
 mod tests {
-    use crate::group::framing::test_utils::get_test_ciphertext_content;
-
-    use super::{step_padded_len, PaddingMode};
+    use super::PaddingMode;
 
     use alloc::vec;
     use alloc::vec::Vec;
@@ -56,7 +50,7 @@ mod tests {
         for x in 1..1024 {
             test_cases.push(TestCase {
                 input: x,
-                output: step_padded_len(x),
+                output: PaddingMode::StepFunction.padded_size(x),
             });
         }
         test_cases
@@ -71,36 +65,38 @@ mod tests {
 
     #[test]
     fn test_no_padding() {
-        let mut ciphertext = get_test_ciphertext_content();
-        let padding_mode = PaddingMode::None;
-        padding_mode.apply_padding(&mut ciphertext);
-        assert!(ciphertext.padding.is_empty())
+        for i in [0, 100, 1000, 10000] {
+            assert_eq!(PaddingMode::None.padded_size(i), i)
+        }
     }
 
     #[test]
     fn test_padding_length() {
-        assert_eq!(step_padded_len(0), 32);
+        assert_eq!(PaddingMode::StepFunction.padded_size(0), 32);
 
         // Short
-        assert_eq!(step_padded_len(63), 64);
-        assert_eq!(step_padded_len(64), 96);
-        assert_eq!(step_padded_len(65), 96);
+        assert_eq!(PaddingMode::StepFunction.padded_size(63), 64);
+        assert_eq!(PaddingMode::StepFunction.padded_size(64), 96);
+        assert_eq!(PaddingMode::StepFunction.padded_size(65), 96);
 
         // Almost long and almost short
-        assert_eq!(step_padded_len(127), 128);
-        assert_eq!(step_padded_len(128), 160);
-        assert_eq!(step_padded_len(129), 160);
+        assert_eq!(PaddingMode::StepFunction.padded_size(127), 128);
+        assert_eq!(PaddingMode::StepFunction.padded_size(128), 160);
+        assert_eq!(PaddingMode::StepFunction.padded_size(129), 160);
 
         // One length from each of the 4 buckets between 256 and 512
-        assert_eq!(step_padded_len(260), 320);
-        assert_eq!(step_padded_len(330), 384);
-        assert_eq!(step_padded_len(390), 448);
-        assert_eq!(step_padded_len(490), 512);
+        assert_eq!(PaddingMode::StepFunction.padded_size(260), 320);
+        assert_eq!(PaddingMode::StepFunction.padded_size(330), 384);
+        assert_eq!(PaddingMode::StepFunction.padded_size(390), 448);
+        assert_eq!(PaddingMode::StepFunction.padded_size(490), 512);
 
         // All test cases
         let test_cases: Vec<TestCase> = load_test_cases();
         for test_case in test_cases {
-            assert_eq!(test_case.output, step_padded_len(test_case.input));
+            assert_eq!(
+                test_case.output,
+                PaddingMode::StepFunction.padded_size(test_case.input)
+            );
         }
     }
 }

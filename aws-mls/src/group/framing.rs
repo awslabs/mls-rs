@@ -161,14 +161,13 @@ impl MlsDecode for PublicMessage {
 
 #[cfg(feature = "private_message")]
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct PrivateContentTBE {
+pub(crate) struct PrivateMessageContent {
     pub content: Content,
     pub auth: FramedContentAuthData,
-    pub padding: Vec<u8>,
 }
 
 #[cfg(feature = "private_message")]
-impl MlsSize for PrivateContentTBE {
+impl MlsSize for PrivateMessageContent {
     fn mls_encoded_len(&self) -> usize {
         let content_len_without_type = match &self.content {
             Content::Application(c) => c.mls_encoded_len(),
@@ -177,13 +176,12 @@ impl MlsSize for PrivateContentTBE {
             Content::Commit(c) => c.mls_encoded_len(),
         };
 
-        // Padding has arbitrary size
-        content_len_without_type + self.auth.mls_encoded_len() + self.padding.len()
+        content_len_without_type + self.auth.mls_encoded_len()
     }
 }
 
 #[cfg(feature = "private_message")]
-impl MlsEncode for PrivateContentTBE {
+impl MlsEncode for PrivateMessageContent {
     fn mls_encode(&self, writer: &mut Vec<u8>) -> Result<(), aws_mls_codec::Error> {
         match &self.content {
             Content::Application(c) => c.mls_encode(writer),
@@ -192,15 +190,14 @@ impl MlsEncode for PrivateContentTBE {
             Content::Commit(c) => c.mls_encode(writer),
         }?;
 
-        // Padding has arbitrary size
         self.auth.mls_encode(writer)?;
-        writer.extend_from_slice(&self.padding);
+
         Ok(())
     }
 }
 
 #[cfg(feature = "private_message")]
-impl PrivateContentTBE {
+impl PrivateMessageContent {
     pub(crate) fn mls_decode(
         reader: &mut &[u8],
         content_type: ContentType,
@@ -216,9 +213,7 @@ impl PrivateContentTBE {
 
         let auth = FramedContentAuthData::mls_decode(reader, content.content_type())?;
 
-        let padding = reader.to_vec();
-
-        if padding.iter().any(|&i| i != 0u8) {
+        if reader.iter().any(|&i| i != 0u8) {
             #[cfg(feature = "std")]
             return Err(aws_mls_codec::Error::Custom(
                 "non-zero padding bytes discovered".to_string(),
@@ -228,11 +223,7 @@ impl PrivateContentTBE {
             return Err(aws_mls_codec::Error::Custom(5));
         }
 
-        Ok(Self {
-            content,
-            auth,
-            padding,
-        })
+        Ok(Self { content, auth })
     }
 }
 
@@ -465,14 +456,13 @@ pub(crate) mod test_utils {
     }
 
     #[cfg(feature = "private_message")]
-    pub(crate) fn get_test_ciphertext_content() -> PrivateContentTBE {
-        PrivateContentTBE {
+    pub(crate) fn get_test_ciphertext_content() -> PrivateMessageContent {
+        PrivateMessageContent {
             content: Content::Application(random_bytes(1024).into()),
             auth: FramedContentAuthData {
                 signature: MessageSignature::from(random_bytes(128)),
                 confirmation_tag: None,
             },
-            padding: vec![],
         }
     }
 
@@ -494,12 +484,13 @@ mod tests {
 
     #[test]
     fn test_mls_ciphertext_content_mls_encoding() {
-        let mut ciphertext_content = get_test_ciphertext_content();
-        ciphertext_content.padding = vec![0u8; 128];
+        let ciphertext_content = get_test_ciphertext_content();
 
-        let encoded = ciphertext_content.mls_encode_to_vec().unwrap();
+        let mut encoded = ciphertext_content.mls_encode_to_vec().unwrap();
+        encoded.extend_from_slice(&[0u8; 128]);
+
         let decoded =
-            PrivateContentTBE::mls_decode(&mut &*encoded, (&ciphertext_content.content).into())
+            PrivateMessageContent::mls_decode(&mut &*encoded, (&ciphertext_content.content).into())
                 .unwrap();
 
         assert_eq!(ciphertext_content, decoded);
@@ -507,12 +498,13 @@ mod tests {
 
     #[test]
     fn test_mls_ciphertext_content_non_zero_padding_error() {
-        let mut ciphertext_content = get_test_ciphertext_content();
-        ciphertext_content.padding = vec![1u8; 128];
+        let ciphertext_content = get_test_ciphertext_content();
 
-        let encoded = ciphertext_content.mls_encode_to_vec().unwrap();
+        let mut encoded = ciphertext_content.mls_encode_to_vec().unwrap();
+        encoded.extend_from_slice(&[1u8; 128]);
+
         let decoded =
-            PrivateContentTBE::mls_decode(&mut &*encoded, (&ciphertext_content.content).into());
+            PrivateMessageContent::mls_decode(&mut &*encoded, (&ciphertext_content.content).into());
 
         assert_matches!(decoded, Err(aws_mls_codec::Error::Custom(_)));
     }

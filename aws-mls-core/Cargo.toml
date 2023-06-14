@@ -4,11 +4,12 @@ version = "0.8.0"
 edition = "2021"
 
 [features]
-default = ["std", "rfc_compliant"]
+default = ["std", "rfc_compliant", "fast_serialize"]
 arbitrary = ["std", "dep:arbitrary"]
 benchmark = []
 external_commit = []
 external_proposal = []
+fast_serialize = ["aws-mls-codec/preallocate"]
 std = ["aws-mls-codec/std", "zeroize/std", "base64/std", "num_enum/std", "indexmap/std", "dep:thiserror", "indexmap"]
 rfc_compliant = ["external_commit", "x509"]
 ffi = ["dep:safer-ffi", "dep:safer-ffi-gen"]

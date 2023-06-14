@@ -13,16 +13,38 @@ where
     header_length + len
 }
 
-pub fn mls_encode<T>(
-    mut iter: impl Iterator<Item = T>,
-    writer: &mut Vec<u8>,
-) -> Result<(), crate::Error>
+#[cfg(feature = "preallocate")]
+pub fn mls_encode<I>(iter: I, writer: &mut Vec<u8>) -> Result<(), crate::Error>
 where
-    T: MlsEncode,
+    I: IntoIterator + Clone,
+    I::Item: MlsEncode,
+{
+    let len = iter
+        .clone()
+        .into_iter()
+        .map(|x| x.mls_encoded_len())
+        .sum::<usize>();
+
+    let header_length = VarInt::try_from(len)?;
+    header_length.mls_encode(writer)?;
+
+    writer.reserve(len);
+
+    iter.into_iter().try_for_each(|x| x.mls_encode(writer))?;
+
+    Ok(())
+}
+
+#[cfg(not(feature = "preallocate"))]
+pub fn mls_encode<I>(iter: I, writer: &mut Vec<u8>) -> Result<(), crate::Error>
+where
+    I: IntoIterator + Clone,
+    I::Item: MlsEncode,
 {
     let mut buffer = Vec::new();
 
-    iter.try_for_each(|x| x.mls_encode(&mut buffer))?;
+    iter.into_iter()
+        .try_for_each(|x| x.mls_encode(&mut buffer))?;
 
     let len = VarInt::try_from(buffer.len())?;
 

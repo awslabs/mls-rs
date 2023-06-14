@@ -13,7 +13,6 @@ use super::{
     GroupContext,
 };
 use crate::{client::MlsError, tree_kem::node::LeafIndex};
-use alloc::vec::Vec;
 use aws_mls_codec::MlsEncode;
 use aws_mls_core::{crypto::CipherSuiteProvider, error::IntoAnyError};
 use zeroize::Zeroizing;
@@ -23,7 +22,7 @@ mod reuse_guard;
 mod sender_data_key;
 
 #[cfg(feature = "private_message")]
-use super::framing::{PrivateContentAAD, PrivateContentTBE, PrivateMessage};
+use super::framing::{PrivateContentAAD, PrivateMessage, PrivateMessageContent};
 
 #[cfg(test)]
 pub use sender_data_key::test_utils::*;
@@ -93,13 +92,10 @@ where
         let authenticated_data = auth_content.content.authenticated_data;
 
         // Build a ciphertext content using the plaintext content and signature
-        let mut ciphertext_content = PrivateContentTBE {
+        let private_content = PrivateMessageContent {
             content: auth_content.content.content,
             auth: auth_content.auth,
-            padding: Vec::new(),
         };
-
-        padding.apply_padding(&mut ciphertext_content);
 
         // Build ciphertext aad using the plaintext message
         let aad = PrivateContentAAD {
@@ -119,7 +115,12 @@ where
             _ => KeyType::Handshake,
         };
 
-        let ciphertext_content = Zeroizing::new(ciphertext_content.mls_encode_to_vec()?);
+        let mut serialized_private_content = private_content.mls_encode_to_vec()?;
+
+        // Apply padding to private content based on the current padding mode.
+        serialized_private_content.resize(padding.padded_size(serialized_private_content.len()), 0);
+
+        let serialized_private_content = Zeroizing::new(serialized_private_content);
 
         // Encrypt the ciphertext content using the encryption key and a nonce that is
         // reuse safe by xor the reuse guard with the first 4 bytes
@@ -131,7 +132,7 @@ where
         let ciphertext = MessageKey::new(key_data)
             .encrypt(
                 &self.cipher_suite_provider,
-                &ciphertext_content,
+                &serialized_private_content,
                 &aad.mls_encode_to_vec()?,
                 &reuse_guard,
             )
@@ -214,7 +215,7 @@ where
             .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
         let ciphertext_content =
-            PrivateContentTBE::mls_decode(&mut &**decrypted_content, ciphertext.content_type)?;
+            PrivateMessageContent::mls_decode(&mut &**decrypted_content, ciphertext.content_type)?;
 
         // Build the MLS plaintext object and process it
         let auth_content = AuthenticatedContent {

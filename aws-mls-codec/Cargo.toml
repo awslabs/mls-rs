@@ -4,7 +4,8 @@ version = "0.3.0"
 edition = "2021"
 
 [features]
-default = ["std"]
+default = ["std", "preallocate"]
+preallocate = []
 std = ["dep:thiserror"]
 
 [dependencies]

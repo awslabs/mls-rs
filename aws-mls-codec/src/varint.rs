@@ -79,7 +79,7 @@ impl MlsDecode for VarInt {
 
         let n = VarInt(n);
 
-        if n.mls_encoded_len() == count {
+        if count_bytes_to_encode_int(n) as usize == count {
             Ok(n)
         } else {
             Err(Error::VarIntMinimumLengthEncoding)
