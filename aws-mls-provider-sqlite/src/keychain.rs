@@ -5,7 +5,6 @@ use aws_mls_core::{
     identity::SigningIdentity,
     keychain::KeychainStorage,
 };
-use openssl::sha::sha512;
 use rusqlite::{params, Connection, OptionalExtension};
 use std::sync::{Arc, Mutex};
 
@@ -46,26 +45,20 @@ impl SqLiteKeychainStorage {
         signer: SignatureSecretKey,
         cipher_suite: CipherSuite,
     ) -> Result<(), SqLiteDataStorageError> {
-        let (id, _) = identifier_hash(&identity)?;
-        self.insert_storage(
-            id.as_slice(),
-            StoredSigningIdentity {
-                identity,
-                signer,
-                cipher_suite,
-            },
-        )
+        self.insert_storage(StoredSigningIdentity {
+            identity,
+            signer,
+            cipher_suite,
+        })
     }
 
     /// Delete an existing identity from storage.
     pub fn delete(&self, identity: &SigningIdentity) -> Result<(), SqLiteDataStorageError> {
-        let (identifier, _) = identifier_hash(identity)?;
-        self.delete_storage(&identifier)
+        self.delete_storage(&identity.signature_key)
     }
 
     fn insert_storage(
         &self,
-        identifier: &[u8],
         identity_data: StoredSigningIdentity,
     ) -> Result<(), SqLiteDataStorageError> {
         let connection = self.connection.lock().unwrap();
@@ -84,7 +77,7 @@ impl SqLiteKeychainStorage {
                     cipher_suite
                 ) VALUES (?,?,?,?)",
                 params![
-                    identifier,
+                    identity.signature_key.as_ref(),
                     identity
                         .mls_encode_to_vec()
                         .map_err(|e| SqLiteDataStorageError::DataConversionError(e.into()))?,
@@ -162,21 +155,8 @@ impl KeychainStorage for SqLiteKeychainStorage {
         &self,
         identity: &SigningIdentity,
     ) -> Result<Option<SignatureSecretKey>, Self::Error> {
-        let (identifier, _) = identifier_hash(identity)?;
-        self.signer(&identifier)
+        self.signer(&identity.signature_key)
     }
-}
-
-fn identifier_hash(
-    identity: &SigningIdentity,
-) -> Result<(Vec<u8>, Vec<u8>), SqLiteDataStorageError> {
-    let serialized_identity = identity
-        .mls_encode_to_vec()
-        .map_err(|e| SqLiteDataStorageError::DataConversionError(e.into()))?;
-
-    let identifier = sha512(&serialized_identity);
-
-    Ok((identifier.into(), serialized_identity))
 }
 
 #[cfg(test)]
@@ -195,19 +175,15 @@ mod tests {
 
     const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::CURVE25519_AES128;
 
-    fn test_signing_identity() -> (Vec<u8>, StoredSigningIdentity) {
-        let identifier = gen_rand_bytes(32);
-
-        let identity = StoredSigningIdentity {
+    fn test_signing_identity() -> StoredSigningIdentity {
+        StoredSigningIdentity {
             identity: SigningIdentity {
                 signature_key: gen_rand_bytes(1024).into(),
                 credential: Credential::Basic(BasicCredential::new(gen_rand_bytes(1024))),
             },
             signer: gen_rand_bytes(256).into(),
             cipher_suite: TEST_CIPHER_SUITE,
-        };
-
-        (identifier, identity)
+        }
     }
 
     fn test_storage() -> SqLiteKeychainStorage {
@@ -220,11 +196,9 @@ mod tests {
     #[test]
     fn identity_insert() {
         let storage = test_storage();
-        let (identifier, stored_identity) = test_signing_identity();
+        let stored_identity = test_signing_identity();
 
-        storage
-            .insert_storage(identifier.as_slice(), stored_identity.clone())
-            .unwrap();
+        storage.insert_storage(stored_identity.clone()).unwrap();
 
         let from_storage = storage.get_identities(TEST_CIPHER_SUITE).unwrap();
 
@@ -232,7 +206,10 @@ mod tests {
         assert_eq!(from_storage[0], stored_identity.identity);
 
         // Get just the signer
-        let signer = storage.signer(&identifier).unwrap().unwrap();
+        let signer = storage
+            .signer(&stored_identity.identity.signature_key)
+            .unwrap()
+            .unwrap();
         assert_eq!(stored_identity.signer, signer);
     }
 
@@ -241,34 +218,29 @@ mod tests {
         let storage = test_storage();
         let test_identities = (0..10).map(|_| test_signing_identity()).collect::<Vec<_>>();
 
-        test_identities
-            .clone()
-            .into_iter()
-            .for_each(|(identifier, identity)| {
-                storage
-                    .insert_storage(identifier.as_slice(), identity)
-                    .unwrap();
-            });
+        test_identities.clone().into_iter().for_each(|identity| {
+            storage.insert_storage(identity).unwrap();
+        });
 
         let from_storage = storage.get_identities(TEST_CIPHER_SUITE).unwrap();
 
         from_storage.into_iter().for_each(|stored_identity| {
             assert!(test_identities
                 .iter()
-                .any(|item| { item.1.identity == stored_identity }))
+                .any(|item| { item.identity == stored_identity }))
         });
     }
 
     #[test]
     fn delete_identity() {
         let storage = test_storage();
-        let (identifier, identity) = test_signing_identity();
+        let identity = test_signing_identity();
+
+        storage.insert_storage(identity.clone()).unwrap();
 
         storage
-            .insert_storage(identifier.as_slice(), identity)
+            .delete_storage(&identity.identity.signature_key)
             .unwrap();
-
-        storage.delete_storage(&identifier).unwrap();
 
         assert!(storage
             .get_identities(TEST_CIPHER_SUITE)
