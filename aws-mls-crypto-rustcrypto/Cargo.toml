@@ -67,4 +67,4 @@ hex = { version = "^0.4.3", features = ["serde"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "^1.0" }
 assert_matches = "1.5.0"
-
+aws-mls-core = { path = "../aws-mls-core", version = "*", features = ["test_suite"] }

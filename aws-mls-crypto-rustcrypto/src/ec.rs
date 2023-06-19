@@ -345,7 +345,6 @@ pub fn private_key_bytes_to_public(secret_key: &[u8], curve: Curve) -> Result<Ve
 
 #[cfg(test)]
 pub(crate) mod test_utils {
-    use aws_mls_core::crypto::CipherSuite;
     use serde::Deserialize;
 
     use super::Curve;
@@ -363,11 +362,6 @@ pub(crate) mod test_utils {
     }
 
     impl TestKeys {
-        pub(crate) fn get_key(&self, cipher_suite: CipherSuite, for_sig: bool) -> Vec<u8> {
-            let curve = Curve::from_ciphersuite(cipher_suite, for_sig).unwrap();
-            self.get_key_from_curve(curve)
-        }
-
         pub(crate) fn get_key_from_curve(&self, curve: Curve) -> Vec<u8> {
             match curve {
                 Curve::P256 => self.p256.clone(),

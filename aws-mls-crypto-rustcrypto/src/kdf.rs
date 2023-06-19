@@ -118,49 +118,10 @@ mod test {
     use assert_matches::assert_matches;
     use aws_mls_core::crypto::CipherSuite;
     use aws_mls_crypto_traits::KdfType;
-    use serde::Deserialize;
 
     use crate::kdf::{Kdf, KdfError};
 
     use alloc::vec;
-    use alloc::vec::Vec;
-
-    #[derive(Deserialize)]
-    struct TestCase {
-        pub ciphersuite: u16,
-        #[serde(with = "hex::serde")]
-        pub ikm: Vec<u8>,
-        #[serde(with = "hex::serde")]
-        pub salt: Vec<u8>,
-        #[serde(with = "hex::serde")]
-        pub info: Vec<u8>,
-        pub len: usize,
-        #[serde(with = "hex::serde")]
-        pub prk: Vec<u8>,
-        #[serde(with = "hex::serde")]
-        pub okm: Vec<u8>,
-    }
-
-    fn run_test_case(case: &TestCase) {
-        let kdf = Kdf::new(case.ciphersuite.into()).unwrap();
-
-        let extracted = kdf.extract(&case.salt, &case.ikm).unwrap();
-        assert_eq!(extracted, case.prk);
-
-        let expanded = kdf.expand(&case.prk, &case.info, case.len).unwrap();
-        assert_eq!(expanded, case.okm);
-    }
-
-    #[test]
-    fn test_vectors() {
-        let test_case_file = include_str!("../test_data/test_kdf.json");
-
-        let test_cases: Vec<TestCase> = serde_json::from_str(test_case_file).unwrap();
-
-        for case in test_cases {
-            run_test_case(&case);
-        }
-    }
 
     #[test]
     fn no_key() {

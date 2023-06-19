@@ -8,6 +8,9 @@ use zeroize::{Zeroize, Zeroizing};
 mod cipher_suite;
 pub use self::cipher_suite::*;
 
+#[cfg(feature = "test_suite")]
+pub mod test_suite;
+
 #[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// Ciphertext produced by [`CipherSuiteProvider::hpke_seal`]

@@ -334,3 +334,10 @@ where
         Ok(self.ec_signer.signature_key_derive_public(secret_key)?)
     }
 }
+
+#[test]
+fn mls_core_tests() {
+    // Uncomment this to generate the tests instead.
+    // aws_mls_core::crypto::test_suite::generate_tests(&OpensslCryptoProvider::new());
+    aws_mls_core::crypto::test_suite::verify_tests(&OpensslCryptoProvider::new());
+}

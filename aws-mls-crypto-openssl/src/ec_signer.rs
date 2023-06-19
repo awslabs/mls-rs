@@ -144,9 +144,6 @@ impl EcSigner {
 
 #[cfg(test)]
 mod test {
-    use assert_matches::assert_matches;
-    use aws_mls_core::crypto::CipherSuite;
-
     use crate::{
         ec::{
             test_utils::{
@@ -155,41 +152,8 @@ mod test {
             },
             Curve,
         },
-        ec_signer::{EcSigner, EcSignerError},
+        ec_signer::EcSigner,
     };
-
-    const TEST_INPUT: &[u8] = b"Hello World!";
-
-    #[test]
-    fn test_signatures() {
-        CipherSuite::all().for_each(test_signature);
-    }
-
-    fn test_signature(cipher_suite: CipherSuite) {
-        println!("Testing signatures for cipher suite: {cipher_suite:?}");
-
-        let public_key = get_test_public_keys().get_key(cipher_suite, true).into();
-        let secret_key = get_test_secret_keys().get_key(cipher_suite, true);
-        let ec_signer = EcSigner::new(cipher_suite).unwrap();
-
-        assert_eq!(ec_signer.secret_key_size(), secret_key.len());
-
-        let sig = ec_signer.sign(&secret_key.into(), TEST_INPUT).unwrap();
-
-        ec_signer.verify(&public_key, &sig, TEST_INPUT).unwrap();
-
-        let other_public_key = ec_signer.signature_key_generate().unwrap().1;
-
-        assert_matches!(
-            ec_signer.verify(&other_public_key, &sig, TEST_INPUT),
-            Err(EcSignerError::InvalidSignature)
-        );
-
-        assert_matches!(
-            ec_signer.verify(&public_key, &sig, &[TEST_INPUT, &[0]].concat()),
-            Err(EcSignerError::InvalidSignature)
-        );
-    }
 
     #[test]
     fn import_der_public() {

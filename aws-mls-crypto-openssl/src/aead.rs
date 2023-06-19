@@ -152,43 +152,6 @@ mod test {
         .collect()
     }
 
-    #[derive(serde::Deserialize)]
-    struct TestCase {
-        pub ciphersuite: u16,
-        #[serde(with = "hex::serde")]
-        pub key: Vec<u8>,
-        #[serde(with = "hex::serde")]
-        pub iv: Vec<u8>,
-        #[serde(with = "hex::serde")]
-        pub ct: Vec<u8>,
-        #[serde(with = "hex::serde")]
-        pub aad: Vec<u8>,
-        #[serde(with = "hex::serde")]
-        pub pt: Vec<u8>,
-    }
-
-    #[test]
-    fn test_vectors() {
-        let test_case_file = include_str!("../test_data/test_aead.json");
-        let test_cases: Vec<TestCase> = serde_json::from_str(test_case_file).unwrap();
-
-        for case in test_cases {
-            let aead = Aead::new(case.ciphersuite.into()).unwrap();
-
-            let ciphertext = aead
-                .seal(&case.key, &case.pt, Some(&case.aad), &case.iv)
-                .unwrap();
-
-            assert_eq!(ciphertext, case.ct);
-
-            let plaintext = aead
-                .open(&case.key, &ciphertext, Some(&case.aad), &case.iv)
-                .unwrap();
-
-            assert_eq!(plaintext, case.pt);
-        }
-    }
-
     #[test]
     fn invalid_key() {
         for aead in get_aeads() {
