@@ -1,6 +1,5 @@
 use aws_mls::{
     bench_utils::create_empty_tree::{load_test_cases, TestCase},
-    identity::basic::BasicIdentityProvider,
     tree_kem::{kem::TreeKem, leaf_node::ConfigProperties, node::LeafIndex, Capabilities},
     CipherSuite, ExtensionList,
 };
@@ -65,7 +64,6 @@ fn bench_encap(
                                 &value.encap_signer,
                                 update_leaf_properties,
                                 None,
-                                BasicIdentityProvider,
                                 &OpensslCryptoProvider::new()
                                     .cipher_suite_provider(cipher_suite)
                                     .unwrap(),

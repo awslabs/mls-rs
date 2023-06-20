@@ -2,11 +2,9 @@ use super::{
     commit_sender,
     confirmation_tag::ConfirmationTag,
     framing::{
-        ApplicationData, Content, ContentType, MLSMessage, MLSMessagePayload, PublicMessage,
-        Sender, WireFormat,
+        ApplicationData, Content, ContentType, MLSMessage, MLSMessagePayload, PublicMessage, Sender,
     },
     message_signature::AuthenticatedContent,
-    proposal::Proposal,
     proposal_filter::{ProposalBundle, ProposalRules},
     state::GroupState,
     transcript_hash::InterimTranscriptHash,
@@ -31,6 +29,9 @@ use super::proposal_ref::ProposalRef;
 
 #[cfg(not(feature = "by_ref_proposal"))]
 use crate::group::proposal_cache::resolve_for_commit;
+
+#[cfg(any(feature = "state_update", feature = "by_ref_proposal"))]
+use super::proposal::Proposal;
 
 #[cfg(all(feature = "state_update", feature = "by_ref_proposal"))]
 use itertools::Itertools;
@@ -266,6 +267,7 @@ impl TryFrom<Sender> for ProposalSender {
     }
 }
 
+#[cfg(feature = "by_ref_proposal")]
 #[derive(Debug, Clone)]
 /// Description of a processed MLS proposal message.
 pub struct ProposalMessageDescription {
@@ -276,6 +278,11 @@ pub struct ProposalMessageDescription {
     /// Plaintext authenticated data in the received MLS packet.
     pub authenticated_data: Vec<u8>,
 }
+
+#[cfg(not(feature = "by_ref_proposal"))]
+#[derive(Debug, Clone)]
+/// Description of a processed MLS proposal message.
+pub struct ProposalMessageDescription {}
 
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum EventOrContent<E> {
@@ -372,14 +379,15 @@ pub(crate) trait MessageProcessor: Send + Sync {
         #[cfg(feature = "by_ref_proposal")] cache_proposal: bool,
         time_sent: Option<MlsTime>,
     ) -> Result<Self::OutputType, MlsError> {
-        let authenticated_data = auth_content.content.authenticated_data.clone();
-
-        let sender = auth_content.content.sender;
-
         let event = match auth_content.content.content {
-            Content::Application(data) => self
-                .process_application_message(data, sender, authenticated_data)
-                .and_then(Self::OutputType::try_from),
+            #[cfg(feature = "private_message")]
+            Content::Application(data) => {
+                let authenticated_data = auth_content.content.authenticated_data;
+                let sender = auth_content.content.sender;
+
+                self.process_application_message(data, sender, authenticated_data)
+                    .and_then(Self::OutputType::try_from)
+            }
             Content::Commit(_) => self
                 .process_commit(auth_content, time_sent)
                 .await
@@ -582,10 +590,21 @@ pub(crate) trait MessageProcessor: Send + Sync {
             return Err(MlsError::GroupUsedAfterReInit);
         }
 
+        // Update the new GroupContext's confirmed and interim transcript hashes using the new Commit.
+        let (interim_transcript_hash, confirmed_transcript_hash) = transcript_hashes(
+            self.cipher_suite_provider(),
+            &self.group_state().interim_transcript_hash,
+            &auth_content,
+        )?;
+
+        #[cfg(any(feature = "private_message", feature = "by_ref_proposal"))]
         let commit = match auth_content.content.content {
-            Content::Commit(ref commit) => Ok(commit),
+            Content::Commit(commit) => Ok(commit),
             _ => Err(MlsError::UnexpectedMessageType),
         }?;
+
+        #[cfg(not(any(feature = "private_message", feature = "by_ref_proposal")))]
+        let Content::Commit(commit) = auth_content.content.content;
 
         let group_state = self.group_state();
         let id_provider = self.identity_provider();
@@ -593,17 +612,17 @@ pub(crate) trait MessageProcessor: Send + Sync {
         #[cfg(feature = "by_ref_proposal")]
         let proposals = group_state
             .proposals
-            .resolve_for_commit(auth_content.content.sender, commit.proposals.clone())?;
+            .resolve_for_commit(auth_content.content.sender, commit.proposals)?;
 
         #[cfg(not(feature = "by_ref_proposal"))]
-        let proposals = resolve_for_commit(auth_content.content.sender, commit.proposals.clone())?;
+        let proposals = resolve_for_commit(auth_content.content.sender, commit.proposals)?;
 
         let mut provisional_state = group_state
             .apply_resolved(
                 auth_content.content.sender,
                 #[cfg(all(feature = "by_ref_proposal", feature = "state_update"))]
                 None,
-                proposals.clone(),
+                proposals,
                 #[cfg(feature = "external_commit")]
                 commit.path.as_ref().map(|path| &path.leaf_node),
                 &id_provider,
@@ -645,41 +664,34 @@ pub(crate) trait MessageProcessor: Send + Sync {
             return Ok(CommitMessageDescription {
                 #[cfg(feature = "external_commit")]
                 is_external: matches!(auth_content.content.sender, Sender::NewMemberCommit),
-                authenticated_data: auth_content.content.authenticated_data.clone(),
+                authenticated_data: auth_content.content.authenticated_data,
                 committer: *sender,
                 state_update,
             });
         }
 
-        let update_path = match commit.path.as_ref() {
-            Some(update_path) => validate_update_path(
-                &self.identity_provider(),
-                self.cipher_suite_provider(),
-                update_path,
-                &provisional_state,
-                sender,
-                time_sent,
-                &provisional_state.group_context.extensions,
-            )
-            .await
-            .map(Some),
-            None => Ok(None),
-        }?;
+        let update_path = match commit.path {
+            Some(update_path) => Some(
+                validate_update_path(
+                    &self.identity_provider(),
+                    self.cipher_suite_provider(),
+                    update_path,
+                    &provisional_state,
+                    sender,
+                    time_sent,
+                )
+                .await?,
+            ),
+            None => None,
+        };
 
         let new_secrets = match update_path {
             Some(update_path) => {
-                self.apply_update_path(sender, update_path, &mut provisional_state)
+                self.apply_update_path(sender, &update_path, &mut provisional_state)
                     .await
             }
             None => Ok(None),
         }?;
-
-        // Update the new GroupContext's confirmed and interim transcript hashes using the new Commit.
-        let (interim_transcript_hash, confirmed_transcript_hash) = transcript_hashes(
-            self.cipher_suite_provider(),
-            &self.group_state().interim_transcript_hash,
-            &auth_content,
-        )?;
 
         // Update the transcript hash to get the new context.
         provisional_state.group_context.confirmed_transcript_hash = confirmed_transcript_hash;
@@ -705,7 +717,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
             }
         }
 
-        if let Some(confirmation_tag) = auth_content.auth.confirmation_tag {
+        if let Some(confirmation_tag) = &auth_content.auth.confirmation_tag {
             // Update the key schedule to calculate new private keys
             self.update_key_schedule(
                 new_secrets,
@@ -718,7 +730,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
             Ok(CommitMessageDescription {
                 #[cfg(feature = "external_commit")]
                 is_external: matches!(auth_content.content.sender, Sender::NewMemberCommit),
-                authenticated_data: auth_content.content.authenticated_data.clone(),
+                authenticated_data: auth_content.content.authenticated_data,
                 committer: *sender,
                 state_update,
             })
@@ -744,19 +756,17 @@ pub(crate) trait MessageProcessor: Send + Sync {
             return Err(MlsError::ProtocolVersionMismatch);
         }
 
-        if let Some((group_id, epoch, content_type, wire_format)) = match &message.payload {
+        if let Some((group_id, epoch, content_type)) = match &message.payload {
             MLSMessagePayload::Plain(plaintext) => Some((
                 &plaintext.content.group_id,
                 plaintext.content.epoch,
                 plaintext.content.content_type(),
-                WireFormat::PublicMessage,
             )),
             #[cfg(feature = "private_message")]
             MLSMessagePayload::Cipher(ciphertext) => Some((
                 &ciphertext.group_id,
                 ciphertext.epoch,
                 ciphertext.content_type,
-                WireFormat::PrivateMessage,
             )),
             _ => None,
         } {
@@ -780,6 +790,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
                         Ok(())
                     }
                 }
+                #[cfg(feature = "private_message")]
                 ContentType::Application => {
                     if let Some(min) = self.min_epoch_available() {
                         if epoch < min {
@@ -804,7 +815,9 @@ pub(crate) trait MessageProcessor: Send + Sync {
             }
 
             // Unencrypted application messages are not allowed
-            if wire_format == WireFormat::PublicMessage && content_type == ContentType::Application
+            #[cfg(feature = "private_message")]
+            if !matches!(&message.payload, MLSMessagePayload::Cipher(_))
+                && content_type == ContentType::Application
             {
                 return Err(MlsError::UnencryptedApplicationMessage);
             }
@@ -827,14 +840,14 @@ pub(crate) trait MessageProcessor: Send + Sync {
     async fn apply_update_path(
         &mut self,
         sender: LeafIndex,
-        update_path: ValidatedUpdatePath,
+        update_path: &ValidatedUpdatePath,
         provisional_state: &mut ProvisionalState,
     ) -> Result<Option<(TreeKemPrivate, PathSecret)>, MlsError> {
         provisional_state
             .public_tree
             .apply_update_path(
                 sender,
-                &update_path,
+                update_path,
                 self.identity_provider(),
                 self.cipher_suite_provider(),
             )
@@ -846,7 +859,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
         &mut self,
         secrets: Option<(TreeKemPrivate, PathSecret)>,
         interim_transcript_hash: InterimTranscriptHash,
-        confirmation_tag: ConfirmationTag,
+        confirmation_tag: &ConfirmationTag,
         provisional_public_state: ProvisionalState,
     ) -> Result<(), MlsError>;
 }

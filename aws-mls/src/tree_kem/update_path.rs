@@ -1,6 +1,6 @@
 use alloc::{vec, vec::Vec};
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
-use aws_mls_core::{error::IntoAnyError, extension::ExtensionList, identity::IdentityProvider};
+use aws_mls_core::{error::IntoAnyError, identity::IdentityProvider};
 
 use super::{
     leaf_node::LeafNode,
@@ -37,12 +37,12 @@ pub struct ValidatedUpdatePath {
 pub(crate) async fn validate_update_path<C: IdentityProvider, CSP: CipherSuiteProvider>(
     identity_provider: &C,
     cipher_suite_provider: &CSP,
-    path: &UpdatePath,
+    path: UpdatePath,
     state: &ProvisionalState,
     sender: LeafIndex,
     commit_time: Option<MlsTime>,
-    group_context_extensions: &ExtensionList,
 ) -> Result<ValidatedUpdatePath, MlsError> {
+    let group_context_extensions = &state.group_context.extensions;
     #[cfg(feature = "all_extensions")]
     let required_capabilities = state.group_context.extensions.get_as()?;
 
@@ -71,19 +71,15 @@ pub(crate) async fn validate_update_path<C: IdentityProvider, CSP: CipherSuitePr
         let existing_leaf = state.public_tree.nodes.borrow_as_leaf(sender)?;
         let original_leaf_node = existing_leaf.clone();
 
-        let original_identity = identity_provider
-            .identity(&original_leaf_node.signing_identity)
+        identity_provider
+            .valid_successor(
+                &original_leaf_node.signing_identity,
+                &path.leaf_node.signing_identity,
+            )
             .await
-            .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?;
-
-        let updated_identity = identity_provider
-            .identity(&path.leaf_node.signing_identity)
-            .await
-            .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?;
-
-        (original_identity == updated_identity)
+            .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?
             .then_some(())
-            .ok_or(MlsError::DifferentIdentityInUpdate(*sender))?;
+            .ok_or(MlsError::InvalidSuccessor)?;
 
         (existing_leaf.public_key != path.leaf_node.public_key)
             .then_some(())
@@ -92,22 +88,21 @@ pub(crate) async fn validate_update_path<C: IdentityProvider, CSP: CipherSuitePr
 
     // Unfilter the update path
     let filtered = state.public_tree.nodes.filtered(sender)?;
-    let num_filtered = filtered.iter().filter(|v| !**v).count();
+    let mut unfiltered_nodes = vec![];
+    let mut i = 0;
 
-    (path.nodes.len() == num_filtered)
-        .then_some(())
-        .ok_or(MlsError::WrongPathLen)?;
+    for n in path.nodes {
+        while *filtered.get(i).ok_or(MlsError::WrongPathLen)? {
+            unfiltered_nodes.push(None);
+            i += 1;
+        }
 
-    let mut unfiltered_nodes = vec![None; filtered.len()];
-    let filtered_iter = filtered.into_iter().enumerate().filter(|(_, f)| !*f);
-
-    // TODO can we avoid clone?
-    for ((i, _), node) in filtered_iter.zip(path.nodes.iter()) {
-        unfiltered_nodes[i] = Some(node.clone());
+        unfiltered_nodes.push(Some(n));
+        i += 1;
     }
 
     Ok(ValidatedUpdatePath {
-        leaf_node: path.leaf_node.clone(),
+        leaf_node: path.leaf_node,
         nodes: unfiltered_nodes,
     })
 }
@@ -116,7 +111,6 @@ pub(crate) async fn validate_update_path<C: IdentityProvider, CSP: CipherSuitePr
 mod tests {
     use alloc::vec;
     use assert_matches::assert_matches;
-    use aws_mls_core::extension::ExtensionList;
 
     use crate::client::test_utils::TEST_CIPHER_SUITE;
     use crate::crypto::test_utils::test_cipher_suite_provider;
@@ -201,11 +195,10 @@ mod tests {
         let validated = validate_update_path(
             &BasicIdentityProvider,
             &cipher_suite_provider,
-            &update_path,
+            update_path.clone(),
             &test_provisional_state(TEST_CIPHER_SUITE).await,
             LeafIndex(0),
             None,
-            &ExtensionList::new(),
         )
         .await
         .unwrap();
@@ -225,11 +218,10 @@ mod tests {
         let validated = validate_update_path(
             &BasicIdentityProvider,
             &cipher_suite_provider,
-            &update_path,
+            update_path,
             &test_provisional_state(TEST_CIPHER_SUITE).await,
             LeafIndex(0),
             None,
-            &ExtensionList::new(),
         )
         .await;
 
@@ -245,15 +237,14 @@ mod tests {
         let validated = validate_update_path(
             &BasicIdentityProvider,
             &cipher_suite_provider,
-            &update_path,
+            update_path,
             &test_provisional_state(cipher_suite).await,
             LeafIndex(0),
             None,
-            &ExtensionList::new(),
         )
         .await;
 
-        assert_matches!(validated, Err(MlsError::DifferentIdentityInUpdate(_)));
+        assert_matches!(validated, Err(MlsError::InvalidSuccessor));
     }
 
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
@@ -272,11 +263,10 @@ mod tests {
         let validated = validate_update_path(
             &BasicIdentityProvider,
             &cipher_suite_provider,
-            &update_path,
+            update_path,
             &state,
             LeafIndex(0),
             None,
-            &ExtensionList::new(),
         )
         .await;
 

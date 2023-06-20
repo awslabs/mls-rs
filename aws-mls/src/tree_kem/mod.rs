@@ -227,38 +227,6 @@ impl TreeKemPublic {
         Ok(added)
     }
 
-    #[maybe_async::maybe_async]
-    pub async fn rekey_leaf<C>(
-        &mut self,
-        index: LeafIndex,
-        leaf_node: LeafNode,
-        identity_provider: C,
-    ) -> Result<(), MlsError>
-    where
-        C: IdentityProvider,
-    {
-        // Update the cache
-        #[cfg(feature = "tree_index")]
-        {
-            let existing_leaf = self.nodes.borrow_as_leaf(index)?;
-
-            let existing_identity = identity_provider
-                .identity(&existing_leaf.signing_identity)
-                .await
-                .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?;
-
-            self.index.remove(existing_leaf, &existing_identity);
-            index_insert(&mut self.index, &leaf_node, index, &identity_provider).await?;
-        }
-
-        #[cfg(not(feature = "tree_index"))]
-        index_insert(&self.nodes, &leaf_node, index, &identity_provider).await?;
-
-        *self.nodes.borrow_as_leaf_mut(index)? = leaf_node;
-
-        Ok(())
-    }
-
     pub fn non_empty_leaves(&self) -> impl Iterator<Item = (LeafIndex, &LeafNode)> + '_ {
         self.nodes.non_empty_leaves()
     }

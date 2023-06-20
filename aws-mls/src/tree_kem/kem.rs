@@ -6,7 +6,6 @@ use crate::tree_kem::math as tree_math;
 use alloc::vec;
 use alloc::vec::Vec;
 use aws_mls_codec::MlsEncode;
-use aws_mls_core::identity::IdentityProvider;
 use cfg_if::cfg_if;
 
 #[cfg(feature = "rayon")]
@@ -48,20 +47,17 @@ impl<'a> TreeKem<'a> {
 
     #[allow(clippy::too_many_arguments)]
     #[maybe_async::maybe_async]
-    #[inline(never)]
-    pub async fn encap<C, P>(
+    pub async fn encap<P>(
         self,
         context: &mut GroupContext,
         excluding: &[LeafIndex],
         signer: &SignatureSecretKey,
         update_leaf_properties: ConfigProperties,
         signing_identity: Option<SigningIdentity>,
-        identity_provider: C,
         cipher_suite_provider: &P,
         #[cfg(test)] commit_modifiers: &CommitModifiers<P>,
     ) -> Result<EncapGeneration, MlsError>
     where
-        C: IdentityProvider,
         P: CipherSuiteProvider + Send + Sync,
     {
         let num_leaves = self.tree_kem_public.nodes.total_leaf_count();
@@ -110,9 +106,7 @@ impl<'a> TreeKem<'a> {
             parent_hash,
         )?);
 
-        self.tree_kem_public
-            .rekey_leaf(self_index, own_leaf_copy.clone(), identity_provider)
-            .await?;
+        *self.tree_kem_public.nodes.borrow_as_leaf_mut(self_index)? = own_leaf_copy.clone();
 
         #[cfg(test)]
         {
@@ -193,17 +187,15 @@ impl<'a> TreeKem<'a> {
     }
 
     #[maybe_async::maybe_async]
-    pub async fn decap<IP, CP>(
+    pub async fn decap<CP>(
         self,
         sender_index: LeafIndex,
-        update_path: ValidatedUpdatePath,
+        update_path: &ValidatedUpdatePath,
         added_leaves: &[LeafIndex],
-        context: &mut GroupContext,
-        identity_provider: IP,
+        context_bytes: &[u8],
         cipher_suite_provider: &CP,
     ) -> Result<PathSecret, MlsError>
     where
-        IP: IdentityProvider,
         CP: CipherSuiteProvider,
     {
         // Exclude newly added leaf indexes
@@ -211,20 +203,6 @@ impl<'a> TreeKem<'a> {
             .iter()
             .map(NodeIndex::from)
             .collect::<Vec<NodeIndex>>();
-
-        self.tree_kem_public
-            .apply_update_path(
-                sender_index,
-                &update_path,
-                identity_provider,
-                cipher_suite_provider,
-            )
-            .await?;
-
-        // Update the tree hash to get context for decryption
-        context.tree_hash = self.tree_kem_public.tree_hash(cipher_suite_provider)?;
-
-        let context_bytes = context.mls_encode_to_vec()?;
 
         let self_index = self.private_key.self_index;
 
@@ -247,7 +225,7 @@ impl<'a> TreeKem<'a> {
             lca_node,
             direct_path_copath[lca_index].1,
             &excluding,
-            &context_bytes,
+            context_bytes,
         )?;
 
         // Derive the rest of the secrets for the tree and assign to the proper nodes
@@ -377,6 +355,7 @@ mod tests {
         ExtensionList,
     };
     use alloc::{format, vec, vec::Vec};
+    use aws_mls_codec::MlsEncode;
     use aws_mls_core::crypto::CipherSuiteProvider;
 
     // Verify that the tree is in the correct state after generating an update path
@@ -517,7 +496,6 @@ mod tests {
                 &encap_signer,
                 update_leaf_properties,
                 None,
-                BasicIdentityProvider,
                 &cipher_suite_provider,
                 #[cfg(test)]
                 &Default::default(),
@@ -561,13 +539,24 @@ mod tests {
         let mut receiver_trees: Vec<TreeKemPublic> = (1..size).map(|_| test_tree.clone()).collect();
 
         for (i, tree) in receiver_trees.iter_mut().enumerate() {
+            tree.apply_update_path(
+                LeafIndex(0),
+                &validated_update_path,
+                BasicIdentityProvider,
+                &cipher_suite_provider,
+            )
+            .await
+            .unwrap();
+
+            let mut context = get_test_group_context(42, cipher_suite);
+            context.tree_hash = tree.tree_hash(&cipher_suite_provider).unwrap();
+
             TreeKem::new(tree, &mut private_keys[i])
                 .decap(
                     LeafIndex(0),
-                    validated_update_path.clone(),
+                    &validated_update_path,
                     &[],
-                    &mut get_test_group_context(42, cipher_suite),
-                    BasicIdentityProvider,
+                    &context.mls_encode_to_vec().unwrap(),
                     &cipher_suite_provider,
                 )
                 .await

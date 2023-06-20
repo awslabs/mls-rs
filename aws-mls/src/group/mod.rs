@@ -1866,29 +1866,36 @@ where
     async fn apply_update_path(
         &mut self,
         sender: LeafIndex,
-        update_path: ValidatedUpdatePath,
+        update_path: &ValidatedUpdatePath,
         provisional_state: &mut ProvisionalState,
     ) -> Result<Option<(TreeKemPrivate, PathSecret)>, MlsError> {
         // Update the private tree to create a provisional private tree
         let mut provisional_private_tree = self.provisional_private_tree(provisional_state)?;
 
-        let secrets = if let Some(pending) = self
+        provisional_state
+            .public_tree
+            .apply_update_path(
+                sender,
+                update_path,
+                self.identity_provider(),
+                self.cipher_suite_provider(),
+            )
+            .await?;
+
+        if let Some(pending) = self
             .pending_commit
             .as_ref()
             .and_then(|pc| pc.pending_secrets.as_ref())
         {
-            provisional_state
-                .public_tree
-                .apply_update_path(
-                    self.private_tree.self_index,
-                    &update_path,
-                    self.identity_provider(),
-                    self.cipher_suite_provider(),
-                )
-                .await?;
-
-            Ok(pending.clone())
+            Ok(Some(pending.clone()))
         } else {
+            // Update the tree hash to get context for decryption
+            provisional_state.group_context.tree_hash = provisional_state
+                .public_tree
+                .tree_hash(&self.cipher_suite_provider)?;
+
+            let context_bytes = provisional_state.group_context.mls_encode_to_vec()?;
+
             TreeKem::new(
                 &mut provisional_state.public_tree,
                 &mut provisional_private_tree,
@@ -1897,22 +1904,19 @@ where
                 sender,
                 update_path,
                 &provisional_state.indexes_of_added_kpkgs,
-                &mut provisional_state.group_context,
-                self.config.identity_provider(),
+                &context_bytes,
                 &self.cipher_suite_provider,
             )
             .await
-            .map(|root_secret| (provisional_private_tree, root_secret))
-        }?;
-
-        Ok(Some(secrets))
+            .map(|root_secret| Some((provisional_private_tree, root_secret)))
+        }
     }
 
     async fn update_key_schedule(
         &mut self,
         secrets: Option<(TreeKemPrivate, PathSecret)>,
         interim_transcript_hash: InterimTranscriptHash,
-        confirmation_tag: ConfirmationTag,
+        confirmation_tag: &ConfirmationTag,
         provisional_state: ProvisionalState,
     ) -> Result<(), MlsError> {
         let commit_secret = CommitSecret::from_root_secret(
@@ -1967,7 +1971,7 @@ where
             &self.cipher_suite_provider,
         )?;
 
-        if new_confirmation_tag != confirmation_tag {
+        if &new_confirmation_tag != confirmation_tag {
             return Err(MlsError::InvalidConfirmationTag);
         }
 

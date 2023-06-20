@@ -49,6 +49,7 @@ impl FramedContentAuthData {
             signature: MessageSignature::mls_decode(reader)?,
             confirmation_tag: match content_type {
                 ContentType::Commit => Some(ConfirmationTag::mls_decode(reader)?),
+                #[cfg(feature = "private_message")]
                 ContentType::Application => None,
                 #[cfg(feature = "by_ref_proposal")]
                 ContentType::Proposal => None,

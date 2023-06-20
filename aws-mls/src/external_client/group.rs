@@ -624,7 +624,7 @@ where
         &mut self,
         _secrets: Option<(TreeKemPrivate, PathSecret)>,
         interim_transcript_hash: InterimTranscriptHash,
-        confirmation_tag: ConfirmationTag,
+        confirmation_tag: &ConfirmationTag,
         provisional_public_state: ProvisionalState,
     ) -> Result<(), MlsError> {
         self.state.context = provisional_public_state.group_context;
@@ -632,7 +632,7 @@ where
         self.state.proposals.clear();
         self.state.interim_transcript_hash = interim_transcript_hash;
         self.state.public_tree = provisional_public_state.public_tree;
-        self.state.confirmation_tag = confirmation_tag;
+        self.state.confirmation_tag = confirmation_tag.clone();
 
         Ok(())
     }

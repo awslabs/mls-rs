@@ -209,7 +209,6 @@ mod tests {
                 &test_tree.creator_signing_key,
                 default_properties(),
                 None,
-                BasicIdentityProvider,
                 &cipher_suite_provider,
                 #[cfg(test)]
                 &Default::default(),

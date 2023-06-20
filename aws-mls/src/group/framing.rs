@@ -13,6 +13,7 @@ use alloc::{boxed::Box, string::ToString};
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
 pub enum ContentType {
+    #[cfg(feature = "private_message")]
     Application = 1u8,
     #[cfg(feature = "by_ref_proposal")]
     Proposal = 2u8,
@@ -22,6 +23,7 @@ pub enum ContentType {
 impl From<&Content> for ContentType {
     fn from(content: &Content) -> Self {
         match content {
+            #[cfg(feature = "private_message")]
             Content::Application(_) => ContentType::Application,
             #[cfg(feature = "by_ref_proposal")]
             Content::Proposal(_) => ContentType::Proposal,
@@ -94,6 +96,7 @@ impl ApplicationData {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
 pub(crate) enum Content {
+    #[cfg(feature = "private_message")]
     Application(ApplicationData) = 1u8,
     #[cfg(feature = "by_ref_proposal")]
     Proposal(alloc::boxed::Box<Proposal>) = 2u8,

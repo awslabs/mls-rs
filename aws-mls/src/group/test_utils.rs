@@ -508,7 +508,7 @@ impl MessageProcessor for GroupWithoutKeySchedule {
     async fn apply_update_path(
         &mut self,
         sender: LeafIndex,
-        update_path: ValidatedUpdatePath,
+        update_path: &ValidatedUpdatePath,
         provisional_state: &mut ProvisionalState,
     ) -> Result<Option<(TreeKemPrivate, PathSecret)>, MlsError> {
         self.inner
@@ -535,7 +535,7 @@ impl MessageProcessor for GroupWithoutKeySchedule {
         &mut self,
         secrets: Option<(TreeKemPrivate, PathSecret)>,
         _interim_transcript_hash: InterimTranscriptHash,
-        _confirmation_tag: ConfirmationTag,
+        _confirmation_tag: &ConfirmationTag,
         provisional_public_state: ProvisionalState,
     ) -> Result<(), MlsError> {
         self.provisional_public_state = Some(provisional_public_state);

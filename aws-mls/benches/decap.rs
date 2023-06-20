@@ -1,12 +1,12 @@
 use aws_mls::{
     bench_utils::create_empty_tree::{load_test_cases, TestCase},
-    identity::basic::BasicIdentityProvider,
     tree_kem::{
         kem::TreeKem, leaf_node::ConfigProperties, node::LeafIndex,
         update_path::ValidatedUpdatePath, Capabilities,
     },
     CipherSuite, ExtensionList,
 };
+use aws_mls_codec::MlsEncode;
 use aws_mls_core::crypto::CryptoProvider;
 use aws_mls_crypto_openssl::OpensslCryptoProvider;
 use criterion::{
@@ -53,7 +53,6 @@ fn bench_decap(
                 &value.encap_signer,
                 update_leaf_properties,
                 None,
-                BasicIdentityProvider,
                 &OpensslCryptoProvider::new()
                     .cipher_suite_provider(cipher_suite)
                     .unwrap(),
@@ -83,14 +82,13 @@ fn bench_decap(
                             value.group_context.clone(),
                         )
                     },
-                    |(mut receiver_tree, mut private_key, mut group_context)| async move {
+                    |(mut receiver_tree, mut private_key, group_context)| async move {
                         TreeKem::new(&mut receiver_tree, &mut private_key)
                             .decap(
                                 LeafIndex::new(0),
-                                validated_update_path.clone(),
+                                validated_update_path,
                                 added_leaves,
-                                &mut group_context,
-                                BasicIdentityProvider,
+                                &group_context.mls_encode_to_vec().unwrap(),
                                 &OpensslCryptoProvider::new()
                                     .cipher_suite_provider(cipher_suite)
                                     .unwrap(),

@@ -505,7 +505,6 @@ where
                 &new_signer,
                 self.config.leaf_properties(),
                 signing_identity,
-                self.config.identity_provider(),
                 &self.cipher_suite_provider,
                 #[cfg(test)]
                 &self.commit_modifiers,

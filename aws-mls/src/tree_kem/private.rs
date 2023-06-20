@@ -183,7 +183,6 @@ mod tests {
                 &alice_signing,
                 default_properties(),
                 None,
-                BasicIdentityProvider,
                 &cipher_suite_provider,
                 #[cfg(test)]
                 &Default::default(),
