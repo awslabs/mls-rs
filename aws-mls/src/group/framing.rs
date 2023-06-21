@@ -360,6 +360,16 @@ impl MLSMessage {
         }
     }
 
+    pub fn group_id(&self) -> Option<&[u8]> {
+        match &self.payload {
+            MLSMessagePayload::Plain(p) => Some(&p.content.group_id),
+            #[cfg(feature = "private_message")]
+            MLSMessagePayload::Cipher(p) => Some(&p.group_id),
+            MLSMessagePayload::GroupInfo(p) => Some(&p.group_context.group_id),
+            MLSMessagePayload::KeyPackage(_) | MLSMessagePayload::Welcome(_) => None,
+        }
+    }
+
     /// Deserialize a message from transport.
     #[inline(never)]
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, MlsError> {
