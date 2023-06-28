@@ -14,7 +14,7 @@ use zeroize::Zeroizing;
 use crate::cipher_suite::CipherSuite;
 use crate::client::MlsError;
 use crate::client_config::ClientConfig;
-use crate::crypto::{HpkeCiphertext, HpkePublicKey, HpkeSecretKey, SignatureSecretKey};
+use crate::crypto::{HpkeCiphertext, SignatureSecretKey};
 use crate::extension::RatchetTreeExt;
 use crate::identity::SigningIdentity;
 use crate::key_package::{KeyPackage, KeyPackageRef};
@@ -30,6 +30,9 @@ pub use crate::tree_kem::Capabilities;
 use crate::tree_kem::{math as tree_math, ValidatedUpdatePath};
 use crate::tree_kem::{TreeKemPrivate, TreeKemPublic};
 use crate::{CipherSuiteProvider, CryptoProvider};
+
+#[cfg(feature = "by_ref_proposal")]
+use crate::crypto::{HpkePublicKey, HpkeSecretKey};
 
 #[cfg(feature = "external_commit")]
 use crate::extension::ExternalPubExt;
@@ -258,9 +261,9 @@ pub(crate) mod internal {
         pub(super) epoch_secrets: EpochSecrets,
         pub(super) private_tree: TreeKemPrivate,
         pub(super) key_schedule: KeySchedule,
-        #[cfg(feature = "std")]
+        #[cfg(all(feature = "std", feature = "by_ref_proposal"))]
         pub(super) pending_updates: HashMap<HpkePublicKey, HpkeSecretKey>, // Hash of leaf node hpke public key to secret key
-        #[cfg(not(feature = "std"))]
+        #[cfg(all(not(feature = "std"), feature = "by_ref_proposal"))]
         pub(super) pending_updates: Vec<(HpkePublicKey, HpkeSecretKey)>,
         pub(super) pending_commit: Option<CommitGeneration>,
         #[cfg(feature = "psk")]
@@ -357,6 +360,7 @@ where
             state: GroupState::new(context, public_tree, interim_hash, confirmation_tag),
             private_tree,
             key_schedule: key_schedule_result.key_schedule,
+            #[cfg(feature = "by_ref_proposal")]
             pending_updates: Default::default(),
             pending_commit: None,
             #[cfg(test)]
@@ -585,6 +589,7 @@ where
             ),
             private_tree,
             key_schedule,
+            #[cfg(feature = "by_ref_proposal")]
             pending_updates: Default::default(),
             pending_commit: None,
             #[cfg(test)]
@@ -2016,7 +2021,11 @@ where
         self.state.proposals.clear();
 
         // Clear the pending updates list
-        self.pending_updates = Default::default();
+        #[cfg(feature = "by_ref_proposal")]
+        {
+            self.pending_updates = Default::default();
+        }
+
         self.pending_commit = None;
 
         Ok(())

@@ -1,7 +1,6 @@
 use crate::{
     client::MlsError,
     client_config::ClientConfig,
-    crypto::{HpkePublicKey, HpkeSecretKey},
     group::{
         key_schedule::KeySchedule, CommitGeneration, ConfirmationTag, Group, GroupContext,
         GroupState, InterimTranscriptHash, ReInitProposal, TreeKemPublic,
@@ -10,7 +9,10 @@ use crate::{
 };
 
 #[cfg(feature = "by_ref_proposal")]
-use crate::group::ProposalRef;
+use crate::{
+    crypto::{HpkePublicKey, HpkeSecretKey},
+    group::ProposalRef,
+};
 
 #[cfg(feature = "by_ref_proposal")]
 use super::proposal_cache::{CachedProposal, ProposalCache};
@@ -23,7 +25,7 @@ use aws_mls_core::identity::IdentityProvider;
 #[cfg(feature = "std")]
 use std::collections::HashMap;
 
-#[cfg(not(feature = "std"))]
+#[cfg(all(feature = "by_ref_proposal", not(feature = "std")))]
 use alloc::vec::Vec;
 
 use super::{cipher_suite_provider, epoch::EpochSecrets, state_repo::GroupStateRepository};
@@ -38,9 +40,9 @@ pub(crate) struct Snapshot {
     private_tree: TreeKemPrivate,
     epoch_secrets: EpochSecrets,
     key_schedule: KeySchedule,
-    #[cfg(feature = "std")]
+    #[cfg(all(feature = "std", feature = "by_ref_proposal"))]
     pending_updates: HashMap<HpkePublicKey, HpkeSecretKey>,
-    #[cfg(not(feature = "std"))]
+    #[cfg(all(not(feature = "std"), feature = "by_ref_proposal"))]
     pending_updates: Vec<(HpkePublicKey, HpkeSecretKey)>,
     pending_commit: Option<CommitGeneration>,
 }
@@ -165,6 +167,7 @@ where
             state: RawGroupState::export(&self.state),
             private_tree: self.private_tree.clone(),
             key_schedule: self.key_schedule.clone(),
+            #[cfg(feature = "by_ref_proposal")]
             pending_updates: self.pending_updates.clone(),
             pending_commit: self.pending_commit.clone(),
             epoch_secrets: self.epoch_secrets.clone(),
@@ -204,6 +207,7 @@ where
                 .await?,
             private_tree: snapshot.private_tree,
             key_schedule: snapshot.key_schedule,
+            #[cfg(feature = "by_ref_proposal")]
             pending_updates: snapshot.pending_updates,
             pending_commit: snapshot.pending_commit,
             #[cfg(test)]
