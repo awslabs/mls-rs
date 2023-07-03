@@ -87,6 +87,7 @@ pub struct CommitOutput {
     pub ratchet_tree: Option<Vec<u8>>,
 }
 
+#[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen)]
 impl CommitOutput {
     /// Commit message to send to other group members.
     pub fn commit_message(&self) -> &MLSMessage {

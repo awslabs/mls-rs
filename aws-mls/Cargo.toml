@@ -29,7 +29,7 @@ rfc_compliant = ["external_commit", "state_update", "private_message", "all_exte
 
 std = ["aws-mls-core/std", "aws-mls-codec/std", "aws-mls-identity-x509?/std", "hex/std", "futures/std", "itertools/use_std", "zeroize/std", "dep:debug_tree", "dep:thiserror"]
 
-ffi = ["dep:safer-ffi", "dep:safer-ffi-gen", "dep:safer-ffi-gen-macro", "aws-mls-core/ffi"]
+ffi = ["dep:safer-ffi", "dep:safer-ffi-gen", "aws-mls-core/ffi"]
 
 # SQLite support
 sqlite = ["std", "aws-mls-provider-sqlite/sqlite"]
@@ -61,9 +61,8 @@ aws-mls-crypto-openssl = { path = "../aws-mls-crypto-openssl", optional = true, 
 # TODO: https://github.com/GoogleChromeLabs/wasm-bindgen-rayon
 rayon = { version = "1", optional = true }
 arbitrary = { version = "1", features = ["derive"], optional = true }
-safer-ffi = { version = "0.0.10", default-features = false, features = ["alloc"], optional = true }
-safer-ffi-gen = { version = "=0.1.0-rc.3", default-features = false, optional = true }
-safer-ffi-gen-macro = { version = "=0.1.0-rc.3", optional = true }
+safer-ffi = { version = "0.1.0", default-features = false, optional = true }
+safer-ffi-gen = { version = "0.2.0", default-features = false, optional = true }
 
 # Example
 tokio = { version = "1", optional = true, features = ["macros", "rt-multi-thread"] }

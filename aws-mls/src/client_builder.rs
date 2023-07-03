@@ -927,7 +927,12 @@ impl Default for Preferences {
     }
 }
 
+#[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen)]
 impl Preferences {
+    pub fn new() -> Self {
+        Default::default()
+    }
+
     #[cfg(feature = "private_message")]
     #[must_use]
     pub fn with_control_encryption(self, enabled: bool) -> Self {
@@ -945,6 +950,7 @@ impl Preferences {
         }
     }
 
+    #[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen_ignore)]
     #[cfg(feature = "private_message")]
     #[must_use]
     pub fn with_padding_mode(self, padding_mode: PaddingMode) -> Self {
@@ -962,6 +968,7 @@ impl Preferences {
         }
     }
 
+    #[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen_ignore)]
     #[cfg(feature = "private_message")]
     pub(crate) fn encryption_mode(&self) -> ControlEncryptionMode {
         if self.encrypt_controls {

@@ -29,6 +29,7 @@ use alloc::boxed::Box;
 
 #[derive(Debug)]
 #[cfg_attr(feature = "std", derive(thiserror::Error))]
+#[cfg_attr(feature = "ffi", safer_ffi_gen::enum_to_error_code)]
 #[non_exhaustive]
 pub enum MlsError {
     #[cfg_attr(feature = "std", error(transparent))]
@@ -101,19 +102,14 @@ pub enum MlsError {
         error("Signing identity is not allowed to externally propose")
     )]
     InvalidExternalSigningIdentity,
-    #[cfg(feature = "external_commit")]
-    #[cfg_attr(
-        all(feature = "external_commit", feature = "std"),
-        error("Missing ExternalPub extension")
-    )]
+    #[cfg_attr(feature = "std", error("Missing ExternalPub extension"))]
     MissingExternalPubExtension,
     #[cfg_attr(feature = "std", error("Epoch not found"))]
     EpochNotFound,
     #[cfg_attr(feature = "std", error("Unencrypted application message"))]
     UnencryptedApplicationMessage,
-    #[cfg(feature = "external_commit")]
     #[cfg_attr(
-        all(feature = "external_commit", feature = "std"),
+        feature = "std",
         error("NewMemberCommit sender type can only be used to send Commit content")
     )]
     ExpectedCommitForNewMemberCommit,
@@ -122,9 +118,8 @@ pub enum MlsError {
         error("NewMemberProposal sender type can only be used to send add proposals")
     )]
     ExpectedAddProposalForNewMemberProposal,
-    #[cfg(feature = "external_commit")]
     #[cfg_attr(
-        all(feature = "external_commit", feature = "std"),
+        feature = "std",
         error("External commit missing ExternalInit proposal")
     )]
     ExternalCommitMissingExternalInit,
@@ -282,35 +277,27 @@ pub enum MlsError {
     MoreThanOneGroupContextExtensionsProposal,
     #[cfg_attr(feature = "std", error("Invalid proposal type for sender"))]
     InvalidProposalTypeForSender,
-    #[cfg(feature = "external_commit")]
     #[cfg_attr(
-        all(feature = "external_commit", feature = "std"),
+        feature = "std",
         error("External commit must have exactly one ExternalInit proposal")
     )]
     ExternalCommitMustHaveExactlyOneExternalInit,
-    #[cfg(feature = "external_commit")]
-    #[cfg_attr(
-        all(feature = "external_commit", feature = "std"),
-        error("External commit must have a new leaf")
-    )]
+    #[cfg_attr(feature = "std", error("External commit must have a new leaf"))]
     ExternalCommitMustHaveNewLeaf,
-    #[cfg(feature = "external_commit")]
     #[cfg_attr(
-        all(feature = "external_commit", feature = "std"),
+        feature = "std",
         error("External commit contains removal of other identity")
     )]
     ExternalCommitRemovesOtherIdentity,
-    #[cfg(feature = "external_commit")]
     #[cfg_attr(
-        all(feature = "external_commit", feature = "std"),
+        feature = "std",
         error("External commit contains more than one Remove proposal")
     )]
     ExternalCommitWithMoreThanOneRemove,
     #[cfg_attr(feature = "std", error("Duplicate PSK IDs"))]
     DuplicatePskIds,
-    #[cfg(feature = "external_commit")]
     #[cfg_attr(
-        all(feature = "external_commit", feature = "std"),
+        feature = "std",
         error("Invalid proposal type {0:?} in external commit")
     )]
     InvalidProposalTypeInExternalCommit(ProposalType),

@@ -278,6 +278,7 @@ pub struct MLSMessage {
     pub(crate) payload: MLSMessagePayload,
 }
 
+#[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen)]
 #[allow(dead_code)]
 impl MLSMessage {
     pub(crate) fn new(version: ProtocolVersion, payload: MLSMessagePayload) -> MLSMessage {
@@ -326,6 +327,7 @@ impl MLSMessage {
     }
 
     /// The wire format value describing the contents of this message.
+    #[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen_ignore)]
     pub fn wire_format(&self) -> WireFormat {
         match self.payload {
             MLSMessagePayload::Plain(_) => WireFormat::PublicMessage,
@@ -341,6 +343,7 @@ impl MLSMessage {
     ///
     /// Returns `None` if the message is [`WireFormat::KeyPackage`]
     /// or [`WireFormat::Welcome`]
+    #[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen_ignore)]
     pub fn epoch(&self) -> Option<u64> {
         match &self.payload {
             MLSMessagePayload::Plain(p) => Some(p.content.epoch),
@@ -351,6 +354,7 @@ impl MLSMessage {
         }
     }
 
+    #[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen_ignore)]
     pub fn cipher_suite(&self) -> Option<CipherSuite> {
         match &self.payload {
             MLSMessagePayload::GroupInfo(i) => Some(i.group_context.cipher_suite),
