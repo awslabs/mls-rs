@@ -3266,6 +3266,80 @@ mod tests {
         );
     }
 
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    async fn receiving_multiple_reinits_fails() {
+        let (alice, tree) = new_tree("alice").await;
+
+        let res = CommitReceiver::new(
+            &tree,
+            alice,
+            alice,
+            test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .receive([
+            Proposal::ReInit(make_reinit(TEST_PROTOCOL_VERSION)),
+            Proposal::ReInit(make_reinit(TEST_PROTOCOL_VERSION)),
+        ])
+        .await;
+
+        assert_matches!(res, Err(MlsError::OtherProposalWithReInit));
+    }
+
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    async fn sending_additional_multiple_reinits_fails() {
+        let (alice, tree) = new_tree("alice").await;
+
+        let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+            .with_additional([
+                Proposal::ReInit(make_reinit(TEST_PROTOCOL_VERSION)),
+                Proposal::ReInit(make_reinit(TEST_PROTOCOL_VERSION)),
+            ])
+            .send()
+            .await;
+
+        assert_matches!(res, Err(MlsError::OtherProposalWithReInit));
+    }
+
+    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    async fn sending_multiple_reinits_keeps_only_one() {
+        let (alice, tree) = new_tree("alice").await;
+        let reinit = Proposal::ReInit(make_reinit(TEST_PROTOCOL_VERSION));
+        let reinit_ref = make_proposal_ref(&reinit, alice);
+        let other_reinit = Proposal::ReInit(ReInitProposal {
+            group_id: b"other_group".to_vec(),
+            ..make_reinit(TEST_PROTOCOL_VERSION)
+        });
+        let other_reinit_ref = make_proposal_ref(&other_reinit, alice);
+
+        let processed_proposals =
+            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+                .cache(reinit_ref.clone(), reinit.clone(), alice)
+                .cache(other_reinit_ref.clone(), other_reinit.clone(), alice)
+                .send()
+                .await
+                .unwrap();
+
+        let processed_ref = match &*processed_proposals.0 {
+            [ProposalOrRef::Reference(r)] => r,
+            p => panic!("Expected single proposal reference but found {p:?}"),
+        };
+
+        assert!(*processed_ref == reinit_ref || *processed_ref == other_reinit_ref);
+
+        #[cfg(feature = "state_update")]
+        {
+            let (rejected_ref, rejected_proposal) = match &*processed_proposals.1.rejected_proposals
+            {
+                [(r, p)] => (r, p),
+                p => panic!("Expected single proposal but found {p:?}"),
+            };
+
+            assert_ne!(rejected_ref, processed_ref);
+            assert!(*rejected_ref == reinit_ref || *rejected_ref == other_reinit_ref);
+            assert!(*rejected_proposal == reinit || *rejected_proposal == other_reinit);
+        }
+    }
+
     #[cfg(feature = "external_commit")]
     fn make_external_init() -> ExternalInit {
         ExternalInit {

@@ -442,16 +442,25 @@ fn filter_out_reinit_if_other_proposals(
     filter: bool,
     mut proposals: ProposalBundle,
 ) -> Result<ProposalBundle, MlsError> {
-    let has_other_types = proposals.length() > proposals.reinitializations.len();
+    let proposal_count = proposals.length();
 
-    if has_other_types {
+    let has_reinit_and_other_proposal =
+        !proposals.reinit_proposals().is_empty() && proposal_count != 1;
+
+    if has_reinit_and_other_proposal {
         let any_by_val = proposals.reinit_proposals().iter().any(|p| p.is_by_value());
 
-        if any_by_val || (!proposals.reinit_proposals().is_empty() && !filter) {
+        if any_by_val || !filter {
             return Err(MlsError::OtherProposalWithReInit);
         }
 
-        proposals.reinitializations = Vec::new();
+        let has_other_proposal_type = proposal_count > proposals.reinit_proposals().len();
+
+        if has_other_proposal_type {
+            proposals.reinitializations = Vec::new();
+        } else {
+            proposals.reinitializations.truncate(1);
+        }
     }
 
     Ok(proposals)
