@@ -225,7 +225,7 @@ impl TreeKemPublic {
             added.push(start);
         }
 
-        self.update_hashes(&mut Vec::new(), &added, cipher_suite_provider)?;
+        self.update_hashes(&added, cipher_suite_provider)?;
 
         Ok(added)
     }
@@ -281,7 +281,7 @@ impl TreeKemPublic {
         // Update the rest of the nodes on the direct path
         let path = self.nodes.direct_path(sender)?;
 
-        for (node, dp) in update_path.nodes.iter().zip(path.into_iter()) {
+        for (node, dp) in update_path.nodes.iter().zip(path) {
             node.as_ref()
                 .map(|n| self.update_node(n.public_key.clone(), dp))
                 .transpose()?;
@@ -303,7 +303,7 @@ impl TreeKemPublic {
 
         // Verify the parent hash of the new sender leaf node and update the parent hash values
         // in the local tree
-        self.update_parent_hashes(sender, Some(&update_path.leaf_node), cipher_suite_provider)?;
+        self.update_parent_hashes(sender, true, cipher_suite_provider)?;
 
         Ok(())
     }
@@ -477,14 +477,15 @@ impl TreeKemPublic {
 
         self.nodes.trim();
 
-        let mut path_blanked = proposal_bundle
+        let updated_leaves = proposal_bundle
             .remove_proposals()
             .iter()
             .map(|p| p.proposal().to_remove)
             .chain(updated_indices.into_iter())
+            .chain(added.iter().copied())
             .collect_vec();
 
-        self.update_hashes(&mut path_blanked, &added, cipher_suite_provider)?;
+        self.update_hashes(&updated_leaves, cipher_suite_provider)?;
 
         Ok(added)
     }
@@ -531,13 +532,14 @@ impl TreeKemPublic {
 
         self.nodes.trim();
 
-        let mut path_blanked = proposal_bundle
+        let updated_leaves = proposal_bundle
             .remove_proposals()
             .iter()
             .map(|p| p.proposal().to_remove)
+            .chain(added.iter().copied())
             .collect_vec();
 
-        self.update_hashes(&mut path_blanked, &added, cipher_suite_provider)?;
+        self.update_hashes(&updated_leaves, cipher_suite_provider)?;
 
         Ok(added)
     }
@@ -679,7 +681,7 @@ pub(crate) mod test_utils {
         tree_kem::leaf_node::test_utils::get_basic_test_node_sig_key,
     };
 
-    use super::leaf_node::{ConfigProperties, LeafNodeSigningContext, LeafNodeSource};
+    use super::leaf_node::{ConfigProperties, LeafNodeSigningContext};
     use super::node::LeafIndex;
     use super::Lifetime;
     use super::{
@@ -817,13 +819,9 @@ pub(crate) mod test_utils {
             self.tree.tree_hashes.current = vec![];
             self.tree.tree_hash(cs).unwrap();
 
-            let parent_hash = self.tree.update_parent_hashes(committer, None, cs).unwrap();
-
             self.tree
-                .nodes
-                .borrow_as_leaf_mut(committer)
-                .unwrap()
-                .leaf_node_source = LeafNodeSource::Commit(parent_hash);
+                .update_parent_hashes(committer, false, cs)
+                .unwrap();
 
             self.tree.tree_hashes.current = vec![];
             self.tree.tree_hash(cs).unwrap();

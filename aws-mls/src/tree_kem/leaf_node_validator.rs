@@ -210,7 +210,6 @@ mod tests {
     use crate::identity::test_utils::get_test_signing_identity;
     use crate::tree_kem::leaf_node::test_utils::*;
     use crate::tree_kem::leaf_node_validator::test_utils::FailureIdentityProvider;
-    use crate::tree_kem::parent_hash::ParentHash;
     use crate::tree_kem::Capabilities;
     use crate::ExtensionList;
 
@@ -310,6 +309,8 @@ mod tests {
 
         let (mut leaf_node, secret) = get_test_add_node().await;
 
+        leaf_node.leaf_node_source = LeafNodeSource::Commit(hex!("f00d").into());
+
         leaf_node
             .commit(
                 &cipher_suite_provider,
@@ -318,7 +319,6 @@ mod tests {
                 default_properties(),
                 None,
                 &secret,
-                ParentHash::from(vec![0u8; 32]),
             )
             .unwrap();
 
@@ -386,6 +386,8 @@ mod tests {
 
         assert_matches!(res, Err(MlsError::InvalidLeafNodeSource));
 
+        leaf_node.leaf_node_source = LeafNodeSource::Commit(hex!("f00d").into());
+
         leaf_node
             .commit(
                 &cipher_suite_provider,
@@ -394,7 +396,6 @@ mod tests {
                 default_properties(),
                 None,
                 &secret,
-                ParentHash::from(vec![0u8; 32]),
             )
             .unwrap();
 
@@ -644,7 +645,7 @@ pub(crate) mod test_utils {
     #[cfg(feature = "external_proposal")]
     impl FailureIdentityProvider {
         pub fn new() -> Self {
-            Self::default()
+            Self
         }
     }
 

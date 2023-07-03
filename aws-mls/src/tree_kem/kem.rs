@@ -1,5 +1,5 @@
 use crate::client::MlsError;
-use crate::crypto::{CipherSuiteProvider, HpkeCiphertext, SignatureSecretKey};
+use crate::crypto::{CipherSuiteProvider, SignatureSecretKey};
 use crate::group::GroupContext;
 use crate::identity::SigningIdentity;
 use crate::tree_kem::math as tree_math;
@@ -11,9 +11,12 @@ use cfg_if::cfg_if;
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 
+#[cfg(feature = "std")]
+use std::collections::HashSet;
+
 use super::hpke_encryption::HpkeEncryptable;
 use super::leaf_node::ConfigProperties;
-use super::node::Node;
+use super::node::NodeTypeResolver;
 use super::{
     node::{LeafIndex, NodeIndex},
     path_secret::{PathSecret, PathSecretGenerator},
@@ -31,7 +34,7 @@ pub struct TreeKem<'a> {
 pub struct EncapGeneration {
     pub update_path: UpdatePath,
     pub path_secrets: Vec<Option<PathSecret>>,
-    pub root_secret: PathSecret,
+    pub commit_secret: PathSecret,
 }
 
 impl<'a> TreeKem<'a> {
@@ -60,7 +63,6 @@ impl<'a> TreeKem<'a> {
     where
         P: CipherSuiteProvider + Send + Sync,
     {
-        let num_leaves = self.tree_kem_public.nodes.total_leaf_count();
         let self_index = self.private_key.self_index;
         let path = self.tree_kem_public.nodes.direct_path_copath(self_index)?;
         let filtered = self.tree_kem_public.nodes.filtered(self_index)?;
@@ -86,45 +88,41 @@ impl<'a> TreeKem<'a> {
         #[cfg(test)]
         (commit_modifiers.modify_tree)(self.tree_kem_public);
 
-        let mut own_leaf_copy = self
-            .tree_kem_public
-            .nodes
-            .borrow_as_leaf(self_index)?
-            .clone();
+        self.tree_kem_public
+            .update_parent_hashes(self_index, false, cipher_suite_provider)?;
 
-        let parent_hash =
-            self.tree_kem_public
-                .update_parent_hashes(self_index, None, cipher_suite_provider)?;
+        let update_path_leaf = {
+            let own_leaf = self.tree_kem_public.nodes.borrow_as_leaf_mut(self_index)?;
 
-        self.private_key.secret_keys[0] = Some(own_leaf_copy.commit(
-            cipher_suite_provider,
-            &context.group_id,
-            *self_index,
-            update_leaf_properties,
-            signing_identity,
-            signer,
-            parent_hash,
-        )?);
+            self.private_key.secret_keys[0] = Some(own_leaf.commit(
+                cipher_suite_provider,
+                &context.group_id,
+                *self_index,
+                update_leaf_properties,
+                signing_identity,
+                signer,
+            )?);
 
-        *self.tree_kem_public.nodes.borrow_as_leaf_mut(self_index)? = own_leaf_copy.clone();
+            #[cfg(test)]
+            (commit_modifiers.modify_leaf)(own_leaf, signer, cipher_suite_provider);
 
-        #[cfg(test)]
-        {
-            (commit_modifiers.modify_leaf)(&mut own_leaf_copy, signer, cipher_suite_provider);
-            *self
-                .tree_kem_public
-                .nodes
-                .borrow_as_leaf_mut(self_index)
-                .unwrap() = own_leaf_copy.clone();
-        }
+            own_leaf.clone()
+        };
 
         // Tree modifications are all done so we can update the tree hash and encrypt with the new context
         self.tree_kem_public
-            .update_hashes(&mut vec![self_index], &[], cipher_suite_provider)?;
+            .update_hashes(&[self_index], cipher_suite_provider)?;
 
         context.tree_hash = self.tree_kem_public.tree_hash(cipher_suite_provider)?;
 
         let context_bytes = context.mls_encode_to_vec()?;
+
+        let excluding = excluding.iter().copied().map(NodeIndex::from);
+
+        #[cfg(feature = "std")]
+        let excluding = excluding.collect::<HashSet<NodeIndex>>();
+        #[cfg(not(feature = "std"))]
+        let excluding = excluding.collect::<Vec<NodeIndex>>();
 
         cfg_if! {
             if #[cfg(feature = "rayon")] {
@@ -137,26 +135,13 @@ impl<'a> TreeKem<'a> {
         let node_updates = copath_iter
             .filter_map(|((_, copath_index), path_secret)| {
                 path_secret.as_ref().map(|path_secret| {
-                    let encrypted_path_secret = encrypt_copath_node_resolution(
+                    self.encrypt_copath_node_resolution(
                         cipher_suite_provider,
                         path_secret,
-                        self.tree_kem_public
-                            .nodes
-                            .get_resolution(copath_index, excluding)?,
+                        copath_index,
                         &context_bytes,
-                    )?;
-
-                    let path_index = tree_math::parent(copath_index, num_leaves)?;
-
-                    Ok(UpdatePathNode {
-                        public_key: self
-                            .tree_kem_public
-                            .nodes
-                            .borrow_as_parent(path_index)?
-                            .public_key
-                            .clone(),
-                        encrypted_path_secret,
-                    })
+                        &excluding,
+                    )
                 })
             })
             .collect::<Result<Vec<_>, MlsError>>()?;
@@ -166,23 +151,14 @@ impl<'a> TreeKem<'a> {
 
         // Create an update path with the new node and parent node updates
         let update_path = UpdatePath {
-            leaf_node: own_leaf_copy,
+            leaf_node: update_path_leaf,
             nodes: node_updates,
         };
-
-        // If the committer is the only group member and doesn't add anyone, there may be no path secrets.
-        // In such case, we choose a random root secret.
-        let root_secret = path_secrets
-            .iter()
-            .rev()
-            .cloned()
-            .find_map(|secret| secret)
-            .unwrap_or(PathSecret::random(cipher_suite_provider)?);
 
         Ok(EncapGeneration {
             update_path,
             path_secrets,
-            root_secret,
+            commit_secret: secret_generator.next_secret()?,
         })
     }
 
@@ -218,14 +194,12 @@ impl<'a> TreeKem<'a> {
             .nodes
             .direct_path_copath(sender_index)?;
 
-        let lca_path_secret = decrypt_parent_path_secret(
-            cipher_suite_provider,
-            self.tree_kem_public,
-            self.private_key,
+        let lca_path_secret = self.decrypt_parent_path_secret(
             lca_node,
             direct_path_copath[lca_index].1,
             &excluding,
             context_bytes,
+            cipher_suite_provider,
         )?;
 
         // Derive the rest of the secrets for the tree and assign to the proper nodes
@@ -233,7 +207,6 @@ impl<'a> TreeKem<'a> {
             PathSecretGenerator::starting_with(cipher_suite_provider, lca_path_secret);
 
         // Update secrets based on the decrypted path secret in the update
-        let mut root_secret = None;
         self.private_key
             .secret_keys
             .resize(direct_path_copath.len() + 1, None);
@@ -251,87 +224,110 @@ impl<'a> TreeKem<'a> {
                 }
 
                 self.private_key.secret_keys[i + 1] = Some(hpke_private);
-
-                root_secret = Some(secret);
             } else {
                 self.private_key.secret_keys[i + 1] = None;
             }
         }
 
-        // The only situation in which there are no path secrets is when the committer is alone in the
-        // group and doesn't add anyone. In such case, he should process pending commit instead of
-        // decrypting.
-        root_secret.ok_or(MlsError::CantProcessMessageFromSelf)
+        node_secret_gen.next_secret()
     }
-}
 
-fn encrypt_copath_node_resolution<P: CipherSuiteProvider>(
-    cipher_suite_provider: &P,
-    path_secret: &PathSecret,
-    resolution: Vec<&Node>,
-    context: &[u8],
-) -> Result<Vec<HpkeCiphertext>, MlsError> {
-    resolution
-        .iter()
-        .map(|&copath_node| {
-            path_secret.encrypt(cipher_suite_provider, copath_node.public_key(), context)
-        })
-        .collect::<Result<Vec<HpkeCiphertext>, _>>()
-}
+    fn encrypt_copath_node_resolution<P: CipherSuiteProvider>(
+        &self,
+        cipher_suite_provider: &P,
+        path_secret: &PathSecret,
+        copath_index: NodeIndex,
+        context: &[u8],
+        #[cfg(feature = "std")] excluding: &HashSet<NodeIndex>,
+        #[cfg(not(feature = "std"))] excluding: &[NodeIndex],
+    ) -> Result<UpdatePathNode, MlsError> {
+        let reso = self
+            .tree_kem_public
+            .nodes
+            .get_resolution_index(copath_index)?;
 
-fn decrypt_parent_path_secret<P: CipherSuiteProvider>(
-    cipher_suite_provider: &P,
-    tree_kem_public: &mut TreeKemPublic,
-    private_key: &TreeKemPrivate,
-    update_node: &UpdatePathNode,
-    lca_direct_path_child: NodeIndex,
-    excluding: &[NodeIndex],
-    context: &[u8],
-) -> Result<PathSecret, MlsError> {
-    // Find the node in the resolution of the copath child that is above the sender
-    let self_index = 2 * *private_key.self_index;
+        let mut ctxts = Vec::new();
 
-    let resolution = tree_kem_public
-        .nodes
-        .get_resolution_index(lca_direct_path_child)?;
+        for idx in reso.into_iter().filter(|idx| !excluding.contains(idx)) {
+            let node = self
+                .tree_kem_public
+                .nodes
+                .borrow_node(idx)?
+                .as_non_empty()?;
 
-    let (resolved, ct) = resolution
-        .iter()
-        .filter(|i| !excluding.contains(i))
-        .zip(&update_node.encrypted_path_secret)
-        .find(|(i, _)| {
-            let l = tree_math::level(**i) + 1;
-            *i >> l == self_index >> l
-        })
-        .ok_or(MlsError::UpdateErrorNoSecretKey)?;
-
-    let secret_key = private_key
-        .secret_keys
-        .get(tree_math::level(*resolved) as usize)
-        .ok_or(MlsError::UpdateErrorNoSecretKey)?
-        .as_ref();
-
-    // If the sender didn't find the key, then it must be an unmerged leaf of the found node.
-    let (secret_key, ct) = match secret_key {
-        Some(secret_key) => (secret_key, ct),
-        None => {
-            let secret_key = private_key
-                .secret_keys
-                .first()
-                .and_then(Option::as_ref)
-                .ok_or(MlsError::UpdateErrorNoSecretKey)?;
-
-            let ct = resolution
-                .iter()
-                .filter(|i| !excluding.contains(i))
-                .zip(&update_node.encrypted_path_secret)
-                .find_map(|(i, ct)| (i == &self_index).then_some(ct));
-
-            (secret_key, ct.ok_or(MlsError::UpdateErrorNoSecretKey)?)
+            let ctxt = path_secret.encrypt(cipher_suite_provider, node.public_key(), context)?;
+            ctxts.push(ctxt);
         }
-    };
 
-    PathSecret::decrypt(cipher_suite_provider, secret_key, context, ct)
+        let path_index = tree_math::parent(copath_index);
+
+        Ok(UpdatePathNode {
+            public_key: self
+                .tree_kem_public
+                .nodes
+                .borrow_as_parent(path_index)?
+                .public_key
+                .clone(),
+            encrypted_path_secret: ctxts,
+        })
+    }
+
+    fn decrypt_parent_path_secret<P: CipherSuiteProvider>(
+        &self,
+        update_node: &UpdatePathNode,
+        lca_direct_path_child: NodeIndex,
+        excluding: &[NodeIndex],
+        context: &[u8],
+        cipher_suite_provider: &P,
+    ) -> Result<PathSecret, MlsError> {
+        // Find the node in the resolution of the copath child that is above the sender
+        let self_index = 2 * *self.private_key.self_index;
+
+        let resolution = self
+            .tree_kem_public
+            .nodes
+            .get_resolution_index(lca_direct_path_child)?;
+
+        let (resolved, ct) = resolution
+            .iter()
+            .filter(|i| !excluding.contains(i))
+            .zip(&update_node.encrypted_path_secret)
+            .find(|(i, _)| {
+                let l = tree_math::level(**i) + 1;
+                *i >> l == self_index >> l
+            })
+            .ok_or(MlsError::UpdateErrorNoSecretKey)?;
+
+        let secret_key = self
+            .private_key
+            .secret_keys
+            .get(tree_math::level(*resolved) as usize)
+            .ok_or(MlsError::UpdateErrorNoSecretKey)?
+            .as_ref();
+
+        // If the sender didn't find the key, then it must be an unmerged leaf of the found node.
+        let (secret_key, ct) = match secret_key {
+            Some(secret_key) => (secret_key, ct),
+            None => {
+                let secret_key = self
+                    .private_key
+                    .secret_keys
+                    .first()
+                    .and_then(Option::as_ref)
+                    .ok_or(MlsError::UpdateErrorNoSecretKey)?;
+
+                let ct = resolution
+                    .iter()
+                    .filter(|i| !excluding.contains(i))
+                    .zip(&update_node.encrypted_path_secret)
+                    .find_map(|(i, ct)| (i == &self_index).then_some(ct));
+
+                (secret_key, ct.ok_or(MlsError::UpdateErrorNoSecretKey)?)
+            }
+        };
+
+        PathSecret::decrypt(cipher_suite_provider, secret_key, context, ct)
+    }
 }
 
 #[cfg(test)]
@@ -533,7 +529,7 @@ mod tests {
         };
 
         encap_tree
-            .update_hashes(&mut vec![LeafIndex(0)], &[], &cipher_suite_provider)
+            .update_hashes(&[LeafIndex(0)], &cipher_suite_provider)
             .unwrap();
 
         let mut receiver_trees: Vec<TreeKemPublic> = (1..size).map(|_| test_tree.clone()).collect();
@@ -562,7 +558,7 @@ mod tests {
                 .await
                 .unwrap();
 
-            tree.update_hashes(&mut vec![LeafIndex(0)], &[], &cipher_suite_provider)
+            tree.update_hashes(&[LeafIndex(0)], &cipher_suite_provider)
                 .unwrap();
 
             assert_eq!(tree, &encap_tree);

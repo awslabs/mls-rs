@@ -112,7 +112,6 @@ impl LeafNode {
         new_properties: ConfigProperties,
         new_signing_identity: Option<SigningIdentity>,
         signer: &SignatureSecretKey,
-        parent_hash: ParentHash,
     ) -> Result<HpkeSecretKey, MlsError> {
         let (secret, public) = cipher_suite_provider
             .kem_generate()
@@ -121,7 +120,6 @@ impl LeafNode {
         self.public_key = public;
         self.capabilities = new_properties.capabilities;
         self.extensions = new_properties.extensions;
-        self.leaf_node_source = LeafNodeSource::Commit(parent_hash);
 
         if let Some(new_signing_identity) = new_signing_identity {
             self.signing_identity = new_signing_identity;
@@ -385,7 +383,6 @@ mod tests {
     use crate::crypto::test_utils::TestCryptoProvider;
     use crate::group::test_utils::random_bytes;
     use crate::identity::test_utils::get_test_signing_identity;
-    use alloc::vec;
     use assert_matches::assert_matches;
 
     #[cfg(target_arch = "wasm32")]
@@ -553,8 +550,6 @@ mod tests {
 
             let original_leaf = leaf.clone();
 
-            let test_parent_hash = ParentHash::from(vec![42u8; 32]);
-
             let new_secret = leaf
                 .commit(
                     &cipher_suite_provider,
@@ -563,7 +558,6 @@ mod tests {
                     default_properties(),
                     None,
                     &secret,
-                    test_parent_hash.clone(),
                 )
                 .unwrap();
 
@@ -581,7 +575,6 @@ mod tests {
             );
 
             assert_eq!(leaf.signing_identity, original_leaf.signing_identity);
-            assert_matches!(&leaf.leaf_node_source, LeafNodeSource::Commit(parent_hash) if parent_hash == &test_parent_hash);
 
             leaf.verify(
                 &cipher_suite_provider,
@@ -608,8 +601,6 @@ mod tests {
         // The new identity has a fresh public key
         let new_signing_identity = get_test_signing_identity(cipher_suite, b"foo".to_vec()).0;
 
-        let test_parent_hash = ParentHash::from(vec![42u8; 32]);
-
         leaf.commit(
             &test_cipher_suite_provider(cipher_suite),
             b"group",
@@ -617,7 +608,6 @@ mod tests {
             new_properties.clone(),
             Some(new_signing_identity.clone()),
             &secret,
-            test_parent_hash,
         )
         .unwrap();
 

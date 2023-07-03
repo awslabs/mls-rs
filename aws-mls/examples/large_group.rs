@@ -171,7 +171,7 @@ fn make_client<P: CryptoProvider + Clone>(
         signing_identity.clone(),
         Client::builder()
             .preferences(preferences)
-            .identity_provider(BasicIdentityProvider::default())
+            .identity_provider(BasicIdentityProvider)
             .crypto_provider(crypto_provider)
             .single_signing_identity(signing_identity, secret, CIPHERSUITE)
             .build(),

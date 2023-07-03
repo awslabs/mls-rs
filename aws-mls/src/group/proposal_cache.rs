@@ -665,7 +665,6 @@ mod tests {
                 },
                 ConfigProperties, LeafNodeSource,
             },
-            parent_hash::ParentHash,
             Lifetime,
         },
     };
@@ -1305,7 +1304,6 @@ mod tests {
                 default_properties(),
                 None,
                 &signer,
-                ParentHash::empty(),
             )
             .unwrap();
 

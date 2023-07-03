@@ -90,13 +90,6 @@ impl<'a, P: CipherSuiteProvider> PathSecretGenerator<'a, P> {
         }
     }
 
-    pub fn starting_from(cipher_suite_provider: &'a P, secret: PathSecret) -> Self {
-        Self {
-            last: Some(secret),
-            ..Self::new(cipher_suite_provider)
-        }
-    }
-
     pub fn starting_with(cipher_suite_provider: &'a P, secret: PathSecret) -> Self {
         Self {
             starting_with: Some(secret),
@@ -212,21 +205,6 @@ mod tests {
 
         assert_eq!(secret, first_secret);
         assert_ne!(first_secret, second_secret);
-    }
-
-    #[test]
-    fn test_starting_from() {
-        let cs_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
-
-        let mut generator = PathSecretGenerator::new(&cs_provider);
-
-        let first_secret = generator.next_secret().unwrap();
-        let second_secret = generator.next_secret().unwrap();
-
-        let mut from_first_generator =
-            PathSecretGenerator::starting_from(&cs_provider, first_secret);
-
-        assert_eq!(second_secret, from_first_generator.next_secret().unwrap());
     }
 
     #[test]

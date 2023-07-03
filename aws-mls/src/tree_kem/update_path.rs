@@ -119,12 +119,12 @@ mod tests {
     use crate::group::test_utils::{get_test_group_context, random_bytes, TEST_GROUP};
     use crate::identity::basic::BasicIdentityProvider;
     use crate::tree_kem::leaf_node::test_utils::default_properties;
+    use crate::tree_kem::leaf_node::test_utils::get_basic_test_node_sig_key;
+    use crate::tree_kem::leaf_node::LeafNodeSource;
     use crate::tree_kem::node::LeafIndex;
+    use crate::tree_kem::parent_hash::ParentHash;
     use crate::tree_kem::test_utils::{get_test_leaf_nodes, get_test_tree};
     use crate::tree_kem::validate_update_path;
-    use crate::tree_kem::{
-        leaf_node::test_utils::get_basic_test_node_sig_key, parent_hash::ParentHash,
-    };
 
     use super::{UpdatePath, UpdatePathNode};
     use crate::{cipher_suite::CipherSuite, tree_kem::MlsError};
@@ -138,6 +138,8 @@ mod tests {
     async fn test_update_path(cipher_suite: CipherSuite, cred: &str) -> UpdatePath {
         let (mut leaf_node, _, signer) = get_basic_test_node_sig_key(cipher_suite, cred).await;
 
+        leaf_node.leaf_node_source = LeafNodeSource::Commit(ParentHash::from(hex!("beef")));
+
         leaf_node
             .commit(
                 &test_cipher_suite_provider(cipher_suite),
@@ -146,7 +148,6 @@ mod tests {
                 default_properties(),
                 None,
                 &signer,
-                ParentHash::empty(),
             )
             .unwrap();
 

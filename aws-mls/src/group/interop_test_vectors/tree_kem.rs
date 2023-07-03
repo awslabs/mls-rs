@@ -3,9 +3,8 @@ use crate::{
     crypto::test_utils::try_test_cipher_suite_provider,
     group::{
         confirmation_tag::ConfirmationTag, framing::Content, internal::PathSecret,
-        key_schedule::CommitSecret, message_processor::MessageProcessor,
-        message_signature::AuthenticatedContent, test_utils::GroupWithoutKeySchedule, Commit,
-        GroupContext, Sender,
+        message_processor::MessageProcessor, message_signature::AuthenticatedContent,
+        test_utils::GroupWithoutKeySchedule, Commit, GroupContext, Sender,
     },
     tree_kem::{
         node::{LeafIndex, NodeVec},
@@ -168,10 +167,9 @@ async fn tree_kem() {
 
                 // Check that we got the expected commit secret and correctly merged the update path.
                 // This implies that we computed the path secrets correctly.
-                let commit_secret =
-                    CommitSecret::from_root_secret(&cs, Some(&group.secrets.unwrap().1)).unwrap();
+                let commit_secret = group.secrets.unwrap().1;
 
-                assert_eq!(commit_secret.as_ref(), &update_path.commit_secret);
+                assert_eq!(&*commit_secret, &update_path.commit_secret);
 
                 let new_tree = &mut group.provisional_public_state.unwrap().public_tree;
                 let new_tree_hash = new_tree.tree_hash(&cs).unwrap();

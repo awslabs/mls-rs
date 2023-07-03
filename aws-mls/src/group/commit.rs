@@ -30,7 +30,7 @@ use crate::{
 use super::{
     confirmation_tag::ConfirmationTag,
     framing::{Content, MLSMessage, Sender},
-    key_schedule::{CommitSecret, KeySchedule},
+    key_schedule::KeySchedule,
     message_processor::{path_update_required, MessageProcessor},
     message_signature::AuthenticatedContent,
     proposal::{Proposal, ProposalOrRef},
@@ -56,7 +56,8 @@ pub(crate) struct Commit {
 #[derive(Clone, PartialEq, Debug, MlsEncode, MlsDecode, MlsSize)]
 pub(super) struct CommitGeneration {
     pub content: AuthenticatedContent,
-    pub pending_secrets: Option<(TreeKemPrivate, PathSecret)>,
+    pub pending_private_tree: TreeKemPrivate,
+    pub pending_commit_secret: PathSecret,
 }
 
 #[derive(Clone, Debug)]
@@ -488,7 +489,7 @@ where
         let perform_path_update = options.prefer_path_update
             || path_update_required(&provisional_state.applied_proposals);
 
-        let (update_path, path_secrets, root_secret) = if perform_path_update {
+        let (update_path, path_secrets, commit_secret) = if perform_path_update {
             // If populating the path field: Create an UpdatePath using the new tree. Any new
             // member (from an add proposal) MUST be excluded from the resolution during the
             // computation of the UpdatePath. The GroupContext for this operation uses the
@@ -514,13 +515,12 @@ where
             (
                 Some(encap_gen.update_path),
                 Some(encap_gen.path_secrets),
-                Some(encap_gen.root_secret),
+                encap_gen.commit_secret,
             )
         } else {
             // Update the tree hash, since it was not updated by encap.
             provisional_state.public_tree.update_hashes(
-                &mut vec![provisional_private_tree.self_index],
-                &[],
+                &[provisional_private_tree.self_index],
                 &self.cipher_suite_provider,
             )?;
 
@@ -528,11 +528,8 @@ where
                 .public_tree
                 .tree_hash(&self.cipher_suite_provider)?;
 
-            (None, None, None)
+            (None, None, PathSecret::empty(&self.cipher_suite_provider))
         };
-
-        let commit_secret =
-            CommitSecret::from_root_secret(&self.cipher_suite_provider, root_secret.as_ref())?;
 
         let added_key_pkgs = provisional_state
             .applied_proposals
@@ -639,7 +636,8 @@ where
 
         let pending_commit = CommitGeneration {
             content: auth_content,
-            pending_secrets: root_secret.map(|rs| (provisional_private_tree, rs)),
+            pending_private_tree: provisional_private_tree,
+            pending_commit_secret: commit_secret,
         };
 
         self.pending_commit = Some(pending_commit);

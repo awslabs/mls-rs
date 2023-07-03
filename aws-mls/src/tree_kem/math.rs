@@ -13,38 +13,43 @@ pub fn root(n: u32) -> u32 {
 }
 
 pub fn left(x: u32) -> Result<u32, MlsError> {
-    let k = level(x);
-    if k == 0 {
+    if x & 1 == 0 {
         Err(MlsError::LeafNodeNoChildren)
     } else {
-        Ok(x ^ (0x01 << (k - 1)))
+        Ok(left_unchecked(x))
     }
+}
+
+/// Panicks if `x` is even.
+pub fn left_unchecked(x: u32) -> u32 {
+    x ^ (0x01 << (level(x) - 1))
 }
 
 pub fn right(x: u32) -> Result<u32, MlsError> {
-    let k = level(x);
-    if k == 0 {
+    if x & 1 == 0 {
         Err(MlsError::LeafNodeNoChildren)
     } else {
-        Ok(x ^ (0x03 << (k - 1)))
+        Ok(right_unchecked(x))
     }
 }
 
-pub fn parent(x: u32, n: u32) -> Result<u32, MlsError> {
-    if x == root(n) {
-        return Err(MlsError::LeafNodeNoParent);
-    }
+/// Panicks if `x` is even.
+pub fn right_unchecked(x: u32) -> u32 {
+    x ^ (0x03 << (level(x) - 1))
+}
 
+pub fn parent(x: u32) -> u32 {
     let lvl = level(x);
-    Ok((x & !(1 << (lvl + 1))) | (1 << lvl))
+    (x & !(1 << (lvl + 1))) | (1 << lvl)
 }
 
-pub fn sibling(x: u32, n: u32) -> Result<u32, MlsError> {
-    let p = parent(x, n)?;
+pub fn sibling(x: u32) -> u32 {
+    let p = parent(x);
+
     if x < p {
-        right(p)
+        right_unchecked(p)
     } else {
-        left(p)
+        left_unchecked(p)
     }
 }
 
@@ -55,6 +60,7 @@ pub fn direct_path(x: u32, n: u32) -> Result<Vec<u32>, MlsError> {
 
     let mut d = Vec::new();
     let mut m = 1 << (level(x) + 1);
+
     while m <= n {
         d.push((x & !m) | (m - 1));
         m <<= 1;
@@ -71,8 +77,14 @@ pub fn copath(mut x: u32, n: u32) -> Result<Vec<u32>, MlsError> {
     let mut d = Vec::new();
 
     while x != root(n) {
-        let p = parent(x, n)?;
-        d.push(if x < p { right(p)? } else { left(p)? });
+        let p = parent(x);
+
+        d.push(if x < p {
+            right_unchecked(p)
+        } else {
+            left_unchecked(p)
+        });
+
         x = p;
     }
 
@@ -87,8 +99,14 @@ pub fn path_copath(mut x: u32, n: u32) -> Result<Vec<(u32, u32)>, MlsError> {
     let mut d = Vec::new();
 
     while x != root(n) {
-        let p = parent(x, n)?;
-        let s = if x < p { right(p)? } else { left(p)? };
+        let p = parent(x);
+
+        let s = if x < p {
+            right_unchecked(p)
+        } else {
+            left_unchecked(p)
+        };
+
         d.push((p, s));
         x = p;
     }
@@ -200,11 +218,11 @@ mod tests {
             let right = (0..n_nodes).map(|x| right(x).ok()).collect::<Vec<_>>();
 
             let parent = (0..n_nodes)
-                .map(|x| parent(x, n_leaves).ok())
+                .map(|x| (x != root(n_leaves)).then_some(parent(x)))
                 .collect::<Vec<_>>();
 
             let sibling = (0..n_nodes)
-                .map(|x| sibling(x, n_leaves).ok())
+                .map(|x| (x != root(n_leaves)).then_some(sibling(x)))
                 .collect::<Vec<_>>();
 
             test_cases.push(TestCase {
@@ -232,11 +250,20 @@ mod tests {
         for case in test_cases {
             assert_eq!(node_width(case.n_leaves), case.n_nodes);
             assert_eq!(root(case.n_leaves), case.root);
+
             for x in 0..case.n_nodes {
                 assert_eq!(left(x).ok(), case.left[x as usize]);
                 assert_eq!(right(x).ok(), case.right[x as usize]);
-                assert_eq!(parent(x, case.n_leaves).ok(), case.parent[x as usize]);
-                assert_eq!(sibling(x, case.n_leaves).ok(), case.sibling[x as usize]);
+
+                assert_eq!(
+                    (x != root(case.n_leaves)).then_some(sibling(x)),
+                    case.sibling[x as usize]
+                );
+
+                assert_eq!(
+                    (x != root(case.n_leaves)).then_some(parent(x)),
+                    case.parent[x as usize]
+                );
             }
         }
     }

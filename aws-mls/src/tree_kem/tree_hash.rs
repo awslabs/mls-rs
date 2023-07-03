@@ -71,8 +71,7 @@ impl TreeKemPublic {
     // list of leaves whose paths were blanked, i.e. updates and removes.
     pub fn update_hashes<P: CipherSuiteProvider>(
         &mut self,
-        path_blanked: &mut Vec<LeafIndex>,
-        leaves_added: &[LeafIndex],
+        updated_leaves: &[LeafIndex],
         cipher_suite_provider: &P,
     ) -> Result<(), MlsError>
     where
@@ -95,7 +94,7 @@ impl TreeKemPublic {
         tree_hash(
             &mut self.tree_hashes.current,
             &self.nodes,
-            Some([path_blanked, leaves_added, &trailing_blanks].concat()),
+            Some([updated_leaves, &trailing_blanks].concat()),
             &[],
             num_leaves,
             cipher_suite_provider,
@@ -166,7 +165,7 @@ impl TreeKemPublic {
         let bfs_iter = BfsIterTopDown::new(num_leaves).skip(1);
 
         for n in bfs_iter {
-            let p = tree_math::parent(n as u32, num_leaves as u32)?;
+            let p = tree_math::parent(n as u32);
             filtered_sets[n] = filtered_sets[p as usize].clone();
 
             if self.different_unmerged(*filtered_sets[p as usize].last().unwrap(), p)? {
@@ -255,23 +254,25 @@ fn tree_hash<P: CipherSuiteProvider>(
         hashes[2 * **l as usize] = TreeHash(hash_for_leaf(*l, leaf, cipher_suite_provider)?);
 
         if 2 * **l != tree_math::root(num_leaves) {
-            node_queue.push_back(tree_math::parent(2 * **l, num_leaves)?);
+            node_queue.push_back(tree_math::parent(2 * **l));
         }
     }
+
+    let root = tree_math::root(num_leaves);
 
     while let Some(n) = node_queue.pop_front() {
         let hash = TreeHash(hash_for_parent(
             nodes.borrow_as_parent(n).ok(),
             cipher_suite_provider,
             filtered_leaves,
-            &hashes[tree_math::left(n)? as usize],
-            &hashes[tree_math::right(n)? as usize],
+            &hashes[tree_math::left_unchecked(n) as usize],
+            &hashes[tree_math::right_unchecked(n) as usize],
         )?);
 
         hashes[n as usize] = hash;
 
-        if let Ok(p) = tree_math::parent(n, num_leaves) {
-            node_queue.push_back(p);
+        if n != root {
+            node_queue.push_back(tree_math::parent(n));
         }
     }
 

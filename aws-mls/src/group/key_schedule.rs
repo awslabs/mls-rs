@@ -3,7 +3,7 @@ use crate::group::{GroupContext, MembershipTag};
 use crate::psk::secret::PskSecret;
 #[cfg(feature = "psk")]
 use crate::psk::PreSharedKey;
-use crate::tree_kem::path_secret::{PathSecret, PathSecretGenerator};
+use crate::tree_kem::path_secret::PathSecret;
 use crate::CipherSuiteProvider;
 
 #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
@@ -66,7 +66,7 @@ impl KeySchedule {
     /// messages
     pub(crate) fn from_key_schedule<P: CipherSuiteProvider>(
         last_key_schedule: &KeySchedule,
-        commit_secret: &CommitSecret,
+        commit_secret: &PathSecret,
         context: &GroupContext,
         #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
         secret_tree_size: u32,
@@ -74,7 +74,7 @@ impl KeySchedule {
         cipher_suite_provider: &P,
     ) -> Result<KeyScheduleDerivationResult, MlsError> {
         let joiner_seed = cipher_suite_provider
-            .kdf_extract(&last_key_schedule.init_secret.0, &commit_secret.0)
+            .kdf_extract(&last_key_schedule.init_secret.0, commit_secret)
             .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
         let joiner_secret = kdf_expand_with_label(
@@ -341,31 +341,6 @@ impl InitSecret {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Zeroize)]
-#[zeroize(drop)]
-pub struct CommitSecret(PathSecret);
-
-impl CommitSecret {
-    pub fn from_root_secret<P: CipherSuiteProvider>(
-        cipher_suite_provider: &P,
-        root_secret: Option<&PathSecret>,
-    ) -> Result<Self, MlsError> {
-        match root_secret {
-            Some(root_secret) => {
-                let mut generator =
-                    PathSecretGenerator::starting_from(cipher_suite_provider, root_secret.clone());
-
-                Ok(CommitSecret(generator.next_secret()?))
-            }
-            None => Ok(Self::empty(cipher_suite_provider)),
-        }
-    }
-
-    pub fn empty<P: CipherSuiteProvider>(cipher_suite_provider: &P) -> CommitSecret {
-        CommitSecret(PathSecret::empty(cipher_suite_provider))
-    }
-}
-
 pub(crate) struct WelcomeSecret<'a, P: CipherSuiteProvider> {
     cipher_suite: &'a P,
     key: Zeroizing<Vec<u8>>,
@@ -431,7 +406,7 @@ pub(crate) mod test_utils {
 
     use crate::{cipher_suite::CipherSuite, crypto::test_utils::test_cipher_suite_provider};
 
-    use super::{CommitSecret, InitSecret, JoinerSecret, KeySchedule};
+    use super::{InitSecret, JoinerSecret, KeySchedule};
 
     #[cfg(feature = "rfc_compliant")]
     use aws_mls_core::error::IntoAnyError;
@@ -480,12 +455,6 @@ pub(crate) mod test_utils {
             self.membership_key = Zeroizing::new(key)
         }
     }
-
-    impl AsRef<[u8]> for CommitSecret {
-        fn as_ref(&self) -> &[u8] {
-            &self.0
-        }
-    }
 }
 
 #[cfg(test)]
@@ -519,7 +488,7 @@ mod tests {
     use zeroize::Zeroizing;
 
     use super::test_utils::get_test_key_schedule;
-    use super::{CommitSecret, KeySchedule};
+    use super::KeySchedule;
 
     #[derive(serde::Deserialize, serde::Serialize)]
     struct KeyScheduleTestCase {
@@ -616,7 +585,7 @@ mod tests {
                 assert_eq!(context.mls_encode_to_vec().unwrap(), epoch.group_context);
 
                 let psk = epoch.psk_secret.into();
-                let commit = CommitSecret(epoch.commit_secret.into());
+                let commit = epoch.commit_secret.into();
 
                 let key_schedule_res = KeySchedule::from_key_schedule(
                     &key_schedule,
@@ -719,7 +688,7 @@ mod tests {
             let mut key_schedule = get_test_key_schedule(cs_provider.cipher_suite());
             key_schedule.init_secret = initial_init_secret.clone();
 
-            let commit_secret = CommitSecret(random_bytes(key_size).into());
+            let commit_secret = random_bytes(key_size).into();
             let psk_secret = PskSecret::new(&cs_provider);
 
             let key_schedule_res = KeySchedule::from_key_schedule(
@@ -738,7 +707,7 @@ mod tests {
             let epoch1 = KeyScheduleEpoch::new(
                 key_schedule_res,
                 psk_secret,
-                commit_secret.0.to_vec(),
+                commit_secret.to_vec(),
                 &group_context,
                 &cs_provider,
             );
@@ -747,7 +716,7 @@ mod tests {
             group_context.confirmed_transcript_hash = random_bytes(key_size).into();
             group_context.tree_hash = random_bytes(key_size);
 
-            let commit_secret = CommitSecret(random_bytes(key_size).into());
+            let commit_secret = random_bytes(key_size).into();
             let psk_secret = PskSecret::new(&cs_provider);
 
             let key_schedule_res = KeySchedule::from_key_schedule(
@@ -764,7 +733,7 @@ mod tests {
             let epoch2 = KeyScheduleEpoch::new(
                 key_schedule_res,
                 psk_secret,
-                commit_secret.0.to_vec(),
+                commit_secret.to_vec(),
                 &group_context,
                 &cs_provider,
             );

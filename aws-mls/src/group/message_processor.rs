@@ -20,7 +20,6 @@ use crate::{
     CipherSuiteProvider,
 };
 use alloc::boxed::Box;
-use alloc::vec;
 use alloc::vec::Vec;
 use aws_mls_core::{identity::IdentityProvider, psk::PreSharedKeyStorage};
 
@@ -697,11 +696,9 @@ pub(crate) trait MessageProcessor: Send + Sync {
         provisional_state.group_context.confirmed_transcript_hash = confirmed_transcript_hash;
 
         // Update the parent hashes in the new context
-        provisional_state.public_tree.update_hashes(
-            &mut vec![sender],
-            &[],
-            self.cipher_suite_provider(),
-        )?;
+        provisional_state
+            .public_tree
+            .update_hashes(&[sender], self.cipher_suite_provider())?;
 
         // Update the tree hash in the new context
         provisional_state.group_context.tree_hash = provisional_state

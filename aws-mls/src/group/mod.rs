@@ -779,7 +779,7 @@ where
 
         let secrets = new_members_kpkgs
             .into_iter()
-            .zip(new_members_indexes.into_iter())
+            .zip(new_members_indexes)
             .map(|(key_package, leaf_index)| {
                 self.encrypt_group_secrets(
                     &key_package,
@@ -1887,12 +1887,11 @@ where
             )
             .await?;
 
-        if let Some(pending) = self
-            .pending_commit
-            .as_ref()
-            .and_then(|pc| pc.pending_secrets.as_ref())
-        {
-            Ok(Some(pending.clone()))
+        if let Some(pending) = &self.pending_commit {
+            Ok(Some((
+                pending.pending_private_tree.clone(),
+                pending.pending_commit_secret.clone(),
+            )))
         } else {
             // Update the tree hash to get context for decryption
             provisional_state.group_context.tree_hash = provisional_state
@@ -1924,10 +1923,12 @@ where
         confirmation_tag: &ConfirmationTag,
         provisional_state: ProvisionalState,
     ) -> Result<(), MlsError> {
-        let commit_secret = CommitSecret::from_root_secret(
-            &self.cipher_suite_provider,
-            secrets.as_ref().map(|(_, root_secret)| root_secret),
-        )?;
+        let commit_secret = if let Some(secrets) = secrets {
+            self.private_tree = secrets.0;
+            secrets.1
+        } else {
+            PathSecret::empty(&self.cipher_suite_provider)
+        };
 
         // Use the commit_secret, the psk_secret, the provisional GroupContext, and the init secret
         // from the previous epoch (or from the external init) to compute the epoch secret and
@@ -2000,19 +2001,9 @@ where
         self.state_repo.insert(past_epoch).await?;
 
         self.epoch_secrets = key_schedule_result.epoch_secrets;
-
-        // If the above checks are successful, consider the updated GroupContext object
-        // as the current state of the group
-        if let Some(private_tree) = secrets.map(|(private_key, _)| private_key) {
-            self.private_tree = private_tree
-        }
-
         self.state.context = provisional_state.group_context;
-
         self.state.interim_transcript_hash = interim_transcript_hash;
-
         self.key_schedule = key_schedule_result.key_schedule;
-
         self.state.public_tree = provisional_state.public_tree;
         self.state.confirmation_tag = new_confirmation_tag;
 
@@ -2619,8 +2610,9 @@ mod tests {
             .group
             .pending_commit
             .unwrap()
-            .pending_secrets
-            .is_none());
+            .pending_commit_secret
+            .iter()
+            .all(|x| x == &0));
 
         let mut test_group = test_group_custom(
             protocol_version,
@@ -2640,12 +2632,13 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(test_group
+        assert!(!test_group
             .group
             .pending_commit
             .unwrap()
-            .pending_secrets
-            .is_some());
+            .pending_commit_secret
+            .iter()
+            .all(|x| x == &0));
     }
 
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
@@ -2664,12 +2657,13 @@ mod tests {
 
         test_group.group.commit(vec![]).await.unwrap();
 
-        assert!(test_group
+        assert!(!test_group
             .group
             .pending_commit
             .unwrap()
-            .pending_secrets
-            .is_some());
+            .pending_commit_secret
+            .iter()
+            .all(|x| x == &0));
     }
 
     #[cfg(feature = "private_message")]

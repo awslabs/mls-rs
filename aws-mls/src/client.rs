@@ -202,10 +202,8 @@ pub enum MlsError {
     RequiredCredentialNotFound(CredentialType),
     #[cfg_attr(feature = "std", error("capabilities must describe extensions used"))]
     ExtensionNotInCapabilities(ExtensionType),
-    #[cfg_attr(feature = "std", error("not a parent"))]
-    ExpectedParentNode,
-    #[cfg_attr(feature = "std", error("not a leaf"))]
-    ExpectedLeafNode,
+    #[cfg_attr(feature = "std", error("expected non-blank node"))]
+    ExpectedNode,
     #[cfg_attr(feature = "std", error("node index is out of bounds {0}"))]
     InvalidNodeIndex(NodeIndex),
     #[cfg_attr(feature = "std", error("unexpected empty node found"))]
@@ -738,9 +736,6 @@ pub(crate) mod test_utils {
     use crate::{
         extension::test_utils::TEST_EXTENSION_TYPE, identity::test_utils::get_test_signing_identity,
     };
-
-    #[cfg(features = "benchmark")]
-    use crate::client_config::ClientConfig;
 
     pub use crate::client_builder::test_utils::{TestClientBuilder, TestClientConfig};
 

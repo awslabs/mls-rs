@@ -9,9 +9,6 @@ use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use core::hash::Hash;
 use core::ops::{Deref, DerefMut};
 
-#[cfg(feature = "std")]
-use std::collections::HashSet;
-
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 pub(crate) struct Parent {
     pub public_key: HpkePublicKey,
@@ -116,7 +113,7 @@ impl NodeTypeResolver for Option<Node> {
                 Node::Parent(p) => Some(p),
                 Node::Leaf(_) => None,
             })
-            .ok_or(MlsError::ExpectedParentNode)
+            .ok_or(MlsError::ExpectedNode)
     }
 
     fn as_parent_mut(&mut self) -> Result<&mut Parent, MlsError> {
@@ -125,7 +122,7 @@ impl NodeTypeResolver for Option<Node> {
                 Node::Parent(p) => Some(p),
                 Node::Leaf(_) => None,
             })
-            .ok_or(MlsError::ExpectedParentNode)
+            .ok_or(MlsError::ExpectedNode)
     }
 
     fn as_leaf(&self) -> Result<&LeafNode, MlsError> {
@@ -134,7 +131,7 @@ impl NodeTypeResolver for Option<Node> {
                 Node::Parent(_) => None,
                 Node::Leaf(l) => Some(l),
             })
-            .ok_or(MlsError::ExpectedLeafNode)
+            .ok_or(MlsError::ExpectedNode)
     }
 
     fn as_leaf_mut(&mut self) -> Result<&mut LeafNode, MlsError> {
@@ -143,7 +140,7 @@ impl NodeTypeResolver for Option<Node> {
                 Node::Parent(_) => None,
                 Node::Leaf(l) => Some(l),
             })
-            .ok_or(MlsError::ExpectedLeafNode)
+            .ok_or(MlsError::ExpectedNode)
     }
 
     fn as_non_empty(&self) -> Result<&Node, MlsError> {
@@ -280,19 +277,10 @@ impl NodeVec {
         Ok(())
     }
 
-    // Remove elements until the last leaf is non-blank
+    // Remove elements until the last node is non-blank
     pub fn trim(&mut self) {
-        // Find the last full leaf
-        let last_full = self
-            .iter()
-            .enumerate()
-            .rev()
-            .step_by(2)
-            .find(|(_, node)| node.is_some());
-
-        // Truncate the node vector to the last full leaf
-        if let Some((last_full, _)) = last_full {
-            self.truncate(last_full + 1)
+        while self.last() == Some(&None) {
+            self.pop();
         }
     }
 
@@ -360,31 +348,12 @@ impl NodeVec {
                     resolution.extend(p.unmerged_leaves.iter().map(NodeIndex::from));
                 }
             } else if index & 1 == 1 {
-                indexes.push(tree_math::right(index)?);
-                indexes.push(tree_math::left(index)?);
+                indexes.push(tree_math::right_unchecked(index));
+                indexes.push(tree_math::left_unchecked(index));
             }
         }
 
         Ok(resolution)
-    }
-
-    pub fn get_resolution(
-        &self,
-        node_index: NodeIndex,
-        excluding: &[LeafIndex],
-    ) -> Result<Vec<&Node>, MlsError> {
-        let excluding = excluding.iter().map(NodeIndex::from);
-
-        #[cfg(feature = "std")]
-        let excluding = excluding.collect::<HashSet<NodeIndex>>();
-        #[cfg(not(feature = "std"))]
-        let excluding = excluding.collect::<Vec<NodeIndex>>();
-
-        self.get_resolution_index(node_index)?
-            .into_iter()
-            .filter(|i| !excluding.contains(i))
-            .map(|i| self.borrow_node(i).and_then(|n| n.as_non_empty()))
-            .collect()
     }
 
     pub fn is_resolution_empty(&self, index: NodeIndex) -> bool {
@@ -400,15 +369,17 @@ impl NodeVec {
     }
 
     pub(crate) fn next_empty_leaf(&self, start: LeafIndex) -> LeafIndex {
-        let i = self
-            .iter()
-            .step_by(2)
-            .enumerate()
-            .skip(start.0 as usize)
-            .find_map(|(i, n)| n.is_none().then_some(i))
-            .unwrap_or((self.len() + 1) >> 1);
+        let mut n = NodeIndex::from(start) as usize;
 
-        LeafIndex(i as u32)
+        while n < self.len() {
+            if self.0[n].is_none() {
+                return LeafIndex((n as u32) >> 1);
+            }
+
+            n += 2;
+        }
+
+        LeafIndex((self.len() as u32 + 1) >> 1)
     }
 
     /// If `index` fits in the current tree, inserts `leaf` at `index`. Else, inserts `leaf` as the
@@ -537,37 +508,13 @@ mod tests {
     async fn test_get_resolution() {
         let test_vec = get_test_node_vec().await;
 
-        let resolution_node_5 = test_vec.get_resolution(5, &[]).unwrap();
-        let resolution_node_2 = test_vec.get_resolution(2, &[]).unwrap();
-        let resolution_node_3 = test_vec.get_resolution(3, &[]).unwrap();
+        let resolution_node_5 = test_vec.get_resolution_index(5).unwrap();
+        let resolution_node_2 = test_vec.get_resolution_index(2).unwrap();
+        let resolution_node_3 = test_vec.get_resolution_index(3).unwrap();
 
-        let expected_5: Vec<Node> = [
-            test_vec[5].as_ref().unwrap().clone(),
-            test_vec[4].as_ref().unwrap().clone(),
-        ]
-        .to_vec();
-
-        let expected_2: Vec<&Node> = [].to_vec();
-
-        let expected_3: Vec<Node> = [
-            test_vec[0].as_ref().unwrap().clone(),
-            test_vec[5].as_ref().unwrap().clone(),
-            test_vec[4].as_ref().unwrap().clone(),
-        ]
-        .to_vec();
-
-        assert_eq!(resolution_node_5, expected_5.iter().collect::<Vec<&Node>>());
-        assert_eq!(resolution_node_2, expected_2);
-        assert_eq!(resolution_node_3, expected_3.iter().collect::<Vec<&Node>>());
-    }
-
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
-    async fn test_resolution_filter() {
-        let test_vec = get_test_node_vec().await;
-        let resolution_node_5 = test_vec.get_resolution(5, &[LeafIndex(2)]).unwrap();
-        let expected_5: Vec<Node> = [test_vec[5].as_ref().unwrap().clone()].to_vec();
-
-        assert_eq!(resolution_node_5, expected_5.iter().collect::<Vec<&Node>>());
+        assert_eq!(&resolution_node_5, &[5, 4]);
+        assert!(resolution_node_2.is_empty());
+        assert_eq!(&resolution_node_3, &[0, 5, 4]);
     }
 
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]

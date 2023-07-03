@@ -614,7 +614,7 @@ impl MlsClient for MlsClientImpl {
         let request = request.into_inner();
         let clients = &mut self.clients.lock().await;
 
-        let mut client = clients
+        let client = clients
             .get_mut(request.reinit_id as usize)
             .ok_or_else(|| Status::aborted("no group with such index."))?;
 
@@ -672,7 +672,7 @@ impl MlsClient for MlsClientImpl {
             key_package_client.key_package_repo.key_packages()[0].clone()
         };
 
-        let mut client = clients
+        let client = clients
             .get_mut(request.state_id as usize)
             .ok_or_else(|| Status::aborted("no group with such index."))?;
 

@@ -3,14 +3,12 @@ use crate::crypto::{CipherSuiteProvider, HpkePublicKey};
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::node::{LeafIndex, Node, NodeIndex};
 use crate::tree_kem::TreeKemPublic;
-use alloc::vec;
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use aws_mls_core::error::IntoAnyError;
 use core::ops::Deref;
 
-use super::leaf_node::{LeafNode, LeafNodeSource};
-use super::tree_hash::TreeHash;
+use super::leaf_node::LeafNodeSource;
 
 #[cfg(feature = "std")]
 use std::collections::HashSet;
@@ -91,61 +89,31 @@ impl Node {
 }
 
 impl TreeKemPublic {
-    fn parent_hash<P: CipherSuiteProvider>(
-        &self,
-        parent_parent_hash: &ParentHash,
-        node_index: NodeIndex,
-        co_path_child_index: NodeIndex,
-        cipher_suite_provider: &P,
-        original_hashes: Option<&[TreeHash]>,
-    ) -> Result<ParentHash, MlsError> {
-        let node = self.nodes.borrow_as_parent(node_index)?;
-        let original_hashes = original_hashes.unwrap_or(&self.tree_hashes.current);
-
-        ParentHash::new(
-            cipher_suite_provider,
-            &node.public_key,
-            parent_parent_hash,
-            &original_hashes[co_path_child_index as usize],
-        )
-    }
-
     fn parent_hash_for_leaf<P: CipherSuiteProvider>(
         &mut self,
         cipher_suite_provider: &P,
         index: LeafIndex,
     ) -> Result<ParentHash, MlsError> {
-        if self.total_leaf_count() <= 1 {
-            return Ok(ParentHash::empty());
+        let mut hash = ParentHash::empty();
+
+        for (dp, cp) in self.nodes.direct_path_copath(index)?.into_iter().rev() {
+            if self.nodes.is_resolution_empty(cp) {
+                continue;
+            }
+
+            let parent = self.nodes.borrow_as_parent_mut(dp)?;
+
+            let calculated = ParentHash::new(
+                cipher_suite_provider,
+                &parent.public_key,
+                &hash,
+                &self.tree_hashes.current[cp as usize],
+            )?;
+
+            (parent.parent_hash, hash) = (hash, calculated);
         }
 
-        let mut filtered_direct_co_path = self
-            .nodes
-            .direct_path_copath(index)?
-            .into_iter()
-            .zip(self.nodes.filtered(index)?)
-            .filter_map(|(cpdp, f)| (!f).then_some(cpdp))
-            .rev();
-
-        // Calculate all the parent hash values along the direct path from root to leaf
-        filtered_direct_co_path.try_fold(
-            ParentHash::empty(),
-            |last_hash, (index, sibling_index)| {
-                let calculated = self.parent_hash(
-                    &last_hash,
-                    index,
-                    sibling_index,
-                    cipher_suite_provider,
-                    None,
-                )?;
-
-                if !self.nodes.is_leaf(index) {
-                    self.nodes.borrow_as_parent_mut(index)?.parent_hash = last_hash;
-                }
-
-                Ok(calculated)
-            },
-        )
+        Ok(hash)
     }
 
     // Updates all of the required parent hash values, and returns the calculated parent hash value for the leaf node
@@ -153,15 +121,16 @@ impl TreeKemPublic {
     pub(crate) fn update_parent_hashes<P: CipherSuiteProvider>(
         &mut self,
         index: LeafIndex,
-        updated_leaf: Option<&LeafNode>,
+        verify_leaf_hash: bool,
         cipher_suite_provider: &P,
-    ) -> Result<ParentHash, MlsError> {
+    ) -> Result<(), MlsError> {
         // First update the relevant original hashes used for parent hash computation.
-        self.update_hashes(&mut vec![index], &[], cipher_suite_provider)?;
+        self.update_hashes(&[index], cipher_suite_provider)?;
 
         let leaf_hash = self.parent_hash_for_leaf(cipher_suite_provider, index)?;
+        let leaf = self.nodes.borrow_as_leaf_mut(index)?;
 
-        if let Some(leaf) = updated_leaf {
+        if verify_leaf_hash {
             // Verify the parent hash of the new sender leaf node and update the parent hash values
             // in the local tree
             if let LeafNodeSource::Commit(parent_hash) = &leaf.leaf_node_source {
@@ -171,12 +140,12 @@ impl TreeKemPublic {
             } else {
                 return Err(MlsError::InvalidLeafNodeSource);
             }
+        } else {
+            leaf.leaf_node_source = LeafNodeSource::Commit(leaf_hash);
         }
 
         // Update hashes after changes to the tree.
-        self.update_hashes(&mut vec![index], &[], cipher_suite_provider)?;
-
-        Ok(leaf_hash)
+        self.update_hashes(&[index], cipher_suite_provider)
     }
 
     pub(super) fn validate_parent_hashes<P: CipherSuiteProvider>(
@@ -203,77 +172,76 @@ impl TreeKemPublic {
             .non_empty_leaves()
             .try_for_each(|(leaf_index, _)| {
                 let mut n = NodeIndex::from(leaf_index);
+
                 while n != root {
                     // Find the first non-blank ancestor p of n and p's co-path child s.
-                    let mut p = tree_math::parent(n, num_leaves)?;
-                    let mut s = tree_math::sibling(n, num_leaves)?;
+                    let mut p = tree_math::parent(n);
+                    let mut s = tree_math::sibling(n);
+
                     while self.nodes.is_blank(p)? {
-                        match tree_math::parent(p, num_leaves) {
-                            Ok(p_parent) => {
-                                s = tree_math::sibling(p, num_leaves)?;
-                                p = p_parent;
-                            }
-                            // If we reached the root, we're done with this chain.
-                            Err(_) => return Ok(()),
+                        // If we reached the root, we're done with this chain.
+                        if p == root {
+                            return Ok(());
                         }
+
+                        s = tree_math::sibling(p);
+                        p = tree_math::parent(p);
                     }
 
                     // Check is n's parent_hash field matches the parent hash of p with co-path child s.
-                    let p_parent_hash = self
+                    let p_parent = self.nodes.borrow_as_parent(p)?;
+
+                    let n_node = self
                         .nodes
-                        .borrow_node(p)?
+                        .borrow_node(n)?
                         .as_ref()
-                        .and_then(|p_node| p_node.get_parent_hash());
-                    if let Some((p_parent_hash, n_node)) =
-                        p_parent_hash.zip(self.nodes.borrow_node(n)?.as_ref())
-                    {
-                        if n_node.get_parent_hash()
-                            == Some(self.parent_hash(
-                                &p_parent_hash,
-                                p,
-                                s,
-                                cipher_suite_provider,
-                                Some(&original_hashes),
-                            )?)
+                        .ok_or(MlsError::ExpectedNode)?;
+
+                    let calculated = ParentHash::new(
+                        cipher_suite_provider,
+                        &p_parent.public_key,
+                        &p_parent.parent_hash,
+                        &original_hashes[s as usize],
+                    )?;
+
+                    if n_node.get_parent_hash() == Some(calculated) {
+                        // Check that "n is in the resolution of c, and the intersection of p's unmerged_leaves with the subtree
+                        // under c is equal to the resolution of c with n removed".
+                        let c = tree_math::sibling(s);
+
+                        let c_resolution = self.nodes.get_resolution_index(c)?.into_iter();
+
+                        #[cfg(feature = "std")]
+                        let mut c_resolution = c_resolution.collect::<HashSet<_>>();
+                        #[cfg(not(feature = "std"))]
+                        let mut c_resolution = c_resolution.collect::<BTreeSet<_>>();
+
+                        let p_unmerged_in_c_subtree = self
+                            .unmerged_in_subtree(p, c)?
+                            .iter()
+                            .copied()
+                            .map(|x| *x * 2);
+
+                        #[cfg(feature = "std")]
+                        let p_unmerged_in_c_subtree =
+                            p_unmerged_in_c_subtree.collect::<HashSet<_>>();
+                        #[cfg(not(feature = "std"))]
+                        let p_unmerged_in_c_subtree =
+                            p_unmerged_in_c_subtree.collect::<BTreeSet<_>>();
+
+                        if c_resolution.remove(&n)
+                            && c_resolution == p_unmerged_in_c_subtree
+                            && nodes_to_validate.remove(&p)
                         {
-                            // Check that "n is in the resolution of c, and the intersection of p's unmerged_leaves with the subtree
-                            // under c is equal to the resolution of c with n removed".
-                            let c = tree_math::sibling(s, num_leaves)?;
-
-                            let c_resolution = self.nodes.get_resolution_index(c)?.into_iter();
-
-                            #[cfg(feature = "std")]
-                            let mut c_resolution = c_resolution.collect::<HashSet<_>>();
-                            #[cfg(not(feature = "std"))]
-                            let mut c_resolution = c_resolution.collect::<BTreeSet<_>>();
-
-                            let p_unmerged_in_c_subtree = self
-                                .unmerged_in_subtree(p, c)?
-                                .iter()
-                                .copied()
-                                .map(|x| *x * 2);
-
-                            #[cfg(feature = "std")]
-                            let p_unmerged_in_c_subtree =
-                                p_unmerged_in_c_subtree.collect::<HashSet<_>>();
-                            #[cfg(not(feature = "std"))]
-                            let p_unmerged_in_c_subtree =
-                                p_unmerged_in_c_subtree.collect::<BTreeSet<_>>();
-
-                            if c_resolution.remove(&n)
-                                && c_resolution == p_unmerged_in_c_subtree
-                                && nodes_to_validate.remove(&p)
-                            {
-                                // If n's parent_hash field matches and p has not been validated yet, mark p as validated and continue.
-                                n = p;
-                            } else {
-                                // If p is validated for the second time, the check fails ("all non-blank parent nodes are covered by exactly one such chain").
-                                return Err(MlsError::ParentHashMismatch);
-                            }
+                            // If n's parent_hash field matches and p has not been validated yet, mark p as validated and continue.
+                            n = p;
                         } else {
-                            // If n's parent_hash field doesn't match, we're done with this chain.
-                            return Ok(());
+                            // If p is validated for the second time, the check fails ("all non-blank parent nodes are covered by exactly one such chain").
+                            return Err(MlsError::ParentHashMismatch);
                         }
+                    } else {
+                        // If n's parent_hash field doesn't match, we're done with this chain.
+                        return Ok(());
                     }
                 }
 
@@ -299,6 +267,8 @@ pub(crate) mod test_utils {
         identity::basic::BasicIdentityProvider,
         tree_kem::{leaf_node::test_utils::get_basic_test_node, node::Parent},
     };
+
+    use alloc::vec;
 
     pub(crate) fn test_parent(
         cipher_suite: CipherSuite,
@@ -354,10 +324,10 @@ pub(crate) mod test_utils {
             vec![LeafIndex(5), LeafIndex(6)],
         ));
 
-        tree.update_parent_hashes(LeafIndex(0), None, &cipher_suite_provider)
+        tree.update_parent_hashes(LeafIndex(0), false, &cipher_suite_provider)
             .unwrap();
 
-        tree.update_parent_hashes(LeafIndex(4), None, &cipher_suite_provider)
+        tree.update_parent_hashes(LeafIndex(4), false, &cipher_suite_provider)
             .unwrap();
 
         tree
@@ -372,7 +342,6 @@ mod tests {
     use crate::tree_kem::leaf_node::test_utils::get_basic_test_node;
     use crate::tree_kem::leaf_node::LeafNodeSource;
     use crate::tree_kem::test_utils::TreeWithSigners;
-    use crate::tree_kem::update_path::ValidatedUpdatePath;
     use crate::tree_kem::MlsError;
     use assert_matches::assert_matches;
 
@@ -384,16 +353,12 @@ mod tests {
         let cs = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let mut test_tree = TreeWithSigners::make_full_tree(8, &cs).await.tree;
 
-        let test_key_package = get_basic_test_node(TEST_CIPHER_SUITE, "foo").await;
-
-        let test_update_path = ValidatedUpdatePath {
-            leaf_node: test_key_package,
-            nodes: vec![],
-        };
+        *test_tree.nodes.borrow_as_leaf_mut(LeafIndex(0)).unwrap() =
+            get_basic_test_node(TEST_CIPHER_SUITE, "foo").await;
 
         let missing_parent_hash_res = test_tree.update_parent_hashes(
             LeafIndex(0),
-            Some(&test_update_path.leaf_node),
+            true,
             &test_cipher_suite_provider(TEST_CIPHER_SUITE),
         );
 
@@ -408,19 +373,17 @@ mod tests {
         let cs = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let mut test_tree = TreeWithSigners::make_full_tree(8, &cs).await.tree;
 
-        let mut test_update_path = ValidatedUpdatePath {
-            leaf_node: get_basic_test_node(TEST_CIPHER_SUITE, "foo").await,
-            nodes: vec![],
-        };
-
         let unexpected_parent_hash = ParentHash::from(hex!("f00d"));
 
-        test_update_path.leaf_node.leaf_node_source =
-            LeafNodeSource::Commit(unexpected_parent_hash);
+        test_tree
+            .nodes
+            .borrow_as_leaf_mut(LeafIndex(0))
+            .unwrap()
+            .leaf_node_source = LeafNodeSource::Commit(unexpected_parent_hash);
 
         let invalid_parent_hash_res = test_tree.update_parent_hashes(
             LeafIndex(0),
-            Some(&test_update_path.leaf_node),
+            true,
             &test_cipher_suite_provider(TEST_CIPHER_SUITE),
         );
 

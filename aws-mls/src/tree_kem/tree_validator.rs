@@ -115,10 +115,14 @@ fn validate_unmerged(tree: &TreeKemPublic) -> Result<(), MlsError> {
     // For each leaf L, we search for the longest prefix P[1], P[2], ..., P[k] of the direct path of L
     // such that for each i=1..k, either L is in the unmerged leaves of P[i], or P[i] is blank. We will
     // then check that L is unmerged at each P[1], ..., P[k] and no other node.
+    let root = tree_math::root(tree.total_leaf_count());
+
     for (index, _) in tree.nodes.non_empty_leaves() {
         let mut n = NodeIndex::from(index);
 
-        while let Ok(parent) = tree_math::parent(n, tree.total_leaf_count()) {
+        while n != root {
+            let parent = tree_math::parent(n);
+
             if tree.nodes.is_blank(parent)? {
                 n = parent;
                 continue;
