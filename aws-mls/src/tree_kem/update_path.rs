@@ -132,6 +132,8 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
+    use alloc::vec::Vec;
+
     #[maybe_async::maybe_async]
     async fn test_update_path(cipher_suite: CipherSuite, cred: &str) -> UpdatePath {
         let (mut leaf_node, _, signer) = get_basic_test_node_sig_key(cipher_suite, cred).await;

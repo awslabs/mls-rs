@@ -33,8 +33,12 @@ pub(crate) mod test_utils {
 
     use super::basic::{BasicCredential, BasicIdentityProvider, BasicIdentityProviderError};
 
-    #[derive(Debug, thiserror::Error)]
-    #[error("expected basic or custom credential type 42 found: {0:?}")]
+    #[derive(Debug)]
+    #[cfg_attr(feature = "std", derive(thiserror::Error))]
+    #[cfg_attr(
+        feature = "std",
+        error("expected basic or custom credential type 42 found: {0:?}")
+    )]
     pub struct BasicWithCustomProviderError(CredentialType);
 
     impl From<BasicIdentityProviderError> for BasicWithCustomProviderError {
@@ -44,6 +48,7 @@ pub(crate) mod test_utils {
     }
 
     impl IntoAnyError for BasicWithCustomProviderError {
+        #[cfg(feature = "std")]
         fn into_dyn_error(self) -> Result<Box<dyn std::error::Error + Send + Sync>, Self> {
             Ok(self.into())
         }

@@ -89,6 +89,7 @@ impl PskSecret {
     }
 }
 
+#[cfg(feature = "psk")]
 #[cfg(test)]
 mod tests {
     use core::iter;

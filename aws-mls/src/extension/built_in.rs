@@ -194,15 +194,20 @@ impl MlsCodecExtension for ExternalSendersExt {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[cfg(feature = "external_proposal")]
     use crate::{
         client::test_utils::TEST_CIPHER_SUITE, identity::test_utils::get_test_signing_identity,
     };
 
-    use super::*;
+    use aws_mls_core::extension::MlsExtension;
+
+    #[cfg(feature = "all_extensions")]
+    use aws_mls_core::identity::BasicCredential;
 
     use alloc::vec;
-    use aws_mls_core::{extension::MlsExtension, identity::BasicCredential};
+
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 

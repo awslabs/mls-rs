@@ -40,12 +40,12 @@ impl MlsDecode for ExtensionList {
                 let ext_type = ext.extension_type;
 
                 if list.0.iter().any(|e| e.extension_type == ext_type) {
-                    #[cfg(feature = "std")]
-                    return Err(aws_mls_codec::Error::Custom(format!(
-                        "Extension list has duplicate extension of type {ext_type:?}"
-                    )));
+                    // #[cfg(feature = "std")]
+                    // return Err(aws_mls_codec::Error::Custom(format!(
+                    //    "Extension list has duplicate extension of type {ext_type:?}"
+                    // )));
 
-                    #[cfg(not(feature = "std"))]
+                    // #[cfg(not(feature = "std"))]
                     return Err(aws_mls_codec::Error::Custom(1));
                 }
 

@@ -418,10 +418,10 @@ mod tests {
     fn private_key_can_be_generated() {
         Curve::all().for_each(|curve| {
             let one_key = generate_private_key(curve)
-                .unwrap_or_else(|e| panic!("Failed to generate private key for {curve:?} : {e}"));
+                .unwrap_or_else(|e| panic!("Failed to generate private key for {curve:?} : {e:?}"));
 
             let another_key = generate_private_key(curve)
-                .unwrap_or_else(|e| panic!("Failed to generate private key for {curve:?} : {e}"));
+                .unwrap_or_else(|e| panic!("Failed to generate private key for {curve:?} : {e:?}"));
 
             assert_ne!(
                 private_key_to_bytes(&one_key).unwrap(),
@@ -448,10 +448,10 @@ mod tests {
             let key_bytes = get_test_secret_keys().get_key_from_curve(curve);
 
             let imported_key = private_key_from_bytes(&key_bytes, curve)
-                .unwrap_or_else(|e| panic!("Failed to import private key for {curve:?} : {e}"));
+                .unwrap_or_else(|e| panic!("Failed to import private key for {curve:?} : {e:?}"));
 
             let exported_bytes = private_key_to_bytes(&imported_key)
-                .unwrap_or_else(|e| panic!("Failed to export private key for {curve:?} : {e}"));
+                .unwrap_or_else(|e| panic!("Failed to export private key for {curve:?} : {e:?}"));
 
             assert_eq!(exported_bytes, key_bytes);
         });
@@ -463,10 +463,10 @@ mod tests {
             let key_bytes = get_test_public_keys().get_key_from_curve(curve);
 
             let imported_key = pub_key_from_uncompressed(&key_bytes, curve)
-                .unwrap_or_else(|e| panic!("Failed to import public key for {curve:?} : {e}"));
+                .unwrap_or_else(|e| panic!("Failed to import public key for {curve:?} : {e:?}"));
 
             let exported_bytes = pub_key_to_uncompressed(&imported_key)
-                .unwrap_or_else(|e| panic!("Failed to export public key for {curve:?} : {e}"));
+                .unwrap_or_else(|e| panic!("Failed to export public key for {curve:?} : {e:?}"));
 
             assert_eq!(exported_bytes, key_bytes);
         });

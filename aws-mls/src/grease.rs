@@ -180,6 +180,7 @@ mod tests {
         ));
     }
 
+    #[cfg(feature = "external_commit")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn group_info_is_greased() {
         let group_info = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)

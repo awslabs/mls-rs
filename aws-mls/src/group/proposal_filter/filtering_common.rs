@@ -356,7 +356,7 @@ where
         let is_new_id = ids_seen.insert(p.proposal.psk.clone());
 
         #[cfg(not(feature = "std"))]
-        let is_new_id = ids_seen.contains(&p.proposal.psk);
+        let is_new_id = !ids_seen.contains(&p.proposal.psk);
 
         let external_id_is_valid = match &p.proposal.psk.key_id {
             JustPreSharedKeyID::External(id) => psk_storage

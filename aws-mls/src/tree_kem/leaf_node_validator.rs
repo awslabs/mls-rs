@@ -194,6 +194,7 @@ mod tests {
     use aws_mls_core::crypto::CipherSuite;
     #[cfg(feature = "all_extensions")]
     use aws_mls_core::group::ProposalType;
+    #[cfg(feature = "std")]
     use core::time::Duration;
 
     use super::*;

@@ -95,7 +95,7 @@ mod tests {
 
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let tag = MembershipTag::create(
-                &get_test_auth_content(b"hello".to_vec()),
+                &get_test_auth_content(),
                 &get_test_group_context(1, cipher_suite),
                 b"membership_key".as_ref(),
                 &test_cipher_suite_provider(cipher_suite),
@@ -123,7 +123,7 @@ mod tests {
             };
 
             let tag = MembershipTag::create(
-                &get_test_auth_content(b"hello".to_vec()),
+                &get_test_auth_content(),
                 &get_test_group_context(1, cs_provider.cipher_suite()),
                 b"membership_key".as_ref(),
                 &test_cipher_suite_provider(cs_provider.cipher_suite()),

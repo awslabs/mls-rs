@@ -7,7 +7,6 @@ members = [
     "aws-mls-identity-x509",
     "aws-mls/fuzz",
     "aws-mls/test_harness_integration",
-    "aws-mls/test_utils",
     "aws-mls-crypto-openssl",
     "aws-mls-crypto-rustcrypto",
     "aws-mls-crypto-hpke",

@@ -223,7 +223,7 @@ fn filter_out_invalid_reinit(
 }
 
 fn filter_out_reinit_if_other_proposals(proposals: &ProposalBundle) -> Result<(), MlsError> {
-    (proposals.length() > proposals.reinitializations.len())
+    (proposals.reinitializations.is_empty() || proposals.length() == 1)
         .then_some(())
         .ok_or(MlsError::OtherProposalWithReInit)
 }

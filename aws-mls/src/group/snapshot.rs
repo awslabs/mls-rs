@@ -252,6 +252,7 @@ pub(crate) mod test_utils {
             private_tree: TreeKemPrivate::new(LeafIndex(0)),
             epoch_secrets: get_test_epoch_secrets(cipher_suite),
             key_schedule: get_test_key_schedule(cipher_suite),
+            #[cfg(feature = "by_ref_proposal")]
             pending_updates: Default::default(),
             pending_commit: None,
             version: 1,
@@ -296,6 +297,7 @@ mod tests {
         snapshot_restore(group).await
     }
 
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn snapshot_with_pending_updates_can_be_serialized_to_json() {
         let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;

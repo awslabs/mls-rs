@@ -27,6 +27,9 @@ use crate::{
 #[cfg(feature = "all_extensions")]
 use crate::extension::RequiredCapabilitiesExt;
 
+#[cfg(not(feature = "by_ref_proposal"))]
+use crate::crypto::HpkePublicKey;
+
 pub const TEST_GROUP: &[u8] = b"group";
 
 #[derive(Clone)]
@@ -41,6 +44,7 @@ impl TestGroup {
         self.group.proposal_message(proposal, vec![]).await.unwrap()
     }
 
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::maybe_async]
     pub(crate) async fn update_proposal(&mut self) -> Proposal {
         self.group.update_proposal(None).await.unwrap()
@@ -143,6 +147,7 @@ impl TestGroup {
         self.group.process_incoming_message(message).await
     }
 
+    #[cfg(feature = "private_message")]
     #[maybe_async::maybe_async]
     pub(crate) async fn make_plaintext(&mut self, content: Content) -> MLSMessage {
         let auth_content = AuthenticatedContent::new_signed(
@@ -454,6 +459,7 @@ impl DerefMut for GroupWithoutKeySchedule {
     }
 }
 
+#[cfg(feature = "rfc_compliant")]
 impl GroupWithoutKeySchedule {
     #[maybe_async::maybe_async]
     pub async fn new(cs: CipherSuite) -> Self {

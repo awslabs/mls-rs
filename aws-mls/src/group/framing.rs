@@ -7,7 +7,7 @@ use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use zeroize::Zeroize;
 
 #[cfg(feature = "private_message")]
-use alloc::{boxed::Box, string::ToString};
+use alloc::boxed::Box;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -217,12 +217,12 @@ impl PrivateMessageContent {
         let auth = FramedContentAuthData::mls_decode(reader, content.content_type())?;
 
         if reader.iter().any(|&i| i != 0u8) {
-            #[cfg(feature = "std")]
-            return Err(aws_mls_codec::Error::Custom(
-                "non-zero padding bytes discovered".to_string(),
-            ));
+            // #[cfg(feature = "std")]
+            // return Err(aws_mls_codec::Error::Custom(
+            //    "non-zero padding bytes discovered".to_string(),
+            // ));
 
-            #[cfg(not(feature = "std"))]
+            // #[cfg(not(feature = "std"))]
             return Err(aws_mls_codec::Error::Custom(5));
         }
 
@@ -446,12 +446,20 @@ impl FramedContent {
 
 #[cfg(test)]
 pub(crate) mod test_utils {
-
+    #[cfg(feature = "private_message")]
     use crate::group::test_utils::random_bytes;
 
     use super::*;
 
-    pub(crate) fn get_test_auth_content(test_content: Vec<u8>) -> AuthenticatedContent {
+    use alloc::boxed::Box;
+
+    pub(crate) fn get_test_auth_content() -> AuthenticatedContent {
+        // This is not a valid commit and should not be validated
+        let commit = Commit {
+            proposals: Default::default(),
+            path: None,
+        };
+
         AuthenticatedContent {
             wire_format: WireFormat::PublicMessage,
             content: FramedContent {
@@ -459,7 +467,7 @@ pub(crate) mod test_utils {
                 epoch: 0,
                 sender: Sender::Member(1),
                 authenticated_data: Vec::new(),
-                content: Content::Application(test_content.into()),
+                content: Content::Commit(Box::new(commit)),
             },
             auth: FramedContentAuthData {
                 signature: MessageSignature::empty(),

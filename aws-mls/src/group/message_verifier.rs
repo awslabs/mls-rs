@@ -233,18 +233,13 @@ mod tests {
             MlsError,
         },
         client_builder::{test_utils::TestClientConfig, Preferences},
-        crypto::{test_utils::test_cipher_suite_provider, SignatureSecretKey},
+        crypto::test_utils::test_cipher_suite_provider,
         group::{
-            framing::WireFormat,
             membership_tag::MembershipTag,
-            message_signature::{AuthenticatedContent, MessageSignature, MessageSigningContext},
-            proposal::{AddProposal, Proposal, RemoveProposal},
-            test_utils::{test_group, test_group_custom, test_member, TestGroup},
-            Content, Group, PublicMessage, Sender,
+            message_signature::{AuthenticatedContent, MessageSignature},
+            test_utils::{test_group_custom, TestGroup},
+            Group, PublicMessage,
         },
-        identity::test_utils::get_test_signing_identity,
-        key_package::KeyPackageGeneration,
-        signer::Signable,
         tree_kem::node::LeafIndex,
     };
     use alloc::vec;
@@ -252,6 +247,35 @@ mod tests {
 
     #[cfg(feature = "external_proposal")]
     use crate::{extension::ExternalSendersExt, ExtensionList};
+
+    #[cfg(feature = "by_ref_proposal")]
+    use crate::{
+        crypto::SignatureSecretKey,
+        group::{
+            message_signature::MessageSigningContext,
+            proposal::{AddProposal, Proposal, RemoveProposal},
+            Content,
+        },
+        key_package::KeyPackageGeneration,
+        signer::Signable,
+        WireFormat,
+    };
+
+    #[cfg(feature = "by_ref_proposal")]
+    use alloc::boxed::Box;
+
+    #[cfg(any(
+        feature = "by_ref_proposal",
+        feature = "external_commit",
+        feature = "external_proposal"
+    ))]
+    use crate::group::{
+        test_utils::{test_group, test_member},
+        Sender,
+    };
+
+    #[cfg(any(feature = "by_ref_proposal", feature = "external_proposal"))]
+    use crate::identity::test_utils::get_test_signing_identity;
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -411,6 +435,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::InvalidMembershipTag));
     }
 
+    #[cfg(feature = "by_ref_proposal")]
     fn test_new_member_proposal<F>(
         key_pkg_gen: KeyPackageGeneration,
         signer: &SignatureSecretKey,
@@ -455,6 +480,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn valid_proposal_from_new_member_is_verified() {
         let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
@@ -472,6 +498,7 @@ mod tests {
         .unwrap();
     }
 
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn proposal_from_new_member_must_not_have_membership_tag() {
         let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
@@ -492,6 +519,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::MembershipTagForNonMember));
     }
 
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn new_member_proposal_sender_must_be_add_proposal() {
         let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
@@ -504,7 +532,7 @@ mod tests {
             })))
         });
 
-        let res = verify_plaintext_authentication(
+        let res: Result<AuthenticatedContent, MlsError> = verify_plaintext_authentication(
             &test_group.group.cipher_suite_provider,
             message,
             Some(&test_group.group.key_schedule),
@@ -603,6 +631,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::UnknownSigningIdentityForExternalSender));
     }
 
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn proposal_from_external_sender_must_not_have_membership_tag() {
         let (bob_key_pkg_gen, _) =

@@ -426,12 +426,18 @@ fn get_welcome_secret<P: CipherSuiteProvider>(
 pub(crate) mod test_utils {
     use alloc::vec;
     use alloc::vec::Vec;
-    use aws_mls_core::{crypto::CipherSuiteProvider, error::IntoAnyError};
+    use aws_mls_core::crypto::CipherSuiteProvider;
     use zeroize::Zeroizing;
 
     use crate::{cipher_suite::CipherSuite, crypto::test_utils::test_cipher_suite_provider};
 
-    use super::{CommitSecret, InitSecret, JoinerSecret, KeySchedule, MlsError};
+    use super::{CommitSecret, InitSecret, JoinerSecret, KeySchedule};
+
+    #[cfg(feature = "rfc_compliant")]
+    use aws_mls_core::error::IntoAnyError;
+
+    #[cfg(feature = "rfc_compliant")]
+    use super::MlsError;
 
     impl From<JoinerSecret> for Vec<u8> {
         fn from(mut value: JoinerSecret) -> Self {
@@ -458,6 +464,7 @@ pub(crate) mod test_utils {
             InitSecret(Zeroizing::new(init_secret))
         }
 
+        #[cfg(feature = "rfc_compliant")]
         pub fn random<P: CipherSuiteProvider>(cipher_suite: &P) -> Result<Self, MlsError> {
             cipher_suite
                 .random_bytes_vec(cipher_suite.kdf_extract_size())
@@ -467,6 +474,7 @@ pub(crate) mod test_utils {
         }
     }
 
+    #[cfg(feature = "rfc_compliant")]
     impl KeySchedule {
         pub fn set_membership_key(&mut self, key: Vec<u8>) {
             self.membership_key = Zeroizing::new(key)
@@ -483,28 +491,35 @@ pub(crate) mod test_utils {
 #[cfg(test)]
 mod tests {
     use crate::client::test_utils::TEST_PROTOCOL_VERSION;
-    use crate::crypto::test_utils::{
-        test_cipher_suite_provider, try_test_cipher_suite_provider, TestCryptoProvider,
-    };
-    use crate::group::internal::PskSecret;
+    use crate::crypto::test_utils::try_test_cipher_suite_provider;
     use crate::group::key_schedule::{
         get_welcome_secret, kdf_derive_secret, kdf_expand_with_label,
     };
-    use crate::group::test_utils::random_bytes;
-    use crate::group::{GroupContext, InitSecret};
-    use alloc::string::{String, ToString};
-    use alloc::vec;
+    use crate::group::GroupContext;
+    use alloc::string::String;
     use alloc::vec::Vec;
     use aws_mls_codec::MlsEncode;
     use aws_mls_core::crypto::CipherSuiteProvider;
-
     use aws_mls_core::extension::ExtensionList;
+
+    #[cfg(feature = "rfc_compliant")]
+    use crate::{
+        crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider},
+        group::{
+            key_schedule::KeyScheduleDerivationResult, test_utils::random_bytes, InitSecret,
+            PskSecret,
+        },
+    };
+
+    #[cfg(feature = "rfc_compliant")]
+    use alloc::{string::ToString, vec};
+
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
     use zeroize::Zeroizing;
 
     use super::test_utils::get_test_key_schedule;
-    use super::{CommitSecret, KeySchedule, KeyScheduleDerivationResult};
+    use super::{CommitSecret, KeySchedule};
 
     #[derive(serde::Deserialize, serde::Serialize)]
     struct KeyScheduleTestCase {
@@ -553,6 +568,7 @@ mod tests {
         confirmation_key: Vec<u8>,
         #[serde(with = "hex::serde")]
         membership_key: Vec<u8>,
+        #[cfg(feature = "psk")]
         #[serde(with = "hex::serde")]
         resumption_psk: Vec<u8>,
 
@@ -654,8 +670,13 @@ mod tests {
 
                 assert_eq!(epoch.membership_key, key_schedule.membership_key.to_vec());
 
-                let expected: Vec<u8> = key_schedule_res.epoch_secrets.resumption_secret.to_vec();
-                assert_eq!(epoch.resumption_psk, expected);
+                #[cfg(feature = "psk")]
+                {
+                    let expected: Vec<u8> =
+                        key_schedule_res.epoch_secrets.resumption_secret.to_vec();
+
+                    assert_eq!(epoch.resumption_psk, expected);
+                }
 
                 #[cfg(feature = "external_commit")]
                 {
@@ -766,6 +787,7 @@ mod tests {
         panic!("key schedule test vectors can only be generated with the feature \"rfc_compliant\"")
     }
 
+    #[cfg(feature = "rfc_compliant")]
     impl KeyScheduleEpoch {
         fn new<P: CipherSuiteProvider>(
             key_schedule_res: KeyScheduleDerivationResult,
@@ -819,6 +841,7 @@ mod tests {
                 external_secret: key_schedule_res.key_schedule.external_secret.to_vec(),
                 confirmation_key: key_schedule_res.confirmation_key.to_vec(),
                 membership_key: key_schedule_res.key_schedule.membership_key.to_vec(),
+                #[cfg(feature = "psk")]
                 resumption_psk: key_schedule_res.epoch_secrets.resumption_secret.to_vec(),
                 #[cfg(feature = "external_commit")]
                 external_pub: external_pub.to_vec(),

@@ -767,6 +767,7 @@ mod tests {
 
         let commit_data = match plaintext.content.content {
             Content::Commit(commit) => commit,
+            #[cfg(any(feature = "private_message", feature = "by_ref_proposal"))]
             _ => panic!("Found non-commit data"),
         };
 
@@ -775,6 +776,7 @@ mod tests {
         commit_data.proposals.into_iter().for_each(|proposal| {
             let proposal = match proposal {
                 ProposalOrRef::Proposal(p) => p,
+                #[cfg(feature = "by_ref_proposal")]
                 ProposalOrRef::Reference(_) => panic!("found proposal reference"),
             };
 
@@ -893,6 +895,7 @@ mod tests {
         assert_commit_builder_output(group, commit_output, vec![expected_remove], 0);
     }
 
+    #[cfg(feature = "psk")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_commit_builder_psk() {
         let mut group = test_commit_builder_group().await;

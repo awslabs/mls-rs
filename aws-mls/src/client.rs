@@ -797,26 +797,30 @@ pub(crate) mod test_utils {
 
 #[cfg(test)]
 mod tests {
-
     use super::test_utils::*;
 
     use super::*;
     use crate::{
-        crypto::test_utils::TestCryptoProvider,
+        crypto::test_utils::TestCryptoProvider, identity::test_utils::get_test_basic_credential,
+        tree_kem::leaf_node::LeafNodeSource,
+    };
+    use assert_matches::assert_matches;
+
+    use aws_mls_codec::MlsEncode;
+
+    #[cfg(feature = "external_commit")]
+    use crate::{
         group::{
             message_processor::ProposalMessageDescription,
             proposal::Proposal,
             test_utils::{test_group, test_group_custom_config},
             ReceivedMessage,
         },
-        identity::test_utils::get_test_basic_credential,
         psk::{ExternalPskId, PreSharedKey},
-        tree_kem::leaf_node::LeafNodeSource,
     };
-    use alloc::vec;
-    use assert_matches::assert_matches;
 
-    use aws_mls_codec::MlsEncode;
+    #[cfg(feature = "external_commit")]
+    use alloc::vec;
 
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_keygen() {

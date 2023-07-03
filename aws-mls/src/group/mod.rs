@@ -2074,44 +2074,53 @@ pub(crate) mod test_utils;
 
 #[cfg(test)]
 mod tests {
-    use core::time::Duration;
-
-    use crate::client::test_utils::{get_basic_client_builder, test_client_with_key_pkg};
+    use crate::client::test_utils::test_client_with_key_pkg;
     use crate::crypto::test_utils::TestCryptoProvider;
-    use crate::group::test_utils::random_bytes;
-    use crate::identity::test_utils::get_test_basic_credential;
-    use crate::key_package::test_utils::{test_key_package, test_key_package_message};
-    use crate::time::MlsTime;
+    use crate::key_package::test_utils::test_key_package_message;
     use crate::tree_kem::leaf_node::test_utils::get_test_capabilities;
     use crate::{
-        client::{
-            test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
-            Client,
-        },
+        client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         client_builder::{test_utils::TestClientConfig, Preferences},
-        extension::test_utils::TestExtension,
-        identity::test_utils::get_test_signing_identity,
-        psk::PreSharedKey,
         tree_kem::{leaf_node::LeafNodeSource, UpdatePathNode},
     };
 
+    #[cfg(feature = "external_commit")]
+    use crate::client::test_utils::get_basic_client_builder;
+
     #[cfg(feature = "all_extensions")]
-    use crate::extension::RequiredCapabilitiesExt;
+    use crate::{extension::RequiredCapabilitiesExt, key_package::test_utils::test_key_package};
 
     #[cfg(all(feature = "external_proposal", feature = "custom_proposal"))]
     use super::test_utils::test_group_custom_config;
 
+    #[cfg(feature = "psk")]
+    use crate::{client::Client, psk::PreSharedKey};
+
+    #[cfg(any(
+        feature = "by_ref_proposal",
+        feature = "external_proposal",
+        feature = "private_message"
+    ))]
+    use crate::group::test_utils::random_bytes;
+
+    #[cfg(feature = "by_ref_proposal")]
+    use crate::{
+        extension::test_utils::TestExtension,
+        identity::test_utils::{get_test_basic_credential, get_test_signing_identity},
+        time::MlsTime,
+    };
+
     use super::{
         test_utils::{
             get_test_25519_key, get_test_groups_with_features, group_extensions, process_commit,
-            test_group, test_group_custom, test_member, test_n_member_group, TestGroup, TEST_GROUP,
+            test_group, test_group_custom, test_n_member_group, TestGroup, TEST_GROUP,
         },
         *,
     };
 
     use assert_matches::assert_matches;
 
-    use aws_mls_core::extension::{Extension, MlsExtension};
+    use aws_mls_core::extension::Extension;
     use aws_mls_core::identity::{Credential, CredentialType, CustomCredential};
 
     #[cfg(feature = "external_proposal")]
@@ -2125,6 +2134,12 @@ mod tests {
 
     #[cfg(feature = "external_proposal")]
     use crate::{crypto::test_utils::test_cipher_suite_provider, extension::ExternalSendersExt};
+
+    #[cfg(any(feature = "private_message", feature = "state_update"))]
+    use super::test_utils::test_member;
+
+    #[cfg(any(feature = "all_extensions", feature = "external_proposal"))]
+    use aws_mls_core::extension::MlsExtension;
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -2143,12 +2158,18 @@ mod tests {
             assert_eq!(group.state.context.epoch, 0);
             assert_eq!(group.state.context.group_id, TEST_GROUP.to_vec());
             assert_eq!(group.state.context.extensions, group_extensions());
+
             assert_eq!(
                 group.state.context.confirmed_transcript_hash,
                 ConfirmedTranscriptHash::from(vec![])
             );
+
+            #[cfg(feature = "private_message")]
             assert!(group.state.proposals.is_empty());
+
+            #[cfg(feature = "by_ref_proposal")]
             assert!(group.pending_updates.is_empty());
+
             assert_eq!(
                 group.private_tree.self_index.0,
                 group.current_member_index()
@@ -2202,6 +2223,7 @@ mod tests {
         assert!(res.is_ok());
     }
 
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_update_proposals() {
         let mut new_capabilities = get_test_capabilities();
@@ -2241,6 +2263,7 @@ mod tests {
         assert_eq!(update.leaf_node.ungreased_capabilities(), new_capabilities);
     }
 
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_invalid_commit_self_update() {
         let mut test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
@@ -2268,6 +2291,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn update_proposal_with_bad_key_package_is_ignored_when_committing() {
         let (mut alice_group, mut bob_group) =
@@ -2648,6 +2672,7 @@ mod tests {
             .is_some());
     }
 
+    #[cfg(feature = "private_message")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn group_rejects_unencrypted_application_message() {
         let protocol_version = TEST_PROTOCOL_VERSION;
@@ -2855,6 +2880,7 @@ mod tests {
         alice_group.process_message(commit).await.unwrap();
     }
 
+    #[cfg(feature = "external_commit")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_membership_tag_from_non_member() {
         let (mut alice_group, mut bob_group) =
@@ -2944,6 +2970,7 @@ mod tests {
         assert!(alice.group.private_tree.secret_keys[1].is_none());
     }
 
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn old_hpke_secrets_of_updated_are_removed() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
@@ -2962,6 +2989,7 @@ mod tests {
         assert!(alice.group.private_tree.secret_keys[1].is_none());
     }
 
+    #[cfg(feature = "psk")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn only_selected_members_of_the_original_group_can_join_subgroup() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
@@ -3671,6 +3699,7 @@ mod tests {
         assert!(res.is_err());
     }
 
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn update_proposal_can_change_credential() {
         let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 3).await;
@@ -3726,6 +3755,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn receiving_commit_with_old_adds_fails() {
         let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 2).await;
@@ -3743,8 +3773,10 @@ mod tests {
 
         // 10 years from now
         let future_time = MlsTime::now().seconds_since_epoch().unwrap() + 10 * 365 * 24 * 3600;
+
         let future_time =
-            MlsTime::from_duration_since_epoch(Duration::from_secs(future_time)).unwrap();
+            MlsTime::from_duration_since_epoch(core::time::Duration::from_secs(future_time))
+                .unwrap();
 
         groups[1]
             .group
@@ -3834,6 +3866,7 @@ mod tests {
         assert_matches!(res, ReceivedMessage::Commit(_));
     }
 
+    #[cfg(feature = "psk")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn can_join_with_psk() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)

@@ -79,6 +79,8 @@ mod tests {
         storage_provider::in_memory::{InMemoryGroupStateStorage, InMemoryKeyPackageStorage},
     };
 
+    use alloc::vec;
+
     use super::GroupStateRepository;
 
     fn test_snapshot(epoch_id: u64) -> Snapshot {

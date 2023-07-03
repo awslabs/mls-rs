@@ -342,7 +342,8 @@ fn rejected_proposals(
         .collect()
 }
 
-#[cfg(test)]
+// TODO add tests for lite version of filtering
+#[cfg(all(feature = "by_ref_proposal", test))]
 pub(crate) mod test_utils {
     use aws_mls_core::{
         crypto::CipherSuiteProvider, extension::ExtensionList, identity::IdentityProvider,
@@ -366,6 +367,8 @@ pub(crate) mod test_utils {
     };
 
     use super::{CachedProposal, MlsError, ProposalCache};
+
+    use alloc::vec::Vec;
 
     impl CachedProposal {
         pub fn new(proposal: Proposal, sender: Sender) -> Self {
@@ -553,7 +556,7 @@ pub(crate) mod test_utils {
             let state = GroupState::new(
                 context,
                 public_tree.clone(),
-                vec![].into(),
+                Vec::new().into(),
                 ConfirmationTag::empty(cipher_suite_provider),
             );
 
@@ -600,7 +603,7 @@ pub(crate) mod test_utils {
             let state = GroupState::new(
                 context.clone(),
                 public_tree.clone(),
-                vec![].into(),
+                Vec::new().into(),
                 ConfirmationTag::empty(cipher_suite_provider),
             );
 
@@ -626,7 +629,8 @@ pub(crate) mod test_utils {
     }
 }
 
-#[cfg(test)]
+// TODO add tests for lite version of filtering
+#[cfg(all(feature = "by_ref_proposal", test))]
 mod tests {
     use super::test_utils::{pass_through_rules, CommitReceiver};
     use super::*;
@@ -925,6 +929,8 @@ mod tests {
         );
 
         assert_eq!(expected_state.public_tree, state.public_tree);
+
+        #[cfg(feature = "state_update")]
         assert_eq!(expected_state.rejected_proposals, state.rejected_proposals);
     }
 
@@ -1178,6 +1184,7 @@ mod tests {
         assert_matches(expected_effects, provisional_state)
     }
 
+    #[cfg(feature = "private_message")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_proposal_cache_is_empty() {
         let mut cache = make_proposal_cache();
@@ -1254,6 +1261,7 @@ mod tests {
         assert_matches(expected_effects, resolution);
     }
 
+    #[cfg(feature = "psk")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn proposal_cache_filters_duplicate_psk_ids() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
@@ -2947,6 +2955,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "psk")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn receiving_psk_proposals_with_same_psk_id_fails() {
         let (alice, tree) = new_tree("alice").await;
@@ -2964,6 +2973,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::DuplicatePskIds));
     }
 
+    #[cfg(feature = "psk")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn sending_additional_psk_proposals_with_same_psk_id_fails() {
         let (alice, tree) = new_tree("alice").await;
@@ -2977,6 +2987,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::DuplicatePskIds));
     }
 
+    #[cfg(feature = "psk")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn sending_psk_proposals_with_same_psk_id_keeps_only_one() {
         let (alice, mut tree) = new_tree("alice").await;
@@ -3759,9 +3770,11 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "psk")]
     #[derive(Debug)]
     struct AlwaysNotFoundPskStorage;
 
+    #[cfg(feature = "psk")]
     #[maybe_async::maybe_async]
     impl PreSharedKeyStorage for AlwaysNotFoundPskStorage {
         type Error = Infallible;
@@ -3771,6 +3784,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "psk")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn receiving_external_psk_with_unknown_id_fails() {
         let (alice, tree) = new_tree("alice").await;
@@ -3788,6 +3802,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::MissingRequiredPsk));
     }
 
+    #[cfg(feature = "psk")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn sending_additional_external_psk_with_unknown_id_fails() {
         let (alice, tree) = new_tree("alice").await;
@@ -3801,6 +3816,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::MissingRequiredPsk));
     }
 
+    #[cfg(feature = "psk")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn sending_external_psk_with_unknown_id_filters_it_out() {
         let (alice, tree) = new_tree("alice").await;
@@ -4127,6 +4143,7 @@ mod tests {
             Proposal::Add(make_add_proposal().await),
             Proposal::Update(make_update_proposal("alice").await),
             Proposal::Remove(RemoveProposal { to_remove: bob }),
+            #[cfg(feature = "psk")]
             Proposal::Psk(make_external_psk(
                 b"ted",
                 PskNonce::random(&test_cipher_suite_provider(TEST_CIPHER_SUITE)).unwrap(),

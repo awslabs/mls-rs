@@ -19,7 +19,10 @@ use crate::client::MlsError;
 use crate::crypto::{self, CipherSuiteProvider, HpkeSecretKey};
 
 #[cfg(feature = "by_ref_proposal")]
-use crate::group::proposal::{AddProposal, RemoveProposal, UpdateProposal};
+use crate::group::proposal::{AddProposal, UpdateProposal};
+
+#[cfg(any(test, feature = "by_ref_proposal"))]
+use crate::group::proposal::RemoveProposal;
 
 use crate::group::proposal_filter::ProposalBundle;
 use crate::tree_kem::tree_hash::TreeHashes;
@@ -502,8 +505,6 @@ impl TreeKemPublic {
         for p in &proposal_bundle.removals {
             let index = p.proposal.to_remove;
 
-            self.nodes.blank_direct_path(index)?;
-
             #[cfg(feature = "tree_index")]
             {
                 // If this fails, it's not because the proposal is bad.
@@ -514,6 +515,8 @@ impl TreeKemPublic {
 
             #[cfg(not(feature = "tree_index"))]
             self.nodes.blank_leaf_node(index)?;
+
+            self.nodes.blank_direct_path(index)?;
         }
 
         // Apply adds
@@ -585,6 +588,7 @@ use crate::group::{proposal::Proposal, proposal_filter::ProposalSource, Sender};
 
 #[cfg(test)]
 impl TreeKemPublic {
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::maybe_async]
     pub async fn update_leaf<I, CP>(
         &mut self,
@@ -633,7 +637,12 @@ impl TreeKemPublic {
             bundle.add(p, Sender::Member(0), ProposalSource::ByValue)?;
         }
 
+        #[cfg(feature = "by_ref_proposal")]
         self.batch_edit(&mut bundle, identity_provider, cipher_suite_provider, true)
+            .await?;
+
+        #[cfg(not(feature = "by_ref_proposal"))]
+        self.batch_edit_lite(&bundle, identity_provider, cipher_suite_provider)
             .await?;
 
         bundle
@@ -771,6 +780,7 @@ pub(crate) mod test_utils {
             }
         }
 
+        #[cfg(feature = "rfc_compliant")]
         pub fn remove_member(&mut self, member: u32) {
             self.tree
                 .nodes
@@ -872,28 +882,38 @@ pub(crate) mod test_utils {
 
 #[cfg(test)]
 mod tests {
-    use crate::client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION};
+    use crate::client::test_utils::TEST_CIPHER_SUITE;
     use crate::crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider};
 
     #[cfg(feature = "custom_proposal")]
     use crate::group::proposal::ProposalType;
 
-    use crate::group::proposal::{Proposal, RemoveProposal, UpdateProposal};
-    use crate::group::proposal_filter::{ProposalBundle, ProposalSource};
-    use crate::group::proposal_ref::ProposalRef;
-    use crate::group::Sender;
     use crate::identity::basic::BasicIdentityProvider;
-    use crate::key_package::test_utils::test_key_package;
-    use crate::tree_kem::leaf_node::test_utils::get_basic_test_node;
     use crate::tree_kem::leaf_node::LeafNode;
     use crate::tree_kem::node::{LeafIndex, Node, NodeIndex, NodeTypeResolver, Parent};
     use crate::tree_kem::parent_hash::ParentHash;
     use crate::tree_kem::test_utils::{get_test_leaf_nodes, get_test_tree};
     use crate::tree_kem::{MlsError, TreeKemPublic};
     use alloc::borrow::ToOwned;
+    use alloc::boxed::Box;
     use alloc::vec;
     use alloc::vec::Vec;
     use assert_matches::assert_matches;
+
+    #[cfg(feature = "by_ref_proposal")]
+    use crate::{
+        client::test_utils::TEST_PROTOCOL_VERSION,
+        group::{
+            proposal::{Proposal, RemoveProposal, UpdateProposal},
+            proposal_filter::{ProposalBundle, ProposalSource},
+            proposal_ref::ProposalRef,
+            Sender,
+        },
+        key_package::test_utils::test_key_package,
+    };
+
+    #[cfg(any(feature = "by_ref_proposal", feature = "custo_proposal"))]
+    use crate::tree_kem::leaf_node::test_utils::get_basic_test_node;
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -1089,6 +1109,7 @@ mod tests {
         )
     }
 
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_update_leaf() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
@@ -1149,6 +1170,7 @@ mod tests {
             });
     }
 
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_update_leaf_not_found() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
@@ -1341,6 +1363,8 @@ mod tests {
         }
     }
 
+    // TODO add test for the lite version
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn batch_edit_works() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);

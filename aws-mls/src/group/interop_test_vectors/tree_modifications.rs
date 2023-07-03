@@ -1,3 +1,4 @@
+use alloc::boxed::Box;
 use alloc::vec;
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode};

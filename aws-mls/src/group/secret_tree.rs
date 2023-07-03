@@ -879,7 +879,7 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "rfc_compliant"))]
+#[cfg(all(test, feature = "rfc_compliant", feature = "std"))]
 mod interop_tests {
     use aws_mls_core::crypto::{CipherSuite, CipherSuiteProvider};
     use zeroize::Zeroizing;

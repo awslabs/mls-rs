@@ -46,9 +46,6 @@ pub enum Error {
     #[cfg_attr(feature = "std", error("Unsupported enum discriminant"))]
     UnsupportedEnumDiscriminant,
     #[cfg_attr(feature = "std", error("mls codec error: {0}"))]
-    #[cfg(feature = "std")]
-    Custom(String),
-    #[cfg(not(feature = "std"))]
     Custom(u8),
 }
 

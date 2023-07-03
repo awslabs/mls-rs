@@ -37,6 +37,8 @@ sqlite-bundled = ["sqlite", "aws-mls-provider-sqlite/sqlite-bundled"]
 sqlcipher = ["sqlite", "aws-mls-provider-sqlite/sqlcipher"]
 sqlcipher-bundled = ["sqlite", "aws-mls-provider-sqlite/sqlcipher-bundled"]
 
+test_utils = []
+
 [dependencies]
 aws-mls-core = { path = "../aws-mls-core", default-features = false, version = "*" }
 aws-mls-identity-x509 = { path = "../aws-mls-identity-x509", default-features = false, version = "*", optional = true }
@@ -64,7 +66,7 @@ safer-ffi-gen = { version = "=0.1.0-rc.3", default-features = false, optional = 
 safer-ffi-gen-macro = { version = "=0.1.0-rc.3", optional = true }
 
 # Example
-tokio = { version = "1", optional = true }
+tokio = { version = "1", optional = true, features = ["macros", "rt-multi-thread"] }
 maybe-async = { version = "0.2.7" }
 
 [dev-dependencies]
@@ -75,7 +77,6 @@ serde_json = "^1.0"
 rand = "0.8"
 serde = { version = "1.0", default-features = false, features = ["alloc", "derive"] }
 hex = { version = "^0.4.3", default-features = false, features = ["serde", "alloc"] }
-test_utils = { path = "test_utils" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { version = "^0.2.79" }
@@ -131,3 +132,7 @@ required-features = ["benchmark"]
 name = "secret_tree_serialize"
 harness = false
 required-features = ["benchmark"]
+
+[[test]]
+name = "client_tests"
+required-features = ["test_utils"]

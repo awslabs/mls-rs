@@ -89,8 +89,11 @@ impl InterimTranscriptHash {
     }
 }
 
+// Test vectors come from the MLS interop repository and contain a proposal by reference.
+#[cfg(feature = "by_ref_proposal")]
 #[cfg(test)]
 mod tests {
+    use alloc::boxed::Box;
     use alloc::vec;
     use alloc::vec::Vec;
     use aws_mls_codec::{MlsDecode, MlsEncode};
@@ -101,9 +104,9 @@ mod tests {
         group::{
             confirmation_tag::ConfirmationTag,
             framing::{Content, ContentType},
+            internal::LeafIndex,
             message_signature::AuthenticatedContent,
-            proposal::ProposalOrRef,
-            proposal_ref::ProposalRef,
+            proposal::{Proposal, ProposalOrRef, RemoveProposal},
             test_utils::get_test_group_context,
             transcript_hashes, Commit, Sender,
         },
@@ -174,11 +177,14 @@ mod tests {
 
             let context = get_test_group_context(0x3456, cs.cipher_suite());
 
-            let proposal_ref = ProposalRef::new_fake(cs.hash(&[9, 9, 9]).unwrap());
-            let proposal_ref = ProposalOrRef::Reference(proposal_ref);
+            let proposal = Proposal::Remove(RemoveProposal {
+                to_remove: LeafIndex(1),
+            });
+
+            let proposal = ProposalOrRef::Proposal(Box::new(proposal));
 
             let commit = Commit {
-                proposals: vec![proposal_ref],
+                proposals: vec![proposal],
                 path: None,
             };
 

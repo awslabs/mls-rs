@@ -17,5 +17,5 @@ pub(crate) use filtering::FilterStrategy;
 
 pub(crate) use filtering_common::ProposalApplier;
 
-#[cfg(test)]
+#[cfg(all(feature = "by_ref_proposal", test))]
 pub(crate) use filtering::proposer_can_propose;

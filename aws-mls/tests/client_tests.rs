@@ -1,5 +1,5 @@
 use assert_matches::assert_matches;
-use aws_mls::client_builder::{ClientBuilder, Preferences};
+use aws_mls::client_builder::{ClientBuilder, MlsConfig, Preferences};
 use aws_mls::error::MlsError;
 use aws_mls::group::proposal::Proposal;
 use aws_mls::group::ReceivedMessage;
@@ -12,6 +12,10 @@ use aws_mls::{CipherSuite, Group};
 use aws_mls::{Client, CryptoProvider};
 use aws_mls_core::crypto::CipherSuiteProvider;
 use cfg_if::cfg_if;
+use rand::prelude::SliceRandom;
+use rand::RngCore;
+
+use aws_mls::test_utils::{all_process_message, get_test_basic_credential, TestClient};
 
 #[cfg(not(sync))]
 use futures::Future;
@@ -24,15 +28,37 @@ cfg_if! {
     }
 }
 
-use rand::RngCore;
-use rand::{prelude::IteratorRandom, prelude::SliceRandom, Rng, SeedableRng};
+fn generate_client(
+    cipher_suite: CipherSuite,
+    id: usize,
+    preferences: &Preferences,
+) -> TestClient<impl MlsConfig> {
+    aws_mls::test_utils::generate_basic_client(
+        cipher_suite,
+        id,
+        preferences,
+        &TestCryptoProvider::default(),
+    )
+}
 
-use test_utils::scenario_utils::{
-    add_random_members, all_process_commit_with_update, all_process_message, get_test_groups,
-    remove_members,
-};
-use test_utils::test_client::{generate_client, get_test_basic_credential, TestClientConfig};
+#[maybe_async::maybe_async]
+pub async fn get_test_groups(
+    version: ProtocolVersion,
+    cipher_suite: CipherSuite,
+    num_participants: usize,
+    preferences: &Preferences,
+) -> Vec<Group<impl MlsConfig>> {
+    aws_mls::test_utils::get_test_groups(
+        version,
+        cipher_suite,
+        num_participants,
+        preferences,
+        &TestCryptoProvider::default(),
+    )
+    .await
+}
 
+use rand::seq::IteratorRandom;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
 
@@ -120,8 +146,8 @@ async fn test_create(
         "Testing group creation for cipher suite: {protocol_version:?} {cipher_suite:?}, participants: 1, {preferences:?}"
     );
 
-    let alice = generate_client(cipher_suite, b"alice".to_vec(), preferences.clone());
-    let bob = generate_client(cipher_suite, b"bob".to_vec(), preferences);
+    let alice = generate_client(cipher_suite, 0, &preferences);
+    let bob = generate_client(cipher_suite, 1, &preferences);
 
     let bob_key_pkg = bob
         .client
@@ -171,41 +197,6 @@ async fn test_create_group() {
     test_on_all_params(test_create).await;
 }
 
-#[maybe_async::test(sync, async(not(sync), futures_test::test))]
-async fn test_many_commits() {
-    let cipher_suite = CipherSuite::CURVE25519_AES128;
-    let preferences = Preferences::default();
-
-    let mut groups = get_test_groups(ProtocolVersion::MLS_10, cipher_suite, 11, preferences).await;
-
-    let seed: <rand::rngs::StdRng as SeedableRng>::Seed = rand::random();
-    let mut rng = rand::rngs::StdRng::from_seed(seed);
-    println!("testing random commits for seed {}", hex::encode(seed));
-
-    let mut random_member_first_index = 0;
-    for i in 0..100 {
-        println!("running step {i}");
-        let num_removed = rng.gen_range(0..groups.len());
-        let mut members = (0..groups.len()).choose_multiple(&mut rng, num_removed + 1);
-        let sender = members.pop().unwrap();
-        remove_members(members, sender, &mut groups, None).await;
-
-        let num_added = rng.gen_range(2..12);
-        let sender = rng.gen_range(0..groups.len());
-
-        add_random_members(
-            random_member_first_index,
-            num_added,
-            sender,
-            &mut groups,
-            None,
-        )
-        .await;
-
-        random_member_first_index += num_added;
-    }
-}
-
 #[maybe_async::maybe_async]
 async fn test_empty_commits(
     protocol_version: ProtocolVersion,
@@ -218,13 +209,13 @@ async fn test_empty_commits(
     );
 
     let mut groups =
-        get_test_groups(protocol_version, cipher_suite, participants, preferences).await;
+        get_test_groups(protocol_version, cipher_suite, participants, &preferences).await;
 
     // Loop through each participant and send a path update
 
     for i in 0..groups.len() {
         // Create the commit
-        let commit_output = groups[i].commit(vec![]).await.unwrap();
+        let commit_output = groups[i].commit(Vec::new()).await.unwrap();
 
         assert!(commit_output.welcome_message.is_none());
 
@@ -242,6 +233,7 @@ async fn test_group_path_updates() {
     test_on_all_params(test_empty_commits).await;
 }
 
+#[cfg(feature = "by_ref_proposal")]
 #[maybe_async::maybe_async]
 async fn test_update_proposals(
     protocol_version: ProtocolVersion,
@@ -254,11 +246,11 @@ async fn test_update_proposals(
     );
 
     let mut groups =
-        get_test_groups(protocol_version, cipher_suite, participants, preferences).await;
+        get_test_groups(protocol_version, cipher_suite, participants, &preferences).await;
 
     // Create an update from the ith member, have the ith + 1 member commit it
     for i in 0..groups.len() - 1 {
-        let update_proposal_msg = groups[i].propose_update(vec![]).await.unwrap();
+        let update_proposal_msg = groups[i].propose_update(Vec::new()).await.unwrap();
 
         let sender = groups[i].current_member_index() as usize;
         all_process_message(&mut groups, &update_proposal_msg, sender, false).await;
@@ -266,14 +258,13 @@ async fn test_update_proposals(
         // Everyone receives the commit
         let committer_index = i + 1;
 
-        let commit_output = groups[committer_index].commit(vec![]).await.unwrap();
+        let commit_output = groups[committer_index].commit(Vec::new()).await.unwrap();
 
         assert!(commit_output.welcome_message.is_none());
 
         let commit = commit_output.commit_message();
 
-        // TODO: state_update feature detection needs to be corrected
-        all_process_commit_with_update(&mut groups, commit, committer_index).await;
+        all_process_message(&mut groups, commit, committer_index, true).await;
 
         groups
             .iter()
@@ -281,6 +272,7 @@ async fn test_update_proposals(
     }
 }
 
+#[cfg(feature = "by_ref_proposal")]
 #[maybe_async::test(sync, async(not(sync), futures_test::test))]
 async fn test_group_update_proposals() {
     test_on_all_params(test_update_proposals).await;
@@ -298,7 +290,7 @@ async fn test_remove_proposals(
     );
 
     let mut groups =
-        get_test_groups(protocol_version, cipher_suite, participants, preferences).await;
+        get_test_groups(protocol_version, cipher_suite, participants, &preferences).await;
 
     // Remove people from the group one at a time
     while groups.len() > 1 {
@@ -362,7 +354,7 @@ async fn test_application_messages(
     let message_count = 20;
 
     let mut groups =
-        get_test_groups(protocol_version, cipher_suite, participants, preferences).await;
+        get_test_groups(protocol_version, cipher_suite, participants, &preferences).await;
 
     // Loop through each participant and send application messages
     for i in 0..groups.len() {
@@ -372,7 +364,7 @@ async fn test_application_messages(
         for _ in 0..message_count {
             // Encrypt the application message
             let ciphertext = groups[i]
-                .encrypt_application_message(&test_message, vec![])
+                .encrypt_application_message(&test_message, Vec::new())
                 .await
                 .unwrap();
 
@@ -399,7 +391,7 @@ async fn test_out_of_order_application_messages() {
         ProtocolVersion::MLS_10,
         CipherSuite::CURVE25519_AES128,
         2,
-        Preferences::default(),
+        &Preferences::default(),
     )
     .await;
 
@@ -407,7 +399,7 @@ async fn test_out_of_order_application_messages() {
     let bob_group = &mut groups[1];
 
     let ciphertext = alice_group
-        .encrypt_application_message(&[0], vec![])
+        .encrypt_application_message(&[0], Vec::new())
         .await
         .unwrap();
 
@@ -415,12 +407,12 @@ async fn test_out_of_order_application_messages() {
 
     ciphertexts.push(
         alice_group
-            .encrypt_application_message(&[1], vec![])
+            .encrypt_application_message(&[1], Vec::new())
             .await
             .unwrap(),
     );
 
-    let commit = alice_group.commit(vec![]).await.unwrap().commit_message;
+    let commit = alice_group.commit(Vec::new()).await.unwrap().commit_message;
 
     alice_group.apply_pending_commit().await.unwrap();
 
@@ -428,14 +420,14 @@ async fn test_out_of_order_application_messages() {
 
     ciphertexts.push(
         alice_group
-            .encrypt_application_message(&[2], vec![])
+            .encrypt_application_message(&[2], Vec::new())
             .await
             .unwrap(),
     );
 
     ciphertexts.push(
         alice_group
-            .encrypt_application_message(&[3], vec![])
+            .encrypt_application_message(&[3], Vec::new())
             .await
             .unwrap(),
     );
@@ -470,7 +462,7 @@ async fn processing_message_from_self_returns_error(
         "Verifying that processing one's own message returns an error for cipher suite: {cipher_suite:?}, {preferences:?}",
     );
 
-    let mut creator_group = get_test_groups(protocol_version, cipher_suite, 1, preferences).await;
+    let mut creator_group = get_test_groups(protocol_version, cipher_suite, 1, &preferences).await;
     let creator_group = &mut creator_group[0];
 
     let commit = creator_group
@@ -500,7 +492,7 @@ async fn external_commits_work(
     _n_participants: usize,
     preferences: Preferences,
 ) {
-    let creator = generate_client(cipher_suite, b"alice-0".to_vec(), preferences);
+    let creator = generate_client(cipher_suite, 0, &preferences);
 
     let creator_group = creator
         .client
@@ -517,13 +509,7 @@ async fn external_commits_work(
     const PARTICIPANT_COUNT: usize = 10;
 
     let others = (1..PARTICIPANT_COUNT)
-        .map(|i| {
-            generate_client(
-                cipher_suite,
-                format!("alice-{i}").into_bytes(),
-                Default::default(),
-            )
-        })
+        .map(|i| generate_client(cipher_suite, i, &Default::default()))
         .collect::<Vec<_>>();
 
     let mut groups = vec![creator_group];
@@ -592,33 +578,39 @@ async fn test_remove_nonexisting_leaf() {
         ProtocolVersion::MLS_10,
         CipherSuite::CURVE25519_AES128,
         10,
-        Preferences::default(),
+        &Preferences::default(),
     )
     .await;
 
-    groups[0].propose_remove(5, vec![]).await.unwrap();
-
-    let res = groups[0].propose_remove(13, vec![]).await;
-
-    // Leaf index out of bounds
-    assert!(res.is_err());
-
-    groups[0].commit(vec![]).await.unwrap();
+    groups[0]
+        .commit_builder()
+        .remove_member(5)
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
     groups[0].apply_pending_commit().await.unwrap();
 
-    // Removing blank leaf causes error
-    let res = groups[0].propose_remove(5, vec![]).await;
+    // Leaf index out of bounds
+    assert!(groups[0].commit_builder().remove_member(13).is_err());
 
-    assert!(res.is_err());
+    // Removing blank leaf causes error
+    assert!(groups[0].commit_builder().remove_member(5).is_err());
 }
 
-struct ReinitClientGeneration {
-    client: Client<TestClientConfig>,
+#[cfg(feature = "psk")]
+struct ReinitClientGeneration<C: MlsConfig> {
+    client: Client<C>,
     id1: SigningIdentity,
     id2: SigningIdentity,
 }
 
-fn get_reinit_client(suite1: CipherSuite, suite2: CipherSuite, id: &str) -> ReinitClientGeneration {
+#[cfg(feature = "psk")]
+fn get_reinit_client(
+    suite1: CipherSuite,
+    suite2: CipherSuite,
+    id: &str,
+) -> ReinitClientGeneration<impl MlsConfig> {
     let credential = get_test_basic_credential(id.as_bytes().to_vec());
 
     let csp1 = TestCryptoProvider::new()
@@ -646,6 +638,7 @@ fn get_reinit_client(suite1: CipherSuite, suite2: CipherSuite, id: &str) -> Rein
     ReinitClientGeneration { client, id1, id2 }
 }
 
+#[cfg(feature = "psk")]
 #[maybe_async::test(sync, async(not(sync), futures_test::test))]
 async fn reinit_works() {
     let suite1 = CipherSuite::CURVE25519_AES128;
@@ -693,7 +686,7 @@ async fn reinit_works() {
             ProtocolVersion::MLS_10,
             suite2,
             ExtensionList::default(),
-            vec![],
+            Vec::new(),
         )
         .await
         .unwrap();
@@ -704,7 +697,7 @@ async fn reinit_works() {
         .await
         .unwrap();
 
-    let commit = bob_group.commit(vec![]).await.unwrap().commit_message;
+    let commit = bob_group.commit(Vec::new()).await.unwrap().commit_message;
 
     // Both process Bob's commit
 
@@ -731,11 +724,11 @@ async fn reinit_works() {
     assert_matches!(message, ReceivedMessage::Commit(_));
 
     // They can't create new epochs anymore
-    let res = alice_group.commit(vec![]).await;
+    let res = alice_group.commit(Vec::new()).await;
 
     assert!(res.is_err());
 
-    let res = bob_group.commit(vec![]).await;
+    let res = bob_group.commit(Vec::new()).await;
 
     assert!(res.is_err());
 
@@ -794,13 +787,13 @@ async fn reinit_works() {
 }
 
 #[cfg(feature = "external_commit")]
-#[maybe_async::test(sync, async(not(sync), futures_test::test))]
+#[futures_test::test]
 async fn external_joiner_can_process_siblings_update() {
     let mut groups = get_test_groups(
         ProtocolVersion::MLS_10,
         CipherSuite::P256_AES128,
         3,
-        Preferences::default().with_ratchet_tree_extension(true),
+        &Preferences::default().with_ratchet_tree_extension(true),
     )
     .await;
 
@@ -821,26 +814,24 @@ async fn external_joiner_can_process_siblings_update() {
         .unwrap();
 
     // Create the external joiner and join
-    let new_client = generate_client(
-        CipherSuite::P256_AES128,
-        b"new member".to_vec(),
-        Preferences::default(),
-    );
+    let new_client = generate_client(CipherSuite::P256_AES128, 0xabba, &Preferences::default());
 
-    let (group, commit) = new_client
+    let (mut group, commit) = new_client
         .client
         .commit_external(info, new_client.identity)
         .await
         .unwrap();
 
     all_process_message(&mut groups, &commit, 1, false).await;
-    groups[1] = group;
+    groups.remove(1);
 
     // New client's sibling proposes an update to blank their common parent
-    let p = groups[0].propose_update(vec![]).await.unwrap();
+    let p = groups[0].propose_update(Vec::new()).await.unwrap();
     all_process_message(&mut groups, &p, 0, false).await;
+    group.process_incoming_message(p).await.unwrap();
 
     // Some other member commits
-    let c = groups[2].commit(vec![]).await.unwrap();
-    all_process_message(&mut groups, &c.commit_message, 2, true).await;
+    let c = groups[1].commit(Vec::new()).await.unwrap().commit_message;
+    all_process_message(&mut groups, &c, 2, true).await;
+    group.process_incoming_message(c).await.unwrap();
 }

@@ -256,6 +256,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::PubKeyMismatch));
     }
 
+    #[cfg(feature = "by_ref_proposal")]
     fn setup_direct_path(self_index: LeafIndex, leaf_count: u32) -> TreeKemPrivate {
         let secret = random_hpke_secret_key();
 
@@ -268,6 +269,7 @@ mod tests {
         private_key
     }
 
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(sync, async(not(sync), futures_test::test))]
     async fn test_update_leaf() {
         let self_leaf = LeafIndex(42);

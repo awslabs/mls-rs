@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 
 #[cfg(any(test, feature = "external_client"))]
-use alloc::vec;
+use alloc::{boxed::Box, vec};
 
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 
@@ -109,6 +109,7 @@ impl PreSharedKeyStorage for AlwaysFoundPskStorage {
     }
 }
 
+#[cfg(feature = "psk")]
 #[cfg(test)]
 pub(crate) mod test_utils {
     use crate::crypto::test_utils::test_cipher_suite_provider;
@@ -134,6 +135,7 @@ pub(crate) mod test_utils {
     }
 }
 
+#[cfg(feature = "psk")]
 #[cfg(test)]
 mod tests {
     use crate::crypto::test_utils::TestCryptoProvider;
