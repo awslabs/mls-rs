@@ -356,16 +356,36 @@ impl NodeVec {
         Ok(resolution)
     }
 
-    pub fn is_resolution_empty(&self, index: NodeIndex) -> bool {
-        match self.get(index as usize) {
-            Some(Some(_)) => false,
-            _ if self.is_leaf(index) => true,
-            _ => {
-                // Left and right return an error only if `index` is a leaf, so it's safe to unwrap.
-                self.is_resolution_empty(tree_math::left(index).unwrap_or_default())
-                    && self.is_resolution_empty(tree_math::right(index).unwrap_or_default())
+    pub fn find_in_resolution(
+        &self,
+        index: NodeIndex,
+        to_find: Option<NodeIndex>,
+    ) -> Option<usize> {
+        let mut indexes = vec![index];
+        let mut resolution_len = 0;
+
+        while let Some(index) = indexes.pop() {
+            if let Some(Some(node)) = self.get(index as usize) {
+                if Some(index) == to_find || to_find.is_none() {
+                    return Some(resolution_len);
+                }
+
+                resolution_len += 1;
+
+                if let Node::Parent(p) = node {
+                    indexes.extend(p.unmerged_leaves.iter().map(NodeIndex::from));
+                }
+            } else if index & 1 == 1 {
+                indexes.push(tree_math::right_unchecked(index));
+                indexes.push(tree_math::left_unchecked(index));
             }
         }
+
+        None
+    }
+
+    pub fn is_resolution_empty(&self, index: NodeIndex) -> bool {
+        self.find_in_resolution(index, None).is_none()
     }
 
     pub(crate) fn next_empty_leaf(&self, start: LeafIndex) -> LeafIndex {

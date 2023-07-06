@@ -3,7 +3,9 @@ use itertools::Itertools;
 
 use crate::crypto::HpkeContextR;
 
-use super::{CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkeContextS, HpkeSecretKey};
+use super::{
+    CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkeContextS, HpkePublicKey, HpkeSecretKey,
+};
 
 const PATH: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -75,7 +77,9 @@ pub fn verify_tests<C: CryptoProvider>(crypto: &C) {
 
     for test_suite in test_suites {
         let cs = test_suite.cipher_suite.into();
-        let Some(cs) = crypto.cipher_suite_provider(cs) else { continue };
+        let Some(cs) = crypto.cipher_suite_provider(cs) else {
+            continue;
+        };
 
         verify_signature_tests(&cs, test_suite.signature_tests);
         verify_aead_tests(&cs, test_suite.aead_tests);
@@ -234,19 +238,19 @@ fn verify_hpke_test<C: CipherSuiteProvider>(cs: &C, test_cases: HpkeTestCases) {
             ciphertext: test.sealed_ciphertext.clone(),
         };
 
-        test_open_ciphertext(cs, &secret, &ct, &test);
+        test_open_ciphertext(cs, &secret, &public, &ct, &test);
 
         let ct = HpkeCiphertext {
             kem_output: test.setup_s_kem_output.clone(),
             ciphertext: test.setup_s_ciphertext.clone(),
         };
 
-        test_open_ciphertext(cs, &secret, &ct, &test);
+        test_open_ciphertext(cs, &secret, &public, &ct, &test);
     }
 
     for test in test_cases.export_tests {
         let context_r = cs
-            .hpke_setup_r(&test.kem_output, &secret, &test.info)
+            .hpke_setup_r(&test.kem_output, &secret, &public, &test.info)
             .unwrap();
 
         let exported = context_r
@@ -260,14 +264,17 @@ fn verify_hpke_test<C: CipherSuiteProvider>(cs: &C, test_cases: HpkeTestCases) {
 fn test_open_ciphertext<C: CipherSuiteProvider>(
     cs: &C,
     secret: &HpkeSecretKey,
+    public: &HpkePublicKey,
     ct: &HpkeCiphertext,
     test: &HpkeSealTestCase,
 ) {
     let aad = (!test.aad.is_empty()).then_some(test.aad.as_slice());
-    let opened = cs.hpke_open(ct, secret, &test.info, aad).unwrap();
+    let opened = cs.hpke_open(ct, secret, public, &test.info, aad).unwrap();
     assert_eq!(&opened, &test.plaintext);
 
-    let mut context_r = cs.hpke_setup_r(&ct.kem_output, secret, &test.info).unwrap();
+    let mut context_r = cs
+        .hpke_setup_r(&ct.kem_output, secret, public, &test.info)
+        .unwrap();
     let opened = context_r.open(aad, &ct.ciphertext).unwrap();
     assert_eq!(&opened, &test.plaintext);
 }

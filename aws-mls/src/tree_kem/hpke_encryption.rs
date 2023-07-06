@@ -48,13 +48,14 @@ pub(crate) trait HpkeEncryptable: Sized {
     fn decrypt<P: CipherSuiteProvider>(
         cipher_suite_provider: &P,
         secret_key: &HpkeSecretKey,
+        public_key: &HpkePublicKey,
         context: &[u8],
         ciphertext: &HpkeCiphertext,
     ) -> Result<Self, MlsError> {
         let context = EncryptContext::new(Self::ENCRYPT_LABEL, context).mls_encode_to_vec()?;
 
         let plaintext = cipher_suite_provider
-            .hpke_open(ciphertext, secret_key, &context, None)
+            .hpke_open(ciphertext, secret_key, public_key, &context, None)
             .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
         Self::from_bytes(plaintext.to_vec())
@@ -128,6 +129,7 @@ pub(crate) mod test_utils {
     impl HpkeInteropTestCase {
         pub fn verify<P: CipherSuiteProvider>(&self, cs: &P) {
             let secret = self.secret.clone().into();
+            let public = self.public.clone().into();
 
             let ciphertext = HpkeCiphertext {
                 kem_output: self.kem_output.clone(),
@@ -135,7 +137,7 @@ pub(crate) mod test_utils {
             };
 
             let computed_plaintext =
-                TestEncryptable::decrypt(cs, &secret, &self.context, &ciphertext).unwrap();
+                TestEncryptable::decrypt(cs, &secret, &public, &self.context, &ciphertext).unwrap();
 
             assert_eq!(&computed_plaintext.0, &self.plaintext)
         }

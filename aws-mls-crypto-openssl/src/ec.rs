@@ -188,33 +188,11 @@ pub fn generate_private_key(curve: Curve) -> Result<EcPrivateKey, ErrorStack> {
     Ok(key)
 }
 
-fn private_key_from_bn_nist(
-    mut sk_val: BigNum,
-    ctx: BigNumContext,
-    group: EcGroup,
-    order: BigNum,
-) -> Result<Option<EcPrivateKey>, ErrorStack> {
-    sk_val.set_const_time();
-
-    // The secret can't be greater than or equal to the order of the curve
-    if sk_val.ge(&order) || sk_val.lt(&BigNum::from_u32(1)?) {
-        return Ok(None);
-    }
-
-    // Derive the public key from the private key since this is the only way we can get
-    // what we need from the openssl crate
-    let mut pk_val = EcPoint::new(&group)?;
-    pk_val.mul_generator(&group, &sk_val, &ctx)?;
-
-    let key = EcKey::from_private_components(&group, &sk_val, &pk_val)?;
-
-    // Clear the original sk_val
-    sk_val.clear();
-
-    Some(PKey::from_ec_key(key)).transpose()
-}
-
-fn private_key_from_bytes_nist(bytes: &[u8], nid: Nid) -> Result<Option<EcPrivateKey>, ErrorStack> {
+fn private_key_from_bytes_nist(
+    bytes: &[u8],
+    nid: Nid,
+    with_public: bool,
+) -> Result<EcPrivateKey, EcError> {
     // Get the order and verify that the bytes are in range
     let mut ctx = BigNumContext::new_secure()?;
 
@@ -227,21 +205,37 @@ fn private_key_from_bytes_nist(bytes: &[u8], nid: Nid) -> Result<Option<EcPrivat
     let mut sk_val = BigNum::from_slice(bytes)?;
     sk_val.set_const_time();
 
-    private_key_from_bn_nist(sk_val, ctx, group, order)
+    (sk_val < order && sk_val > BigNum::new()?)
+        .then_some(())
+        .ok_or(EcError::InvalidKeyBytes)?;
+
+    let mut pk_val = EcPoint::new(&group)?;
+
+    if with_public {
+        pk_val.mul_generator(&group, &sk_val, &ctx)?;
+    }
+
+    let key = EcKey::from_private_components(&group, &sk_val, &pk_val)?;
+
+    sk_val.clear();
+
+    Ok(PKey::from_ec_key(key)?)
 }
 
 fn private_key_from_bytes_non_nist(bytes: &[u8], id: Id) -> Result<EcPrivateKey, ErrorStack> {
     PKey::private_key_from_raw_bytes(bytes, id)
 }
 
-pub fn private_key_from_bytes(bytes: &[u8], curve: Curve) -> Result<EcPrivateKey, EcError> {
-    let maybe_secret_key = if let Some(nist_id) = nist_curve_id(curve) {
-        private_key_from_bytes_nist(bytes, nist_id)
+pub fn private_key_from_bytes(
+    bytes: &[u8],
+    curve: Curve,
+    with_public: bool,
+) -> Result<EcPrivateKey, EcError> {
+    if let Some(nist_id) = nist_curve_id(curve) {
+        private_key_from_bytes_nist(bytes, nist_id, with_public)
     } else {
-        Some(private_key_from_bytes_non_nist(bytes, Id::from(curve))).transpose()
-    }?;
-
-    maybe_secret_key.ok_or(EcError::InvalidKeyBytes)
+        Ok(private_key_from_bytes_non_nist(bytes, Id::from(curve))?)
+    }
 }
 
 pub fn private_key_to_bytes(key: &EcPrivateKey) -> Result<Vec<u8>, ErrorStack> {
@@ -253,7 +247,7 @@ pub fn private_key_to_bytes(key: &EcPrivateKey) -> Result<Vec<u8>, ErrorStack> {
 }
 
 pub fn private_key_bytes_to_public(secret_key: &[u8], curve: Curve) -> Result<Vec<u8>, EcError> {
-    let secret_key = private_key_from_bytes(secret_key, curve)?;
+    let secret_key = private_key_from_bytes(secret_key, curve, true)?;
     let public_key = private_key_to_public(&secret_key)?;
     Ok(pub_key_to_uncompressed(&public_key)?)
 }
@@ -447,7 +441,7 @@ mod tests {
         Curve::all().for_each(|curve| {
             let key_bytes = get_test_secret_keys().get_key_from_curve(curve);
 
-            let imported_key = private_key_from_bytes(&key_bytes, curve)
+            let imported_key = private_key_from_bytes(&key_bytes, curve, true)
                 .unwrap_or_else(|e| panic!("Failed to import private key for {curve:?} : {e:?}"));
 
             let exported_bytes = private_key_to_bytes(&imported_key)
@@ -519,10 +513,10 @@ mod tests {
         )
         .unwrap();
 
-        // Keys must be <= to order
-        let p256_res = private_key_from_bytes(&p256_order, Curve::P256);
-        let p384_res = private_key_from_bytes(&p384_order, Curve::P384);
-        let p521_res = private_key_from_bytes(&p521_order, Curve::P521);
+        // Keys must be < to order
+        let p256_res = private_key_from_bytes(&p256_order, Curve::P256, true);
+        let p384_res = private_key_from_bytes(&p384_order, Curve::P384, true);
+        let p521_res = private_key_from_bytes(&p521_order, Curve::P521, true);
 
         assert_matches!(p256_res, Err(EcError::InvalidKeyBytes));
         assert_matches!(p384_res, Err(EcError::InvalidKeyBytes));
@@ -533,7 +527,7 @@ mod tests {
         // Keys must not be 0
         for curve in nist_curves {
             assert_matches!(
-                private_key_from_bytes(&vec![0u8; curve.secret_key_size()], curve),
+                private_key_from_bytes(&vec![0u8; curve.secret_key_size()], curve, true),
                 Err(EcError::InvalidKeyBytes)
             );
         }

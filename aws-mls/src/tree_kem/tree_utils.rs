@@ -5,9 +5,9 @@ use core::borrow::BorrowMut;
 use debug_tree::TreeBuilder;
 
 use super::node::NodeIndex;
+use super::tree_math::{left_unchecked, right_unchecked};
 use super::{math::root, node::NodeVec};
 use crate::client::MlsError;
-use crate::tree_kem::math::{left, right};
 
 pub(crate) fn build_tree(
     tree: &mut TreeBuilder,
@@ -51,8 +51,9 @@ pub(crate) fn build_tree(
 
     let mut branch = tree.add_branch(&parent_tag);
 
-    build_tree(tree, nodes, left(idx)?)?;
-    build_tree(tree, nodes, right(idx)?)?;
+    //This cannot panic, as we already checked that idx is not a leaf
+    build_tree(tree, nodes, left_unchecked(idx))?;
+    build_tree(tree, nodes, right_unchecked(idx))?;
 
     branch.release();
 

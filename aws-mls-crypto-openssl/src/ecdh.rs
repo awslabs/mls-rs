@@ -95,7 +95,7 @@ impl DhType for Ecdh {
         public_key: &HpkePublicKey,
     ) -> Result<Vec<u8>, Self::Error> {
         Ok(private_key_ecdh(
-            &private_key_from_bytes(secret_key, self.0)?,
+            &private_key_from_bytes(secret_key, self.0, false)?,
             &self.to_ec_public_key(public_key)?,
         )?)
     }

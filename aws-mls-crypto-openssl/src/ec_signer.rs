@@ -87,7 +87,7 @@ impl EcSigner {
         &self,
         key: &SignatureSecretKey,
     ) -> Result<PKey<Private>, EcSignerError> {
-        private_key_from_bytes(key, self.0).map_err(Into::into)
+        private_key_from_bytes(key, self.0, true).map_err(Into::into)
     }
 
     #[cfg(feature = "x509")]
@@ -103,7 +103,7 @@ impl EcSigner {
         secret_key: &SignatureSecretKey,
         data: &[u8],
     ) -> Result<Vec<u8>, EcSignerError> {
-        let secret_key = private_key_from_bytes(secret_key, self.0)?;
+        let secret_key = private_key_from_bytes(secret_key, self.0, true)?;
 
         let mut signer = match self.message_digest() {
             Some(md) => openssl::sign::Signer::new(md, &secret_key),

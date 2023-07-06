@@ -146,7 +146,9 @@ async fn interop_passive_client() {
         .chain(test_cases_rand.into_iter())
     {
         let crypto_provider = TestCryptoProvider::new();
-        let Some(cs) = crypto_provider.cipher_suite_provider(test_case.cipher_suite.into()) else { continue };
+        let Some(cs) = crypto_provider.cipher_suite_provider(test_case.cipher_suite.into()) else {
+            continue;
+        };
 
         let message = MLSMessage::from_bytes(&test_case.key_package).unwrap();
         let key_package = message.into_key_package().unwrap();
@@ -268,7 +270,9 @@ pub async fn generate_passive_client_proposal_tests() {
 
     for cs in CipherSuite::all() {
         let crypto_provider = TestCryptoProvider::new();
-        let Some(cs) = crypto_provider.cipher_suite_provider(cs) else { continue };
+        let Some(cs) = crypto_provider.cipher_suite_provider(cs) else {
+            continue;
+        };
 
         let mut groups = get_test_groups(
             ProtocolVersion::MLS_10,
@@ -466,7 +470,9 @@ pub async fn generate_passive_client_welcome_tests() {
 
     for cs in CipherSuite::all() {
         let crypto_provider = TestCryptoProvider::new();
-        let Some(cs) = crypto_provider.cipher_suite_provider(cs) else { continue };
+        let Some(cs) = crypto_provider.cipher_suite_provider(cs) else {
+            continue;
+        };
 
         for with_tree_in_extension in [true, false] {
             for (with_psk, with_path) in [false, true].into_iter().cartesian_product([true, false])
@@ -506,7 +512,9 @@ pub async fn generate_passive_client_random_tests() {
 
     for cs in CipherSuite::all() {
         let crypto = TestCryptoProvider::new();
-        let Some(csp) = crypto.cipher_suite_provider(cs) else { continue };
+        let Some(csp) = crypto.cipher_suite_provider(cs) else {
+            continue;
+        };
 
         let creator = generate_basic_client(cs, 0, &Default::default(), &crypto);
 

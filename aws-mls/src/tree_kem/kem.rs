@@ -174,42 +174,46 @@ impl<'a> TreeKem<'a> {
     where
         CP: CipherSuiteProvider,
     {
-        // Exclude newly added leaf indexes
-        let excluding = added_leaves
-            .iter()
-            .map(NodeIndex::from)
-            .collect::<Vec<NodeIndex>>();
-
         let self_index = self.private_key.self_index;
 
         let lca_index =
             tree_math::leaf_lca_level(self_index.into(), sender_index.into()) as usize - 2;
 
+        let mut path = self.tree_kem_public.nodes.direct_path(self_index)?;
+        path.insert(0, self_index.into());
+        let resolved_pos = self.find_resolved_pos(&path, lca_index)?;
+        let ct_pos = self.find_ciphertext_pos(path[lca_index], path[resolved_pos], added_leaves)?;
+
         let lca_node = update_path.nodes[lca_index]
             .as_ref()
             .ok_or(MlsError::LcaNotFoundInDirectPath)?;
 
-        let direct_path_copath = self
+        let ct = lca_node
+            .encrypted_path_secret
+            .get(ct_pos)
+            .ok_or(MlsError::LcaNotFoundInDirectPath)?;
+
+        let secret = self.private_key.secret_keys[resolved_pos]
+            .as_ref()
+            .ok_or(MlsError::UpdateErrorNoSecretKey)?;
+
+        let public = self
             .tree_kem_public
             .nodes
-            .direct_path_copath(sender_index)?;
+            .borrow_node(path[resolved_pos])?
+            .as_ref()
+            .ok_or(MlsError::UpdateErrorNoSecretKey)?
+            .public_key();
 
-        let lca_path_secret = self.decrypt_parent_path_secret(
-            lca_node,
-            direct_path_copath[lca_index].1,
-            &excluding,
-            context_bytes,
-            cipher_suite_provider,
-        )?;
+        let lca_path_secret =
+            PathSecret::decrypt(cipher_suite_provider, secret, public, context_bytes, ct)?;
 
         // Derive the rest of the secrets for the tree and assign to the proper nodes
         let mut node_secret_gen =
             PathSecretGenerator::starting_with(cipher_suite_provider, lca_path_secret);
 
         // Update secrets based on the decrypted path secret in the update
-        self.private_key
-            .secret_keys
-            .resize(direct_path_copath.len() + 1, None);
+        self.private_key.secret_keys.resize(path.len() + 1, None);
 
         for (i, update) in update_path.nodes.iter().enumerate().skip(lca_index) {
             if let Some(update) = update {
@@ -272,61 +276,57 @@ impl<'a> TreeKem<'a> {
         })
     }
 
-    fn decrypt_parent_path_secret<P: CipherSuiteProvider>(
+    #[inline]
+    fn find_resolved_pos(
         &self,
-        update_node: &UpdatePathNode,
-        lca_direct_path_child: NodeIndex,
-        excluding: &[NodeIndex],
-        context: &[u8],
-        cipher_suite_provider: &P,
-    ) -> Result<PathSecret, MlsError> {
-        // Find the node in the resolution of the copath child that is above the sender
-        let self_index = 2 * *self.private_key.self_index;
+        path: &[NodeIndex],
+        mut lca_index: usize,
+    ) -> Result<usize, MlsError> {
+        while self.tree_kem_public.nodes.is_blank(path[lca_index])? {
+            lca_index -= 1;
+        }
 
-        let resolution = self
+        // If we don't have the key, we should be an unmerged leaf at the resolved node. (If
+        // we're not, an error will be thrown later.)
+        if self.private_key.secret_keys[lca_index].is_none() {
+            lca_index = 0;
+        }
+
+        Ok(lca_index)
+    }
+
+    #[inline]
+    fn find_ciphertext_pos(
+        &self,
+        lca: NodeIndex,
+        resolved: NodeIndex,
+        excluding: &[LeafIndex],
+    ) -> Result<usize, MlsError> {
+        let pos = self
             .tree_kem_public
             .nodes
-            .get_resolution_index(lca_direct_path_child)?;
-
-        let (resolved, ct) = resolution
-            .iter()
-            .filter(|i| !excluding.contains(i))
-            .zip(&update_node.encrypted_path_secret)
-            .find(|(i, _)| {
-                let l = tree_math::level(**i) + 1;
-                *i >> l == self_index >> l
-            })
+            .find_in_resolution(lca, Some(resolved))
             .ok_or(MlsError::UpdateErrorNoSecretKey)?;
 
-        let secret_key = self
-            .private_key
-            .secret_keys
-            .get(tree_math::level(*resolved) as usize)
-            .ok_or(MlsError::UpdateErrorNoSecretKey)?
-            .as_ref();
+        if pos == 0 {
+            return Ok(0);
+        }
 
-        // If the sender didn't find the key, then it must be an unmerged leaf of the found node.
-        let (secret_key, ct) = match secret_key {
-            Some(secret_key) => (secret_key, ct),
-            None => {
-                let secret_key = self
-                    .private_key
-                    .secret_keys
-                    .first()
-                    .and_then(Option::as_ref)
-                    .ok_or(MlsError::UpdateErrorNoSecretKey)?;
+        let lca_subtree_start = tree_math::subtree(lca).0;
 
-                let ct = resolution
-                    .iter()
-                    .filter(|i| !excluding.contains(i))
-                    .zip(&update_node.encrypted_path_secret)
-                    .find_map(|(i, ct)| (i == &self_index).then_some(ct));
+        let (mut n_excluded, mut l_excluded) = (0, 0);
 
-                (secret_key, ct.ok_or(MlsError::UpdateErrorNoSecretKey)?)
-            }
-        };
+        while n_excluded < excluding.len() && excluding[n_excluded] < lca_subtree_start {
+            n_excluded += 1;
+        }
 
-        PathSecret::decrypt(cipher_suite_provider, secret_key, context, ct)
+        while (n_excluded + l_excluded) < excluding.len()
+            && 2 * *excluding[n_excluded + l_excluded] < resolved
+        {
+            l_excluded += 1;
+        }
+
+        Ok(pos - l_excluded)
     }
 }
 
@@ -428,11 +428,15 @@ mod tests {
                 .public_key();
 
             let test_data = random_bytes(32);
+
             let sealed = provider
                 .hpke_seal(public_key, &[], None, &test_data)
                 .unwrap();
 
-            let opened = provider.hpke_open(&sealed, secret_key, &[], None).unwrap();
+            let opened = provider
+                .hpke_open(&sealed, secret_key, public_key, &[], None)
+                .unwrap();
+
             assert_eq!(test_data, opened);
         }
     }

@@ -259,6 +259,7 @@ pub trait CipherSuiteProvider: Send + Sync {
         &self,
         ciphertext: &HpkeCiphertext,
         local_secret: &HpkeSecretKey,
+        local_public: &HpkePublicKey,
         info: &[u8],
         aad: Option<&[u8]>,
     ) -> Result<Vec<u8>, Self::Error>;
@@ -298,6 +299,8 @@ pub trait CipherSuiteProvider: Send + Sync {
         &self,
         kem_output: &[u8],
         local_secret: &HpkeSecretKey,
+        local_public: &HpkePublicKey,
+
         info: &[u8],
     ) -> Result<Self::HpkeContextR, Self::Error>;
 

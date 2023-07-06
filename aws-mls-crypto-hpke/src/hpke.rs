@@ -142,11 +142,19 @@ where
         &self,
         ciphertext: &HpkeCiphertext,
         local_secret: &HpkeSecretKey,
+        local_public: &HpkePublicKey,
         info: &[u8],
         psk: Option<Psk>,
         aad: Option<&[u8]>,
     ) -> Result<Vec<u8>, HpkeError> {
-        let mut hpke_ctx = self.setup_receiver(&ciphertext.kem_output, local_secret, info, psk)?;
+        let mut hpke_ctx = self.setup_receiver(
+            &ciphertext.kem_output,
+            local_secret,
+            local_public,
+            info,
+            psk,
+        )?;
+
         hpke_ctx.open(aad, &ciphertext.ciphertext)
     }
 
@@ -182,6 +190,7 @@ where
         &self,
         enc: &[u8],
         local_secret: &HpkeSecretKey,
+        local_public: &HpkePublicKey,
         info: &[u8],
         psk: Option<Psk>,
     ) -> Result<ContextR<KDF, AEAD>, HpkeError> {
@@ -189,7 +198,7 @@ where
 
         let shared_secret = self
             .kem
-            .decap(enc, local_secret)
+            .decap(enc, local_secret, local_public)
             .map_err(|e| HpkeError::KemError(e.into_any_error()))?;
 
         self.key_schedule(mode, &shared_secret, info, psk)
@@ -365,7 +374,9 @@ mod test {
     }
 
     fn run_test_case(test_case: HpkeTestCase) {
-        let Some(cipher_suite) =  filter_test_case(&test_case.algo) else { return; };
+        let Some(cipher_suite) = filter_test_case(&test_case.algo) else {
+            return;
+        };
 
         println!("Testing HPKE for ciphersuite {cipher_suite:?}",);
 
@@ -377,8 +388,10 @@ mod test {
         let mut hpke = test_hpke(cipher_suite, false);
         hpke.kem.set_test_data(test_case.ikm_e);
 
+        let pk_rm = test_case.pk_rm.into();
+
         let (enc, context) = hpke
-            .setup_sender(&test_case.pk_rm.into(), &test_case.info, psk.clone())
+            .setup_sender(&pk_rm, &test_case.info, psk.clone())
             .unwrap();
 
         assert_eq!(enc, test_case.enc);
@@ -391,7 +404,7 @@ mod test {
         );
 
         let context = hpke
-            .setup_receiver(&enc, &test_case.sk_rm.into(), &test_case.info, psk)
+            .setup_receiver(&enc, &test_case.sk_rm.into(), &pk_rm, &test_case.info, psk)
             .unwrap();
 
         assert_eq!(context.0.exporter_secret(), &test_case.exporter_secret);
@@ -419,7 +432,10 @@ mod test {
         let (secret, remote_pub) = hpke.generate().unwrap();
 
         let (enc, mut sender_ctx) = hpke.setup_sender(&remote_pub, &[], None).unwrap();
-        let mut receiver_ctx = hpke.setup_receiver(&enc, &secret, &[], None).unwrap();
+
+        let mut receiver_ctx = hpke
+            .setup_receiver(&enc, &secret, &remote_pub, &[], None)
+            .unwrap();
 
         assert_matches!(
             sender_ctx.seal(None, b"test"),

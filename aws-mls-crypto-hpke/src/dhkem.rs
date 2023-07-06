@@ -110,7 +110,12 @@ impl<DH: DhType, KDF: KdfType> KemType for DhKem<DH, KDF> {
         Ok(KemResult::new(shared_secret, ephemeral_pk.into()))
     }
 
-    fn decap(&self, enc: &[u8], secret_key: &HpkeSecretKey) -> Result<Vec<u8>, Self::Error> {
+    fn decap(
+        &self,
+        enc: &[u8],
+        secret_key: &HpkeSecretKey,
+        public_key: &HpkePublicKey,
+    ) -> Result<Vec<u8>, Self::Error> {
         let remote_pk = enc.to_vec().into();
 
         let ecdh_ss = self
@@ -119,12 +124,7 @@ impl<DH: DhType, KDF: KdfType> KemType for DhKem<DH, KDF> {
             .map(Zeroizing::new)
             .map_err(|e| DhKemError::DhError(e.into_any_error()))?;
 
-        let local_public_key = self
-            .dh
-            .to_public(secret_key)
-            .map_err(|e| DhKemError::DhError(e.into_any_error()))?;
-
-        let kem_context = [enc, &local_public_key].concat();
+        let kem_context = [enc, public_key].concat();
 
         self.kdf
             .labeled_extract_then_expand(&ecdh_ss, &kem_context, self.n_secret)
@@ -275,18 +275,23 @@ mod test {
     }
 
     fn encap_decap_test_case(test_case: EncapDecapTestCase) {
-        let Some(cipher_suite) =  filter_test_case(&test_case.algo) else { return; };
+        let Some(cipher_suite) = filter_test_case(&test_case.algo) else {
+            return;
+        };
 
-        println!("Testing DHKEM for ciphersuite {cipher_suite:?}");
+        let pk_rm = test_case.pk_rm.into();
 
         let mut dhkem = test_dhkem(cipher_suite);
         dhkem.set_test_data(test_case.ikm_e);
 
-        let res = dhkem.encap(&test_case.pk_rm.into()).unwrap();
+        let res = dhkem.encap(&pk_rm).unwrap();
         assert_eq!(res.enc(), &test_case.enc);
         assert_eq!(res.shared_secret(), &test_case.shared_secret);
 
-        let shared_secret = dhkem.decap(res.enc(), &test_case.sk_rm.into()).unwrap();
+        let shared_secret = dhkem
+            .decap(res.enc(), &test_case.sk_rm.into(), &pk_rm)
+            .unwrap();
+
         assert_eq!(shared_secret, test_case.shared_secret);
     }
 }

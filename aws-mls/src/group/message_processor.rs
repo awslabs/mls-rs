@@ -410,7 +410,9 @@ pub(crate) trait MessageProcessor: Send + Sync {
             feature = "external_proposal",
             feature = "by_ref_proposal",
             feature = "external_commit"
-        ))] let Sender::Member(sender_index) = sender else {
+        ))]
+        let Sender::Member(sender_index) = sender
+        else {
             return Err(MlsError::InvalidSender);
         };
 

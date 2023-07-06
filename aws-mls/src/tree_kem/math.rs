@@ -12,6 +12,7 @@ pub fn root(n: u32) -> u32 {
     n - 1
 }
 
+#[cfg(any(feature = "secret_tree_access", feature = "private_message", test))]
 pub fn left(x: u32) -> Result<u32, MlsError> {
     if x & 1 == 0 {
         Err(MlsError::LeafNodeNoChildren)
@@ -25,6 +26,7 @@ pub fn left_unchecked(x: u32) -> u32 {
     x ^ (0x01 << (level(x) - 1))
 }
 
+#[cfg(any(feature = "secret_tree_access", feature = "private_message", test))]
 pub fn right(x: u32) -> Result<u32, MlsError> {
     if x & 1 == 0 {
         Err(MlsError::LeafNodeNoChildren)

@@ -245,7 +245,13 @@ mod tests {
                 .unwrap();
 
             let opened = cipher_suite_provider
-                .hpke_open(&sealed, &generated.init_secret_key, &[], None)
+                .hpke_open(
+                    &sealed,
+                    &generated.init_secret_key,
+                    &generated.key_package.hpke_init_key,
+                    &[],
+                    None,
+                )
                 .unwrap();
 
             assert_eq!(opened, test_data);

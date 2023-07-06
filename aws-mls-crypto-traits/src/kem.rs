@@ -21,7 +21,13 @@ pub trait KemType {
     fn public_key_validate(&self, key: &HpkePublicKey) -> Result<(), Self::Error>;
 
     fn encap(&self, remote_key: &HpkePublicKey) -> Result<KemResult, Self::Error>;
-    fn decap(&self, enc: &[u8], secret_key: &HpkeSecretKey) -> Result<Vec<u8>, Self::Error>;
+
+    fn decap(
+        &self,
+        enc: &[u8],
+        secret_key: &HpkeSecretKey,
+        local_public: &HpkePublicKey,
+    ) -> Result<Vec<u8>, Self::Error>;
 }
 
 /// Struct to represent the output of the kem [encap](KemType::encap) function

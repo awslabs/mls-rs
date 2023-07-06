@@ -430,6 +430,7 @@ where
         let group_secrets = GroupSecrets::decrypt(
             &cipher_suite_provider,
             &key_package_generation.init_secret_key,
+            &key_package_generation.key_package.hpke_init_key,
             &welcome.encrypted_group_info,
             &encrypted_group_secrets.encrypted_group_secrets,
         )?;

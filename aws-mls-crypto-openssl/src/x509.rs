@@ -966,7 +966,8 @@ mod tests {
 
         assert_eq!(expected_csr, built_csr.request_data());
 
-        let built_secret = private_key_from_bytes(built_csr.secret_key(), Curve::Ed25519).unwrap();
+        let built_secret =
+            private_key_from_bytes(built_csr.secret_key(), Curve::Ed25519, true).unwrap();
         let expected_public = private_key_to_public(&built_secret).unwrap();
 
         let public_key = X509Req::from_der(built_csr.request_data())
@@ -996,7 +997,7 @@ mod tests {
 
         assert_ne!(secret, other_crt.generated_secret().unwrap());
 
-        let secret = private_key_from_bytes(secret, Curve::Ed448).unwrap();
+        let secret = private_key_from_bytes(secret, Curve::Ed448, true).unwrap();
         let public = private_key_to_public(&secret).unwrap();
 
         let crt_public = X509::from_der(crt.certificate_chain().leaf().unwrap())

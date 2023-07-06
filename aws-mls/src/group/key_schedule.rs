@@ -57,8 +57,11 @@ impl KeySchedule {
         kem_output: &[u8],
         cipher_suite: &P,
     ) -> Result<KeySchedule, MlsError> {
-        let (secret, _public) = self.get_external_key_pair(cipher_suite)?;
-        let init_secret = InitSecret::decode_for_external(cipher_suite, kem_output, &secret)?;
+        let (secret, public) = self.get_external_key_pair(cipher_suite)?;
+
+        let init_secret =
+            InitSecret::decode_for_external(cipher_suite, kem_output, &secret, &public)?;
+
         Ok(KeySchedule::new(init_secret))
     }
 
@@ -328,9 +331,10 @@ impl InitSecret {
         cipher_suite: &P,
         kem_output: &[u8],
         external_secret: &HpkeSecretKey,
+        external_pub: &HpkePublicKey,
     ) -> Result<Self, MlsError> {
         let context = cipher_suite
-            .hpke_setup_r(kem_output, external_secret, &[])
+            .hpke_setup_r(kem_output, external_secret, external_pub, &[])
             .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
         context

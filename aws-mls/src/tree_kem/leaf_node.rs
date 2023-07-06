@@ -428,7 +428,9 @@ mod tests {
                 .hpke_seal(&leaf_node.public_key, &[], None, &test_data)
                 .unwrap();
 
-            let opened = provider.hpke_open(&sealed, &secret_key, &[], None).unwrap();
+            let opened = provider
+                .hpke_open(&sealed, &secret_key, &leaf_node.public_key, &[], None)
+                .unwrap();
 
             assert_eq!(opened, test_data);
 

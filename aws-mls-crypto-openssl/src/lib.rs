@@ -265,19 +265,25 @@ where
         &self,
         ciphertext: &HpkeCiphertext,
         local_secret: &HpkeSecretKey,
+        local_public: &HpkePublicKey,
         info: &[u8],
         aad: Option<&[u8]>,
     ) -> Result<Vec<u8>, Self::Error> {
-        Ok(self.hpke.open(ciphertext, local_secret, info, None, aad)?)
+        Ok(self
+            .hpke
+            .open(ciphertext, local_secret, local_public, info, None, aad)?)
     }
 
     fn hpke_setup_r(
         &self,
         enc: &[u8],
         local_secret: &HpkeSecretKey,
+        local_public: &HpkePublicKey,
         info: &[u8],
     ) -> Result<Self::HpkeContextR, Self::Error> {
-        Ok(self.hpke.setup_receiver(enc, local_secret, info, None)?)
+        Ok(self
+            .hpke
+            .setup_receiver(enc, local_secret, local_public, info, None)?)
     }
 
     fn hpke_setup_s(
