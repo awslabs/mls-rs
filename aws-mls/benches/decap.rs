@@ -1,3 +1,4 @@
+#[cfg(sync)]
 use aws_mls::{
     bench_utils::create_empty_tree::{load_test_cases, TestCase},
     tree_kem::{
@@ -6,24 +7,27 @@ use aws_mls::{
     },
     CipherSuite, ExtensionList,
 };
+#[cfg(sync)]
 use aws_mls_codec::MlsEncode;
+#[cfg(sync)]
 use aws_mls_core::crypto::CryptoProvider;
+#[cfg(sync)]
 use aws_mls_crypto_openssl::OpensslCryptoProvider;
+#[cfg(sync)]
 use criterion::{
-    async_executor::FuturesExecutor, criterion_group, criterion_main, measurement::WallTime,
-    BatchSize, BenchmarkGroup, BenchmarkId, Criterion,
+    criterion_group, criterion_main, measurement::WallTime, BatchSize, BenchmarkGroup, BenchmarkId,
+    Criterion,
 };
-use futures::executor::block_on;
+#[cfg(sync)]
 use std::collections::HashMap;
 
+#[cfg(sync)]
 fn decap_setup(c: &mut Criterion) {
     let mut decap_group = c.benchmark_group("decap");
 
     let cipher_suite = CipherSuite::CURVE25519_AES128;
 
-    println!("Benchmarking decap for: {cipher_suite:?}");
-
-    let trees = block_on(load_test_cases());
+    let trees = load_test_cases();
 
     // Run Decap Benchmark
     bench_decap(&mut decap_group, cipher_suite, trees, &[], None, None);
@@ -31,6 +35,7 @@ fn decap_setup(c: &mut Criterion) {
     decap_group.finish();
 }
 
+#[cfg(sync)]
 fn bench_decap(
     bench_group: &mut BenchmarkGroup<WallTime>,
     cipher_suite: CipherSuite,
@@ -46,8 +51,8 @@ fn bench_decap(
             extensions: extensions.clone().unwrap_or_default(),
         };
 
-        let encap_gen = block_on(
-            TreeKem::new(&mut value.encap_tree, &mut value.encap_private_key).encap(
+        let encap_gen = TreeKem::new(&mut value.encap_tree, &mut value.encap_private_key)
+            .encap(
                 &mut value.group_context,
                 &[],
                 &value.encap_signer,
@@ -56,9 +61,8 @@ fn bench_decap(
                 &OpensslCryptoProvider::new()
                     .cipher_suite_provider(cipher_suite)
                     .unwrap(),
-            ),
-        )
-        .unwrap();
+            )
+            .unwrap();
 
         // Apply the update path to the rest of the leaf nodes using the decap function
         let validated_update_path = &ValidatedUpdatePath {
@@ -74,26 +78,26 @@ fn bench_decap(
             BenchmarkId::new(format!("{cipher_suite:?}"), key),
             &key,
             |b, _| {
-                b.to_async(FuturesExecutor).iter_batched(
+                b.iter_batched_ref(
                     || {
                         (
                             receiver_tree.clone(),
                             private_keys[0].clone(),
-                            value.group_context.clone(),
+                            value.group_context.mls_encode_to_vec().unwrap(),
+                            OpensslCryptoProvider::new()
+                                .cipher_suite_provider(cipher_suite)
+                                .unwrap(),
                         )
                     },
-                    |(mut receiver_tree, mut private_key, group_context)| async move {
-                        TreeKem::new(&mut receiver_tree, &mut private_key)
+                    move |(receiver_tree, private_key, group_context, cs)| {
+                        TreeKem::new(receiver_tree, private_key)
                             .decap(
                                 LeafIndex::new(0),
                                 validated_update_path,
                                 added_leaves,
-                                &group_context.mls_encode_to_vec().unwrap(),
-                                &OpensslCryptoProvider::new()
-                                    .cipher_suite_provider(cipher_suite)
-                                    .unwrap(),
+                                &group_context,
+                                cs,
                             )
-                            .await
                             .unwrap();
                     },
                     BatchSize::SmallInput,
@@ -103,5 +107,8 @@ fn bench_decap(
     }
 }
 
-criterion_group!(benches, decap_setup);
-criterion_main!(benches);
+#[cfg(not(sync))]
+fn decap_setup(_: &mut criterion::Criterion) {}
+
+criterion::criterion_group!(benches, decap_setup);
+criterion::criterion_main!(benches);
