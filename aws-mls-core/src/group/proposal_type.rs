@@ -3,12 +3,14 @@ use core::ops::Deref;
 
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 
+/// Wrapper type representing a proposal type identifier along with default
+/// values defined by the MLS RFC.
 #[derive(
     Clone, Copy, Eq, Hash, PartialOrd, Ord, PartialEq, MlsSize, MlsEncode, MlsDecode, Debug,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-/// Wrapper type representing a proposal type identifier along with default
-/// values defined by the MLS RFC.
+#[cfg_attr(feature = "ffi", safer_ffi_gen::ffi_type(clone))]
+#[repr(transparent)]
 pub struct ProposalType(u16);
 
 impl ProposalType {
