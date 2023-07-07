@@ -33,7 +33,7 @@ pub trait IntoAnyError: core::fmt::Debug + Sized {
     #[cfg(feature = "std")]
     fn into_any_error(self) -> AnyError {
         self.into_dyn_error()
-            .map_or_else(|_| AnyError(std::any::type_name::<Self>().into()), AnyError)
+            .map_or_else(|this| AnyError(format!("{this:?}").into()), AnyError)
     }
 
     #[cfg(not(feature = "std"))]
