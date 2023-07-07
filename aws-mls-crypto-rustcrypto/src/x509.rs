@@ -38,6 +38,8 @@ pub enum X509Error {
         error("cipher suite {0:?} is not a valid signing key")
     )]
     InvalidSigningKey(CipherSuite),
+    #[cfg_attr(feature = "std", error("unsupported cipher suite"))]
+    UnsupportedCipherSuite,
     #[cfg_attr(
         feature = "std",
         error("subject alt name type of {0:?} is not supported")

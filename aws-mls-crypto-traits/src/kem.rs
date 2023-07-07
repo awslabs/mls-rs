@@ -1,5 +1,5 @@
 use aws_mls_core::{
-    crypto::{HpkePublicKey, HpkeSecretKey},
+    crypto::{CipherSuite, HpkePublicKey, HpkeSecretKey},
     error::IntoAnyError,
 };
 
@@ -48,5 +48,44 @@ impl KemResult {
     /// Returns the ciphertext encapsulating the shared secret.
     pub fn enc(&self) -> &[u8] {
         &self.enc
+    }
+}
+
+/// Kem identifiers for HPKE
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[repr(u16)]
+#[non_exhaustive]
+pub enum KemId {
+    DhKemP256Sha256 = 0x0010,
+    DhKemP384Sha384 = 0x0011,
+    DhKemP521Sha512 = 0x0012,
+    DhKemX25519Sha256 = 0x0020,
+    DhKemX448Sha512 = 0x0021,
+}
+
+impl KemId {
+    pub fn new(cipher_suite: CipherSuite) -> Option<Self> {
+        match cipher_suite {
+            CipherSuite::CURVE25519_AES128 | CipherSuite::CURVE25519_CHACHA => {
+                Some(KemId::DhKemX25519Sha256)
+            }
+            CipherSuite::P256_AES128 => Some(KemId::DhKemP256Sha256),
+            CipherSuite::CURVE448_AES256 | CipherSuite::CURVE448_CHACHA => {
+                Some(KemId::DhKemX448Sha512)
+            }
+            CipherSuite::P384_AES256 => Some(KemId::DhKemP384Sha384),
+            CipherSuite::P521_AES256 => Some(KemId::DhKemP521Sha512),
+            _ => None,
+        }
+    }
+
+    pub fn n_secret(&self) -> usize {
+        match self {
+            KemId::DhKemP256Sha256 => 32,
+            KemId::DhKemP384Sha384 => 48,
+            KemId::DhKemP521Sha512 => 64,
+            KemId::DhKemX25519Sha256 => 32,
+            KemId::DhKemX448Sha512 => 64,
+        }
     }
 }

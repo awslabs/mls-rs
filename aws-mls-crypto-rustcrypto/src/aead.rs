@@ -4,7 +4,7 @@ use core::fmt::Debug;
 
 use aes_gcm::{Aes128Gcm, Aes256Gcm, KeyInit};
 use aws_mls_core::{crypto::CipherSuite, error::IntoAnyError};
-use aws_mls_crypto_traits::AeadType;
+use aws_mls_crypto_traits::{AeadId, AeadType, AES_TAG_LEN};
 use chacha20poly1305::ChaCha20Poly1305;
 use rc_aead::{generic_array::GenericArray, Payload};
 
@@ -43,34 +43,12 @@ impl IntoAnyError for AeadError {
         Ok(self.into())
     }
 }
-
-pub const TAG_LEN: usize = 16;
-pub const NONCE_LEN: usize = 12;
-
-/// Aead ID as specified in RFC 9180, Table 5.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[repr(u16)]
-pub enum Aead {
-    /// AES-128-GCM: 16 byte key, 12 byte nonce, 16 byte tag
-    Aes128Gcm = 0x0001,
-    /// AES-256-GCM: 32 byte key, 12 byte nonce, 16 byte tag
-    Aes256Gcm = 0x0002,
-    /// ChaCha20-Poly1305: 32 byte key, 12 byte nonce, 16 byte tag
-    Chacha20Poly1305 = 0x0003,
-}
+pub struct Aead(AeadId);
 
 impl Aead {
-    pub fn new(cipher_suite: CipherSuite) -> Result<Self, AeadError> {
-        match cipher_suite {
-            CipherSuite::P256_AES128 | CipherSuite::CURVE25519_AES128 => Ok(Aead::Aes128Gcm),
-            CipherSuite::CURVE448_AES256 | CipherSuite::P384_AES256 | CipherSuite::P521_AES256 => {
-                Ok(Aead::Aes256Gcm)
-            }
-            CipherSuite::CURVE25519_CHACHA | CipherSuite::CURVE448_CHACHA => {
-                Ok(Aead::Chacha20Poly1305)
-            }
-            _ => Err(AeadError::UnsupportedCipherSuite),
-        }
+    pub fn new(cipher_suite: CipherSuite) -> Option<Self> {
+        AeadId::new(cipher_suite).map(Self)
     }
 }
 
@@ -92,19 +70,20 @@ impl AeadType for Aead {
             .then_some(())
             .ok_or_else(|| AeadError::InvalidKeyLen(key.len(), self.key_size()))?;
 
-        match self {
-            Aead::Aes128Gcm => {
+        match self.0 {
+            AeadId::Aes128Gcm => {
                 let cipher = Aes128Gcm::new(GenericArray::from_slice(key));
                 encrypt_aead_trait(cipher, data, aad, nonce)
             }
-            Aead::Aes256Gcm => {
+            AeadId::Aes256Gcm => {
                 let cipher = Aes256Gcm::new(GenericArray::from_slice(key));
                 encrypt_aead_trait(cipher, data, aad, nonce)
             }
-            Aead::Chacha20Poly1305 => {
+            AeadId::Chacha20Poly1305 => {
                 let cipher = ChaCha20Poly1305::new(GenericArray::from_slice(key));
                 encrypt_aead_trait(cipher, data, aad, nonce)
             }
+            _ => Err(AeadError::UnsupportedCipherSuite),
         }
     }
 
@@ -115,7 +94,7 @@ impl AeadType for Aead {
         aad: Option<&[u8]>,
         nonce: &[u8],
     ) -> Result<Vec<u8>, AeadError> {
-        (ciphertext.len() > TAG_LEN)
+        (ciphertext.len() > AES_TAG_LEN)
             .then_some(())
             .ok_or(AeadError::InvalidCipherLen(ciphertext.len()))?;
 
@@ -123,37 +102,34 @@ impl AeadType for Aead {
             .then_some(())
             .ok_or_else(|| AeadError::InvalidKeyLen(key.len(), self.key_size()))?;
 
-        match self {
-            Aead::Aes128Gcm => {
+        match self.0 {
+            AeadId::Aes128Gcm => {
                 let cipher = Aes128Gcm::new(GenericArray::from_slice(key));
                 decrypt_aead_trait(cipher, ciphertext, aad, nonce)
             }
-            Aead::Aes256Gcm => {
+            AeadId::Aes256Gcm => {
                 let cipher = Aes256Gcm::new(GenericArray::from_slice(key));
                 decrypt_aead_trait(cipher, ciphertext, aad, nonce)
             }
-            Aead::Chacha20Poly1305 => {
+            AeadId::Chacha20Poly1305 => {
                 let cipher = ChaCha20Poly1305::new(GenericArray::from_slice(key));
                 decrypt_aead_trait(cipher, ciphertext, aad, nonce)
             }
+            _ => Err(AeadError::UnsupportedCipherSuite),
         }
     }
 
     #[inline(always)]
     fn key_size(&self) -> usize {
-        match self {
-            Aead::Aes128Gcm => 16,
-            Aead::Aes256Gcm => 32,
-            Aead::Chacha20Poly1305 => 32,
-        }
+        self.0.key_size()
     }
 
     fn nonce_size(&self) -> usize {
-        NONCE_LEN
+        self.0.nonce_size()
     }
 
     fn aead_id(&self) -> u16 {
-        *self as u16
+        self.0 as u16
     }
 }
 
@@ -188,9 +164,7 @@ fn decrypt_aead_trait(
 #[cfg(test)]
 mod test {
     use aws_mls_core::crypto::CipherSuite;
-    use aws_mls_crypto_traits::AeadType;
-
-    use crate::aead::TAG_LEN;
+    use aws_mls_crypto_traits::{AeadType, AES_TAG_LEN};
 
     use super::{Aead, AeadError};
 
@@ -238,7 +212,7 @@ mod test {
             let key = vec![42u8; aead.key_size()];
             let nonce = vec![42u8; aead.nonce_size()];
 
-            let too_short = [0u8; TAG_LEN];
+            let too_short = [0u8; AES_TAG_LEN];
 
             assert_matches!(
                 aead.open(&key, &too_short, None, &nonce),

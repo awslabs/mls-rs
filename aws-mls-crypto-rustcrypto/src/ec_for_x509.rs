@@ -1,10 +1,11 @@
 use std::fmt::Debug;
 
+use aws_mls_crypto_traits::Curve;
 use p256::pkcs8::EncodePublicKey;
 use spki::{AlgorithmIdentifier, ObjectIdentifier, SubjectPublicKeyInfo};
 
 use crate::{
-    ec::{pub_key_from_uncompressed, Curve, EcError, EcPublicKey},
+    ec::{pub_key_from_uncompressed, EcError, EcPublicKey},
     ec_signer::EcSigner,
 };
 pub const X25519_OID: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.3.101.110");
@@ -91,6 +92,7 @@ pub fn pub_key_from_spki(spki: &SubjectPublicKeyInfo) -> Result<EcPublicKey, EcX
         Curve::P256 => p256::PublicKey::from_sec1_bytes(spki.subject_public_key)
             .map_err(|e| EcX509Error::from(EcError::P256Error(e)))
             .map(EcPublicKey::P256),
+        _ => Err(EcError::UnsupportedCurve.into()),
     }
 }
 

@@ -16,6 +16,7 @@ pub mod psk;
 pub mod time;
 
 pub use aws_mls_codec;
+pub use enum_iterator;
 
 #[cfg(feature = "arbitrary")]
 pub use arbitrary;

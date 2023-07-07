@@ -47,6 +47,8 @@ pub enum X509Error {
     NonSelfSignedCa,
     #[error("invalid certificate lifetime")]
     InvalidCertificateLifetime,
+    #[error("unsupported cipher suite")]
+    UnsupportedCipherSuite,
     #[error(transparent)]
     EcSignerError(#[from] EcSignerError),
     #[error(transparent)]
@@ -470,7 +472,7 @@ impl X509CertificateWriter for X509Writer {
         let mut builder = X509ReqBuilder::new()?;
         builder.set_common_params(&params)?;
 
-        let signer = EcSigner::new(cipher_suite)?;
+        let signer = EcSigner::new(cipher_suite).ok_or(X509Error::UnsupportedCipherSuite)?;
 
         let (secret_key, public_key) = match signature_key {
             Some(key) => {
@@ -550,7 +552,8 @@ impl X509CertificateWriter for X509Writer {
 
         cert_builder.append_extension(authority_key_identity)?;
 
-        let signer = EcSigner::new(subject_cipher_suite)?;
+        let signer =
+            EcSigner::new(subject_cipher_suite).ok_or(X509Error::UnsupportedCipherSuite)?;
 
         let (subjet_seckey, subject_pubkey) = match subject_pubkey {
             Some(public_key) => (None, public_key),
@@ -569,8 +572,10 @@ impl X509CertificateWriter for X509Writer {
 
         cert_builder.append_extension(subject_key_id)?;
 
-        cert_builder
-            .sign_with_ec_signer(&EcSigner::new(issuer.cipher_suite)?, &issuer.signing_key)?;
+        cert_builder.sign_with_ec_signer(
+            &EcSigner::new(issuer.cipher_suite).ok_or(X509Error::UnsupportedCipherSuite)?,
+            &issuer.signing_key,
+        )?;
 
         let built_cert = DerCertificate::from(cert_builder.build().to_der()?);
 
@@ -722,6 +727,7 @@ mod tests {
         crypto::{CipherSuite, SignaturePublicKey, SignatureSecretKey},
         time::MlsTime,
     };
+    use aws_mls_crypto_traits::Curve;
     use aws_mls_identity_x509::{
         CertificateChain, CertificateIssuer, CertificateParameters, DerCertificate, SubjectAltName,
         SubjectComponent, X509CertificateReader, X509CertificateWriter,
@@ -733,7 +739,7 @@ mod tests {
     };
 
     use crate::{
-        ec::{private_key_from_bytes, private_key_to_bytes, private_key_to_public, Curve},
+        ec::{private_key_from_bytes, private_key_to_bytes, private_key_to_public},
         x509::test_utils::{load_another_ca, load_test_invalid_ca_chain, load_test_invalid_chain},
     };
 

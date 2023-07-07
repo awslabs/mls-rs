@@ -14,11 +14,11 @@ use aws_mls_crypto_hpke::{
     dhkem::DhKem,
     hpke::{Hpke, HpkeError},
 };
-use aws_mls_crypto_traits::{AeadType, KdfType, KemType};
+use aws_mls_crypto_traits::{AeadType, KdfType, KemId, KemType};
 
 use ec::EcError;
 use ec_signer::{EcSigner, EcSignerError};
-use ecdh::{Ecdh, KemId};
+use ecdh::Ecdh;
 use kdf::Kdf;
 use mac::{Hash, HashError};
 use openssl::error::ErrorStack;
@@ -104,13 +104,13 @@ impl CryptoProvider for OpensslCryptoProvider {
             return None;
         }
 
-        let kdf = Kdf::new(cipher_suite).ok()?;
-        let ecdh = Ecdh::new(cipher_suite).ok()?;
-        let kem_id = KemId::new(cipher_suite).ok()?;
+        let kdf = Kdf::new(cipher_suite)?;
+        let ecdh = Ecdh::new(cipher_suite)?;
+        let kem_id = KemId::new(cipher_suite)?;
         let kem = DhKem::new(ecdh, kdf.clone(), kem_id as u16, kem_id.n_secret());
-        let aead = Aead::new(cipher_suite).ok()?;
+        let aead = Aead::new(cipher_suite)?;
 
-        OpensslCipherSuite::new(cipher_suite, kem, kdf, aead).ok()
+        OpensslCipherSuite::new(cipher_suite, kem, kdf, aead)
     }
 }
 
@@ -135,19 +135,14 @@ where
     KDF: KdfType + Clone,
     AEAD: AeadType + Clone,
 {
-    pub fn new(
-        cipher_suite: CipherSuite,
-        kem: KEM,
-        kdf: KDF,
-        aead: AEAD,
-    ) -> Result<Self, OpensslCryptoError> {
+    pub fn new(cipher_suite: CipherSuite, kem: KEM, kdf: KDF, aead: AEAD) -> Option<Self> {
         let hpke = Hpke::new(kem, kdf.clone(), Some(aead.clone()));
 
-        Ok(Self {
+        Some(Self {
             cipher_suite,
             kdf,
             aead,
-            hash: Hash::new(cipher_suite)?,
+            hash: Hash::new(cipher_suite).ok()?,
             hpke,
             ec_signer: EcSigner::new(cipher_suite)?,
         })

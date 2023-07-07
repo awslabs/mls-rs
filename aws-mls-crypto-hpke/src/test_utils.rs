@@ -1,4 +1,5 @@
 use aws_mls_core::crypto::CipherSuite;
+use aws_mls_crypto_traits::KemId;
 use cfg_if::cfg_if;
 use serde::Deserialize;
 
@@ -54,7 +55,7 @@ pub fn ciphersuite_supported(cs: CipherSuite) -> bool {
 }
 
 pub fn test_dhkem(cipher_suite: CipherSuite) -> DhKem<Ecdh, Kdf> {
-    let kem_id = ecdh::KemId::new(cipher_suite).unwrap();
+    let kem_id = KemId::new(cipher_suite).unwrap();
 
     DhKem::new(
         Ecdh::new(cipher_suite).unwrap(),

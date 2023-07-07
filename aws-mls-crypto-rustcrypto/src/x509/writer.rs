@@ -72,7 +72,8 @@ impl X509CertificateWriter for X509Writer {
         // TODO check if the issuer cert makes sense and matches issuer signer
 
         // Get or generate subject public key in DER format
-        let signer = EcSigner::new(subject_cipher_suite)?;
+        let signer =
+            EcSigner::new(subject_cipher_suite).ok_or(X509Error::UnsupportedCipherSuite)?;
 
         let (subjet_seckey, subject_pubkey) = match subject_pubkey {
             Some(pub_key) => (None, pub_key),
@@ -135,7 +136,9 @@ impl X509CertificateWriter for X509Writer {
             extensions: Some(extensions.iter().map(Into::into).collect()),
         };
 
-        let issuer_signer = EcSigner::new(issuer.cipher_suite)?;
+        let issuer_signer =
+            EcSigner::new(issuer.cipher_suite).ok_or(X509Error::UnsupportedCipherSuite)?;
+
         let signature = issuer_signer.sign(&issuer.signing_key, &tbs_cert.to_vec()?)?;
 
         let built_cert = Certificate {
@@ -160,7 +163,7 @@ impl X509CertificateWriter for X509Writer {
         signature_key: Option<SignatureSecretKey>,
         params: CertificateParameters,
     ) -> Result<CertificateRequest, Self::Error> {
-        let signer = EcSigner::new(cipher_suite)?;
+        let signer = EcSigner::new(cipher_suite).ok_or(X509Error::UnsupportedCipherSuite)?;
 
         let (secret_key, public_key) = match signature_key {
             Some(key) => {
@@ -235,6 +238,7 @@ pub(crate) mod test_utils {
 mod tests {
     use aws_mls_core::crypto::CipherSuite;
 
+    use aws_mls_crypto_traits::Curve;
     use aws_mls_identity_x509::{
         CertificateIssuer, CertificateParameters, DerCertificate, SubjectAltName, SubjectComponent,
         X509CertificateWriter,
@@ -245,8 +249,7 @@ mod tests {
 
     use crate::{
         ec::{
-            private_key_from_bytes, private_key_to_public, pub_key_to_uncompressed, Curve,
-            EcPrivateKey,
+            private_key_from_bytes, private_key_to_public, pub_key_to_uncompressed, EcPrivateKey,
         },
         x509::X509Writer,
     };

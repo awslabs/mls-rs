@@ -1,10 +1,11 @@
 use crate::ec::{
     generate_keypair, private_key_bytes_to_public, private_key_from_bytes,
-    pub_key_from_uncompressed, sign_ed25519, sign_p256, verify_ed25519, verify_p256, Curve,
-    EcError, EcPrivateKey, EcPublicKey,
+    pub_key_from_uncompressed, sign_ed25519, sign_p256, verify_ed25519, verify_p256, EcError,
+    EcPrivateKey, EcPublicKey,
 };
 use alloc::vec::Vec;
 use aws_mls_core::crypto::{CipherSuite, SignaturePublicKey, SignatureSecretKey};
+use aws_mls_crypto_traits::Curve;
 use core::ops::Deref;
 
 #[derive(Debug)]
@@ -36,8 +37,8 @@ impl Deref for EcSigner {
 }
 
 impl EcSigner {
-    pub fn new(cipher_suite: CipherSuite) -> Result<Self, EcSignerError> {
-        Ok(Self(Curve::from_ciphersuite(cipher_suite, true)?))
+    pub fn new(cipher_suite: CipherSuite) -> Option<Self> {
+        Curve::from_ciphersuite(cipher_suite, true).map(Self)
     }
 
     pub fn new_from_curve(curve: Curve) -> Self {

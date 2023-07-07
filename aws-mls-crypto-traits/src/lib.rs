@@ -3,13 +3,15 @@ extern crate alloc;
 
 mod aead;
 mod dh;
+mod ec;
 mod kdf;
 mod kem;
 
-pub use aead::{AeadType, AEAD_ID_EXPORT_ONLY};
+pub use aead::{AeadId, AeadType, AEAD_ID_EXPORT_ONLY, AES_TAG_LEN};
 pub use dh::DhType;
-pub use kdf::KdfType;
-pub use kem::{KemResult, KemType};
+pub use ec::Curve;
+pub use kdf::{KdfId, KdfType};
+pub use kem::{KemId, KemResult, KemType};
 
 #[cfg(feature = "mock")]
 pub mod mock;

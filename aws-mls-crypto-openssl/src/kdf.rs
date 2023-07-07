@@ -1,7 +1,7 @@
 use std::{fmt::Debug, ops::Deref};
 
 use aws_mls_core::{crypto::CipherSuite, error::IntoAnyError};
-use aws_mls_crypto_traits::KdfType;
+use aws_mls_crypto_traits::{KdfId, KdfType};
 use openssl::{
     md::{Md, MdRef},
     pkey::Id,
@@ -37,15 +37,6 @@ impl Debug for Kdf {
     }
 }
 
-/// Aead KDF as specified in RFC 9180, Table 3.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[repr(u16)]
-pub enum KdfId {
-    HkdfSha256 = 0x0001,
-    HkdfSha384 = 0x0002,
-    HkdfSha512 = 0x0003,
-}
-
 impl Deref for Kdf {
     type Target = MdRef;
 
@@ -55,19 +46,17 @@ impl Deref for Kdf {
 }
 
 impl Kdf {
-    pub fn new(cipher_suite: CipherSuite) -> Result<Self, KdfError> {
-        let (message_digest, kdf_id) = match cipher_suite {
-            CipherSuite::CURVE25519_AES128
-            | CipherSuite::P256_AES128
-            | CipherSuite::CURVE25519_CHACHA => Ok((Md::sha256(), KdfId::HkdfSha256)),
-            CipherSuite::P384_AES256 => Ok((Md::sha384(), KdfId::HkdfSha384)),
-            CipherSuite::P521_AES256
-            | CipherSuite::CURVE448_AES256
-            | CipherSuite::CURVE448_CHACHA => Ok((Md::sha512(), KdfId::HkdfSha512)),
-            _ => Err(KdfError::UnsupportedCipherSuite),
+    pub fn new(cipher_suite: CipherSuite) -> Option<Self> {
+        let kdf_id = KdfId::new(cipher_suite)?;
+
+        let message_digest = match kdf_id {
+            KdfId::HkdfSha256 => Some(Md::sha256()),
+            KdfId::HkdfSha384 => Some(Md::sha384()),
+            KdfId::HkdfSha512 => Some(Md::sha512()),
+            _ => None,
         }?;
 
-        Ok(Self {
+        Some(Self {
             message_digest,
             kdf_id,
         })

@@ -196,6 +196,7 @@ impl<KDF: KdfType, AEAD: AeadType> Context<KDF, AEAD> {
 
 #[cfg(test)]
 mod test {
+    use aws_mls_crypto_traits::KemId;
     use serde::Deserialize;
 
     use crate::{
@@ -252,7 +253,9 @@ mod test {
     }
 
     fn context_test_case(test_case: ContextTestCase) {
-        let Some(cipher_suite) =  filter_test_case(&test_case.algo) else { return; };
+        let Some(cipher_suite) = filter_test_case(&test_case.algo) else {
+            return;
+        };
 
         println!("Testing Context for ciphersuite {cipher_suite:?}");
 

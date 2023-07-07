@@ -2,7 +2,7 @@ use core::ops::Deref;
 
 use alloc::vec::Vec;
 
-use aws_mls_crypto_traits::DhType;
+use aws_mls_crypto_traits::{Curve, DhType};
 
 use aws_mls_core::{
     crypto::{CipherSuite, HpkePublicKey, HpkeSecretKey},
@@ -11,7 +11,7 @@ use aws_mls_core::{
 
 use crate::ec::{
     generate_keypair, private_key_bytes_to_public, private_key_ecdh, private_key_from_bytes,
-    pub_key_from_uncompressed, Curve, EcError, EcPublicKey,
+    pub_key_from_uncompressed, EcError, EcPublicKey,
 };
 
 #[derive(Debug)]
@@ -36,30 +36,6 @@ impl IntoAnyError for EcdhKemError {
     }
 }
 
-/// Kem identifiers for HPKE
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-#[repr(u16)]
-pub enum KemId {
-    DhKemP256Sha256 = 0x0010,
-    DhKemX25519Sha256 = 0x0020,
-}
-
-impl KemId {
-    pub fn new(cipher_suite: CipherSuite) -> Result<Self, EcdhKemError> {
-        match cipher_suite {
-            CipherSuite::CURVE25519_AES128 | CipherSuite::CURVE25519_CHACHA => {
-                Ok(KemId::DhKemX25519Sha256)
-            }
-            CipherSuite::P256_AES128 => Ok(KemId::DhKemP256Sha256),
-            _ => Err(EcdhKemError::UnsupportedCipherSuite),
-        }
-    }
-
-    pub fn n_secret(&self) -> usize {
-        32
-    }
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Ecdh(Curve);
 
@@ -72,8 +48,8 @@ impl Deref for Ecdh {
 }
 
 impl Ecdh {
-    pub fn new(cipher_suite: CipherSuite) -> Result<Self, EcdhKemError> {
-        Ok(Self(Curve::from_ciphersuite(cipher_suite, false)?))
+    pub fn new(cipher_suite: CipherSuite) -> Option<Self> {
+        Curve::from_ciphersuite(cipher_suite, false).map(Self)
     }
 }
 
@@ -132,9 +108,8 @@ mod test {
     fn get_ecdhs() -> Vec<Ecdh> {
         [CipherSuite::P256_AES128, CipherSuite::CURVE25519_AES128]
             .into_iter()
-            .map(Ecdh::new)
-            .collect::<Result<_, _>>()
-            .unwrap()
+            .map(|c| Ecdh::new(c).unwrap())
+            .collect()
     }
 
     #[derive(Deserialize)]

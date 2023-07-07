@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use alloc::vec::Vec;
+use aws_mls_crypto_traits::Curve;
 
 #[cfg(feature = "std")]
 use std::array::TryFromSliceError;
@@ -9,7 +10,6 @@ use std::array::TryFromSliceError;
 #[cfg(not(feature = "std"))]
 use core::array::TryFromSliceError;
 
-use aws_mls_core::crypto::CipherSuite;
 use p256::elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint};
 use rand_core::{OsRng, RngCore};
 use zeroize::Zeroize;
@@ -82,57 +82,6 @@ impl From<TryFromSliceError> for EcError {
     }
 }
 
-/// Elliptic curve types
-#[derive(Clone, Copy, Debug, Eq, enum_iterator::Sequence, PartialEq)]
-#[repr(u8)]
-#[cfg_attr(test, derive(serde::Deserialize))]
-pub enum Curve {
-    /// NIST Curve-P256
-    P256,
-    /// Elliptic-curve Diffie-Hellman key exchange Curve25519
-    X25519,
-    /// Edwards-curve Digital Signature Algorithm Curve25519
-    Ed25519,
-}
-
-impl Curve {
-    /// Returns the amount of bytes of a secret key using this curve
-    #[inline(always)]
-    pub fn secret_key_size(&self) -> usize {
-        match self {
-            Curve::P256 => 32,
-            Curve::X25519 => 32,
-            Curve::Ed25519 => 32,
-        }
-    }
-
-    pub fn from_ciphersuite(cipher_suite: CipherSuite, for_sig: bool) -> Result<Self, EcError> {
-        match cipher_suite {
-            CipherSuite::P256_AES128 => Ok(Curve::P256),
-            CipherSuite::CURVE25519_AES128 | CipherSuite::CURVE25519_CHACHA if for_sig => {
-                Ok(Curve::Ed25519)
-            }
-            CipherSuite::CURVE25519_AES128 | CipherSuite::CURVE25519_CHACHA => Ok(Curve::X25519),
-            _ => Err(EcError::UnsupportedCurve),
-        }
-    }
-
-    #[inline(always)]
-    pub(crate) fn curve_bitmask(&self) -> Option<u8> {
-        match self {
-            Curve::P256 => Some(0xFF),
-            Curve::X25519 => None,
-            Curve::Ed25519 => None,
-        }
-    }
-
-    /// Returns an iterator over all curves
-    #[inline(always)]
-    pub fn all() -> impl Iterator<Item = Curve> {
-        enum_iterator::all()
-    }
-}
-
 impl core::fmt::Debug for EcPrivateKey {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
@@ -163,6 +112,7 @@ pub fn pub_key_from_uncompressed(bytes: &[u8], curve: Curve) -> Result<EcPublicK
         Curve::Ed25519 => Ok(EcPublicKey::Ed25519(ed25519_dalek::PublicKey::from_bytes(
             bytes,
         )?)),
+        _ => Err(EcError::UnsupportedCurve),
     }
 }
 
@@ -201,6 +151,7 @@ pub fn generate_private_key(curve: Curve) -> Result<EcPrivateKey, EcError> {
 
             Ok(EcPrivateKey::Ed25519(key))
         }
+        _ => Err(EcError::UnsupportedCurve),
     }
 }
 
@@ -216,6 +167,7 @@ pub fn private_key_from_bytes(bytes: &[u8], curve: Curve) -> Result<EcPrivateKey
         Curve::Ed25519 => ed25519_dalek::SecretKey::from_bytes(bytes)
             .map_err(|_| EcError::EcKeyInvalidKeyData)
             .map(EcPrivateKey::Ed25519),
+        _ => Err(EcError::UnsupportedCurve),
     }
 }
 
@@ -367,6 +319,7 @@ pub(crate) mod test_utils {
                 Curve::P256 => self.p256.clone(),
                 Curve::X25519 => self.x25519.clone(),
                 Curve::Ed25519 => self.ed25519.clone(),
+                _ => Vec::new(),
             }
         }
     }
@@ -381,22 +334,20 @@ pub(crate) mod test_utils {
         serde_json::from_str(test_case_file).unwrap()
     }
 
-    impl Curve {
-        pub fn is_curve_25519(&self) -> bool {
-            self == &Curve::X25519 || self == &Curve::Ed25519
+    pub fn is_curve_25519(curve: Curve) -> bool {
+        curve == Curve::X25519 || curve == Curve::Ed25519
+    }
+
+    pub fn byte_equal(curve: Curve, other: Curve) -> bool {
+        if curve == other {
+            return true;
         }
 
-        pub fn byte_equal(self, other: Curve) -> bool {
-            if self == other {
-                return true;
-            }
-
-            if self.is_curve_25519() && other.is_curve_25519() {
-                return true;
-            }
-
-            false
+        if is_curve_25519(curve) && is_curve_25519(other) {
+            return true;
         }
+
+        false
     }
 }
 
@@ -408,15 +359,17 @@ mod tests {
         generate_keypair, generate_private_key, private_key_bytes_to_public,
         private_key_from_bytes, private_key_to_bytes, pub_key_from_uncompressed,
         pub_key_to_uncompressed,
-        test_utils::{get_test_public_keys, get_test_secret_keys},
+        test_utils::{byte_equal, get_test_public_keys, get_test_secret_keys},
         Curve, EcError,
     };
 
     use alloc::vec;
 
+    const SUPPORTED_CURVES: [Curve; 3] = [Curve::Ed25519, Curve::P256, Curve::X25519];
+
     #[test]
     fn private_key_can_be_generated() {
-        Curve::all().for_each(|curve| {
+        SUPPORTED_CURVES.iter().copied().for_each(|curve| {
             let one_key = generate_private_key(curve)
                 .unwrap_or_else(|e| panic!("Failed to generate private key for {curve:?} : {e:?}"));
 
@@ -433,7 +386,7 @@ mod tests {
 
     #[test]
     fn key_pair_can_be_generated() {
-        Curve::all().for_each(|curve| {
+        SUPPORTED_CURVES.iter().copied().for_each(|curve| {
             assert_matches!(
                 generate_keypair(curve),
                 Ok(_),
@@ -444,7 +397,7 @@ mod tests {
 
     #[test]
     fn private_key_can_be_imported_and_exported() {
-        Curve::all().for_each(|curve| {
+        SUPPORTED_CURVES.iter().copied().for_each(|curve| {
             let key_bytes = get_test_secret_keys().get_key_from_curve(curve);
 
             let imported_key = private_key_from_bytes(&key_bytes, curve)
@@ -459,7 +412,7 @@ mod tests {
 
     #[test]
     fn public_key_can_be_imported_and_exported() {
-        Curve::all().for_each(|curve| {
+        SUPPORTED_CURVES.iter().copied().for_each(|curve| {
             let key_bytes = get_test_public_keys().get_key_from_curve(curve);
 
             let imported_key = pub_key_from_uncompressed(&key_bytes, curve)
@@ -477,7 +430,7 @@ mod tests {
         let test_public_keys = get_test_public_keys();
         let test_secret_keys = get_test_secret_keys();
 
-        for curve in Curve::all() {
+        for curve in SUPPORTED_CURVES.iter().copied() {
             let secret_key = test_secret_keys.get_key_from_curve(curve);
             let public_key = private_key_bytes_to_public(&secret_key, curve).unwrap();
             assert_eq!(public_key, test_public_keys.get_key_from_curve(curve));
@@ -486,8 +439,12 @@ mod tests {
 
     #[test]
     fn mismatched_curve_import() {
-        for curve in Curve::all() {
-            for other_curve in Curve::all().filter(|c| !c.byte_equal(curve)) {
+        for curve in SUPPORTED_CURVES.iter().copied() {
+            for other_curve in SUPPORTED_CURVES
+                .iter()
+                .copied()
+                .filter(|c| !byte_equal(*c, curve))
+            {
                 let public_key = get_test_public_keys().get_key_from_curve(curve);
                 let res = pub_key_from_uncompressed(&public_key, other_curve);
 

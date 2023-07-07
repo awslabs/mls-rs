@@ -1,6 +1,6 @@
 use std::ops::Deref;
 
-use aws_mls_crypto_traits::DhType;
+use aws_mls_crypto_traits::{Curve, DhType};
 use thiserror::Error;
 
 use aws_mls_core::{
@@ -10,7 +10,7 @@ use aws_mls_core::{
 
 use crate::ec::{
     generate_keypair, private_key_bytes_to_public, private_key_ecdh, private_key_from_bytes,
-    pub_key_from_uncompressed, Curve, EcError, EcPublicKey,
+    pub_key_from_uncompressed, EcError, EcPublicKey,
 };
 
 #[derive(Debug, Error)]
@@ -29,44 +29,6 @@ impl IntoAnyError for EcdhKemError {
     }
 }
 
-/// Kem identifiers for HPKE
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-#[repr(u16)]
-pub enum KemId {
-    DhKemP256Sha256 = 0x0010,
-    DhKemP384Sha384 = 0x0011,
-    DhKemP521Sha512 = 0x0012,
-    DhKemX25519Sha256 = 0x0020,
-    DhKemX448Sha512 = 0x0021,
-}
-
-impl KemId {
-    pub fn new(cipher_suite: CipherSuite) -> Result<Self, EcdhKemError> {
-        match cipher_suite {
-            CipherSuite::CURVE25519_AES128 | CipherSuite::CURVE25519_CHACHA => {
-                Ok(KemId::DhKemX25519Sha256)
-            }
-            CipherSuite::P256_AES128 => Ok(KemId::DhKemP256Sha256),
-            CipherSuite::CURVE448_AES256 | CipherSuite::CURVE448_CHACHA => {
-                Ok(KemId::DhKemX448Sha512)
-            }
-            CipherSuite::P384_AES256 => Ok(KemId::DhKemP384Sha384),
-            CipherSuite::P521_AES256 => Ok(KemId::DhKemP521Sha512),
-            _ => Err(EcdhKemError::UnsupportedCipherSuite),
-        }
-    }
-
-    pub fn n_secret(&self) -> usize {
-        match self {
-            KemId::DhKemP256Sha256 => 32,
-            KemId::DhKemP384Sha384 => 48,
-            KemId::DhKemP521Sha512 => 64,
-            KemId::DhKemX25519Sha256 => 32,
-            KemId::DhKemX448Sha512 => 64,
-        }
-    }
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Ecdh(Curve);
 
@@ -79,10 +41,8 @@ impl Deref for Ecdh {
 }
 
 impl Ecdh {
-    pub fn new(cipher_suite: CipherSuite) -> Result<Self, EcdhKemError> {
-        Curve::from_ciphersuite(cipher_suite, false)
-            .map(Self)
-            .map_err(Into::into)
+    pub fn new(cipher_suite: CipherSuite) -> Option<Self> {
+        Curve::from_ciphersuite(cipher_suite, false).map(Self)
     }
 }
 

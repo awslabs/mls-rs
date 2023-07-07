@@ -9,6 +9,7 @@ members = [
     "aws-mls/test_harness_integration",
     "aws-mls-crypto-openssl",
     "aws-mls-crypto-rustcrypto",
+    "aws-mls-crypto-awslc",
     "aws-mls-crypto-hpke",
     "aws-mls-provider-sqlite",
     "aws-mls-codec",
@@ -22,6 +23,7 @@ default-members = [
     "aws-mls-crypto-hpke",
     "aws-mls-crypto-openssl",
     "aws-mls-crypto-rustcrypto",
+    "aws-mls-crypto-awslc",
     "aws-mls-provider-sqlite",
     "aws-mls-codec"
 ]

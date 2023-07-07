@@ -1,6 +1,7 @@
 use std::ops::Deref;
 
 use aws_mls_core::crypto::{CipherSuite, SignaturePublicKey, SignatureSecretKey};
+use aws_mls_crypto_traits::Curve;
 use openssl::hash::MessageDigest;
 
 #[cfg(feature = "x509")]
@@ -11,7 +12,7 @@ use thiserror::Error;
 use crate::ec::{
     curve_from_private_key, curve_from_public_key, generate_keypair, private_key_bytes_to_public,
     private_key_from_bytes, private_key_from_der, private_key_to_bytes, pub_key_from_uncompressed,
-    pub_key_to_uncompressed, public_key_from_der, Curve, EcError,
+    pub_key_to_uncompressed, public_key_from_der, EcError,
 };
 
 #[derive(Debug, Error)]
@@ -36,10 +37,8 @@ impl Deref for EcSigner {
 }
 
 impl EcSigner {
-    pub fn new(cipher_suite: CipherSuite) -> Result<Self, EcSignerError> {
-        Curve::from_ciphersuite(cipher_suite, true)
-            .map(Self)
-            .map_err(Into::into)
+    pub fn new(cipher_suite: CipherSuite) -> Option<Self> {
+        Curve::from_ciphersuite(cipher_suite, true).map(Self)
     }
 
     pub fn signature_key_generate(
@@ -103,7 +102,7 @@ impl EcSigner {
         secret_key: &SignatureSecretKey,
         data: &[u8],
     ) -> Result<Vec<u8>, EcSignerError> {
-        let secret_key = private_key_from_bytes(secret_key, self.0, true)?;
+        let secret_key = private_key_from_bytes(secret_key, self.0, false)?;
 
         let mut signer = match self.message_digest() {
             Some(md) => openssl::sign::Signer::new(md, &secret_key),
@@ -144,13 +143,12 @@ impl EcSigner {
 
 #[cfg(test)]
 mod test {
+    use aws_mls_crypto_traits::Curve;
+
     use crate::{
-        ec::{
-            test_utils::{
-                get_test_public_keys, get_test_public_keys_der, get_test_secret_keys,
-                get_test_secret_keys_der, TestKeys,
-            },
-            Curve,
+        ec::test_utils::{
+            get_test_public_keys, get_test_public_keys_der, get_test_secret_keys,
+            get_test_secret_keys_der, TestKeys,
         },
         ec_signer::EcSigner,
     };

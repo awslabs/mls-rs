@@ -1,7 +1,7 @@
 use core::fmt::Debug;
 
 use aws_mls_core::{crypto::CipherSuite, error::IntoAnyError};
-use aws_mls_crypto_traits::KdfType;
+use aws_mls_crypto_traits::{KdfId, KdfType};
 use hkdf::SimpleHkdf;
 use sha2::{Sha256, Sha384, Sha512};
 
@@ -43,27 +43,12 @@ impl IntoAnyError for KdfError {
     }
 }
 
-/// Aead KDF as specified in RFC 9180, Table 3.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[repr(u16)]
-pub enum Kdf {
-    HkdfSha256 = 0x0001,
-    HkdfSha384 = 0x0002,
-    HkdfSha512 = 0x0003,
-}
+pub struct Kdf(KdfId);
 
 impl Kdf {
-    pub fn new(cipher_suite: CipherSuite) -> Result<Self, KdfError> {
-        match cipher_suite {
-            CipherSuite::CURVE25519_AES128
-            | CipherSuite::P256_AES128
-            | CipherSuite::CURVE25519_CHACHA => Ok(Kdf::HkdfSha256),
-            CipherSuite::P384_AES256 => Ok(Kdf::HkdfSha384),
-            CipherSuite::CURVE448_CHACHA
-            | CipherSuite::CURVE448_AES256
-            | CipherSuite::P521_AES256 => Ok(Kdf::HkdfSha512),
-            _ => Err(KdfError::UnsupportedCipherSuite),
-        }
+    pub fn new(cipher_suite: CipherSuite) -> Option<Self> {
+        KdfId::new(cipher_suite).map(Self)
     }
 }
 
@@ -77,10 +62,11 @@ impl KdfType for Kdf {
 
         let mut buf = vec![0u8; len];
 
-        match self {
-            Kdf::HkdfSha256 => SimpleHkdf::<Sha256>::from_prk(prk)?.expand(info, &mut buf),
-            Kdf::HkdfSha384 => SimpleHkdf::<Sha384>::from_prk(prk)?.expand(info, &mut buf),
-            Kdf::HkdfSha512 => SimpleHkdf::<Sha512>::from_prk(prk)?.expand(info, &mut buf),
+        match self.0 {
+            KdfId::HkdfSha256 => Ok(SimpleHkdf::<Sha256>::from_prk(prk)?.expand(info, &mut buf)?),
+            KdfId::HkdfSha384 => Ok(SimpleHkdf::<Sha384>::from_prk(prk)?.expand(info, &mut buf)?),
+            KdfId::HkdfSha512 => Ok(SimpleHkdf::<Sha512>::from_prk(prk)?.expand(info, &mut buf)?),
+            _ => Err(KdfError::UnsupportedCipherSuite),
         }?;
 
         Ok(buf)
@@ -93,23 +79,20 @@ impl KdfType for Kdf {
 
         let salt = if salt.is_empty() { None } else { Some(salt) };
 
-        Ok(match self {
-            Kdf::HkdfSha256 => SimpleHkdf::<Sha256>::extract(salt, ikm).0.to_vec(),
-            Kdf::HkdfSha384 => SimpleHkdf::<Sha384>::extract(salt, ikm).0.to_vec(),
-            Kdf::HkdfSha512 => SimpleHkdf::<Sha512>::extract(salt, ikm).0.to_vec(),
-        })
-    }
-
-    fn extract_size(&self) -> usize {
-        match self {
-            Kdf::HkdfSha256 => 32,
-            Kdf::HkdfSha384 => 48,
-            Kdf::HkdfSha512 => 64,
+        match self.0 {
+            KdfId::HkdfSha256 => Ok(SimpleHkdf::<Sha256>::extract(salt, ikm).0.to_vec()),
+            KdfId::HkdfSha384 => Ok(SimpleHkdf::<Sha384>::extract(salt, ikm).0.to_vec()),
+            KdfId::HkdfSha512 => Ok(SimpleHkdf::<Sha512>::extract(salt, ikm).0.to_vec()),
+            _ => Err(KdfError::UnsupportedCipherSuite),
         }
     }
 
+    fn extract_size(&self) -> usize {
+        self.0.extract_size()
+    }
+
     fn kdf_id(&self) -> u16 {
-        *self as u16
+        self.0 as u16
     }
 }
 

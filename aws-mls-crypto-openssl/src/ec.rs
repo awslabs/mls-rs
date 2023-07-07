@@ -1,4 +1,4 @@
-use aws_mls_core::crypto::CipherSuite;
+use aws_mls_crypto_traits::Curve;
 use thiserror::Error;
 
 use openssl::{
@@ -22,79 +22,6 @@ pub enum EcError {
     InvalidKeyBytes,
     #[error("unsupported cipher suite")]
     UnsupportedCipherSuite,
-}
-
-/// Elliptic curve types
-#[derive(Clone, Copy, Debug, Eq, enum_iterator::Sequence, PartialEq)]
-#[repr(u8)]
-#[cfg_attr(test, derive(serde::Deserialize))]
-pub enum Curve {
-    /// NIST Curve-P256
-    P256,
-    /// NIST Curve-P384
-    P384,
-    /// NIST Curve-P521
-    P521,
-    /// Elliptic-curve Diffie-Hellman key exchange Curve25519
-    X25519,
-    /// Edwards-curve Digital Signature Algorithm Curve25519
-    Ed25519,
-    /// Elliptic-curve Diffie-Hellman key exchange Curve448
-    X448,
-    /// Edwards-curve Digital Signature Algorithm Curve448
-    Ed448,
-}
-
-impl Curve {
-    /// Returns the amount of bytes of a secret key using this curve
-    #[inline(always)]
-    pub fn secret_key_size(&self) -> usize {
-        match self {
-            Curve::P256 => 32,
-            Curve::P384 => 48,
-            Curve::P521 => 66,
-            Curve::X25519 => 32,
-            Curve::Ed25519 => 32,
-            Curve::X448 => 56,
-            Curve::Ed448 => 57,
-        }
-    }
-
-    pub fn from_ciphersuite(cipher_suite: CipherSuite, for_sig: bool) -> Result<Self, EcError> {
-        match cipher_suite {
-            CipherSuite::P256_AES128 => Ok(Curve::P256),
-            CipherSuite::P384_AES256 => Ok(Curve::P384),
-            CipherSuite::P521_AES256 => Ok(Curve::P521),
-            CipherSuite::CURVE25519_AES128 | CipherSuite::CURVE25519_CHACHA if for_sig => {
-                Ok(Curve::Ed25519)
-            }
-            CipherSuite::CURVE25519_AES128 | CipherSuite::CURVE25519_CHACHA => Ok(Curve::X25519),
-            CipherSuite::CURVE448_AES256 | CipherSuite::CURVE448_CHACHA if for_sig => {
-                Ok(Curve::Ed448)
-            }
-            CipherSuite::CURVE448_AES256 | CipherSuite::CURVE448_CHACHA => Ok(Curve::X448),
-            _ => Err(EcError::UnsupportedCipherSuite),
-        }
-    }
-
-    #[inline(always)]
-    pub(crate) fn curve_bitmask(&self) -> Option<u8> {
-        match self {
-            Curve::P256 => Some(0xFF),
-            Curve::P384 => Some(0xFF),
-            Curve::P521 => Some(0x01),
-            Curve::X25519 => None,
-            Curve::Ed25519 => None,
-            Curve::X448 => None,
-            Curve::Ed448 => None,
-        }
-    }
-
-    /// Returns an iterator over all curves
-    #[inline(always)]
-    pub fn all() -> impl Iterator<Item = Curve> {
-        enum_iterator::all()
-    }
 }
 
 #[inline(always)]
@@ -134,12 +61,14 @@ fn pub_key_from_uncompressed_non_nist(bytes: &[u8], id: Id) -> Result<EcPublicKe
     PKey::public_key_from_raw_bytes(bytes, id)
 }
 
-pub fn pub_key_from_uncompressed(bytes: &[u8], curve: Curve) -> Result<EcPublicKey, ErrorStack> {
-    if let Some(nist_id) = nist_curve_id(curve) {
+pub fn pub_key_from_uncompressed(bytes: &[u8], curve: Curve) -> Result<EcPublicKey, EcError> {
+    let pubkey = if let Some(nist_id) = nist_curve_id(curve) {
         pub_key_from_uncompressed_nist(bytes, nist_id)
     } else {
-        pub_key_from_uncompressed_non_nist(bytes, Id::from(curve))
-    }
+        pub_key_from_uncompressed_non_nist(bytes, curve_to_id(curve)?)
+    }?;
+
+    Ok(pubkey)
 }
 
 pub fn pub_key_to_uncompressed(key: &EcPublicKey) -> Result<Vec<u8>, ErrorStack> {
@@ -154,17 +83,14 @@ pub fn pub_key_to_uncompressed(key: &EcPublicKey) -> Result<Vec<u8>, ErrorStack>
     }
 }
 
-impl From<Curve> for Id {
-    fn from(c: Curve) -> Self {
-        match c {
-            Curve::P256 => Id::EC,
-            Curve::P384 => Id::EC,
-            Curve::P521 => Id::EC,
-            Curve::X25519 => Id::X25519,
-            Curve::Ed25519 => Id::ED25519,
-            Curve::X448 => Id::X448,
-            Curve::Ed448 => Id::ED448,
-        }
+pub fn curve_to_id(c: Curve) -> Result<Id, EcError> {
+    match c {
+        Curve::P256 | Curve::P384 | Curve::P521 => Ok(Id::EC),
+        Curve::X25519 => Ok(Id::X25519),
+        Curve::Ed25519 => Ok(Id::ED25519),
+        Curve::X448 => Ok(Id::X448),
+        Curve::Ed448 => Ok(Id::ED448),
+        _ => Err(EcError::UnsupportedCipherSuite),
     }
 }
 
@@ -174,7 +100,7 @@ fn generate_pkey_with_nid(nid: Nid) -> Result<EcPrivateKey, ErrorStack> {
     PKey::from_ec_key(ec_key)
 }
 
-pub fn generate_private_key(curve: Curve) -> Result<EcPrivateKey, ErrorStack> {
+pub fn generate_private_key(curve: Curve) -> Result<EcPrivateKey, EcError> {
     let key = match curve {
         Curve::X25519 => PKey::generate_x25519(),
         Curve::Ed25519 => PKey::generate_ed25519(),
@@ -183,6 +109,7 @@ pub fn generate_private_key(curve: Curve) -> Result<EcPrivateKey, ErrorStack> {
         Curve::P256 => generate_pkey_with_nid(Nid::X9_62_PRIME256V1),
         Curve::P384 => generate_pkey_with_nid(Nid::SECP384R1),
         Curve::P521 => generate_pkey_with_nid(Nid::SECP521R1),
+        _ => return Err(EcError::UnsupportedCipherSuite),
     }?;
 
     Ok(key)
@@ -234,7 +161,7 @@ pub fn private_key_from_bytes(
     if let Some(nist_id) = nist_curve_id(curve) {
         private_key_from_bytes_nist(bytes, nist_id, with_public)
     } else {
-        Ok(private_key_from_bytes_non_nist(bytes, Id::from(curve))?)
+        Ok(private_key_from_bytes_non_nist(bytes, curve_to_id(curve)?)?)
     }
 }
 
@@ -345,6 +272,7 @@ pub(crate) mod test_utils {
                 Curve::Ed25519 => self.ed25519.clone(),
                 Curve::X448 => self.x448.clone(),
                 Curve::Ed448 => self.ed448.clone(),
+                _ => panic!("unsuported ciphersuite"),
             }
         }
     }
@@ -369,30 +297,28 @@ pub(crate) mod test_utils {
         serde_json::from_str(test_case_file).unwrap()
     }
 
-    impl Curve {
-        pub fn is_curve_25519(&self) -> bool {
-            self == &Curve::X25519 || self == &Curve::Ed25519
+    pub fn is_curve_25519(curve: Curve) -> bool {
+        curve == Curve::X25519 || curve == Curve::Ed25519
+    }
+
+    pub fn is_curve_448(curve: Curve) -> bool {
+        curve == Curve::X448 || curve == Curve::Ed448
+    }
+
+    pub fn byte_equal(curve: Curve, other: Curve) -> bool {
+        if curve == other {
+            return true;
         }
 
-        pub fn is_curve_448(&self) -> bool {
-            self == &Curve::X448 || self == &Curve::Ed448
+        if is_curve_25519(curve) && is_curve_25519(other) {
+            return true;
         }
 
-        pub fn byte_equal(self, other: Curve) -> bool {
-            if self == other {
-                return true;
-            }
-
-            if self.is_curve_25519() && other.is_curve_25519() {
-                return true;
-            }
-
-            if self.is_curve_448() && other.is_curve_448() {
-                return true;
-            }
-
-            false
+        if is_curve_448(curve) && is_curve_448(other) {
+            return true;
         }
+
+        false
     }
 }
 
@@ -404,13 +330,23 @@ mod tests {
         generate_keypair, generate_private_key, private_key_bytes_to_public,
         private_key_from_bytes, private_key_to_bytes, pub_key_from_uncompressed,
         pub_key_to_uncompressed,
-        test_utils::{get_test_public_keys, get_test_secret_keys},
+        test_utils::{byte_equal, get_test_public_keys, get_test_secret_keys},
         Curve, EcError,
     };
 
+    const SUPPORTED_CURVES: [Curve; 7] = [
+        Curve::Ed25519,
+        Curve::Ed448,
+        Curve::P256,
+        Curve::P384,
+        Curve::P521,
+        Curve::X25519,
+        Curve::X448,
+    ];
+
     #[test]
     fn private_key_can_be_generated() {
-        Curve::all().for_each(|curve| {
+        SUPPORTED_CURVES.iter().copied().for_each(|curve| {
             let one_key =
                 generate_private_key(curve).expect("Failed to generate private key for {curve:?}");
 
@@ -427,7 +363,7 @@ mod tests {
 
     #[test]
     fn key_pair_can_be_generated() {
-        Curve::all().for_each(|curve| {
+        SUPPORTED_CURVES.iter().copied().for_each(|curve| {
             assert_matches!(
                 generate_keypair(curve),
                 Ok(_),
@@ -438,7 +374,7 @@ mod tests {
 
     #[test]
     fn private_key_can_be_imported_and_exported() {
-        Curve::all().for_each(|curve| {
+        SUPPORTED_CURVES.iter().copied().for_each(|curve| {
             let key_bytes = get_test_secret_keys().get_key_from_curve(curve);
 
             let imported_key = private_key_from_bytes(&key_bytes, curve, true)
@@ -453,7 +389,7 @@ mod tests {
 
     #[test]
     fn public_key_can_be_imported_and_exported() {
-        Curve::all().for_each(|curve| {
+        SUPPORTED_CURVES.iter().copied().for_each(|curve| {
             let key_bytes = get_test_public_keys().get_key_from_curve(curve);
 
             let imported_key = pub_key_from_uncompressed(&key_bytes, curve)
@@ -471,7 +407,7 @@ mod tests {
         let test_public_keys = get_test_public_keys();
         let test_secret_keys = get_test_secret_keys();
 
-        for curve in Curve::all() {
+        for curve in SUPPORTED_CURVES.iter().copied() {
             let secret_key = test_secret_keys.get_key_from_curve(curve);
             let public_key = private_key_bytes_to_public(&secret_key, curve).unwrap();
             assert_eq!(public_key, test_public_keys.get_key_from_curve(curve));
@@ -480,8 +416,12 @@ mod tests {
 
     #[test]
     fn mismatched_curve_import() {
-        for curve in Curve::all() {
-            for other_curve in Curve::all().filter(|c| !c.byte_equal(curve)) {
+        for curve in SUPPORTED_CURVES.iter().copied() {
+            for other_curve in SUPPORTED_CURVES
+                .iter()
+                .copied()
+                .filter(|c| !byte_equal(*c, curve))
+            {
                 println!(
                     "Mismatched curve public key import : key curve {:?}, import curve {:?}",
                     &curve, &other_curve
