@@ -112,7 +112,15 @@ pub trait HpkeContextR {
 /// the public key should be represented in the uncompressed format.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::ffi_type(opaque))]
 pub struct SignaturePublicKey(#[mls_codec(with = "aws_mls_codec::byte_vec")] Vec<u8>);
+
+#[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen)]
+impl SignaturePublicKey {
+    pub fn new(bytes: Vec<u8>) -> Self {
+        bytes.into()
+    }
+}
 
 impl Deref for SignaturePublicKey {
     type Target = [u8];
@@ -134,6 +142,13 @@ impl From<Vec<u8>> for SignaturePublicKey {
 pub struct SignatureSecretKey {
     #[mls_codec(with = "aws_mls_codec::byte_vec")]
     bytes: Vec<u8>,
+}
+
+#[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen)]
+impl SignatureSecretKey {
+    pub fn new(bytes: Vec<u8>) -> Self {
+        bytes.into()
+    }
 }
 
 impl From<Vec<u8>> for SignatureSecretKey {
