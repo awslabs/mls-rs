@@ -1,11 +1,11 @@
 [package]
 name = "aws-mls-crypto-awslc"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 [dependencies]
-aws-lc-rs = "1.1.0"
-aws-lc-sys = "0.7.0"
+aws-lc-rs = "1.2.0"
+aws-lc-sys = "0.9.0"
 aws-mls-core = { path = "../aws-mls-core", version = "*" }
 aws-mls-crypto-hpke = { path = "../aws-mls-crypto-hpke", version = "*" }
 aws-mls-crypto-traits = { path = "../aws-mls-crypto-traits", version = "*" }
