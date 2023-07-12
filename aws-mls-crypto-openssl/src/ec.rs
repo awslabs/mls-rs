@@ -149,8 +149,23 @@ fn private_key_from_bytes_nist(
     Ok(PKey::from_ec_key(key)?)
 }
 
-fn private_key_from_bytes_non_nist(bytes: &[u8], id: Id) -> Result<EcPrivateKey, ErrorStack> {
-    PKey::private_key_from_raw_bytes(bytes, id)
+fn private_key_from_bytes_non_nist(bytes: &[u8], curve: Curve) -> Result<EcPrivateKey, EcError> {
+    let id = curve_to_id(curve)?;
+
+    // TODO investigate if it is possible to provide an already known public key to OpenSSL,
+    // to avoid recomputing it
+    let openssl_secret_len = match curve {
+        Curve::Ed25519 | Curve::Ed448 => curve.secret_key_size() / 2,
+        _ => curve.secret_key_size(),
+    };
+
+    (openssl_secret_len <= bytes.len())
+        .then_some(())
+        .ok_or(EcError::InvalidKeyBytes)?;
+
+    let bytes = &bytes[..openssl_secret_len];
+
+    Ok(PKey::private_key_from_raw_bytes(bytes, id)?)
 }
 
 pub fn private_key_from_bytes(
@@ -161,15 +176,17 @@ pub fn private_key_from_bytes(
     if let Some(nist_id) = nist_curve_id(curve) {
         private_key_from_bytes_nist(bytes, nist_id, with_public)
     } else {
-        Ok(private_key_from_bytes_non_nist(bytes, curve_to_id(curve)?)?)
+        Ok(private_key_from_bytes_non_nist(bytes, curve)?)
     }
 }
 
 pub fn private_key_to_bytes(key: &EcPrivateKey) -> Result<Vec<u8>, ErrorStack> {
     if let Ok(ec_key) = key.ec_key() {
         Ok(ec_key.private_key().to_vec())
-    } else {
+    } else if [Some(Curve::X25519), Some(Curve::X448)].contains(&curve_from_private_key(key)) {
         key.raw_private_key()
+    } else {
+        Ok([key.raw_private_key()?, key.raw_public_key()?].concat())
     }
 }
 

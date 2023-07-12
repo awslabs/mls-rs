@@ -1,24 +1,28 @@
-use aws_lc_rs::aead;
+use aws_lc_rs::aead::{self, UnboundKey, AES_128_GCM, AES_256_GCM, CHACHA20_POLY1305};
+use aws_mls_core::crypto::CipherSuite;
 use aws_mls_crypto_traits::AeadId;
 
 use crate::AwsLcCryptoError;
 
 #[derive(Clone)]
-pub struct Aes256Gcm(AeadId);
+pub struct AwsLcAead(AeadId);
 
-impl Aes256Gcm {
-    pub fn new() -> Self {
-        Self(AeadId::Aes256Gcm)
+impl AwsLcAead {
+    pub fn new(cipher_suite: CipherSuite) -> Option<Self> {
+        AeadId::new(cipher_suite).map(Self)
+    }
+
+    fn unbound_key(&self, key: &[u8]) -> Result<UnboundKey, AwsLcCryptoError> {
+        match self.0 {
+            AeadId::Aes128Gcm => Ok(UnboundKey::new(&AES_128_GCM, key)?),
+            AeadId::Aes256Gcm => Ok(UnboundKey::new(&AES_256_GCM, key)?),
+            AeadId::Chacha20Poly1305 => Ok(UnboundKey::new(&CHACHA20_POLY1305, key)?),
+            _ => Err(AwsLcCryptoError::UnsupportedCipherSuite),
+        }
     }
 }
 
-impl Default for Aes256Gcm {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl aws_mls_crypto_traits::AeadType for Aes256Gcm {
+impl aws_mls_crypto_traits::AeadType for AwsLcAead {
     type Error = AwsLcCryptoError;
 
     fn aead_id(&self) -> u16 {
@@ -34,7 +38,7 @@ impl aws_mls_crypto_traits::AeadType for Aes256Gcm {
     ) -> Result<Vec<u8>, Self::Error> {
         let mut in_out_buffer = data.to_vec();
 
-        let key = aead::UnboundKey::new(&aead::AES_256_GCM, key)?;
+        let key = self.unbound_key(key)?;
         let nonce = aead::Nonce::try_assume_unique_for_key(nonce)?;
 
         let sealing_key = aead::LessSafeKey::new(key);
@@ -55,7 +59,7 @@ impl aws_mls_crypto_traits::AeadType for Aes256Gcm {
     ) -> Result<Vec<u8>, Self::Error> {
         let mut in_out_buffer = ciphertext.to_vec();
 
-        let key = aead::UnboundKey::new(&aead::AES_256_GCM, key)?;
+        let key = self.unbound_key(key)?;
         let nonce = aead::Nonce::try_assume_unique_for_key(nonce)?;
 
         let opening_key = aead::LessSafeKey::new(key);

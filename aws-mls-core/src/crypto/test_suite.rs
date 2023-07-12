@@ -82,10 +82,10 @@ pub fn verify_tests<C: CryptoProvider>(crypto: &C) {
         };
 
         verify_hkdf_tests(&cs, test_suite.hkdf_tests);
-        verify_signature_tests(&cs, test_suite.signature_tests);
         verify_aead_tests(&cs, test_suite.aead_tests);
-        verify_hpke_tests(&cs, test_suite.hpke_tests);
         verify_mac_tests(&cs, test_suite.mac_tests);
+        verify_hpke_tests(&cs, test_suite.hpke_tests);
+        verify_signature_tests(&cs, test_suite.signature_tests);
     }
 }
 

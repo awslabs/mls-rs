@@ -5,7 +5,7 @@ mod kdf;
 
 use std::mem::MaybeUninit;
 
-use aead::Aes256Gcm;
+use aead::AwsLcAead;
 use aws_lc_rs::{digest, error::Unspecified, hmac};
 
 use aws_lc_sys::SHA256;
@@ -24,8 +24,8 @@ use aws_mls_crypto_hpke::{
 };
 use aws_mls_crypto_traits::{AeadType, KdfType, KemId};
 use ec::Ecdh;
-use ecdsa::EcdsaP521;
-use kdf::HkdfSha512;
+use ecdsa::AwsLcEcdsa;
+use kdf::AwsLcHkdf;
 use thiserror::Error;
 use zeroize::Zeroizing;
 
@@ -34,42 +34,44 @@ pub struct AwsLcCryptoProvider;
 
 #[derive(Clone)]
 pub struct AwsLcCipherSuite {
-    signing: EcdsaP521,
-    aead: Aes256Gcm,
-    kdf: HkdfSha512,
-    hpke: Hpke<DhKem<Ecdh, HkdfSha512>, HkdfSha512, Aes256Gcm>,
+    signing: AwsLcEcdsa,
+    aead: AwsLcAead,
+    kdf: AwsLcHkdf,
+    hpke: Hpke<DhKem<Ecdh, AwsLcHkdf>, AwsLcHkdf, AwsLcAead>,
+    mac_algo: hmac::Algorithm,
 }
 
 impl AwsLcCipherSuite {
-    pub fn new() -> Self {
-        let kem_id = KemId::DhKemP521Sha512;
+    pub fn new(cipher_suite: CipherSuite) -> Option<Self> {
+        let kem_id = KemId::new(cipher_suite)?;
+        let kdf = AwsLcHkdf::new(cipher_suite)?;
+        let aead = AwsLcAead::new(cipher_suite)?;
+        let dh = Ecdh::new(cipher_suite)?;
+        let dh_kem = DhKem::new(dh, kdf.clone(), kem_id as u16, kem_id.n_secret());
 
-        let dh_kem = DhKem::new(
-            Ecdh::new(),
-            HkdfSha512::new(),
-            kem_id as u16,
-            kem_id.n_secret(),
-        );
+        let mac_algo = match cipher_suite {
+            CipherSuite::CURVE25519_AES128
+            | CipherSuite::CURVE25519_CHACHA
+            | CipherSuite::P256_AES128 => hmac::HMAC_SHA256,
+            CipherSuite::P384_AES256 => hmac::HMAC_SHA384,
+            CipherSuite::P521_AES256 => hmac::HMAC_SHA512,
+            _ => return None,
+        };
 
-        Self {
-            hpke: Hpke::new(dh_kem, HkdfSha512::new(), Some(Aes256Gcm::new())),
-            aead: Aes256Gcm::new(),
-            kdf: HkdfSha512::new(),
-            signing: EcdsaP521,
-        }
+        Some(Self {
+            hpke: Hpke::new(dh_kem, kdf.clone(), Some(aead.clone())),
+            aead,
+            kdf,
+            signing: AwsLcEcdsa::new(cipher_suite)?,
+            mac_algo,
+        })
     }
 
-    pub fn import_der_private_key(
+    pub fn import_ec_der_private_key(
         &self,
         bytes: &[u8],
     ) -> Result<SignatureSecretKey, AwsLcCryptoError> {
-        self.signing.import_der_private_key(bytes)
-    }
-}
-
-impl Default for AwsLcCipherSuite {
-    fn default() -> Self {
-        Self::new()
+        self.signing.import_ec_der_private_key(bytes)
     }
 }
 
@@ -77,14 +79,20 @@ impl CryptoProvider for AwsLcCryptoProvider {
     type CipherSuiteProvider = AwsLcCipherSuite;
 
     fn supported_cipher_suites(&self) -> Vec<aws_mls_core::crypto::CipherSuite> {
-        vec![CipherSuite::P521_AES256]
+        vec![
+            CipherSuite::P521_AES256,
+            CipherSuite::P256_AES128,
+            CipherSuite::P384_AES256,
+            CipherSuite::CURVE25519_AES128,
+            CipherSuite::CURVE25519_CHACHA,
+        ]
     }
 
     fn cipher_suite_provider(
         &self,
         cipher_suite: aws_mls_core::crypto::CipherSuite,
     ) -> Option<Self::CipherSuiteProvider> {
-        (cipher_suite == CipherSuite::P521_AES256).then_some(AwsLcCipherSuite::new())
+        AwsLcCipherSuite::new(cipher_suite)
     }
 }
 
@@ -98,6 +106,8 @@ pub enum AwsLcCryptoError {
     InvalidSignature,
     #[error(transparent)]
     HpkeError(#[from] HpkeError),
+    #[error("Unsupported ciphersuite")]
+    UnsupportedCipherSuite,
 }
 
 impl From<Unspecified> for AwsLcCryptoError {
@@ -111,8 +121,8 @@ impl IntoAnyError for AwsLcCryptoError {}
 impl CipherSuiteProvider for AwsLcCipherSuite {
     type Error = AwsLcCryptoError;
 
-    type HpkeContextS = ContextS<HkdfSha512, Aes256Gcm>;
-    type HpkeContextR = ContextR<HkdfSha512, Aes256Gcm>;
+    type HpkeContextS = ContextS<AwsLcHkdf, AwsLcAead>;
+    type HpkeContextR = ContextR<AwsLcHkdf, AwsLcAead>;
 
     fn cipher_suite(&self) -> aws_mls_core::crypto::CipherSuite {
         CipherSuite::P521_AES256
@@ -123,7 +133,7 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
     }
 
     fn mac(&self, key: &[u8], data: &[u8]) -> Result<Vec<u8>, Self::Error> {
-        let key = hmac::Key::new(hmac::HMAC_SHA512, key);
+        let key = hmac::Key::new(self.mac_algo, key);
         Ok(hmac::sign(&key, data).as_ref().to_vec())
     }
 

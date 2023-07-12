@@ -1,4 +1,4 @@
-use std::{mem::MaybeUninit, os::raw::c_void, ptr::null_mut};
+use std::{os::raw::c_void, ptr::null_mut};
 
 use aws_lc_rs::error::Unspecified;
 use aws_lc_sys::{
@@ -6,19 +6,24 @@ use aws_lc_sys::{
     EC_GROUP_free, EC_GROUP_new_by_curve_name, EC_KEY_free, EC_KEY_generate_key, EC_KEY_get0_group,
     EC_KEY_get0_private_key, EC_KEY_get0_public_key, EC_KEY_new_by_curve_name,
     EC_KEY_set_private_key, EC_KEY_set_public_key, EC_POINT_copy, EC_POINT_free, EC_POINT_mul,
-    EC_POINT_new, EC_POINT_oct2point, EC_POINT_point2oct, NID_secp521r1, EC_POINT,
+    EC_POINT_new, EC_POINT_oct2point, EC_POINT_point2oct, NID_X9_62_prime256v1, NID_secp384r1,
+    NID_secp521r1, X25519_keypair, X25519_public_from_private, EC_POINT, X25519,
 };
-use aws_mls_core::crypto::{HpkePublicKey, HpkeSecretKey};
+use aws_mls_core::crypto::{CipherSuite, HpkePublicKey, HpkeSecretKey};
 use aws_mls_crypto_traits::Curve;
 
 use crate::AwsLcCryptoError;
+
+pub(crate) const SUPPORTED_NIST_CURVES: [Curve; 3] = [Curve::P521, Curve::P256, Curve::P384];
 
 #[derive(Clone)]
 pub(crate) struct Ecdh(Curve);
 
 impl Ecdh {
-    pub fn new() -> Self {
-        Self(Curve::P521)
+    pub fn new(cipher_suite: CipherSuite) -> Option<Self> {
+        let curve = Curve::from_ciphersuite(cipher_suite, false)?;
+
+        (SUPPORTED_NIST_CURVES.contains(&curve) || curve == Curve::X25519).then_some(Self(curve))
     }
 }
 
@@ -30,40 +35,31 @@ impl aws_mls_crypto_traits::DhType for Ecdh {
         secret_key: &HpkeSecretKey,
         public_key: &HpkePublicKey,
     ) -> Result<Vec<u8>, Self::Error> {
-        let secret_key = EcPrivateKey::from_bytes(secret_key)?;
-        let public_key = EcPublicKey::from_bytes(public_key)?;
-
-        let mut shared_secret_data = MaybeUninit::<[u8; SHARED_SECRET_LEN]>::uninit();
-
-        unsafe {
-            let out_len = ECDH_compute_key(
-                shared_secret_data.as_mut_ptr() as *mut c_void,
-                SHARED_SECRET_LEN,
-                public_key.inner,
-                secret_key.inner,
-                None,
-            );
-
-            if out_len == 0 {
-                return Err(Unspecified.into());
-            }
-
-            Ok(shared_secret_data.assume_init()[..out_len as usize].to_vec())
+        if self.0 == Curve::X25519 {
+            x25519(secret_key, public_key)
+        } else {
+            ecdh(self.0, secret_key, public_key)
         }
     }
 
     fn generate(&self) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
-        let private_key = EcPrivateKey::generate()?;
-        let public_key = private_key.public_key()?;
+        let (secret, public) = if self.0 == Curve::X25519 {
+            x25519_generate()
+        } else {
+            ec_generate(self.0)
+        }?;
 
-        Ok((private_key.to_vec()?.into(), public_key.to_vec()?.into()))
+        Ok((secret.into(), public.into()))
     }
 
     fn to_public(&self, secret_key: &HpkeSecretKey) -> Result<HpkePublicKey, Self::Error> {
-        Ok(EcPrivateKey::from_bytes(secret_key)?
-            .public_key()?
-            .to_vec()?
-            .into())
+        let public = if self.0 == Curve::X25519 {
+            x25519_public_key(secret_key)
+        } else {
+            ec_public_key(self.0, secret_key)
+        }?;
+
+        Ok(public.into())
     }
 
     fn bitmask_for_rejection_sampling(&self) -> Option<u8> {
@@ -75,40 +71,121 @@ impl aws_mls_crypto_traits::DhType for Ecdh {
     }
 
     fn public_key_validate(&self, key: &HpkePublicKey) -> Result<(), Self::Error> {
-        EcPublicKey::from_bytes(key).map(|_| ()).map_err(Into::into)
+        if self.0 != Curve::X25519 {
+            EcPublicKey::from_bytes(key, self.0)?;
+        }
+
+        Ok(())
     }
 }
 
-const ELEM_MAX_BITS: usize = 521;
+pub fn ecdh(
+    curve: Curve,
+    secret_key: &HpkeSecretKey,
+    public_key: &HpkePublicKey,
+) -> Result<Vec<u8>, AwsLcCryptoError> {
+    let secret_key = EcPrivateKey::from_bytes(secret_key, curve)?;
+    let public_key = EcPublicKey::from_bytes(public_key, curve)?;
 
-pub const ELEM_MAX_BYTES: usize = (ELEM_MAX_BITS + 7) / 8;
-pub const PUBLIC_KEY_LEN: usize = 1 + (2 * ELEM_MAX_BYTES);
-pub const SECRET_KEY_LEN: usize = ELEM_MAX_BYTES;
-pub const SHARED_SECRET_LEN: usize = SECRET_KEY_LEN;
+    let mut shared_secret_data = vec![0u8; curve.secret_key_size()];
+
+    let out_len = unsafe {
+        ECDH_compute_key(
+            shared_secret_data.as_mut_ptr() as *mut c_void,
+            shared_secret_data.len(),
+            public_key.inner,
+            secret_key.inner,
+            None,
+        )
+    };
+
+    (out_len as usize == shared_secret_data.len())
+        .then_some(shared_secret_data)
+        .ok_or(Unspecified.into())
+}
+
+pub fn x25519(
+    secret_key: &HpkeSecretKey,
+    public_key: &HpkePublicKey,
+) -> Result<Vec<u8>, AwsLcCryptoError> {
+    let curve = Curve::X25519;
+
+    (secret_key.len() == curve.secret_key_size() && public_key.len() == curve.public_key_size())
+        .then_some(())
+        .ok_or(AwsLcCryptoError::InvalidKeyData)?;
+
+    let mut secret = vec![0u8; curve.secret_key_size()];
+
+    // returns one on success and zero on error
+    let res = unsafe {
+        X25519(
+            secret.as_mut_ptr(),
+            secret_key.as_ptr(),
+            public_key.as_ptr(),
+        )
+    };
+
+    (res == 1).then_some(secret).ok_or(Unspecified.into())
+}
+
+pub fn ec_generate(curve: Curve) -> Result<(Vec<u8>, Vec<u8>), AwsLcCryptoError> {
+    let private_key = EcPrivateKey::generate(curve)?;
+    let public_key = private_key.public_key()?;
+
+    Ok((private_key.to_vec()?, public_key.to_vec()?))
+}
+
+pub fn x25519_generate() -> Result<(Vec<u8>, Vec<u8>), AwsLcCryptoError> {
+    let curve = Curve::X25519;
+
+    let mut private_key = vec![0u8; curve.secret_key_size()];
+    let mut public_key = vec![0u8; curve.public_key_size()];
+
+    unsafe { X25519_keypair(public_key.as_mut_ptr(), private_key.as_mut_ptr()) }
+
+    Ok((private_key, public_key))
+}
+
+pub fn ec_public_key(curve: Curve, secret_key: &[u8]) -> Result<Vec<u8>, AwsLcCryptoError> {
+    Ok(EcPrivateKey::from_bytes(secret_key, curve)?
+        .public_key()?
+        .to_vec()?)
+}
+
+pub fn x25519_public_key(secret_key: &[u8]) -> Result<Vec<u8>, AwsLcCryptoError> {
+    let mut public_key = vec![0u8; Curve::X25519.public_key_size()];
+
+    unsafe { X25519_public_from_private(public_key.as_mut_ptr(), secret_key.as_ptr()) }
+
+    Ok(public_key)
+}
 
 pub struct EcPrivateKey {
     pub(crate) inner: *mut aws_lc_sys::ec_key_st,
+    curve: Curve,
 }
 
 impl EcPrivateKey {
-    pub fn generate() -> Result<Self, Unspecified> {
+    pub fn generate(curve: Curve) -> Result<Self, Unspecified> {
+        let nid = nid(curve).ok_or(Unspecified)?;
+
+        let key = unsafe { EC_KEY_new_by_curve_name(nid) };
+
+        if key.is_null() {
+            return Err(Unspecified);
+        }
+
         unsafe {
-            let key = EC_KEY_new_by_curve_name(NID_secp521r1);
-
-            if key.is_null() {
-                return Err(Unspecified);
-            }
-
             if 1 != EC_KEY_generate_key(key) {
                 EC_KEY_free(key);
                 return Err(Unspecified);
             }
-
-            Ok(Self { inner: key })
         }
+
+        Ok(Self { inner: key, curve })
     }
 
-    pub fn from_der(bytes: &[u8]) -> Result<Self, Unspecified> {
+    pub fn from_der(bytes: &[u8], curve: Curve) -> Result<Self, Unspecified> {
         unsafe {
             let mut result_holder = bytes.as_ptr();
 
@@ -120,54 +197,70 @@ impl EcPrivateKey {
                 return Err(Unspecified);
             }
 
-            Ok(Self { inner: ec_key })
+            Ok(Self {
+                inner: ec_key,
+                curve,
+            })
         }
     }
 
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, Unspecified> {
-        unsafe {
-            // Private key to bignum
-            let bn = BN_bin2bn(bytes.as_ptr(), bytes.len(), null_mut());
+    pub fn from_bytes(bytes: &[u8], curve: Curve) -> Result<Self, Unspecified> {
+        let bn = unsafe { BN_bin2bn(bytes.as_ptr(), bytes.len(), null_mut()) };
 
-            if bn.is_null() {
-                return Err(Unspecified);
+        if bn.is_null() {
+            return Err(Unspecified);
+        }
+
+        let key = unsafe {
+            let key = nid(curve).map(|n| EC_KEY_new_by_curve_name(n));
+
+            match key {
+                Some(key) if !key.is_null() => key,
+                _ => {
+                    BN_free(bn);
+                    return Err(Unspecified);
+                }
             }
+        };
 
-            let key = EC_KEY_new_by_curve_name(NID_secp521r1);
-
+        unsafe {
             if 1 != EC_KEY_set_private_key(key, bn) {
                 EC_KEY_free(key);
                 BN_free(bn);
                 return Err(Unspecified);
             }
 
-            Ok(Self { inner: key })
+            BN_free(bn);
         }
+
+        Ok(Self { inner: key, curve })
     }
 
     pub fn to_vec(&self) -> Result<Vec<u8>, Unspecified> {
-        unsafe {
-            let mut secret_key_data = MaybeUninit::<[u8; SECRET_KEY_LEN]>::uninit();
+        let mut secret_key_data = vec![0u8; self.curve.secret_key_size()];
 
-            let len = BN_bn2bin(
+        let len = unsafe {
+            BN_bn2bin(
                 EC_KEY_get0_private_key(self.inner),
-                secret_key_data.as_mut_ptr() as *mut u8,
-            );
+                secret_key_data.as_mut_ptr(),
+            )
+        };
 
-            if len == 0 {
-                return Err(Unspecified);
-            }
-
-            Ok(secret_key_data.assume_init()[..len].to_vec())
+        if len > secret_key_data.len() || len == 0 {
+            return Err(Unspecified);
         }
+
+        secret_key_data.truncate(len);
+
+        Ok(secret_key_data)
     }
 
     pub fn public_key(&self) -> Result<EcPublicKey, Unspecified> {
-        unsafe {
-            let group = EC_KEY_get0_group(self.inner);
+        let group = unsafe { EC_KEY_get0_group(self.inner) };
+        let pub_key = unsafe { EC_POINT_new(group) };
 
+        unsafe {
             if EC_KEY_get0_public_key(self.inner).is_null() {
-                let pub_key = EC_POINT_new(group);
                 let bn = EC_KEY_get0_private_key(self.inner);
 
                 if 1 != EC_POINT_mul(group, pub_key, bn, null_mut(), null_mut(), null_mut()) {
@@ -179,19 +272,16 @@ impl EcPrivateKey {
                     EC_POINT_free(pub_key);
                     return Err(Unspecified);
                 }
-
-                Ok(EcPublicKey { inner: pub_key })
-            } else {
-                let point = EC_POINT_new(group);
-
-                if 1 != EC_POINT_copy(point, EC_KEY_get0_public_key(self.inner)) {
-                    EC_POINT_free(point);
-                    return Err(Unspecified);
-                }
-
-                Ok(EcPublicKey { inner: point })
+            } else if 1 != EC_POINT_copy(pub_key, EC_KEY_get0_public_key(self.inner)) {
+                EC_POINT_free(pub_key);
+                return Err(Unspecified);
             }
         }
+
+        Ok(EcPublicKey {
+            inner: pub_key,
+            curve: self.curve,
+        })
     }
 }
 
@@ -203,12 +293,15 @@ impl Drop for EcPrivateKey {
 
 pub struct EcPublicKey {
     pub(crate) inner: *mut EC_POINT,
+    curve: Curve,
 }
 
 impl EcPublicKey {
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, Unspecified> {
+    pub fn from_bytes(bytes: &[u8], curve: Curve) -> Result<Self, Unspecified> {
+        let nid = nid(curve).ok_or(Unspecified)?;
+
         unsafe {
-            let group = EC_GROUP_new_by_curve_name(NID_secp521r1);
+            let group = EC_GROUP_new_by_curve_name(nid);
 
             let point = EC_POINT_new(group);
 
@@ -220,38 +313,51 @@ impl EcPublicKey {
 
             EC_GROUP_free(group);
 
-            Ok(Self { inner: point })
+            Ok(Self {
+                inner: point,
+                curve,
+            })
         }
     }
 
     pub fn to_vec(&self) -> Result<Vec<u8>, Unspecified> {
-        unsafe {
-            let mut pub_key_data = MaybeUninit::<[u8; PUBLIC_KEY_LEN]>::uninit();
+        let mut pub_key_data = vec![0u8; self.curve.public_key_size()];
+        let nid = nid(self.curve).ok_or(Unspecified)?;
 
-            let group = EC_GROUP_new_by_curve_name(NID_secp521r1);
+        let out_len = unsafe {
+            let group = EC_GROUP_new_by_curve_name(nid);
 
             let out_len = EC_POINT_point2oct(
                 group,
                 self.inner,
                 point_conversion_form_t::POINT_CONVERSION_UNCOMPRESSED,
                 pub_key_data.as_mut_ptr() as *mut u8,
-                PUBLIC_KEY_LEN,
+                self.curve.public_key_size(),
                 null_mut(),
             );
 
             EC_GROUP_free(group);
 
-            if out_len == 0 {
-                return Err(Unspecified);
-            }
+            out_len
+        };
 
-            Ok(pub_key_data.assume_init().to_vec())
-        }
+        (out_len == pub_key_data.len())
+            .then_some(pub_key_data)
+            .ok_or(Unspecified)
     }
 }
 
 impl Drop for EcPublicKey {
     fn drop(&mut self) {
         unsafe { EC_POINT_free(self.inner) }
+    }
+}
+
+fn nid(curve: Curve) -> Option<i32> {
+    match curve {
+        Curve::P256 => Some(NID_X9_62_prime256v1),
+        Curve::P384 => Some(NID_secp384r1),
+        Curve::P521 => Some(NID_secp521r1),
+        _ => None,
     }
 }

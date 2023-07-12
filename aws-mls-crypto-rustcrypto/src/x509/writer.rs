@@ -249,7 +249,8 @@ mod tests {
 
     use crate::{
         ec::{
-            private_key_from_bytes, private_key_to_public, pub_key_to_uncompressed, EcPrivateKey,
+            private_key_from_bytes, private_key_to_public, pub_key_to_uncompressed,
+            test_utils::ed25519_seed_to_private_key, EcPrivateKey,
         },
         x509::X509Writer,
     };
@@ -273,7 +274,7 @@ mod tests {
             include_bytes!("../../test_data/x509/leaf/key")
         };
 
-        let subject_seckey = subject_seckey.to_vec().into();
+        let subject_seckey = ed25519_seed_to_private_key(subject_seckey).into();
 
         let expected_csr = if ca {
             include_bytes!("../../test_data/x509/root_ca/csr.der").to_vec()
@@ -365,12 +366,13 @@ mod tests {
 
             let key_data: p256::pkcs8::PrivateKeyInfo = document.decode_msg().unwrap();
 
-            let keypair_bytes =
+            let secret =
                 p256::pkcs8::der::asn1::OctetString::from_der(key_data.private_key).unwrap();
 
-            EcPrivateKey::Ed25519(
-                ed25519_dalek::SecretKey::from_bytes(keypair_bytes.as_bytes()).unwrap(),
-            )
+            let secret = ed25519_dalek::SecretKey::from_bytes(secret.as_bytes()).unwrap();
+            let public = (&secret).into();
+
+            EcPrivateKey::Ed25519((secret, public))
         };
 
         let subject_pubkey =
@@ -438,6 +440,7 @@ mod tests {
 
     fn get_test_root_ca() -> CertificateIssuer {
         let ca_key = include_bytes!("../../test_data/x509/root_ca/key");
+        let ca_key = ed25519_seed_to_private_key(ca_key);
 
         let ca_cert =
             DerCertificate::from(include_bytes!("../../test_data/x509/root_ca/cert.der").to_vec());
@@ -445,7 +448,7 @@ mod tests {
         let lifetime = 10 * 365 * 24 * 3600;
 
         CertificateIssuer::new(
-            ca_key.to_vec().into(),
+            ca_key.into(),
             CipherSuite::CURVE25519_AES128,
             vec![ca_cert].into(),
             lifetime,

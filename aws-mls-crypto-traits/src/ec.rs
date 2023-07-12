@@ -30,9 +30,17 @@ impl Curve {
             Curve::P384 => 48,
             Curve::P521 => 66,
             Curve::X25519 => 32,
-            Curve::Ed25519 => 32,
+            Curve::Ed25519 => 64,
             Curve::X448 => 56,
-            Curve::Ed448 => 57,
+            Curve::Ed448 => 114,
+        }
+    }
+
+    #[inline(always)]
+    pub fn public_key_size(&self) -> usize {
+        match self {
+            Curve::P256 | Curve::P384 | Curve::P521 => 2 * self.secret_key_size() + 1,
+            Curve::X25519 | Curve::Ed25519 | Curve::X448 | Curve::Ed448 => self.secret_key_size(),
         }
     }
 
