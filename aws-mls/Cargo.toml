@@ -56,7 +56,7 @@ portable-atomic = { version = "*", default-features = false, features = ["critic
 portable-atomic-util = { version = "0.1.2", default-features = false, features = ["alloc"]}
 
 # Optional dependencies
-aws-mls-provider-sqlite = { path = "../aws-mls-provider-sqlite", version = "*", optional = true }
+aws-mls-provider-sqlite = { path = "../aws-mls-provider-sqlite", version = "*", default-features = false, optional = true }
 aws-mls-crypto-openssl = { path = "../aws-mls-crypto-openssl", optional = true, version = "*" }
 # TODO: https://github.com/GoogleChromeLabs/wasm-bindgen-rayon
 rayon = { version = "1", optional = true }
