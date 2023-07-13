@@ -37,6 +37,10 @@ struct TestSuite {
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "std"))]
 pub fn generate_tests<C: CryptoProvider>(crypto: &C) {
+    for cs in crypto.supported_cipher_suites() {
+        crypto.cipher_suite_provider(cs).unwrap();
+    }
+
     let mut test_suites = create_or_load_tests(crypto);
 
     for test_suite in test_suites.iter_mut() {

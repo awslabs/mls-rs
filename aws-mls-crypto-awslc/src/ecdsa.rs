@@ -23,7 +23,7 @@ pub struct AwsLcEcdsa(Curve);
 
 impl AwsLcEcdsa {
     pub fn new(cipher_suite: CipherSuite) -> Option<Self> {
-        let curve = Curve::from_ciphersuite(cipher_suite, false)?;
+        let curve = Curve::from_ciphersuite(cipher_suite, true)?;
         (SUPPORTED_NIST_CURVES.contains(&curve) || curve == Curve::Ed25519).then_some(Self(curve))
     }
 
