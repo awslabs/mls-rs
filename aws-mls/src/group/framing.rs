@@ -4,7 +4,7 @@ use super::*;
 use crate::{client::MlsError, protocol_version::ProtocolVersion};
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
-use zeroize::Zeroize;
+use zeroize::ZeroizeOnDrop;
 
 #[cfg(feature = "private_message")]
 use alloc::boxed::Box;
@@ -66,9 +66,8 @@ impl From<u32> for Sender {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode, Zeroize)]
+#[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode, ZeroizeOnDrop)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[zeroize(drop)]
 pub struct ApplicationData(#[mls_codec(with = "aws_mls_codec::byte_vec")] Vec<u8>);
 
 impl From<Vec<u8>> for ApplicationData {

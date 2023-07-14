@@ -13,7 +13,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use aws_mls_core::error::IntoAnyError;
-use zeroize::{Zeroize, Zeroizing};
+use zeroize::Zeroizing;
 
 #[cfg(feature = "external_commit")]
 use crate::crypto::{HpkeContextR, HpkeContextS, HpkePublicKey, HpkeSecretKey};
@@ -21,7 +21,7 @@ use crate::crypto::{HpkeContextR, HpkeContextS, HpkePublicKey, HpkeSecretKey};
 use super::epoch::{EpochSecrets, SenderDataSecret};
 use super::message_signature::AuthenticatedContent;
 
-#[derive(Debug, Clone, PartialEq, Eq, Zeroize, Default, MlsEncode, MlsDecode, MlsSize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, MlsEncode, MlsDecode, MlsSize)]
 pub struct KeySchedule {
     #[mls_codec(with = "aws_mls_codec::byte_vec")]
     exporter_secret: Zeroizing<Vec<u8>>,
@@ -306,7 +306,7 @@ impl<'a, P: CipherSuiteProvider> SecretsProducer<'a, P> {
 #[cfg(feature = "external_commit")]
 const EXPORTER_CONTEXT: &[u8] = b"MLS 1.0 external init secret";
 
-#[derive(Clone, Debug, Eq, PartialEq, MlsEncode, MlsDecode, MlsSize, Zeroize, Default)]
+#[derive(Clone, Debug, Eq, PartialEq, MlsEncode, MlsDecode, MlsSize, Default)]
 pub struct InitSecret(#[mls_codec(with = "aws_mls_codec::byte_vec")] Zeroizing<Vec<u8>>);
 
 #[cfg(feature = "external_commit")]

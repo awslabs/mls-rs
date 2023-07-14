@@ -3,7 +3,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use core::ops::Deref;
-use zeroize::{Zeroize, Zeroizing};
+use zeroize::{ZeroizeOnDrop, Zeroizing};
 
 mod cipher_suite;
 pub use self::cipher_suite::*;
@@ -54,7 +54,7 @@ impl AsRef<[u8]> for HpkePublicKey {
 }
 
 /// Byte representation of an HPKE secret key.
-#[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode, Zeroize)]
+#[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode, ZeroizeOnDrop)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct HpkeSecretKey(#[mls_codec(with = "aws_mls_codec::byte_vec")] Vec<u8>);
 
@@ -138,7 +138,7 @@ impl From<Vec<u8>> for SignaturePublicKey {
 
 /// Byte representation of a signature key.
 #[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::ffi_type(opaque))]
-#[derive(Clone, Debug, PartialEq, Eq, Zeroize, MlsSize, MlsEncode, MlsDecode)]
+#[derive(Clone, Debug, PartialEq, Eq, ZeroizeOnDrop, MlsSize, MlsEncode, MlsDecode)]
 pub struct SignatureSecretKey {
     #[mls_codec(with = "aws_mls_codec::byte_vec")]
     bytes: Vec<u8>,

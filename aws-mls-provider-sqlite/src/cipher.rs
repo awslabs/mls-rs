@@ -3,10 +3,10 @@ use crate::SqLiteDataStorageError;
 use rusqlite::Connection;
 
 use hex::ToHex;
-use zeroize::{Zeroize, Zeroizing};
+use zeroize::{ZeroizeOnDrop, Zeroizing};
 
 #[allow(dead_code)]
-#[derive(Debug, Zeroize, Clone)]
+#[derive(Debug, ZeroizeOnDrop, Clone)]
 /// Representation of a SQLCipher key used to unlock a database.
 pub enum SqlCipherKey {
     /// Passphrase based key.

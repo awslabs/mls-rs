@@ -6,12 +6,11 @@ use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use aws_mls_core::error::IntoAnyError;
 use core::ops::Deref;
-use zeroize::{Zeroize, Zeroizing};
+use zeroize::Zeroizing;
 
 use super::hpke_encryption::HpkeEncryptable;
 
-#[derive(Debug, Clone, Zeroize, Eq, PartialEq, MlsSize, MlsEncode, MlsDecode)]
-#[zeroize(drop)]
+#[derive(Debug, Clone, Eq, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 pub struct PathSecret(#[mls_codec(with = "aws_mls_codec::byte_vec")] Zeroizing<Vec<u8>>);
 
 impl Deref for PathSecret {
