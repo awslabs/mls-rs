@@ -120,6 +120,14 @@ impl SignaturePublicKey {
     pub fn new(bytes: Vec<u8>) -> Self {
         bytes.into()
     }
+
+    pub fn new_slice(data: &[u8]) -> Self {
+        Self(data.to_vec())
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
 }
 
 impl Deref for SignaturePublicKey {
@@ -137,7 +145,10 @@ impl From<Vec<u8>> for SignaturePublicKey {
 }
 
 /// Byte representation of a signature key.
-#[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::ffi_type(opaque))]
+#[cfg_attr(
+    all(feature = "ffi", not(test)),
+    ::safer_ffi_gen::ffi_type(clone, opaque)
+)]
 #[derive(Clone, Debug, PartialEq, Eq, ZeroizeOnDrop, MlsSize, MlsEncode, MlsDecode)]
 pub struct SignatureSecretKey {
     #[mls_codec(with = "aws_mls_codec::byte_vec")]
@@ -148,6 +159,16 @@ pub struct SignatureSecretKey {
 impl SignatureSecretKey {
     pub fn new(bytes: Vec<u8>) -> Self {
         bytes.into()
+    }
+
+    pub fn new_slice(data: &[u8]) -> Self {
+        Self {
+            bytes: data.to_vec(),
+        }
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.bytes
     }
 }
 

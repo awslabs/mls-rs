@@ -62,7 +62,7 @@ aws-mls-crypto-openssl = { path = "../aws-mls-crypto-openssl", optional = true, 
 rayon = { version = "1", optional = true }
 arbitrary = { version = "1", features = ["derive"], optional = true }
 safer-ffi = { version = "0.1.0", default-features = false, optional = true }
-safer-ffi-gen = { version = "0.3.0", default-features = false, optional = true }
+safer-ffi-gen = { version = "0.4.0", default-features = false, optional = true }
 
 # Example
 tokio = { version = "1", optional = true, features = ["macros", "rt-multi-thread"] }
