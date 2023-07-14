@@ -14,10 +14,10 @@ use alloc::collections::BTreeMap;
 
 use aws_mls_core::psk::{ExternalPskId, PreSharedKey, PreSharedKeyStorage};
 
+#[cfg(not(sync))]
+use alloc::boxed::Box;
 #[cfg(feature = "std")]
 use std::sync::Mutex;
-
-use alloc::boxed::Box;
 
 #[cfg(not(feature = "std"))]
 use spin::Mutex;

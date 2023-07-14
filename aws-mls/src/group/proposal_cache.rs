@@ -10,7 +10,7 @@ use crate::group::proposal_filter::FilterStrategy;
 #[cfg(feature = "external_commit")]
 use crate::tree_kem::leaf_node::LeafNode;
 
-#[cfg(feature = "std")]
+#[cfg(all(feature = "std", feature = "by_ref_proposal"))]
 use std::collections::HashMap;
 
 use aws_mls_core::{error::IntoAnyError, psk::PreSharedKeyStorage};

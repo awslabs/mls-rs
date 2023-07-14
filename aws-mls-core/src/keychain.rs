@@ -1,4 +1,5 @@
 use crate::{crypto::SignatureSecretKey, error::IntoAnyError, identity::SigningIdentity};
+#[cfg(not(sync))]
 use alloc::boxed::Box;
 
 /// Storage trait that maintains secret signature keys

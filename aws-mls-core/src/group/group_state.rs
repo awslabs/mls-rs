@@ -1,4 +1,5 @@
 use crate::error::IntoAnyError;
+#[cfg(not(sync))]
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode};

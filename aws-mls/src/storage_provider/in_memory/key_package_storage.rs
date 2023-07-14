@@ -17,10 +17,10 @@ use aws_mls_core::key_package::{KeyPackageData, KeyPackageStorage};
 #[cfg(feature = "std")]
 use std::sync::Mutex;
 
+#[cfg(not(sync))]
+use alloc::boxed::Box;
 #[cfg(not(feature = "std"))]
 use spin::Mutex;
-
-use alloc::boxed::Box;
 
 #[derive(Clone, Default, Debug)]
 /// In memory key package storage backed by a HashMap.

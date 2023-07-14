@@ -19,6 +19,7 @@ use crate::{
     },
     CipherSuiteProvider,
 };
+#[cfg(not(sync))]
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use aws_mls_core::{identity::IdentityProvider, psk::PreSharedKeyStorage};
@@ -223,6 +224,10 @@ impl ApplicationMessageDescription {
     }
 }
 
+#[cfg_attr(
+    all(feature = "ffi", not(test)),
+    safer_ffi_gen::ffi_type(clone, opaque)
+)]
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 /// Description of a processed MLS commit message.

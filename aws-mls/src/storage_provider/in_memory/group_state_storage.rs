@@ -3,13 +3,13 @@ use alloc::collections::VecDeque;
 #[cfg(feature = "std")]
 use alloc::sync::Arc;
 
-use aws_mls_codec::{MlsDecode, MlsEncode};
-#[cfg(not(feature = "std"))]
-use portable_atomic_util::Arc;
-
+#[cfg(not(sync))]
 use alloc::boxed::Box;
 use alloc::vec::Vec;
+use aws_mls_codec::{MlsDecode, MlsEncode};
 use aws_mls_core::group::{EpochRecord, GroupState, GroupStateStorage};
+#[cfg(not(feature = "std"))]
+use portable_atomic_util::Arc;
 
 use crate::storage_provider::group_state::EpochData;
 

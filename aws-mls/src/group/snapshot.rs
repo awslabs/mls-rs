@@ -22,7 +22,7 @@ use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 #[cfg(feature = "tree_index")]
 use aws_mls_core::identity::IdentityProvider;
 
-#[cfg(feature = "std")]
+#[cfg(all(feature = "std", feature = "by_ref_proposal"))]
 use std::collections::HashMap;
 
 #[cfg(all(feature = "by_ref_proposal", not(feature = "std")))]

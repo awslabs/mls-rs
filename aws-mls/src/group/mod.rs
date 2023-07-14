@@ -46,7 +46,7 @@ use crate::psk::{
 #[cfg(any(feature = "benchmark", feature = "psk"))]
 use crate::client_builder::Preferences;
 
-#[cfg(feature = "std")]
+#[cfg(all(feature = "std", feature = "by_ref_proposal"))]
 use std::collections::HashMap;
 
 #[cfg(feature = "private_message")]

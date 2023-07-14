@@ -269,7 +269,10 @@ impl From<&PrivateMessage> for PrivateContentAAD {
 }
 
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
-#[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::ffi_type(opaque))]
+#[cfg_attr(
+    all(feature = "ffi", not(test)),
+    ::safer_ffi_gen::ffi_type(clone, opaque)
+)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// A MLS protocol message for sending data over the wire.
 pub struct MLSMessage {

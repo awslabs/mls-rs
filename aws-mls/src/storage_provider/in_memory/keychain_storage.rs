@@ -22,10 +22,10 @@ use aws_mls_core::{
 #[cfg(feature = "std")]
 use std::sync::Mutex;
 
+#[cfg(not(sync))]
+use alloc::boxed::Box;
 #[cfg(not(feature = "std"))]
 use spin::Mutex;
-
-use alloc::boxed::Box;
 
 /// In memory keychain backed by a HashMap.
 ///

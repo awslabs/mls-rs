@@ -1,10 +1,9 @@
-use core::ops::Deref;
-
+use crate::error::IntoAnyError;
+#[cfg(not(sync))]
 use alloc::boxed::Box;
 use alloc::vec::Vec;
-
-use crate::error::IntoAnyError;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
+use core::ops::Deref;
 use zeroize::Zeroizing;
 
 #[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]

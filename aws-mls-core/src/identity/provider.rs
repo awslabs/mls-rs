@@ -1,4 +1,5 @@
 use crate::{error::IntoAnyError, extension::ExtensionList, group::RosterUpdate, time::MlsTime};
+#[cfg(not(sync))]
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
