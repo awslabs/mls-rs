@@ -1,6 +1,8 @@
 use crate::{identity::CredentialType, identity::SigningIdentity, time::MlsTime};
+#[cfg(not(sync))]
+use alloc::boxed::Box;
 use alloc::vec;
-use alloc::{boxed::Box, vec::Vec};
+use alloc::vec::Vec;
 pub use aws_mls_core::identity::BasicCredential;
 use aws_mls_core::{
     error::IntoAnyError,
