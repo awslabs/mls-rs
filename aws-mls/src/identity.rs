@@ -13,7 +13,7 @@ pub use aws_mls_core::identity::{
 
 pub use aws_mls_core::group::RosterUpdate;
 
-#[cfg(any(test, feature = "benchmark"))]
+#[cfg(test)]
 pub(crate) mod test_utils {
     use alloc::boxed::Box;
     use alloc::vec;

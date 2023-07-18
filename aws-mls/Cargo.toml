@@ -90,6 +90,13 @@ aws-mls-crypto-openssl = { path = "../aws-mls-crypto-openssl", version = "*"}
 [target.'cfg(sync)'.dependencies]
 maybe-async = { version = "0.2.7", features = ["is_sync"] }
 
+# Benchmarks
+[target.'cfg(awslc)'.dependencies]
+aws-mls-crypto-awslc = { path = "../aws-mls-crypto-awslc" }
+[target.'cfg(rustcrypto)'.dependencies]
+aws-mls-crypto-rustcrypto = { path = "../aws-mls-crypto-rustcrypto" }
+
+
 [[example]]
 name = "basic_usage"
 required-features = ["tokio"]
@@ -119,6 +126,11 @@ required-features = ["benchmark"]
 
 [[bench]]
 name = "group_commit"
+harness = false
+required-features = ["benchmark"]
+
+[[bench]]
+name = "group_receive_commit"
 harness = false
 required-features = ["benchmark"]
 

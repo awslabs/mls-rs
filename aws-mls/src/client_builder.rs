@@ -1039,7 +1039,7 @@ use aws_mls_core::{
 };
 use private::{Config, ConfigInner, IntoConfig};
 
-#[cfg(any(test, feature = "benchmark"))]
+#[cfg(test)]
 pub(crate) mod test_utils {
     use crate::{
         client_builder::{BaseConfig, ClientBuilder, WithIdentityProvider, WithKeychain},

@@ -30,9 +30,6 @@ use alloc::vec::Vec;
 
 use super::{cipher_suite_provider, epoch::EpochSecrets, state_repo::GroupStateRepository};
 
-#[cfg(feature = "benchmark")]
-use crate::cipher_suite::CipherSuite;
-
 #[derive(Debug, PartialEq, Clone, MlsEncode, MlsDecode, MlsSize)]
 pub(crate) struct Snapshot {
     version: u16,
@@ -50,11 +47,6 @@ pub(crate) struct Snapshot {
 impl Snapshot {
     pub(crate) fn group_id(&self) -> &[u8] {
         &self.state.context.group_id
-    }
-
-    #[cfg(feature = "benchmark")]
-    pub(crate) fn cipher_suite(&self) -> CipherSuite {
-        self.state.context.cipher_suite
     }
 }
 

@@ -2,7 +2,7 @@ use aws_mls::client_builder::MlsConfig;
 use aws_mls::CipherSuite;
 use aws_mls::Group;
 
-use aws_mls::bench_utils::group_functions::{commit_group, load_test_cases};
+use aws_mls::bench_utils::group_functions::load_test_cases;
 
 use criterion::{
     async_executor::FuturesExecutor, criterion_group, criterion_main, measurement::WallTime,
@@ -19,12 +19,9 @@ fn application_message_setup(c: &mut Criterion) {
     println!("Benchmarking group application message for: {cipher_suite:?}");
 
     // creates group of the desired size
-    let mut container = block_on(load_test_cases());
+    let mut container = block_on(load_test_cases(cipher_suite));
 
     let sessions = container.iter_mut().next().unwrap();
-
-    // fills the tree by having everyone commit
-    block_on(commit_group(sessions));
 
     let mut bytes = vec![0; 1000000];
     rand::thread_rng().fill_bytes(&mut bytes);

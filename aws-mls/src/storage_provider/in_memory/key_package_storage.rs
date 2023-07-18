@@ -82,13 +82,6 @@ impl InMemoryKeyPackageStorage {
 
         map.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
     }
-
-    #[cfg(feature = "benchmark")]
-    pub fn from_benchmark_data(key_packages: Vec<(Vec<u8>, KeyPackageData)>) -> Self {
-        Self {
-            inner: Arc::new(Mutex::new(key_packages.into_iter().collect())),
-        }
-    }
 }
 
 #[maybe_async::maybe_async]

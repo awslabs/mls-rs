@@ -1,21 +1,17 @@
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use aws_mls_core::{
-    crypto::SignatureSecretKey, group::GroupStateStorage, key_package::KeyPackageData,
+    crypto::{CipherSuiteProvider, CryptoProvider, SignatureSecretKey},
+    group::GroupStateStorage,
+    identity::BasicCredential,
+    key_package::KeyPackageData,
+    protocol_version::ProtocolVersion,
 };
-use aws_mls_crypto_openssl::OpensslCryptoProvider;
 
 use crate::{
     cipher_suite::CipherSuite,
-    client::{
-        test_utils::{
-            get_basic_client_builder, test_client_with_key_pkg, TEST_CIPHER_SUITE,
-            TEST_PROTOCOL_VERSION,
-        },
-        MlsError,
-    },
+    client::MlsError,
     client_builder::{
-        test_utils::TestClientBuilder, BaseConfig, Preferences, WithCryptoProvider,
-        WithIdentityProvider, WithKeychain,
+        BaseConfig, Preferences, WithCryptoProvider, WithIdentityProvider, WithKeychain,
     },
     client_config::ClientConfig,
     group::{
@@ -26,24 +22,33 @@ use crate::{
         snapshot::Snapshot,
         Commit, Group,
     },
-    identity::{test_utils::BasicWithCustomProvider, SigningIdentity},
+    identity::{basic::BasicIdentityProvider, SigningIdentity},
     storage_provider::in_memory::{
         InMemoryGroupStateStorage, InMemoryKeyPackageStorage, InMemoryKeychainStorage,
     },
-    ExtensionList,
+    Client, ExtensionList,
 };
 
+#[cfg(awslc)]
+pub use aws_mls_crypto_awslc::AwsLcCryptoProvider as MlsCryptoProvider;
+#[cfg(not(any(awslc, rustcrypto)))]
+pub use aws_mls_crypto_openssl::OpensslCryptoProvider as MlsCryptoProvider;
+#[cfg(rustcrypto)]
+pub use aws_mls_crypto_rustcrypto::RustCryptoProvider as MlsCryptoProvider;
+
 pub type TestClientConfig = WithIdentityProvider<
-    BasicWithCustomProvider,
-    WithKeychain<InMemoryKeychainStorage, WithCryptoProvider<OpensslCryptoProvider, BaseConfig>>,
+    BasicIdentityProvider,
+    WithKeychain<InMemoryKeychainStorage, WithCryptoProvider<MlsCryptoProvider, BaseConfig>>,
 >;
+
+pub const PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::MLS_10;
 
 #[derive(Debug, MlsEncode, MlsDecode, MlsSize)]
 struct GroupInfo {
     session: Snapshot,
     epochs: Vec<u8>,
     key_packages: Vec<u8>,
-    secrets: Vec<u8>,
+    identities: Vec<u8>,
 }
 
 #[derive(Debug, MlsEncode, MlsDecode, MlsSize)]
@@ -52,31 +57,29 @@ pub struct TestCase {
 }
 
 #[maybe_async::maybe_async]
-async fn generate_test_cases() -> Vec<TestCase> {
-    let cipher_suite = TEST_CIPHER_SUITE;
-
+async fn generate_test_cases(cs: CipherSuite) -> Vec<TestCase> {
     let mut cases = Vec::new();
 
-    for length in [10, 50, 100] {
-        cases.push(get_group_states(cipher_suite, length).await)
+    for length in [16, 64, 128] {
+        cases.push(get_group_states(cs, length).await)
     }
 
     cases
 }
 
 #[maybe_async::async_impl]
-async fn load_or_generate() -> Vec<TestCase> {
-    load_test_case_mls!(group_state, generate_test_cases().await, to_vec)
+async fn load_or_generate(cs: CipherSuite) -> Vec<TestCase> {
+    load_test_case_mls!(group_state, generate_test_cases(cs).await, to_vec)
 }
 
 #[maybe_async::sync_impl]
-fn load_or_generate() -> Vec<TestCase> {
-    load_test_case_mls!(group_state, generate_test_cases(), to_vec)
+fn load_or_generate(cs: CipherSuite) -> Vec<TestCase> {
+    load_test_case_mls!(group_state, generate_test_cases(cs), to_vec)
 }
 
 #[maybe_async::maybe_async]
-pub async fn load_test_cases() -> Vec<Vec<Group<TestClientConfig>>> {
-    let tests: Vec<TestCase> = load_or_generate().await;
+pub async fn load_test_cases(cs: CipherSuite) -> Vec<Vec<Group<TestClientConfig>>> {
+    let tests: Vec<TestCase> = load_or_generate(cs).await;
 
     let mut group_collection = Vec::new();
 
@@ -89,8 +92,14 @@ pub async fn load_test_cases() -> Vec<Vec<Group<TestClientConfig>>> {
             )
             .unwrap();
 
-            let secrets = Vec::<(SigningIdentity, SignatureSecretKey)>::mls_decode(
-                &mut group_info.secrets.as_slice(),
+            let kpkg_storage = InMemoryKeyPackageStorage::default();
+
+            for (id, pkg) in key_packages {
+                kpkg_storage.insert(id, pkg);
+            }
+
+            let identities = Vec::<(SigningIdentity, SignatureSecretKey)>::mls_decode(
+                &mut group_info.identities.as_slice(),
             )
             .unwrap();
 
@@ -98,27 +107,25 @@ pub async fn load_test_cases() -> Vec<Vec<Group<TestClientConfig>>> {
 
             let group_id = group_info.session.group_id().to_vec();
 
-            let client_builder = secrets.into_iter().fold(
-                TestClientBuilder::new_for_test(),
-                |builder, (identity, secret_key)| {
-                    builder.signing_identity(
-                        identity,
-                        secret_key,
-                        group_info.session.cipher_suite(),
-                    )
-                },
-            );
+            let mut group_state_storage = InMemoryGroupStateStorage::default();
 
-            let group = client_builder
-                .group_state_storage(InMemoryGroupStateStorage::from_benchmark_data(
-                    group_info.session,
-                    epochs,
-                ))
-                .key_package_repo(InMemoryKeyPackageStorage::from_benchmark_data(key_packages))
-                .build()
-                .load_group(&group_id)
+            group_state_storage
+                .write(group_info.session, epochs, Vec::new(), None)
                 .await
                 .unwrap();
+
+            let mut client = Client::builder()
+                .preferences(make_preferences())
+                .identity_provider(BasicIdentityProvider)
+                .crypto_provider(MlsCryptoProvider::default())
+                .group_state_storage(group_state_storage)
+                .key_package_repo(kpkg_storage);
+
+            for (identity, signer) in identities {
+                client = client.signing_identity(identity, signer, cs);
+            }
+
+            let group = client.build().load_group(&group_id).await.unwrap();
 
             groups.push(group)
         }
@@ -132,26 +139,12 @@ pub async fn load_test_cases() -> Vec<Vec<Group<TestClientConfig>>> {
 // creates group modifying code found in client.rs
 #[maybe_async::maybe_async]
 pub async fn create_group(cipher_suite: CipherSuite, size: usize) -> Vec<Group<TestClientConfig>> {
-    pub const TEST_GROUP: &[u8] = b"group";
+    let (alice_identity, alice_client) = make_client(cipher_suite, "alice");
 
-    let (alice, alice_identity) = get_basic_client_builder(cipher_suite, "alice");
-
-    let mut preferences = Preferences::default();
-
-    preferences = preferences.with_ratchet_tree_extension(true);
-
-    #[cfg(feature = "private_message")]
-    {
-        preferences = preferences.with_control_encryption(true);
-    }
-
-    let alice = alice.preferences(preferences).build();
-
-    let alice_group = alice
-        .create_group_with_id(
-            TEST_PROTOCOL_VERSION,
+    let alice_group = alice_client
+        .create_group(
+            PROTOCOL_VERSION,
             cipher_suite,
-            TEST_GROUP.to_vec(),
             alice_identity,
             ExtensionList::new(),
         )
@@ -161,14 +154,18 @@ pub async fn create_group(cipher_suite: CipherSuite, size: usize) -> Vec<Group<T
     let mut groups = vec![alice_group];
 
     for n in 0..size - 1 {
-        let (committer_group, other_groups) = groups.split_first_mut().unwrap();
+        let (committer_group, other_groups) = groups.split_last_mut().unwrap();
 
-        let (bob, bob_key_pkg) =
-            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, cipher_suite, &format!("bob{n}")).await;
+        let (new_identity, new_client) = make_client(cipher_suite, &format!("bob{n}"));
+
+        let new_kpkg = new_client
+            .generate_key_package_message(PROTOCOL_VERSION, cipher_suite, new_identity)
+            .await
+            .unwrap();
 
         let commit_output = committer_group
             .commit_builder()
-            .add_member(bob_key_pkg)
+            .add_member(new_kpkg)
             .unwrap()
             .build()
             .await
@@ -183,15 +180,12 @@ pub async fn create_group(cipher_suite: CipherSuite, size: usize) -> Vec<Group<T
                 .unwrap();
         }
 
-        let (bob_group, _) = bob
-            .join_group(
-                Some(&committer_group.export_tree().unwrap()),
-                commit_output.welcome_message.unwrap(),
-            )
+        let (new_group, _) = new_client
+            .join_group(None, commit_output.welcome_message.unwrap())
             .await
             .unwrap();
 
-        groups.push(bob_group);
+        groups.push(new_group);
     }
 
     groups
@@ -216,7 +210,13 @@ async fn get_group_states(cipher_suite: CipherSuite, size: usize) -> TestCase {
         let config = &group.config;
 
         let epoch_repo = config.group_state_storage();
-        let exported_epochs = epoch_repo.export_epoch_data(group.group_id()).unwrap();
+        let mut epoch_id = group.current_epoch();
+        let mut exported_epochs = Vec::<PriorEpoch>::new();
+
+        while let Some(epoch) = epoch_repo.epoch(group.group_id(), epoch_id).await.unwrap() {
+            exported_epochs.push(epoch);
+            epoch_id -= 1;
+        }
 
         let group_state = epoch_repo.state(group.group_id()).await.unwrap().unwrap();
 
@@ -228,49 +228,19 @@ async fn get_group_states(cipher_suite: CipherSuite, size: usize) -> TestCase {
 
         let key_chain = config.keychain();
         let exported_key_chain = key_chain.identities();
-        let secrets = exported_key_chain.mls_encode_to_vec().unwrap();
+        let identities = exported_key_chain.mls_encode_to_vec().unwrap();
 
         let info = GroupInfo {
             session: group_state,
             epochs,
             key_packages,
-            secrets,
+            identities,
         };
 
         group_info.push(info)
     }
 
     TestCase { info: group_info }
-}
-
-#[maybe_async::maybe_async]
-pub async fn commit_groups<C: ClientConfig>(
-    mut container: Vec<Vec<Group<C>>>,
-) -> Vec<Vec<Group<C>>> {
-    for value in &mut container {
-        commit_group(value).await;
-    }
-
-    container
-}
-
-#[maybe_async::maybe_async]
-pub async fn commit_group<C: ClientConfig>(container: &mut [Group<C>]) {
-    for committer_index in 0..container.len() {
-        let commit = container[committer_index]
-            .commit(Vec::new())
-            .await
-            .unwrap()
-            .commit_message;
-
-        for (index, bob) in container.iter_mut().enumerate() {
-            if index == committer_index {
-                bob.apply_pending_commit().await.unwrap();
-            } else {
-                bob.process_incoming_message(commit.clone()).await.unwrap();
-            }
-        }
-    }
 }
 
 #[maybe_async::maybe_async]
@@ -288,11 +258,7 @@ where
     context.epoch = epoch;
 
     #[cfg(feature = "private_message")]
-    let wire_format = if group.preferences().encrypt_controls {
-        WireFormat::PrivateMessage
-    } else {
-        WireFormat::PublicMessage
-    };
+    let wire_format = WireFormat::PrivateMessage;
 
     #[cfg(not(feature = "private_message"))]
     let wire_format = WireFormat::PublicMessage;
@@ -311,4 +277,47 @@ where
     )?;
 
     group.format_for_wire(auth_content)
+}
+
+fn make_client(
+    cipher_suite: CipherSuite,
+    name: &str,
+) -> (SigningIdentity, Client<TestClientConfig>) {
+    let (secret, signing_identity) = make_identity(cipher_suite, name);
+
+    let client = Client::builder()
+        .preferences(make_preferences())
+        .identity_provider(BasicIdentityProvider)
+        .crypto_provider(MlsCryptoProvider::default())
+        .single_signing_identity(signing_identity.clone(), secret, cipher_suite)
+        .build();
+
+    (signing_identity, client)
+}
+
+pub fn make_identity(
+    cipher_suite: CipherSuite,
+    name: &str,
+) -> (SignatureSecretKey, SigningIdentity) {
+    let cipher_suite = MlsCryptoProvider::new()
+        .cipher_suite_provider(cipher_suite)
+        .unwrap();
+
+    let (secret, public) = cipher_suite.signature_key_generate().unwrap();
+    let basic_identity = BasicCredential::new(name.as_bytes().to_vec());
+    let signing_identity = SigningIdentity::new(basic_identity.into_credential(), public);
+
+    (secret, signing_identity)
+}
+
+fn make_preferences() -> Preferences {
+    let mut preferences = Preferences::default();
+    preferences = preferences.with_ratchet_tree_extension(true);
+
+    #[cfg(feature = "private_message")]
+    {
+        preferences = preferences.with_control_encryption(true);
+    }
+
+    preferences
 }

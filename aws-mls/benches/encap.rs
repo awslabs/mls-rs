@@ -19,7 +19,7 @@ fn encap_setup(c: &mut Criterion) {
 
     println!("Benchmarking encap for: {cipher_suite:?}");
 
-    let trees = block_on(load_test_cases());
+    let trees = block_on(load_test_cases(cipher_suite));
 
     bench_encap(&mut encap_group, &[], None, None, cipher_suite, trees);
 

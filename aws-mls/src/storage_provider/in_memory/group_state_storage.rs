@@ -13,11 +13,8 @@ use portable_atomic_util::Arc;
 
 use crate::storage_provider::group_state::EpochData;
 
-#[cfg(any(feature = "benchmark", all(feature = "prior_epoch", test)))]
+#[cfg(all(feature = "prior_epoch", test))]
 use crate::group::epoch::PriorEpoch;
-
-#[cfg(feature = "benchmark")]
-use crate::group::snapshot::Snapshot;
 
 #[cfg(feature = "std")]
 use std::collections::{hash_map::Entry, HashMap};
@@ -104,7 +101,7 @@ impl InMemoryGroupStateStorage {
         }
     }
 
-    #[cfg(any(feature = "benchmark", all(feature = "prior_epoch", test)))]
+    #[cfg(all(feature = "prior_epoch", test))]
     pub(crate) fn export_epoch_data(&self, group_id: &[u8]) -> Option<Vec<PriorEpoch>> {
         #[cfg(feature = "std")]
         let lock = self.inner.lock().unwrap();
@@ -118,25 +115,6 @@ impl InMemoryGroupStateStorage {
                     .map(|v| PriorEpoch::mls_decode(&mut v.data.as_slice()).unwrap()),
             )
         })
-    }
-
-    #[cfg(feature = "benchmark")]
-    pub(crate) fn from_benchmark_data(snapshot: Snapshot, epoch_data: Vec<PriorEpoch>) -> Self {
-        let group_id = snapshot.group_id().to_vec();
-
-        let mut group_data = InMemoryGroupData::new(snapshot.mls_encode_to_vec().unwrap());
-
-        epoch_data.into_iter().for_each(|epoch| {
-            group_data
-                .epoch_data
-                .push_back(EpochData::new(epoch).unwrap())
-        });
-
-        let storage = InMemoryGroupStateStorage::new();
-
-        storage.inner.lock().unwrap().insert(group_id, group_data);
-
-        storage
     }
 
     /// Get the set of unique group ids that have data stored.

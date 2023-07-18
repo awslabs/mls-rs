@@ -7,7 +7,7 @@ use criterion::{measurement::WallTime, BatchSize, BenchmarkGroup, BenchmarkId, C
 
 #[cfg(sync)]
 fn bench(c: &mut Criterion) {
-    let mut group_commit = c.benchmark_group("group_commit");
+    let mut group_commit = c.benchmark_group("group_receive_commit");
 
     let cipher_suite = CipherSuite::CURVE25519_AES128;
 
@@ -19,7 +19,7 @@ fn bench(c: &mut Criterion) {
     group_commit.finish();
 }
 
-// benches a single commit creation
+// benches the processing of a single commit
 #[cfg(sync)]
 fn bench_group_commit<C: MlsConfig>(
     bench_group: &mut BenchmarkGroup<WallTime>,
@@ -32,9 +32,16 @@ fn bench_group_commit<C: MlsConfig>(
             &groups.len(),
             |b, _| {
                 b.iter_batched_ref(
-                    || groups[0].clone(),
-                    move |sender| {
-                        sender.commit(Vec::new()).unwrap();
+                    || {
+                        (
+                            groups[0].clone().commit(Vec::new()).unwrap(),
+                            groups[1].clone(),
+                        )
+                    },
+                    move |(commit, receiver)| {
+                        receiver
+                            .process_incoming_message(commit.commit_message.clone())
+                            .unwrap();
                     },
                     BatchSize::SmallInput,
                 )

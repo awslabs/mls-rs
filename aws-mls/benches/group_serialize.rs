@@ -15,7 +15,7 @@ fn group_setup(c: &mut Criterion) {
 
     println!("Benchmarking group state serialization for: {cipher_suite:?}");
 
-    let container = block_on(load_test_cases());
+    let container = block_on(load_test_cases(cipher_suite));
 
     bench_group_snapshot(&mut group_serialize, cipher_suite, container);
 

@@ -717,7 +717,7 @@ where
     }
 }
 
-#[cfg(any(test, feature = "benchmark"))]
+#[cfg(test)]
 pub(crate) mod test_utils {
     use super::*;
     use crate::{

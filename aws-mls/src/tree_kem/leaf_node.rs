@@ -226,7 +226,7 @@ impl<'a> Signable<'a> for LeafNode {
     }
 }
 
-#[cfg(any(test, feature = "benchmark"))]
+#[cfg(test)]
 pub(crate) mod test_utils {
     use alloc::vec;
     use aws_mls_core::identity::{BasicCredential, CredentialType};
@@ -370,6 +370,33 @@ pub(crate) mod test_utils {
             .credential
             .mls_encode_to_vec()
             .unwrap()
+    }
+}
+
+#[cfg(feature = "benchmark")]
+impl LeafNode {
+    #[maybe_async::maybe_async]
+    pub async fn generate_default<CS: CipherSuiteProvider>(
+        cs: &CS,
+        name: &str,
+    ) -> (LeafNode, HpkeSecretKey, SignatureSecretKey) {
+        let (signer, public) = cs.signature_key_generate().unwrap();
+        let basic_identity = crate::identity::basic::BasicCredential::new(name.as_bytes().to_vec());
+        let signing_identity = SigningIdentity::new(basic_identity.into_credential(), public);
+
+        let properties = ConfigProperties {
+            capabilities: Default::default(),
+            extensions: Default::default(),
+        };
+
+        let lifetime = Default::default();
+
+        let (leaf, secret) =
+            LeafNode::generate(cs, properties, signing_identity, &signer, lifetime)
+                .await
+                .unwrap();
+
+        (leaf, secret, signer)
     }
 }
 

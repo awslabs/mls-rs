@@ -14,7 +14,7 @@ fn secret_tree_setup(c: &mut Criterion) {
 
     println!("Benchmarking secret tree serialization for: {cipher_suite:?}");
 
-    let container = block_on(load_test_cases());
+    let container = block_on(load_test_cases(cipher_suite));
 
     for groups in container {
         bench_secret_tree_serialize(

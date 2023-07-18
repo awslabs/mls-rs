@@ -70,12 +70,9 @@ pub struct Member {
     signing_identity: SigningIdentity,
     capabilities: Capabilities,
     extensions: ExtensionList,
-    #[cfg(feature = "benchmark")]
-    leaf_bytes: Vec<u8>,
 }
 
 impl Member {
-    #[cfg(not(feature = "benchmark"))]
     pub fn new(
         index: u32,
         signing_identity: SigningIdentity,
@@ -87,23 +84,6 @@ impl Member {
             signing_identity,
             capabilities,
             extensions,
-        }
-    }
-
-    #[cfg(feature = "benchmark")]
-    pub fn new(
-        index: u32,
-        signing_identity: SigningIdentity,
-        capabilities: Capabilities,
-        extensions: ExtensionList,
-        leaf_bytes: Vec<u8>,
-    ) -> Self {
-        Self {
-            index,
-            signing_identity,
-            capabilities,
-            extensions,
-            leaf_bytes,
         }
     }
 
@@ -128,11 +108,6 @@ impl Member {
     /// Current leaf node extensions in use by this member.
     pub fn extensions(&self) -> &ExtensionList {
         &self.extensions
-    }
-
-    #[cfg(feature = "benchmark")]
-    pub fn leaf_bytes(&self) -> &[u8] {
-        &self.leaf_bytes
     }
 }
 

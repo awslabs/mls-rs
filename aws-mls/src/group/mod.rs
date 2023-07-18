@@ -43,7 +43,6 @@ use crate::psk::{
     PreSharedKeyID, PskGroupId, PskNonce, ResumptionPSKUsage, ResumptionPsk,
 };
 
-#[cfg(any(feature = "benchmark", feature = "psk"))]
 use crate::client_builder::Preferences;
 
 #[cfg(all(feature = "std", feature = "by_ref_proposal"))]
@@ -101,10 +100,6 @@ pub use roster::*;
 pub(crate) use transcript_hash::ConfirmedTranscriptHash;
 pub(crate) use util::*;
 
-#[cfg(feature = "benchmark")]
-pub use context::*;
-
-#[cfg(not(feature = "benchmark"))]
 pub(crate) use context::*;
 
 #[cfg(feature = "private_message")]
@@ -373,7 +368,6 @@ where
         })
     }
 
-    #[cfg(feature = "benchmark")]
     pub fn preferences(&self) -> Preferences {
         self.config.preferences()
     }

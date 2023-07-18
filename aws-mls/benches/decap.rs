@@ -27,7 +27,7 @@ fn decap_setup(c: &mut Criterion) {
 
     let cipher_suite = CipherSuite::CURVE25519_AES128;
 
-    let trees = load_test_cases();
+    let trees = load_test_cases(cipher_suite);
 
     // Run Decap Benchmark
     bench_decap(&mut decap_group, cipher_suite, trees, &[], None, None);

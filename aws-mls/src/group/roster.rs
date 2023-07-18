@@ -1,5 +1,4 @@
 use super::*;
-use cfg_if::cfg_if;
 
 pub use aws_mls_core::group::Member;
 
@@ -9,24 +8,12 @@ pub(crate) fn member_from_key_package(key_package: &KeyPackage, index: LeafIndex
 }
 
 pub(crate) fn member_from_leaf_node(leaf_node: &LeafNode, leaf_index: LeafIndex) -> Member {
-    cfg_if! {
-        if #[cfg(feature = "benchmark")] {
-            Member::new(
-                *leaf_index,
-                leaf_node.signing_identity.clone(),
-                leaf_node.ungreased_capabilities(),
-                leaf_node.ungreased_extensions(),
-                leaf_node.mls_encode_to_vec().unwrap()
-            )
-        } else {
-            Member::new(
-                *leaf_index,
-                leaf_node.signing_identity.clone(),
-                leaf_node.ungreased_capabilities(),
-                leaf_node.ungreased_extensions(),
-            )
-        }
-    }
+    Member::new(
+        *leaf_index,
+        leaf_node.signing_identity.clone(),
+        leaf_node.ungreased_capabilities(),
+        leaf_node.ungreased_extensions(),
+    )
 }
 
 impl GroupState {

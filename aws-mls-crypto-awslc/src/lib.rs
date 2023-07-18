@@ -29,8 +29,14 @@ use kdf::AwsLcHkdf;
 use thiserror::Error;
 use zeroize::Zeroizing;
 
-#[derive(Clone)]
+#[derive(Clone, Default, Debug)]
 pub struct AwsLcCryptoProvider;
+
+impl AwsLcCryptoProvider {
+    pub fn new() -> Self {
+        Self
+    }
+}
 
 #[derive(Clone)]
 pub struct AwsLcCipherSuite {

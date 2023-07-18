@@ -614,7 +614,7 @@ mod private {
 use aws_mls_core::{identity::IdentityProvider, keychain::KeychainStorage};
 use private::{Config, ConfigInner, IntoConfig};
 
-#[cfg(any(test, feature = "benchmark"))]
+#[cfg(test)]
 pub(crate) mod test_utils {
     use crate::{
         cipher_suite::CipherSuite, crypto::test_utils::TestCryptoProvider,
