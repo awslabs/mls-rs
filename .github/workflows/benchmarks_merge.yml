@@ -30,7 +30,7 @@ jobs:
         run: ( set -o pipefail; cargo bench --features benchmark --bench encap --bench group_serialize --bench group_application --bench secret_tree_serialize -- --output-format bencher | tee output.txt )
       - name: Run sync benchmark
         working-directory: aws-mls
-        run: ( set -o pipefail; RUSTFLAGS='--cfg sync' cargo bench --features benchmark --bench decap --bench group_commit --bench group_receive_commit-- --output-format bencher | tee -a output.txt )
+        run: ( set -o pipefail; RUSTFLAGS='--cfg sync' cargo bench --features benchmark --bench decap --bench group_commit --bench group_receive_commit -- --output-format bencher | tee -a output.txt )
       - name: Store benchmark result
         uses: benchmark-action/github-action-benchmark@v1
         with:
