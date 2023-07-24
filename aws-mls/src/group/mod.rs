@@ -102,6 +102,9 @@ pub(crate) use util::*;
 
 pub(crate) use context::*;
 
+#[cfg(all(feature = "by_ref_proposal", feature = "external_client"))]
+pub use self::message_processor::CachedProposal;
+
 #[cfg(feature = "private_message")]
 mod ciphertext_processor;
 
@@ -1119,7 +1122,7 @@ where
     ///
     /// Identity updates are allowed by the group by default assuming that the
     /// new identity provided is considered
-    /// [valid](crate::IdentityProvider::validate)
+    /// [valid](crate::IdentityProvider::validate_member)
     /// by and matches the output of the
     /// [identity](crate::IdentityProvider)
     /// function of the current
@@ -1201,8 +1204,8 @@ where
     /// Create a proposal message that adds an external pre shared key to the group.
     ///
     /// Each group member will need to have the PSK associated with
-    /// [`ExternalPskId`](crate::storage_provider::ExternalPskId) installed within
-    /// the [`PreSharedKeyStorage`](crate::PreSharedKeyStorage)
+    /// [`ExternalPskId`](aws_mls_core::psk::ExternalPskId) installed within
+    /// the [`PreSharedKeyStorage`](aws_mls_core::psk::PreSharedKeyStorage)
     /// in use by this group upon processing a [commit](Group::commit) that
     /// contains this proposal.
     ///

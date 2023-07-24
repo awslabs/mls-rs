@@ -109,6 +109,10 @@ required-features = ["tokio", "x509"]
 name = "large_group"
 required-features = ["tokio"]
 
+[[example]]
+name = "basic_server_usage"
+required-features = ["tokio", "external_client"]
+
 [[bench]]
 name = "encap"
 harness = false

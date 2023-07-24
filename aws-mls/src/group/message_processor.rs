@@ -62,6 +62,9 @@ use super::proposal::CustomProposal;
 #[cfg(feature = "private_message")]
 use crate::group::framing::PrivateMessage;
 
+#[cfg(all(feature = "by_ref_proposal", feature = "external_client"))]
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
+
 #[derive(Debug)]
 pub(crate) struct ProvisionalState {
     pub(crate) public_tree: TreeKemPublic,
@@ -281,6 +284,45 @@ pub struct ProposalMessageDescription {
     pub proposal: Proposal,
     /// Plaintext authenticated data in the received MLS packet.
     pub authenticated_data: Vec<u8>,
+    pub(crate) proposal_ref: ProposalRef,
+}
+
+#[cfg(all(feature = "by_ref_proposal", feature = "external_client"))]
+#[derive(MlsSize, MlsEncode, MlsDecode)]
+pub struct CachedProposal {
+    pub(crate) proposal: Proposal,
+    pub(crate) proposal_ref: ProposalRef,
+    pub(crate) sender: Sender,
+}
+
+#[cfg(all(feature = "by_ref_proposal", feature = "external_client"))]
+impl CachedProposal {
+    /// Deserialize the proposal
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, MlsError> {
+        Ok(Self::mls_decode(&mut &*bytes)?)
+    }
+
+    /// Serialize the proposal
+    pub fn to_bytes(&self) -> Result<Vec<u8>, MlsError> {
+        Ok(self.mls_encode_to_vec()?)
+    }
+}
+
+#[cfg(all(feature = "by_ref_proposal", feature = "external_client"))]
+impl ProposalMessageDescription {
+    pub fn cached_proposal(self) -> CachedProposal {
+        let sender = match self.sender {
+            ProposalSender::Member(i) => Sender::Member(i),
+            ProposalSender::External(i) => Sender::External(i),
+            ProposalSender::NewMember => Sender::NewMemberProposal,
+        };
+
+        CachedProposal {
+            proposal: self.proposal,
+            proposal_ref: self.proposal_ref,
+            sender,
+        }
+    }
 }
 
 #[cfg(not(feature = "by_ref_proposal"))]
@@ -458,6 +500,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
             authenticated_data: auth_content.content.authenticated_data.clone(),
             proposal: proposal.clone(),
             sender: auth_content.content.sender.try_into()?,
+            proposal_ref,
         })
     }
 

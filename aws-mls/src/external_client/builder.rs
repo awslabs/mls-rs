@@ -379,7 +379,7 @@ pub type WithIdentityProvider<I, C> = Config<
 
 /// Change the proposal filter used by a client configuration.
 ///
-/// See [`ExternalClientBuilder::proposal_filter`].
+/// See [`ExternalClientBuilder::proposal_rules`].
 pub type WithProposalRules<Pr, C> = Config<
     <C as IntoConfig>::Keychain,
     <C as IntoConfig>::IdentityProvider,

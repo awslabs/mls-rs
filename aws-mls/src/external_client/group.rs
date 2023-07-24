@@ -30,6 +30,7 @@ use crate::{
 use crate::{
     group::{
         framing::{Content, MLSMessagePayload},
+        message_processor::CachedProposal,
         message_signature::AuthenticatedContent,
         proposal::Proposal,
         proposal_ref::ProposalRef,
@@ -157,7 +158,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     /// secrets required to do a complete check.
     ///
     /// * Application messages are always encrypted so they result in a no-op
-    /// that returns [ExternalEvent::Ciphertext](ExternalEvent::Ciphertext)
+    /// that returns [ExternalReceivedMessage::Ciphertext]
     ///
     /// # Warning
     ///
@@ -192,11 +193,13 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         let sender = auth_content.content.sender;
 
         let proposal = match auth_content.content.content {
-            Content::Proposal(p) => Ok(p),
+            Content::Proposal(p) => Ok(*p),
             _ => Err(MlsError::UnexpectedMessageType),
         }?;
 
-        self.insert_proposal(*proposal, proposal_ref, sender);
+        self.group_state_mut()
+            .proposals
+            .insert(proposal_ref, proposal, sender);
 
         Ok(())
     }
@@ -204,15 +207,12 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     /// Force insert a proposal directly into the internal state of the group
     /// with no validation.
     #[cfg(feature = "by_ref_proposal")]
-    pub fn insert_proposal(
-        &mut self,
-        proposal: Proposal,
-        proposal_ref: ProposalRef,
-        sender: Sender,
-    ) {
-        self.group_state_mut()
-            .proposals
-            .insert(proposal_ref, proposal, sender)
+    pub fn insert_proposal(&mut self, proposal: CachedProposal) {
+        self.group_state_mut().proposals.insert(
+            proposal.proposal_ref,
+            proposal.proposal,
+            proposal.sender,
+        )
     }
 
     /// Create an external proposal to request that a group add a new member
@@ -673,6 +673,18 @@ where
 pub struct ExternalSnapshot {
     version: u16,
     state: RawGroupState,
+}
+
+impl ExternalSnapshot {
+    /// Serialize the snapshot
+    pub fn to_bytes(&self) -> Result<Vec<u8>, MlsError> {
+        Ok(self.mls_encode_to_vec()?)
+    }
+
+    /// Deserialize the snapshot
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, MlsError> {
+        Ok(Self::mls_decode(&mut &*bytes)?)
+    }
 }
 
 impl<C> ExternalGroup<C>

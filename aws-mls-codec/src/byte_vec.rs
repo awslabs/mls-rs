@@ -34,7 +34,7 @@ where
     encode_slice(data.as_ref(), writer)
 }
 
-/// Optimized decoding for types that can be represented as Vec<u8>
+/// Optimized decoding for types that can be represented as `Vec<u8>`
 pub fn mls_decode<T>(reader: &mut &[u8]) -> Result<T, crate::Error>
 where
     T: From<Vec<u8>>,

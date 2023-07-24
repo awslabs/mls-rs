@@ -4,7 +4,7 @@ use alloc::boxed::Box;
 
 /// Storage trait that maintains secret signature keys
 /// indexed by public
-/// [`SigningIdentity`](aws_mls_core::identity::SigningIdentity).
+/// [`SigningIdentity`](crate::identity::SigningIdentity).
 #[maybe_async::maybe_async]
 pub trait KeychainStorage: Send + Sync {
     /// Error type that the underlying storage mechanism returns on internal
@@ -12,7 +12,7 @@ pub trait KeychainStorage: Send + Sync {
     type Error: IntoAnyError;
 
     /// Retrieve the
-    /// [`SignatureSecretKey`](aws_mls_core::crypto::SignatureSecretKey)
+    /// [`SignatureSecretKey`](crate::crypto::SignatureSecretKey)
     /// that is associated with `identity`.
     ///
     /// `None` should be returned in the event `identity` is not found.

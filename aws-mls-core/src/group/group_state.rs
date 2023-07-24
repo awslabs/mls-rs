@@ -54,7 +54,7 @@ pub trait GroupStateStorage: Send + Sync {
     /// The protocol implementation handles managing the max size of a prior epoch
     /// cache and the deleting of prior states based on group activity.
     /// The maximum number of prior epochs that will be stored is controlled by the
-    /// [`Preferences::max_epoch_retention`](crate::client_builder::Preferences::max_epoch_retention)
+    /// `Preferences::max_epoch_retention` function in `aws_mls`.
     /// value. Requested deletes are communicated by the `delete_epoch_under`
     /// parameter being set to `Some`.
     ///

@@ -54,7 +54,7 @@ impl Deref for CredentialType {
 /// # Warning
 ///
 /// In order to use a custom credential within an MLS group, a supporting
-/// [`IdentityProvider`](crate::IdentityProvider) must be created that can
+/// [`IdentityProvider`](crate::identity::IdentityProvider) must be created that can
 /// authenticate the credential.
 pub struct CustomCredential {
     pub(crate) credential_type: CredentialType,

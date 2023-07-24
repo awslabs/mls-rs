@@ -255,7 +255,7 @@ where
     /// Change the committer's signing identity as part of making this commit.
     /// This will only succeed if the [`IdentityProvider`](crate::IdentityProvider)
     /// in use by the group considers the credential inside this signing_identity
-    /// [valid](crate::IdentityProvider::validate)
+    /// [valid](crate::IdentityProvider::validate_member)
     /// and results in the same
     /// [identity](crate::IdentityProvider::identity)
     /// being used.
@@ -267,8 +267,8 @@ where
     }
 
     /// Set [`Preferences`](crate::client_builder::Preferences) used to make
-    /// this commit. By default, preferences from the group's
-    /// [`ClientConfig`](crate::client_config::ClientConfig) are used.
+    /// this commit. By default, preferences set with [`ClientBuilder::preferences`](crate::client_builder::ClientBuilder::preferences)
+    /// (by default [Preferences::default]) are used.
     pub fn set_commit_preferences(self, preferences: Preferences) -> Self {
         Self {
             preferences: Some(preferences),

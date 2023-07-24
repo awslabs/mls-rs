@@ -50,8 +50,7 @@ pub trait IdentityProvider: Send + Sync {
     ) -> Result<(), Self::Error>;
 
     /// Determine if `signing_identity` is valid for an external sender in
-    /// [`ExternalSendersExt`](crate::extension::ExternalSendersExt) stored in the
-    /// group context.
+    /// the ExternalSendersExtension stored in the group context.
     ///
     /// A `timestamp` value can optionally be supplied to aid with validation
     /// of a [`Credential`](aws-mls-core::identity::Credential) that requires
