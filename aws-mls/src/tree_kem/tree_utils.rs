@@ -84,7 +84,7 @@ mod tests {
 
     use super::build_ascii_tree;
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn print_fully_populated_tree() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
@@ -109,7 +109,7 @@ mod tests {
         assert_eq!(tree_str, build_ascii_tree(&tree.nodes));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn print_tree_blank_leaves() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
@@ -143,7 +143,7 @@ mod tests {
         assert_eq!(tree_str, build_ascii_tree(&tree.nodes));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn print_tree_unmerged_leaves_on_parent() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 

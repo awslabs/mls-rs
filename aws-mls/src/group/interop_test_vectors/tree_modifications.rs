@@ -86,7 +86,7 @@ async fn generate_tree_mods_tests() -> Vec<TreeModsTestCase> {
     test_vector
 }
 
-#[maybe_async::test(sync, async(not(sync), futures_test::test))]
+#[maybe_async::test(sync, async(not(sync), crate::futures_test))]
 async fn tree_modifications_interop() {
     // The test vector can be found here https://github.com/mlswg/mls-implementations/blob/main/test-vectors/tree-operations.json
     #[cfg(sync)]

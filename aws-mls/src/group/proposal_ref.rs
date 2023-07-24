@@ -72,9 +72,6 @@ mod test {
     #[cfg(feature = "all_extensions")]
     use crate::extension::RequiredCapabilitiesExt;
 
-    #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen_test::wasm_bindgen_test as test;
-
     #[cfg(feature = "all_extensions")]
     fn get_test_extension_list() -> ExtensionList {
         let test_extension = RequiredCapabilitiesExt {
@@ -186,7 +183,7 @@ mod test {
         load_test_case_json!(proposal_ref, generate_proposal_test_cases())
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_proposal_ref() {
         let test_cases = load_test_cases().await;
 

@@ -2127,10 +2127,7 @@ mod tests {
     #[cfg(any(feature = "all_extensions", feature = "external_proposal"))]
     use aws_mls_core::extension::MlsExtension;
 
-    #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen_test::wasm_bindgen_test as test;
-
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_create_group() {
         for (protocol_version, cipher_suite) in ProtocolVersion::all().flat_map(|p| {
             TestCryptoProvider::all_supported_cipher_suites()
@@ -2169,7 +2166,7 @@ mod tests {
     }
 
     #[cfg(feature = "private_message")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_pending_proposals_application_data() {
         let mut test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
@@ -2210,7 +2207,7 @@ mod tests {
     }
 
     #[cfg(feature = "by_ref_proposal")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_update_proposals() {
         let mut new_capabilities = get_test_capabilities();
         new_capabilities.extensions.push(42.into());
@@ -2250,7 +2247,7 @@ mod tests {
     }
 
     #[cfg(feature = "by_ref_proposal")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_invalid_commit_self_update() {
         let mut test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
@@ -2278,7 +2275,7 @@ mod tests {
     }
 
     #[cfg(feature = "by_ref_proposal")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn update_proposal_with_bad_key_package_is_ignored_when_committing() {
         let (mut alice_group, mut bob_group) =
             test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, true).await;
@@ -2358,17 +2355,17 @@ mod tests {
         (test_group, bob_test_group)
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_welcome_processing_exported_tree() {
         test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, false).await;
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_welcome_processing_tree_extension() {
         test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, true).await;
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_welcome_processing_missing_tree() {
         let mut test_group = test_group_custom(
             TEST_PROTOCOL_VERSION,
@@ -2405,7 +2402,7 @@ mod tests {
     }
 
     #[cfg(feature = "all_extensions")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_group_context_ext_proposal_create() {
         let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
@@ -2458,7 +2455,7 @@ mod tests {
     }
 
     #[cfg(feature = "all_extensions")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_group_context_ext_proposal_commit() {
         let mut extension_list = ExtensionList::new();
 
@@ -2486,7 +2483,7 @@ mod tests {
     }
 
     #[cfg(feature = "all_extensions")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_group_context_ext_proposal_invalid() {
         let mut extension_list = ExtensionList::new();
         extension_list
@@ -2506,7 +2503,7 @@ mod tests {
     }
 
     #[cfg(feature = "private_message")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_group_encrypt_plaintext_padding() {
         let protocol_version = TEST_PROTOCOL_VERSION;
         let cipher_suite = TEST_CIPHER_SUITE;
@@ -2545,7 +2542,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_commit")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn external_commit_requires_external_pub_extension() {
         let protocol_version = TEST_PROTOCOL_VERSION;
         let cipher_suite = TEST_CIPHER_SUITE;
@@ -2575,7 +2572,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::MissingExternalPubExtension));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_path_update_preference() {
         let protocol_version = TEST_PROTOCOL_VERSION;
         let cipher_suite = TEST_CIPHER_SUITE;
@@ -2636,7 +2633,7 @@ mod tests {
             .all(|x| x == &0));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_path_update_preference_override() {
         let protocol_version = TEST_PROTOCOL_VERSION;
         let cipher_suite = TEST_CIPHER_SUITE;
@@ -2662,7 +2659,7 @@ mod tests {
     }
 
     #[cfg(feature = "private_message")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn group_rejects_unencrypted_application_message() {
         let protocol_version = TEST_PROTOCOL_VERSION;
         let cipher_suite = TEST_CIPHER_SUITE;
@@ -2680,7 +2677,7 @@ mod tests {
     }
 
     #[cfg(feature = "state_update")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_state_update() {
         let protocol_version = TEST_PROTOCOL_VERSION;
         let cipher_suite = TEST_CIPHER_SUITE;
@@ -2808,7 +2805,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_commit")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn commit_description_external_commit() {
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
@@ -2846,7 +2843,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_commit")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn can_join_new_group_externally() {
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
@@ -2870,7 +2867,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_commit")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_membership_tag_from_non_member() {
         let (mut alice_group, mut bob_group) =
             test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, true).await;
@@ -2891,7 +2888,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::MembershipTagForNonMember));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_partial_commits() {
         let protocol_version = TEST_PROTOCOL_VERSION;
         let cipher_suite = TEST_CIPHER_SUITE;
@@ -2919,7 +2916,7 @@ mod tests {
         bob.process_message(commit).await.unwrap();
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn old_hpke_secrets_are_removed() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         alice.join("bob").await;
@@ -2939,7 +2936,7 @@ mod tests {
         assert!(alice.group.private_tree.secret_keys[1].is_none());
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn old_hpke_secrets_of_removed_are_removed() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         alice.join("bob").await;
@@ -2960,7 +2957,7 @@ mod tests {
     }
 
     #[cfg(feature = "by_ref_proposal")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn old_hpke_secrets_of_updated_are_removed() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let (mut bob, _) = alice.join("bob").await;
@@ -2979,7 +2976,7 @@ mod tests {
     }
 
     #[cfg(feature = "psk")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn only_selected_members_of_the_original_group_can_join_subgroup() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let (mut bob, _) = alice.join("bob").await;
@@ -3039,7 +3036,7 @@ mod tests {
         alice_group.join_with_custom_config("alice", false, f).await
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn joining_group_fails_if_protocol_version_is_not_supported() {
         let res = joining_group_fails_if_unsupported(|config| {
             config.0.settings.protocol_versions.clear();
@@ -3054,7 +3051,7 @@ mod tests {
         );
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn joining_group_fails_if_cipher_suite_is_not_supported() {
         let res = joining_group_fails_if_unsupported(|config| {
             config
@@ -3073,7 +3070,7 @@ mod tests {
     }
 
     #[cfg(feature = "private_message")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn member_can_see_sender_creds() {
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let (mut bob_group, _) = alice_group.join("bob").await;
@@ -3099,7 +3096,7 @@ mod tests {
         );
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn members_of_a_group_have_identical_authentication_secrets() {
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let (bob_group, _) = alice_group.join("bob").await;
@@ -3111,7 +3108,7 @@ mod tests {
     }
 
     #[cfg(feature = "private_message")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn member_cannot_decrypt_same_message_twice() {
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let (mut bob_group, _) = alice_group.join("bob").await;
@@ -3139,7 +3136,7 @@ mod tests {
     }
 
     #[cfg(feature = "all_extensions")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn removing_requirements_allows_to_add() {
         let mut capabilities = get_test_capabilities();
         capabilities.extensions = vec![17.into()];
@@ -3215,7 +3212,7 @@ mod tests {
         assert_eq!(alice_group.group.roster().len(), 2);
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn commit_leaf_wrong_source() {
         // RFC, 13.4.2. "The leaf_node_source field MUST be set to commit."
         let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 3).await;
@@ -3234,7 +3231,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::InvalidLeafNodeSource));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn commit_leaf_same_hpke_key() {
         // RFC 13.4.2. "Verify that the encryption_key value in the LeafNode is different from the committer's current leaf node"
 
@@ -3263,7 +3260,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::SameHpkeKey(0)));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn commit_leaf_duplicate_hpke_key() {
         // RFC 8.3 "Verify that the following fields are unique among the members of the group: `encryption_key`"
 
@@ -3300,7 +3297,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::DuplicateLeafData(_)));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn commit_leaf_duplicate_signature_key() {
         // RFC 8.3 "Verify that the following fields are unique among the members of the group: `signature_key`"
 
@@ -3308,9 +3305,14 @@ mod tests {
 
         // Group 1 uses the fixed key
         groups[1].group.commit_modifiers.modify_leaf = |leaf, _, cp| {
-            let sk = SignatureSecretKey::from(vec![2u8; 32]);
-            let pk = cp.signature_key_derive_public(&sk).unwrap();
-            leaf.signing_identity.signature_key = pk;
+            let sk = hex!(
+                "3468b4c890255c983e3d5cbf5cb64c1ef7f6433a518f2f3151d6672f839a06ebcad4fc381fe61822af45135c82921a348e6f46643d66ddefc70483565433714b"
+            )
+            .into();
+
+            leaf.signing_identity.signature_key =
+                hex!("cad4fc381fe61822af45135c82921a348e6f46643d66ddefc70483565433714b").into();
+
             leaf.sign(cp, &sk, &(TEST_GROUP, 1).into()).unwrap();
         };
 
@@ -3326,9 +3328,14 @@ mod tests {
 
         // Group 0 tries to use the fixed key too
         groups[0].group.commit_modifiers.modify_leaf = |leaf, _, cp| {
-            let sk = SignatureSecretKey::from(vec![2u8; 32]);
-            let pk = cp.signature_key_derive_public(&sk).unwrap();
-            leaf.signing_identity.signature_key = pk;
+            let sk = hex!(
+                "3468b4c890255c983e3d5cbf5cb64c1ef7f6433a518f2f3151d6672f839a06ebcad4fc381fe61822af45135c82921a348e6f46643d66ddefc70483565433714b"
+            )
+            .into();
+
+            leaf.signing_identity.signature_key =
+                hex!("cad4fc381fe61822af45135c82921a348e6f46643d66ddefc70483565433714b").into();
+
             leaf.sign(cp, &sk, &(TEST_GROUP, 0).into()).unwrap();
         };
 
@@ -3341,7 +3348,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::DuplicateLeafData(_)));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn commit_leaf_incorrect_signature() {
         let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 3).await;
 
@@ -3358,7 +3365,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::InvalidSignature));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn commit_leaf_not_supporting_used_context_extension() {
         // The new leaf of the committer doesn't support an extension set in group context
         let extension = Extension::new(999.into(), vec![]);
@@ -3380,7 +3387,7 @@ mod tests {
         assert!(res.is_err());
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn commit_leaf_not_supporting_used_leaf_extension() {
         // The new leaf of the committer doesn't support an extension set in another leaf
         let extension = Extension::new(999.into(), vec![]);
@@ -3403,7 +3410,7 @@ mod tests {
         assert!(res.is_err());
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn commit_leaf_uses_extension_unsupported_by_another_leaf() {
         // The new leaf of the committer uses an extension unsupported by another leaf
         let mut groups =
@@ -3431,7 +3438,7 @@ mod tests {
     }
 
     #[cfg(feature = "all_extensions")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn commit_leaf_not_supporting_required_extension() {
         // The new leaf of the committer doesn't support an extension required by group context
 
@@ -3459,7 +3466,7 @@ mod tests {
         assert!(res.is_err());
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn commit_leaf_has_unsupported_credential() {
         // The new leaf of the committer has a credential unsupported by another leaf
         let mut groups =
@@ -3493,7 +3500,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::CredentialTypeOfNewLeafIsUnsupported));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn commit_leaf_not_supporting_credential_used_in_another_leaf() {
         // The new leaf of the committer doesn't support another leaf's credential
 
@@ -3516,7 +3523,7 @@ mod tests {
     }
 
     #[cfg(feature = "all_extensions")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn commit_leaf_not_supporting_required_credential() {
         // The new leaf of the committer doesn't support a credential required by group context
 
@@ -3546,7 +3553,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_proposal")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn commit_leaf_not_supporting_credential_used_by_external_sender() {
         // The new leaf of the committer doesn't support credential used by an external sender
         let (_, ext_sender_pk) = test_cipher_suite_provider(TEST_CIPHER_SUITE)
@@ -3584,7 +3591,7 @@ mod tests {
      * Edge case paths
      */
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn committing_degenerate_path_succeeds() {
         let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 10).await;
 
@@ -3607,7 +3614,7 @@ mod tests {
         assert!(res.is_ok());
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn inserting_key_in_filtered_node_fails() {
         let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 10).await;
 
@@ -3651,7 +3658,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::WrongPathLen));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn commit_with_too_short_path_fails() {
         let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 10).await;
 
@@ -3689,7 +3696,7 @@ mod tests {
     }
 
     #[cfg(feature = "by_ref_proposal")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn update_proposal_can_change_credential() {
         let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 3).await;
         let (identity, secret_key) =
@@ -3745,7 +3752,7 @@ mod tests {
     }
 
     #[cfg(feature = "by_ref_proposal")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn receiving_commit_with_old_adds_fails() {
         let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 2).await;
 
@@ -3801,7 +3808,7 @@ mod tests {
     }
 
     #[cfg(feature = "custom_proposal")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn custom_proposal_by_value() {
         let (mut alice, mut bob) = custom_proposal_setup().await;
 
@@ -3827,7 +3834,7 @@ mod tests {
     }
 
     #[cfg(feature = "custom_proposal")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn custom_proposal_by_reference() {
         let (mut alice, mut bob) = custom_proposal_setup().await;
 
@@ -3856,7 +3863,7 @@ mod tests {
     }
 
     #[cfg(feature = "psk")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn can_join_with_psk() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
             .await
@@ -3890,7 +3897,7 @@ mod tests {
             .unwrap();
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn signer_for_identity() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
             .await

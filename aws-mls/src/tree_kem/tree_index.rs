@@ -309,9 +309,6 @@ mod tests {
     use alloc::format;
     use assert_matches::assert_matches;
 
-    #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen_test::wasm_bindgen_test as test;
-
     #[derive(Clone, Debug)]
     struct TestData {
         pub leaf_node: LeafNode,
@@ -349,7 +346,7 @@ mod tests {
         (test_data, test_index)
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_insert() {
         let (test_data, test_index) = test_setup().await;
 
@@ -371,7 +368,7 @@ mod tests {
         })
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_insert_duplicate_credential_key() {
         let (test_data, mut test_index) = test_setup().await;
 
@@ -392,7 +389,7 @@ mod tests {
         assert_eq!(before_error, test_index);
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_insert_duplicate_hpke_key() {
         let cipher_suite = TEST_CIPHER_SUITE;
         let (test_data, mut test_index) = test_setup().await;
@@ -413,7 +410,7 @@ mod tests {
         assert_eq!(before_error, test_index);
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_remove() {
         let (test_data, mut test_index) = test_setup().await;
 
@@ -443,7 +440,7 @@ mod tests {
     }
 
     #[cfg(feature = "custom_proposal")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn custom_proposals() {
         let test_proposal_id = ProposalType::new(42);
         let other_proposal_id = ProposalType::new(45);

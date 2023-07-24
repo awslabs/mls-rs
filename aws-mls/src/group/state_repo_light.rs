@@ -87,7 +87,7 @@ mod tests {
         get_test_snapshot(TEST_CIPHER_SUITE, epoch_id)
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_stored_groups_list() {
         let mut test_repo = GroupStateRepository::new(
             InMemoryGroupStateStorage::default(),
@@ -102,7 +102,7 @@ mod tests {
         assert_eq!(test_repo.storage.stored_groups(), vec![TEST_GROUP])
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn used_key_package_is_deleted() {
         let key_package_repo = InMemoryKeyPackageStorage::default();
 

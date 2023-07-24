@@ -257,9 +257,6 @@ mod test {
     use alloc::vec;
     use assert_matches::assert_matches;
 
-    #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen_test::wasm_bindgen_test as test;
-
     struct TestData {
         group: TestGroup,
         content: AuthenticatedContent,
@@ -292,7 +289,7 @@ mod test {
         TestData { group, content }
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_encrypt_decrypt() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let mut test_data = test_data(cipher_suite).await;
@@ -314,7 +311,7 @@ mod test {
         }
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_padding_use() {
         let mut test_data = test_data(TEST_CIPHER_SUITE).await;
         let mut ciphertext_processor = test_processor(&mut test_data.group, TEST_CIPHER_SUITE);
@@ -330,7 +327,7 @@ mod test {
         assert!(ciphertext_step.ciphertext.len() > ciphertext_no_pad.ciphertext.len());
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_invalid_sender() {
         let mut test_data = test_data(TEST_CIPHER_SUITE).await;
         test_data.content.content.sender = Sender::Member(3);
@@ -342,7 +339,7 @@ mod test {
         assert_matches!(res, Err(MlsError::InvalidSender))
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_cant_process_from_self() {
         let mut test_data = test_data(TEST_CIPHER_SUITE).await;
 
@@ -357,7 +354,7 @@ mod test {
         assert_matches!(res, Err(MlsError::CantProcessMessageFromSelf))
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_decryption_error() {
         let mut test_data = test_data(TEST_CIPHER_SUITE).await;
         let mut receiver_group = test_data.group.clone();

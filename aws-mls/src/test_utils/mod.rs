@@ -28,6 +28,16 @@ pub fn make_test_ext_psk() -> Vec<u8> {
     b"secret psk key".to_vec()
 }
 
+pub fn is_edwards(cs: u16) -> bool {
+    [
+        CipherSuite::CURVE25519_AES128,
+        CipherSuite::CURVE25519_CHACHA,
+        CipherSuite::CURVE448_AES256,
+        CipherSuite::CURVE448_CHACHA,
+    ]
+    .contains(&cs.into())
+}
+
 pub fn generate_basic_client<C: CryptoProvider + Clone>(
     cipher_suite: CipherSuite,
     id: usize,

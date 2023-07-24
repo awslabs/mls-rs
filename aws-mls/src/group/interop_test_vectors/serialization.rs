@@ -59,7 +59,7 @@ struct TestCase {
 
 // The test vector can be found here:
 // https://github.com/mlswg/mls-implementations/blob/main/test-vectors/messages.json
-#[maybe_async::test(sync, async(not(sync), futures_test::test))]
+#[maybe_async::test(sync, async(not(sync), crate::futures_test))]
 async fn serialization() {
     let test_cases: Vec<TestCase> = load_test_case_json!(serialization, Vec::<TestCase>::new());
 

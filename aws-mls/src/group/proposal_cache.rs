@@ -692,9 +692,6 @@ mod tests {
     #[cfg(not(sync))]
     use futures::FutureExt;
 
-    #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen_test::wasm_bindgen_test as test;
-
     fn test_sender() -> u32 {
         1
     }
@@ -933,7 +930,7 @@ mod tests {
         assert_eq!(expected_state.rejected_proposals, state.rejected_proposals);
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_proposal_cache_commit_all_cached() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
@@ -966,7 +963,7 @@ mod tests {
         assert_matches(expected_effects, provisional_state)
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_proposal_cache_commit_additional() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
@@ -1025,7 +1022,7 @@ mod tests {
         assert_matches(expected_effects, provisional_state);
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_proposal_cache_update_filter() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
@@ -1059,7 +1056,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::InvalidProposalTypeForSender));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_proposal_cache_removal_override_update() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
@@ -1104,7 +1101,7 @@ mod tests {
             .contains(&ProposalOrRef::Reference(update_proposal_ref)))
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_proposal_cache_filter_duplicates_insert() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
@@ -1138,7 +1135,7 @@ mod tests {
         assert_matches(expected_effects, provisional_state)
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_proposal_cache_filter_duplicates_additional() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
@@ -1184,7 +1181,7 @@ mod tests {
     }
 
     #[cfg(feature = "private_message")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_proposal_cache_is_empty() {
         let mut cache = make_proposal_cache();
         assert!(cache.is_empty());
@@ -1200,7 +1197,7 @@ mod tests {
         assert!(!cache.is_empty())
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_proposal_cache_resolve() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
@@ -1261,7 +1258,7 @@ mod tests {
     }
 
     #[cfg(feature = "psk")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn proposal_cache_filters_duplicate_psk_ids() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
@@ -1311,7 +1308,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_commit")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn external_commit_must_have_new_leaf() {
         let cache = make_proposal_cache();
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
@@ -1342,7 +1339,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_commit")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn proposal_cache_rejects_proposals_by_ref_for_new_member() {
         let mut cache = make_proposal_cache();
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
@@ -1383,7 +1380,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_commit")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn proposal_cache_rejects_multiple_external_init_proposals_in_commit() {
         let cache = make_proposal_cache();
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
@@ -1454,7 +1451,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_commit")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn new_member_cannot_commit_add_proposal() {
         let res = new_member_commits_proposal(Proposal::Add(Box::new(AddProposal {
             key_package: test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "frank").await,
@@ -1470,7 +1467,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_commit")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn new_member_cannot_commit_more_than_one_remove_proposal() {
         let cache = make_proposal_cache();
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
@@ -1527,7 +1524,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_commit")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn new_member_remove_proposal_invalid_credential() {
         let cache = make_proposal_cache();
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
@@ -1579,7 +1576,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_commit")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn new_member_remove_proposal_valid_credential() {
         let cache = make_proposal_cache();
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
@@ -1631,7 +1628,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_commit")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn new_member_cannot_commit_update_proposal() {
         let res = new_member_commits_proposal(Proposal::Update(UpdateProposal {
             leaf_node: get_basic_test_node(TEST_CIPHER_SUITE, "foo").await,
@@ -1647,7 +1644,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_commit")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn new_member_cannot_commit_group_extensions_proposal() {
         let res =
             new_member_commits_proposal(Proposal::GroupContextExtensions(ExtensionList::new()))
@@ -1662,7 +1659,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_commit")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn new_member_cannot_commit_reinit_proposal() {
         let res = new_member_commits_proposal(Proposal::ReInit(ReInitProposal {
             group_id: b"foo".to_vec(),
@@ -1681,7 +1678,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_commit")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn new_member_commit_must_contain_an_external_init_proposal() {
         let cache = make_proposal_cache();
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
@@ -1710,7 +1707,7 @@ mod tests {
         );
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_path_update_required_empty() {
         let cache = make_proposal_cache();
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
@@ -1734,7 +1731,7 @@ mod tests {
         assert!(path_update_required(&effects.applied_proposals))
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_path_update_required_updates() {
         let mut cache = make_proposal_cache();
         let update = Proposal::Update(make_update_proposal("bar").await);
@@ -1770,7 +1767,7 @@ mod tests {
         assert!(path_update_required(&effects.applied_proposals))
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_path_update_required_removes() {
         let cache = make_proposal_cache();
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
@@ -1816,7 +1813,7 @@ mod tests {
     }
 
     #[cfg(feature = "psk")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_path_update_not_required() {
         let (alice, tree) = new_tree("alice").await;
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
@@ -1853,7 +1850,7 @@ mod tests {
         assert!(!path_update_required(&effects.applied_proposals))
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn path_update_is_not_required_for_re_init() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let (alice, tree) = new_tree("alice").await;
@@ -2086,7 +2083,7 @@ mod tests {
         )
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn receiving_add_with_invalid_key_package_fails() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -2104,7 +2101,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::InvalidSignature));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_additional_add_with_invalid_key_package_fails() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -2118,7 +2115,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::InvalidSignature));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_add_with_invalid_key_package_filters_it_out() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -2143,7 +2140,7 @@ mod tests {
         );
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_add_with_hpke_key_of_another_member_fails() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -2160,7 +2157,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::DuplicateLeafData(_)));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_add_with_hpke_key_of_another_member_filters_it_out() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -2189,7 +2186,7 @@ mod tests {
         );
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn receiving_update_with_invalid_leaf_node_fails() {
         let (alice, mut tree) = new_tree("alice").await;
         let bob = add_member(&mut tree, "bob").await;
@@ -2213,7 +2210,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::InvalidLeafNodeSource));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_update_with_invalid_leaf_node_filters_it_out() {
         let (alice, mut tree) = new_tree("alice").await;
         let bob = add_member(&mut tree, "bob").await;
@@ -2238,7 +2235,7 @@ mod tests {
         assert_eq!(processed_proposals.1.rejected_proposals, Vec::new());
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn receiving_remove_with_invalid_index_fails() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -2256,7 +2253,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::InvalidNodeIndex(20)));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_additional_remove_with_invalid_index_fails() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -2270,7 +2267,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::InvalidNodeIndex(20)));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_remove_with_invalid_index_filters_it_out() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -2314,7 +2311,7 @@ mod tests {
     }
 
     #[cfg(feature = "psk")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn receiving_psk_with_invalid_nonce_fails() {
         let invalid_nonce = PskNonce(vec![0, 1, 2]);
         let (alice, tree) = new_tree("alice").await;
@@ -2335,7 +2332,7 @@ mod tests {
     }
 
     #[cfg(feature = "psk")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_additional_psk_with_invalid_nonce_fails() {
         let invalid_nonce = PskNonce(vec![0, 1, 2]);
         let (alice, tree) = new_tree("alice").await;
@@ -2352,7 +2349,7 @@ mod tests {
     }
 
     #[cfg(feature = "psk")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_psk_with_invalid_nonce_filters_it_out() {
         let invalid_nonce = PskNonce(vec![0, 1, 2]);
         let (alice, tree) = new_tree("alice").await;
@@ -2444,37 +2441,37 @@ mod tests {
     }
 
     #[cfg(feature = "psk")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn receiving_resumption_psk_with_reinit_usage_fails() {
         receiving_resumption_psk_with_bad_usage_fails(ResumptionPSKUsage::Reinit).await;
     }
 
     #[cfg(feature = "psk")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_additional_resumption_psk_with_reinit_usage_fails() {
         sending_additional_resumption_psk_with_bad_usage_fails(ResumptionPSKUsage::Reinit).await;
     }
 
     #[cfg(feature = "psk")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_resumption_psk_with_reinit_usage_filters_it_out() {
         sending_resumption_psk_with_bad_usage_filters_it_out(ResumptionPSKUsage::Reinit).await;
     }
 
     #[cfg(feature = "psk")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn receiving_resumption_psk_with_branch_usage_fails() {
         receiving_resumption_psk_with_bad_usage_fails(ResumptionPSKUsage::Branch).await;
     }
 
     #[cfg(feature = "psk")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_additional_resumption_psk_with_branch_usage_fails() {
         sending_additional_resumption_psk_with_bad_usage_fails(ResumptionPSKUsage::Branch).await;
     }
 
     #[cfg(feature = "psk")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_resumption_psk_with_branch_usage_filters_it_out() {
         sending_resumption_psk_with_bad_usage_filters_it_out(ResumptionPSKUsage::Branch).await;
     }
@@ -2488,7 +2485,7 @@ mod tests {
         }
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn receiving_reinit_downgrading_version_fails() {
         let smaller_protocol_version = ProtocolVersion::from(0);
         let (alice, tree) = new_tree("alice").await;
@@ -2505,7 +2502,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::InvalidProtocolVersionInReInit));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_additional_reinit_downgrading_version_fails() {
         let smaller_protocol_version = ProtocolVersion::from(0);
         let (alice, tree) = new_tree("alice").await;
@@ -2518,7 +2515,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::InvalidProtocolVersionInReInit));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_reinit_downgrading_version_filters_it_out() {
         let smaller_protocol_version = ProtocolVersion::from(0);
         let (alice, tree) = new_tree("alice").await;
@@ -2541,7 +2538,7 @@ mod tests {
         );
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn receiving_update_for_committer_fails() {
         let (alice, tree) = new_tree("alice").await;
         let update = Proposal::Update(make_update_proposal("alice").await);
@@ -2560,7 +2557,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::InvalidCommitSelfUpdate));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_additional_update_for_committer_fails() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -2572,7 +2569,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::InvalidProposalTypeForSender));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_update_for_committer_filters_it_out() {
         let (alice, tree) = new_tree("alice").await;
         let proposal = Proposal::Update(make_update_proposal("alice").await);
@@ -2594,7 +2591,7 @@ mod tests {
         );
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn receiving_remove_for_committer_fails() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -2610,7 +2607,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::CommitterSelfRemoval));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_additional_remove_for_committer_fails() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -2622,7 +2619,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::CommitterSelfRemoval));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_remove_for_committer_filters_it_out() {
         let (alice, tree) = new_tree("alice").await;
         let proposal = Proposal::Remove(RemoveProposal { to_remove: alice });
@@ -2644,7 +2641,7 @@ mod tests {
         );
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn receiving_update_and_remove_for_same_leaf_fails() {
         let (alice, mut tree) = new_tree("alice").await;
         let bob = add_member(&mut tree, "bob").await;
@@ -2669,7 +2666,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::UpdatingNonExistingMember));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_update_and_remove_for_same_leaf_filters_update_out() {
         let (alice, mut tree) = new_tree("alice").await;
         let bob = add_member(&mut tree, "bob").await;
@@ -2753,7 +2750,7 @@ mod tests {
         }
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn receiving_add_proposals_for_same_client_fails() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -2772,7 +2769,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::DuplicateLeafData(1)));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_additional_add_proposals_for_same_client_fails() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -2787,7 +2784,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::DuplicateLeafData(1)));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_add_proposals_for_same_client_keeps_only_one() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -2819,7 +2816,7 @@ mod tests {
         );
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn receiving_update_for_different_identity_fails() {
         let (alice, mut tree) = new_tree("alice").await;
         let bob = add_member(&mut tree, "bob").await;
@@ -2840,7 +2837,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::InvalidSuccessor));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_update_for_different_identity_filters_it_out() {
         let (alice, mut tree) = new_tree("alice").await;
         let bob = add_member(&mut tree, "bob").await;
@@ -2863,7 +2860,7 @@ mod tests {
         assert_eq!(processed_proposals.1.rejected_proposals, Vec::new());
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn receiving_add_for_same_client_as_existing_member_fails() {
         let (alice, public_tree) = new_tree("alice").await;
         let add = Proposal::Add(make_add_proposal().await);
@@ -2890,7 +2887,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::DuplicateLeafData(1)));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_additional_add_for_same_client_as_existing_member_fails() {
         let (alice, public_tree) = new_tree("alice").await;
         let add = Proposal::Add(make_add_proposal().await);
@@ -2917,7 +2914,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::DuplicateLeafData(1)));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_add_for_same_client_as_existing_member_filters_it_out() {
         let (alice, public_tree) = new_tree("alice").await;
         let add = Proposal::Add(make_add_proposal().await);
@@ -2954,7 +2951,7 @@ mod tests {
     }
 
     #[cfg(feature = "psk")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn receiving_psk_proposals_with_same_psk_id_fails() {
         let (alice, tree) = new_tree("alice").await;
         let psk_proposal = Proposal::Psk(new_external_psk(b"foo"));
@@ -2972,7 +2969,7 @@ mod tests {
     }
 
     #[cfg(feature = "psk")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_additional_psk_proposals_with_same_psk_id_fails() {
         let (alice, tree) = new_tree("alice").await;
         let psk_proposal = Proposal::Psk(new_external_psk(b"foo"));
@@ -2986,7 +2983,7 @@ mod tests {
     }
 
     #[cfg(feature = "psk")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_psk_proposals_with_same_psk_id_keeps_only_one() {
         let (alice, mut tree) = new_tree("alice").await;
         let bob = add_member(&mut tree, "bob").await;
@@ -3029,7 +3026,7 @@ mod tests {
         }
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn receiving_multiple_group_context_extensions_fails() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -3051,7 +3048,7 @@ mod tests {
         );
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_multiple_additional_group_context_extensions_fails() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -3073,7 +3070,7 @@ mod tests {
         vec![TestExtension { foo }.into_extension().unwrap()].into()
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_multiple_group_context_extensions_keeps_only_one() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
@@ -3146,7 +3143,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_proposal")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn receiving_invalid_external_senders_extension_fails() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -3166,7 +3163,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_proposal")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_additional_invalid_external_senders_extension_fails() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -3182,7 +3179,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_proposal")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_invalid_external_senders_extension_filters_it_out() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -3207,7 +3204,7 @@ mod tests {
         );
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn receiving_reinit_with_other_proposals_fails() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -3226,7 +3223,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::OtherProposalWithReInit));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_additional_reinit_with_other_proposals_fails() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -3241,7 +3238,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::OtherProposalWithReInit));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_reinit_with_other_proposals_filters_it_out() {
         let (alice, tree) = new_tree("alice").await;
         let reinit = Proposal::ReInit(make_reinit(TEST_PROTOCOL_VERSION));
@@ -3266,7 +3263,7 @@ mod tests {
         );
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn receiving_multiple_reinits_fails() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -3285,7 +3282,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::OtherProposalWithReInit));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_additional_multiple_reinits_fails() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -3300,7 +3297,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::OtherProposalWithReInit));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_multiple_reinits_keeps_only_one() {
         let (alice, tree) = new_tree("alice").await;
         let reinit = Proposal::ReInit(make_reinit(TEST_PROTOCOL_VERSION));
@@ -3348,7 +3345,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_commit")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn receiving_external_init_from_member_fails() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -3365,7 +3362,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_commit")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_additional_external_init_from_member_fails() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -3378,7 +3375,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_commit")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_external_init_from_member_filters_it_out() {
         let (alice, tree) = new_tree("alice").await;
         let external_init = Proposal::ExternalInit(make_external_init());
@@ -3413,7 +3410,7 @@ mod tests {
     }
 
     #[cfg(feature = "all_extensions")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn receiving_required_capabilities_not_supported_by_member_fails() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -3433,7 +3430,7 @@ mod tests {
     }
 
     #[cfg(feature = "all_extensions")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_required_capabilities_not_supported_by_member_fails() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -3449,7 +3446,7 @@ mod tests {
     }
 
     #[cfg(feature = "all_extensions")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_additional_required_capabilities_not_supported_by_member_filters_it_out() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -3472,7 +3469,7 @@ mod tests {
         );
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn committing_update_from_pk1_to_pk2_and_update_from_pk2_to_pk3_works() {
         let (alice_leaf, alice_secret, alice_signer) =
             get_basic_test_node_sig_key(TEST_CIPHER_SUITE, "alice").await;
@@ -3542,7 +3539,7 @@ mod tests {
         );
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn committing_update_from_pk1_to_pk2_and_removal_of_pk2_works() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
@@ -3653,7 +3650,7 @@ mod tests {
             .key_package
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn receiving_add_with_leaf_not_supporting_credential_type_of_other_leaf_fails() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -3671,7 +3668,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::InUseCredentialTypeUnsupportedByNewLeaf));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_additional_add_with_leaf_not_supporting_credential_type_of_other_leaf_fails() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -3685,7 +3682,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::InUseCredentialTypeUnsupportedByNewLeaf));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_add_with_leaf_not_supporting_credential_type_of_other_leaf_filters_it_out() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -3712,7 +3709,7 @@ mod tests {
     }
 
     #[cfg(feature = "custom_proposal")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_custom_proposal_with_member_not_supporting_proposal_type_fails() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -3732,7 +3729,7 @@ mod tests {
     }
 
     #[cfg(feature = "custom_proposal")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_custom_proposal_with_member_not_supporting_filters_it_out() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -3757,7 +3754,7 @@ mod tests {
     }
 
     #[cfg(feature = "custom_proposal")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn receiving_custom_proposal_with_member_not_supporting_fails() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -3779,7 +3776,7 @@ mod tests {
     }
 
     #[cfg(feature = "all_extensions")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn receiving_group_extension_unsupported_by_leaf_fails() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -3801,7 +3798,7 @@ mod tests {
     }
 
     #[cfg(feature = "all_extensions")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_additional_group_extension_unsupported_by_leaf_fails() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -3819,7 +3816,7 @@ mod tests {
     }
 
     #[cfg(feature = "all_extensions")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_group_extension_unsupported_by_leaf_filters_it_out() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -3857,7 +3854,7 @@ mod tests {
     }
 
     #[cfg(feature = "psk")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn receiving_external_psk_with_unknown_id_fails() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -3875,7 +3872,7 @@ mod tests {
     }
 
     #[cfg(feature = "psk")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_additional_external_psk_with_unknown_id_fails() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -3889,7 +3886,7 @@ mod tests {
     }
 
     #[cfg(feature = "psk")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn sending_external_psk_with_unknown_id_filters_it_out() {
         let (alice, tree) = new_tree("alice").await;
         let proposal = Proposal::Psk(new_external_psk(b"abc"));
@@ -3912,7 +3909,7 @@ mod tests {
         );
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn user_defined_filter_can_remove_proposals() {
         struct RemoveGroupContextExtensions;
 
@@ -4002,7 +3999,7 @@ mod tests {
         }
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn user_defined_filter_can_refuse_to_send_commit() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -4015,7 +4012,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::UserDefinedProposalFilterError(_)));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn user_defined_filter_can_reject_incoming_commit() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -4074,7 +4071,7 @@ mod tests {
     }
 
     #[cfg(feature = "custom_proposal")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn user_defined_custom_proposal_rules_are_applied_on_send() {
         let (alice, tree) = new_tree_custom_proposals("alice", vec![ProposalType::new(42)]).await;
 
@@ -4123,7 +4120,7 @@ mod tests {
     }
 
     #[cfg(feature = "custom_proposal")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn user_defined_custom_proposal_rules_are_applied_on_receive() {
         let (alice, tree) = new_tree_custom_proposals("alice", vec![ProposalType::new(42)]).await;
 
@@ -4170,7 +4167,7 @@ mod tests {
     }
 
     #[cfg(feature = "custom_proposal")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn user_defined_custom_proposal_rules_are_not_exempt_from_base_rules() {
         let (alice, tree) = new_tree_custom_proposals("alice", vec![ProposalType::new(42)]).await;
 
@@ -4201,7 +4198,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::InvalidProposalTypeForSender { .. }))
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn proposers_are_verified() {
         let (alice, mut tree) = new_tree("alice").await;
         let bob = add_member(&mut tree, "bob").await;

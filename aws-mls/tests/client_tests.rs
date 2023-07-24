@@ -59,11 +59,15 @@ pub async fn get_test_groups(
 }
 
 use rand::seq::IteratorRandom;
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
 
 #[cfg(target_arch = "wasm32")]
-wasm_bindgen_test_configure!(run_in_browser);
+wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
+
+#[cfg(all(test, not(sync), target_arch = "wasm32"))]
+use wasm_bindgen_test::wasm_bindgen_test as futures_test;
+
+#[cfg(all(test, not(sync), not(target_arch = "wasm32")))]
+use futures_test::test as futures_test;
 
 #[cfg(feature = "private_message")]
 #[maybe_async::async_impl]
@@ -192,7 +196,7 @@ async fn test_create(
     assert!(Group::equal_group_state(&alice_group, &bob_group));
 }
 
-#[maybe_async::test(sync, async(not(sync), futures_test::test))]
+#[maybe_async::test(sync, async(not(sync), futures_test))]
 async fn test_create_group() {
     test_on_all_params(test_create).await;
 }
@@ -228,7 +232,7 @@ async fn test_empty_commits(
     }
 }
 
-#[maybe_async::test(sync, async(not(sync), futures_test::test))]
+#[maybe_async::test(sync, async(not(sync), futures_test))]
 async fn test_group_path_updates() {
     test_on_all_params(test_empty_commits).await;
 }
@@ -273,7 +277,7 @@ async fn test_update_proposals(
 }
 
 #[cfg(feature = "by_ref_proposal")]
-#[maybe_async::test(sync, async(not(sync), futures_test::test))]
+#[maybe_async::test(sync, async(not(sync), futures_test))]
 async fn test_group_update_proposals() {
     test_on_all_params(test_update_proposals).await;
 }
@@ -338,7 +342,7 @@ async fn test_remove_proposals(
     }
 }
 
-#[maybe_async::test(sync, async(not(sync), futures_test::test))]
+#[maybe_async::test(sync, async(not(sync), futures_test))]
 async fn test_group_remove_proposals() {
     test_on_all_params(test_remove_proposals).await;
 }
@@ -385,7 +389,7 @@ async fn test_application_messages(
 }
 
 #[cfg(all(feature = "private_message", feature = "out_of_order"))]
-#[maybe_async::test(sync, async(not(sync), futures_test::test))]
+#[maybe_async::test(sync, async(not(sync), futures_test))]
 async fn test_out_of_order_application_messages() {
     let mut groups = get_test_groups(
         ProtocolVersion::MLS_10,
@@ -446,7 +450,7 @@ async fn test_out_of_order_application_messages() {
 }
 
 #[cfg(feature = "private_message")]
-#[maybe_async::test(sync, async(not(sync), futures_test::test))]
+#[maybe_async::test(sync, async(not(sync), futures_test))]
 async fn test_group_application_messages() {
     test_on_all_params(test_application_messages).await
 }
@@ -479,7 +483,7 @@ async fn processing_message_from_self_returns_error(
     assert_matches!(error, MlsError::CantProcessMessageFromSelf);
 }
 
-#[maybe_async::test(sync, async(not(sync), futures_test::test))]
+#[maybe_async::test(sync, async(not(sync), futures_test))]
 async fn test_processing_message_from_self_returns_error() {
     test_on_all_params(processing_message_from_self_returns_error).await;
 }
@@ -567,12 +571,12 @@ async fn external_commits_work(
 }
 
 #[cfg(feature = "external_commit")]
-#[maybe_async::test(sync, async(not(sync), futures_test::test))]
+#[maybe_async::test(sync, async(not(sync), futures_test))]
 async fn test_external_commits() {
     test_on_all_params_plaintext(external_commits_work).await
 }
 
-#[maybe_async::test(sync, async(not(sync), futures_test::test))]
+#[maybe_async::test(sync, async(not(sync), futures_test))]
 async fn test_remove_nonexisting_leaf() {
     let mut groups = get_test_groups(
         ProtocolVersion::MLS_10,
@@ -639,7 +643,7 @@ fn get_reinit_client(
 }
 
 #[cfg(feature = "psk")]
-#[maybe_async::test(sync, async(not(sync), futures_test::test))]
+#[maybe_async::test(sync, async(not(sync), futures_test))]
 async fn reinit_works() {
     let suite1 = CipherSuite::CURVE25519_AES128;
     let suite2 = CipherSuite::P256_AES128;

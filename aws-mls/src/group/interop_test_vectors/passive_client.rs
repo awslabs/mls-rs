@@ -92,7 +92,7 @@ impl TestEpoch {
     }
 }
 
-#[maybe_async::test(sync, async(not(sync), futures_test::test))]
+#[maybe_async::test(sync, async(not(sync), crate::futures_test))]
 async fn interop_passive_client() {
     // Test vectors can be found here:
     // * https://github.com/mlswg/mls-implementations/blob/main/test-vectors/passive-client-welcome.json

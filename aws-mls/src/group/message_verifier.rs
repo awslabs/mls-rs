@@ -277,9 +277,6 @@ mod tests {
     #[cfg(any(feature = "by_ref_proposal", feature = "external_proposal"))]
     use crate::identity::test_utils::get_test_signing_identity;
 
-    #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen_test::wasm_bindgen_test as test;
-
     use super::{verify_auth_content_signature, verify_plaintext_authentication};
 
     #[maybe_async::maybe_async]
@@ -339,7 +336,7 @@ mod tests {
         }
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn valid_plaintext_is_verified() {
         let mut env = TestEnv::new().await;
 
@@ -355,7 +352,7 @@ mod tests {
         .unwrap();
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn valid_auth_content_is_verified() {
         let mut env = TestEnv::new().await;
 
@@ -372,7 +369,7 @@ mod tests {
         .unwrap();
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn invalid_plaintext_is_not_verified() {
         let mut env = TestEnv::new().await;
         let mut message = make_signed_plaintext(&mut env.alice.group).await;
@@ -401,7 +398,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::InvalidSignature));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn plaintext_from_member_requires_membership_tag() {
         let mut env = TestEnv::new().await;
         let mut message = make_signed_plaintext(&mut env.alice.group).await;
@@ -418,7 +415,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::InvalidMembershipTag));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn plaintext_fails_with_invalid_membership_tag() {
         let mut env = TestEnv::new().await;
         let mut message = make_signed_plaintext(&mut env.alice.group).await;
@@ -481,7 +478,7 @@ mod tests {
     }
 
     #[cfg(feature = "by_ref_proposal")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn valid_proposal_from_new_member_is_verified() {
         let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let (key_pkg_gen, signer) =
@@ -499,7 +496,7 @@ mod tests {
     }
 
     #[cfg(feature = "by_ref_proposal")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn proposal_from_new_member_must_not_have_membership_tag() {
         let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let (key_pkg_gen, signer) =
@@ -520,7 +517,7 @@ mod tests {
     }
 
     #[cfg(feature = "by_ref_proposal")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn new_member_proposal_sender_must_be_add_proposal() {
         let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let (key_pkg_gen, signer) =
@@ -544,7 +541,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_commit")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn new_member_commit_must_be_external_commit() {
         let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let (key_pkg_gen, signer) =
@@ -566,7 +563,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_proposal")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn valid_proposal_from_external_is_verified() {
         let (bob_key_pkg_gen, _) =
             test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob").await;
@@ -609,7 +606,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_proposal")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn external_proposal_must_be_from_valid_sender() {
         let (bob_key_pkg_gen, _) =
             test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob").await;
@@ -632,7 +629,7 @@ mod tests {
     }
 
     #[cfg(feature = "by_ref_proposal")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn proposal_from_external_sender_must_not_have_membership_tag() {
         let (bob_key_pkg_gen, _) =
             test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob").await;
@@ -657,7 +654,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::MembershipTagForNonMember));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn plaintext_from_self_fails_verification() {
         let mut env = TestEnv::new().await;
 

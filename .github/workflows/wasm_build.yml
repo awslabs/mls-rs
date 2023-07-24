@@ -19,7 +19,7 @@ jobs:
       run: wasm-pack test --headless --chrome --release -- --features="browser"
     - name: WASM aws-mls
       working-directory: aws-mls
-      run: wasm-pack test --headless --chrome --release -- --no-default-features --features="grease"
+      run: wasm-pack test --headless --chrome --release
     - name: WASM aws-mls-core
       working-directory: aws-mls-core
       run: wasm-pack test --headless --chrome --release

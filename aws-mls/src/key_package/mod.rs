@@ -259,9 +259,6 @@ mod tests {
     use alloc::format;
     use assert_matches::assert_matches;
 
-    #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen_test::wasm_bindgen_test as test;
-
     #[derive(serde::Deserialize, serde::Serialize)]
     struct TestCase {
         cipher_suite: u16,
@@ -308,7 +305,7 @@ mod tests {
         load_test_case_json!(key_package_ref, TestCase::generate())
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_key_package_ref() {
         let cases = load_test_cases().await;
 
@@ -326,7 +323,7 @@ mod tests {
         }
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn key_package_ref_fails_invalid_cipher_suite() {
         let key_package = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "test").await;
 

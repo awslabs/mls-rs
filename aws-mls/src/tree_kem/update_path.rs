@@ -129,9 +129,6 @@ mod tests {
     use super::{UpdatePath, UpdatePathNode};
     use crate::{cipher_suite::CipherSuite, tree_kem::MlsError};
 
-    #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen_test::wasm_bindgen_test as test;
-
     use alloc::vec::Vec;
 
     #[maybe_async::maybe_async]
@@ -190,7 +187,7 @@ mod tests {
         }
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_valid_leaf_node() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let update_path = test_update_path(TEST_CIPHER_SUITE, "creator").await;
@@ -212,7 +209,7 @@ mod tests {
         assert_eq!(validated.leaf_node, update_path.leaf_node);
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_invalid_key_package() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let mut update_path = test_update_path(TEST_CIPHER_SUITE, "creator").await;
@@ -231,7 +228,7 @@ mod tests {
         assert_matches!(validated, Err(MlsError::InvalidSignature));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn validating_path_fails_with_different_identity() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let cipher_suite = TEST_CIPHER_SUITE;
@@ -250,7 +247,7 @@ mod tests {
         assert_matches!(validated, Err(MlsError::InvalidSuccessor));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn validating_path_fails_with_same_hpke_key() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let update_path = test_update_path(TEST_CIPHER_SUITE, "creator").await;

@@ -335,9 +335,6 @@ mod tests {
 
     use super::*;
 
-    #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen_test::wasm_bindgen_test as test;
-
     #[derive(serde::Deserialize, serde::Serialize)]
     struct TestCase {
         cipher_suite: u16,
@@ -378,7 +375,7 @@ mod tests {
         load_test_case_json!(tree_hash, TestCase::generate())
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_tree_hash() {
         let cases = load_test_cases().await;
 

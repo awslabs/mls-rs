@@ -809,7 +809,7 @@ mod tests {
         }
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_commit_builder_add() {
         let mut group = test_commit_builder_group().await;
 
@@ -829,7 +829,7 @@ mod tests {
         assert_commit_builder_output(group, commit_output, vec![expected_add], 1)
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_commit_builder_add_with_ext() {
         let mut group = test_commit_builder_group().await;
 
@@ -865,7 +865,7 @@ mod tests {
         );
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_commit_builder_remove() {
         let mut group = test_commit_builder_group().await;
         let test_key_package =
@@ -895,7 +895,7 @@ mod tests {
     }
 
     #[cfg(feature = "psk")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_commit_builder_psk() {
         let mut group = test_commit_builder_group().await;
         let test_psk = ExternalPskId::new(vec![1]);
@@ -920,7 +920,7 @@ mod tests {
     }
 
     #[cfg(feature = "all_extensions")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_commit_builder_group_context_ext() {
         let mut group = test_commit_builder_group().await;
         let mut test_ext = ExtensionList::default();
@@ -942,7 +942,7 @@ mod tests {
     }
 
     #[cfg(feature = "all_extensions")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_commit_builder_reinit() {
         let mut group = test_commit_builder_group().await;
         let test_group_id = "foo".as_bytes().to_vec();
@@ -980,7 +980,7 @@ mod tests {
     }
 
     #[cfg(feature = "custom_proposal")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_commit_builder_custom_proposal() {
         let mut group = test_commit_builder_group().await;
 
@@ -996,7 +996,7 @@ mod tests {
         assert_commit_builder_output(group, commit_output, vec![Proposal::Custom(proposal)], 0);
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_commit_builder_chaining() {
         let mut group = test_commit_builder_group().await;
         let kp1 = test_key_package_message(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "alice").await;
@@ -1020,7 +1020,7 @@ mod tests {
         assert_commit_builder_output(group, commit_output, expected_adds, 2);
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_commit_builder_empty_commit() {
         let mut group = test_commit_builder_group().await;
 
@@ -1029,7 +1029,7 @@ mod tests {
         assert_commit_builder_output(group, commit_output, vec![], 0);
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_commit_builder_authenticated_data() {
         let mut group = test_commit_builder_group().await;
         let test_data = "test".as_bytes().to_vec();
@@ -1052,7 +1052,7 @@ mod tests {
         );
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn commit_can_change_credential() {
         let cs = TEST_CIPHER_SUITE;
         let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, cs, 3).await;
@@ -1107,7 +1107,7 @@ mod tests {
         );
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn commit_includes_tree_if_no_ratchet_tree_ext() {
         let mut group = test_group_custom_config(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, |b| {
             b.custom_proposal_type(ProposalType::from(42))
@@ -1125,7 +1125,7 @@ mod tests {
         assert_eq!(new_tree, commit.ratchet_tree.unwrap())
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn commit_does_not_include_tree_if_ratchet_tree_ext() {
         let mut group = test_group_custom_config(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, |b| {
             b.custom_proposal_type(ProposalType::from(42))
@@ -1139,7 +1139,7 @@ mod tests {
         assert!(commit.ratchet_tree().is_none());
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn member_identity_is_validated_against_new_extensions() {
         let (alice, identity) = client_with_test_extension(b"alice");
 
@@ -1194,7 +1194,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_proposal")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn server_identity_is_validated_against_new_extensions() {
         let (alice, identity) = client_with_test_extension(b"alice");
 

@@ -345,10 +345,7 @@ mod tests {
     use crate::tree_kem::MlsError;
     use assert_matches::assert_matches;
 
-    #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen_test::wasm_bindgen_test as test;
-
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_missing_parent_hash() {
         let cs = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let mut test_tree = TreeWithSigners::make_full_tree(8, &cs).await.tree;
@@ -368,7 +365,7 @@ mod tests {
         );
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_parent_hash_mismatch() {
         let cs = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let mut test_tree = TreeWithSigners::make_full_tree(8, &cs).await.tree;
@@ -390,7 +387,7 @@ mod tests {
         assert_matches!(invalid_parent_hash_res, Err(MlsError::ParentHashMismatch));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_parent_hash_invalid() {
         let cs = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let mut test_tree = TreeWithSigners::make_full_tree(8, &cs).await.tree;

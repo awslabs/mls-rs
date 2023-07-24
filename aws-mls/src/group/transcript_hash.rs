@@ -132,7 +132,7 @@ mod tests {
         pub interim_transcript_hash_after: Vec<u8>,
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn transcript_hash() {
         #[cfg(not(sync))]
         let test_cases: Vec<TestCase> =

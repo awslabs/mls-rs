@@ -8,6 +8,7 @@ use crate::{
     client_builder::Preferences,
     crypto::test_utils::{test_cipher_suite_provider, try_test_cipher_suite_provider},
     group::{test_utils::test_group_custom, PaddingMode},
+    test_utils::is_edwards,
     tree_kem::{leaf_node::test_utils::get_basic_test_node, node::LeafIndex},
 };
 
@@ -67,7 +68,11 @@ impl FramingTestCase {
         let mut context = InteropGroupContext::random(cs);
         context.cipher_suite = cs.cipher_suite().into();
 
-        let (signature_priv, signature_pub) = cs.signature_key_generate().unwrap();
+        let (mut signature_priv, signature_pub) = cs.signature_key_generate().unwrap();
+
+        if is_edwards(*cs.cipher_suite()) {
+            signature_priv = signature_priv[0..signature_priv.len() / 2].to_vec().into();
+        }
 
         Self {
             context,
@@ -121,7 +126,7 @@ impl From<InteropGroupContext> for GroupContext {
 
 // The test vector can be found here:
 // https://github.com/mlswg/mls-implementations/blob/main/test-vectors/message-protection.json
-#[maybe_async::test(sync, async(not(sync), futures_test::test))]
+#[maybe_async::test(sync, async(not(sync), crate::futures_test))]
 async fn framing_proposal() {
     #[cfg(sync)]
     let test_cases: Vec<FramingTestCase> =
@@ -168,7 +173,7 @@ async fn framing_proposal() {
 
 // The test vector can be found here:
 // https://github.com/mlswg/mls-implementations/blob/main/test-vectors/message-protection.json
-#[maybe_async::test(sync, async(not(sync), futures_test::test))]
+#[maybe_async::test(sync, async(not(sync), crate::futures_test))]
 async fn framing_application() {
     #[cfg(sync)]
     let test_cases: Vec<FramingTestCase> =
@@ -202,8 +207,8 @@ async fn framing_application() {
 
 // The test vector can be found here:
 // https://github.com/mlswg/mls-implementations/blob/main/test-vectors/message-protection.json
-#[maybe_async::test(sync, async(not(sync), futures_test::test))]
-async fn framing_comit() {
+#[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+async fn framing_commit() {
     #[cfg(sync)]
     let test_cases: Vec<FramingTestCase> =
         load_test_case_json!(framing, generate_framing_test_vector());
@@ -219,12 +224,18 @@ async fn framing_comit() {
 
         let commit = Commit::mls_decode(&mut &*test_case.commit).unwrap();
 
+        let mut signature_priv = test_case.signature_priv.clone();
+
+        if is_edwards(test_case.context.cipher_suite) {
+            signature_priv.extend(test_case.signature_pub.iter());
+        }
+
         let mut auth_content = AuthenticatedContent::new_signed(
             &cs,
             &test_case.context.clone().into(),
             Sender::Member(1),
             Content::Commit(alloc::boxed::Box::new(commit.clone())),
-            &test_case.signature_priv.clone().into(),
+            &signature_priv.into(),
             WireFormat::PublicMessage,
             vec![],
         )
@@ -384,11 +395,15 @@ async fn make_group<P: CipherSuiteProvider>(
     let member = group.current_member_signing_identity().unwrap().clone();
     group.config.0.keychain.delete(&member);
 
+    let mut signature_priv = test_case.signature_priv.clone();
+
+    if is_edwards(test_case.context.cipher_suite) {
+        signature_priv.extend(test_case.signature_pub.iter());
+    }
+
     group.config.0.keychain.insert(
         group.current_member_signing_identity().unwrap().clone(),
-        SignaturePublicKey::from(test_case.signature_priv.clone())
-            .to_vec()
-            .into(),
+        signature_priv.into(),
         cs.cipher_suite(),
     );
 

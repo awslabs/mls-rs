@@ -16,9 +16,6 @@ use super::{
     node::NodeVec, test_utils::TreeWithSigners, tree_validator::TreeValidator, TreeKemPublic,
 };
 
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen_test::wasm_bindgen_test as test;
-
 #[derive(serde::Serialize, serde::Deserialize, Debug, Default, Clone)]
 struct ValidationTestCase {
     pub cipher_suite: u16,
@@ -68,7 +65,7 @@ impl ValidationTestCase {
     }
 }
 
-#[maybe_async::test(sync, async(not(sync), futures_test::test))]
+#[maybe_async::test(sync, async(not(sync), crate::futures_test))]
 async fn validation() {
     #[cfg(not(sync))]
     let test_cases: Vec<ValidationTestCase> = load_test_case_json!(

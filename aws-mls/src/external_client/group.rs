@@ -849,7 +849,7 @@ mod tests {
         group
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn external_group_can_be_created() {
         for (v, cs) in ProtocolVersion::all().flat_map(|v| {
             TestCryptoProvider::all_supported_cipher_suites()
@@ -860,7 +860,7 @@ mod tests {
         }
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn external_group_can_process_commit() {
         let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let mut server = make_external_group(&alice).await;
@@ -875,7 +875,7 @@ mod tests {
         assert_eq!(alice.group.state, server.state);
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn external_group_can_process_proposals_by_reference() {
         let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let mut server = make_external_group(&alice).await;
@@ -917,7 +917,7 @@ mod tests {
         assert_eq!(alice.group.state, server.state);
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn external_group_can_process_commit_adding_member() {
         let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let mut server = make_external_group(&alice).await;
@@ -936,7 +936,7 @@ mod tests {
         assert_eq!(alice.group.state, server.state);
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn external_group_rejects_commit_not_for_current_epoch() {
         let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let mut server = make_external_group(&alice).await;
@@ -955,7 +955,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::InvalidEpoch));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn external_group_can_reject_message_with_invalid_signature() {
         let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
@@ -979,7 +979,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::InvalidSignature));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn external_group_rejects_unencrypted_application_message() {
         let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let mut server = make_external_group(&alice).await;
@@ -993,7 +993,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::UnencryptedApplicationMessage));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn external_group_will_reject_unsupported_cipher_suites() {
         let alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
@@ -1019,7 +1019,7 @@ mod tests {
         );
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn external_group_will_reject_unsupported_protocol_versions() {
         let alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
@@ -1107,7 +1107,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_proposal")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn external_group_can_propose_add() {
         let (server_identity, server_key, mut alice) = setup_extern_proposal_test(true).await;
 
@@ -1131,7 +1131,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_proposal")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn external_group_can_propose_remove() {
         let (server_identity, server_key, mut alice) = setup_extern_proposal_test(true).await;
 
@@ -1152,7 +1152,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_proposal")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn external_group_external_proposal_not_allowed() {
         let (signing_id, secret_key, alice) = setup_extern_proposal_test(false).await;
         let mut server = make_external_group(&alice).await;
@@ -1174,7 +1174,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_proposal")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn external_group_external_signing_identity_invalid() {
         let (server_identity, server_key) =
             get_test_signing_identity(TEST_CIPHER_SUITE, b"server".to_vec());
@@ -1199,7 +1199,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::InvalidExternalSigningIdentity));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn external_group_errors_on_old_epoch() {
         let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
@@ -1229,7 +1229,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::InvalidEpoch));
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn proposals_can_be_cached_externally() {
         let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
@@ -1256,7 +1256,7 @@ mod tests {
             .unwrap();
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn external_group_can_observe_since_creation() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
@@ -1276,7 +1276,7 @@ mod tests {
         }
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn external_group_can_be_serialized_to_tls_encoding() {
         let server =
             make_external_group(&test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await).await;

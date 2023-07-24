@@ -569,14 +569,14 @@ mod tests {
         }
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_encap_decap() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             encap_decap(cipher_suite, 10, None, None).await;
         }
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_encap_capabilities() {
         let cipher_suite = TEST_CIPHER_SUITE;
         let mut capabilities = get_test_capabilities();
@@ -585,7 +585,7 @@ mod tests {
         encap_decap(cipher_suite, 10, Some(capabilities.clone()), None).await;
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_encap_extensions() {
         let cipher_suite = TEST_CIPHER_SUITE;
         let mut extensions = ExtensionList::default();
@@ -594,7 +594,7 @@ mod tests {
         encap_decap(cipher_suite, 10, None, Some(extensions)).await;
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_encap_capabilities_extensions() {
         let cipher_suite = TEST_CIPHER_SUITE;
         let mut capabilities = get_test_capabilities();

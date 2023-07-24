@@ -281,7 +281,7 @@ mod tests {
             .equal_internals(&group.group.state.public_tree))
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn snapshot_with_pending_commit_can_be_serialized_to_json() {
         let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         group.group.commit(vec![]).await.unwrap();
@@ -290,7 +290,7 @@ mod tests {
     }
 
     #[cfg(feature = "by_ref_proposal")]
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn snapshot_with_pending_updates_can_be_serialized_to_json() {
         let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
@@ -303,7 +303,7 @@ mod tests {
         snapshot_restore(group).await
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn snapshot_can_be_serialized_to_json_with_internals() {
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 

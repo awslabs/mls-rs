@@ -412,10 +412,7 @@ mod tests {
     use crate::identity::test_utils::get_test_signing_identity;
     use assert_matches::assert_matches;
 
-    #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen_test::wasm_bindgen_test as test;
-
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_node_generation() {
         let capabilities = get_test_capabilities();
         let extensions = get_test_extensions();
@@ -471,7 +468,7 @@ mod tests {
         }
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_node_generation_randomness() {
         let cipher_suite = TEST_CIPHER_SUITE;
 
@@ -489,7 +486,7 @@ mod tests {
         }
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_node_update_no_meta_changes() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
@@ -538,7 +535,7 @@ mod tests {
         }
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_node_update_meta_changes() {
         let cipher_suite = TEST_CIPHER_SUITE;
 
@@ -566,7 +563,7 @@ mod tests {
         assert_eq!(leaf.ungreased_extensions(), new_properties.extensions);
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_node_commit_no_meta_changes() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
@@ -614,7 +611,7 @@ mod tests {
         }
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_node_commit_meta_changes() {
         let cipher_suite = TEST_CIPHER_SUITE;
 
@@ -645,7 +642,7 @@ mod tests {
         assert_eq!(leaf.signing_identity, new_signing_identity);
     }
 
-    #[maybe_async::test(sync, async(not(sync), futures_test::test))]
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn context_is_signed() {
         let provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
