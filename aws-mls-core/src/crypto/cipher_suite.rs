@@ -2,8 +2,6 @@ use core::ops::Deref;
 
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, MlsSize, MlsEncode, MlsDecode, PartialOrd, Ord)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// Wrapper type representing a ciphersuite identifier
 /// along with default values defined by the MLS RFC. Custom ciphersuites
 /// can be defined using a custom [`CryptoProvider`](crate::crypto::CryptoProvider).
@@ -22,6 +20,10 @@ use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 /// | 5  | DHKEMP521   | AES 256 | SHA 512 | P521             |
 /// | 6  | DHKEMX448   | ChaCha20Poly1305 | SHA 512 | Ed448   |
 /// | 7  | DHKEMP384   | AES 256 | SHA 512 | P384             |
+#[derive(Debug, Copy, Clone, Eq, PartialEq, MlsSize, MlsEncode, MlsDecode, PartialOrd, Ord)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::ffi_type)]
+#[repr(transparent)]
 pub struct CipherSuite(u16);
 
 impl From<u16> for CipherSuite {

@@ -198,6 +198,10 @@ pub(crate) struct Welcome {
 }
 
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    all(feature = "ffi", not(test)),
+    safer_ffi_gen::ffi_type(clone, opaque)
+)]
 #[non_exhaustive]
 /// Information provided to new members upon joining a group.
 pub struct NewMemberInfo {
@@ -206,6 +210,7 @@ pub struct NewMemberInfo {
     pub(crate) group_info_extensions: ExtensionList,
 }
 
+#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl NewMemberInfo {
     pub(crate) fn new(group_info_extensions: ExtensionList) -> Self {
         let mut new_member_info = Self {

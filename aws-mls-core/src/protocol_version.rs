@@ -2,11 +2,13 @@ use core::ops::Deref;
 
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 
+/// Wrapper type representing a protocol version identifier.
 #[derive(
     Debug, Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd, MlsSize, MlsEncode, MlsDecode,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-/// Wrapper type representing a protocol version identifier.
+#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::ffi_type)]
+#[repr(transparent)]
 pub struct ProtocolVersion(u16);
 
 impl From<u16> for ProtocolVersion {

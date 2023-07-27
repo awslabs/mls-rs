@@ -8,14 +8,17 @@ use super::BasicCredential;
 #[cfg(feature = "x509")]
 use super::CertificateChain;
 
+/// Wrapper type representing a credential type identifier along with default
+/// values defined by the MLS RFC.
 #[derive(
     Debug, PartialEq, Eq, Hash, Clone, Copy, PartialOrd, Ord, MlsSize, MlsEncode, MlsDecode,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-/// Wrapper type representing a credential type identifier along with default
-/// values defined by the MLS RFC.
+#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::ffi_type)]
+#[repr(transparent)]
 pub struct CredentialType(u16);
 
+#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl CredentialType {
     /// Basic identity.
     pub const BASIC: CredentialType = CredentialType(1);
@@ -49,6 +52,10 @@ impl Deref for CredentialType {
 
 #[derive(Clone, Debug, MlsSize, MlsEncode, MlsDecode, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(
+    all(feature = "ffi", not(test)),
+    safer_ffi_gen::ffi_type(clone, opaque)
+)]
 /// Custom user created credential type.
 ///
 /// # Warning
@@ -62,6 +69,7 @@ pub struct CustomCredential {
     pub(crate) data: Vec<u8>,
 }
 
+#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl CustomCredential {
     /// Create a new custom credential with opaque data.
     ///
@@ -87,9 +95,13 @@ impl CustomCredential {
     }
 }
 
+/// A MLS credential used to authenticate a group member.
 #[derive(Clone, Debug, PartialEq, Ord, PartialOrd, Eq, Hash)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-/// A MLS credential used to authenticate a group member.
+#[cfg_attr(
+    all(feature = "ffi", not(test)),
+    safer_ffi_gen::ffi_type(clone, opaque)
+)]
 #[non_exhaustive]
 pub enum Credential {
     /// Basic identifier-only credential.

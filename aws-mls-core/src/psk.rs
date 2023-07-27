@@ -50,9 +50,14 @@ impl Deref for PreSharedKey {
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialOrd, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(
+    all(feature = "ffi", not(test)),
+    safer_ffi_gen::ffi_type(clone, opaque)
+)]
 /// An external pre-shared key identifier.
 pub struct ExternalPskId(#[mls_codec(with = "aws_mls_codec::byte_vec")] Vec<u8>);
 
+#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl ExternalPskId {
     pub fn new(id_data: Vec<u8>) -> Self {
         Self(id_data)

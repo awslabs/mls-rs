@@ -10,9 +10,14 @@ use super::{Credential, CredentialType, MlsCredential};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(
+    all(feature = "ffi", not(test)),
+    safer_ffi_gen::ffi_type(clone, opaque)
+)]
 /// X.509 certificate in DER format.
 pub struct DerCertificate(#[mls_codec(with = "aws_mls_codec::byte_vec")] Vec<u8>);
 
+#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl DerCertificate {
     /// Create a der certificate from raw bytes.
     pub fn new(data: Vec<u8>) -> DerCertificate {
@@ -47,6 +52,10 @@ impl AsRef<[u8]> for DerCertificate {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(
+    all(feature = "ffi", not(test)),
+    safer_ffi_gen::ffi_type(clone, opaque)
+)]
 /// A chain of [`DerCertificate`] that is ordered from leaf to root.
 ///
 /// Certificate chains MAY leave out root CA's so long as they are

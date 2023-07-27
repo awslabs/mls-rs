@@ -12,8 +12,12 @@ use super::{Extension, ExtensionError, ExtensionType, MlsExtension};
 /// # Warning
 ///
 /// Extension lists require that each type of extension has at most one entry.
-#[derive(Debug, Clone, PartialEq, Default, MlsSize, MlsEncode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(
+    all(feature = "ffi", not(test)),
+    safer_ffi_gen::ffi_type(clone, opaque)
+)]
+#[derive(Debug, Clone, PartialEq, Default, MlsSize, MlsEncode)]
 pub struct ExtensionList(Vec<Extension>);
 
 impl Deref for ExtensionList {

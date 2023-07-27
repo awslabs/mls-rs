@@ -9,7 +9,7 @@ use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
     Clone, Copy, Eq, Hash, PartialOrd, Ord, PartialEq, MlsSize, MlsEncode, MlsDecode, Debug,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[cfg_attr(feature = "ffi", safer_ffi_gen::ffi_type(clone))]
+#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::ffi_type)]
 #[repr(transparent)]
 pub struct ProposalType(u16);
 

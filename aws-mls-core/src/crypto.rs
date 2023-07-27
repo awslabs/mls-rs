@@ -25,6 +25,10 @@ pub struct HpkeCiphertext {
 /// the public key should be represented in the uncompressed format.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, MlsSize, MlsDecode, MlsEncode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(
+    all(feature = "ffi", not(test)),
+    safer_ffi_gen::ffi_type(clone, opaque)
+)]
 pub struct HpkePublicKey(#[mls_codec(with = "aws_mls_codec::byte_vec")] Vec<u8>);
 
 impl From<Vec<u8>> for HpkePublicKey {
@@ -56,6 +60,10 @@ impl AsRef<[u8]> for HpkePublicKey {
 /// Byte representation of an HPKE secret key.
 #[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode, ZeroizeOnDrop)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(
+    all(feature = "ffi", not(test)),
+    safer_ffi_gen::ffi_type(clone, opaque)
+)]
 pub struct HpkeSecretKey(#[mls_codec(with = "aws_mls_codec::byte_vec")] Vec<u8>);
 
 impl From<Vec<u8>> for HpkeSecretKey {

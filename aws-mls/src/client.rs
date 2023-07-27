@@ -29,7 +29,7 @@ use alloc::boxed::Box;
 
 #[derive(Debug)]
 #[cfg_attr(feature = "std", derive(thiserror::Error))]
-#[cfg_attr(feature = "ffi", safer_ffi_gen::enum_to_error_code)]
+#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::enum_to_error_code)]
 #[non_exhaustive]
 pub enum MlsError {
     #[cfg_attr(feature = "std", error(transparent))]
