@@ -22,10 +22,12 @@ use crate::{
     storage_provider::in_memory::InMemoryKeyPackageStorage,
     test_utils::{
         all_process_message, generate_basic_client, get_test_basic_credential, get_test_groups,
-        make_test_ext_psk, TestClient, TEST_EXT_PSK_ID,
+        make_test_ext_psk, TEST_EXT_PSK_ID,
     },
-    Group, MLSMessage,
+    Client, Group, MLSMessage,
 };
+
+const VERSION: ProtocolVersion = ProtocolVersion::MLS_10;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Default, Clone)]
 pub struct TestCase {
@@ -141,9 +143,9 @@ async fn interop_passive_client() {
 
     for test_case in vec![]
         .into_iter()
-        .chain(test_cases_com.into_iter())
-        .chain(test_cases_wel.into_iter())
-        .chain(test_cases_rand.into_iter())
+        .chain(test_cases_com)
+        .chain(test_cases_wel)
+        .chain(test_cases_rand)
     {
         let crypto_provider = TestCryptoProvider::new();
         let Some(cs) = crypto_provider.cipher_suite_provider(test_case.cipher_suite.into()) else {
@@ -157,14 +159,15 @@ async fn interop_passive_client() {
 
         let mut client_builder = ClientBuilder::new()
             .crypto_provider(crypto_provider)
-            .identity_provider(BasicIdentityProvider::new())
-            .single_signing_identity(id, key, cs.cipher_suite());
+            .identity_provider(BasicIdentityProvider::new());
 
         for psk in test_case.external_psks {
             client_builder = client_builder.psk(ExternalPskId::new(psk.psk_id), psk.psk.into());
         }
 
-        let client = client_builder.build();
+        let client = client_builder
+            .signing_identity(id, key, cs.cipher_suite())
+            .build();
 
         let key_pckg_gen = KeyPackageGeneration {
             reference: key_package.to_reference(&cs).unwrap(),
@@ -219,14 +222,11 @@ async fn invite_passive_client<P: CipherSuiteProvider>(
     let client = ClientBuilder::new()
         .crypto_provider(crypto_provider)
         .identity_provider(BasicIdentityProvider::new())
-        .single_signing_identity(identity.clone(), secret_key.clone(), cs.cipher_suite())
         .key_package_repo(key_package_repo.clone())
+        .signing_identity(identity.clone(), secret_key.clone(), cs.cipher_suite())
         .build();
 
-    let key_pckg = client
-        .generate_key_package_message(ProtocolVersion::MLS_10, cs.cipher_suite(), identity)
-        .await
-        .unwrap();
+    let key_pckg = client.generate_key_package_message().await.unwrap();
 
     let (_, key_pckg_secrets) = key_package_repo.key_packages()[0].clone();
 
@@ -275,7 +275,7 @@ pub async fn generate_passive_client_proposal_tests() {
         };
 
         let mut groups = get_test_groups(
-            ProtocolVersion::MLS_10,
+            VERSION,
             cs.cipher_suite(),
             7,
             &Preferences::default().with_ratchet_tree_extension(true),
@@ -455,13 +455,15 @@ where
 
 #[maybe_async::maybe_async]
 async fn create_key_package(cs: CipherSuite) -> MLSMessage {
-    let client = generate_basic_client(cs, 0xbeef, &Default::default(), &TestCryptoProvider::new());
+    let client = generate_basic_client(
+        cs,
+        VERSION,
+        0xbeef,
+        &Default::default(),
+        &TestCryptoProvider::new(),
+    );
 
-    client
-        .client
-        .generate_key_package_message(ProtocolVersion::MLS_10, cs, client.identity)
-        .await
-        .unwrap()
+    client.generate_key_package_message().await.unwrap()
 }
 
 #[maybe_async::maybe_async]
@@ -478,7 +480,7 @@ pub async fn generate_passive_client_welcome_tests() {
             for (with_psk, with_path) in [false, true].into_iter().cartesian_product([true, false])
             {
                 let mut groups = get_test_groups(
-                    ProtocolVersion::MLS_10,
+                    VERSION,
                     cs.cipher_suite(),
                     16,
                     &Preferences::default()
@@ -508,7 +510,6 @@ pub async fn generate_passive_client_welcome_tests() {
 #[maybe_async::maybe_async]
 pub async fn generate_passive_client_random_tests() {
     let mut test_cases: Vec<TestCase> = vec![];
-    let version = ProtocolVersion::MLS_10;
 
     for cs in CipherSuite::all() {
         let crypto = TestCryptoProvider::new();
@@ -516,18 +517,13 @@ pub async fn generate_passive_client_random_tests() {
             continue;
         };
 
-        let creator = generate_basic_client(cs, 0, &Default::default(), &crypto);
-
-        let creator_group = creator
-            .client
-            .create_group(version, cs, creator.identity, Default::default())
-            .await
-            .unwrap();
+        let creator = generate_basic_client(cs, VERSION, 0, &Default::default(), &crypto);
+        let creator_group = creator.create_group(Default::default()).await.unwrap();
 
         let mut groups = vec![creator_group];
 
         let new_clients = (0..10)
-            .map(|i| generate_basic_client(cs, i + 1, &Default::default(), &crypto))
+            .map(|i| generate_basic_client(cs, VERSION, i + 1, &Default::default(), &crypto))
             .collect();
 
         add_random_members(0, &mut groups, new_clients, None).await;
@@ -561,7 +557,15 @@ pub async fn generate_passive_client_random_tests() {
                 .unwrap();
 
             let new_clients = (0..num_added)
-                .map(|i| generate_basic_client(cs, next_free_idx + i, &Default::default(), &crypto))
+                .map(|i| {
+                    generate_basic_client(
+                        cs,
+                        VERSION,
+                        next_free_idx + i,
+                        &Default::default(),
+                        &crypto,
+                    )
+                })
                 .collect();
 
             add_random_members(sender, &mut groups, new_clients, Some(&mut test_case)).await;
@@ -577,25 +581,15 @@ pub async fn generate_passive_client_random_tests() {
 pub async fn add_random_members<C: MlsConfig>(
     committer: usize,
     groups: &mut Vec<Group<C>>,
-    clients: Vec<TestClient<C>>,
+    clients: Vec<Client<C>>,
     test_case: Option<&mut TestCase>,
 ) {
-    let cipher_suite = groups[committer].cipher_suite();
     let committer_index = groups[committer].current_member_index() as usize;
 
     let mut key_packages = Vec::new();
 
     for client in &clients {
-        let key_package = client
-            .client
-            .generate_key_package_message(
-                ProtocolVersion::MLS_10,
-                cipher_suite,
-                client.identity.clone(),
-            )
-            .await
-            .unwrap();
-
+        let key_package = client.generate_key_package_message().await.unwrap();
         key_packages.push(key_package);
     }
 
@@ -634,7 +628,6 @@ pub async fn add_random_members<C: MlsConfig>(
         let commit = commit_output.welcome_message.clone().unwrap();
 
         let group = client
-            .client
             .join_group(Some(&tree_data.clone()), commit)
             .await
             .unwrap()

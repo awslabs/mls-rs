@@ -35,7 +35,7 @@ fn application_message_setup(c: &mut Criterion) {
 fn bench_application_message<C: MlsConfig>(
     bench_group: &mut BenchmarkGroup<WallTime>,
     cipher_suite: CipherSuite,
-    container: &mut [Group<C>],
+    container: &[Group<C>],
     bytes: Vec<u8>,
 ) {
     let bytes = &bytes;

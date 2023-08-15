@@ -1,11 +1,9 @@
 use assert_matches::assert_matches;
-use aws_mls::client_builder::{ClientBuilder, MlsConfig, Preferences};
+use aws_mls::client_builder::{MlsConfig, Preferences};
 use aws_mls::error::MlsError;
 use aws_mls::group::proposal::Proposal;
 use aws_mls::group::ReceivedMessage;
-use aws_mls::identity::basic::BasicIdentityProvider;
 use aws_mls::identity::SigningIdentity;
-use aws_mls::storage_provider::in_memory::InMemoryKeychainStorage;
 use aws_mls::ExtensionList;
 use aws_mls::ProtocolVersion;
 use aws_mls::{CipherSuite, Group};
@@ -15,7 +13,7 @@ use cfg_if::cfg_if;
 use rand::prelude::SliceRandom;
 use rand::RngCore;
 
-use aws_mls::test_utils::{all_process_message, get_test_basic_credential, TestClient};
+use aws_mls::test_utils::{all_process_message, get_test_basic_credential};
 
 #[cfg(not(sync))]
 use futures::Future;
@@ -30,11 +28,13 @@ cfg_if! {
 
 fn generate_client(
     cipher_suite: CipherSuite,
+    protocol_version: ProtocolVersion,
     id: usize,
     preferences: &Preferences,
-) -> TestClient<impl MlsConfig> {
+) -> Client<impl MlsConfig> {
     aws_mls::test_utils::generate_basic_client(
         cipher_suite,
+        protocol_version,
         id,
         preferences,
         &TestCryptoProvider::default(),
@@ -150,25 +150,13 @@ async fn test_create(
         "Testing group creation for cipher suite: {protocol_version:?} {cipher_suite:?}, participants: 1, {preferences:?}"
     );
 
-    let alice = generate_client(cipher_suite, 0, &preferences);
-    let bob = generate_client(cipher_suite, 1, &preferences);
-
-    let bob_key_pkg = bob
-        .client
-        .generate_key_package_message(protocol_version, cipher_suite, bob.identity)
-        .await
-        .unwrap();
+    let alice = generate_client(cipher_suite, protocol_version, 0, &preferences);
+    let bob = generate_client(cipher_suite, protocol_version, 1, &preferences);
+    let bob_key_pkg = bob.generate_key_package_message().await.unwrap();
 
     // Alice creates a group and adds bob
     let mut alice_group = alice
-        .client
-        .create_group_with_id(
-            protocol_version,
-            cipher_suite,
-            b"group".to_vec(),
-            alice.identity,
-            ExtensionList::default(),
-        )
+        .create_group_with_id(b"group".to_vec(), ExtensionList::default())
         .await
         .unwrap();
 
@@ -187,11 +175,7 @@ async fn test_create(
     let tree = alice_group.export_tree().unwrap();
 
     // Bob receives the welcome message and joins the group
-    let (bob_group, _) = bob
-        .client
-        .join_group(Some(&tree), welcome.unwrap())
-        .await
-        .unwrap();
+    let (bob_group, _) = bob.join_group(Some(&tree), welcome.unwrap()).await.unwrap();
 
     assert!(Group::equal_group_state(&alice_group, &bob_group));
 }
@@ -496,24 +480,17 @@ async fn external_commits_work(
     _n_participants: usize,
     preferences: Preferences,
 ) {
-    let creator = generate_client(cipher_suite, 0, &preferences);
+    let creator = generate_client(cipher_suite, protocol_version, 0, &preferences);
 
     let creator_group = creator
-        .client
-        .create_group_with_id(
-            protocol_version,
-            cipher_suite,
-            b"group".to_vec(),
-            creator.identity,
-            ExtensionList::default(),
-        )
+        .create_group_with_id(b"group".to_vec(), ExtensionList::default())
         .await
         .unwrap();
 
     const PARTICIPANT_COUNT: usize = 10;
 
     let others = (1..PARTICIPANT_COUNT)
-        .map(|i| generate_client(cipher_suite, i, &Default::default()))
+        .map(|i| generate_client(cipher_suite, protocol_version, i, &Default::default()))
         .collect::<Vec<_>>();
 
     let mut groups = vec![creator_group];
@@ -527,8 +504,8 @@ async fn external_commits_work(
             .unwrap();
 
         let (new_group, commit) = client
-            .client
-            .external_commit_builder(client.identity.clone())
+            .external_commit_builder()
+            .unwrap()
             .with_tree_data(existing_group.export_tree().unwrap())
             .build(group_info)
             .await
@@ -603,67 +580,18 @@ async fn test_remove_nonexisting_leaf() {
 }
 
 #[cfg(feature = "psk")]
-struct ReinitClientGeneration<C: MlsConfig> {
-    client: Client<C>,
-    id1: SigningIdentity,
-    id2: SigningIdentity,
-}
-
-#[cfg(feature = "psk")]
-fn get_reinit_client(
-    suite1: CipherSuite,
-    suite2: CipherSuite,
-    id: &str,
-) -> ReinitClientGeneration<impl MlsConfig> {
-    let credential = get_test_basic_credential(id.as_bytes().to_vec());
-
-    let csp1 = TestCryptoProvider::new()
-        .cipher_suite_provider(suite1)
-        .unwrap();
-
-    let csp2 = TestCryptoProvider::new()
-        .cipher_suite_provider(suite2)
-        .unwrap();
-
-    let (sk1, pk1) = csp1.signature_key_generate().unwrap();
-    let (sk2, pk2) = csp2.signature_key_generate().unwrap();
-
-    let id1 = SigningIdentity::new(credential.clone(), pk1);
-    let id2 = SigningIdentity::new(credential, pk2);
-
-    let client = ClientBuilder::new()
-        .crypto_provider(TestCryptoProvider::default())
-        .identity_provider(BasicIdentityProvider::new())
-        .keychain(InMemoryKeychainStorage::default())
-        .signing_identity(id1.clone(), sk1, suite1)
-        .signing_identity(id2.clone(), sk2, suite2)
-        .build();
-
-    ReinitClientGeneration { client, id1, id2 }
-}
-
-#[cfg(feature = "psk")]
 #[maybe_async::test(sync, async(not(sync), futures_test))]
 async fn reinit_works() {
     let suite1 = CipherSuite::CURVE25519_AES128;
     let suite2 = CipherSuite::P256_AES128;
     let version = ProtocolVersion::MLS_10;
 
+    let alice1 = generate_client(suite1, version, 1, &Default::default());
+    let bob1 = generate_client(suite1, version, 2, &Default::default());
+
     // Create a group with 2 parties
-    let alice = get_reinit_client(suite1, suite2, "alice");
-    let bob = get_reinit_client(suite1, suite2, "bob");
-
-    let mut alice_group = alice
-        .client
-        .create_group(version, suite1, alice.id1.clone(), ExtensionList::new())
-        .await
-        .unwrap();
-
-    let kp = bob
-        .client
-        .generate_key_package_message(version, suite1, bob.id1)
-        .await
-        .unwrap();
+    let mut alice_group = alice1.create_group(ExtensionList::new()).await.unwrap();
+    let kp = bob1.generate_key_package_message().await.unwrap();
 
     let welcome = alice_group
         .commit_builder()
@@ -677,8 +605,7 @@ async fn reinit_works() {
     alice_group.apply_pending_commit().await.unwrap();
     let tree = alice_group.export_tree().unwrap();
 
-    let (mut bob_group, _) = bob
-        .client
+    let (mut bob_group, _) = bob1
         .join_group(Some(&tree), welcome.unwrap())
         .await
         .unwrap();
@@ -729,42 +656,48 @@ async fn reinit_works() {
 
     // They can't create new epochs anymore
     let res = alice_group.commit(Vec::new()).await;
-
     assert!(res.is_err());
 
     let res = bob_group.commit(Vec::new()).await;
-
     assert!(res.is_err());
 
-    // Alice finishes the reinit by creating the new group
-    let kp = bob
-        .client
-        .generate_key_package_message(version, suite2, bob.id2)
-        .await
+    // Get reinit clients for alice and bob
+    let (secret_key, public_key) = TestCryptoProvider::new()
+        .cipher_suite_provider(suite2)
+        .unwrap()
+        .signature_key_generate()
         .unwrap();
 
-    let (mut alice_group, welcome) = alice_group
-        .finish_reinit_commit(vec![kp], Some(alice.id2), None)
-        .await
+    let identity = SigningIdentity::new(get_test_basic_credential(b"bob".to_vec()), public_key);
+
+    let bob2 = bob_group
+        .get_reinit_client(Some(secret_key), Some(identity))
         .unwrap();
 
-    // Alice invited Bob
-    let welcome = welcome.unwrap();
+    let (secret_key, public_key) = TestCryptoProvider::new()
+        .cipher_suite_provider(suite2)
+        .unwrap()
+        .signature_key_generate()
+        .unwrap();
+
+    let identity = SigningIdentity::new(get_test_basic_credential(b"alice".to_vec()), public_key);
+
+    let alice2 = alice_group
+        .get_reinit_client(Some(secret_key), Some(identity))
+        .unwrap();
+
+    // Bob produces key package, alice commits, bob joins
+    let kp = bob2.generate_key_package().await.unwrap();
+    let (mut alice_group, welcome) = alice2.commit(vec![kp], None).await.unwrap();
     let tree = alice_group.export_tree().unwrap();
+    let (mut bob_group, _) = bob2.join(welcome.unwrap(), Some(&tree)).await.unwrap();
 
-    let (mut bob_group, _) = bob_group
-        .finish_reinit_join(welcome, Some(&tree))
-        .await
-        .unwrap();
+    assert!(bob_group.cipher_suite() == suite2);
 
     // They can talk
-    let carol = get_reinit_client(suite1, suite2, "carol");
+    let carol = generate_client(suite2, version, 3, &Default::default());
 
-    let kp = carol
-        .client
-        .generate_key_package_message(version, suite2, carol.id2)
-        .await
-        .unwrap();
+    let kp = carol.generate_key_package_message().await.unwrap();
 
     let commit_output = alice_group
         .commit_builder()
@@ -784,7 +717,6 @@ async fn reinit_works() {
     let tree = alice_group.export_tree().unwrap();
 
     carol
-        .client
         .join_group(Some(&tree), commit_output.welcome_message.unwrap())
         .await
         .unwrap();
@@ -818,13 +750,14 @@ async fn external_joiner_can_process_siblings_update() {
         .unwrap();
 
     // Create the external joiner and join
-    let new_client = generate_client(CipherSuite::P256_AES128, 0xabba, &Preferences::default());
+    let new_client = generate_client(
+        CipherSuite::P256_AES128,
+        ProtocolVersion::MLS_10,
+        0xabba,
+        &Preferences::default(),
+    );
 
-    let (mut group, commit) = new_client
-        .client
-        .commit_external(info, new_client.identity)
-        .await
-        .unwrap();
+    let (mut group, commit) = new_client.commit_external(info).await.unwrap();
 
     all_process_message(&mut groups, &commit, 1, false).await;
     groups.remove(1);

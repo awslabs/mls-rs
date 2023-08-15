@@ -178,8 +178,7 @@ mod tests {
         }) {
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
 
-            let (signing_identity, signing_key) =
-                get_test_signing_identity(cipher_suite, b"foo".to_vec());
+            let (signing_identity, signing_key) = get_test_signing_identity(cipher_suite, b"foo");
 
             let key_package_ext = test_key_package_ext(32);
             let leaf_node_ext = test_leaf_node_ext(42);
@@ -286,8 +285,7 @@ mod tests {
                 .into_iter()
                 .map(move |cs| (p, cs))
         }) {
-            let (signing_identity, signing_key) =
-                get_test_signing_identity(cipher_suite, b"foo".to_vec());
+            let (signing_identity, signing_key) = get_test_signing_identity(cipher_suite, b"foo");
 
             let test_generator = KeyPackageGenerator {
                 protocol_version,

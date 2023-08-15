@@ -181,7 +181,6 @@ pub use aws_mls_core::{
     group::GroupStateStorage,
     identity::IdentityProvider,
     key_package::KeyPackageStorage,
-    keychain::KeychainStorage,
     psk::PreSharedKeyStorage,
 };
 

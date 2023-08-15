@@ -11,12 +11,10 @@ use aws_mls::{
         SigningIdentity,
     },
     CipherSuite, CipherSuiteProvider, Client, CryptoProvider, ExtensionList, MLSMessage,
-    ProtocolVersion,
 };
 use aws_mls_core::crypto::SignatureSecretKey;
 
 const CIPHERSUITE: CipherSuite = CipherSuite::CURVE25519_AES128;
-const PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::MLS_10;
 
 fn cipher_suite_provider() -> impl CipherSuiteProvider {
     crypto_provider()
@@ -108,18 +106,15 @@ fn make_server() -> ExternalClient<impl ExternalMlsConfig> {
         .build()
 }
 
-fn make_client(name: &str) -> Result<(SigningIdentity, Client<impl MlsConfig>), MlsError> {
+fn make_client(name: &str) -> Result<Client<impl MlsConfig>, MlsError> {
     let (secret, signing_identity) = make_identity(name);
 
-    Ok((
-        signing_identity.clone(),
-        Client::builder()
-            .identity_provider(BasicIdentityProvider)
-            .crypto_provider(crypto_provider())
-            .single_signing_identity(signing_identity, secret, CIPHERSUITE)
-            .preferences(Preferences::default().with_ratchet_tree_extension(true))
-            .build(),
-    ))
+    Ok(Client::builder()
+        .identity_provider(BasicIdentityProvider)
+        .crypto_provider(crypto_provider())
+        .preferences(Preferences::default().with_ratchet_tree_extension(true))
+        .signing_identity(signing_identity, secret, CIPHERSUITE)
+        .build())
 }
 
 fn make_identity(name: &str) -> (SignatureSecretKey, SigningIdentity) {
@@ -138,22 +133,12 @@ fn make_identity(name: &str) -> (SignatureSecretKey, SigningIdentity) {
 #[tokio::main]
 async fn main() -> Result<(), MlsError> {
     // Create clients for Alice and Bob
-    let (alice_identity, alice) = make_client("alice")?;
-    let (bob_identity, bob) = make_client("bob")?;
+    let alice = make_client("alice")?;
+    let bob = make_client("bob")?;
 
     // Alice creates a group with bob
-    let mut alice_group = alice
-        .create_group(
-            PROTOCOL_VERSION,
-            CIPHERSUITE,
-            alice_identity,
-            ExtensionList::default(),
-        )
-        .await?;
-
-    let bob_key_package = bob
-        .generate_key_package_message(PROTOCOL_VERSION, CIPHERSUITE, bob_identity)
-        .await?;
+    let mut alice_group = alice.create_group(ExtensionList::default()).await?;
+    let bob_key_package = bob.generate_key_package_message().await?;
 
     let welcome = alice_group
         .commit_builder()

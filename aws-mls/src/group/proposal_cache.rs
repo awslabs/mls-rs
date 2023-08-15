@@ -3076,7 +3076,7 @@ mod tests {
 
         let (alice, tree) = {
             let (signing_identity, signature_key) =
-                get_test_signing_identity(TEST_CIPHER_SUITE, b"alice".to_vec());
+                get_test_signing_identity(TEST_CIPHER_SUITE, b"alice");
 
             let properties = ConfigProperties {
                 capabilities: Capabilities {
@@ -3135,7 +3135,7 @@ mod tests {
     #[cfg(feature = "external_proposal")]
     fn make_external_senders_extension() -> ExtensionList {
         vec![ExternalSendersExt::new(vec![
-            get_test_signing_identity(TEST_CIPHER_SUITE, b"alice".to_vec()).0,
+            get_test_signing_identity(TEST_CIPHER_SUITE, b"alice").0,
         ])
         .into_extension()
         .unwrap()]
@@ -3620,7 +3620,7 @@ mod tests {
     #[maybe_async::maybe_async]
     async fn unsupported_credential_key_package(name: &str) -> KeyPackage {
         let (mut signing_identity, secret_key) =
-            get_test_signing_identity(TEST_CIPHER_SUITE, name.as_bytes().to_vec());
+            get_test_signing_identity(TEST_CIPHER_SUITE, name.as_bytes());
 
         signing_identity.credential = Credential::Custom(CustomCredential::new(
             CredentialType::new(BasicWithCustomProvider::CUSTOM_CREDENTIAL_TYPE),
@@ -4205,7 +4205,7 @@ mod tests {
 
         #[cfg(feature = "external_proposal")]
         let external_senders = ExternalSendersExt::new(vec![
-            get_test_signing_identity(TEST_CIPHER_SUITE, b"carol".to_vec()).0,
+            get_test_signing_identity(TEST_CIPHER_SUITE, b"carol").0,
         ]);
 
         let proposals: &[Proposal] = &[

@@ -1,5 +1,7 @@
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
-use aws_mls_core::{error::IntoAnyError, group::Member, identity::IdentityProvider};
+use aws_mls_core::{
+    crypto::SignatureSecretKey, error::IntoAnyError, group::Member, identity::IdentityProvider,
+};
 
 use crate::{
     cipher_suite::CipherSuite,
@@ -47,10 +49,7 @@ use crate::{
 use crate::group::proposal::CustomProposal;
 
 #[cfg(feature = "external_proposal")]
-use aws_mls_core::{
-    crypto::CipherSuiteProvider, extension::ExtensionList, keychain::KeychainStorage,
-    psk::ExternalPskId,
-};
+use aws_mls_core::{crypto::CipherSuiteProvider, extension::ExtensionList, psk::ExternalPskId};
 
 #[cfg(feature = "external_proposal")]
 use crate::{
@@ -96,12 +95,14 @@ where
     pub(crate) config: C,
     pub(crate) cipher_suite_provider: <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider,
     pub(crate) state: GroupState,
+    pub(crate) signing_data: Option<(SignatureSecretKey, SigningIdentity)>,
 }
 
 impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     #[maybe_async::maybe_async]
     pub(crate) async fn join(
         config: C,
+        signing_data: Option<(SignatureSecretKey, SigningIdentity)>,
         group_info: MLSMessage,
         tree_data: Option<&[u8]>,
     ) -> Result<Self, MlsError> {
@@ -137,6 +138,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
 
         Ok(Self {
             config,
+            signing_data,
             state: GroupState::new(
                 join_context.group_context,
                 join_context.public_tree,
@@ -228,7 +230,6 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     pub async fn propose_add(
         &mut self,
         key_package: MLSMessage,
-        signing_identity: &SigningIdentity,
         authenticated_data: Vec<u8>,
     ) -> Result<MLSMessage, MlsError> {
         let key_package = key_package
@@ -256,7 +257,6 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
 
         self.propose(
             Proposal::Add(alloc::boxed::Box::new(AddProposal { key_package })),
-            signing_identity,
             authenticated_data,
         )
         .await
@@ -275,7 +275,6 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     pub async fn propose_remove(
         &mut self,
         index: u32,
-        signing_identity: &SigningIdentity,
         authenticated_data: Vec<u8>,
     ) -> Result<MLSMessage, MlsError> {
         let to_remove = LeafIndex(index);
@@ -285,7 +284,6 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
 
         self.propose(
             Proposal::Remove(RemoveProposal { to_remove }),
-            signing_identity,
             authenticated_data,
         )
         .await
@@ -305,12 +303,10 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     pub async fn propose_external_psk(
         &mut self,
         psk: ExternalPskId,
-        signing_identity: &SigningIdentity,
         authenticated_data: Vec<u8>,
     ) -> Result<MLSMessage, MlsError> {
         let proposal = self.psk_proposal(JustPreSharedKeyID::External(psk))?;
-        self.propose(proposal, signing_identity, authenticated_data)
-            .await
+        self.propose(proposal, authenticated_data).await
     }
 
     /// Create an external proposal to request that a group adds a pre shared key
@@ -327,7 +323,6 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     pub async fn propose_resumption_psk(
         &mut self,
         psk_epoch: u64,
-        signing_identity: &SigningIdentity,
         authenticated_data: Vec<u8>,
     ) -> Result<MLSMessage, MlsError> {
         let key_id = ResumptionPsk {
@@ -337,8 +332,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         };
 
         let proposal = self.psk_proposal(JustPreSharedKeyID::Resumption(key_id))?;
-        self.propose(proposal, signing_identity, authenticated_data)
-            .await
+        self.propose(proposal, authenticated_data).await
     }
 
     #[cfg(all(feature = "external_proposal", feature = "psk"))]
@@ -366,12 +360,10 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     pub async fn propose_group_context_extensions(
         &mut self,
         extensions: ExtensionList,
-        signing_identity: &SigningIdentity,
         authenticated_data: Vec<u8>,
     ) -> Result<MLSMessage, MlsError> {
         let proposal = Proposal::GroupContextExtensions(extensions);
-        self.propose(proposal, signing_identity, authenticated_data)
-            .await
+        self.propose(proposal, authenticated_data).await
     }
 
     /// Create an external proposal to request that a group is reinitialized.
@@ -390,7 +382,6 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         version: ProtocolVersion,
         cipher_suite: CipherSuite,
         extensions: ExtensionList,
-        signing_identity: &SigningIdentity,
         authenticated_data: Vec<u8>,
     ) -> Result<MLSMessage, MlsError> {
         let group_id = group_id.map(Ok).unwrap_or_else(|| {
@@ -406,8 +397,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             extensions,
         });
 
-        self.propose(proposal, signing_identity, authenticated_data)
-            .await
+        self.propose(proposal, authenticated_data).await
     }
 
     /// Create a custom proposal message.
@@ -423,15 +413,10 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     pub async fn propose_custom(
         &mut self,
         proposal: CustomProposal,
-        signing_identity: &SigningIdentity,
         authenticated_data: Vec<u8>,
     ) -> Result<MLSMessage, MlsError> {
-        self.propose(
-            Proposal::Custom(proposal),
-            signing_identity,
-            authenticated_data,
-        )
-        .await
+        self.propose(Proposal::Custom(proposal), authenticated_data)
+            .await
     }
 
     #[cfg(feature = "external_proposal")]
@@ -439,23 +424,17 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     async fn propose(
         &mut self,
         proposal: Proposal,
-        signing_identity: &SigningIdentity,
         authenticated_data: Vec<u8>,
     ) -> Result<MLSMessage, MlsError> {
+        let (signer, signing_identity) =
+            self.signing_data.as_ref().ok_or(MlsError::SignerNotFound)?;
+
         let external_senders_ext = self
             .state
             .context
             .extensions
             .get_as::<ExternalSendersExt>()?
             .ok_or(MlsError::ExternalProposalsDisabled)?;
-
-        let signer = self
-            .config
-            .keychain()
-            .signer(signing_identity)
-            .await
-            .map_err(|e| MlsError::KeychainError(e.into_any_error()))?
-            .ok_or(MlsError::SignerNotFound)?;
 
         let sender_index = external_senders_ext
             .allowed_senders
@@ -470,7 +449,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             &self.state.context,
             sender,
             Content::Proposal(Box::new(proposal.clone())),
-            &signer,
+            signer,
             WireFormat::PublicMessage,
             authenticated_data,
         )?;
@@ -673,6 +652,7 @@ where
 pub struct ExternalSnapshot {
     version: u16,
     state: RawGroupState,
+    signing_data: Option<(SignatureSecretKey, SigningIdentity)>,
 }
 
 impl ExternalSnapshot {
@@ -696,6 +676,7 @@ where
         ExternalSnapshot {
             state: RawGroupState::export(self.group_state()),
             version: 1,
+            signing_data: self.signing_data.clone(),
         }
     }
 
@@ -714,6 +695,7 @@ where
 
         Ok(ExternalGroup {
             config,
+            signing_data: snapshot.signing_data,
             state: snapshot
                 .state
                 .import(
@@ -775,6 +757,7 @@ pub(crate) mod test_utils {
 
         ExternalGroup::join(
             config,
+            None,
             group
                 .group
                 .group_info_message_allowing_ext_commit()
@@ -1015,6 +998,7 @@ mod tests {
 
         let res = ExternalGroup::join(
             config,
+            None,
             alice
                 .group
                 .group_info_message_allowing_ext_commit()
@@ -1044,7 +1028,7 @@ mod tests {
             .unwrap();
         group_info.version = ProtocolVersion::from(64);
 
-        let res = ExternalGroup::join(config, group_info, None)
+        let res = ExternalGroup::join(config, None, group_info, None)
             .await
             .map(|_| ());
 
@@ -1060,8 +1044,7 @@ mod tests {
     async fn setup_extern_proposal_test(
         extern_proposals_allowed: bool,
     ) -> (SigningIdentity, SignatureSecretKey, TestGroup) {
-        let (server_identity, server_key) =
-            get_test_signing_identity(TEST_CIPHER_SUITE, b"server".to_vec());
+        let (server_identity, server_key) = get_test_signing_identity(TEST_CIPHER_SUITE, b"server");
 
         let alice = test_group_two_members(
             TEST_PROTOCOL_VERSION,
@@ -1125,17 +1108,13 @@ mod tests {
 
         let mut server = make_external_group(&alice).await;
 
-        server
-            .config
-            .0
-            .keychain
-            .insert(server_identity.clone(), server_key, TEST_CIPHER_SUITE);
+        server.signing_data = Some((server_key, server_identity));
 
         let charlie_key_package =
             test_key_package_message(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "charlie").await;
 
         let external_proposal = server
-            .propose_add(charlie_key_package, &server_identity, vec![])
+            .propose_add(charlie_key_package, vec![])
             .await
             .unwrap();
 
@@ -1149,16 +1128,9 @@ mod tests {
 
         let mut server = make_external_group(&alice).await;
 
-        server
-            .config
-            .0
-            .keychain
-            .insert(server_identity.clone(), server_key, TEST_CIPHER_SUITE);
+        server.signing_data = Some((server_key, server_identity));
 
-        let external_proposal = server
-            .propose_remove(1, &server_identity, vec![])
-            .await
-            .unwrap();
+        let external_proposal = server.propose_remove(1, vec![]).await.unwrap();
 
         test_external_proposal(&mut server, &mut alice, external_proposal).await
     }
@@ -1169,18 +1141,12 @@ mod tests {
         let (signing_id, secret_key, alice) = setup_extern_proposal_test(false).await;
         let mut server = make_external_group(&alice).await;
 
-        server
-            .config
-            .0
-            .keychain
-            .insert(signing_id.clone(), secret_key, TEST_CIPHER_SUITE);
+        server.signing_data = Some((secret_key, signing_id));
 
         let charlie_key_package =
             test_key_package_message(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "charlie").await;
 
-        let res = server
-            .propose_add(charlie_key_package, &signing_id, vec![])
-            .await;
+        let res = server.propose_add(charlie_key_package, vec![]).await;
 
         assert_matches!(res, Err(MlsError::ExternalProposalsDisabled));
     }
@@ -1188,25 +1154,20 @@ mod tests {
     #[cfg(feature = "external_proposal")]
     #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn external_group_external_signing_identity_invalid() {
-        let (server_identity, server_key) =
-            get_test_signing_identity(TEST_CIPHER_SUITE, b"server".to_vec());
+        let (server_identity, server_key) = get_test_signing_identity(TEST_CIPHER_SUITE, b"server");
 
         let alice = test_group_two_members(
             TEST_PROTOCOL_VERSION,
             TEST_CIPHER_SUITE,
-            Some(get_test_signing_identity(TEST_CIPHER_SUITE, b"not server".to_vec()).0),
+            Some(get_test_signing_identity(TEST_CIPHER_SUITE, b"not server").0),
         )
         .await;
 
         let mut server = make_external_group(&alice).await;
 
-        server
-            .config
-            .0
-            .keychain
-            .insert(server_identity.clone(), server_key, TEST_CIPHER_SUITE);
+        server.signing_data = Some((server_key, server_identity));
 
-        let res = server.propose_remove(1, &server_identity, vec![]).await;
+        let res = server.propose_remove(1, vec![]).await;
 
         assert_matches!(res, Err(MlsError::InvalidExternalSigningIdentity));
     }
@@ -1279,7 +1240,7 @@ mod tests {
             .unwrap();
 
         let config = TestExternalClientBuilder::new_for_test().build_config();
-        let mut server = ExternalGroup::join(config, info, None).await.unwrap();
+        let mut server = ExternalGroup::join(config, None, info, None).await.unwrap();
 
         for _ in 0..2 {
             let commit = alice.group.commit(vec![]).await.unwrap().commit_message;

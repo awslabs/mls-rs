@@ -1,4 +1,4 @@
-use aws_mls_core::{identity::IdentityProvider, keychain::KeychainStorage};
+use aws_mls_core::identity::IdentityProvider;
 
 use crate::{
     crypto::SignaturePublicKey,
@@ -11,12 +11,10 @@ use crate::{
 };
 
 pub trait ExternalClientConfig: Send + Sync + Clone {
-    type Keychain: KeychainStorage + Clone;
     type IdentityProvider: IdentityProvider + Clone;
     type ProposalRules: ProposalRules + Clone;
     type CryptoProvider: CryptoProvider;
 
-    fn keychain(&self) -> Self::Keychain;
     fn supported_extensions(&self) -> Vec<ExtensionType>;
     fn supported_custom_proposals(&self) -> Vec<ProposalType>;
     fn supported_protocol_versions(&self) -> Vec<ProtocolVersion>;

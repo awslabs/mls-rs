@@ -331,7 +331,7 @@ impl EcPublicKey {
                 group,
                 self.inner,
                 point_conversion_form_t::POINT_CONVERSION_UNCOMPRESSED,
-                pub_key_data.as_mut_ptr() as *mut u8,
+                pub_key_data.as_mut_ptr(),
                 self.curve.public_key_size(),
                 null_mut(),
             );

@@ -17,7 +17,6 @@ use aws_mls::{
 use aws_mls::{
     client_builder::{
         BaseConfig, ClientBuilder, Preferences, WithCryptoProvider, WithIdentityProvider,
-        WithKeychain,
     },
     crypto::SignatureSecretKey,
     error::MlsError,
@@ -27,9 +26,7 @@ use aws_mls::{
         basic::{BasicCredential, BasicIdentityProvider},
         Credential, SigningIdentity,
     },
-    storage_provider::in_memory::{
-        InMemoryKeyPackageStorage, InMemoryKeychainStorage, InMemoryPreSharedKeyStorage,
-    },
+    storage_provider::in_memory::{InMemoryKeyPackageStorage, InMemoryPreSharedKeyStorage},
     CipherSuite, CipherSuiteProvider, Client, CryptoProvider, Extension, ExtensionList, Group,
     MLSMessage, ProtocolVersion,
 };
@@ -66,6 +63,7 @@ fn abort<T: std::fmt::Debug>(e: T) -> Status {
 
 pub mod mls_client {
     #![allow(clippy::derive_partial_eq_without_eq)]
+    #![allow(non_snake_case)]
     tonic::include_proto!("mls_client");
 }
 
@@ -80,15 +78,12 @@ const PROPOSAL_DESC_REINIT: &[u8] = b"reinit";
 
 type TestClientConfig = WithIdentityProvider<
     BasicIdentityProvider,
-    WithKeychain<InMemoryKeychainStorage, WithCryptoProvider<OpensslCryptoProvider, BaseConfig>>,
+    WithCryptoProvider<OpensslCryptoProvider, BaseConfig>,
 >;
 
-type TestExternalClientConfig = external_client::builder::WithKeychain<
-    InMemoryKeychainStorage,
-    external_client::builder::WithIdentityProvider<
-        BasicIdentityProvider,
-        external_client::builder::WithCryptoProvider<OpensslCryptoProvider, ExternalBaseConfig>,
-    >,
+type TestExternalClientConfig = external_client::builder::WithIdentityProvider<
+    BasicIdentityProvider,
+    external_client::builder::WithCryptoProvider<OpensslCryptoProvider, ExternalBaseConfig>,
 >;
 
 #[derive(Default)]
@@ -104,13 +99,11 @@ struct ClientDetails {
     group: Option<Group<TestClientConfig>>,
     signing_identity: SigningIdentity,
     signer: SignatureSecretKey,
-    keychain: InMemoryKeychainStorage,
     key_package_repo: InMemoryKeyPackageStorage,
 }
 
 struct ExternalClientDetails {
     ext_client: ExternalClient<TestExternalClientConfig>,
-    signing_identity: SigningIdentity,
 }
 
 #[tonic::async_trait]
@@ -143,13 +136,7 @@ impl MlsClient for MlsClientImpl {
 
         let group = client
             .client
-            .create_group_with_id(
-                ProtocolVersion::MLS_10,
-                (request.cipher_suite as u16).into(),
-                request.group_id,
-                client.signing_identity.clone(),
-                ExtensionList::default(),
-            )
+            .create_group_with_id(request.group_id, ExtensionList::default())
             .await
             .map_err(abort)?;
 
@@ -174,11 +161,7 @@ impl MlsClient for MlsClientImpl {
 
         let key_package = client
             .client
-            .generate_key_package_message(
-                ProtocolVersion::MLS_10,
-                (request.cipher_suite as u16).into(),
-                client.signing_identity.clone(),
-            )
+            .generate_key_package_message()
             .await
             .map_err(abort)?;
 
@@ -268,9 +251,7 @@ impl MlsClient for MlsClientImpl {
             None
         };
 
-        let mut builder = client
-            .client
-            .external_commit_builder(client.signing_identity.clone());
+        let mut builder = client.client.external_commit_builder().map_err(abort)?;
 
         if let Some(tree) = tree {
             builder = builder.with_tree_data(tree.to_vec());
@@ -625,8 +606,16 @@ impl MlsClient for MlsClientImpl {
 
         let welcome = MLSMessage::from_bytes(&request.welcome).map_err(abort)?;
 
-        let (group, _tree) = group
-            .finish_reinit_join(welcome, get_tree(&request.ratchet_tree))
+        let reinit_client = group
+            .clone()
+            .get_reinit_client(
+                Some(client.signer.clone()),
+                Some(client.signing_identity.clone()),
+            )
+            .map_err(abort)?;
+
+        let (group, _info) = reinit_client
+            .join(welcome, get_tree(&request.ratchet_tree))
             .await
             .map_err(abort)?;
 
@@ -715,7 +704,7 @@ impl MlsClient for MlsClientImpl {
 
         let proposal = client
             .client
-            .external_add_proposal(group_info, None, client.signing_identity.clone(), vec![])
+            .external_add_proposal(group_info, None, vec![])
             .await
             .map_err(abort)?
             .to_bytes()
@@ -759,13 +748,10 @@ impl MlsClient for MlsClientImpl {
         let ext_client = ExternalClientBuilder::new()
             .crypto_provider(OpensslCryptoProvider::default())
             .identity_provider(BasicIdentityProvider::new())
-            .single_signing_identity(signing_identity.clone(), secret_key, cs.cipher_suite())
+            .signer(secret_key, signing_identity)
             .build();
 
-        ext_clients.push(ExternalClientDetails {
-            ext_client,
-            signing_identity,
-        });
+        ext_clients.push(ExternalClientDetails { ext_client });
 
         let resp = CreateExternalSignerResponse {
             signer_id: ext_clients.len() as u32 - 1,
@@ -830,40 +816,31 @@ impl MlsClient for MlsClientImpl {
             .description
             .ok_or_else(|| Status::aborted("proposal not found"))?;
 
-        let server_id = &ext_client.signing_identity;
-
         let proposal = match proposal.proposal_type.as_slice() {
             PROPOSAL_DESC_ADD => {
                 let key_package = MLSMessage::from_bytes(&proposal.key_package).map_err(abort)?;
 
-                server
-                    .propose_add(key_package, server_id, vec![])
-                    .await
-                    .map_err(abort)
+                server.propose_add(key_package, vec![]).await.map_err(abort)
             }
             PROPOSAL_DESC_REMOVE => {
                 let cred = Credential::Basic(BasicCredential::new(proposal.removed_id.clone()));
                 let removed_index = find_member(&server.roster(), &cred)?;
 
                 server
-                    .propose_remove(removed_index, server_id, vec![])
+                    .propose_remove(removed_index, vec![])
                     .await
                     .map_err(abort)
             }
             PROPOSAL_DESC_EXTERNAL_PSK => server
-                .propose_external_psk(ExternalPskId::new(proposal.psk_id), server_id, vec![])
+                .propose_external_psk(ExternalPskId::new(proposal.psk_id), vec![])
                 .await
                 .map_err(abort),
             PROPOSAL_DESC_RESUMPTION_PSK => server
-                .propose_resumption_psk(proposal.epoch_id, server_id, vec![])
+                .propose_resumption_psk(proposal.epoch_id, vec![])
                 .await
                 .map_err(abort),
             PROPOSAL_DESC_GCE => server
-                .propose_group_context_extensions(
-                    parse_extensions(proposal.extensions),
-                    server_id,
-                    vec![],
-                )
+                .propose_group_context_extensions(parse_extensions(proposal.extensions), vec![])
                 .await
                 .map_err(abort),
             PROPOSAL_DESC_REINIT => server
@@ -872,7 +849,6 @@ impl MlsClient for MlsClientImpl {
                     ProtocolVersion::MLS_10,
                     (proposal.ciphersuite as u16).into(),
                     parse_extensions(proposal.extensions),
-                    server_id,
                     vec![],
                 )
                 .await
@@ -925,12 +901,16 @@ impl MlsClientImpl {
                 .await
                 .map_err(abort)?
         } else {
-            group
-                .finish_reinit_commit(
-                    new_key_pkgs,
+            let client = group
+                .clone()
+                .get_reinit_client(
+                    Some(client.signer.clone()),
                     Some(client.signing_identity.clone()),
-                    Some(preferences),
                 )
+                .map_err(abort)?;
+
+            client
+                .commit(new_key_pkgs, Some(preferences))
                 .await
                 .map_err(abort)?
         };
@@ -995,21 +975,13 @@ impl MlsClientImpl {
 
         let signing_identity = SigningIdentity::new(credential, public_key);
 
-        // Store the new identity s.t. the group and client can use it
-        client
-            .keychain
-            .insert(signing_identity.clone(), secret_key, cipher_suite);
-
         // Generate a key packge used to join the new group after reinit
-        let key_package = client
-            .client
-            .generate_key_package_message(
-                ProtocolVersion::MLS_10,
-                cipher_suite,
-                signing_identity.clone(),
-            )
-            .await
+        let reinit_client = group
+            .clone()
+            .get_reinit_client(Some(secret_key.clone()), Some(signing_identity.clone()))
             .map_err(abort)?;
+
+        let key_package = reinit_client.generate_key_package().await.map_err(abort)?;
 
         let resp = HandleReInitCommitResponse {
             epoch_authenticator: commit_resp.epoch_authenticator,
@@ -1018,6 +990,7 @@ impl MlsClientImpl {
         };
 
         client.signing_identity = signing_identity;
+        client.signer = secret_key;
 
         Ok(Response::new(resp))
     }
@@ -1195,8 +1168,6 @@ async fn create_client(cipher_suite: u16, identity: &[u8]) -> Result<ClientDetai
     let (secret_key, public_key) = provider.signature_key_generate().map_err(abort)?;
     let credential = BasicCredential::new(identity.to_vec()).into_credential();
     let signing_identity = SigningIdentity::new(credential, public_key);
-    let mut keychain = InMemoryKeychainStorage::default();
-    keychain.insert(signing_identity.clone(), secret_key.clone(), cipher_suite);
 
     let psk_store = InMemoryPreSharedKeyStorage::default();
     let key_package_repo = InMemoryKeyPackageStorage::new();
@@ -1204,10 +1175,10 @@ async fn create_client(cipher_suite: u16, identity: &[u8]) -> Result<ClientDetai
     let client = ClientBuilder::new()
         .crypto_provider(OpensslCryptoProvider::default())
         .identity_provider(BasicIdentityProvider::new())
-        .keychain(keychain.clone())
         .preferences(Preferences::default().with_ratchet_tree_extension(true))
         .psk_store(psk_store.clone())
         .key_package_repo(key_package_repo.clone())
+        .signing_identity(signing_identity.clone(), secret_key.clone(), cipher_suite)
         .build();
 
     Ok(ClientDetails {
@@ -1217,7 +1188,6 @@ async fn create_client(cipher_suite: u16, identity: &[u8]) -> Result<ClientDetai
         control_encryption: false,
         signing_identity,
         signer: secret_key,
-        keychain,
         key_package_repo,
     })
 }

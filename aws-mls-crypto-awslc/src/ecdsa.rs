@@ -123,8 +123,7 @@ impl AwsLcEcdsa {
         let private_key = EcPrivateKey::from_bytes(secret_key, self.0)?;
         let hash = self.hash(data)?;
 
-        let signature =
-            unsafe { ECDSA_do_sign(hash.as_ptr() as *const u8, hash.len(), private_key.inner) };
+        let signature = unsafe { ECDSA_do_sign(hash.as_ptr(), hash.len(), private_key.inner) };
 
         if signature.is_null() {
             return Err(Unspecified.into());

@@ -3,8 +3,7 @@
 //! See [`ExternalClientBuilder`].
 
 use crate::{
-    cipher_suite::CipherSuite,
-    crypto::{SignaturePublicKey, SignatureSecretKey},
+    crypto::SignaturePublicKey,
     extension::ExtensionType,
     external_client::{ExternalClient, ExternalClientConfig},
     group::{
@@ -12,30 +11,24 @@ use crate::{
         proposal_filter::{PassThroughProposalRules, ProposalRules},
     },
     identity::CredentialType,
-    identity::SigningIdentity,
     protocol_version::ProtocolVersion,
-    storage_provider::in_memory::InMemoryKeychainStorage,
     tree_kem::Capabilities,
     CryptoProvider, Sealed,
 };
 use std::collections::HashMap;
 
 /// Base client configuration type when instantiating `ExternalClientBuilder`
-pub type ExternalBaseConfig =
-    Config<InMemoryKeychainStorage, Missing, PassThroughProposalRules, Missing>;
+pub type ExternalBaseConfig = Config<Missing, PassThroughProposalRules, Missing>;
 
 /// Builder for [`ExternalClient`]
 ///
 /// This is returned by [`ExternalClient::builder`] and allows to tweak settings the
-/// `ExternalClient` will use. At a minimum, the builder must be told the [`CryptoProvider`],
-/// [`IdentityProvider`] and [`KeychainStorage`] to use. Other settings have default values. This
+/// `ExternalClient` will use. At a minimum, the builder must be told the [`CryptoProvider`]
+/// and [`IdentityProvider`] to use. Other settings have default values. This
 /// means that the following methods must be called before [`ExternalClientBuilder::build`]:
 ///
 /// - To specify the [`CryptoProvider`]: [`ExternalClientBuilder::crypto_provider`]
 /// - To specify the [`IdentityProvider`]: [`ExternalClientBuilder::identity_provider`]
-/// - To specify the [`KeychainStorage`], one of:
-///   - [`ExternalClientBuilder::keychain`]
-///   - [`ExternalClientBuilder::single_signing_identity`]
 ///
 /// # Example
 ///
@@ -43,18 +36,13 @@ pub type ExternalBaseConfig =
 /// use aws_mls::{
 ///     external_client::ExternalClient,
 ///     identity::basic::BasicIdentityProvider,
-///     storage_provider::{in_memory::InMemoryKeychainStorage},
 /// };
 ///
 /// use aws_mls_crypto_openssl::OpensslCryptoProvider;
 ///
-/// let keychain = InMemoryKeychainStorage::default();
-/// // Add code to populate keychain here
-///
 /// let _client = ExternalClient::builder()
 ///     .crypto_provider(OpensslCryptoProvider::default())
 ///     .identity_provider(BasicIdentityProvider::new())
-///     .keychain(keychain)
 ///     .build();
 /// ```
 ///
@@ -67,7 +55,6 @@ pub type ExternalBaseConfig =
 /// use aws_mls::{
 ///     external_client::{ExternalClient, builder::MlsConfig},
 ///     identity::basic::BasicIdentityProvider,
-///     storage_provider::{in_memory::InMemoryKeychainStorage},
 /// };
 ///
 /// use aws_mls_crypto_openssl::OpensslCryptoProvider;
@@ -76,7 +63,6 @@ pub type ExternalBaseConfig =
 ///     ExternalClient::builder()
 ///         .crypto_provider(OpensslCryptoProvider::default())
 ///         .identity_provider(BasicIdentityProvider::new())
-///         .keychain(InMemoryKeychainStorage::default())
 ///         .build()
 /// }
 ///```
@@ -84,25 +70,21 @@ pub type ExternalBaseConfig =
 /// The second option is more verbose and consists in writing the full `ExternalClient` type:
 /// ```
 /// use aws_mls::{
-///     external_client::{ExternalClient, builder::{ExternalBaseConfig, WithIdentityProvider, WithKeychain, WithCryptoProvider}},
+///     external_client::{ExternalClient, builder::{ExternalBaseConfig, WithIdentityProvider, WithCryptoProvider}},
 ///     identity::basic::BasicIdentityProvider,
-///     storage_provider::{
-///         in_memory::InMemoryKeychainStorage,
-///     },
 /// };
 ///
 /// use aws_mls_crypto_openssl::OpensslCryptoProvider;
 ///
-/// type MlsClient = ExternalClient<WithKeychain<InMemoryKeychainStorage, WithIdentityProvider<
+/// type MlsClient = ExternalClient<WithIdentityProvider<
 ///     BasicIdentityProvider,
 ///     WithCryptoProvider<OpensslCryptoProvider, ExternalBaseConfig>,
-/// >>>;
+/// >>;
 ///
 /// fn make_client_2() -> MlsClient {
 ///     ExternalClient::builder()
 ///         .crypto_provider(OpensslCryptoProvider::new())
 ///         .identity_provider(BasicIdentityProvider::new())
-///         .keychain(InMemoryKeychainStorage::default())
 ///         .build()
 /// }
 ///
@@ -120,10 +102,10 @@ impl ExternalClientBuilder<ExternalBaseConfig> {
     pub fn new() -> Self {
         Self(Config(ConfigInner {
             settings: Default::default(),
-            keychain: Default::default(),
             identity_provider: Missing,
             proposal_rules: PassThroughProposalRules,
             crypto_provider: Missing,
+            signing_data: None,
         }))
     }
 }
@@ -221,35 +203,6 @@ impl<C: IntoConfig> ExternalClientBuilder<C> {
         ExternalClientBuilder(c)
     }
 
-    /// Set the keychain to be used by the client.
-    pub fn keychain<K>(self, keychain: K) -> ExternalClientBuilder<WithKeychain<K, C>>
-    where
-        K: KeychainStorage,
-    {
-        let Config(c) = self.0.into_config();
-        ExternalClientBuilder(Config(ConfigInner {
-            settings: c.settings,
-            keychain,
-            identity_provider: c.identity_provider,
-            proposal_rules: c.proposal_rules,
-            crypto_provider: c.crypto_provider,
-        }))
-    }
-
-    /// Set an in-memory keychain with a single identity to be used by the client.
-    pub fn single_signing_identity(
-        self,
-        identity: SigningIdentity,
-        key: SignatureSecretKey,
-        cipher_suite: CipherSuite,
-    ) -> ExternalClientBuilder<WithKeychain<InMemoryKeychainStorage, C>> {
-        self.keychain({
-            let mut keychain = InMemoryKeychainStorage::default();
-            keychain.insert(identity, key, cipher_suite);
-            keychain
-        })
-    }
-
     /// Set the identity validator to be used by the client.
     pub fn identity_provider<I>(
         self,
@@ -261,10 +214,10 @@ impl<C: IntoConfig> ExternalClientBuilder<C> {
         let Config(c) = self.0.into_config();
         ExternalClientBuilder(Config(ConfigInner {
             settings: c.settings,
-            keychain: c.keychain,
             identity_provider,
             proposal_rules: c.proposal_rules,
             crypto_provider: c.crypto_provider,
+            signing_data: c.signing_data,
         }))
     }
 
@@ -281,10 +234,10 @@ impl<C: IntoConfig> ExternalClientBuilder<C> {
         let Config(c) = self.0.into_config();
         ExternalClientBuilder(Config(ConfigInner {
             settings: c.settings,
-            keychain: c.keychain,
             identity_provider: c.identity_provider,
             proposal_rules: c.proposal_rules,
             crypto_provider,
+            signing_data: c.signing_data,
         }))
     }
 
@@ -305,17 +258,27 @@ impl<C: IntoConfig> ExternalClientBuilder<C> {
         let Config(c) = self.0.into_config();
         ExternalClientBuilder(Config(ConfigInner {
             settings: c.settings,
-            keychain: c.keychain,
             identity_provider: c.identity_provider,
             proposal_rules,
             crypto_provider: c.crypto_provider,
+            signing_data: c.signing_data,
         }))
+    }
+
+    /// Set the signature secret key used by the client to send external proposals.
+    pub fn signer(
+        self,
+        signer: SignatureSecretKey,
+        signing_identity: SigningIdentity,
+    ) -> ExternalClientBuilder<IntoConfigOutput<C>> {
+        let mut c = self.0.into_config();
+        c.0.signing_data = Some((signer, signing_identity));
+        ExternalClientBuilder(c)
     }
 }
 
 impl<C: IntoConfig> ExternalClientBuilder<C>
 where
-    C::Keychain: KeychainStorage + Clone,
     C::IdentityProvider: IdentityProvider + Clone,
     C::ProposalRules: ProposalRules + Clone,
     C::CryptoProvider: CryptoProvider + Clone,
@@ -335,21 +298,9 @@ where
     /// See [`ExternalClientBuilder`] documentation if the return type of this function needs to be
     /// spelled out.
     pub fn build(self) -> ExternalClient<IntoConfigOutput<C>> {
-        ExternalClient::new(self.build_config())
-    }
-}
-
-impl<C: IntoConfig<Keychain = InMemoryKeychainStorage>> ExternalClientBuilder<C> {
-    /// Add an identity to the in-memory keychain.
-    pub fn signing_identity(
-        self,
-        identity: SigningIdentity,
-        secret_key: SignatureSecretKey,
-        cipher_suite: CipherSuite,
-    ) -> ExternalClientBuilder<IntoConfigOutput<C>> {
-        let mut c = self.0.into_config();
-        c.0.keychain.insert(identity, secret_key, cipher_suite);
-        ExternalClientBuilder(c)
+        let mut c = self.build_config();
+        let signing_data = c.0.signing_data.take();
+        ExternalClient::new(c, signing_data)
     }
 }
 
@@ -357,69 +308,40 @@ impl<C: IntoConfig<Keychain = InMemoryKeychainStorage>> ExternalClientBuilder<C>
 #[derive(Debug)]
 pub struct Missing;
 
-/// Change the keychain used by a client configuration.
-///
-/// See [`ExternalClientBuilder::keychain`].
-pub type WithKeychain<K, C> = Config<
-    K,
-    <C as IntoConfig>::IdentityProvider,
-    <C as IntoConfig>::ProposalRules,
-    <C as IntoConfig>::CryptoProvider,
->;
-
 /// Change the identity validator used by a client configuration.
 ///
 /// See [`ExternalClientBuilder::identity_provider`].
-pub type WithIdentityProvider<I, C> = Config<
-    <C as IntoConfig>::Keychain,
-    I,
-    <C as IntoConfig>::ProposalRules,
-    <C as IntoConfig>::CryptoProvider,
->;
+pub type WithIdentityProvider<I, C> =
+    Config<I, <C as IntoConfig>::ProposalRules, <C as IntoConfig>::CryptoProvider>;
 
 /// Change the proposal filter used by a client configuration.
 ///
 /// See [`ExternalClientBuilder::proposal_rules`].
-pub type WithProposalRules<Pr, C> = Config<
-    <C as IntoConfig>::Keychain,
-    <C as IntoConfig>::IdentityProvider,
-    Pr,
-    <C as IntoConfig>::CryptoProvider,
->;
+pub type WithProposalRules<Pr, C> =
+    Config<<C as IntoConfig>::IdentityProvider, Pr, <C as IntoConfig>::CryptoProvider>;
 
 /// Change the crypto provider used by a client configuration.
 ///
 /// See [`ExternalClientBuilder::crypto_provider`].
-pub type WithCryptoProvider<Cp, C> = Config<
-    <C as IntoConfig>::Keychain,
-    <C as IntoConfig>::IdentityProvider,
-    <C as IntoConfig>::ProposalRules,
-    Cp,
->;
+pub type WithCryptoProvider<Cp, C> =
+    Config<<C as IntoConfig>::IdentityProvider, <C as IntoConfig>::ProposalRules, Cp>;
 
 /// Helper alias for `Config`.
 pub type IntoConfigOutput<C> = Config<
-    <C as IntoConfig>::Keychain,
     <C as IntoConfig>::IdentityProvider,
     <C as IntoConfig>::ProposalRules,
     <C as IntoConfig>::CryptoProvider,
 >;
 
-impl<K, Ip, Pr, Cp> ExternalClientConfig for ConfigInner<K, Ip, Pr, Cp>
+impl<Ip, Pr, Cp> ExternalClientConfig for ConfigInner<Ip, Pr, Cp>
 where
-    K: KeychainStorage + Clone,
     Ip: IdentityProvider + Clone,
     Pr: ProposalRules + Clone,
     Cp: CryptoProvider + Clone,
 {
-    type Keychain = K;
     type IdentityProvider = Ip;
     type ProposalRules = Pr;
     type CryptoProvider = Cp;
-
-    fn keychain(&self) -> Self::Keychain {
-        self.keychain.clone()
-    }
 
     fn supported_extensions(&self) -> Vec<ExtensionType> {
         self.settings.extension_types.clone()
@@ -461,16 +383,15 @@ where
     }
 }
 
-impl<K, Ip, Mpf, Cp> Sealed for Config<K, Ip, Mpf, Cp> {}
+impl<Ip, Mpf, Cp> Sealed for Config<Ip, Mpf, Cp> {}
 
-impl<K, Ip, Pr, Cp> MlsConfig for Config<K, Ip, Pr, Cp>
+impl<Ip, Pr, Cp> MlsConfig for Config<Ip, Pr, Cp>
 where
-    K: KeychainStorage + Clone,
     Ip: IdentityProvider + Clone,
     Pr: ProposalRules + Clone,
     Cp: CryptoProvider + Clone,
 {
-    type Output = ConfigInner<K, Ip, Pr, Cp>;
+    type Output = ConfigInner<Ip, Pr, Cp>;
 
     fn get(&self) -> &Self::Output {
         &self.0
@@ -492,14 +413,9 @@ pub trait MlsConfig: Send + Sync + Clone + Sealed {
 
 /// Blanket implementation so that `T: MlsConfig` implies `T: ExternalClientConfig`
 impl<T: MlsConfig> ExternalClientConfig for T {
-    type Keychain = <T::Output as ExternalClientConfig>::Keychain;
     type IdentityProvider = <T::Output as ExternalClientConfig>::IdentityProvider;
     type ProposalRules = <T::Output as ExternalClientConfig>::ProposalRules;
     type CryptoProvider = <T::Output as ExternalClientConfig>::CryptoProvider;
-
-    fn keychain(&self) -> Self::Keychain {
-        self.get().keychain()
-    }
 
     fn supported_extensions(&self) -> Vec<ExtensionType> {
         self.get().supported_extensions()
@@ -576,22 +492,23 @@ impl Default for Settings {
 /// Definitions meant to be private that are inaccessible outside this crate. They need to be marked
 /// `pub` because they appear in public definitions.
 mod private {
+    use aws_mls_core::{crypto::SignatureSecretKey, identity::SigningIdentity};
+
     use super::{IntoConfigOutput, Settings};
 
     #[derive(Clone, Debug)]
-    pub struct Config<K, Ip, Pr, Cp>(pub(crate) ConfigInner<K, Ip, Pr, Cp>);
+    pub struct Config<Ip, Pr, Cp>(pub(crate) ConfigInner<Ip, Pr, Cp>);
 
     #[derive(Clone, Debug)]
-    pub struct ConfigInner<K, Ip, Mpf, Cp> {
+    pub struct ConfigInner<Ip, Mpf, Cp> {
         pub(crate) settings: Settings,
-        pub(crate) keychain: K,
         pub(crate) identity_provider: Ip,
         pub(crate) proposal_rules: Mpf,
         pub(crate) crypto_provider: Cp,
+        pub(crate) signing_data: Option<(SignatureSecretKey, SigningIdentity)>,
     }
 
     pub trait IntoConfig {
-        type Keychain;
         type IdentityProvider;
         type ProposalRules;
         type CryptoProvider;
@@ -599,8 +516,7 @@ mod private {
         fn into_config(self) -> IntoConfigOutput<Self>;
     }
 
-    impl<K, Ip, Pr, Cp> IntoConfig for Config<K, Ip, Pr, Cp> {
-        type Keychain = K;
+    impl<Ip, Pr, Cp> IntoConfig for Config<Ip, Pr, Cp> {
         type IdentityProvider = Ip;
         type ProposalRules = Pr;
         type CryptoProvider = Cp;
@@ -611,7 +527,10 @@ mod private {
     }
 }
 
-use aws_mls_core::{identity::IdentityProvider, keychain::KeychainStorage};
+use aws_mls_core::{
+    crypto::SignatureSecretKey,
+    identity::{IdentityProvider, SigningIdentity},
+};
 use private::{Config, ConfigInner, IntoConfig};
 
 #[cfg(test)]
@@ -619,20 +538,15 @@ pub(crate) mod test_utils {
     use crate::{
         cipher_suite::CipherSuite, crypto::test_utils::TestCryptoProvider,
         identity::basic::BasicIdentityProvider,
-        storage_provider::in_memory::InMemoryKeychainStorage,
     };
 
     use super::{
         ExternalBaseConfig, ExternalClientBuilder, WithCryptoProvider, WithIdentityProvider,
-        WithKeychain,
     };
 
     pub type TestExternalClientConfig = WithIdentityProvider<
         BasicIdentityProvider,
-        WithKeychain<
-            InMemoryKeychainStorage,
-            WithCryptoProvider<TestCryptoProvider, ExternalBaseConfig>,
-        >,
+        WithCryptoProvider<TestCryptoProvider, ExternalBaseConfig>,
     >;
 
     pub type TestExternalClientBuilder = ExternalClientBuilder<TestExternalClientConfig>;
@@ -642,7 +556,6 @@ pub(crate) mod test_utils {
             ExternalClientBuilder::new()
                 .crypto_provider(TestCryptoProvider::default())
                 .identity_provider(BasicIdentityProvider::new())
-                .keychain(InMemoryKeychainStorage::default())
         }
 
         pub fn new_for_test_disabling_cipher_suite(cipher_suite: CipherSuite) -> Self {
@@ -656,7 +569,6 @@ pub(crate) mod test_utils {
             ExternalClientBuilder::new()
                 .crypto_provider(crypto_provider)
                 .identity_provider(BasicIdentityProvider::new())
-                .keychain(InMemoryKeychainStorage::default())
         }
     }
 }

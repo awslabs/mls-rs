@@ -1,4 +1,4 @@
-use aws_mls_core::{error::IntoAnyError, identity::SigningIdentity, keychain::KeychainStorage};
+use aws_mls_core::{crypto::SignatureSecretKey, error::IntoAnyError, identity::SigningIdentity};
 
 use crate::{
     client_config::ClientConfig,
@@ -30,6 +30,7 @@ use crate::group::{
 
 /// A builder that aids with the construction of an external commit.
 pub struct ExternalCommitBuilder<C: ClientConfig> {
+    signer: SignatureSecretKey,
     signing_identity: SigningIdentity,
     config: C,
     tree_data: Option<Vec<u8>>,
@@ -40,11 +41,16 @@ pub struct ExternalCommitBuilder<C: ClientConfig> {
 }
 
 impl<C: ClientConfig> ExternalCommitBuilder<C> {
-    pub(crate) fn new(signing_identity: SigningIdentity, config: C) -> Self {
+    pub(crate) fn new(
+        signer: SignatureSecretKey,
+        signing_identity: SigningIdentity,
+        config: C,
+    ) -> Self {
         Self {
             tree_data: None,
             to_remove: None,
             authenticated_data: Vec::new(),
+            signer,
             signing_identity,
             config,
             #[cfg(feature = "psk")]
@@ -121,19 +127,11 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
         )
         .await?;
 
-        let signer = self
-            .config
-            .keychain()
-            .signer(&self.signing_identity)
-            .await
-            .map_err(|e| MlsError::KeychainError(e.into_any_error()))?
-            .ok_or(MlsError::SignerNotFound)?;
-
         let (leaf_node, _) = LeafNode::generate(
             &cipher_suite_provider,
             self.config.leaf_properties(),
             self.signing_identity,
-            &signer,
+            &self.signer,
             self.config.lifetime(),
         )
         .await?;
@@ -159,6 +157,7 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
             epoch_secrets,
             TreeKemPrivate::new_for_external(),
             None,
+            self.signer,
         )
         .await?;
 
@@ -200,6 +199,7 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
                 Some(&leaf_node),
                 self.authenticated_data,
                 Default::default(),
+                None,
                 None,
                 None,
             )

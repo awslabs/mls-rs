@@ -13,11 +13,6 @@ use crate::{
 
 use alloc::{vec, vec::Vec};
 
-pub struct TestClient<C: MlsConfig> {
-    pub client: Client<C>,
-    pub identity: SigningIdentity,
-}
-
 pub fn get_test_basic_credential(identity: Vec<u8>) -> Credential {
     BasicCredential::new(identity).into_credential()
 }
@@ -40,10 +35,11 @@ pub fn is_edwards(cs: u16) -> bool {
 
 pub fn generate_basic_client<C: CryptoProvider + Clone>(
     cipher_suite: CipherSuite,
+    protocol_version: ProtocolVersion,
     id: usize,
     preferences: &Preferences,
     crypto: &C,
-) -> TestClient<impl MlsConfig> {
+) -> Client<impl MlsConfig> {
     let cs = crypto.cipher_suite_provider(cipher_suite).unwrap();
 
     let (secret_key, public_key) = cs.signature_key_generate().unwrap();
@@ -51,18 +47,17 @@ pub fn generate_basic_client<C: CryptoProvider + Clone>(
 
     let identity = SigningIdentity::new(credential, public_key);
 
-    let client = ClientBuilder::new()
+    ClientBuilder::new()
         .crypto_provider(crypto.clone())
         .identity_provider(BasicIdentityProvider::new())
-        .single_signing_identity(identity.clone(), secret_key, cipher_suite)
         .preferences(preferences.clone())
         .psk(
             ExternalPskId::new(TEST_EXT_PSK_ID.to_vec()),
             make_test_ext_psk().into(),
         )
-        .build();
-
-    TestClient { client, identity }
+        .used_protocol_version(protocol_version)
+        .signing_identity(identity, secret_key, cipher_suite)
+        .build()
 }
 
 #[maybe_async::maybe_async]
@@ -74,25 +69,16 @@ pub async fn get_test_groups<C: CryptoProvider + Clone>(
     crypto: &C,
 ) -> Vec<Group<impl MlsConfig>> {
     // Create the group with Alice as the group initiator
-    let creator = generate_basic_client(cipher_suite, 0, preferences, crypto);
+    let creator = generate_basic_client(cipher_suite, version, 0, preferences, crypto);
 
-    let mut creator_group = creator
-        .client
-        .create_group(version, cipher_suite, creator.identity, Default::default())
-        .await
-        .unwrap();
+    let mut creator_group = creator.create_group(Default::default()).await.unwrap();
 
     let mut receiver_clients = Vec::new();
     let mut commit_builder = creator_group.commit_builder();
 
     for i in 1..num_participants {
-        let client = generate_basic_client(cipher_suite, i, preferences, crypto);
-
-        let kp = client
-            .client
-            .generate_key_package_message(version, cipher_suite, client.identity.clone())
-            .await
-            .unwrap();
+        let client = generate_basic_client(cipher_suite, version, i, preferences, crypto);
+        let kp = client.generate_key_package_message().await.unwrap();
 
         receiver_clients.push(client);
         commit_builder = commit_builder.add_member(kp.clone()).unwrap();
@@ -108,7 +94,6 @@ pub async fn get_test_groups<C: CryptoProvider + Clone>(
 
     for client in &receiver_clients {
         let (test_client, _info) = client
-            .client
             .join_group(Some(&tree_data), welcome.clone().unwrap())
             .await
             .unwrap();

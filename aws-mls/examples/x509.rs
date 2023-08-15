@@ -1,4 +1,4 @@
-use aws_mls::{CipherSuite, Client, ProtocolVersion};
+use aws_mls::{CipherSuite, Client};
 use aws_mls_crypto_openssl::OpensslCryptoProvider;
 
 const CIPHERSUITE: CipherSuite = CipherSuite::CURVE25519_AES128;
@@ -25,18 +25,10 @@ async fn main() {
             ))
             .unwrap(),
         )
-        .single_signing_identity(signing_identity.clone(), secret_key, CIPHERSUITE)
+        .signing_identity(signing_identity, secret_key, CIPHERSUITE)
         .build();
 
-    let mut alice_group = alice_client
-        .create_group(
-            ProtocolVersion::MLS_10,
-            CIPHERSUITE,
-            signing_identity,
-            Default::default(),
-        )
-        .await
-        .unwrap();
+    let mut alice_group = alice_client.create_group(Default::default()).await.unwrap();
 
     alice_group.commit(Vec::new()).await.unwrap();
     alice_group.apply_pending_commit().await.unwrap();

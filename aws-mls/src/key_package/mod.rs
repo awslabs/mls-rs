@@ -151,7 +151,7 @@ pub(crate) mod test_utils {
         ) -> futures::future::BoxFuture<'_, KeyPackageGeneration>,
     {
         let (signing_identity, secret_key) =
-            get_test_signing_identity(cipher_suite_provider.cipher_suite(), id.as_bytes().to_vec());
+            get_test_signing_identity(cipher_suite_provider.cipher_suite(), id.as_bytes());
 
         let generator = KeyPackageGenerator {
             protocol_version,
@@ -176,7 +176,7 @@ pub(crate) mod test_utils {
         F: FnOnce(KeyPackageGenerator<'_, BasicIdentityProvider, CSP>) -> KeyPackageGeneration,
     {
         let (signing_identity, secret_key) =
-            get_test_signing_identity(cipher_suite_provider.cipher_suite(), id.as_bytes().to_vec());
+            get_test_signing_identity(cipher_suite_provider.cipher_suite(), id.as_bytes());
 
         let generator = KeyPackageGenerator {
             protocol_version,

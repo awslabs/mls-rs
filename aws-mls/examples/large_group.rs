@@ -5,11 +5,10 @@ use aws_mls::{
         basic::{BasicCredential, BasicIdentityProvider},
         SigningIdentity,
     },
-    CipherSuite, CipherSuiteProvider, Client, CryptoProvider, Group, ProtocolVersion,
+    CipherSuite, CipherSuiteProvider, Client, CryptoProvider, Group,
 };
 
 const CIPHERSUITE: CipherSuite = CipherSuite::CURVE25519_AES128;
-const PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::MLS_10;
 const GROUP_SIZES: [usize; 8] = [2, 3, 5, 9, 17, 33, 65, 129];
 
 enum Case {
@@ -52,26 +51,17 @@ async fn make_groups_best_case<P: CryptoProvider + Clone>(
     num_groups: usize,
     crypto_provider: &P,
 ) -> Result<Vec<Group<impl MlsConfig>>, MlsError> {
-    let (bob_identity, bob_client) = make_client(crypto_provider.clone(), &make_name(0))?;
+    let bob_client = make_client(crypto_provider.clone(), &make_name(0))?;
 
-    let bob_group = bob_client
-        .create_group(
-            PROTOCOL_VERSION,
-            CIPHERSUITE,
-            bob_identity,
-            Default::default(),
-        )
-        .await?;
+    let bob_group = bob_client.create_group(Default::default()).await?;
 
     let mut groups = vec![bob_group];
 
     for i in 0..(num_groups - 1) {
-        let (bob_identity, bob_client) = make_client(crypto_provider.clone(), &make_name(i + 1))?;
+        let bob_client = make_client(crypto_provider.clone(), &make_name(i + 1))?;
 
         // The new client generates a key package.
-        let bob_kpkg = bob_client
-            .generate_key_package_message(PROTOCOL_VERSION, CIPHERSUITE, bob_identity)
-            .await?;
+        let bob_kpkg = bob_client.generate_key_package_message().await?;
 
         // Last group sends a commit adding the new client to the group.
         let commit = groups
@@ -107,16 +97,9 @@ async fn make_groups_worst_case<P: CryptoProvider + Clone>(
     num_groups: usize,
     crypto_provider: &P,
 ) -> Result<Vec<Group<impl MlsConfig>>, MlsError> {
-    let (alice_identity, alice_client) = make_client(crypto_provider.clone(), &make_name(0))?;
+    let alice_client = make_client(crypto_provider.clone(), &make_name(0))?;
 
-    let mut alice_group = alice_client
-        .create_group(
-            PROTOCOL_VERSION,
-            CIPHERSUITE,
-            alice_identity,
-            Default::default(),
-        )
-        .await?;
+    let mut alice_group = alice_client.create_group(Default::default()).await?;
 
     let bob_clients = (0..(num_groups - 1))
         .map(|i| make_client(crypto_provider.clone(), &make_name(i + 1)))
@@ -125,11 +108,8 @@ async fn make_groups_worst_case<P: CryptoProvider + Clone>(
     // Alice adds all Bob's clients in a single commit.
     let mut commit_builder = alice_group.commit_builder();
 
-    for (bob_identity, bob_client) in &bob_clients {
-        let bob_kpkg = bob_client
-            .generate_key_package_message(PROTOCOL_VERSION, CIPHERSUITE, bob_identity.clone())
-            .await?;
-
+    for bob_client in &bob_clients {
+        let bob_kpkg = bob_client.generate_key_package_message().await?;
         commit_builder = commit_builder.add_member(bob_kpkg)?;
     }
 
@@ -140,7 +120,7 @@ async fn make_groups_worst_case<P: CryptoProvider + Clone>(
     // Bob's clients join the group.
     let mut groups = vec![alice_group];
 
-    for (_, bob_client) in &bob_clients {
+    for bob_client in &bob_clients {
         let (bob_group, _info) = bob_client.join_group(None, welcome_message.clone()).await?;
         groups.push(bob_group);
     }
@@ -151,7 +131,7 @@ async fn make_groups_worst_case<P: CryptoProvider + Clone>(
 fn make_client<P: CryptoProvider + Clone>(
     crypto_provider: P,
     name: &str,
-) -> Result<(SigningIdentity, Client<impl MlsConfig>), MlsError> {
+) -> Result<Client<impl MlsConfig>, MlsError> {
     let cipher_suite = crypto_provider.cipher_suite_provider(CIPHERSUITE).unwrap();
 
     // Generate a signature key pair.
@@ -167,15 +147,12 @@ fn make_client<P: CryptoProvider + Clone>(
     // include a copy of the MLS ratchet tree.
     let preferences = Preferences::default().with_ratchet_tree_extension(true);
 
-    Ok((
-        signing_identity.clone(),
-        Client::builder()
-            .preferences(preferences)
-            .identity_provider(BasicIdentityProvider)
-            .crypto_provider(crypto_provider)
-            .single_signing_identity(signing_identity, secret, CIPHERSUITE)
-            .build(),
-    ))
+    Ok(Client::builder()
+        .preferences(preferences)
+        .identity_provider(BasicIdentityProvider)
+        .crypto_provider(crypto_provider)
+        .signing_identity(signing_identity, secret, CIPHERSUITE)
+        .build())
 }
 
 fn make_name(i: usize) -> String {

@@ -297,6 +297,7 @@ pub struct ProposalMessageDescription {
     pub proposal: Proposal,
     /// Plaintext authenticated data in the received MLS packet.
     pub authenticated_data: Vec<u8>,
+    #[cfg(all(feature = "by_ref_proposal", feature = "external_client"))]
     pub(crate) proposal_ref: ProposalRef,
 }
 
@@ -505,18 +506,22 @@ pub(crate) trait MessageProcessor: Send + Sync {
 
         let group_state = self.group_state_mut();
 
-        cache_proposal.then(|| {
+        if cache_proposal {
+            #[cfg(all(feature = "by_ref_proposal", feature = "external_client"))]
+            let proposal_ref = proposal_ref.clone();
+
             group_state.proposals.insert(
                 proposal_ref.clone(),
                 proposal.clone(),
                 auth_content.content.sender,
-            )
-        });
+            );
+        }
 
         Ok(ProposalMessageDescription {
             authenticated_data: auth_content.content.authenticated_data.clone(),
             proposal: proposal.clone(),
             sender: auth_content.content.sender.try_into()?,
+            #[cfg(all(feature = "by_ref_proposal", feature = "external_client"))]
             proposal_ref,
         })
     }

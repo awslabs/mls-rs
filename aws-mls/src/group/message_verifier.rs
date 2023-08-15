@@ -325,6 +325,7 @@ mod tests {
                 commit_output.welcome_message.unwrap(),
                 None,
                 bob_client.config,
+                bob_client.signer.unwrap(),
             )
             .await
             .unwrap();
@@ -568,8 +569,7 @@ mod tests {
         let (bob_key_pkg_gen, _) =
             test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob").await;
 
-        let (ted_signing, ted_secret) =
-            get_test_signing_identity(TEST_CIPHER_SUITE, b"ted".to_vec());
+        let (ted_signing, ted_secret) = get_test_signing_identity(TEST_CIPHER_SUITE, b"ted");
 
         let mut test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let mut extensions = ExtensionList::default();
@@ -610,7 +610,7 @@ mod tests {
     async fn external_proposal_must_be_from_valid_sender() {
         let (bob_key_pkg_gen, _) =
             test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob").await;
-        let (_, ted_secret) = get_test_signing_identity(TEST_CIPHER_SUITE, b"ted".to_vec());
+        let (_, ted_secret) = get_test_signing_identity(TEST_CIPHER_SUITE, b"ted");
         let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
         let message = test_new_member_proposal(bob_key_pkg_gen, &ted_secret, &test_group, |msg| {
@@ -634,7 +634,7 @@ mod tests {
         let (bob_key_pkg_gen, _) =
             test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob").await;
 
-        let (_, ted_secret) = get_test_signing_identity(TEST_CIPHER_SUITE, b"ted".to_vec());
+        let (_, ted_secret) = get_test_signing_identity(TEST_CIPHER_SUITE, b"ted");
 
         let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 

@@ -117,8 +117,8 @@ where
     }
 
     /// Based on RFC 9180 Single-Shot APIs. This function combines the action
-    /// of the [setup_sender](Hpke::setup_sender) and then calling [seal](Context::seal)
-    /// on the resulting [Context](self::Context).
+    /// of the [setup_sender](Hpke::setup_sender) and then calling [seal](ContextS::seal)
+    /// on the resulting [ContextS](self::ContextS).
     pub fn seal(
         &self,
         remote_key: &HpkePublicKey,
@@ -137,7 +137,7 @@ where
 
     /// Based on RFC 9180 Single-Shot APIs. This function combines the action
     /// of the [setup_receiver](Hpke::setup_receiver) and then calling
-    /// [seal](Context::open) on the resulting [Context](self::Context).
+    /// [open](ContextR::open) on the resulting [ContextR](self::ContextR).
     pub fn open(
         &self,
         ciphertext: &HpkeCiphertext,
@@ -160,8 +160,8 @@ where
 
     /// Generate an HPKE context using the base setup mode. This function returns a tuple
     /// containing the `enc` value that can be used as the input to
-    /// [setup_receiver](Hpke::setup_receiver), as well as the [Context](self::Context)
-    /// that can be used to generate and receive AEAD ciphertexts. Note that for ECDH based kem
+    /// [setup_receiver](Hpke::setup_receiver), as well as the [ContextS](self::ContextS)
+    /// that can be used to generate AEAD ciphertexts. Note that for ECDH based kem
     /// functions, `remote_key` is expected to be in uncompressed public key format.
     pub fn setup_sender(
         &self,
@@ -184,7 +184,7 @@ where
     /// Set up an HPKE context by receiving an `enc` value from the output of
     /// [setup_sender](Hpke::setup_sender) as well as your `local_secret` key based on
     /// the KEM type being used. This function returns an HPKE context that can be used for AEAD
-    /// encryption and decryption. Note that for ECDH based kem functions, `local_secret`
+    /// decryption. Note that for ECDH based kem functions, `local_secret`
     /// is expected to be in raw byte key format.
     pub fn setup_receiver(
         &self,

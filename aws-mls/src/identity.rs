@@ -155,12 +155,12 @@ pub(crate) mod test_utils {
 
     pub fn get_test_signing_identity(
         cipher_suite: CipherSuite,
-        identity: Vec<u8>,
+        identity: &[u8],
     ) -> (SigningIdentity, SignatureSecretKey) {
         let provider = test_cipher_suite_provider(cipher_suite);
         let (secret_key, public_key) = provider.signature_key_generate().unwrap();
 
-        let basic = get_test_basic_credential(identity);
+        let basic = get_test_basic_credential(identity.to_vec());
 
         (SigningIdentity::new(basic, public_key), secret_key)
     }

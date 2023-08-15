@@ -481,7 +481,7 @@ impl TreeKemPublic {
             .remove_proposals()
             .iter()
             .map(|p| p.proposal().to_remove)
-            .chain(updated_indices.into_iter())
+            .chain(updated_indices)
             .chain(added.iter().copied())
             .collect_vec();
 
@@ -851,7 +851,7 @@ pub(crate) mod test_utils {
         cs: &P,
     ) -> (LeafNode, SignatureSecretKey) {
         let (signing_identity, signature_key) =
-            get_test_signing_identity(cs.cipher_suite(), name.as_bytes().to_vec());
+            get_test_signing_identity(cs.cipher_suite(), name.as_bytes());
 
         let capabilities = Capabilities {
             credentials: vec![BasicCredential::credential_type()],

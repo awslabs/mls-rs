@@ -287,9 +287,8 @@ mod tests {
     #[cfg(feature = "external_proposal")]
     #[test]
     fn test_external_senders() {
-        let ext = ExternalSendersExt::new(vec![
-            get_test_signing_identity(TEST_CIPHER_SUITE, vec![1]).0,
-        ]);
+        let ext =
+            ExternalSendersExt::new(vec![get_test_signing_identity(TEST_CIPHER_SUITE, &[1]).0]);
 
         let as_extension = ext.clone().into_extension().unwrap();
 

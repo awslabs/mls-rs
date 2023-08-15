@@ -5,7 +5,6 @@ use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use aws_mls_core::error::IntoAnyError;
 use aws_mls_core::extension::ExtensionList;
 use aws_mls_core::identity::IdentityProvider;
-use aws_mls_core::keychain::KeychainStorage;
 use aws_mls_core::time::MlsTime;
 use core::ops::Deref;
 use core::option::Option::Some;
@@ -36,6 +35,9 @@ use crate::crypto::{HpkePublicKey, HpkeSecretKey};
 
 #[cfg(feature = "external_commit")]
 use crate::extension::ExternalPubExt;
+
+#[cfg(feature = "psk")]
+pub use self::resumption::ReinitClient;
 
 #[cfg(feature = "psk")]
 use crate::psk::{
@@ -127,6 +129,8 @@ mod proposal_cache;
 pub(crate) mod proposal_filter;
 #[cfg(feature = "by_ref_proposal")]
 pub(crate) mod proposal_ref;
+#[cfg(feature = "psk")]
+mod resumption;
 mod roster;
 pub(crate) mod snapshot;
 pub(crate) mod state;
@@ -265,15 +269,18 @@ pub(crate) mod internal {
         pub(super) private_tree: TreeKemPrivate,
         pub(super) key_schedule: KeySchedule,
         #[cfg(all(feature = "std", feature = "by_ref_proposal"))]
-        pub(super) pending_updates: HashMap<HpkePublicKey, HpkeSecretKey>, // Hash of leaf node hpke public key to secret key
+        pub(super) pending_updates:
+            HashMap<HpkePublicKey, (HpkeSecretKey, Option<SignatureSecretKey>)>, // Hash of leaf node hpke public key to secret key
         #[cfg(all(not(feature = "std"), feature = "by_ref_proposal"))]
-        pub(super) pending_updates: Vec<(HpkePublicKey, HpkeSecretKey)>,
+        pub(super) pending_updates:
+            Vec<(HpkePublicKey, (HpkeSecretKey, Option<SignatureSecretKey>))>,
         pub(super) pending_commit: Option<CommitGeneration>,
         #[cfg(feature = "psk")]
         pub(super) previous_psk: Option<PskSecretInput>,
         #[cfg(test)]
         pub(crate) commit_modifiers:
             CommitModifiers<<C::CryptoProvider as CryptoProvider>::CipherSuiteProvider>,
+        pub(crate) signer: SignatureSecretKey,
     }
 }
 
@@ -291,15 +298,9 @@ where
         protocol_version: ProtocolVersion,
         signing_identity: SigningIdentity,
         group_context_extensions: ExtensionList,
+        signer: SignatureSecretKey,
     ) -> Result<Self, MlsError> {
         let cipher_suite_provider = cipher_suite_provider(config.crypto_provider(), cipher_suite)?;
-
-        let signer = config
-            .keychain()
-            .signer(&signing_identity)
-            .await
-            .map_err(|e| MlsError::KeychainError(e.into_any_error()))?
-            .ok_or(MlsError::SignerNotFound)?;
 
         let (leaf_node, leaf_node_secret) = LeafNode::generate(
             &cipher_suite_provider,
@@ -373,6 +374,7 @@ where
             cipher_suite_provider,
             #[cfg(feature = "psk")]
             previous_psk: None,
+            signer,
         })
     }
 
@@ -385,11 +387,13 @@ where
         welcome: MLSMessage,
         tree_data: Option<&[u8]>,
         config: C,
+        signer: SignatureSecretKey,
     ) -> Result<(Self, NewMemberInfo), MlsError> {
         Self::from_welcome_message(
             welcome,
             tree_data,
             config,
+            signer,
             #[cfg(feature = "psk")]
             None,
         )
@@ -401,6 +405,7 @@ where
         welcome: MLSMessage,
         tree_data: Option<&[u8]>,
         config: C,
+        signer: SignatureSecretKey,
         #[cfg(feature = "psk")] additional_psk: Option<PskSecretInput>,
     ) -> Result<(Self, NewMemberInfo), MlsError> {
         let protocol_version = welcome.version;
@@ -547,10 +552,12 @@ where
             key_schedule_result.epoch_secrets,
             private_tree,
             Some(used_key_package_ref),
+            signer,
         )
         .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     #[maybe_async::maybe_async]
     async fn join_with(
         config: C,
@@ -560,6 +567,7 @@ where
         epoch_secrets: EpochSecrets,
         private_tree: TreeKemPrivate,
         used_key_package_ref: Option<KeyPackageRef>,
+        signer: SignatureSecretKey,
     ) -> Result<(Self, NewMemberInfo), MlsError> {
         // Use the confirmed transcript hash and confirmation tag to compute the interim transcript
         // hash in the new state.
@@ -602,6 +610,7 @@ where
             cipher_suite_provider,
             #[cfg(feature = "psk")]
             previous_psk: None,
+            signer,
         };
 
         Ok((group, NewMemberInfo::new(group_info_extensions)))
@@ -658,14 +667,12 @@ where
         proposal: Proposal,
         authenticated_data: Vec<u8>,
     ) -> Result<MLSMessage, MlsError> {
-        let signer = self.signer().await?;
-
         let auth_content = AuthenticatedContent::new_signed(
             &self.cipher_suite_provider,
             self.context(),
             Sender::Member(*self.private_tree.self_index),
             Content::Proposal(alloc::boxed::Box::new(proposal.clone())),
-            &signer,
+            &self.signer,
             #[cfg(feature = "private_message")]
             self.config.preferences().encryption_mode().into(),
             #[cfg(not(feature = "private_message"))]
@@ -682,28 +689,6 @@ where
         self.format_for_wire(auth_content)
     }
 
-    #[maybe_async::maybe_async]
-    pub(crate) async fn signer(&self) -> Result<SignatureSecretKey, MlsError> {
-        self.signer_for_identity(None).await
-    }
-
-    #[maybe_async::maybe_async]
-    pub(crate) async fn signer_for_identity(
-        &self,
-        signing_identity: Option<&SigningIdentity>,
-    ) -> Result<SignatureSecretKey, MlsError> {
-        let signing_identity = signing_identity
-            .map(Ok)
-            .unwrap_or_else(|| self.current_member_signing_identity())?;
-
-        self.config
-            .keychain()
-            .signer(signing_identity)
-            .await
-            .map_err(|e| MlsError::KeychainError(e.into_any_error()))?
-            .ok_or(MlsError::SignerNotFound)
-    }
-
     /// Unique identifier for this group.
     pub fn group_id(&self) -> &[u8] {
         &self.context().group_id
@@ -712,7 +697,7 @@ where
     fn provisional_private_tree(
         &self,
         provisional_state: &ProvisionalState,
-    ) -> Result<TreeKemPrivate, MlsError> {
+    ) -> Result<(TreeKemPrivate, Option<SignatureSecretKey>), MlsError> {
         let mut provisional_private_tree = self.private_tree.clone();
         let self_index = provisional_private_tree.self_index;
 
@@ -733,6 +718,11 @@ where
         }
 
         // Apply own update
+        let new_signer = None;
+
+        #[cfg(feature = "by_ref_proposal")]
+        let mut new_signer = new_signer;
+
         #[cfg(feature = "by_ref_proposal")]
         for p in &provisional_state.applied_proposals.updates {
             if p.sender == Sender::Member(*self_index) {
@@ -740,13 +730,16 @@ where
 
                 // Update the leaf in the private tree if this is our update
                 #[cfg(feature = "std")]
-                let new_leaf_sk = self.pending_updates.get(leaf_pk).cloned();
+                let new_leaf_sk_and_signer = self.pending_updates.get(leaf_pk);
 
                 #[cfg(not(feature = "std"))]
-                let new_leaf_sk = self
+                let new_leaf_sk_and_signer = self
                     .pending_updates
                     .iter()
-                    .find_map(|(pk, sk)| (pk == leaf_pk).then_some(sk.clone()));
+                    .find_map(|(pk, sk)| (pk == leaf_pk).then_some(sk));
+
+                let new_leaf_sk = new_leaf_sk_and_signer.map(|(sk, _)| sk.clone());
+                new_signer = new_leaf_sk_and_signer.and_then(|(_, sk)| sk.clone());
 
                 provisional_private_tree
                     .update_leaf(new_leaf_sk.ok_or(MlsError::UpdateErrorNoSecretKey)?);
@@ -755,7 +748,7 @@ where
             }
         }
 
-        Ok(provisional_private_tree)
+        Ok((provisional_private_tree, new_signer))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -804,235 +797,6 @@ where
                 encrypted_group_info,
             }),
         )))
-    }
-
-    /// Create a sub-group from a subset of the current group members.
-    ///
-    /// Membership within the resulting sub-group is indicated by providing a
-    /// key package that produces the same
-    /// [identity](crate::IdentityProvider::identity) value
-    /// as an existing group member. The identity value of each key package
-    /// is determined using the
-    /// [`IdentityProvider`](crate::IdentityProvider)
-    /// that is currently in use by this group instance.
-    #[cfg(feature = "psk")]
-    #[maybe_async::maybe_async]
-    pub async fn branch(
-        &self,
-        sub_group_id: Vec<u8>,
-        new_key_packages: Vec<MLSMessage>,
-        preferences: Option<Preferences>,
-    ) -> Result<(Group<C>, Option<MLSMessage>), MlsError> {
-        let new_group_params = ResumptionGroupParameters {
-            group_id: &sub_group_id,
-            cipher_suite: self.cipher_suite(),
-            version: self.protocol_version(),
-            extensions: self.context_extensions(),
-        };
-
-        self.resumption_create_group(
-            new_key_packages,
-            &new_group_params,
-            // TODO investigate if it's worth updating your own signing identity here
-            None,
-            preferences,
-            ResumptionPSKUsage::Branch,
-        )
-        .await
-    }
-
-    /// Join a subgroup that was created by [`Group::branch`].
-    #[cfg(feature = "psk")]
-    #[maybe_async::maybe_async]
-    pub async fn join_subgroup(
-        &self,
-        welcome: MLSMessage,
-        tree_data: Option<&[u8]>,
-    ) -> Result<(Group<C>, NewMemberInfo), MlsError> {
-        let expected_new_group_prams = ResumptionGroupParameters {
-            group_id: &[],
-            cipher_suite: self.cipher_suite(),
-            version: self.protocol_version(),
-            extensions: self.context_extensions(),
-        };
-
-        self.resumption_join_group(
-            welcome,
-            tree_data,
-            expected_new_group_prams,
-            false,
-            ResumptionPSKUsage::Branch,
-        )
-        .await
-    }
-
-    /// Create a new group that is based on properties defined by a previously
-    /// sent [`ReInit`](proposal::ReInitProposal).
-    ///
-    /// For each member of the group, a key package that produces the same
-    /// [identity](crate::IdentityProvider::identity) value
-    /// as an existing group member. The identity value of each key package
-    /// is determined using the
-    /// [`IdentityProvider`](crate::IdentityProvider)
-    /// that is currently in use by this group instance.
-    ///
-    /// The resulting commit message can be processed by other members using
-    /// [`Group::finish_reinit_join`].
-    ///
-    /// # Warning
-    ///
-    /// This function will fail if the number of members in the reinitialized
-    /// group is not the same as the prior group roster.
-    #[cfg(feature = "psk")]
-    #[maybe_async::maybe_async]
-    pub async fn finish_reinit_commit(
-        &self,
-        new_key_packages: Vec<MLSMessage>,
-        signing_identity: Option<SigningIdentity>,
-        preferences: Option<Preferences>,
-    ) -> Result<(Group<C>, Option<MLSMessage>), MlsError> {
-        let reinit = self
-            .state
-            .pending_reinit
-            .as_ref()
-            .ok_or(MlsError::PendingReInitNotFound)?;
-
-        let new_group_params = ResumptionGroupParameters {
-            group_id: reinit.group_id(),
-            cipher_suite: reinit.new_cipher_suite(),
-            version: reinit.new_version(),
-            extensions: reinit.new_group_context_extensions(),
-        };
-
-        self.resumption_create_group(
-            new_key_packages,
-            &new_group_params,
-            signing_identity,
-            preferences,
-            ResumptionPSKUsage::Reinit,
-        )
-        .await
-    }
-
-    /// Join a reinitialized group that was created by
-    /// [`Group::finish_reinit_commit`].
-    #[cfg(feature = "psk")]
-    #[maybe_async::maybe_async]
-    pub async fn finish_reinit_join(
-        &self,
-        welcome: MLSMessage,
-        tree_data: Option<&[u8]>,
-    ) -> Result<(Group<C>, NewMemberInfo), MlsError> {
-        let reinit = self
-            .state
-            .pending_reinit
-            .as_ref()
-            .ok_or(MlsError::PendingReInitNotFound)?;
-
-        let expected_group_params = ResumptionGroupParameters {
-            group_id: reinit.group_id(),
-            cipher_suite: reinit.new_cipher_suite(),
-            version: reinit.new_version(),
-            extensions: reinit.new_group_context_extensions(),
-        };
-
-        self.resumption_join_group(
-            welcome,
-            tree_data,
-            expected_group_params,
-            true,
-            ResumptionPSKUsage::Reinit,
-        )
-        .await
-    }
-
-    #[cfg(feature = "psk")]
-    #[maybe_async::maybe_async]
-    async fn resumption_create_group(
-        &self,
-        new_key_packages: Vec<MLSMessage>,
-        new_group_params: &ResumptionGroupParameters<'_>,
-        signing_identity: Option<SigningIdentity>,
-        preferences: Option<Preferences>,
-        usage: ResumptionPSKUsage,
-    ) -> Result<(Group<C>, Option<MLSMessage>), MlsError> {
-        // Create a new group with new parameters
-        let signing_identity =
-            signing_identity.unwrap_or(self.current_member_signing_identity()?.clone());
-
-        let mut group = Group::new(
-            self.config.clone(),
-            Some(new_group_params.group_id.to_vec()),
-            new_group_params.cipher_suite,
-            new_group_params.version,
-            signing_identity,
-            new_group_params.extensions.clone(),
-        )
-        .await?;
-
-        // Install the resumption psk in the new group
-        group.previous_psk = Some(self.resumption_psk_input(usage)?);
-
-        // Create a commit that adds new key packages and uses the resumption PSK
-        let mut commit = group.commit_builder();
-
-        for kp in new_key_packages.into_iter() {
-            commit = commit.add_member(kp)?;
-        }
-
-        if let Some(preferences) = preferences {
-            commit = commit.set_commit_preferences(preferences);
-        }
-
-        let commit = commit.build().await?;
-        group.apply_pending_commit().await?;
-
-        // Uninstall the resumption psk on success (in case of failure, the new group is discarded anyway)
-        group.previous_psk = None;
-
-        Ok((group, commit.welcome_message))
-    }
-
-    #[cfg(feature = "psk")]
-    #[maybe_async::maybe_async]
-    async fn resumption_join_group(
-        &self,
-        welcome: MLSMessage,
-        tree_data: Option<&[u8]>,
-        expected_new_group_params: ResumptionGroupParameters<'_>,
-        verify_group_id: bool,
-        usage: ResumptionPSKUsage,
-    ) -> Result<(Group<C>, NewMemberInfo), MlsError> {
-        let psk_input = Some(self.resumption_psk_input(usage)?);
-
-        let (group, new_member_info) =
-            Self::from_welcome_message(welcome, tree_data, self.config.clone(), psk_input).await?;
-
-        if group.protocol_version() != expected_new_group_params.version {
-            Err(MlsError::ProtocolVersionMismatch)
-        } else if group.cipher_suite() != expected_new_group_params.cipher_suite {
-            Err(MlsError::CipherSuiteMismatch)
-        } else if verify_group_id && group.group_id() != expected_new_group_params.group_id {
-            Err(MlsError::GroupIdMismatch)
-        } else if group.context_extensions() != expected_new_group_params.extensions {
-            Err(MlsError::ReInitExtensionsMismatch)
-        } else {
-            Ok((group, new_member_info))
-        }
-    }
-
-    #[cfg(feature = "psk")]
-    fn resumption_psk_input(&self, usage: ResumptionPSKUsage) -> Result<PskSecretInput, MlsError> {
-        let psk = self.epoch_secrets.resumption_secret.clone();
-
-        let id = JustPreSharedKeyID::Resumption(ResumptionPsk {
-            usage,
-            psk_group_id: PskGroupId(self.group_id().to_vec()),
-            psk_epoch: self.current_epoch(),
-        });
-
-        let id = PreSharedKeyID::new(id, self.cipher_suite_provider())?;
-        Ok(PskSecretInput { id, psk })
     }
 
     fn encrypt_group_secrets(
@@ -1114,7 +878,7 @@ where
         &mut self,
         authenticated_data: Vec<u8>,
     ) -> Result<MLSMessage, MlsError> {
-        let proposal = self.update_proposal(None).await?;
+        let proposal = self.update_proposal(None, None).await?;
         self.proposal_message(proposal, authenticated_data).await
     }
 
@@ -1139,10 +903,14 @@ where
     #[maybe_async::maybe_async]
     pub async fn propose_update_with_identity(
         &mut self,
+        signer: SignatureSecretKey,
         signing_identity: SigningIdentity,
         authenticated_data: Vec<u8>,
     ) -> Result<MLSMessage, MlsError> {
-        let proposal = self.update_proposal(Some(signing_identity)).await?;
+        let proposal = self
+            .update_proposal(Some(signer), Some(signing_identity))
+            .await?;
+
         self.proposal_message(proposal, authenticated_data).await
     }
 
@@ -1150,10 +918,10 @@ where
     #[maybe_async::maybe_async]
     async fn update_proposal(
         &mut self,
+        signer: Option<SignatureSecretKey>,
         signing_identity: Option<SigningIdentity>,
     ) -> Result<Proposal, MlsError> {
         // Grab a copy of the current node and update it to have new key material
-        let signer = self.signer_for_identity(signing_identity.as_ref()).await?;
         let mut new_leaf_node = self.current_user_leaf_node()?.clone();
 
         let secret_key = new_leaf_node.update(
@@ -1162,17 +930,17 @@ where
             self.current_member_index(),
             self.config.leaf_properties(),
             signing_identity,
-            &signer,
+            signer.as_ref().unwrap_or(&self.signer),
         )?;
 
         // Store the secret key in the pending updates storage for later
         #[cfg(feature = "std")]
         self.pending_updates
-            .insert(new_leaf_node.public_key.clone(), secret_key);
+            .insert(new_leaf_node.public_key.clone(), (secret_key, signer));
 
         #[cfg(not(feature = "std"))]
         self.pending_updates
-            .push((new_leaf_node.public_key.clone(), secret_key));
+            .push((new_leaf_node.public_key.clone(), (secret_key, signer)));
 
         Ok(Proposal::Update(UpdateProposal {
             leaf_node: new_leaf_node,
@@ -1269,7 +1037,7 @@ where
     ///
     /// Once a [`ReInitProposal`](proposal::ReInitProposal)
     /// has been sent, another group member can complete reinitialization of
-    /// the group by calling [`Group::finish_reinit_commit`].
+    /// the group by calling [`Group::get_reinit_client`].
     ///
     /// `authenticated_data` will be sent unencrypted along with the contents
     /// of the proposal message.
@@ -1411,8 +1179,6 @@ where
         message: &[u8],
         authenticated_data: Vec<u8>,
     ) -> Result<MLSMessage, MlsError> {
-        let signer = self.signer().await?;
-
         // A group member that has observed one or more proposals within an epoch MUST send a Commit message
         // before sending application data
         #[cfg(feature = "by_ref_proposal")]
@@ -1425,7 +1191,7 @@ where
             self.context(),
             Sender::Member(*self.private_tree.self_index),
             Content::Application(message.to_vec().into()),
-            &signer,
+            &self.signer,
             WireFormat::PrivateMessage,
             authenticated_data,
         )?;
@@ -1616,8 +1382,6 @@ where
         &self,
         mut initial_extensions: ExtensionList,
     ) -> Result<MLSMessage, MlsError> {
-        let signer = self.signer().await?;
-
         let preferences = self.config.preferences();
 
         if preferences.ratchet_tree_extension {
@@ -1636,7 +1400,7 @@ where
 
         info.grease(self.cipher_suite_provider())?;
 
-        info.sign(&self.cipher_suite_provider, &signer, &())?;
+        info.sign(&self.cipher_suite_provider, &self.signer, &())?;
 
         Ok(MLSMessage::new(
             self.protocol_version(),
@@ -1801,14 +1565,6 @@ where
     }
 }
 
-#[cfg(feature = "psk")]
-struct ResumptionGroupParameters<'a> {
-    group_id: &'a [u8],
-    cipher_suite: CipherSuite,
-    version: ProtocolVersion,
-    extensions: &'a ExtensionList,
-}
-
 #[cfg(feature = "private_message")]
 impl<C> GroupStateProvider for Group<C>
 where
@@ -1878,7 +1634,12 @@ where
         provisional_state: &mut ProvisionalState,
     ) -> Result<Option<(TreeKemPrivate, PathSecret)>, MlsError> {
         // Update the private tree to create a provisional private tree
-        let mut provisional_private_tree = self.provisional_private_tree(provisional_state)?;
+        let (mut provisional_private_tree, new_signer) =
+            self.provisional_private_tree(provisional_state)?;
+
+        if let Some(signer) = new_signer {
+            self.signer = signer;
+        }
 
         provisional_state
             .public_tree
@@ -2078,9 +1839,6 @@ mod tests {
         tree_kem::{leaf_node::LeafNodeSource, UpdatePathNode},
     };
 
-    #[cfg(feature = "external_commit")]
-    use crate::client::test_utils::get_basic_client_builder;
-
     #[cfg(feature = "all_extensions")]
     use crate::{extension::RequiredCapabilitiesExt, key_package::test_utils::test_key_package};
 
@@ -2164,11 +1922,6 @@ mod tests {
             assert_eq!(
                 group.private_tree.self_index.0,
                 group.current_member_index()
-            );
-
-            assert_eq!(
-                group.state.public_tree.get_leaf_nodes()[0].signing_identity,
-                group.config.keychain().identities()[0].0
             );
         }
     }
@@ -2402,6 +2155,7 @@ mod tests {
             commit_output.welcome_message.unwrap(),
             None,
             bob_client.config,
+            bob_client.signer.unwrap(),
         )
         .await
         .map(|_| ());
@@ -2572,10 +2326,14 @@ mod tests {
             .unwrap()
             .clone();
 
-        let res = external_commit::ExternalCommitBuilder::new(signing_identity, group.group.config)
-            .build(info_msg)
-            .await
-            .map(|_| {});
+        let res = external_commit::ExternalCommitBuilder::new(
+            group.group.signer,
+            signing_identity,
+            group.group.config,
+        )
+        .build(info_msg)
+        .await
+        .map(|_| {});
 
         assert_matches!(res, Err(MlsError::MissingExternalPubExtension));
     }
@@ -2815,13 +2573,19 @@ mod tests {
     #[cfg(feature = "external_commit")]
     #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn commit_description_external_commit() {
+        use crate::client::test_utils::TestClientBuilder;
+
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
-        let (bob, bob_identity) = get_basic_client_builder(TEST_CIPHER_SUITE, "bob");
+        let (bob_identity, secret_key) = get_test_signing_identity(TEST_CIPHER_SUITE, b"bob");
+
+        let bob = TestClientBuilder::new_for_test()
+            .signing_identity(bob_identity, secret_key, TEST_CIPHER_SUITE)
+            .build();
 
         let (bob_group, commit) = bob
-            .build()
-            .external_commit_builder(bob_identity)
+            .external_commit_builder()
+            .unwrap()
             .with_tree_data(alice_group.group.export_tree().unwrap())
             .build(
                 alice_group
@@ -2853,13 +2617,19 @@ mod tests {
     #[cfg(feature = "external_commit")]
     #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn can_join_new_group_externally() {
+        use crate::client::test_utils::TestClientBuilder;
+
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
-        let (bob, bob_identity) = get_basic_client_builder(TEST_CIPHER_SUITE, "bob");
+        let (bob_identity, secret_key) = get_test_signing_identity(TEST_CIPHER_SUITE, b"bob");
+
+        let bob = TestClientBuilder::new_for_test()
+            .signing_identity(bob_identity, secret_key, TEST_CIPHER_SUITE)
+            .build();
 
         let (_, commit) = bob
-            .build()
-            .external_commit_builder(bob_identity)
+            .external_commit_builder()
+            .unwrap()
             .with_tree_data(alice_group.group.export_tree().unwrap())
             .build(
                 alice_group
@@ -2993,12 +2763,18 @@ mod tests {
         // Apply the commit that adds carol
         bob.group.process_incoming_message(commit).await.unwrap();
 
-        let bob_identity = bob.group.config.keychain().identities()[0].0.clone();
+        let bob_identity = bob.group.current_member_signing_identity().unwrap().clone();
+        let signer = bob.group.signer.clone();
 
-        let new_key_pkg = Client::new(bob.group.config.clone())
-            .generate_key_package_message(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, bob_identity)
-            .await
-            .unwrap();
+        let new_key_pkg = Client::new(
+            bob.group.config.clone(),
+            Some(signer),
+            Some((bob_identity, TEST_CIPHER_SUITE)),
+            TEST_PROTOCOL_VERSION,
+        )
+        .generate_key_package_message()
+        .await
+        .unwrap();
 
         let (mut alice_sub_group, welcome) = alice
             .group
@@ -3015,7 +2791,6 @@ mod tests {
             .unwrap();
 
         // Carol can't join
-
         let res = carol
             .group
             .join_subgroup(welcome, Some(&alice_sub_group.export_tree().unwrap()))
@@ -3707,20 +3482,11 @@ mod tests {
     #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn update_proposal_can_change_credential() {
         let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 3).await;
-        let (identity, secret_key) =
-            get_test_signing_identity(TEST_CIPHER_SUITE, b"member".to_vec());
-
-        // Add new identity
-        groups[0]
-            .group
-            .config
-            .0
-            .keychain
-            .insert(identity.clone(), secret_key, TEST_CIPHER_SUITE);
+        let (identity, secret_key) = get_test_signing_identity(TEST_CIPHER_SUITE, b"member");
 
         let update = groups[0]
             .group
-            .propose_update_with_identity(identity.clone(), vec![])
+            .propose_update_with_identity(secret_key, identity.clone(), vec![])
             .await
             .unwrap();
 
@@ -3903,23 +3669,5 @@ mod tests {
         bob.join_group(None, commit.welcome_message.unwrap())
             .await
             .unwrap();
-    }
-
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
-    async fn signer_for_identity() {
-        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
-            .await
-            .group;
-
-        let identity = alice.current_member_signing_identity().unwrap().clone();
-
-        alice
-            .state
-            .public_tree
-            .nodes
-            .blank_leaf_node(LeafIndex(alice.current_member_index()))
-            .unwrap();
-
-        alice.signer_for_identity(Some(&identity)).await.unwrap();
     }
 }

@@ -10,12 +10,11 @@ use crate::{
 use alloc::vec::Vec;
 use aws_mls_core::{
     crypto::CryptoProvider, group::GroupStateStorage, identity::IdentityProvider,
-    key_package::KeyPackageStorage, keychain::KeychainStorage, psk::PreSharedKeyStorage,
+    key_package::KeyPackageStorage, psk::PreSharedKeyStorage,
 };
 
 pub trait ClientConfig: Send + Sync + Clone {
     type KeyPackageRepository: KeyPackageStorage + Clone;
-    type Keychain: KeychainStorage + Clone;
     type PskStore: PreSharedKeyStorage + Clone;
     type GroupStateStorage: GroupStateStorage + Clone;
     type IdentityProvider: IdentityProvider + Clone;
@@ -31,7 +30,6 @@ pub trait ClientConfig: Send + Sync + Clone {
 
     fn proposal_rules(&self) -> Self::ProposalRules;
 
-    fn keychain(&self) -> Self::Keychain;
     fn secret_store(&self) -> Self::PskStore;
     fn group_state_storage(&self) -> Self::GroupStateStorage;
     fn identity_provider(&self) -> Self::IdentityProvider;

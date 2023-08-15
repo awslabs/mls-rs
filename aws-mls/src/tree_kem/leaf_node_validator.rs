@@ -215,8 +215,7 @@ mod tests {
 
     #[maybe_async::maybe_async]
     async fn get_test_add_node() -> (LeafNode, SignatureSecretKey) {
-        let (signing_identity, secret) =
-            get_test_signing_identity(TEST_CIPHER_SUITE, b"foo".to_vec());
+        let (signing_identity, secret) = get_test_signing_identity(TEST_CIPHER_SUITE, b"foo");
 
         let (leaf_node, _) =
             get_test_node(TEST_CIPHER_SUITE, signing_identity, &secret, None, None).await;
@@ -414,8 +413,7 @@ mod tests {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
 
-            let (signing_identity, secret) =
-                get_test_signing_identity(cipher_suite, b"foo".to_vec());
+            let (signing_identity, secret) = get_test_signing_identity(cipher_suite, b"foo");
 
             let (mut leaf_node, _) =
                 get_test_node(cipher_suite, signing_identity, &secret, None, None).await;
@@ -440,8 +438,7 @@ mod tests {
 
     #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn test_capabilities_mismatch() {
-        let (signing_identity, secret) =
-            get_test_signing_identity(TEST_CIPHER_SUITE, b"foo".to_vec());
+        let (signing_identity, secret) = get_test_signing_identity(TEST_CIPHER_SUITE, b"foo");
 
         let mut extensions = ExtensionList::new();
 

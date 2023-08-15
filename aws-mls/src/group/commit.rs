@@ -1,6 +1,7 @@
 use alloc::vec;
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
+use aws_mls_core::crypto::SignatureSecretKey;
 
 use crate::{
     cipher_suite::CipherSuite,
@@ -121,7 +122,8 @@ where
     pub(super) proposals: Vec<Proposal>,
     authenticated_data: Vec<u8>,
     group_info_extensions: ExtensionList,
-    signing_identity: Option<SigningIdentity>,
+    new_signer: Option<SignatureSecretKey>,
+    new_signing_identity: Option<SigningIdentity>,
     preferences: Option<Preferences>,
 }
 
@@ -259,9 +261,14 @@ where
     /// and results in the same
     /// [identity](crate::IdentityProvider::identity)
     /// being used.
-    pub fn set_new_signing_identity(self, signing_identity: SigningIdentity) -> Self {
+    pub fn set_new_signing_identity(
+        self,
+        signer: SignatureSecretKey,
+        signing_identity: SigningIdentity,
+    ) -> Self {
         Self {
-            signing_identity: Some(signing_identity),
+            new_signer: Some(signer),
+            new_signing_identity: Some(signing_identity),
             ..self
         }
     }
@@ -293,7 +300,8 @@ where
                 None,
                 self.authenticated_data,
                 self.group_info_extensions,
-                self.signing_identity,
+                self.new_signer,
+                self.new_signing_identity,
                 self.preferences,
             )
             .await
@@ -354,6 +362,7 @@ where
             Default::default(),
             None,
             None,
+            None,
         )
         .await
     }
@@ -366,13 +375,15 @@ where
             proposals: Default::default(),
             authenticated_data: Default::default(),
             group_info_extensions: Default::default(),
-            signing_identity: Default::default(),
+            new_signer: Default::default(),
+            new_signing_identity: Default::default(),
             preferences: Default::default(),
         }
     }
 
     /// Returns commit and optional [`MLSMessage`] containing a welcome message
     /// for newly added members.
+    #[allow(clippy::too_many_arguments)]
     #[maybe_async::maybe_async]
     pub(super) async fn commit_internal(
         &mut self,
@@ -380,7 +391,8 @@ where
         #[cfg(feature = "external_commit")] external_leaf: Option<&LeafNode>,
         authenticated_data: Vec<u8>,
         group_info_extensions: ExtensionList,
-        signing_identity: Option<SigningIdentity>,
+        new_signer: Option<SignatureSecretKey>,
+        new_signing_identity: Option<SigningIdentity>,
         preferences: Option<Preferences>,
     ) -> Result<CommitOutput, MlsError> {
         if self.pending_commit.is_some() {
@@ -416,29 +428,8 @@ where
         #[cfg(not(feature = "external_commit"))]
         let sender = Sender::Member(*self.private_tree.self_index);
 
-        #[cfg(feature = "external_commit")]
-        let new_signer = match external_leaf {
-            Some(leaf_node) => {
-                self.signer_for_identity(Some(&leaf_node.signing_identity))
-                    .await
-            }
-            None => self.signer_for_identity(signing_identity.as_ref()).await,
-        }?;
-
-        #[cfg(not(feature = "external_commit"))]
-        let new_signer = self.signer_for_identity(signing_identity.as_ref()).await?;
-
-        #[cfg(feature = "external_commit")]
-        let old_signer = match external_leaf {
-            Some(leaf_node) => {
-                self.signer_for_identity(Some(&leaf_node.signing_identity))
-                    .await
-            }
-            None => self.signer().await,
-        }?;
-
-        #[cfg(not(feature = "external_commit"))]
-        let old_signer = self.signer().await?;
+        let new_signer_ref = new_signer.as_ref().unwrap_or(&self.signer);
+        let old_signer = &self.signer;
 
         #[cfg(feature = "std")]
         let time = Some(crate::time::MlsTime::now());
@@ -471,7 +462,8 @@ where
             )
             .await?;
 
-        let mut provisional_private_tree = self.provisional_private_tree(&provisional_state)?;
+        let (mut provisional_private_tree, _) =
+            self.provisional_private_tree(&provisional_state)?;
 
         #[cfg(feature = "external_commit")]
         if is_external {
@@ -504,9 +496,9 @@ where
             .encap(
                 &mut provisional_group_context,
                 &provisional_state.indexes_of_added_kpkgs,
-                &new_signer,
+                new_signer_ref,
                 self.config.leaf_properties(),
-                signing_identity,
+                new_signing_identity,
                 &self.cipher_suite_provider,
                 #[cfg(test)]
                 &self.commit_modifiers,
@@ -557,7 +549,7 @@ where
             self.context(),
             sender,
             Content::Commit(alloc::boxed::Box::new(commit)),
-            &old_signer,
+            old_signer,
             #[cfg(feature = "private_message")]
             options.encryption_mode.into(),
             #[cfg(not(feature = "private_message"))]
@@ -620,7 +612,7 @@ where
         group_info.grease(self.cipher_suite_provider())?;
 
         // Sign the GroupInfo using the member's private signing key
-        group_info.sign(&self.cipher_suite_provider, &new_signer, &())?;
+        group_info.sign(&self.cipher_suite_provider, new_signer_ref, &())?;
 
         let welcome_message = self.make_welcome_message(
             added_key_pkgs,
@@ -651,6 +643,10 @@ where
                     .mls_encode_to_vec()
             })
             .transpose()?;
+
+        if let Some(signer) = new_signer {
+            self.signer = signer;
+        }
 
         Ok(CommitOutput {
             commit_message,
@@ -721,7 +717,7 @@ mod tests {
         client::test_utils::{test_client_with_key_pkg, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         client_builder::{
             test_utils::TestClientConfig, BaseConfig, ClientBuilder, WithCryptoProvider,
-            WithIdentityProvider, WithKeychain,
+            WithIdentityProvider,
         },
         client_config::ClientConfig,
         extension::test_utils::{TestExtension, TEST_EXTENSION_TYPE},
@@ -732,7 +728,6 @@ mod tests {
         identity::test_utils::get_test_signing_identity,
         identity::{basic::BasicIdentityProvider, test_utils::get_test_basic_credential},
         key_package::test_utils::test_key_package_message,
-        storage_provider::in_memory::InMemoryKeychainStorage,
     };
 
     #[cfg(feature = "all_extensions")]
@@ -1056,20 +1051,12 @@ mod tests {
     async fn commit_can_change_credential() {
         let cs = TEST_CIPHER_SUITE;
         let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, cs, 3).await;
-        let (identity, secret_key) = get_test_signing_identity(cs, b"member".to_vec());
-
-        // Add new identity
-        groups[0]
-            .group
-            .config
-            .0
-            .keychain
-            .insert(identity.clone(), secret_key, cs);
+        let (identity, secret_key) = get_test_signing_identity(cs, b"member");
 
         let commit_output = groups[0]
             .group
             .commit_builder()
-            .set_new_signing_identity(identity.clone())
+            .set_new_signing_identity(secret_key, identity.clone())
             .build()
             .await
             .unwrap();
@@ -1141,24 +1128,11 @@ mod tests {
 
     #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn member_identity_is_validated_against_new_extensions() {
-        let (alice, identity) = client_with_test_extension(b"alice");
+        let alice = client_with_test_extension(b"alice");
+        let mut alice = alice.create_group(ExtensionList::new()).await.unwrap();
 
-        let mut alice = alice
-            .create_group(
-                TEST_PROTOCOL_VERSION,
-                TEST_CIPHER_SUITE,
-                identity,
-                ExtensionList::new(),
-            )
-            .await
-            .unwrap();
-
-        let (bob, identity) = client_with_test_extension(b"bob");
-
-        let bob_kp = bob
-            .generate_key_package_message(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, identity)
-            .await
-            .unwrap();
+        let bob = client_with_test_extension(b"bob");
+        let bob_kp = bob.generate_key_package_message().await.unwrap();
 
         let mut extension_list = ExtensionList::new();
         let extension = TestExtension { foo: b'a' };
@@ -1175,16 +1149,11 @@ mod tests {
 
         assert!(res.is_err());
 
-        let (alex, identity) = client_with_test_extension(b"alex");
-
-        let alex_kp = alex
-            .generate_key_package_message(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, identity)
-            .await
-            .unwrap();
+        let alex = client_with_test_extension(b"alex");
 
         alice
             .commit_builder()
-            .add_member(alex_kp)
+            .add_member(alex.generate_key_package_message().await.unwrap())
             .unwrap()
             .set_group_context_ext(extension_list.clone())
             .unwrap()
@@ -1196,23 +1165,14 @@ mod tests {
     #[cfg(feature = "external_proposal")]
     #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
     async fn server_identity_is_validated_against_new_extensions() {
-        let (alice, identity) = client_with_test_extension(b"alice");
-
-        let mut alice = alice
-            .create_group(
-                TEST_PROTOCOL_VERSION,
-                TEST_CIPHER_SUITE,
-                identity,
-                ExtensionList::new(),
-            )
-            .await
-            .unwrap();
+        let alice = client_with_test_extension(b"alice");
+        let mut alice = alice.create_group(ExtensionList::new()).await.unwrap();
 
         let mut extension_list = ExtensionList::new();
         let extension = TestExtension { foo: b'a' };
         extension_list.set_from(extension).unwrap();
 
-        let (alex_server, _) = get_test_signing_identity(TEST_CIPHER_SUITE, b"alex".to_vec());
+        let (alex_server, _) = get_test_signing_identity(TEST_CIPHER_SUITE, b"alex");
 
         let mut alex_extensions = extension_list.clone();
 
@@ -1231,7 +1191,7 @@ mod tests {
 
         assert!(res.is_err());
 
-        let (bob_server, _) = get_test_signing_identity(TEST_CIPHER_SUITE, b"bob".to_vec());
+        let (bob_server, _) = get_test_signing_identity(TEST_CIPHER_SUITE, b"bob");
 
         let mut bob_extensions = extension_list;
 
@@ -1347,20 +1307,17 @@ mod tests {
 
     type ExtensionClientConfig = WithIdentityProvider<
         IdentityProviderWithExtension,
-        WithKeychain<InMemoryKeychainStorage, WithCryptoProvider<TestCryptoProvider, BaseConfig>>,
+        WithCryptoProvider<TestCryptoProvider, BaseConfig>,
     >;
 
-    fn client_with_test_extension(name: &[u8]) -> (Client<ExtensionClientConfig>, SigningIdentity) {
-        let (identity, secret_key) = get_test_signing_identity(TEST_CIPHER_SUITE, name.to_vec());
+    fn client_with_test_extension(name: &[u8]) -> Client<ExtensionClientConfig> {
+        let (identity, secret_key) = get_test_signing_identity(TEST_CIPHER_SUITE, name);
 
-        let client = ClientBuilder::new()
+        ClientBuilder::new()
             .crypto_provider(TestCryptoProvider::new())
-            .keychain(InMemoryKeychainStorage::new())
-            .single_signing_identity(identity.clone(), secret_key, TEST_CIPHER_SUITE)
             .extension_types(vec![TEST_EXTENSION_TYPE.into()])
             .identity_provider(IdentityProviderWithExtension(BasicIdentityProvider::new()))
-            .build();
-
-        (client, identity)
+            .signing_identity(identity, secret_key, TEST_CIPHER_SUITE)
+            .build()
     }
 }

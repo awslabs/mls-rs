@@ -5,16 +5,15 @@ use aws_mls::{
         basic::{BasicCredential, BasicIdentityProvider},
         SigningIdentity,
     },
-    CipherSuite, CipherSuiteProvider, Client, CryptoProvider, ExtensionList, ProtocolVersion,
+    CipherSuite, CipherSuiteProvider, Client, CryptoProvider, ExtensionList,
 };
 
 const CIPHERSUITE: CipherSuite = CipherSuite::CURVE25519_AES128;
-const PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::MLS_10;
 
 fn make_client<P: CryptoProvider + Clone>(
     crypto_provider: P,
     name: &str,
-) -> Result<(SigningIdentity, Client<impl MlsConfig>), MlsError> {
+) -> Result<Client<impl MlsConfig>, MlsError> {
     let cipher_suite = crypto_provider.cipher_suite_provider(CIPHERSUITE).unwrap();
 
     // Generate a signature key pair.
@@ -30,15 +29,12 @@ fn make_client<P: CryptoProvider + Clone>(
     // include a copy of the MLS ratchet tree.
     let preferences = Preferences::default().with_ratchet_tree_extension(true);
 
-    Ok((
-        signing_identity.clone(),
-        Client::builder()
-            .preferences(preferences)
-            .identity_provider(BasicIdentityProvider)
-            .crypto_provider(crypto_provider)
-            .single_signing_identity(signing_identity, secret, CIPHERSUITE)
-            .build(),
-    ))
+    Ok(Client::builder()
+        .preferences(preferences)
+        .identity_provider(BasicIdentityProvider)
+        .crypto_provider(crypto_provider)
+        .signing_identity(signing_identity, secret, CIPHERSUITE)
+        .build())
 }
 
 #[tokio::main]
@@ -46,23 +42,14 @@ async fn main() -> Result<(), MlsError> {
     let crypto_provider = aws_mls_crypto_openssl::OpensslCryptoProvider::default();
 
     // Create clients for Alice and Bob
-    let (alice_identity, alice) = make_client(crypto_provider.clone(), "alice")?;
-    let (bob_identity, bob) = make_client(crypto_provider.clone(), "bob")?;
+    let alice = make_client(crypto_provider.clone(), "alice")?;
+    let bob = make_client(crypto_provider.clone(), "bob")?;
 
     // Alice creates a new group.
-    let mut alice_group = alice
-        .create_group(
-            PROTOCOL_VERSION,
-            CIPHERSUITE,
-            alice_identity,
-            ExtensionList::default(),
-        )
-        .await?;
+    let mut alice_group = alice.create_group(ExtensionList::default()).await?;
 
     // Bob generates a key package that Alice needs to add Bob to the group.
-    let bob_key_package = bob
-        .generate_key_package_message(PROTOCOL_VERSION, CIPHERSUITE, bob_identity)
-        .await?;
+    let bob_key_package = bob.generate_key_package_message().await?;
 
     // Alice issues a commit that adds Bob to the group.
     let alice_commit = alice_group

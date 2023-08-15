@@ -1,6 +1,5 @@
 use connection_strategy::ConnectionStrategy;
 use group_state::SqLiteGroupStateStorage;
-use keychain::SqLiteKeychainStorage;
 use psk::SqLitePreSharedKeyStorage;
 use rusqlite::Connection;
 use storage::{SqLiteApplicationStorage, SqLiteKeyPackageStorage};
@@ -9,7 +8,6 @@ use thiserror::Error;
 mod application;
 mod group_state;
 mod key_package;
-mod keychain;
 mod psk;
 
 #[cfg(any(feature = "sqlcipher", feature = "sqlcipher-bundled"))]
@@ -25,8 +23,7 @@ pub mod connection_strategy;
 pub mod storage {
     pub use {
         crate::application::SqLiteApplicationStorage, crate::group_state::SqLiteGroupStateStorage,
-        crate::key_package::SqLiteKeyPackageStorage, crate::keychain::SqLiteKeychainStorage,
-        crate::psk::SqLitePreSharedKeyStorage,
+        crate::key_package::SqLiteKeyPackageStorage, crate::psk::SqLitePreSharedKeyStorage,
     };
 }
 
@@ -73,7 +70,7 @@ where
     }
 
     fn create_connection(&self) -> Result<Connection, SqLiteDataStorageError> {
-        let mut connection = self.connection_strategy.make_connection()?;
+        let connection = self.connection_strategy.make_connection()?;
 
         // Run SQL to establish the schema
         let current_schema = connection
@@ -81,7 +78,7 @@ where
             .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))?;
 
         if current_schema != 1 {
-            create_tables_v1(&mut connection)?;
+            create_tables_v1(&connection)?;
         }
 
         Ok(connection)
@@ -95,11 +92,6 @@ where
     /// Returns a struct that implements the `KeyPackageStorage` trait for use in MLS.
     pub fn key_package_storage(&self) -> Result<SqLiteKeyPackageStorage, SqLiteDataStorageError> {
         Ok(SqLiteKeyPackageStorage::new(self.create_connection()?))
-    }
-
-    /// Returns a struct that implements the `KeychainStorage` trait for use in MLS.
-    pub fn keychain_storage(&self) -> Result<SqLiteKeychainStorage, SqLiteDataStorageError> {
-        Ok(SqLiteKeychainStorage::new(self.create_connection()?))
     }
 
     /// Returns a struct that implements the `PreSharedKeyStorage` trait for use in MLS.
@@ -117,7 +109,7 @@ where
     }
 }
 
-fn create_tables_v1(connection: &mut Connection) -> Result<(), SqLiteDataStorageError> {
+fn create_tables_v1(connection: &Connection) -> Result<(), SqLiteDataStorageError> {
     connection
         .execute_batch(
             "BEGIN;
@@ -136,13 +128,6 @@ fn create_tables_v1(connection: &mut Connection) -> Result<(), SqLiteDataStorage
                 id BLOB PRIMARY KEY,
                 data BLOB NOT NULL
             ) WITHOUT ROWID;
-            CREATE TABLE keychain (
-                identifier BLOB PRIMARY KEY,
-                identity BLOB NOT NULL,
-                signature_secret_key BLOB NOT NULL,
-                cipher_suite INTEGER NOT NULL
-            ) WITHOUT ROWID;
-            CREATE INDEX idx_keychain_algorithm ON keychain(cipher_suite);
             CREATE TABLE psk (
                 psk_id BLOB PRIMARY KEY,
                 data BLOB NOT NULL

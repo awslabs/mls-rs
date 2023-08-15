@@ -319,7 +319,7 @@ async fn generate_framing_test_vector() -> Vec<FramingTestCase> {
             group.context(),
             Sender::Member(1),
             Content::Commit(alloc::boxed::Box::new(commit.clone())),
-            &group.signer().await.unwrap(),
+            &group.signer,
             WireFormat::PublicMessage,
             vec![],
         )
@@ -336,7 +336,7 @@ async fn generate_framing_test_vector() -> Vec<FramingTestCase> {
             group.context(),
             Sender::Member(1),
             Content::Commit(alloc::boxed::Box::new(commit)),
-            &group.signer().await.unwrap(),
+            &group.signer,
             WireFormat::PrivateMessage,
             vec![],
         )
@@ -392,20 +392,13 @@ async fn make_group<P: CipherSuiteProvider>(
     group.private_tree.self_index = LeafIndex(if for_send { 1 } else { 0 });
 
     // Convince the group that their signing key is the one from the test case
-    let member = group.current_member_signing_identity().unwrap().clone();
-    group.config.0.keychain.delete(&member);
-
     let mut signature_priv = test_case.signature_priv.clone();
 
     if is_edwards(test_case.context.cipher_suite) {
         signature_priv.extend(test_case.signature_pub.iter());
     }
 
-    group.config.0.keychain.insert(
-        group.current_member_signing_identity().unwrap().clone(),
-        signature_priv.into(),
-        cs.cipher_suite(),
-    );
+    group.signer = signature_priv.into();
 
     // Set the group context and secrets
     let context = GroupContext::from(test_case.context.clone());

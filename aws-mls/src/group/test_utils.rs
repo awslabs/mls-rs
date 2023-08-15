@@ -47,7 +47,7 @@ impl TestGroup {
     #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::maybe_async]
     pub(crate) async fn update_proposal(&mut self) -> Proposal {
-        self.group.update_proposal(None).await.unwrap()
+        self.group.update_proposal(None, None).await.unwrap()
     }
 
     #[maybe_async::maybe_async]
@@ -118,6 +118,7 @@ impl TestGroup {
             commit_output.welcome_message.unwrap(),
             tree.as_ref().map(Vec::as_ref),
             new_client.config.clone(),
+            new_client.signer.clone().unwrap(),
         )
         .await?;
 
@@ -155,7 +156,7 @@ impl TestGroup {
             &self.group.state.context,
             Sender::Member(*self.group.private_tree.self_index),
             content,
-            &self.group.signer().await.unwrap(),
+            &self.group.signer,
             WireFormat::PublicMessage,
             Vec::new(),
         )
@@ -220,8 +221,7 @@ pub(crate) async fn test_member(
     cipher_suite: CipherSuite,
     identifier: &[u8],
 ) -> (KeyPackageGeneration, SignatureSecretKey) {
-    let (signing_identity, signing_key) =
-        get_test_signing_identity(cipher_suite, identifier.to_vec());
+    let (signing_identity, signing_key) = get_test_signing_identity(cipher_suite, identifier);
 
     let key_package_generator = KeyPackageGenerator {
         protocol_version,
@@ -256,23 +256,17 @@ pub(crate) async fn test_group_custom(
     let leaf_extensions = leaf_extensions.unwrap_or_default();
     let preferences = preferences.unwrap_or_default();
 
-    let (signing_identity, secret_key) =
-        get_test_signing_identity(cipher_suite, b"member".to_vec());
+    let (signing_identity, secret_key) = get_test_signing_identity(cipher_suite, b"member");
 
     let group = TestClientBuilder::new_for_test()
-        .test_single_signing_identity(signing_identity.clone(), secret_key, cipher_suite)
         .leaf_node_extensions(leaf_extensions)
         .preferences(preferences)
         .extension_types(capabilities.extensions)
         .protocol_versions(capabilities.protocol_versions)
+        .used_protocol_version(protocol_version)
+        .signing_identity(signing_identity.clone(), secret_key, cipher_suite)
         .build()
-        .create_group_with_id(
-            protocol_version,
-            cipher_suite,
-            TEST_GROUP.to_vec(),
-            signing_identity,
-            group_extensions(),
-        )
+        .create_group_with_id(TEST_GROUP.to_vec(), group_extensions())
         .await
         .unwrap();
 
@@ -303,22 +297,16 @@ pub(crate) async fn test_group_custom_config<F>(
 where
     F: FnOnce(TestClientBuilder) -> TestClientBuilder,
 {
-    let (signing_identity, secret_key) =
-        get_test_signing_identity(cipher_suite, b"member".to_vec());
+    let (signing_identity, secret_key) = get_test_signing_identity(cipher_suite, b"member");
 
     let client_builder = TestClientBuilder::new_for_test()
-        .signing_identity(signing_identity.clone(), secret_key, cipher_suite)
+        .used_protocol_version(protocol_version)
         .preferences(Preferences::default().with_ratchet_tree_extension(true));
 
     let group = custom(client_builder)
+        .signing_identity(signing_identity.clone(), secret_key, cipher_suite)
         .build()
-        .create_group_with_id(
-            protocol_version,
-            cipher_suite,
-            TEST_GROUP.to_vec(),
-            signing_identity,
-            group_extensions(),
-        )
+        .create_group_with_id(TEST_GROUP.to_vec(), group_extensions())
         .await
         .unwrap();
 
@@ -367,42 +355,26 @@ pub(crate) async fn get_test_groups_with_features(
     let clients = (0..n)
         .map(|i| {
             let (identity, secret_key) =
-                get_test_signing_identity(TEST_CIPHER_SUITE, format!("member{i}").into_bytes());
+                get_test_signing_identity(TEST_CIPHER_SUITE, format!("member{i}").as_bytes());
 
-            let client = TestClientBuilder::new_for_test()
+            TestClientBuilder::new_for_test()
                 .extension_type(999.into())
                 .preferences(Preferences::default().with_ratchet_tree_extension(true))
-                .test_single_signing_identity(identity.clone(), secret_key, TEST_CIPHER_SUITE)
                 .leaf_node_extensions(leaf_extensions.clone())
-                .build();
-
-            (client, identity)
+                .signing_identity(identity, secret_key, TEST_CIPHER_SUITE)
+                .build()
         })
         .collect::<Vec<_>>();
 
     let group = clients[0]
-        .0
-        .create_group_with_id(
-            TEST_PROTOCOL_VERSION,
-            TEST_CIPHER_SUITE,
-            b"TEST GROUP".to_vec(),
-            clients[0].1.clone(),
-            extensions,
-        )
+        .create_group_with_id(b"TEST GROUP".to_vec(), extensions)
         .await
         .unwrap();
 
     let mut groups = vec![group];
 
-    for (client, identity) in clients.iter().skip(1) {
-        let key_package = client
-            .generate_key_package_message(
-                TEST_PROTOCOL_VERSION,
-                TEST_CIPHER_SUITE,
-                identity.clone(),
-            )
-            .await
-            .unwrap();
+    for client in clients.iter().skip(1) {
+        let key_package = client.generate_key_package_message().await.unwrap();
 
         let commit_output = groups[0]
             .commit_builder()

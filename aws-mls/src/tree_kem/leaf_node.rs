@@ -308,7 +308,7 @@ pub(crate) mod test_utils {
         capabilities: Capabilities,
     ) -> (LeafNode, HpkeSecretKey, SignatureSecretKey) {
         let (signing_identity, signature_key) =
-            get_test_signing_identity(cipher_suite, id.as_bytes().to_vec());
+            get_test_signing_identity(cipher_suite, id.as_bytes());
 
         LeafNode::generate(
             &test_cipher_suite_provider(cipher_suite),
@@ -419,8 +419,7 @@ mod tests {
         let lifetime = Lifetime::years(1).unwrap();
 
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
-            let (signing_identity, secret) =
-                get_test_signing_identity(cipher_suite, b"foo".to_vec());
+            let (signing_identity, secret) = get_test_signing_identity(cipher_suite, b"foo");
 
             let (leaf_node, secret_key) = get_test_node_with_lifetime(
                 cipher_suite,
@@ -472,7 +471,7 @@ mod tests {
     async fn test_node_generation_randomness() {
         let cipher_suite = TEST_CIPHER_SUITE;
 
-        let (signing_identity, secret) = get_test_signing_identity(cipher_suite, b"foo".to_vec());
+        let (signing_identity, secret) = get_test_signing_identity(cipher_suite, b"foo");
 
         let (first_leaf, first_secret) =
             get_test_node(cipher_suite, signing_identity.clone(), &secret, None, None).await;
@@ -491,8 +490,7 @@ mod tests {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
 
-            let (signing_identity, secret) =
-                get_test_signing_identity(cipher_suite, b"foo".to_vec());
+            let (signing_identity, secret) = get_test_signing_identity(cipher_suite, b"foo");
 
             let (mut leaf, leaf_secret) =
                 get_test_node(cipher_suite, signing_identity.clone(), &secret, None, None).await;
@@ -539,7 +537,7 @@ mod tests {
     async fn test_node_update_meta_changes() {
         let cipher_suite = TEST_CIPHER_SUITE;
 
-        let (signing_identity, secret) = get_test_signing_identity(cipher_suite, b"foo".to_vec());
+        let (signing_identity, secret) = get_test_signing_identity(cipher_suite, b"foo");
 
         let new_properties = ConfigProperties {
             capabilities: get_test_capabilities(),
@@ -568,8 +566,7 @@ mod tests {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
 
-            let (signing_identity, secret) =
-                get_test_signing_identity(cipher_suite, b"foo".to_vec());
+            let (signing_identity, secret) = get_test_signing_identity(cipher_suite, b"foo");
 
             let (mut leaf, leaf_secret) =
                 get_test_node(cipher_suite, signing_identity.clone(), &secret, None, None).await;
@@ -615,7 +612,7 @@ mod tests {
     async fn test_node_commit_meta_changes() {
         let cipher_suite = TEST_CIPHER_SUITE;
 
-        let (signing_identity, secret) = get_test_signing_identity(cipher_suite, b"foo".to_vec());
+        let (signing_identity, secret) = get_test_signing_identity(cipher_suite, b"foo");
         let (mut leaf, _) =
             get_test_node(cipher_suite, signing_identity, &secret, None, None).await;
 
@@ -625,7 +622,7 @@ mod tests {
         };
 
         // The new identity has a fresh public key
-        let new_signing_identity = get_test_signing_identity(cipher_suite, b"foo".to_vec()).0;
+        let new_signing_identity = get_test_signing_identity(cipher_suite, b"foo").0;
 
         leaf.commit(
             &test_cipher_suite_provider(cipher_suite),
@@ -646,8 +643,7 @@ mod tests {
     async fn context_is_signed() {
         let provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
-        let (signing_identity, secret) =
-            get_test_signing_identity(TEST_CIPHER_SUITE, b"foo".to_vec());
+        let (signing_identity, secret) = get_test_signing_identity(TEST_CIPHER_SUITE, b"foo");
 
         let (mut leaf, _) = get_test_node(
             TEST_CIPHER_SUITE,

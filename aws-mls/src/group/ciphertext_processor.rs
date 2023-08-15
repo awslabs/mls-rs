@@ -280,7 +280,7 @@ mod test {
             group.group.context(),
             Sender::Member(0),
             Content::Application(ApplicationData::from(b"test".to_vec())),
-            &group.group.signer().await.unwrap(),
+            &group.group.signer,
             WireFormat::PrivateMessage,
             vec![],
         )

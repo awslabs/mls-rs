@@ -19,6 +19,7 @@ use super::proposal_cache::{CachedProposal, ProposalCache};
 
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 
+use aws_mls_core::crypto::SignatureSecretKey;
 #[cfg(feature = "tree_index")]
 use aws_mls_core::identity::IdentityProvider;
 
@@ -38,10 +39,11 @@ pub(crate) struct Snapshot {
     epoch_secrets: EpochSecrets,
     key_schedule: KeySchedule,
     #[cfg(all(feature = "std", feature = "by_ref_proposal"))]
-    pending_updates: HashMap<HpkePublicKey, HpkeSecretKey>,
+    pending_updates: HashMap<HpkePublicKey, (HpkeSecretKey, Option<SignatureSecretKey>)>,
     #[cfg(all(not(feature = "std"), feature = "by_ref_proposal"))]
-    pending_updates: Vec<(HpkePublicKey, HpkeSecretKey)>,
+    pending_updates: Vec<(HpkePublicKey, (HpkeSecretKey, Option<SignatureSecretKey>))>,
     pending_commit: Option<CommitGeneration>,
+    signer: SignatureSecretKey,
 }
 
 impl Snapshot {
@@ -164,6 +166,7 @@ where
             pending_commit: self.pending_commit.clone(),
             epoch_secrets: self.epoch_secrets.clone(),
             version: 1,
+            signer: self.signer.clone(),
         }
     }
 
@@ -209,6 +212,7 @@ where
             cipher_suite_provider,
             #[cfg(feature = "psk")]
             previous_psk: None,
+            signer: snapshot.signer,
         })
     }
 }
@@ -248,6 +252,7 @@ pub(crate) mod test_utils {
             pending_updates: Default::default(),
             pending_commit: None,
             version: 1,
+            signer: vec![].into(),
         }
     }
 }

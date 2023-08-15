@@ -3,6 +3,7 @@ use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use aws_mls_core::crypto::{
     CipherSuiteProvider, CryptoProvider, HpkeSecretKey, SignatureSecretKey,
 };
+use aws_mls_core::protocol_version::ProtocolVersion;
 
 use crate::cipher_suite::CipherSuite;
 use crate::crypto::test_utils::test_cipher_suite_provider;
@@ -15,7 +16,9 @@ use crate::tree_kem::{TreeKemPrivate, TreeKemPublic};
 use crate::ExtensionList;
 use std::collections::HashMap;
 
-use super::group_functions::{MlsCryptoProvider, PROTOCOL_VERSION};
+use super::group_functions::MlsCryptoProvider;
+
+pub const PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::MLS_10;
 
 #[derive(Debug, MlsSize, MlsDecode, MlsEncode)]
 pub struct TestCase {

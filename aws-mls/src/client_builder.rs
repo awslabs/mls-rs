@@ -16,8 +16,7 @@ use crate::{
     protocol_version::ProtocolVersion,
     psk::{ExternalPskId, PreSharedKey},
     storage_provider::in_memory::{
-        InMemoryGroupStateStorage, InMemoryKeyPackageStorage, InMemoryKeychainStorage,
-        InMemoryPreSharedKeyStorage,
+        InMemoryGroupStateStorage, InMemoryKeyPackageStorage, InMemoryPreSharedKeyStorage,
     },
     tree_kem::{Capabilities, Lifetime},
     Sealed,
@@ -39,10 +38,7 @@ use aws_mls_provider_sqlite::{
     SqLiteDataStorageEngine, SqLiteDataStorageError,
     {
         connection_strategy::ConnectionStrategy,
-        storage::{
-            SqLiteGroupStateStorage, SqLiteKeyPackageStorage, SqLiteKeychainStorage,
-            SqLitePreSharedKeyStorage,
-        },
+        storage::{SqLiteGroupStateStorage, SqLiteKeyPackageStorage, SqLitePreSharedKeyStorage},
     },
 };
 
@@ -52,7 +48,6 @@ pub use crate::group::padding::PaddingMode;
 /// Base client configuration type when instantiating `ClientBuilder`
 pub type BaseConfig = Config<
     InMemoryKeyPackageStorage,
-    InMemoryKeychainStorage,
     InMemoryPreSharedKeyStorage,
     InMemoryGroupStateStorage,
     Missing,
@@ -61,13 +56,12 @@ pub type BaseConfig = Config<
 >;
 
 pub type EmptyConfig =
-    Config<Missing, Missing, Missing, Missing, Missing, PassThroughProposalRules, Missing>;
+    Config<Missing, Missing, Missing, Missing, PassThroughProposalRules, Missing>;
 
 /// Base client configuration that is backed by SQLite storage.
 #[cfg(feature = "sqlite")]
 pub type BaseSqlConfig = Config<
     SqLiteKeyPackageStorage,
-    SqLiteKeychainStorage,
     SqLitePreSharedKeyStorage,
     SqLiteGroupStateStorage,
     Missing,
@@ -78,34 +72,35 @@ pub type BaseSqlConfig = Config<
 /// Builder for [`Client`]
 ///
 /// This is returned by [`Client::builder`] and allows to tweak settings the `Client` will use. At a
-/// minimum, the builder must be told the [`CryptoProvider`], [`IdentityProvider`] and
-/// [`KeychainStorage`] to use. Other settings have default values. This means that the following
+/// minimum, the builder must be told the [`CryptoProvider`] and [`IdentityProvider`] to use. Other
+/// settings have default values. This means that the following
 /// methods must be called before [`ClientBuilder::build`]:
 ///
 /// - To specify the [`CryptoProvider`]: [`ClientBuilder::crypto_provider`]
 /// - To specify the [`IdentityProvider`]: [`ClientBuilder::identity_provider`]
-/// - To specify the [`KeychainStorage`], one of:
-///   - [`ClientBuilder::keychain`]
-///   - [`ClientBuilder::single_signing_identity`]
 ///
 /// # Example
 ///
 /// ```
 /// use aws_mls::{
 ///     Client,
-///     identity::basic::BasicIdentityProvider,
-///     storage_provider::{in_memory::InMemoryKeychainStorage},
+///     identity::{SigningIdentity, basic::{BasicIdentityProvider, BasicCredential}},
+///     CipherSuite,
 /// };
 ///
 /// use aws_mls_crypto_openssl::OpensslCryptoProvider;
 ///
-/// let keychain = InMemoryKeychainStorage::default();
-/// // Add code to populate keychain here
+/// // Replace by code to load the certificate and secret key
+/// let secret_key = b"never hard-code secrets".to_vec().into();
+/// let public_key = b"test invalid public key".to_vec().into();
+/// let basic_identity = BasicCredential::new(b"name".to_vec());
+/// let signing_identity = SigningIdentity::new(basic_identity.into_credential(), public_key);
+///
 ///
 /// let _client = Client::builder()
 ///     .crypto_provider(OpensslCryptoProvider::default())
 ///     .identity_provider(BasicIdentityProvider::new())
-///     .keychain(keychain)
+///     .signing_identity(signing_identity, secret_key, CipherSuite::CURVE25519_AES128)
 ///     .build();
 /// ```
 ///
@@ -118,17 +113,23 @@ pub type BaseSqlConfig = Config<
 /// use aws_mls::{
 ///     Client,
 ///     client_builder::MlsConfig,
-///     identity::basic::BasicIdentityProvider,
-///     storage_provider::{in_memory::InMemoryKeychainStorage},
+///     identity::{SigningIdentity, basic::{BasicIdentityProvider, BasicCredential}},
+///     CipherSuite,
 /// };
 ///
 /// use aws_mls_crypto_openssl::OpensslCryptoProvider;
 ///
 /// fn make_client() -> Client<impl MlsConfig> {
+///     // Replace by code to load the certificate and secret key
+///     let secret_key = b"never hard-code secrets".to_vec().into();
+///     let public_key = b"test invalid public key".to_vec().into();
+///     let basic_identity = BasicCredential::new(b"name".to_vec());
+///     let signing_identity = SigningIdentity::new(basic_identity.into_credential(), public_key);
+///
 ///     Client::builder()
 ///         .crypto_provider(OpensslCryptoProvider::default())
 ///         .identity_provider(BasicIdentityProvider::new())
-///         .keychain(InMemoryKeychainStorage::default())
+///         .signing_identity(signing_identity, secret_key, CipherSuite::CURVE25519_AES128)
 ///         .build()
 /// }
 ///```
@@ -137,24 +138,31 @@ pub type BaseSqlConfig = Config<
 /// ```
 /// use aws_mls::{
 ///     Client,
-///     client_builder::{BaseConfig, WithIdentityProvider, WithKeychain, WithCryptoProvider},
-///     identity::basic::BasicIdentityProvider,
-///     storage_provider::{
-///         in_memory::InMemoryKeychainStorage,
-///     },
+///     client_builder::{BaseConfig, WithIdentityProvider, WithCryptoProvider},
+///     identity::{SigningIdentity, basic::{BasicIdentityProvider, BasicCredential}},
+///     CipherSuite,
 /// };
 ///
 /// use aws_mls_crypto_openssl::OpensslCryptoProvider;
 ///
-/// type MlsClient =
-///     Client<WithKeychain<InMemoryKeychainStorage, WithIdentityProvider<BasicIdentityProvider,
-///     WithCryptoProvider<OpensslCryptoProvider, BaseConfig>>>>;
+/// type MlsClient = Client<
+///     WithIdentityProvider<
+///         BasicIdentityProvider,
+///         WithCryptoProvider<OpensslCryptoProvider, BaseConfig>,
+///     >,
+/// >;
 ///
-/// fn make_client_2() -> MlsClient {
+/// fn make_client_2() -> MlsClient {  
+///     // Replace by code to load the certificate and secret key
+///     let secret_key = b"never hard-code secrets".to_vec().into();
+///     let public_key = b"test invalid public key".to_vec().into();
+///     let basic_identity = BasicCredential::new(b"name".to_vec());
+///     let signing_identity = SigningIdentity::new(basic_identity.into_credential(), public_key);
+///
 ///     Client::builder()
 ///         .crypto_provider(OpensslCryptoProvider::default())
 ///         .identity_provider(BasicIdentityProvider::new())
-///         .keychain(InMemoryKeychainStorage::default())
+///         .signing_identity(signing_identity, secret_key, CipherSuite::CURVE25519_AES128)
 ///         .build()
 /// }
 ///
@@ -174,12 +182,14 @@ impl ClientBuilder<BaseConfig> {
         Self(Config(ConfigInner {
             settings: Default::default(),
             key_package_repo: Default::default(),
-            keychain: Default::default(),
             psk_store: Default::default(),
             group_state_storage: Default::default(),
             identity_provider: Missing,
             proposal_rules: PassThroughProposalRules,
             crypto_provider: Missing,
+            signer: Default::default(),
+            signing_identity: Default::default(),
+            version: ProtocolVersion::MLS_10,
         }))
     }
 }
@@ -189,12 +199,14 @@ impl ClientBuilder<EmptyConfig> {
         Self(Config(ConfigInner {
             settings: Default::default(),
             key_package_repo: Missing,
-            keychain: Missing,
             psk_store: Missing,
             group_state_storage: Missing,
             identity_provider: Missing,
             proposal_rules: PassThroughProposalRules,
             crypto_provider: Missing,
+            signer: Default::default(),
+            signing_identity: Default::default(),
+            version: ProtocolVersion::MLS_10,
         }))
     }
 }
@@ -208,12 +220,14 @@ impl ClientBuilder<BaseSqlConfig> {
         Ok(Self(Config(ConfigInner {
             settings: Default::default(),
             key_package_repo: storage.key_package_storage()?,
-            keychain: storage.keychain_storage()?,
             psk_store: storage.pre_shared_key_storage()?,
             group_state_storage: storage.group_state_storage()?,
             identity_provider: Missing,
             proposal_rules: PassThroughProposalRules,
             crypto_provider: Missing,
+            signer: Default::default(),
+            signing_identity: Default::default(),
+            version: ProtocolVersion::MLS_10,
         })))
     }
 }
@@ -334,57 +348,6 @@ impl<C: IntoConfig> ClientBuilder<C> {
         ClientBuilder(c)
     }
 
-    /// Set the keychain to be used by the client.
-    pub fn keychain<K>(self, keychain: K) -> ClientBuilder<WithKeychain<K, C>>
-    where
-        K: KeychainStorage,
-    {
-        let Config(c) = self.0.into_config();
-        ClientBuilder(Config(ConfigInner {
-            settings: c.settings,
-            key_package_repo: c.key_package_repo,
-            keychain,
-            psk_store: c.psk_store,
-            group_state_storage: c.group_state_storage,
-            identity_provider: c.identity_provider,
-            proposal_rules: c.proposal_rules,
-            crypto_provider: c.crypto_provider,
-        }))
-    }
-
-    /// Set an in-memory keychain with a single identity to be used by the client.
-    pub fn single_signing_identity(
-        self,
-        identity: SigningIdentity,
-        key: SignatureSecretKey,
-        cipher_suite: CipherSuite,
-    ) -> ClientBuilder<WithKeychain<InMemoryKeychainStorage, C>> {
-        self.single_entry_keychain(identity, key, cipher_suite)
-    }
-
-    #[cfg(test)]
-    pub fn test_single_signing_identity(
-        self,
-        identity: SigningIdentity,
-        key: SignatureSecretKey,
-        cipher_suite: CipherSuite,
-    ) -> ClientBuilder<WithKeychain<InMemoryKeychainStorage, C>> {
-        self.single_entry_keychain(identity, key, cipher_suite)
-    }
-
-    fn single_entry_keychain(
-        self,
-        identity: SigningIdentity,
-        key: SignatureSecretKey,
-        cipher_suite: CipherSuite,
-    ) -> ClientBuilder<WithKeychain<InMemoryKeychainStorage, C>> {
-        self.keychain({
-            let mut keychain = InMemoryKeychainStorage::new();
-            keychain.insert(identity, key, cipher_suite);
-            keychain
-        })
-    }
-
     /// Set the key package repository to be used by the client.
     ///
     /// By default, an in-memory repository is used.
@@ -393,15 +356,18 @@ impl<C: IntoConfig> ClientBuilder<C> {
         K: KeyPackageStorage,
     {
         let Config(c) = self.0.into_config();
+
         ClientBuilder(Config(ConfigInner {
             settings: c.settings,
             key_package_repo,
-            keychain: c.keychain,
             psk_store: c.psk_store,
             group_state_storage: c.group_state_storage,
             identity_provider: c.identity_provider,
             proposal_rules: c.proposal_rules,
             crypto_provider: c.crypto_provider,
+            signer: c.signer,
+            signing_identity: c.signing_identity,
+            version: c.version,
         }))
     }
 
@@ -413,15 +379,18 @@ impl<C: IntoConfig> ClientBuilder<C> {
         P: PreSharedKeyStorage,
     {
         let Config(c) = self.0.into_config();
+
         ClientBuilder(Config(ConfigInner {
             settings: c.settings,
             key_package_repo: c.key_package_repo,
-            keychain: c.keychain,
             psk_store,
             group_state_storage: c.group_state_storage,
             identity_provider: c.identity_provider,
             proposal_rules: c.proposal_rules,
             crypto_provider: c.crypto_provider,
+            signer: c.signer,
+            signing_identity: c.signing_identity,
+            version: c.version,
         }))
     }
 
@@ -436,15 +405,18 @@ impl<C: IntoConfig> ClientBuilder<C> {
         G: GroupStateStorage,
     {
         let Config(c) = self.0.into_config();
+
         ClientBuilder(Config(ConfigInner {
             settings: c.settings,
             key_package_repo: c.key_package_repo,
-            keychain: c.keychain,
             psk_store: c.psk_store,
             group_state_storage,
             identity_provider: c.identity_provider,
             crypto_provider: c.crypto_provider,
             proposal_rules: c.proposal_rules,
+            signer: c.signer,
+            signing_identity: c.signing_identity,
+            version: c.version,
         }))
     }
 
@@ -457,15 +429,18 @@ impl<C: IntoConfig> ClientBuilder<C> {
         I: IdentityProvider,
     {
         let Config(c) = self.0.into_config();
+
         ClientBuilder(Config(ConfigInner {
             settings: c.settings,
             key_package_repo: c.key_package_repo,
-            keychain: c.keychain,
             psk_store: c.psk_store,
             group_state_storage: c.group_state_storage,
             identity_provider,
             proposal_rules: c.proposal_rules,
             crypto_provider: c.crypto_provider,
+            signer: c.signer,
+            signing_identity: c.signing_identity,
+            version: c.version,
         }))
     }
 
@@ -478,15 +453,18 @@ impl<C: IntoConfig> ClientBuilder<C> {
         Cp: CryptoProvider,
     {
         let Config(c) = self.0.into_config();
+
         ClientBuilder(Config(ConfigInner {
             settings: c.settings,
             key_package_repo: c.key_package_repo,
-            keychain: c.keychain,
             psk_store: c.psk_store,
             group_state_storage: c.group_state_storage,
             identity_provider: c.identity_provider,
             proposal_rules: c.proposal_rules,
             crypto_provider,
+            signer: c.signer,
+            signing_identity: c.signing_identity,
+            version: c.version,
         }))
     }
 
@@ -502,23 +480,56 @@ impl<C: IntoConfig> ClientBuilder<C> {
         Pr: ProposalRules,
     {
         let Config(c) = self.0.into_config();
+
         ClientBuilder(Config(ConfigInner {
             settings: c.settings,
             key_package_repo: c.key_package_repo,
-            keychain: c.keychain,
             psk_store: c.psk_store,
             group_state_storage: c.group_state_storage,
             identity_provider: c.identity_provider,
             proposal_rules,
             crypto_provider: c.crypto_provider,
+            signer: c.signer,
+            signing_identity: c.signing_identity,
+            version: c.version,
         }))
+    }
+
+    /// Set the protocol version used by the client. By default, the client uses version MLS 1.0
+    pub fn used_protocol_version(
+        self,
+        version: ProtocolVersion,
+    ) -> ClientBuilder<IntoConfigOutput<C>> {
+        let mut c = self.0.into_config();
+        c.0.version = version;
+        ClientBuilder(c)
+    }
+
+    /// Set the signing identity used by the client as well as the matching signer and cipher suite.
+    /// This must be called in order to create groups and key packages.
+    pub fn signing_identity(
+        self,
+        signing_identity: SigningIdentity,
+        signer: SignatureSecretKey,
+        cipher_suite: CipherSuite,
+    ) -> ClientBuilder<IntoConfigOutput<C>> {
+        let mut c = self.0.into_config();
+        c.0.signer = Some(signer);
+        c.0.signing_identity = Some((signing_identity, cipher_suite));
+        ClientBuilder(c)
+    }
+
+    /// Set the signer used by the client. This must be called in order to join groups.
+    pub fn signer(self, signer: SignatureSecretKey) -> ClientBuilder<IntoConfigOutput<C>> {
+        let mut c = self.0.into_config();
+        c.0.signer = Some(signer);
+        ClientBuilder(c)
     }
 }
 
 impl<C: IntoConfig> ClientBuilder<C>
 where
     C::KeyPackageRepository: KeyPackageStorage + Clone,
-    C::Keychain: KeychainStorage + Clone,
     C::PskStore: PreSharedKeyStorage + Clone,
     C::GroupStateStorage: GroupStateStorage + Clone,
     C::IdentityProvider: IdentityProvider + Clone,
@@ -540,24 +551,12 @@ where
     /// See [`ClientBuilder`] documentation if the return type of this function needs to be spelled
     /// out.
     pub fn build(self) -> Client<IntoConfigOutput<C>> {
-        Client::new(self.build_config())
-    }
-}
+        let mut c = self.build_config();
+        let version = c.0.version;
+        let signer = c.0.signer.take();
+        let signing_identity = c.0.signing_identity.take();
 
-impl<C> ClientBuilder<C>
-where
-    C: IntoConfig<Keychain = InMemoryKeychainStorage>,
-{
-    /// Add an identity to the in-memory keychain.
-    pub fn signing_identity(
-        self,
-        identity: SigningIdentity,
-        secret_key: SignatureSecretKey,
-        cipher_suite: CipherSuite,
-    ) -> ClientBuilder<IntoConfigOutput<C>> {
-        let mut c = self.0.into_config();
-        c.0.keychain.insert(identity, secret_key, cipher_suite);
-        ClientBuilder(c)
+        Client::new(c, signer, signing_identity, version)
     }
 }
 
@@ -583,20 +582,6 @@ pub struct Missing;
 /// See [`ClientBuilder::key_package_repo`].
 pub type WithKeyPackageRepo<K, C> = Config<
     K,
-    <C as IntoConfig>::Keychain,
-    <C as IntoConfig>::PskStore,
-    <C as IntoConfig>::GroupStateStorage,
-    <C as IntoConfig>::IdentityProvider,
-    <C as IntoConfig>::ProposalRules,
-    <C as IntoConfig>::CryptoProvider,
->;
-
-/// Change the keychain used by a client configuration.
-///
-/// See [`ClientBuilder::keychain`].
-pub type WithKeychain<K, C> = Config<
-    <C as IntoConfig>::KeyPackageRepository,
-    K,
     <C as IntoConfig>::PskStore,
     <C as IntoConfig>::GroupStateStorage,
     <C as IntoConfig>::IdentityProvider,
@@ -609,7 +594,6 @@ pub type WithKeychain<K, C> = Config<
 /// See [`ClientBuilder::psk_store`].
 pub type WithPskStore<P, C> = Config<
     <C as IntoConfig>::KeyPackageRepository,
-    <C as IntoConfig>::Keychain,
     P,
     <C as IntoConfig>::GroupStateStorage,
     <C as IntoConfig>::IdentityProvider,
@@ -622,7 +606,6 @@ pub type WithPskStore<P, C> = Config<
 /// See [`ClientBuilder::group_state_storage`].
 pub type WithGroupStateStorage<G, C> = Config<
     <C as IntoConfig>::KeyPackageRepository,
-    <C as IntoConfig>::Keychain,
     <C as IntoConfig>::PskStore,
     G,
     <C as IntoConfig>::IdentityProvider,
@@ -635,7 +618,6 @@ pub type WithGroupStateStorage<G, C> = Config<
 /// See [`ClientBuilder::identity_provider`].
 pub type WithIdentityProvider<I, C> = Config<
     <C as IntoConfig>::KeyPackageRepository,
-    <C as IntoConfig>::Keychain,
     <C as IntoConfig>::PskStore,
     <C as IntoConfig>::GroupStateStorage,
     I,
@@ -648,7 +630,6 @@ pub type WithIdentityProvider<I, C> = Config<
 /// See [`ClientBuilder::proposal_rules`].
 pub type WithProposalRules<Pr, C> = Config<
     <C as IntoConfig>::KeyPackageRepository,
-    <C as IntoConfig>::Keychain,
     <C as IntoConfig>::PskStore,
     <C as IntoConfig>::GroupStateStorage,
     <C as IntoConfig>::IdentityProvider,
@@ -661,7 +642,6 @@ pub type WithProposalRules<Pr, C> = Config<
 /// See [`ClientBuilder::crypto_provider`].
 pub type WithCryptoProvider<Cp, C> = Config<
     <C as IntoConfig>::KeyPackageRepository,
-    <C as IntoConfig>::Keychain,
     <C as IntoConfig>::PskStore,
     <C as IntoConfig>::GroupStateStorage,
     <C as IntoConfig>::IdentityProvider,
@@ -672,7 +652,6 @@ pub type WithCryptoProvider<Cp, C> = Config<
 /// Helper alias for `Config`.
 pub type IntoConfigOutput<C> = Config<
     <C as IntoConfig>::KeyPackageRepository,
-    <C as IntoConfig>::Keychain,
     <C as IntoConfig>::PskStore,
     <C as IntoConfig>::GroupStateStorage,
     <C as IntoConfig>::IdentityProvider,
@@ -680,10 +659,9 @@ pub type IntoConfigOutput<C> = Config<
     <C as IntoConfig>::CryptoProvider,
 >;
 
-impl<Kpr, K, Ps, Gss, Ip, Pr, Cp> ClientConfig for ConfigInner<Kpr, K, Ps, Gss, Ip, Pr, Cp>
+impl<Kpr, Ps, Gss, Ip, Pr, Cp> ClientConfig for ConfigInner<Kpr, Ps, Gss, Ip, Pr, Cp>
 where
     Kpr: KeyPackageStorage + Clone,
-    K: KeychainStorage + Clone,
     Ps: PreSharedKeyStorage + Clone,
     Gss: GroupStateStorage + Clone,
     Ip: IdentityProvider + Clone,
@@ -691,7 +669,6 @@ where
     Cp: CryptoProvider + Clone,
 {
     type KeyPackageRepository = Kpr;
-    type Keychain = K;
     type PskStore = Ps;
     type GroupStateStorage = Gss;
     type IdentityProvider = Ip;
@@ -716,10 +693,6 @@ where
 
     fn proposal_rules(&self) -> Self::ProposalRules {
         self.proposal_rules.clone()
-    }
-
-    fn keychain(&self) -> Self::Keychain {
-        self.keychain.clone()
     }
 
     fn secret_store(&self) -> Self::PskStore {
@@ -764,19 +737,19 @@ where
     }
 }
 
-impl<Kpr, K, Ps, Gss, Ip, Pr, Cp> Sealed for Config<Kpr, K, Ps, Gss, Ip, Pr, Cp> {}
+impl<Kpr, Ps, Gss, Ip, Pr, Cp> Sealed for Config<Kpr, Ps, Gss, Ip, Pr, Cp> {}
 
-impl<Kpr, K, Ps, Gss, Ip, Pr, Cp> MlsConfig for Config<Kpr, K, Ps, Gss, Ip, Pr, Cp>
+impl<Kpr, Ps, Gss, Ip, Pr, Cp> MlsConfig for Config<Kpr, Ps, Gss, Ip, Pr, Cp>
 where
     Kpr: KeyPackageStorage + Clone,
-    K: KeychainStorage + Clone,
+
     Ps: PreSharedKeyStorage + Clone,
     Gss: GroupStateStorage + Clone,
     Ip: IdentityProvider + Clone,
     Pr: ProposalRules + Clone,
     Cp: CryptoProvider + Clone,
 {
-    type Output = ConfigInner<Kpr, K, Ps, Gss, Ip, Pr, Cp>;
+    type Output = ConfigInner<Kpr, Ps, Gss, Ip, Pr, Cp>;
 
     fn get(&self) -> &Self::Output {
         &self.0
@@ -797,7 +770,6 @@ pub trait MlsConfig: Clone + Send + Sync + Sealed {
 /// Blanket implementation so that `T: MlsConfig` implies `T: ClientConfig`
 impl<T: MlsConfig> ClientConfig for T {
     type KeyPackageRepository = <T::Output as ClientConfig>::KeyPackageRepository;
-    type Keychain = <T::Output as ClientConfig>::Keychain;
     type PskStore = <T::Output as ClientConfig>::PskStore;
     type GroupStateStorage = <T::Output as ClientConfig>::GroupStateStorage;
     type IdentityProvider = <T::Output as ClientConfig>::IdentityProvider;
@@ -826,10 +798,6 @@ impl<T: MlsConfig> ClientConfig for T {
 
     fn proposal_rules(&self) -> Self::ProposalRules {
         self.get().proposal_rules()
-    }
-
-    fn keychain(&self) -> Self::Keychain {
-        self.get().keychain()
     }
 
     fn secret_store(&self) -> Self::PskStore {
@@ -982,28 +950,33 @@ impl Preferences {
 /// Definitions meant to be private that are inaccessible outside this crate. They need to be marked
 /// `pub` because they appear in public definitions.
 mod private {
+    use aws_mls_core::{
+        crypto::{CipherSuite, SignatureSecretKey},
+        identity::SigningIdentity,
+        protocol_version::ProtocolVersion,
+    };
+
     use crate::client_builder::{IntoConfigOutput, Settings};
 
     #[derive(Clone, Debug)]
-    pub struct Config<Kpr, K, Ps, Gss, Ip, Pr, Cp>(
-        pub(crate) ConfigInner<Kpr, K, Ps, Gss, Ip, Pr, Cp>,
-    );
+    pub struct Config<Kpr, Ps, Gss, Ip, Pr, Cp>(pub(crate) ConfigInner<Kpr, Ps, Gss, Ip, Pr, Cp>);
 
     #[derive(Clone, Debug)]
-    pub struct ConfigInner<Kpr, K, Ps, Gss, Ip, Pr, Cp> {
+    pub struct ConfigInner<Kpr, Ps, Gss, Ip, Pr, Cp> {
         pub(crate) settings: Settings,
         pub(crate) key_package_repo: Kpr,
-        pub(crate) keychain: K,
         pub(crate) psk_store: Ps,
         pub(crate) group_state_storage: Gss,
         pub(crate) identity_provider: Ip,
         pub(crate) proposal_rules: Pr,
         pub(crate) crypto_provider: Cp,
+        pub(crate) signer: Option<SignatureSecretKey>,
+        pub(crate) signing_identity: Option<(SigningIdentity, CipherSuite)>,
+        pub(crate) version: ProtocolVersion,
     }
 
     pub trait IntoConfig {
         type KeyPackageRepository;
-        type Keychain;
         type PskStore;
         type GroupStateStorage;
         type IdentityProvider;
@@ -1013,9 +986,8 @@ mod private {
         fn into_config(self) -> IntoConfigOutput<Self>;
     }
 
-    impl<Kpr, K, Ps, Gss, Ip, Pr, Cp> IntoConfig for Config<Kpr, K, Ps, Gss, Ip, Pr, Cp> {
+    impl<Kpr, Ps, Gss, Ip, Pr, Cp> IntoConfig for Config<Kpr, Ps, Gss, Ip, Pr, Cp> {
         type KeyPackageRepository = Kpr;
-        type Keychain = K;
         type PskStore = Ps;
         type GroupStateStorage = Gss;
         type IdentityProvider = Ip;
@@ -1034,7 +1006,6 @@ use aws_mls_core::{
     group::GroupStateStorage,
     identity::IdentityProvider,
     key_package::KeyPackageStorage,
-    keychain::KeychainStorage,
     psk::PreSharedKeyStorage,
 };
 use private::{Config, ConfigInner, IntoConfig};
@@ -1042,17 +1013,16 @@ use private::{Config, ConfigInner, IntoConfig};
 #[cfg(test)]
 pub(crate) mod test_utils {
     use crate::{
-        client_builder::{BaseConfig, ClientBuilder, WithIdentityProvider, WithKeychain},
+        client_builder::{BaseConfig, ClientBuilder, WithIdentityProvider},
         crypto::test_utils::TestCryptoProvider,
         identity::{basic::BasicIdentityProvider, test_utils::BasicWithCustomProvider},
-        storage_provider::in_memory::InMemoryKeychainStorage,
     };
 
     use super::WithCryptoProvider;
 
     pub type TestClientConfig = WithIdentityProvider<
         BasicWithCustomProvider,
-        WithKeychain<InMemoryKeychainStorage, WithCryptoProvider<TestCryptoProvider, BaseConfig>>,
+        WithCryptoProvider<TestCryptoProvider, BaseConfig>,
     >;
 
     pub type TestClientBuilder = ClientBuilder<TestClientConfig>;
@@ -1062,7 +1032,6 @@ pub(crate) mod test_utils {
             ClientBuilder::new()
                 .crypto_provider(TestCryptoProvider::new())
                 .identity_provider(BasicWithCustomProvider::new(BasicIdentityProvider::new()))
-                .keychain(InMemoryKeychainStorage::new())
         }
     }
 }
