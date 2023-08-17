@@ -10,20 +10,20 @@ use std::array::TryFromSliceError;
 #[cfg(not(feature = "std"))]
 use core::array::TryFromSliceError;
 
+use ed25519_dalek::Signer;
 use p256::elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint};
-use rand_core::{OsRng, RngCore};
-use zeroize::Zeroize;
+use rand_core::OsRng;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum EcPublicKey {
     X25519(x25519_dalek::PublicKey),
-    Ed25519(ed25519_dalek::PublicKey),
+    Ed25519(ed25519_dalek::VerifyingKey),
     P256(p256::PublicKey),
 }
 
 pub enum EcPrivateKey {
     X25519(x25519_dalek::StaticSecret),
-    Ed25519((ed25519_dalek::SecretKey, ed25519_dalek::PublicKey)),
+    Ed25519(ed25519_dalek::SigningKey),
     P256(p256::SecretKey),
 }
 
@@ -32,8 +32,6 @@ pub enum EcPrivateKey {
 pub enum EcError {
     #[cfg_attr(feature = "std", error("p256 error: {0:?}"))]
     P256Error(p256::elliptic_curve::Error),
-    #[cfg_attr(feature = "std", error("ed25519 error: {0:?}"))]
-    Ed25519Error(ed25519_dalek::SignatureError),
     #[cfg_attr(feature = "std", error("unsupported curve type"))]
     UnsupportedCurve,
     #[cfg_attr(feature = "std", error("invalid public key data"))]
@@ -55,12 +53,6 @@ pub enum EcError {
 impl From<p256::elliptic_curve::Error> for EcError {
     fn from(value: p256::elliptic_curve::Error) -> Self {
         EcError::P256Error(value)
-    }
-}
-
-impl From<ed25519_dalek::SignatureError> for EcError {
-    fn from(value: ed25519_dalek::SignatureError) -> Self {
-        EcError::Ed25519Error(value)
     }
 }
 
@@ -109,9 +101,9 @@ pub fn pub_key_from_uncompressed(bytes: &[u8], curve: Curve) -> Result<EcPublicK
             let array: [u8; 32] = bytes.try_into()?;
             Ok(EcPublicKey::X25519(x25519_dalek::PublicKey::from(array)))
         }
-        Curve::Ed25519 => Ok(EcPublicKey::Ed25519(ed25519_dalek::PublicKey::from_bytes(
-            bytes,
-        )?)),
+        Curve::Ed25519 => Ok(EcPublicKey::Ed25519(
+            ed25519_dalek::VerifyingKey::from_bytes(bytes.try_into()?)?,
+        )),
         _ => Err(EcError::UnsupportedCurve),
     }
 }
@@ -127,31 +119,12 @@ pub fn pub_key_to_uncompressed(key: &EcPublicKey) -> Result<Vec<u8>, EcError> {
 pub fn generate_private_key(curve: Curve) -> Result<EcPrivateKey, EcError> {
     match curve {
         Curve::P256 => Ok(EcPrivateKey::P256(p256::SecretKey::random(OsRng))),
-        Curve::X25519 => {
-            // x25519_dalek uses an outdated rand_core, this is functionally equal to
-            // StaticSecret::new passing an Rng from rand_core
-            let mut array = [0u8; 32];
-            OsRng.try_fill_bytes(&mut array)?;
-
-            let key = EcPrivateKey::X25519(x25519_dalek::StaticSecret::from(array));
-
-            array.zeroize();
-
-            Ok(key)
-        }
-        Curve::Ed25519 => {
-            // ed25519_dalek uses an outdated rand_core, this is functionally equal to
-            // SecretKey::generate passing an Rng from rand_core
-            let mut array = [0u8; 32];
-            OsRng.try_fill_bytes(&mut array)?;
-
-            let secret = ed25519_dalek::SecretKey::from_bytes(&array)?;
-            let public = (&secret).into();
-
-            array.zeroize();
-
-            Ok(EcPrivateKey::Ed25519((secret, public)))
-        }
+        Curve::X25519 => Ok(EcPrivateKey::X25519(
+            x25519_dalek::StaticSecret::random_from_rng(OsRng),
+        )),
+        Curve::Ed25519 => Ok(EcPrivateKey::Ed25519(ed25519_dalek::SigningKey::generate(
+            &mut OsRng,
+        ))),
         _ => Err(EcError::UnsupportedCurve),
     }
 }
@@ -171,22 +144,14 @@ pub fn private_key_from_bytes(bytes: &[u8], curve: Curve) -> Result<EcPrivateKey
 }
 
 fn ed25519_private_from_bytes(bytes: &[u8]) -> Result<EcPrivateKey, EcError> {
-    (bytes.len() == Curve::Ed25519.secret_key_size())
-        .then_some(())
-        .ok_or(EcError::EcKeyInvalidKeyData)?;
-
-    let secret = ed25519_dalek::SecretKey::from_bytes(&bytes[..bytes.len() / 2])?;
-    let public = ed25519_dalek::PublicKey::from_bytes(&bytes[bytes.len() / 2..])?;
-
-    Ok(EcPrivateKey::Ed25519((secret, public)))
+    let signing_key = ed25519_dalek::SigningKey::from_keypair_bytes(bytes.try_into()?)?;
+    Ok(EcPrivateKey::Ed25519(signing_key))
 }
 
 pub fn private_key_to_bytes(key: &EcPrivateKey) -> Result<Vec<u8>, EcError> {
     match key {
         EcPrivateKey::X25519(key) => Ok(key.to_bytes().to_vec()),
-        EcPrivateKey::Ed25519((secret, public)) => {
-            Ok([secret.to_bytes(), public.to_bytes()].concat())
-        }
+        EcPrivateKey::Ed25519(key) => Ok(key.to_keypair_bytes().to_vec()),
         EcPrivateKey::P256(key) => Ok(key.to_be_bytes().to_vec()),
     }
 }
@@ -194,7 +159,7 @@ pub fn private_key_to_bytes(key: &EcPrivateKey) -> Result<Vec<u8>, EcError> {
 pub fn private_key_to_public(private_key: &EcPrivateKey) -> Result<EcPublicKey, EcError> {
     match private_key {
         EcPrivateKey::X25519(key) => Ok(EcPublicKey::X25519(x25519_dalek::PublicKey::from(key))),
-        EcPrivateKey::Ed25519((_, key)) => Ok(EcPublicKey::Ed25519(*key)),
+        EcPrivateKey::Ed25519(key) => Ok(EcPublicKey::Ed25519(key.verifying_key())),
         EcPrivateKey::P256(key) => Ok(EcPublicKey::P256(key.public_key())),
     }
 }
@@ -252,12 +217,8 @@ pub fn sign_p256(private_key: &p256::SecretKey, data: &[u8]) -> Result<Vec<u8>, 
     Ok(signature.to_der().to_bytes().to_vec())
 }
 
-pub fn sign_ed25519(
-    (private_key, public_key): &(ed25519_dalek::SecretKey, ed25519_dalek::PublicKey),
-    data: &[u8],
-) -> Result<Vec<u8>, EcError> {
-    let expanded = ed25519_dalek::ExpandedSecretKey::from(private_key);
-    Ok(expanded.sign(data, public_key).to_bytes().to_vec())
+pub fn sign_ed25519(key: &ed25519_dalek::SigningKey, data: &[u8]) -> Result<Vec<u8>, EcError> {
+    Ok(key.sign(data).to_bytes().to_vec())
 }
 
 pub fn verify_p256(
@@ -275,7 +236,7 @@ pub fn verify_p256(
 }
 
 pub fn verify_ed25519(
-    public_key: &ed25519_dalek::PublicKey,
+    public_key: &ed25519_dalek::VerifyingKey,
     signature: &[u8],
     data: &[u8],
 ) -> Result<bool, EcError> {
@@ -360,9 +321,9 @@ pub(crate) mod test_utils {
 
     #[cfg(feature = "x509")]
     pub fn ed25519_seed_to_private_key(seed: &[u8]) -> Vec<u8> {
-        let secret = ed25519_dalek::SecretKey::from_bytes(seed).unwrap();
-        let public = ed25519_dalek::PublicKey::from(&secret);
-        [secret.to_bytes(), public.to_bytes()].concat()
+        let secret = ed25519_dalek::SecretKey::try_from(seed).unwrap();
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(&secret);
+        signing_key.to_keypair_bytes().to_vec()
     }
 }
 

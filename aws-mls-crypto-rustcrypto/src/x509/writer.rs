@@ -369,10 +369,10 @@ mod tests {
             let secret =
                 p256::pkcs8::der::asn1::OctetString::from_der(key_data.private_key).unwrap();
 
-            let secret = ed25519_dalek::SecretKey::from_bytes(secret.as_bytes()).unwrap();
-            let public = (&secret).into();
+            let signing_key =
+                ed25519_dalek::SigningKey::from_bytes(secret.as_bytes().try_into().unwrap());
 
-            EcPrivateKey::Ed25519((secret, public))
+            EcPrivateKey::Ed25519(signing_key)
         };
 
         let subject_pubkey =

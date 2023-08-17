@@ -20,8 +20,6 @@ std = [
     "hkdf/std",
     "p256/std",
     "sec1/std",
-    "x25519-dalek/std",
-    "ed25519-dalek/std",
     "dep:thiserror"
 ]
 
@@ -51,8 +49,8 @@ hkdf = { version = "0.12", default-features = false }
 
 # KEM
 p256 = { version = "0.12", default-features = false, features = ["alloc", "ecdh", "ecdsa", "pem"] }
-x25519-dalek = { version = "1", default-features = false, features = ["u64_backend"] }
-ed25519-dalek = { version = "1", default-features = false, features = ["u64_backend"] }
+x25519-dalek = { version = "2", default-features = false, features = ["alloc", "static_secrets"] }
+ed25519-dalek = { version = "2", default-features = false, features = ["alloc", "rand_core"] }
 sec1 = { version = "0.3", default-features = false, features = ["alloc"] }
 
 # X509 feature
