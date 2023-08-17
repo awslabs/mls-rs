@@ -176,6 +176,12 @@ impl Default for ClientBuilder<BaseConfig> {
     }
 }
 
+impl<C> ClientBuilder<C> {
+    pub(crate) fn from_config(c: C) -> Self {
+        Self(c)
+    }
+}
+
 impl ClientBuilder<BaseConfig> {
     /// Create a new client builder with default in-memory providers
     pub fn new() -> Self {
@@ -659,6 +665,16 @@ pub type IntoConfigOutput<C> = Config<
     <C as IntoConfig>::CryptoProvider,
 >;
 
+/// Helper alias to make a `Config` from a `ClientConfig`
+pub type MakeConfig<C> = Config<
+    <C as ClientConfig>::KeyPackageRepository,
+    <C as ClientConfig>::PskStore,
+    <C as ClientConfig>::GroupStateStorage,
+    <C as ClientConfig>::IdentityProvider,
+    <C as ClientConfig>::ProposalRules,
+    <C as ClientConfig>::CryptoProvider,
+>;
+
 impl<Kpr, Ps, Gss, Ip, Pr, Cp> ClientConfig for ConfigInner<Kpr, Ps, Gss, Ip, Pr, Cp>
 where
     Kpr: KeyPackageStorage + Clone,
@@ -945,6 +961,37 @@ impl Preferences {
             ControlEncryptionMode::Plaintext
         }
     }
+}
+
+pub(crate) fn recreate_config<T: ClientConfig>(
+    c: T,
+    signer: Option<SignatureSecretKey>,
+    signing_identity: Option<(SigningIdentity, CipherSuite)>,
+    version: ProtocolVersion,
+) -> MakeConfig<T> {
+    Config(ConfigInner {
+        settings: Settings {
+            extension_types: c.supported_extensions(),
+            protocol_versions: c.supported_protocol_versions(),
+            custom_proposal_types: c.supported_custom_proposals(),
+            preferences: c.preferences(),
+            key_package_extensions: c.key_package_extensions(),
+            leaf_node_extensions: c.leaf_node_extensions(),
+            lifetime_in_s: {
+                let l = c.lifetime();
+                l.not_after - l.not_before
+            },
+        },
+        key_package_repo: c.key_package_repo(),
+        psk_store: c.secret_store(),
+        group_state_storage: c.group_state_storage(),
+        identity_provider: c.identity_provider(),
+        proposal_rules: c.proposal_rules(),
+        crypto_provider: c.crypto_provider(),
+        signer,
+        signing_identity,
+        version,
+    })
 }
 
 /// Definitions meant to be private that are inaccessible outside this crate. They need to be marked

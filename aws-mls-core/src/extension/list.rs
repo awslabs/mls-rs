@@ -1,10 +1,7 @@
-use core::ops::{Deref, DerefMut};
-
-use alloc::vec::Vec;
-
-use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
-
 use super::{Extension, ExtensionError, ExtensionType, MlsExtension};
+use alloc::vec::Vec;
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
+use core::ops::Deref;
 
 /// A collection of MLS [Extensions](super::Extension).
 ///
@@ -17,7 +14,7 @@ use super::{Extension, ExtensionError, ExtensionType, MlsExtension};
     all(feature = "ffi", not(test)),
     safer_ffi_gen::ffi_type(clone, opaque)
 )]
-#[derive(Debug, Clone, PartialEq, Default, MlsSize, MlsEncode)]
+#[derive(Debug, Clone, Default, MlsSize, MlsEncode)]
 pub struct ExtensionList(Vec<Extension>);
 
 impl Deref for ExtensionList {
@@ -28,9 +25,12 @@ impl Deref for ExtensionList {
     }
 }
 
-impl DerefMut for ExtensionList {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+impl PartialEq for ExtensionList {
+    fn eq(&self, other: &Self) -> bool {
+        self.len() == other.len()
+            && self
+                .iter()
+                .all(|ext| other.get(ext.extension_type).as_ref() == Some(ext))
     }
 }
 
@@ -62,8 +62,22 @@ impl MlsDecode for ExtensionList {
 }
 
 impl From<Vec<Extension>> for ExtensionList {
-    fn from(v: Vec<Extension>) -> Self {
-        Self(v)
+    fn from(extensions: Vec<Extension>) -> Self {
+        extensions.into_iter().collect()
+    }
+}
+
+impl Extend<Extension> for ExtensionList {
+    fn extend<T: IntoIterator<Item = Extension>>(&mut self, iter: T) {
+        iter.into_iter().for_each(|ext| self.set(ext));
+    }
+}
+
+impl FromIterator<Extension> for ExtensionList {
+    fn from_iter<T: IntoIterator<Item = Extension>>(iter: T) -> Self {
+        let mut list = Self::new();
+        list.extend(iter);
+        list
     }
 }
 
@@ -126,7 +140,6 @@ impl ExtensionList {
 
     /// Get a raw [Extension](super::Extension) value based on an
     /// [ExtensionType](super::ExtensionType).
-    #[cfg(any(test, feature = "std"))]
     pub fn get(&self, extension_type: ExtensionType) -> Option<Extension> {
         self.0
             .iter()
@@ -157,7 +170,7 @@ mod tests {
     use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 
     use crate::extension::{
-        Extension, ExtensionList, ExtensionType, MlsCodecExtension, MlsExtension,
+        list::ExtensionList, Extension, ExtensionType, MlsCodecExtension, MlsExtension,
     };
 
     #[derive(Debug, Clone, MlsSize, MlsEncode, MlsDecode, PartialEq, Eq)]
@@ -165,6 +178,9 @@ mod tests {
 
     #[derive(Debug, Clone, MlsEncode, MlsDecode, MlsSize, PartialEq, Eq)]
     struct TestExtensionB(#[mls_codec(with = "aws_mls_codec::byte_vec")] Vec<u8>);
+
+    #[derive(Debug, Clone, MlsEncode, MlsDecode, MlsSize, PartialEq, Eq)]
+    struct TestExtensionC(u8);
 
     impl MlsCodecExtension for TestExtensionA {
         fn extension_type() -> ExtensionType {
@@ -175,6 +191,12 @@ mod tests {
     impl MlsCodecExtension for TestExtensionB {
         fn extension_type() -> ExtensionType {
             ExtensionType(129)
+        }
+    }
+
+    impl MlsCodecExtension for TestExtensionC {
+        fn extension_type() -> ExtensionType {
+            ExtensionType(130)
         }
     }
 
@@ -285,5 +307,54 @@ mod tests {
             ExtensionList::mls_decode(&mut &*serialized_extensions),
             Err(aws_mls_codec::Error::Custom(_))
         );
+    }
+
+    #[test]
+    fn extension_list_equality_does_not_consider_order() {
+        let extensions = [
+            TestExtensionA(33).into_extension().unwrap(),
+            TestExtensionC(34).into_extension().unwrap(),
+        ];
+
+        let a = extensions.iter().cloned().collect::<ExtensionList>();
+        let b = extensions.iter().rev().cloned().collect::<ExtensionList>();
+
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn extending_extension_list_maintains_extension_uniqueness() {
+        let mut list = ExtensionList::new();
+        list.set_from(TestExtensionA(33)).unwrap();
+        list.set_from(TestExtensionC(34)).unwrap();
+        list.extend([
+            TestExtensionA(35).into_extension().unwrap(),
+            TestExtensionB(vec![36]).into_extension().unwrap(),
+            TestExtensionA(37).into_extension().unwrap(),
+        ]);
+
+        let expected = ExtensionList(vec![
+            TestExtensionA(37).into_extension().unwrap(),
+            TestExtensionB(vec![36]).into_extension().unwrap(),
+            TestExtensionC(34).into_extension().unwrap(),
+        ]);
+
+        assert_eq!(list, expected);
+    }
+
+    #[test]
+    fn extension_list_from_vec_maintains_extension_uniqueness() {
+        let list = ExtensionList::from(vec![
+            TestExtensionA(33).into_extension().unwrap(),
+            TestExtensionC(34).into_extension().unwrap(),
+            TestExtensionA(35).into_extension().unwrap(),
+        ]);
+
+        let expected = ExtensionList(vec![
+            TestExtensionA(35).into_extension().unwrap(),
+            TestExtensionC(34).into_extension().unwrap(),
+        ]);
+
+        assert_eq!(list, expected);
     }
 }

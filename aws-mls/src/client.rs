@@ -1,5 +1,5 @@
 use crate::cipher_suite::CipherSuite;
-use crate::client_builder::{BaseConfig, ClientBuilder};
+use crate::client_builder::{recreate_config, BaseConfig, ClientBuilder, MakeConfig};
 use crate::client_config::ClientConfig;
 use crate::group::framing::MLSMessage;
 
@@ -397,6 +397,15 @@ where
         }
     }
 
+    pub fn to_builder(&self) -> ClientBuilder<MakeConfig<C>> {
+        ClientBuilder::from_config(recreate_config(
+            self.config.clone(),
+            self.signer.clone(),
+            self.signing_identity.clone(),
+            self.version,
+        ))
+    }
+
     /// Creates a new key package message that can be used to to add this
     /// client to a [Group](crate::group::Group). Each call to this function
     /// will produce a unique value that is signed by `signing_identity`.
@@ -686,6 +695,11 @@ where
             .as_ref()
             .map(|(id, cs)| (id, *cs))
             .ok_or(MlsError::SignerNotFound)
+    }
+
+    /// Returns key package extensions used by this client
+    pub fn key_package_extensions(&self) -> ExtensionList {
+        self.config.key_package_extensions()
     }
 }
 
@@ -1005,5 +1019,14 @@ mod tests {
             .process_incoming_message(external_commit)
             .await;
         assert_matches!(res, Err(_));
+    }
+
+    #[test]
+    fn builder_can_be_obtained_from_client_to_edit_properties_for_new_client() {
+        let alice = TestClientBuilder::new_for_test()
+            .extension_type(33.into())
+            .build();
+        let bob = alice.to_builder().extension_type(34.into()).build();
+        assert_eq!(bob.config.supported_extensions(), [33, 34].map(Into::into));
     }
 }
