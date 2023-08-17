@@ -891,9 +891,7 @@ mod interop_tests {
 
     use crate::{
         crypto::test_utils::try_test_cipher_suite_provider,
-        group::{
-            ciphertext_processor::InteropSenderData, internal::LeafIndex, secret_tree::KeyType,
-        },
+        group::{ciphertext_processor::InteropSenderData, secret_tree::KeyType, LeafIndex},
     };
 
     use super::SecretTree;

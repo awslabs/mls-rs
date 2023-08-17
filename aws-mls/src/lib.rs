@@ -151,7 +151,7 @@ mod protocol_version {
 
 pub use protocol_version::ProtocolVersion;
 
-mod client;
+pub mod client;
 pub mod client_builder;
 mod client_config;
 /// Dependencies of [`CryptoProvider`] and [`CipherSuiteProvider`]
@@ -199,7 +199,7 @@ pub use crate::client::Client;
 
 pub use group::{
     framing::{MLSMessage, WireFormat},
-    internal::Group,
+    Group,
 };
 
 /// Error types.

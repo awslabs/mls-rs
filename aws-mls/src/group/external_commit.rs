@@ -5,10 +5,10 @@ use crate::{
     group::{
         cipher_suite_provider,
         epoch::SenderDataSecret,
-        internal::{EpochSecrets, ExternalPubExt, LeafIndex, LeafNode, TreeKemPrivate},
         key_schedule::{InitSecret, KeySchedule},
         proposal::{ExternalInit, Proposal, RemoveProposal},
-        validate_group_info, MlsError,
+        validate_group_info, EpochSecrets, ExternalPubExt, LeafIndex, LeafNode, MlsError,
+        TreeKemPrivate,
     },
     Group, MLSMessage,
 };
@@ -24,11 +24,11 @@ use aws_mls_core::psk::{ExternalPskId, PreSharedKey};
 
 #[cfg(feature = "psk")]
 use crate::group::{
-    internal::{JustPreSharedKeyID, PreSharedKeyID, PskNonce},
-    PreSharedKeyProposal,
+    PreSharedKeyProposal, {JustPreSharedKeyID, PreSharedKeyID, PskNonce},
 };
 
 /// A builder that aids with the construction of an external commit.
+#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::ffi_type(opaque))]
 pub struct ExternalCommitBuilder<C: ClientConfig> {
     signer: SignatureSecretKey,
     signing_identity: SigningIdentity,

@@ -8,7 +8,7 @@ use aws_mls_core::{error::IntoAnyError, group::GroupStateStorage, key_package::K
 use super::snapshot::Snapshot;
 
 #[cfg(feature = "psk")]
-use crate::group::internal::ResumptionPsk;
+use crate::group::ResumptionPsk;
 
 #[cfg(feature = "psk")]
 use aws_mls_core::psk::PreSharedKey;
@@ -254,8 +254,8 @@ mod tests {
         client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         group::{
             epoch::{test_utils::get_test_epoch_with_id, SenderDataSecret},
-            internal::{PskGroupId, ResumptionPSKUsage},
             test_utils::{random_bytes, test_member, TEST_GROUP},
+            PskGroupId, ResumptionPSKUsage,
         },
         storage_provider::{
             group_state::EpochData,

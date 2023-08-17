@@ -7,21 +7,19 @@ use crate::{
     client::test_utils::{TestClientConfig, TEST_PROTOCOL_VERSION},
     client_builder::Preferences,
     crypto::test_utils::{test_cipher_suite_provider, try_test_cipher_suite_provider},
-    group::{test_utils::test_group_custom, PaddingMode},
+    group::{
+        confirmation_tag::ConfirmationTag,
+        epoch::EpochSecrets,
+        framing::{Content, WireFormat},
+        message_processor::{EventOrContent, MessageProcessor},
+        proposal::{Proposal, RemoveProposal},
+        secret_tree::test_utils::get_test_tree,
+        test_utils::random_bytes,
+        test_utils::test_group_custom,
+        AuthenticatedContent, Commit, Group, GroupContext, MLSMessage, PaddingMode, Sender,
+    },
     test_utils::is_edwards,
     tree_kem::{leaf_node::test_utils::get_basic_test_node, node::LeafIndex},
-};
-
-use super::super::{
-    confirmation_tag::ConfirmationTag,
-    epoch::EpochSecrets,
-    framing::{Content, WireFormat},
-    internal::AuthenticatedContent,
-    message_processor::{EventOrContent, MessageProcessor},
-    proposal::{Proposal, RemoveProposal},
-    secret_tree::test_utils::get_test_tree,
-    test_utils::random_bytes,
-    Commit, Group, GroupContext, MLSMessage, Sender,
 };
 
 const FRAMING_N_LEAVES: u32 = 2;

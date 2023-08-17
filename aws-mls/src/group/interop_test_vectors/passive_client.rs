@@ -13,10 +13,7 @@ use rand::{seq::IteratorRandom, Rng, SeedableRng};
 use crate::{
     client_builder::{ClientBuilder, MlsConfig},
     crypto::test_utils::TestCryptoProvider,
-    group::{
-        internal::{ClientConfig, Preferences},
-        CommitBuilder,
-    },
+    group::{ClientConfig, CommitBuilder, Preferences},
     identity::basic::BasicIdentityProvider,
     key_package::KeyPackageGeneration,
     storage_provider::in_memory::InMemoryKeyPackageStorage,

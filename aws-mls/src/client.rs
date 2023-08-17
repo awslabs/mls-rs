@@ -361,6 +361,7 @@ impl From<ExtensionError> for MlsError {
 /// and underlying identities used to join groups and generate key packages.
 /// Applications may decide to create one or many clients depending on their
 /// specific needs.
+#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::ffi_type(opaque))]
 #[derive(Clone, Debug)]
 pub struct Client<C> {
     pub(crate) config: C,
@@ -377,6 +378,7 @@ impl Client<()> {
     }
 }
 
+#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl<C> Client<C>
 where
     C: ClientConfig + Clone,

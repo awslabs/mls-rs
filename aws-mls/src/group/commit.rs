@@ -24,7 +24,7 @@ use crate::WireFormat;
 
 #[cfg(feature = "psk")]
 use crate::{
-    group::internal::{JustPreSharedKeyID, PskGroupId, ResumptionPSKUsage, ResumptionPsk},
+    group::{JustPreSharedKeyID, PskGroupId, ResumptionPSKUsage, ResumptionPsk},
     psk::ExternalPskId,
 };
 

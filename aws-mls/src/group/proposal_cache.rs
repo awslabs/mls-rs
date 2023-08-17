@@ -354,13 +354,12 @@ pub(crate) mod test_utils {
         client::test_utils::TEST_PROTOCOL_VERSION,
         group::{
             confirmation_tag::ConfirmationTag,
-            internal::{LeafIndex, LeafNode, ProvisionalState, TreeKemPublic},
             proposal::{Proposal, ProposalOrRef},
             proposal_filter::{PassThroughProposalRules, ProposalRules},
             proposal_ref::ProposalRef,
             state::GroupState,
             test_utils::{get_test_group_context, TEST_GROUP},
-            GroupContext, Sender,
+            GroupContext, LeafIndex, LeafNode, ProvisionalState, Sender, TreeKemPublic,
         },
         identity::{basic::BasicIdentityProvider, test_utils::BasicWithCustomProvider},
         psk::AlwaysFoundPskStorage,
@@ -649,7 +648,7 @@ mod tests {
         group::{
             message_processor::path_update_required,
             proposal_filter::proposer_can_propose,
-            test_utils::{random_bytes, test_group, TEST_GROUP},
+            test_utils::{get_test_group_context, random_bytes, test_group, TEST_GROUP},
         },
         identity::basic::BasicIdentityProvider,
         identity::test_utils::{get_test_signing_identity, BasicWithCustomProvider},
@@ -685,9 +684,8 @@ mod tests {
         identity::{Credential, CredentialType, CustomCredential},
     };
     use core::convert::Infallible;
-    use internal::proposal_filter::{PassThroughProposalRules, ProposalInfo};
-    use internal::test_utils::get_test_group_context;
     use itertools::Itertools;
+    use proposal_filter::{PassThroughProposalRules, ProposalInfo};
 
     #[cfg(not(sync))]
     use futures::FutureExt;

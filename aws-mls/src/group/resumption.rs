@@ -10,12 +10,8 @@ use aws_mls_core::{
 use crate::{client::MlsError, Client, Group, MLSMessage};
 
 use super::{
-    internal::{
-        ClientConfig, JustPreSharedKeyID, MessageProcessor, PreSharedKeyID, Preferences,
-        PskGroupId, PskSecretInput, ResumptionPSKUsage, ResumptionPsk,
-    },
-    proposal::ReInitProposal,
-    NewMemberInfo,
+    proposal::ReInitProposal, ClientConfig, JustPreSharedKeyID, MessageProcessor, NewMemberInfo,
+    PreSharedKeyID, Preferences, PskGroupId, PskSecretInput, ResumptionPSKUsage, ResumptionPsk,
 };
 
 struct ResumptionGroupParameters<'a> {

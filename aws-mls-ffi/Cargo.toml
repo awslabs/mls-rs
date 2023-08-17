@@ -1,0 +1,10 @@
+[package]
+name = "aws-mls-ffi"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aws-mls = { path = "../aws-mls", version = "*", features = ["ffi"] }
+aws-mls-crypto-openssl = { path = "../aws-mls-crypto-openssl", version = "*" }
+safer-ffi = "0.1.0"
+safer-ffi-gen = "0.8.0"

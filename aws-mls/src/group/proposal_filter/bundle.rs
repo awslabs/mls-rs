@@ -14,7 +14,7 @@ use crate::{
 };
 
 #[cfg(feature = "by_ref_proposal")]
-use crate::group::{internal::LeafIndex, ProposalRef, UpdateProposal};
+use crate::group::{LeafIndex, ProposalRef, UpdateProposal};
 
 #[cfg(feature = "psk")]
 use crate::group::PreSharedKeyProposal;

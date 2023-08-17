@@ -2,9 +2,9 @@ use crate::{
     client::test_utils::TEST_PROTOCOL_VERSION,
     crypto::test_utils::try_test_cipher_suite_provider,
     group::{
-        confirmation_tag::ConfirmationTag, framing::Content, internal::PathSecret,
-        message_processor::MessageProcessor, message_signature::AuthenticatedContent,
-        test_utils::GroupWithoutKeySchedule, Commit, GroupContext, Sender,
+        confirmation_tag::ConfirmationTag, framing::Content, message_processor::MessageProcessor,
+        message_signature::AuthenticatedContent, test_utils::GroupWithoutKeySchedule, Commit,
+        GroupContext, PathSecret, Sender,
     },
     tree_kem::{
         node::{LeafIndex, NodeVec},

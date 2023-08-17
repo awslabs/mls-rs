@@ -4,6 +4,7 @@ resolver = "2"
 members = [
     "aws-mls",
     "aws-mls-core",
+    "aws-mls-ffi",
     "aws-mls-identity-x509",
     "aws-mls/fuzz",
     "aws-mls/test_harness_integration",
@@ -19,6 +20,7 @@ members = [
 default-members = [
     "aws-mls",
     "aws-mls-core",
+    "aws-mls-ffi",
     "aws-mls-identity-x509",
     "aws-mls-crypto-hpke",
     "aws-mls-crypto-openssl",

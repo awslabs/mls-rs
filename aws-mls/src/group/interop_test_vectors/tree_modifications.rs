@@ -7,12 +7,11 @@ use crate::{
     client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
     crypto::test_utils::test_cipher_suite_provider,
     group::{
-        internal::{LeafIndex, TreeKemPublic},
         proposal::{AddProposal, Proposal, ProposalOrRef, RemoveProposal, UpdateProposal},
         proposal_cache::test_utils::CommitReceiver,
         proposal_ref::ProposalRef,
         test_utils::TEST_GROUP,
-        Sender,
+        LeafIndex, Sender, TreeKemPublic,
     },
     key_package::test_utils::test_key_package,
     tree_kem::{

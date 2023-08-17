@@ -104,11 +104,10 @@ mod tests {
         group::{
             confirmation_tag::ConfirmationTag,
             framing::{Content, ContentType},
-            internal::LeafIndex,
             message_signature::AuthenticatedContent,
             proposal::{Proposal, ProposalOrRef, RemoveProposal},
             test_utils::get_test_group_context,
-            transcript_hashes, Commit, Sender,
+            transcript_hashes, Commit, LeafIndex, Sender,
         },
         WireFormat,
     };

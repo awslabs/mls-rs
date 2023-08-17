@@ -240,52 +240,46 @@ pub(crate) enum ControlEncryptionMode {
     Encrypted(PaddingMode),
 }
 
-pub(crate) mod internal {
-    pub use super::*;
-    /// An MLS end-to-end encrypted group.
-    ///
-    /// # Group Evolution
-    ///
-    /// MLS Groups are evolved via a propose-then-commit system. Each group state
-    /// produced by a commit is called an epoch and can produce and consume
-    /// application, proposal, and commit messages. A [commit](Group::commit) is used
-    /// to advance to the next epoch by applying existing proposals sent in
-    /// the current epoch by-reference along with an optional set of proposals
-    /// that are included by-value using a [`CommitBuilder`].
-    #[derive(Clone)]
-    pub struct Group<C>
-    where
-        C: ClientConfig,
-    {
-        #[cfg(feature = "benchmark")]
-        pub config: C,
-        #[cfg(not(feature = "benchmark"))]
-        pub(super) config: C,
-        pub(super) cipher_suite_provider:
-            <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider,
-        pub(super) state_repo: GroupStateRepository<C::GroupStateStorage, C::KeyPackageRepository>,
-        pub(crate) state: GroupState,
-        pub(super) epoch_secrets: EpochSecrets,
-        pub(super) private_tree: TreeKemPrivate,
-        pub(super) key_schedule: KeySchedule,
-        #[cfg(all(feature = "std", feature = "by_ref_proposal"))]
-        pub(super) pending_updates:
-            HashMap<HpkePublicKey, (HpkeSecretKey, Option<SignatureSecretKey>)>, // Hash of leaf node hpke public key to secret key
-        #[cfg(all(not(feature = "std"), feature = "by_ref_proposal"))]
-        pub(super) pending_updates:
-            Vec<(HpkePublicKey, (HpkeSecretKey, Option<SignatureSecretKey>))>,
-        pub(super) pending_commit: Option<CommitGeneration>,
-        #[cfg(feature = "psk")]
-        pub(super) previous_psk: Option<PskSecretInput>,
-        #[cfg(test)]
-        pub(crate) commit_modifiers:
-            CommitModifiers<<C::CryptoProvider as CryptoProvider>::CipherSuiteProvider>,
-        pub(crate) signer: SignatureSecretKey,
-    }
+/// An MLS end-to-end encrypted group.
+///
+/// # Group Evolution
+///
+/// MLS Groups are evolved via a propose-then-commit system. Each group state
+/// produced by a commit is called an epoch and can produce and consume
+/// application, proposal, and commit messages. A [commit](Group::commit) is used
+/// to advance to the next epoch by applying existing proposals sent in
+/// the current epoch by-reference along with an optional set of proposals
+/// that are included by-value using a [`CommitBuilder`].
+#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::ffi_type(opaque))]
+#[derive(Clone)]
+pub struct Group<C>
+where
+    C: ClientConfig,
+{
+    #[cfg(feature = "benchmark")]
+    pub config: C,
+    #[cfg(not(feature = "benchmark"))]
+    config: C,
+    cipher_suite_provider: <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider,
+    state_repo: GroupStateRepository<C::GroupStateStorage, C::KeyPackageRepository>,
+    pub(crate) state: GroupState,
+    epoch_secrets: EpochSecrets,
+    private_tree: TreeKemPrivate,
+    key_schedule: KeySchedule,
+    #[cfg(all(feature = "std", feature = "by_ref_proposal"))]
+    pending_updates: HashMap<HpkePublicKey, (HpkeSecretKey, Option<SignatureSecretKey>)>, // Hash of leaf node hpke public key to secret key
+    #[cfg(all(not(feature = "std"), feature = "by_ref_proposal"))]
+    pending_updates: Vec<(HpkePublicKey, (HpkeSecretKey, Option<SignatureSecretKey>))>,
+    pending_commit: Option<CommitGeneration>,
+    #[cfg(feature = "psk")]
+    previous_psk: Option<PskSecretInput>,
+    #[cfg(test)]
+    pub(crate) commit_modifiers:
+        CommitModifiers<<C::CryptoProvider as CryptoProvider>::CipherSuiteProvider>,
+    pub(crate) signer: SignatureSecretKey,
 }
 
-pub(crate) use internal::*;
-
+#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl<C> Group<C>
 where
     C: ClientConfig + Clone,
@@ -643,6 +637,7 @@ where
     }
 
     /// Signing identity currently in use by the local group instance.
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     pub fn current_member_signing_identity(&self) -> Result<&SigningIdentity, MlsError> {
         self.current_user_leaf_node().map(|ln| &ln.signing_identity)
     }
@@ -1312,6 +1307,7 @@ where
     /// not be persisted by the
     /// [`GroupStateStorage`](crate::GroupStateStorage)
     /// in use by this group until [`Group::write_to_storage`] is called.
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     #[maybe_async::maybe_async]
     pub async fn process_incoming_message_with_time(
         &mut self,
@@ -1420,10 +1416,12 @@ where
     /// Get the
     /// [epoch_authenticator](https://messaginglayersecurity.rocks/mls-protocol/draft-ietf-mls-protocol.html#name-key-schedule)
     /// of the current epoch.
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     pub fn epoch_authenticator(&self) -> Result<Zeroizing<Vec<u8>>, MlsError> {
         Ok(self.key_schedule.authentication_secret.clone())
     }
 
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     pub fn export_secret(
         &self,
         label: &[u8],
@@ -1477,6 +1475,7 @@ where
     /// The indexes within this iterator do not correlate with indexes of users
     /// within [`ReceivedMessage`] content descriptions due to the layout of
     /// member information within a MLS group state.
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     pub fn roster_iter(&self) -> impl Iterator<Item = Member> + '_ {
         self.group_state().roster_iter()
     }
@@ -1488,6 +1487,7 @@ where
     /// The indexes within this iterator do not correlate with indexes of users
     /// within [`ReceivedMessage`] content descriptions due to the layout of
     /// member information within a MLS group state.
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     pub fn member_identities(&self) -> impl Iterator<Item = &SigningIdentity> + '_ {
         self.state.signing_identity_iter()
     }
