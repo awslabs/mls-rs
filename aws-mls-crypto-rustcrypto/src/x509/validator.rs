@@ -111,7 +111,7 @@ impl X509Validator {
 
 fn verify_time(cert: &Certificate, time: MlsTime) -> Result<(), X509Error> {
     let validity = cert.tbs_certificate.validity;
-    let now = time.seconds_since_epoch()?;
+    let now = time.seconds_since_epoch();
     let not_before = validity.not_before.to_unix_duration().as_secs();
     let not_after = validity.not_after.to_unix_duration().as_secs();
 
@@ -338,7 +338,9 @@ mod tests {
 
         let res = validator.validate_chain(
             &chain,
-            Some(MlsTime::from_duration_since_epoch(Duration::from_secs(1798761600)).unwrap()),
+            Some(MlsTime::from_duration_since_epoch(Duration::from_secs(
+                1798761600,
+            ))),
         );
 
         assert_matches!(res, Err(X509Error::ValidityError(_, _)));

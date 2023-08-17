@@ -19,7 +19,7 @@ impl Lifetime {
 
     pub fn seconds(s: u64) -> Result<Self, MlsError> {
         #[cfg(feature = "std")]
-        let not_before = MlsTime::now().seconds_since_epoch()?;
+        let not_before = MlsTime::now().seconds_since_epoch();
         #[cfg(not(feature = "std"))]
         // There is no clock on no_std, this is here just so that we can run tests.
         let not_before = 3600u64;
@@ -41,9 +41,9 @@ impl Lifetime {
         Self::days(365 * y as u32)
     }
 
-    pub(crate) fn within_lifetime(&self, time: MlsTime) -> Result<bool, MlsError> {
-        let since_epoch = time.seconds_since_epoch()?;
-        Ok(since_epoch >= self.not_before && since_epoch <= self.not_after)
+    pub(crate) fn within_lifetime(&self, time: MlsTime) -> bool {
+        let since_epoch = time.seconds_since_epoch();
+        since_epoch >= self.not_before && since_epoch <= self.not_after
     }
 }
 
@@ -97,23 +97,18 @@ mod tests {
         };
 
         assert!(!test_lifetime
-            .within_lifetime(MlsTime::from_duration_since_epoch(Duration::from_secs(4)).unwrap())
-            .unwrap());
+            .within_lifetime(MlsTime::from_duration_since_epoch(Duration::from_secs(4))));
 
         assert!(!test_lifetime
-            .within_lifetime(MlsTime::from_duration_since_epoch(Duration::from_secs(11)).unwrap())
-            .unwrap());
+            .within_lifetime(MlsTime::from_duration_since_epoch(Duration::from_secs(11))));
 
         assert!(test_lifetime
-            .within_lifetime(MlsTime::from_duration_since_epoch(Duration::from_secs(5)).unwrap())
-            .unwrap());
+            .within_lifetime(MlsTime::from_duration_since_epoch(Duration::from_secs(5))));
 
         assert!(test_lifetime
-            .within_lifetime(MlsTime::from_duration_since_epoch(Duration::from_secs(10)).unwrap())
-            .unwrap());
+            .within_lifetime(MlsTime::from_duration_since_epoch(Duration::from_secs(10))));
 
         assert!(test_lifetime
-            .within_lifetime(MlsTime::from_duration_since_epoch(Duration::from_secs(6)).unwrap())
-            .unwrap());
+            .within_lifetime(MlsTime::from_duration_since_epoch(Duration::from_secs(6))));
     }
 }

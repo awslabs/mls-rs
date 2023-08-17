@@ -105,7 +105,7 @@ impl X509CertificateWriter for X509Writer {
 
         // Compute validity. Consider the current time to be 1 hour earlier to avoid clock drift issues
         let not_before = MlsTime::now()
-            .seconds_since_epoch()?
+            .seconds_since_epoch()
             .checked_sub(3600)
             .map(Duration::from_secs)
             .ok_or(X509Error::InvalidCertificateLifetime)?;

@@ -4,7 +4,7 @@ use aws_mls_core::{
     crypto::{SignaturePublicKey, SignatureSecretKey},
     error::IntoAnyError,
     identity::{CertificateChain, SigningIdentity},
-    time::{MlsTime, SystemTimeError},
+    time::MlsTime,
 };
 use aws_mls_identity_x509::{
     CertificateGeneration, CertificateParameters, CertificateRequest, DerCertificate,
@@ -53,8 +53,6 @@ pub enum X509Error {
     EcSignerError(#[from] EcSignerError),
     #[error(transparent)]
     OpensslError(#[from] ErrorStack),
-    #[error(transparent)]
-    SystemTimeError(#[from] SystemTimeError),
 }
 
 impl IntoAnyError for X509Error {
@@ -111,7 +109,7 @@ impl X509Validator {
         let mut params = X509VerifyParam::new()?;
 
         if let Some(timestamp) = timestamp {
-            params.set_time(timestamp.seconds_since_epoch()? as i64);
+            params.set_time(timestamp.seconds_since_epoch() as i64);
         } else {
             params.flags().set(X509VerifyFlags::NO_CHECK_TIME, true);
         }
@@ -506,7 +504,7 @@ impl X509CertificateWriter for X509Writer {
         cert_builder.set_common_params(&subject_params)?;
 
         // Consider the current time to be 1 hour earlier to avoid clock drift issues
-        let not_before = i64::try_from(MlsTime::now().seconds_since_epoch()? - 3600)
+        let not_before = i64::try_from(MlsTime::now().seconds_since_epoch() - 3600)
             .map_err(|_| X509Error::InvalidCertificateLifetime)?;
 
         #[cfg(test)]
@@ -806,7 +804,7 @@ mod tests {
 
         // Some time in late 2022 (almost 53 years since 1970)
         let cert_valid_time =
-            MlsTime::from_duration_since_epoch(Duration::from_secs(53 * 365 * 24 * 3600)).unwrap();
+            MlsTime::from_duration_since_epoch(Duration::from_secs(53 * 365 * 24 * 3600));
 
         system_validator
             .validate_chain(&chain, Some(cert_valid_time))
@@ -845,7 +843,9 @@ mod tests {
 
         let res = validator.validate_chain(
             &chain,
-            Some(MlsTime::from_duration_since_epoch(Duration::from_secs(1798761600)).unwrap()),
+            Some(MlsTime::from_duration_since_epoch(Duration::from_secs(
+                1798761600,
+            ))),
         );
 
         assert_matches!(res, Err(X509Error::ChainValidationFailure(_)));

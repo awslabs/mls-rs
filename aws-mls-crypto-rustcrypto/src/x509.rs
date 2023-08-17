@@ -1,6 +1,6 @@
 use std::net::AddrParseError;
 
-use aws_mls_core::{crypto::CipherSuite, error::IntoAnyError, time::SystemTimeError};
+use aws_mls_core::{crypto::CipherSuite, error::IntoAnyError};
 use aws_mls_identity_x509::SubjectAltName;
 use spki::{der::Tag, ObjectIdentifier};
 
@@ -52,8 +52,6 @@ pub enum X509Error {
     InvalidCaExtensions,
     #[cfg_attr(feature = "std", error("invalid certificate lifetime"))]
     InvalidCertificateLifetime,
-    #[cfg_attr(feature = "std", error(transparent))]
-    SystemTimeError(SystemTimeError),
     #[cfg_attr(feature = "std", error("no trusted CA certificate found in the chain"))]
     CaNotFound,
     #[cfg_attr(feature = "std", error("pinned certificate not found in the chain"))]
@@ -124,12 +122,6 @@ impl From<EcSignerError> for X509Error {
 impl From<AddrParseError> for X509Error {
     fn from(e: AddrParseError) -> X509Error {
         X509Error::AddrParseError(e)
-    }
-}
-
-impl From<SystemTimeError> for X509Error {
-    fn from(e: SystemTimeError) -> Self {
-        X509Error::SystemTimeError(e)
     }
 }
 

@@ -152,7 +152,7 @@ pub type BaseSqlConfig = Config<
 ///     >,
 /// >;
 ///
-/// fn make_client_2() -> MlsClient {  
+/// fn make_client_2() -> MlsClient {
 ///     // Replace by code to load the certificate and secret key
 ///     let secret_key = b"never hard-code secrets".to_vec().into();
 ///     let public_key = b"test invalid public key".to_vec().into();
@@ -721,7 +721,7 @@ where
 
     fn lifetime(&self) -> Lifetime {
         #[cfg(feature = "std")]
-        let now_timestamp = MlsTime::now().seconds_since_epoch().unwrap();
+        let now_timestamp = MlsTime::now().seconds_since_epoch();
 
         #[cfg(not(feature = "std"))]
         let now_timestamp = 0;

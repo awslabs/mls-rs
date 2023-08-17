@@ -73,7 +73,7 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
                 // If the context is add, and we specified a time to check for lifetime, verify it
                 if let LeafNodeSource::KeyPackage(lifetime) = &leaf_node.leaf_node_source {
                     if let Some(current_time) = time {
-                        if !lifetime.within_lifetime(*current_time)? {
+                        if !lifetime.within_lifetime(*current_time) {
                             return Err(MlsError::InvalidLifetime);
                         }
                     }
@@ -600,10 +600,9 @@ mod tests {
 
         let good_lifetime = MlsTime::now();
 
-        let over_one_year = good_lifetime.seconds_since_epoch().unwrap() + (86400 * 366);
+        let over_one_year = good_lifetime.seconds_since_epoch() + (86400 * 366);
 
-        let bad_lifetime =
-            MlsTime::from_duration_since_epoch(Duration::from_secs(over_one_year)).unwrap();
+        let bad_lifetime = MlsTime::from_duration_since_epoch(Duration::from_secs(over_one_year));
 
         let res = test_validator
             .check_if_valid(&leaf_node, ValidationContext::Add(Some(good_lifetime)))

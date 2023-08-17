@@ -50,8 +50,6 @@ pub enum MlsError {
     SerializationError(AnyError),
     #[cfg_attr(feature = "std", error(transparent))]
     ExtensionError(AnyError),
-    #[cfg_attr(feature = "std", error(transparent))]
-    SystemTimeError(aws_mls_core::time::SystemTimeError),
     #[cfg_attr(feature = "std", error("Cipher suite does not match"))]
     CipherSuiteMismatch,
     #[cfg_attr(feature = "std", error("Invalid commit, missing required path"))]
@@ -352,13 +350,6 @@ impl From<ExtensionError> for MlsError {
     #[inline]
     fn from(e: ExtensionError) -> Self {
         MlsError::ExtensionError(e.into_any_error())
-    }
-}
-
-impl From<crate::time::SystemTimeError> for MlsError {
-    #[inline]
-    fn from(e: crate::time::SystemTimeError) -> Self {
-        MlsError::SystemTimeError(e)
     }
 }
 

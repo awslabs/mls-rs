@@ -3542,11 +3542,10 @@ mod tests {
         let commit = groups[0].group.commit(vec![]).await.unwrap().commit_message;
 
         // 10 years from now
-        let future_time = MlsTime::now().seconds_since_epoch().unwrap() + 10 * 365 * 24 * 3600;
+        let future_time = MlsTime::now().seconds_since_epoch() + 10 * 365 * 24 * 3600;
 
         let future_time =
-            MlsTime::from_duration_since_epoch(core::time::Duration::from_secs(future_time))
-                .unwrap();
+            MlsTime::from_duration_since_epoch(core::time::Duration::from_secs(future_time));
 
         groups[1]
             .group
