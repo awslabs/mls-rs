@@ -12,6 +12,7 @@ pub mod identity;
 pub mod key_package;
 pub mod protocol_version;
 pub mod psk;
+pub mod secret;
 pub mod time;
 
 pub use aws_mls_codec;

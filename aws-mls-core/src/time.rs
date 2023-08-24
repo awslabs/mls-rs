@@ -3,7 +3,9 @@ use core::time::Duration;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
+#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::ffi_type)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
 pub struct MlsTime {
     seconds: u64,
 }

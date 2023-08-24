@@ -329,7 +329,6 @@ impl MLSMessage {
     }
 
     /// The wire format value describing the contents of this message.
-    #[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen_ignore)]
     pub fn wire_format(&self) -> WireFormat {
         match self.payload {
             MLSMessagePayload::Plain(_) => WireFormat::PublicMessage,
@@ -407,6 +406,7 @@ impl From<PublicMessage> for MLSMessagePayload {
     }
 }
 
+#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::ffi_type)]
 #[derive(
     Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, MlsSize, MlsEncode, MlsDecode,
 )]
@@ -415,7 +415,6 @@ impl From<PublicMessage> for MLSMessagePayload {
 /// Content description of an [`MLSMessage`]
 pub enum WireFormat {
     PublicMessage = 1u16,
-    #[cfg(feature = "private_message")]
     PrivateMessage = 2u16,
     Welcome = 3u16,
     GroupInfo = 4u16,

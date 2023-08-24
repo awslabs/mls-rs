@@ -5,10 +5,10 @@ use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use aws_mls_core::error::IntoAnyError;
 use aws_mls_core::extension::ExtensionList;
 use aws_mls_core::identity::IdentityProvider;
+use aws_mls_core::secret::Secret;
 use aws_mls_core::time::MlsTime;
 use core::ops::Deref;
 use core::option::Option::Some;
-use zeroize::Zeroizing;
 
 use crate::cipher_suite::CipherSuite;
 use crate::client::MlsError;
@@ -1307,7 +1307,6 @@ where
     /// not be persisted by the
     /// [`GroupStateStorage`](crate::GroupStateStorage)
     /// in use by this group until [`Group::write_to_storage`] is called.
-    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     #[maybe_async::maybe_async]
     pub async fn process_incoming_message_with_time(
         &mut self,
@@ -1416,20 +1415,19 @@ where
     /// Get the
     /// [epoch_authenticator](https://messaginglayersecurity.rocks/mls-protocol/draft-ietf-mls-protocol.html#name-key-schedule)
     /// of the current epoch.
-    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
-    pub fn epoch_authenticator(&self) -> Result<Zeroizing<Vec<u8>>, MlsError> {
-        Ok(self.key_schedule.authentication_secret.clone())
+    pub fn epoch_authenticator(&self) -> Result<Secret, MlsError> {
+        Ok(self.key_schedule.authentication_secret.clone().into())
     }
 
-    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     pub fn export_secret(
         &self,
         label: &[u8],
         context: &[u8],
         len: usize,
-    ) -> Result<Zeroizing<Vec<u8>>, MlsError> {
+    ) -> Result<Secret, MlsError> {
         self.key_schedule
             .export_secret(label, context, len, &self.cipher_suite_provider)
+            .map(Into::into)
     }
 
     /// Export the current epoch's ratchet tree in serialized format.

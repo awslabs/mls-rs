@@ -397,6 +397,7 @@ where
         }
     }
 
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     pub fn to_builder(&self) -> ClientBuilder<MakeConfig<C>> {
         ClientBuilder::from_config(recreate_config(
             self.config.clone(),

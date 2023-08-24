@@ -1,5 +1,7 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 /// Padding used when sending an encrypted group message.
+#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::ffi_type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[repr(u8)]
 pub enum PaddingMode {
     /// Step function based on the size of the message being sent.
     /// The amount of padding used will increase with the size of the original
