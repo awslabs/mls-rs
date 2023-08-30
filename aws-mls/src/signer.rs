@@ -223,7 +223,8 @@ mod tests {
         let cases = load_test_cases();
 
         for one_case in cases {
-            let Some(cipher_suite_provider) = try_test_cipher_suite_provider(one_case.cipher_suite) else {
+            let Some(cipher_suite_provider) = try_test_cipher_suite_provider(one_case.cipher_suite)
+            else {
                 continue;
             };
 
