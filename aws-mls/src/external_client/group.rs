@@ -1,6 +1,7 @@
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use aws_mls_core::{
-    crypto::SignatureSecretKey, error::IntoAnyError, group::Member, identity::IdentityProvider,
+    crypto::SignatureSecretKey, error::IntoAnyError, extension::ExtensionList, group::Member,
+    identity::IdentityProvider,
 };
 
 use crate::{
@@ -49,7 +50,7 @@ use crate::{
 use crate::group::proposal::CustomProposal;
 
 #[cfg(feature = "external_proposal")]
-use aws_mls_core::{crypto::CipherSuiteProvider, extension::ExtensionList, psk::ExternalPskId};
+use aws_mls_core::{crypto::CipherSuiteProvider, psk::ExternalPskId};
 
 #[cfg(feature = "external_proposal")]
 use crate::{
@@ -514,6 +515,11 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     #[inline(always)]
     pub fn roster(&self) -> Vec<Member> {
         self.group_state().roster()
+    }
+
+    #[inline(always)]
+    pub fn context_extensions(&self) -> &ExtensionList {
+        &self.group_state().context.extensions
     }
 
     /// Get the
