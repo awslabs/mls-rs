@@ -310,11 +310,7 @@ async fn test_remove_proposals(
                 assert_eq!(group.current_epoch(), epoch_before_remove);
             } else {
                 assert_eq!(group.current_epoch(), epoch_before_remove + 1);
-
-                assert!(group
-                    .roster()
-                    .iter()
-                    .all(|member| member.index() != to_remove_index));
+                assert!(group.roster().member_with_index(to_remove_index).is_err());
             }
         }
 
@@ -523,7 +519,7 @@ async fn external_commits_work(
 
     assert!(groups
         .iter()
-        .all(|group| group.roster().len() == PARTICIPANT_COUNT));
+        .all(|group| group.roster().members_iter().count() == PARTICIPANT_COUNT));
 
     for i in 0..groups.len() {
         let message = groups[i].propose_remove(0, Vec::new()).await.unwrap();

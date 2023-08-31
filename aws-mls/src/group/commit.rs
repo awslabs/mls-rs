@@ -1063,7 +1063,7 @@ mod tests {
 
         // Check that the credential was updated by in the committer's state.
         groups[0].process_pending_commit().await.unwrap();
-        let new_member = groups[0].group.roster().first().cloned().unwrap();
+        let new_member = groups[0].group.roster().member_with_index(0).unwrap();
 
         assert_eq!(
             new_member.signing_identity().credential,
@@ -1081,7 +1081,7 @@ mod tests {
             .await
             .unwrap();
 
-        let new_member = groups[1].group.roster().first().cloned().unwrap();
+        let new_member = groups[1].group.roster().member_with_index(0).unwrap();
 
         assert_eq!(
             new_member.signing_identity().credential,

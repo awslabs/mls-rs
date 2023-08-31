@@ -286,7 +286,7 @@ impl GroupState {
 #[cfg(feature = "custom_proposal")]
 #[maybe_async::maybe_async]
 pub async fn expand_custom_proposals<F>(
-    roster: &[Member],
+    roster: &Roster<'_>,
     group_extensions: &ExtensionList,
     proposal_bundle: &mut ProposalBundle,
     user_rules: &F,
@@ -3918,7 +3918,7 @@ mod tests {
             #[cfg(feature = "custom_proposal")]
             async fn expand_custom_proposals(
                 &self,
-                _current_roster: &[Member],
+                _current_roster: &Roster,
                 _extension_list: &ExtensionList,
                 _proposals: &[ProposalInfo<CustomProposal>],
             ) -> Result<Vec<ProposalInfo<Proposal>>, Self::Error> {
@@ -3928,7 +3928,7 @@ mod tests {
             async fn validate(
                 &self,
                 _: Sender,
-                _: &[Member],
+                _: &Roster,
                 _: &ExtensionList,
                 _: &ProposalBundle,
             ) -> Result<(), Self::Error> {
@@ -3938,7 +3938,7 @@ mod tests {
             async fn filter(
                 &self,
                 _: Sender,
-                _: &[Member],
+                _: &Roster,
                 _: &ExtensionList,
                 mut proposals: ProposalBundle,
             ) -> Result<ProposalBundle, Self::Error> {
@@ -3969,7 +3969,7 @@ mod tests {
         #[cfg(feature = "custom_proposal")]
         async fn expand_custom_proposals(
             &self,
-            _current_roster: &[Member],
+            _current_roster: &Roster,
             _extension_list: &ExtensionList,
             _proposals: &[ProposalInfo<CustomProposal>],
         ) -> Result<Vec<ProposalInfo<Proposal>>, Self::Error> {
@@ -3979,7 +3979,7 @@ mod tests {
         async fn validate(
             &self,
             _: Sender,
-            _: &[Member],
+            _: &Roster,
             _: &ExtensionList,
             _: &ProposalBundle,
         ) -> Result<(), Self::Error> {
@@ -3989,7 +3989,7 @@ mod tests {
         async fn filter(
             &self,
             _: Sender,
-            _: &[Member],
+            _: &Roster,
             _: &ExtensionList,
             _: ProposalBundle,
         ) -> Result<ProposalBundle, Self::Error> {
@@ -4040,7 +4040,7 @@ mod tests {
 
         async fn expand_custom_proposals(
             &self,
-            _current_roster: &[Member],
+            _current_roster: &Roster,
             _extension_list: &ExtensionList,
             _proposals: &[ProposalInfo<CustomProposal>],
         ) -> Result<Vec<ProposalInfo<Proposal>>, Self::Error> {
@@ -4050,7 +4050,7 @@ mod tests {
         async fn validate(
             &self,
             _: Sender,
-            _: &[Member],
+            _: &Roster,
             _: &ExtensionList,
             _: &ProposalBundle,
         ) -> Result<(), Self::Error> {
@@ -4060,7 +4060,7 @@ mod tests {
         async fn filter(
             &self,
             _: Sender,
-            _: &[Member],
+            _: &Roster,
             _: &ExtensionList,
             bundle: ProposalBundle,
         ) -> Result<ProposalBundle, Self::Error> {

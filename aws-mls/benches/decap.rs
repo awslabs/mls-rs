@@ -14,10 +14,7 @@ use aws_mls_core::crypto::CryptoProvider;
 #[cfg(sync)]
 use aws_mls_crypto_openssl::OpensslCryptoProvider;
 #[cfg(sync)]
-use criterion::{
-    criterion_group, criterion_main, measurement::WallTime, BatchSize, BenchmarkGroup, BenchmarkId,
-    Criterion,
-};
+use criterion::{measurement::WallTime, BatchSize, BenchmarkGroup, BenchmarkId, Criterion};
 #[cfg(sync)]
 use std::collections::HashMap;
 

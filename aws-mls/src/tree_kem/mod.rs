@@ -893,10 +893,12 @@ mod tests {
     use crate::tree_kem::test_utils::{get_test_leaf_nodes, get_test_tree};
     use crate::tree_kem::{MlsError, TreeKemPublic};
     use alloc::borrow::ToOwned;
-    use alloc::boxed::Box;
     use alloc::vec;
     use alloc::vec::Vec;
     use assert_matches::assert_matches;
+
+    #[cfg(feature = "by_ref_proposal")]
+    use alloc::boxed::Box;
 
     #[cfg(feature = "by_ref_proposal")]
     use crate::{

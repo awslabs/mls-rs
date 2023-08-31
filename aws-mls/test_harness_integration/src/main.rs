@@ -10,7 +10,7 @@ use aws_mls::{
         builder::{ExternalBaseConfig, ExternalClientBuilder},
         ExternalClient,
     },
-    group::ReceivedMessage,
+    group::{Member, ReceivedMessage},
     psk::ExternalPskId,
 };
 
@@ -21,7 +21,7 @@ use aws_mls::{
     crypto::SignatureSecretKey,
     error::MlsError,
     extension::built_in::ExternalSendersExt,
-    group::{Member, StateUpdate},
+    group::StateUpdate,
     identity::{
         basic::{BasicCredential, BasicIdentityProvider},
         Credential, SigningIdentity,
@@ -245,7 +245,10 @@ impl MlsClient for MlsClientImpl {
                 .await
                 .map_err(abort)?;
 
-            let idx = find_member(&server.roster(), &client.signing_identity.credential)?;
+            let idx = find_member(
+                &server.roster().members(),
+                &client.signing_identity.credential,
+            )?;
             Some(idx)
         } else {
             None
@@ -424,7 +427,7 @@ impl MlsClient for MlsClientImpl {
 
         self.send_proposal(request.state_id, move |group| {
             let removed_cred = Credential::Basic(BasicCredential::new(request.removed_id));
-            let removed_index = find_member(&group.roster(), &removed_cred)?;
+            let removed_index = find_member(&group.roster().members(), &removed_cred)?;
             Ok(group.propose_remove(removed_index, vec![]).boxed())
         })
         .await
@@ -824,7 +827,7 @@ impl MlsClient for MlsClientImpl {
             }
             PROPOSAL_DESC_REMOVE => {
                 let cred = Credential::Basic(BasicCredential::new(proposal.removed_id.clone()));
-                let removed_index = find_member(&server.roster(), &cred)?;
+                let removed_index = find_member(&server.roster().members(), &cred)?;
 
                 server
                     .propose_remove(removed_index, vec![])
@@ -1025,7 +1028,7 @@ impl MlsClientImpl {
         preferences.force_commit_path_update = request.force_path;
         preferences.ratchet_tree_extension = !request.external_tree;
 
-        let roster = group.roster();
+        let roster = group.roster().members();
 
         let mut commit_builder = group.commit_builder().set_commit_preferences(preferences);
 

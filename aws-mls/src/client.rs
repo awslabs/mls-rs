@@ -857,7 +857,7 @@ mod tests {
         assert!(alice_group
             .group
             .roster()
-            .into_iter()
+            .members_iter()
             .any(|member| member.signing_identity() == &bob_identity))
     }
 
@@ -917,7 +917,7 @@ mod tests {
 
         let num_members = if do_remove { 2 } else { 3 };
 
-        assert_eq!(new_group.roster().len(), num_members);
+        assert_eq!(new_group.roster().members_iter().count(), num_members);
 
         let _ = alice_group
             .group
@@ -933,10 +933,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(alice_group.group.roster().len() == num_members);
+        assert!(alice_group.group.roster().members_iter().count() == num_members);
 
         if !do_remove {
-            assert!(bob_group.group.roster().len() == num_members);
+            assert!(bob_group.group.roster().members_iter().count() == num_members);
         } else {
             // Bob was removed so his epoch must stay the same
             assert_eq!(bob_group.group.current_epoch(), bob_current_epoch);

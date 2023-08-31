@@ -1453,41 +1453,10 @@ where
         self.context().cipher_suite
     }
 
-    /// The current set of group members. This function makes a clone of
-    /// member information from the internal group state.
-    ///
-    /// # Warning
-    ///
-    /// The indexes within this roster do not correlate with indexes of users
-    /// within [`ReceivedMessage`] content descriptions due to the layout of
-    /// member information within a MLS group state.
-    pub fn roster(&self) -> Vec<Member> {
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
+    /// Current roster
+    pub fn roster(&self) -> Roster {
         self.group_state().roster()
-    }
-
-    /// Iterator over the current roster that lazily copies data out of the
-    /// internal group state.
-    ///
-    /// # Warning
-    ///
-    /// The indexes within this iterator do not correlate with indexes of users
-    /// within [`ReceivedMessage`] content descriptions due to the layout of
-    /// member information within a MLS group state.
-    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
-    pub fn roster_iter(&self) -> impl Iterator<Item = Member> + '_ {
-        self.group_state().roster_iter()
-    }
-
-    /// Iterator over member's signing identities.
-    ///
-    /// # Warning
-    ///
-    /// The indexes within this iterator do not correlate with indexes of users
-    /// within [`ReceivedMessage`] content descriptions due to the layout of
-    /// member information within a MLS group state.
-    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
-    pub fn member_identities(&self) -> impl Iterator<Item = &SigningIdentity> + '_ {
-        self.state.signing_identity_iter()
     }
 
     /// Determines equality of two different groups internal states.
@@ -2546,7 +2515,7 @@ mod tests {
                 .map(|update| update.after_update().clone())
                 .collect_vec()
                 .as_slice(),
-            &alice.group.roster()[0..2]
+            &alice.group.roster().members()[0..2]
         );
 
         assert_eq!(
@@ -2606,10 +2575,13 @@ mod tests {
 
         assert_eq!(
             commit_description.state_update.roster_update.added(),
-            &bob_group.roster()[1..2]
+            &bob_group.roster().members()[1..2]
         );
 
-        assert_eq!(bob_group.roster(), alice_group.group.roster());
+        itertools::assert_equal(
+            bob_group.roster().members_iter(),
+            alice_group.group.roster().members_iter(),
+        );
     }
 
     #[cfg(feature = "external_commit")]
@@ -2990,7 +2962,7 @@ mod tests {
         #[cfg(not(feature = "state_update"))]
         assert!(state_update == StateUpdate {});
 
-        assert_eq!(alice_group.group.roster().len(), 2);
+        assert_eq!(alice_group.group.roster().members_iter().count(), 2);
     }
 
     #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
@@ -3493,7 +3465,7 @@ mod tests {
 
         // Check that the credential was updated by in the committer's state.
         groups[1].process_pending_commit().await.unwrap();
-        let new_member = groups[1].group.roster().first().cloned().unwrap();
+        let new_member = groups[1].group.roster().member_with_index(0).unwrap();
 
         assert_eq!(
             new_member.signing_identity().credential,
@@ -3510,7 +3482,7 @@ mod tests {
             .process_message(commit_output.commit_message)
             .await
             .unwrap();
-        let new_member = groups[0].group.roster().first().cloned().unwrap();
+        let new_member = groups[0].group.roster().member_with_index(0).unwrap();
 
         assert_eq!(
             new_member.signing_identity().credential,

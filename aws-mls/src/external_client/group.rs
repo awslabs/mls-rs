@@ -20,7 +20,7 @@ use crate::{
         snapshot::RawGroupState,
         state::GroupState,
         transcript_hash::InterimTranscriptHash,
-        validate_group_info,
+        validate_group_info, Roster,
     },
     identity::SigningIdentity,
     protocol_version::ProtocolVersion,
@@ -513,7 +513,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
 
     /// Get the current roster of the group.
     #[inline(always)]
-    pub fn roster(&self) -> Vec<Member> {
+    pub fn roster(&self) -> Roster {
         self.group_state().roster()
     }
 

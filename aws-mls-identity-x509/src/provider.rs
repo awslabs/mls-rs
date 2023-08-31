@@ -1,7 +1,6 @@
 use core::convert::Infallible;
 
 use crate::{util::credential_to_chain, CertificateChain, X509IdentityError};
-use alloc::boxed::Box;
 use alloc::vec;
 use alloc::vec::Vec;
 use aws_mls_core::{
@@ -12,6 +11,9 @@ use aws_mls_core::{
     identity::{CredentialType, IdentityProvider, IdentityWarning},
     time::MlsTime,
 };
+
+#[cfg(not(feature = "std"))]
+use alloc::boxed::Box;
 
 #[cfg(all(test, feature = "std"))]
 use mockall::automock;

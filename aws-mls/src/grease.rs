@@ -200,8 +200,9 @@ mod tests {
         let member = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
             .await
             .group
-            .roster()[0]
-            .clone();
+            .roster()
+            .member_with_index(0)
+            .unwrap();
 
         assert!(!is_ext_greased(member.extensions()));
         assert!(!is_greased(member.capabilities().protocol_versions()));

@@ -1,4 +1,4 @@
-use crate::group::{proposal_filter::ProposalBundle, Sender};
+use crate::group::{proposal_filter::ProposalBundle, Roster, Sender};
 
 #[cfg(feature = "custom_proposal")]
 use crate::group::proposal::{CustomProposal, Proposal};
@@ -7,7 +7,7 @@ use crate::group::proposal::{CustomProposal, Proposal};
 use alloc::{vec, vec::Vec};
 
 use alloc::boxed::Box;
-use aws_mls_core::{error::IntoAnyError, extension::ExtensionList, group::Member};
+use aws_mls_core::{error::IntoAnyError, extension::ExtensionList};
 use core::convert::Infallible;
 
 #[cfg(feature = "custom_proposal")]
@@ -35,7 +35,7 @@ pub trait ProposalRules: Send + Sync {
     #[cfg(feature = "custom_proposal")]
     async fn expand_custom_proposals(
         &self,
-        current_roster: &[Member],
+        current_roster: &Roster,
         extension_list: &ExtensionList,
         proposals: &[ProposalInfo<CustomProposal>],
     ) -> Result<Vec<ProposalInfo<Proposal>>, Self::Error>;
@@ -45,7 +45,7 @@ pub trait ProposalRules: Send + Sync {
     async fn validate(
         &self,
         commit_sender: Sender,
-        current_roster: &[Member],
+        current_roster: &Roster,
         extension_list: &ExtensionList,
         proposals: &ProposalBundle,
     ) -> Result<(), Self::Error>;
@@ -56,7 +56,7 @@ pub trait ProposalRules: Send + Sync {
     async fn filter(
         &self,
         commit_sender: Sender,
-        current_roster: &[Member],
+        current_roster: &Roster,
         extension_list: &ExtensionList,
         proposals: ProposalBundle,
     ) -> Result<ProposalBundle, Self::Error>;
@@ -72,7 +72,7 @@ macro_rules! delegate_proposal_rules {
             #[maybe_async::maybe_async]
             async fn expand_custom_proposals(
                 &self,
-                current_roster: &[Member],
+                current_roster: &Roster,
                 extension_list: &ExtensionList,
                 proposals: &[ProposalInfo<CustomProposal>],
             ) -> Result<Vec<ProposalInfo<Proposal>>, Self::Error> {
@@ -85,7 +85,7 @@ macro_rules! delegate_proposal_rules {
             async fn validate(
                 &self,
                 commit_sender: Sender,
-                current_roster: &[Member],
+                current_roster: &Roster,
                 extension_list: &ExtensionList,
                 proposals: &ProposalBundle,
             ) -> Result<(), Self::Error> {
@@ -98,7 +98,7 @@ macro_rules! delegate_proposal_rules {
             async fn filter(
                 &self,
                 commit_sender: Sender,
-                current_roster: &[Member],
+                current_roster: &Roster,
                 extension_list: &ExtensionList,
                 proposals: ProposalBundle,
             ) -> Result<ProposalBundle, Self::Error> {
@@ -130,7 +130,7 @@ impl ProposalRules for PassThroughProposalRules {
     #[cfg(feature = "custom_proposal")]
     async fn expand_custom_proposals(
         &self,
-        _current_roster: &[Member],
+        _current_roster: &Roster,
         _extension_list: &ExtensionList,
         _proposals: &[ProposalInfo<CustomProposal>],
     ) -> Result<Vec<ProposalInfo<Proposal>>, Self::Error> {
@@ -140,7 +140,7 @@ impl ProposalRules for PassThroughProposalRules {
     async fn validate(
         &self,
         _commit_sender: Sender,
-        _current_roster: &[Member],
+        _current_roster: &Roster,
         _extension_list: &ExtensionList,
         _proposals: &ProposalBundle,
     ) -> Result<(), Self::Error> {
@@ -150,7 +150,7 @@ impl ProposalRules for PassThroughProposalRules {
     async fn filter(
         &self,
         _commit_sender: Sender,
-        _current_roster: &[Member],
+        _current_roster: &Roster,
         _extension_list: &ExtensionList,
         proposals: ProposalBundle,
     ) -> Result<ProposalBundle, Self::Error> {
