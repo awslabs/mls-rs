@@ -3,8 +3,20 @@ name = "aws-mls-ffi"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["openssl", "sqlcipher-bundled", "x509"]
+openssl = ["aws-mls-crypto-openssl", "std"]
+sqlcipher = ["sqlite", "aws-mls-provider-sqlite/sqlcipher"]
+sqlcipher-bundled = ["sqlite", "aws-mls-provider-sqlite/sqlcipher-bundled"]
+sqlite = ["std", "aws-mls-provider-sqlite/sqlite"]
+sqlite-bundled = ["sqlite", "aws-mls-provider-sqlite/sqlite-bundled"]
+std = ["aws-mls/std", "safer-ffi-gen/std"]
+x509 = ["aws-mls-identity-x509"]
+
 [dependencies]
 aws-mls = { path = "../aws-mls", version = "*", features = ["ffi"] }
-aws-mls-crypto-openssl = { path = "../aws-mls-crypto-openssl", version = "*" }
-safer-ffi = "0.1.0"
-safer-ffi-gen = "0.8.0"
+aws-mls-crypto-openssl = { path = "../aws-mls-crypto-openssl", version = "*", optional = true }
+aws-mls-identity-x509 = { path = "../aws-mls-identity-x509", version = "*", optional = true }
+aws-mls-provider-sqlite = { path = "../aws-mls-provider-sqlite", version = "*", default-features = false, optional = true }
+safer-ffi = { version = "0.1.0", default-features = false }
+safer-ffi-gen = { version = "0.8.0", default-features = false }
