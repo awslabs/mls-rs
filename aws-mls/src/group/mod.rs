@@ -1453,9 +1453,8 @@ where
         self.context().cipher_suite
     }
 
-    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     /// Current roster
-    pub fn roster(&self) -> Roster {
+    pub fn roster(&self) -> Roster<'_> {
         self.group_state().roster()
     }
 
