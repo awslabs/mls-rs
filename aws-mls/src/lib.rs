@@ -235,3 +235,6 @@ use private::Sealed;
 #[cfg(any(test, feature = "test_utils"))]
 #[doc(hidden)]
 pub mod test_utils;
+
+#[cfg(feature = "ffi")]
+pub use safer_ffi_gen;

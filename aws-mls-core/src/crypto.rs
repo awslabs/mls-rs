@@ -146,6 +146,12 @@ impl Deref for SignaturePublicKey {
     }
 }
 
+impl AsRef<[u8]> for SignaturePublicKey {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
 impl From<Vec<u8>> for SignaturePublicKey {
     fn from(data: Vec<u8>) -> Self {
         SignaturePublicKey(data)
@@ -190,6 +196,12 @@ impl Deref for SignatureSecretKey {
     type Target = Vec<u8>;
 
     fn deref(&self) -> &Self::Target {
+        &self.bytes
+    }
+}
+
+impl AsRef<[u8]> for SignatureSecretKey {
+    fn as_ref(&self) -> &[u8] {
         &self.bytes
     }
 }

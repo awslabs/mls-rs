@@ -691,7 +691,8 @@ where
         self.signer.as_ref().ok_or(MlsError::SignerNotFound)
     }
 
-    fn signing_identity(&self) -> Result<(&SigningIdentity, CipherSuite), MlsError> {
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
+    pub fn signing_identity(&self) -> Result<(&SigningIdentity, CipherSuite), MlsError> {
         self.signing_identity
             .as_ref()
             .map(|(id, cs)| (id, *cs))
