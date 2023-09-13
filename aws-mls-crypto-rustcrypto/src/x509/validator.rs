@@ -27,7 +27,7 @@ impl X509Validator {
                 // Verify the self-signture. Time is validated when CAs are used
                 let cert = Certificate::from_der(&cert_data)?;
                 verify_cert(&cert, &cert, None)?;
-                let subject = cert.tbs_certificate.subject.to_vec()?;
+                let subject = cert.tbs_certificate.subject.to_der()?;
                 Ok((subject, cert_data))
             })
             .collect::<Result<_, X509Error>>()?;
@@ -75,7 +75,7 @@ impl X509Validator {
         {
             let maybe_ca = self
                 .root_ca_list
-                .get(&cert1.tbs_certificate.issuer.to_vec()?);
+                .get(&cert1.tbs_certificate.issuer.to_der()?);
 
             let verifier = maybe_ca
                 .map(|ca| {
@@ -355,6 +355,7 @@ mod tests {
             .tbs_certificate
             .subject_public_key_info
             .subject_public_key
+            .raw_bytes()
             .to_vec()
             .into();
 

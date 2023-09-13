@@ -14,7 +14,7 @@ use rand_core::{OsRng, RngCore};
 
 use spki::{
     der::{
-        asn1::{BitStringRef, UIntRef, UtcTime},
+        asn1::{BitString, UtcTime},
         Decode,
     },
     AlgorithmIdentifier, SubjectPublicKeyInfo,
@@ -22,6 +22,7 @@ use spki::{
 
 use x509_cert::{
     der::Encode,
+    serial_number::SerialNumber,
     time::{Time, Validity},
     Certificate, TbsCertificate,
 };
@@ -86,15 +87,15 @@ impl X509CertificateWriter for X509Writer {
         let subject_pubkey_der = pub_key_to_spki(&subject_pubkey_ec)?;
 
         // Generate a serial number
-        let mut serial_number = vec![0; 20];
+        let mut serial_number = [0u8; 8];
         OsRng.try_fill_bytes(&mut serial_number)?;
-        let serial_number = UIntRef::new(&serial_number)?;
+        let serial_number = SerialNumber::from(u64::from_be_bytes(serial_number));
 
         #[cfg(test)]
         let serial_number = self
             .test_serial
             .as_ref()
-            .map(|s| UIntRef::new(s))
+            .map(|s| SerialNumber::new(s))
             .transpose()?
             .unwrap_or(serial_number);
 
@@ -125,7 +126,7 @@ impl X509CertificateWriter for X509Writer {
         let tbs_cert = TbsCertificate {
             version: x509_cert::certificate::Version::V3,
             serial_number,
-            signature: issuer_cert.tbs_certificate.signature,
+            signature: issuer_cert.tbs_certificate.signature.clone(),
             issuer: issuer_cert.tbs_certificate.subject.clone(),
             validity,
             subject: build_x509_name(&subject_params.subject)?,
@@ -135,18 +136,17 @@ impl X509CertificateWriter for X509Writer {
             subject_unique_id: None,
             extensions: Some(extensions.iter().map(Into::into).collect()),
         };
-
         let issuer_signer =
             EcSigner::new(issuer.cipher_suite).ok_or(X509Error::UnsupportedCipherSuite)?;
 
-        let signature = issuer_signer.sign(&issuer.signing_key, &tbs_cert.to_vec()?)?;
+        let signature = issuer_signer.sign(&issuer.signing_key, &tbs_cert.to_der()?)?;
 
         let built_cert = Certificate {
             tbs_certificate: tbs_cert,
             signature_algorithm: issuer_cert.tbs_certificate.signature,
-            signature: signature.as_slice().try_into()?,
+            signature: BitString::from_bytes(signature.as_slice())?,
         }
-        .to_vec()?;
+        .to_der()?;
 
         let chain = [&[built_cert.into()] as &[DerCertificate], &issuer.chain].concat();
 
@@ -201,8 +201,8 @@ impl X509CertificateWriter for X509Writer {
             parameters: None,
         };
 
-        let signature_data = signer.sign(&secret_key, &info.to_vec()?)?;
-        let signature = BitStringRef::new(0, &signature_data)?;
+        let signature_data = signer.sign(&secret_key, &info.to_der()?)?;
+        let signature = BitString::from_bytes(&signature_data)?;
 
         let req = CertReq {
             info,
@@ -211,7 +211,7 @@ impl X509CertificateWriter for X509Writer {
         };
 
         Ok(CertificateRequest::new(
-            req.to_vec()?,
+            req.to_der()?,
             public_key,
             secret_key,
         ))
@@ -244,7 +244,7 @@ mod tests {
         X509CertificateWriter,
     };
 
-    use spki::der::Decode;
+    use spki::der::{asn1::BitString, Decode};
     use x509_cert::{request::CertReq, Certificate};
 
     use crate::{
@@ -310,7 +310,7 @@ mod tests {
             .public_key
             .subject_public_key;
 
-        assert_eq!(public_key, &expected_public);
+        assert_eq!(public_key, BitString::from_bytes(&expected_public).unwrap());
     }
 
     #[test]
@@ -435,7 +435,7 @@ mod tests {
             .subject_public_key_info
             .subject_public_key;
 
-        assert_eq!(crt_public, &public);
+        assert_eq!(crt_public, BitString::from_bytes(&public).unwrap());
     }
 
     fn get_test_root_ca() -> CertificateIssuer {

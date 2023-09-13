@@ -48,15 +48,15 @@ hmac = { version = "0.12", default-features = false, features = ["reset"] }
 hkdf = { version = "0.12", default-features = false }
 
 # KEM
-p256 = { version = "0.12", default-features = false, features = ["alloc", "ecdh", "ecdsa", "pem"] }
+p256 = { version = "0.13", default-features = false, features = ["alloc", "ecdh", "ecdsa", "pem"] }
 x25519-dalek = { version = "2", default-features = false, features = ["alloc", "static_secrets"] }
 ed25519-dalek = { version = "2", default-features = false, features = ["alloc", "rand_core"] }
-sec1 = { version = "0.3", default-features = false, features = ["alloc"] }
+sec1 = { version = "0.7", default-features = false, features = ["alloc"] }
 
 # X509 feature
 aws-mls-identity-x509 = { path = "../aws-mls-identity-x509", optional = true, version = "*" }
-x509-cert = { version = "0.1", optional = true, features = ["std"] }
-spki = { version = "0.6", optional = true, features = ["std", "alloc"] }
+x509-cert = { version = "0.2", optional = true, features = ["std"] }
+spki = { version = "0.7", optional = true, features = ["std", "alloc"] }
 sha1 = { version = "0.10", optional = true, features = ["std"] }
 const-oid = { version = "0.9", optional = true, features = ["std"] }
 

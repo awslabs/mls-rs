@@ -31,7 +31,7 @@ impl X509CertificateReader for X509Reader {
         Certificate::from_der(certificate)?
             .tbs_certificate
             .subject
-            .to_vec()
+            .to_der()
             .map_err(Into::into)
     }
 
@@ -52,7 +52,9 @@ impl X509CertificateReader for X509Reader {
             .unwrap_or_default()
             .iter()
             .filter(|ext| ext.extn_id == SubjectAltName::OID)
-            .map(|ext| general_names_to_alt_names(&GeneralNames::from_der(ext.extn_value)?))
+            .map(|ext| {
+                general_names_to_alt_names(&GeneralNames::from_der(ext.extn_value.as_bytes())?)
+            })
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
             .flatten()
@@ -81,7 +83,7 @@ mod tests {
     use spki::der::{
         asn1::{SetOfVec, Utf8StringRef},
         oid::db::rfc4519,
-        AnyRef, Encode,
+        Any, Encode,
     };
     use x509_cert::{attr::AttributeTypeAndValue, name::RelativeDistinguishedName};
 
@@ -96,14 +98,14 @@ mod tests {
 
         let expected_type_and_value = AttributeTypeAndValue {
             oid: rfc4519::CN,
-            value: AnyRef::from(Utf8StringRef::new("CA").unwrap()),
+            value: Any::from(Utf8StringRef::new("CA").unwrap()),
         };
 
         let expected_rdn = RelativeDistinguishedName::from(
             SetOfVec::try_from(vec![expected_type_and_value]).unwrap(),
         );
 
-        let expected_name = vec![expected_rdn].to_vec().unwrap();
+        let expected_name = vec![expected_rdn].to_der().unwrap();
 
         assert_eq!(
             X509Reader::new().subject_bytes(&test_cert).unwrap(),

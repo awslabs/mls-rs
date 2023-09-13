@@ -118,7 +118,7 @@ pub fn pub_key_to_uncompressed(key: &EcPublicKey) -> Result<Vec<u8>, EcError> {
 
 pub fn generate_private_key(curve: Curve) -> Result<EcPrivateKey, EcError> {
     match curve {
-        Curve::P256 => Ok(EcPrivateKey::P256(p256::SecretKey::random(OsRng))),
+        Curve::P256 => Ok(EcPrivateKey::P256(p256::SecretKey::random(&mut OsRng))),
         Curve::X25519 => Ok(EcPrivateKey::X25519(
             x25519_dalek::StaticSecret::random_from_rng(OsRng),
         )),
@@ -131,7 +131,7 @@ pub fn generate_private_key(curve: Curve) -> Result<EcPrivateKey, EcError> {
 
 pub fn private_key_from_bytes(bytes: &[u8], curve: Curve) -> Result<EcPrivateKey, EcError> {
     match curve {
-        Curve::P256 => p256::SecretKey::from_be_bytes(bytes)
+        Curve::P256 => p256::SecretKey::from_slice(bytes)
             .map_err(|_| EcError::EcKeyInvalidKeyData)
             .map(EcPrivateKey::P256),
         Curve::X25519 => bytes
@@ -152,7 +152,7 @@ pub fn private_key_to_bytes(key: &EcPrivateKey) -> Result<Vec<u8>, EcError> {
     match key {
         EcPrivateKey::X25519(key) => Ok(key.to_bytes().to_vec()),
         EcPrivateKey::Ed25519(key) => Ok(key.to_keypair_bytes().to_vec()),
-        EcPrivateKey::P256(key) => Ok(key.to_be_bytes().to_vec()),
+        EcPrivateKey::P256(key) => Ok(key.to_bytes().to_vec()),
     }
 }
 

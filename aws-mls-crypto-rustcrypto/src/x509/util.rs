@@ -7,7 +7,7 @@ use std::{net::IpAddr, str::FromStr};
 
 use spki::{
     der::{
-        asn1::PrintableStringRef,
+        asn1::{Ia5String, OctetString, PrintableString, PrintableStringRef},
         oid::db::{rfc3280, rfc4519, rfc5912::ECDSA_WITH_SHA_256},
         Tag, Tagged,
     },
@@ -30,9 +30,9 @@ use x509_cert::{
 
 use x509_cert::{
     der::{
-        asn1::{Any, Ia5StringRef, OctetStringRef, SetOfVec, Utf8StringRef},
+        asn1::{Any, Ia5StringRef, SetOfVec, Utf8StringRef},
         oid::AssociatedOid,
-        AnyRef, Decode, Encode,
+        Decode, Encode,
     },
     ext::pkix::SubjectAltName,
 };
@@ -62,7 +62,7 @@ impl OwnedAttribute {
         extensions: Vec<OwnedExtension>,
     ) -> Result<OwnedAttribute, X509Error> {
         let extensions = extensions.iter().map(From::from).collect();
-        let ext_req = ExtensionReq(extensions).to_vec()?;
+        let ext_req = ExtensionReq(extensions).to_der()?;
 
         Ok(OwnedAttribute {
             oid: ExtensionReq::OID,
@@ -71,11 +71,11 @@ impl OwnedAttribute {
     }
 }
 
-impl<'a> TryFrom<&'a OwnedAttribute> for Attributes<'a> {
+impl TryFrom<&OwnedAttribute> for Attributes {
     type Error = X509Error;
 
-    fn try_from(owned: &'a OwnedAttribute) -> Result<Self, X509Error> {
-        let values = SetOfVec::try_from(owned.values.iter().map(AnyRef::from).collect::<Vec<_>>())?;
+    fn try_from(owned: &OwnedAttribute) -> Result<Self, X509Error> {
+        let values = SetOfVec::try_from(owned.values.iter().map(Any::from).collect::<Vec<_>>())?;
 
         Ok(Attributes::try_from([Attribute {
             oid: owned.oid,
@@ -88,33 +88,30 @@ impl<'a> TryFrom<&'a OwnedAttribute> for Attributes<'a> {
 pub(super) struct OwnedExtension {
     extn_id: ObjectIdentifier,
     critical: bool,
-    extn_value: Vec<u8>,
+    extn_value: OctetString,
 }
 
 impl OwnedExtension {
     pub(super) fn subject_alt_name(name: &MlsSubjectAltName) -> Result<OwnedExtension, X509Error> {
         let subject_alt_name = match name {
-            MlsSubjectAltName::Uri(n) => vec![GeneralName::UniformResourceIdentifier(
-                Ia5StringRef::new(n)?,
-            )]
-            .to_vec()?,
-            MlsSubjectAltName::Dns(d) => {
-                vec![GeneralName::DnsName(Ia5StringRef::new(d)?)].to_vec()?
+            MlsSubjectAltName::Uri(n) => {
+                vec![GeneralName::UniformResourceIdentifier(Ia5String::new(n)?)].to_der()?
             }
+            MlsSubjectAltName::Dns(d) => vec![GeneralName::DnsName(Ia5String::new(d)?)].to_der()?,
             MlsSubjectAltName::Rid(r) => {
-                vec![GeneralName::RegisteredId(ObjectIdentifier::new(r)?)].to_vec()?
+                vec![GeneralName::RegisteredId(ObjectIdentifier::new(r)?)].to_der()?
             }
             // When the subjectAltName extension contains an Internet mail address,
             // the address MUST be stored in the rfc822Name.
             MlsSubjectAltName::Email(e) => {
-                vec![GeneralName::Rfc822Name(Ia5StringRef::new(e)?)].to_vec()?
+                vec![GeneralName::Rfc822Name(Ia5String::new(e)?)].to_der()?
             }
             MlsSubjectAltName::Ip(i) => match IpAddr::from_str(i)? {
                 IpAddr::V4(ip) => {
-                    vec![GeneralName::IpAddress(OctetStringRef::new(&ip.octets())?)].to_vec()?
+                    vec![GeneralName::IpAddress(OctetString::new(ip.octets())?)].to_der()?
                 }
                 IpAddr::V6(ip) => {
-                    vec![GeneralName::IpAddress(OctetStringRef::new(&ip.octets())?)].to_vec()?
+                    vec![GeneralName::IpAddress(OctetString::new(ip.octets())?)].to_der()?
                 }
             },
         };
@@ -122,7 +119,7 @@ impl OwnedExtension {
         Ok(OwnedExtension {
             extn_id: SubjectAltName::OID,
             critical: false,
-            extn_value: subject_alt_name,
+            extn_value: OctetString::new(subject_alt_name)?,
         })
     }
 
@@ -135,7 +132,7 @@ impl OwnedExtension {
         Ok(OwnedExtension {
             extn_id: BasicConstraints::OID,
             critical: true,
-            extn_value: basic_constraints.to_vec()?,
+            extn_value: OctetString::new(basic_constraints.to_der()?)?,
         })
     }
 
@@ -145,7 +142,9 @@ impl OwnedExtension {
         Ok(OwnedExtension {
             extn_id: SubjectKeyIdentifier::OID,
             critical: false,
-            extn_value: SubjectKeyIdentifier(OctetStringRef::new(&key_identifier)?).to_vec()?,
+            extn_value: OctetString::new(
+                SubjectKeyIdentifier(OctetString::new(key_identifier)?).to_der()?,
+            )?,
         })
     }
 
@@ -153,7 +152,9 @@ impl OwnedExtension {
         Ok(OwnedExtension {
             extn_id: KeyUsage::OID,
             critical: true,
-            extn_value: KeyUsage(KeyUsages::KeyCertSign | KeyUsages::CRLSign).to_vec()?,
+            extn_value: OctetString::new(
+                KeyUsage(KeyUsages::KeyCertSign | KeyUsages::CRLSign).to_der()?,
+            )?,
         })
     }
 
@@ -161,15 +162,16 @@ impl OwnedExtension {
         let issuer_pubkey = issuer
             .tbs_certificate
             .subject_public_key_info
-            .subject_public_key;
+            .subject_public_key
+            .clone();
 
-        let key_identifier = Sha1::digest(issuer_pubkey).to_vec();
+        let key_identifier = Sha1::digest(issuer_pubkey.raw_bytes()).to_vec();
 
-        let issuer_serial = issuer.tbs_certificate.serial_number;
+        let issuer_serial = issuer.tbs_certificate.serial_number.clone();
         let issuer_name = GeneralName::DirectoryName(issuer.tbs_certificate.subject.clone());
 
         let extn_value = AuthorityKeyIdentifier {
-            key_identifier: Some(OctetStringRef::new(&key_identifier)?),
+            key_identifier: Some(OctetString::new(key_identifier)?),
             authority_cert_issuer: Some(vec![issuer_name]),
             authority_cert_serial_number: Some(issuer_serial),
         };
@@ -177,23 +179,23 @@ impl OwnedExtension {
         Ok(OwnedExtension {
             extn_id: AuthorityKeyIdentifier::OID,
             critical: false,
-            extn_value: extn_value.to_vec()?,
+            extn_value: OctetString::new(extn_value.to_der()?)?,
         })
     }
 }
 
-impl<'a> From<&'a OwnedExtension> for Extension<'a> {
-    fn from(ext: &'a OwnedExtension) -> Self {
+impl From<&OwnedExtension> for Extension {
+    fn from(ext: &OwnedExtension) -> Self {
         Extension {
             extn_id: ext.extn_id,
             critical: ext.critical,
-            extn_value: &ext.extn_value,
+            extn_value: ext.extn_value.clone(),
         }
     }
 }
 
-impl<'a> PartialEq<Extension<'a>> for OwnedExtension {
-    fn eq(&self, other: &Extension<'a>) -> bool {
+impl PartialEq<Extension> for OwnedExtension {
+    fn eq(&self, other: &Extension) -> bool {
         self.extn_id == other.extn_id
             && self.critical == other.critical
             && self.extn_value == other.extn_value
@@ -254,9 +256,9 @@ pub(crate) fn build_x509_name(components: &[SubjectComponent]) -> Result<RdnSequ
             };
 
             let value = match c {
-                SubjectComponent::CountryName(_) => AnyRef::from(PrintableStringRef::new(v)?),
-                SubjectComponent::DomainComponent(_) => AnyRef::from(Ia5StringRef::new(v)?),
-                _ => AnyRef::from(Utf8StringRef::new(v)?),
+                SubjectComponent::CountryName(_) => Any::from(PrintableStringRef::new(v)?),
+                SubjectComponent::DomainComponent(_) => Any::from(Ia5StringRef::new(v)?),
+                _ => Any::from(Utf8StringRef::new(v)?),
             };
 
             Ok(RelativeDistinguishedName::from(SetOfVec::try_from(vec![
@@ -275,9 +277,11 @@ pub(super) fn parse_x509_name(rdns: &RdnSequence) -> Result<Vec<SubjectComponent
             let type_and_value = rdn.0.get(0).unwrap();
 
             let value = match type_and_value.value.tag() {
-                Tag::PrintableString => type_and_value.value.printable_string()?.to_string(),
-                Tag::Ia5String => type_and_value.value.ia5_string()?.to_string(),
-                Tag::Utf8String => type_and_value.value.utf8_string()?.to_string(),
+                Tag::PrintableString => {
+                    PrintableString::new(&type_and_value.value.value())?.to_string()
+                }
+                Tag::Ia5String => Ia5String::new(&type_and_value.value.value())?.to_string(),
+                Tag::Utf8String => Utf8StringRef::new(type_and_value.value.value())?.to_string(),
                 _ => {
                     return Err(X509Error::UnexpectedComponentType(
                         type_and_value.value.tag(),
