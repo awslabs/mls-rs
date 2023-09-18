@@ -79,6 +79,13 @@ impl AwsLcCipherSuite {
     ) -> Result<SignatureSecretKey, AwsLcCryptoError> {
         self.signing.import_ec_der_private_key(bytes)
     }
+
+    pub fn import_ec_der_public_key(
+        &self,
+        bytes: &[u8],
+    ) -> Result<SignaturePublicKey, AwsLcCryptoError> {
+        self.signing.import_ec_der_public_key(bytes)
+    }
 }
 
 impl CryptoProvider for AwsLcCryptoProvider {

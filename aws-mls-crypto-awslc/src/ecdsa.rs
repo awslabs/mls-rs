@@ -1,7 +1,7 @@
 use std::{ffi::c_void, mem::MaybeUninit};
 
 use aws_lc_rs::{
-    digest::{self},
+    digest,
     error::Unspecified,
     signature::{self, UnparsedPublicKey, ED25519_PUBLIC_KEY_LEN},
 };
@@ -14,7 +14,7 @@ use aws_mls_core::crypto::{CipherSuite, SignaturePublicKey, SignatureSecretKey};
 use aws_mls_crypto_traits::Curve;
 
 use crate::{
-    ec::{ec_generate, ec_public_key, EcPrivateKey, SUPPORTED_NIST_CURVES},
+    ec::{ec_generate, ec_public_key, EcPrivateKey, EcPublicKey, SUPPORTED_NIST_CURVES},
     AwsLcCryptoError,
 };
 
@@ -31,12 +31,17 @@ impl AwsLcEcdsa {
         &self,
         bytes: &[u8],
     ) -> Result<SignatureSecretKey, AwsLcCryptoError> {
-        SUPPORTED_NIST_CURVES
-            .contains(&self.0)
-            .then_some(())
-            .ok_or(AwsLcCryptoError::UnsupportedCipherSuite)?;
-
         Ok(EcPrivateKey::from_der(bytes, self.0)
+            .map_err(|_| AwsLcCryptoError::InvalidKeyData)?
+            .to_vec()?
+            .into())
+    }
+
+    pub fn import_ec_der_public_key(
+        &self,
+        bytes: &[u8],
+    ) -> Result<SignaturePublicKey, AwsLcCryptoError> {
+        Ok(EcPublicKey::from_bytes(bytes, self.0)
             .map_err(|_| AwsLcCryptoError::InvalidKeyData)?
             .to_vec()?
             .into())
