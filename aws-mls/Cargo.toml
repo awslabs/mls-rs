@@ -1,6 +1,6 @@
 [package]
 name = "aws-mls"
-version = "0.31.2"
+version = "0.32.0"
 authors = ["Tom Leavy <tom@wickr.com>"]
 edition = "2021"
 
