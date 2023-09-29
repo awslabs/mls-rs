@@ -1,4 +1,7 @@
-use super::*;
+use super::{
+    proposal_filter::{CommitDirection, CommitSource},
+    *,
+};
 use crate::{
     group::proposal_filter::{ProposalApplier, ProposalBundle, ProposalRules, ProposalSource},
     time::MlsTime,
@@ -82,7 +85,7 @@ impl ProposalCache {
         &self,
         sender: Sender,
         additional_proposals: Vec<Proposal>,
-    ) -> Result<ProposalBundle, MlsError> {
+    ) -> ProposalBundle {
         let mut proposals = ProposalBundle::default();
 
         for (r, p) in &self.proposals {
@@ -90,14 +93,14 @@ impl ProposalCache {
                 p.proposal.clone(),
                 p.sender,
                 ProposalSource::ByReference(r.clone()),
-            )?;
+            );
         }
 
         for p in additional_proposals.into_iter() {
-            proposals.add(p, sender, ProposalSource::ByValue)?;
+            proposals.add(p, sender, ProposalSource::ByValue);
         }
 
-        Ok(proposals)
+        proposals
     }
 
     pub fn resolve_for_commit(
@@ -109,7 +112,7 @@ impl ProposalCache {
 
         for p in proposal_list {
             match p {
-                ProposalOrRef::Proposal(p) => proposals.add(*p, sender, ProposalSource::ByValue)?,
+                ProposalOrRef::Proposal(p) => proposals.add(*p, sender, ProposalSource::ByValue),
                 ProposalOrRef::Reference(r) => {
                     #[cfg(feature = "std")]
                     let p = self
@@ -125,7 +128,7 @@ impl ProposalCache {
                         .ok_or(MlsError::ProposalNotFound)?
                         .clone();
 
-                    proposals.add(p.proposal, p.sender, ProposalSource::ByReference(r))?;
+                    proposals.add(p.proposal, p.sender, ProposalSource::ByReference(r));
                 }
             };
         }
@@ -138,14 +141,14 @@ impl ProposalCache {
 pub(crate) fn prepare_commit(
     sender: Sender,
     additional_proposals: Vec<Proposal>,
-) -> Result<ProposalBundle, MlsError> {
+) -> ProposalBundle {
     let mut proposals = ProposalBundle::default();
 
     for p in additional_proposals.into_iter() {
-        proposals.add(p, sender, ProposalSource::ByValue)?;
+        proposals.add(p, sender, ProposalSource::ByValue);
     }
 
-    Ok(proposals)
+    proposals
 }
 
 #[cfg(not(feature = "by_ref_proposal"))]
@@ -157,7 +160,7 @@ pub(crate) fn resolve_for_commit(
 
     for p in proposal_list {
         let ProposalOrRef::Proposal(p) = p;
-        proposals.add(*p, sender, ProposalSource::ByValue)?;
+        proposals.add(*p, sender, ProposalSource::ByValue);
     }
 
     Ok(proposals)
@@ -171,14 +174,14 @@ impl GroupState {
         &self,
         sender: Sender,
         #[cfg(all(feature = "by_ref_proposal", feature = "state_update"))] receiver: Option<Sender>,
-        proposals: ProposalBundle,
+        mut proposals: ProposalBundle,
         #[cfg(feature = "external_commit")] external_leaf: Option<&LeafNode>,
         identity_provider: &C,
         cipher_suite_provider: &CSP,
         psk_storage: &P,
         user_rules: F,
         commit_time: Option<MlsTime>,
-        #[cfg(feature = "by_ref_proposal")] for_prepare_commit: bool,
+        direction: CommitDirection,
     ) -> Result<ProvisionalState, MlsError>
     where
         C: IdentityProvider,
@@ -192,33 +195,26 @@ impl GroupState {
         #[cfg(all(feature = "by_ref_proposal", feature = "state_update"))]
         let all_proposals = proposals.clone();
 
-        #[cfg(feature = "by_ref_proposal")]
-        let mut proposals = proposals;
+        let origin = match sender {
+            Sender::Member(index) => Ok::<_, MlsError>(CommitSource::ExistingMember(
+                roster.member_with_index(index)?,
+            )),
+            #[cfg(feature = "by_ref_proposal")]
+            Sender::NewMemberProposal => Err(MlsError::InvalidSender),
+            #[cfg(feature = "external_proposal")]
+            Sender::External(_) => Err(MlsError::InvalidSender),
+            #[cfg(feature = "external_commit")]
+            Sender::NewMemberCommit => Ok(CommitSource::NewMember(
+                external_leaf
+                    .map(|l| l.signing_identity.clone())
+                    .ok_or(MlsError::ExternalCommitMustHaveNewLeaf)?,
+            )),
+        }?;
 
-        #[cfg(feature = "by_ref_proposal")]
-        if for_prepare_commit {
-            proposals = user_rules
-                .filter(sender, &roster, group_extensions, proposals)
-                .await
-                .map_err(|e| MlsError::UserDefinedProposalFilterError(e.into_any_error()))?;
-        } else {
-            user_rules
-                .validate(sender, &roster, group_extensions, &proposals)
-                .await
-                .map_err(|e| MlsError::UserDefinedProposalFilterError(e.into_any_error()))?;
-        }
-
-        #[cfg(not(feature = "by_ref_proposal"))]
-        user_rules
-            .validate(sender, &roster, group_extensions, &proposals)
+        proposals = user_rules
+            .filter(direction, origin, &roster, group_extensions, proposals)
             .await
             .map_err(|e| MlsError::UserDefinedProposalFilterError(e.into_any_error()))?;
-
-        #[cfg(feature = "custom_proposal")]
-        let mut proposals = proposals;
-
-        #[cfg(feature = "custom_proposal")]
-        expand_custom_proposals(&roster, group_extensions, &mut proposals, &user_rules).await?;
 
         let applier = ProposalApplier::new(
             &self.public_tree,
@@ -234,14 +230,17 @@ impl GroupState {
         );
 
         #[cfg(feature = "by_ref_proposal")]
-        let applier_output = if for_prepare_commit {
-            applier
-                .apply_proposals(FilterStrategy::IgnoreByRef, &sender, proposals, commit_time)
-                .await?
-        } else {
-            applier
-                .apply_proposals(FilterStrategy::IgnoreNone, &sender, proposals, commit_time)
-                .await?
+        let applier_output = match direction {
+            CommitDirection::Send => {
+                applier
+                    .apply_proposals(FilterStrategy::IgnoreByRef, &sender, proposals, commit_time)
+                    .await?
+            }
+            CommitDirection::Receive => {
+                applier
+                    .apply_proposals(FilterStrategy::IgnoreNone, &sender, proposals, commit_time)
+                    .await?
+            }
         };
 
         #[cfg(not(feature = "by_ref_proposal"))]
@@ -281,29 +280,6 @@ impl GroupState {
             rejected_proposals,
         })
     }
-}
-
-#[cfg(feature = "custom_proposal")]
-#[maybe_async::maybe_async]
-pub async fn expand_custom_proposals<F>(
-    roster: &Roster<'_>,
-    group_extensions: &ExtensionList,
-    proposal_bundle: &mut ProposalBundle,
-    user_rules: &F,
-) -> Result<(), MlsError>
-where
-    F: ProposalRules,
-{
-    let new_proposals = user_rules
-        .expand_custom_proposals(roster, group_extensions, proposal_bundle.custom_proposals())
-        .await
-        .map_err(|e| MlsError::UserDefinedProposalFilterError(e.into_any_error()))?;
-
-    for info in new_proposals {
-        proposal_bundle.add(info.proposal, info.sender, info.source)?;
-    }
-
-    Ok(())
 }
 
 #[cfg(feature = "by_ref_proposal")]
@@ -355,7 +331,7 @@ pub(crate) mod test_utils {
         group::{
             confirmation_tag::ConfirmationTag,
             proposal::{Proposal, ProposalOrRef},
-            proposal_filter::{PassThroughProposalRules, ProposalRules},
+            proposal_filter::{CommitDirection, PassThroughProposalRules, ProposalRules},
             proposal_ref::ProposalRef,
             state::GroupState,
             test_utils::{get_test_group_context, TEST_GROUP},
@@ -574,7 +550,7 @@ pub(crate) mod test_utils {
                     psk_storage,
                     user_rules,
                     None,
-                    false,
+                    CommitDirection::Receive,
                 )
                 .await
         }
@@ -606,7 +582,7 @@ pub(crate) mod test_utils {
                 ConfirmationTag::empty(cipher_suite_provider),
             );
 
-            let proposals = self.prepare_commit(sender, additional_proposals)?;
+            let proposals = self.prepare_commit(sender, additional_proposals);
 
             state
                 .apply_resolved(
@@ -621,7 +597,7 @@ pub(crate) mod test_utils {
                     psk_storage,
                     user_rules,
                     None,
-                    true,
+                    CommitDirection::Send,
                 )
                 .await
         }
@@ -685,7 +661,7 @@ mod tests {
     };
     use core::convert::Infallible;
     use itertools::Itertools;
-    use proposal_filter::{PassThroughProposalRules, ProposalInfo};
+    use proposal_filter::PassThroughProposalRules;
 
     #[cfg(not(sync))]
     use futures::FutureExt;
@@ -815,13 +791,11 @@ mod tests {
         for i in 0..proposals.len() {
             let pref = ProposalRef::from_content(&cipher_suite_provider, &plaintext[i]).unwrap();
 
-            bundle
-                .add(
-                    proposals[i].clone(),
-                    Sender::Member(test_sender),
-                    ProposalSource::ByReference(pref),
-                )
-                .unwrap();
+            bundle.add(
+                proposals[i].clone(),
+                Sender::Member(test_sender),
+                ProposalSource::ByReference(pref),
+            )
         }
 
         expected_tree
@@ -998,14 +972,11 @@ mod tests {
             .await
             .unwrap();
 
-        expected_effects
-            .applied_proposals
-            .add(
-                Proposal::Add(Box::new(additional.clone())),
-                Sender::Member(test_sender),
-                ProposalSource::ByValue,
-            )
-            .unwrap();
+        expected_effects.applied_proposals.add(
+            Proposal::Add(Box::new(additional.clone())),
+            Sender::Member(test_sender),
+            ProposalSource::ByValue,
+        );
 
         let leaf = vec![additional_key_package.leaf_node.clone()];
 
@@ -1710,6 +1681,10 @@ mod tests {
         let cache = make_proposal_cache();
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
+        let mut tree = TreeKemPublic::new();
+        add_member(&mut tree, "alice").await;
+        add_member(&mut tree, "bob").await;
+
         let effects = cache
             .prepare_commit_default(
                 Sender::Member(test_sender()),
@@ -1717,7 +1692,7 @@ mod tests {
                 &get_test_group_context(1, TEST_CIPHER_SUITE),
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
-                &TreeKemPublic::new(),
+                &tree,
                 #[cfg(feature = "external_commit")]
                 None,
                 &AlwaysFoundPskStorage,
@@ -2697,55 +2672,6 @@ mod tests {
         Box::new(AddProposal {
             key_package: test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "frank").await,
         })
-    }
-
-    #[cfg(feature = "custom_proposal")]
-    #[maybe_async::async_impl]
-    async fn make_custom_add_proposal(capabilities: Capabilities) -> AddProposal {
-        AddProposal {
-            key_package: test_key_package_custom(
-                &test_cipher_suite_provider(TEST_CIPHER_SUITE),
-                TEST_PROTOCOL_VERSION,
-                "frank",
-                |generator| {
-                    async move {
-                        generator
-                            .generate(
-                                Lifetime::years(1).unwrap(),
-                                capabilities,
-                                ExtensionList::default(),
-                                ExtensionList::default(),
-                            )
-                            .await
-                            .unwrap()
-                    }
-                    .boxed()
-                },
-            )
-            .await,
-        }
-    }
-
-    #[cfg(feature = "custom_proposal")]
-    #[maybe_async::sync_impl]
-    fn make_custom_add_proposal(capabilities: Capabilities) -> AddProposal {
-        AddProposal {
-            key_package: test_key_package_custom(
-                &test_cipher_suite_provider(TEST_CIPHER_SUITE),
-                TEST_PROTOCOL_VERSION,
-                "frank",
-                |generator| {
-                    generator
-                        .generate(
-                            Lifetime::years(1).unwrap(),
-                            capabilities,
-                            ExtensionList::default(),
-                            ExtensionList::default(),
-                        )
-                        .unwrap()
-                },
-            ),
-        }
     }
 
     #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
@@ -3915,29 +3841,10 @@ mod tests {
         impl ProposalRules for RemoveGroupContextExtensions {
             type Error = Infallible;
 
-            #[cfg(feature = "custom_proposal")]
-            async fn expand_custom_proposals(
-                &self,
-                _current_roster: &Roster,
-                _extension_list: &ExtensionList,
-                _proposals: &[ProposalInfo<CustomProposal>],
-            ) -> Result<Vec<ProposalInfo<Proposal>>, Self::Error> {
-                Ok(vec![])
-            }
-
-            async fn validate(
-                &self,
-                _: Sender,
-                _: &Roster,
-                _: &ExtensionList,
-                _: &ProposalBundle,
-            ) -> Result<(), Self::Error> {
-                Ok(())
-            }
-
             async fn filter(
                 &self,
-                _: Sender,
+                _: CommitDirection,
+                _: CommitSource,
                 _: &Roster,
                 _: &ExtensionList,
                 mut proposals: ProposalBundle,
@@ -3966,35 +3873,102 @@ mod tests {
     impl ProposalRules for FailureProposalRules {
         type Error = MlsError;
 
-        #[cfg(feature = "custom_proposal")]
-        async fn expand_custom_proposals(
-            &self,
-            _current_roster: &Roster,
-            _extension_list: &ExtensionList,
-            _proposals: &[ProposalInfo<CustomProposal>],
-        ) -> Result<Vec<ProposalInfo<Proposal>>, Self::Error> {
-            Ok(vec![])
-        }
-
-        async fn validate(
-            &self,
-            _: Sender,
-            _: &Roster,
-            _: &ExtensionList,
-            _: &ProposalBundle,
-        ) -> Result<(), Self::Error> {
-            Err(MlsError::InvalidSignature)
-        }
-
         async fn filter(
             &self,
-            _: Sender,
+            _: CommitDirection,
+            _: CommitSource,
             _: &Roster,
             _: &ExtensionList,
             _: ProposalBundle,
         ) -> Result<ProposalBundle, Self::Error> {
             Err(MlsError::InvalidSignature)
         }
+    }
+
+    struct InjectProposalRules {
+        to_inject: Proposal,
+        source: ProposalSource,
+    }
+
+    #[maybe_async::maybe_async]
+    impl ProposalRules for InjectProposalRules {
+        type Error = MlsError;
+
+        async fn filter(
+            &self,
+            _: CommitDirection,
+            _: CommitSource,
+            _: &Roster,
+            _: &ExtensionList,
+            mut proposals: ProposalBundle,
+        ) -> Result<ProposalBundle, Self::Error> {
+            proposals.add(
+                self.to_inject.clone(),
+                Sender::Member(0),
+                self.source.clone(),
+            );
+            Ok(proposals)
+        }
+    }
+
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    async fn user_defined_filter_can_inject_proposals() {
+        let (alice, tree) = new_tree("alice").await;
+
+        let test_proposal = Proposal::GroupContextExtensions(Default::default());
+
+        let (committed, _) =
+            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+                .with_user_rules(InjectProposalRules {
+                    to_inject: test_proposal.clone(),
+                    source: ProposalSource::ByValue,
+                })
+                .send()
+                .await
+                .unwrap();
+
+        assert_eq!(
+            committed,
+            vec![ProposalOrRef::Proposal(test_proposal.into())]
+        );
+    }
+
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    async fn user_defined_filter_can_inject_local_only_proposals() {
+        let (alice, tree) = new_tree("alice").await;
+
+        let test_proposal = Proposal::GroupContextExtensions(Default::default());
+
+        let (committed, _) =
+            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+                .with_user_rules(InjectProposalRules {
+                    to_inject: test_proposal.clone(),
+                    source: ProposalSource::Local,
+                })
+                .send()
+                .await
+                .unwrap();
+
+        assert_eq!(committed, vec![]);
+    }
+
+    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    async fn user_defined_filter_cant_break_base_rules() {
+        let (alice, tree) = new_tree("alice").await;
+
+        let test_proposal = Proposal::Update(UpdateProposal {
+            leaf_node: get_basic_test_node(TEST_CIPHER_SUITE, "leaf").await,
+        });
+
+        let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+            .with_user_rules(InjectProposalRules {
+                to_inject: test_proposal.clone(),
+                source: ProposalSource::ByValue,
+            })
+            .send()
+            .await;
+
+        assert_matches!(res, Err(MlsError::InvalidProposalTypeForSender { .. }))
     }
 
     #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
@@ -4025,175 +3999,6 @@ mod tests {
         .await;
 
         assert_matches!(res, Err(MlsError::UserDefinedProposalFilterError(_)));
-    }
-
-    #[cfg(feature = "custom_proposal")]
-    #[derive(Debug, Clone)]
-    struct ExpandCustomRules {
-        to_expand: Vec<ProposalInfo<Proposal>>,
-    }
-
-    #[cfg(feature = "custom_proposal")]
-    #[maybe_async::maybe_async]
-    impl ProposalRules for ExpandCustomRules {
-        type Error = Infallible;
-
-        async fn expand_custom_proposals(
-            &self,
-            _current_roster: &Roster,
-            _extension_list: &ExtensionList,
-            _proposals: &[ProposalInfo<CustomProposal>],
-        ) -> Result<Vec<ProposalInfo<Proposal>>, Self::Error> {
-            Ok(self.to_expand.clone())
-        }
-
-        async fn validate(
-            &self,
-            _: Sender,
-            _: &Roster,
-            _: &ExtensionList,
-            _: &ProposalBundle,
-        ) -> Result<(), Self::Error> {
-            Ok(())
-        }
-
-        async fn filter(
-            &self,
-            _: Sender,
-            _: &Roster,
-            _: &ExtensionList,
-            bundle: ProposalBundle,
-        ) -> Result<ProposalBundle, Self::Error> {
-            Ok(bundle)
-        }
-    }
-
-    #[cfg(feature = "custom_proposal")]
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
-    async fn user_defined_custom_proposal_rules_are_applied_on_send() {
-        let (alice, tree) = new_tree_custom_proposals("alice", vec![ProposalType::new(42)]).await;
-
-        let add_proposal = make_custom_add_proposal(Capabilities {
-            proposals: vec![ProposalType::new(42)],
-            ..get_test_capabilities()
-        })
-        .await;
-
-        let expander = ExpandCustomRules {
-            to_expand: vec![ProposalInfo {
-                proposal: Proposal::Add(Box::new(add_proposal.clone())),
-                sender: Sender::Member(alice.into()),
-                source: ProposalSource::CustomRule(true),
-            }],
-        };
-
-        let custom_proposal = CustomProposal::new(ProposalType::new(42), vec![]);
-
-        let processed_proposals =
-            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
-                .with_user_rules(expander)
-                .with_additional(vec![Proposal::Custom(custom_proposal.clone())])
-                .send()
-                .await
-                .unwrap();
-
-        assert_eq!(
-            processed_proposals.0,
-            vec![ProposalOrRef::Proposal(Box::new(Proposal::Custom(
-                custom_proposal.clone()
-            )))]
-        );
-
-        #[cfg(feature = "state_update")]
-        assert_eq!(
-            processed_proposals.1.applied_proposals.additions[0].proposal,
-            add_proposal
-        );
-
-        #[cfg(feature = "state_update")]
-        assert_eq!(
-            processed_proposals.1.applied_proposals.custom_proposals[0].proposal,
-            custom_proposal
-        )
-    }
-
-    #[cfg(feature = "custom_proposal")]
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
-    async fn user_defined_custom_proposal_rules_are_applied_on_receive() {
-        let (alice, tree) = new_tree_custom_proposals("alice", vec![ProposalType::new(42)]).await;
-
-        let add_proposal = make_custom_add_proposal(Capabilities {
-            proposals: vec![ProposalType::new(42)],
-            ..get_test_capabilities()
-        })
-        .await;
-
-        let expander = ExpandCustomRules {
-            to_expand: vec![ProposalInfo {
-                proposal: Proposal::Add(Box::new(add_proposal.clone())),
-                sender: Sender::Member(0),
-                source: ProposalSource::CustomRule(true),
-            }],
-        };
-
-        let custom_proposal = CustomProposal::new(ProposalType::new(42), vec![]);
-
-        let processed_proposals = CommitReceiver::new(
-            &tree,
-            alice,
-            alice,
-            test_cipher_suite_provider(TEST_CIPHER_SUITE),
-        )
-        .with_user_rules(expander)
-        .receive(vec![Proposal::Custom(custom_proposal.clone())])
-        .await
-        .unwrap();
-
-        // If the add is applied, then the custom proposal must have been applied.
-        #[cfg(feature = "state_update")]
-        assert_eq!(
-            processed_proposals.applied_proposals.additions[0].proposal,
-            add_proposal
-        );
-
-        // Check that `custom_proposals` are computed correctly.
-        #[cfg(feature = "state_update")]
-        assert_eq!(
-            processed_proposals.applied_proposals.custom_proposals[0].proposal,
-            custom_proposal
-        )
-    }
-
-    #[cfg(feature = "custom_proposal")]
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
-    async fn user_defined_custom_proposal_rules_are_not_exempt_from_base_rules() {
-        let (alice, tree) = new_tree_custom_proposals("alice", vec![ProposalType::new(42)]).await;
-
-        let update_proposal = ProposalInfo {
-            proposal: Proposal::Update(UpdateProposal {
-                leaf_node: get_basic_test_node(TEST_CIPHER_SUITE, "leaf").await,
-            }),
-            sender: Sender::NewMemberCommit,
-            source: ProposalSource::CustomRule(true),
-        };
-
-        let expander = ExpandCustomRules {
-            to_expand: vec![update_proposal],
-        };
-
-        let custom_proposal = CustomProposal::new(ProposalType::new(42), vec![]);
-
-        let res = CommitReceiver::new(
-            &tree,
-            alice,
-            alice,
-            test_cipher_suite_provider(TEST_CIPHER_SUITE),
-        )
-        .with_user_rules(expander)
-        .receive(vec![Proposal::Custom(custom_proposal)])
-        .await;
-
-        assert_matches!(res, Err(MlsError::InvalidProposalTypeForSender { .. }))
     }
 
     #[maybe_async::test(sync, async(not(sync), crate::futures_test))]

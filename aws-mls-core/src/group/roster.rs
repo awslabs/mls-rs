@@ -73,7 +73,7 @@ impl Default for Capabilities {
     all(feature = "ffi", not(test)),
     safer_ffi_gen::ffi_type(clone, opaque)
 )]
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Member {
     index: u32,
     signing_identity: SigningIdentity,

@@ -5,7 +5,7 @@ use super::{
         ApplicationData, Content, ContentType, MLSMessage, MLSMessagePayload, PublicMessage, Sender,
     },
     message_signature::AuthenticatedContent,
-    proposal_filter::{ProposalBundle, ProposalRules},
+    proposal_filter::{CommitDirection, ProposalBundle, ProposalRules},
     state::GroupState,
     transcript_hash::InterimTranscriptHash,
     transcript_hashes, GroupContext,
@@ -701,8 +701,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
                 &self.psk_storage(),
                 self.proposal_rules(),
                 time_sent,
-                #[cfg(feature = "by_ref_proposal")]
-                false,
+                CommitDirection::Receive,
             )
             .await?;
 

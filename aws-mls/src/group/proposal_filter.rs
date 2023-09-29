@@ -10,7 +10,7 @@ pub mod filtering_lite;
 use filtering_lite as filtering;
 
 pub use bundle::{Proposable, ProposalBundle, ProposalInfo, ProposalSource};
-pub use filter::{PassThroughProposalRules, ProposalRules};
+pub use filter::{CommitDirection, CommitSource, PassThroughProposalRules, ProposalRules};
 
 #[cfg(feature = "by_ref_proposal")]
 pub(crate) use filtering::FilterStrategy;

@@ -14,7 +14,7 @@ use core::ops::Deref;
     all(feature = "ffi", not(test)),
     safer_ffi_gen::ffi_type(clone, opaque)
 )]
-#[derive(Debug, Clone, Default, MlsSize, MlsEncode)]
+#[derive(Debug, Clone, Default, MlsSize, MlsEncode, Eq)]
 pub struct ExtensionList(Vec<Extension>);
 
 impl Deref for ExtensionList {

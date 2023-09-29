@@ -5,7 +5,6 @@ use alloc::vec::Vec;
 use itertools::Itertools;
 
 use crate::{
-    client::MlsError,
     group::{
         AddProposal, BorrowedProposal, Proposal, ProposalOrRef, ProposalType, ReInitProposal,
         RemoveProposal, Sender,
@@ -47,12 +46,7 @@ pub struct ProposalBundle {
 }
 
 impl ProposalBundle {
-    pub(crate) fn add(
-        &mut self,
-        proposal: Proposal,
-        sender: Sender,
-        source: ProposalSource,
-    ) -> Result<(), MlsError> {
+    pub fn add(&mut self, proposal: Proposal, sender: Sender, source: ProposalSource) {
         match proposal {
             Proposal::Add(proposal) => self.additions.push(ProposalInfo {
                 proposal: *proposal,
@@ -100,9 +94,7 @@ impl ProposalBundle {
                 sender,
                 source,
             }),
-        };
-
-        Ok(())
+        }
     }
 
     /// Remove the proposal of type `T` at `index`
@@ -175,34 +167,34 @@ impl ProposalBundle {
         F: FnMut(&ProposalInfo<BorrowedProposal<'_>>) -> Result<bool, E>,
     {
         self.retain_by_type::<AddProposal, _, _>(|proposal| {
-            f(&proposal.by_ref().map(BorrowedProposal::from))
+            f(&proposal.as_ref().map(BorrowedProposal::from))
         })?;
 
         #[cfg(feature = "by_ref_proposal")]
         self.retain_by_type::<UpdateProposal, _, _>(|proposal| {
-            f(&proposal.by_ref().map(BorrowedProposal::from))
+            f(&proposal.as_ref().map(BorrowedProposal::from))
         })?;
 
         self.retain_by_type::<RemoveProposal, _, _>(|proposal| {
-            f(&proposal.by_ref().map(BorrowedProposal::from))
+            f(&proposal.as_ref().map(BorrowedProposal::from))
         })?;
 
         #[cfg(feature = "psk")]
         self.retain_by_type::<PreSharedKeyProposal, _, _>(|proposal| {
-            f(&proposal.by_ref().map(BorrowedProposal::from))
+            f(&proposal.as_ref().map(BorrowedProposal::from))
         })?;
 
         self.retain_by_type::<ReInitProposal, _, _>(|proposal| {
-            f(&proposal.by_ref().map(BorrowedProposal::from))
+            f(&proposal.as_ref().map(BorrowedProposal::from))
         })?;
 
         #[cfg(feature = "external_commit")]
         self.retain_by_type::<ExternalInit, _, _>(|proposal| {
-            f(&proposal.by_ref().map(BorrowedProposal::from))
+            f(&proposal.as_ref().map(BorrowedProposal::from))
         })?;
 
         self.retain_by_type::<ExtensionList, _, _>(|proposal| {
-            f(&proposal.by_ref().map(BorrowedProposal::from))
+            f(&proposal.as_ref().map(BorrowedProposal::from))
         })?;
 
         Ok(())
@@ -235,50 +227,50 @@ impl ProposalBundle {
         let res = self
             .additions
             .iter()
-            .map(|p| p.by_ref().map(BorrowedProposal::Add))
+            .map(|p| p.as_ref().map(BorrowedProposal::Add))
             .chain(
                 self.removals
                     .iter()
-                    .map(|p| p.by_ref().map(BorrowedProposal::Remove)),
+                    .map(|p| p.as_ref().map(BorrowedProposal::Remove)),
             )
             .chain(
                 self.reinitializations
                     .iter()
-                    .map(|p| p.by_ref().map(BorrowedProposal::ReInit)),
+                    .map(|p| p.as_ref().map(BorrowedProposal::ReInit)),
             );
 
         #[cfg(feature = "by_ref_proposal")]
         let res = res.chain(
             self.updates
                 .iter()
-                .map(|p| p.by_ref().map(BorrowedProposal::Update)),
+                .map(|p| p.as_ref().map(BorrowedProposal::Update)),
         );
 
         #[cfg(feature = "psk")]
         let res = res.chain(
             self.psks
                 .iter()
-                .map(|p| p.by_ref().map(BorrowedProposal::Psk)),
+                .map(|p| p.as_ref().map(BorrowedProposal::Psk)),
         );
 
         #[cfg(feature = "external_commit")]
         let res = res.chain(
             self.external_initializations
                 .iter()
-                .map(|p| p.by_ref().map(BorrowedProposal::ExternalInit)),
+                .map(|p| p.as_ref().map(BorrowedProposal::ExternalInit)),
         );
 
         let res = res.chain(
             self.group_context_extensions
                 .iter()
-                .map(|p| p.by_ref().map(BorrowedProposal::GroupContextExtensions)),
+                .map(|p| p.as_ref().map(BorrowedProposal::GroupContextExtensions)),
         );
 
         #[cfg(feature = "custom_proposal")]
         let res = res.chain(
             self.custom_proposals
                 .iter()
-                .map(|p| p.by_ref().map(BorrowedProposal::Custom)),
+                .map(|p| p.as_ref().map(BorrowedProposal::Custom)),
         );
 
         res
@@ -326,7 +318,6 @@ impl ProposalBundle {
         )
     }
 
-    #[cfg(feature = "custom_proposal")]
     pub(crate) fn into_proposals_or_refs(self) -> Vec<ProposalOrRef> {
         self.into_proposals()
             .filter_map(|p| match p.source {
@@ -334,17 +325,6 @@ impl ProposalBundle {
                 #[cfg(feature = "by_ref_proposal")]
                 ProposalSource::ByReference(reference) => Some(ProposalOrRef::Reference(reference)),
                 _ => None,
-            })
-            .collect()
-    }
-
-    #[cfg(not(feature = "custom_proposal"))]
-    pub(crate) fn into_proposals_or_refs(self) -> Vec<ProposalOrRef> {
-        self.into_proposals()
-            .map(|p| match p.source {
-                ProposalSource::ByValue => ProposalOrRef::Proposal(Box::new(p.proposal)),
-                #[cfg(feature = "by_ref_proposal")]
-                ProposalSource::ByReference(reference) => ProposalOrRef::Reference(reference),
             })
             .collect()
     }
@@ -464,9 +444,7 @@ pub enum ProposalSource {
     ByValue,
     #[cfg(feature = "by_ref_proposal")]
     ByReference(ProposalRef),
-    /// True if originally by value.
-    #[cfg(feature = "custom_proposal")]
-    CustomRule(bool),
+    Local,
 }
 
 #[derive(Clone, Debug)]
@@ -479,60 +457,32 @@ pub struct ProposalInfo<T> {
     pub(crate) source: ProposalSource,
 }
 
-#[cfg(feature = "custom_proposal")]
-impl ProposalInfo<CustomProposal> {
-    /// Expand this proposal to multiple proposals.
-    ///
-    /// The resulting Vec of ProposalInfo values will have the same sender as
-    /// the original and will be specifically flagged as being generated by
-    /// a custom rule. This function is useful when implementing custom
-    /// [`ProposalRules`](crate::ProposalRules).
-    pub fn expand(&self, expanded: Vec<Proposal>) -> Vec<ProposalInfo<Proposal>> {
-        expanded
-            .into_iter()
-            .map(|p| ProposalInfo {
-                proposal: p,
-                sender: self.sender,
-                source: match self.source {
-                    ProposalSource::ByValue => ProposalSource::CustomRule(true),
-                    #[cfg(feature = "by_ref_proposal")]
-                    ProposalSource::ByReference(_) => ProposalSource::CustomRule(false),
-                    ProposalSource::CustomRule(value) => ProposalSource::CustomRule(value),
-                },
-            })
-            .collect_vec()
-    }
-}
-
-#[cfg(feature = "custom_proposal")]
 impl ProposalInfo<Proposal> {
     /// Create a new ProposalInfo.
     ///
-    /// The resulting value will be specifically flagged as being generated by
-    /// a custom rule either by-value or by-reference depending on the value of
-    /// `by_value`. This function is useful when implementing custom
+    /// The resulting value will be either transmitted with a commit or
+    /// locally injected into a commit resolution depending on the
+    /// `can_transmit` flag.
+    ///
+    /// This function is useful when implementing custom
     /// [`ProposalRules`](crate::ProposalRules).
-    #[cfg(feature = "by_ref_proposal")]
-    pub fn new(proposal: Proposal, sender: Sender, by_value: bool) -> ProposalInfo<Proposal> {
-        ProposalInfo {
-            proposal,
-            sender,
-            source: ProposalSource::CustomRule(by_value),
-        }
-    }
+    pub fn new(proposal: Proposal, sender: Sender, can_transmit: bool) -> ProposalInfo<Proposal> {
+        let source = if can_transmit {
+            ProposalSource::ByValue
+        } else {
+            ProposalSource::Local
+        };
 
-    #[cfg(not(feature = "by_ref_proposal"))]
-    pub fn new(proposal: Proposal, sender: Sender, _by_value: bool) -> ProposalInfo<Proposal> {
         ProposalInfo {
             proposal,
             sender,
-            source: ProposalSource::CustomRule(true),
+            source,
         }
     }
 }
 
 impl<T> ProposalInfo<T> {
-    pub(crate) fn map<U, F>(self, f: F) -> ProposalInfo<U>
+    pub fn map<U, F>(self, f: F) -> ProposalInfo<U>
     where
         F: FnOnce(T) -> U,
     {
@@ -543,7 +493,7 @@ impl<T> ProposalInfo<T> {
         }
     }
 
-    pub(crate) fn by_ref(&self) -> ProposalInfo<&T> {
+    pub fn as_ref(&self) -> ProposalInfo<&T> {
         ProposalInfo {
             proposal: &self.proposal,
             sender: self.sender,
@@ -553,13 +503,7 @@ impl<T> ProposalInfo<T> {
 
     #[inline(always)]
     pub fn is_by_value(&self) -> bool {
-        match self.source {
-            ProposalSource::ByValue => true,
-            #[cfg(feature = "by_ref_proposal")]
-            ProposalSource::ByReference(_) => false,
-            #[cfg(feature = "custom_proposal")]
-            ProposalSource::CustomRule(by_value) => by_value,
-        }
+        self.source == ProposalSource::ByValue
     }
 
     #[inline(always)]
@@ -575,6 +519,10 @@ impl<T> ProposalInfo<T> {
     /// The underlying proposal value.
     pub fn proposal(&self) -> &T {
         &self.proposal
+    }
+
+    pub fn source(&self) -> &ProposalSource {
+        &self.source
     }
 }
 

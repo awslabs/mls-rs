@@ -35,6 +35,7 @@ use super::{
     message_processor::{path_update_required, MessageProcessor},
     message_signature::AuthenticatedContent,
     proposal::{Proposal, ProposalOrRef},
+    proposal_filter::CommitDirection,
     ConfirmedTranscriptHash, Group, GroupInfo,
 };
 
@@ -438,10 +439,10 @@ where
         let time = None;
 
         #[cfg(feature = "by_ref_proposal")]
-        let proposals = self.state.proposals.prepare_commit(sender, proposals)?;
+        let proposals = self.state.proposals.prepare_commit(sender, proposals);
 
         #[cfg(not(feature = "by_ref_proposal"))]
-        let proposals = prepare_commit(sender, proposals)?;
+        let proposals = prepare_commit(sender, proposals);
 
         let mut provisional_state = self
             .state
@@ -457,8 +458,7 @@ where
                 &self.config.secret_store(),
                 self.config.proposal_rules(),
                 time,
-                #[cfg(feature = "by_ref_proposal")]
-                true,
+                CommitDirection::Send,
             )
             .await?;
 

@@ -606,7 +606,7 @@ impl TreeKemPublic {
         let p = Proposal::Update(UpdateProposal { leaf_node });
 
         let mut bundle = ProposalBundle::default();
-        bundle.add(p, Sender::Member(leaf_index), ProposalSource::ByValue)?;
+        bundle.add(p, Sender::Member(leaf_index), ProposalSource::ByValue);
         bundle.update_senders = vec![LeafIndex(leaf_index)];
 
         self.batch_edit(&mut bundle, identity_provider, cipher_suite_provider, true)
@@ -636,7 +636,7 @@ impl TreeKemPublic {
         let mut bundle = ProposalBundle::default();
 
         for p in proposals {
-            bundle.add(p, Sender::Member(0), ProposalSource::ByValue)?;
+            bundle.add(p, Sender::Member(0), ProposalSource::ByValue);
         }
 
         #[cfg(feature = "by_ref_proposal")]
@@ -1377,9 +1377,8 @@ mod tests {
 
         let kp = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "D").await;
         let add = Proposal::Add(Box::new(kp.into()));
-        bundle
-            .add(add, Sender::Member(0), ProposalSource::ByValue)
-            .unwrap();
+
+        bundle.add(add, Sender::Member(0), ProposalSource::ByValue);
 
         let update = UpdateProposal {
             leaf_node: get_basic_test_node(TEST_CIPHER_SUITE, "A").await,
@@ -1387,9 +1386,9 @@ mod tests {
 
         let update = Proposal::Update(update);
         let pref = ProposalRef::new_fake(vec![1, 2, 3]);
-        bundle
-            .add(update, Sender::Member(1), ProposalSource::ByReference(pref))
-            .unwrap();
+
+        bundle.add(update, Sender::Member(1), ProposalSource::ByReference(pref));
+
         bundle.update_senders = vec![LeafIndex(1)];
 
         let remove = RemoveProposal {
@@ -1397,9 +1396,8 @@ mod tests {
         };
 
         let remove = Proposal::Remove(remove);
-        bundle
-            .add(remove, Sender::Member(0), ProposalSource::ByValue)
-            .unwrap();
+
+        bundle.add(remove, Sender::Member(0), ProposalSource::ByValue);
 
         tree.batch_edit(
             &mut bundle,

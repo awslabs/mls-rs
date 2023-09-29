@@ -187,7 +187,8 @@ pub use aws_mls_core::{
 /// Dependencies of [`ProposalRules`].
 pub mod proposal_rules {
     pub use crate::group::proposal_filter::{
-        PassThroughProposalRules, ProposalBundle, ProposalInfo,
+        CommitDirection, CommitSource, PassThroughProposalRules, ProposalBundle, ProposalInfo,
+        ProposalSource,
     };
 }
 
