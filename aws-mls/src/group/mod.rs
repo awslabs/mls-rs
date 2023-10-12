@@ -149,14 +149,7 @@ mod util;
 /// External commit building.
 pub mod external_commit;
 
-#[cfg(feature = "benchmark")]
-#[doc(hidden)]
-pub mod secret_tree;
-
-#[cfg(all(
-    not(feature = "benchmark"),
-    any(feature = "secret_tree_access", feature = "private_message")
-))]
+#[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
 pub(crate) mod secret_tree;
 
 #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
@@ -256,9 +249,6 @@ pub struct Group<C>
 where
     C: ClientConfig,
 {
-    #[cfg(feature = "benchmark")]
-    pub config: C,
-    #[cfg(not(feature = "benchmark"))]
     config: C,
     cipher_suite_provider: <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider,
     state_repo: GroupStateRepository<C::GroupStateStorage, C::KeyPackageRepository>,
@@ -1463,11 +1453,6 @@ where
     ///
     pub fn equal_group_state(a: &Group<C>, b: &Group<C>) -> bool {
         a.state == b.state && a.key_schedule == b.key_schedule && a.epoch_secrets == b.epoch_secrets
-    }
-
-    #[cfg(feature = "benchmark")]
-    pub fn secret_tree(&self) -> &SecretTree {
-        &self.epoch_secrets.secret_tree
     }
 
     #[cfg(feature = "psk")]

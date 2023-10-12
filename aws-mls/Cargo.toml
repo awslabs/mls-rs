@@ -6,7 +6,6 @@ edition = "2021"
 
 [features]
 default = ["std", "rayon", "rfc_compliant", "tree_index", "fast_serialize"]
-benchmark = ["std", "aws-mls-crypto-openssl", "aws-mls-core/benchmark", "rfc_compliant"]
 arbitrary = ["std", "dep:arbitrary", "aws-mls-core/arbitrary"]
 rayon = ["std", "dep:rayon"]
 external_client = ["std"]
@@ -37,7 +36,8 @@ sqlite-bundled = ["sqlite", "aws-mls-provider-sqlite/sqlite-bundled"]
 sqlcipher = ["sqlite", "aws-mls-provider-sqlite/sqlcipher"]
 sqlcipher-bundled = ["sqlite", "aws-mls-provider-sqlite/sqlcipher-bundled"]
 
-test_utils = []
+test_utils = ["dep:once_cell", "aws-mls-crypto-openssl"]
+
 
 [dependencies]
 aws-mls-core = { path = "../aws-mls-core", default-features = false, version = "*" }
@@ -63,6 +63,7 @@ rayon = { version = "1", optional = true }
 arbitrary = { version = "1", features = ["derive"], optional = true }
 safer-ffi = { version = "0.1.0", default-features = false, optional = true }
 safer-ffi-gen = { version = "0.9.1", default-features = false, optional = true }
+once_cell = { version = "1.18", optional = true }
 
 # Example
 tokio = { version = "1", optional = true, features = ["macros", "rt-multi-thread"] }
@@ -114,39 +115,24 @@ name = "basic_server_usage"
 required-features = ["tokio", "external_client"]
 
 [[bench]]
-name = "encap"
-harness = false
-required-features = ["benchmark"]
-
-[[bench]]
-name = "decap"
-harness = false
-required-features = ["benchmark"]
-
-[[bench]]
-name = "group_serialize"
-harness = false
-required-features = ["benchmark"]
-
-[[bench]]
 name = "group_commit"
 harness = false
-required-features = ["benchmark"]
+required-features = ["test_utils"]
 
 [[bench]]
 name = "group_receive_commit"
 harness = false
-required-features = ["benchmark"]
+required-features = ["test_utils"]
 
 [[bench]]
 name = "group_application"
 harness = false
-required-features = ["benchmark"]
+required-features = ["test_utils"]
 
 [[bench]]
-name = "secret_tree_serialize"
+name = "group_serialize"
 harness = false
-required-features = ["benchmark"]
+required-features = ["test_utils"]
 
 [[test]]
 name = "client_tests"

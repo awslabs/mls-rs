@@ -99,46 +99,6 @@ macro_rules! load_test_case_json {
     }};
 }
 
-#[cfg(feature = "benchmark")]
-macro_rules! load_test_case_mls {
-    ($name:ident, $generate:expr) => {
-        load_test_case_mls!($name, $generate, to_vec_pretty)
-    };
-    ($name:ident, $generate:expr, $to_json:ident) => {{
-        #[cfg(any(target_arch = "wasm32", not(feature = "std")))]
-        {
-            // Do not remove `async`! (The goal of this line is to remove warnings
-            // about `$generate` not being used. Actually calling it will make tests fail.)
-            let _ = async { $generate };
-
-            aws_mls_codec::MlsDecode::mls_decode(&mut &include_bytes!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/test_data/",
-                stringify!($name),
-                ".mls"
-            )))
-            .unwrap()
-        }
-
-        #[cfg(all(not(target_arch = "wasm32"), feature = "std"))]
-        {
-            let path = concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/test_data/",
-                stringify!($name),
-                ".mls"
-            );
-
-            if !std::path::Path::new(path).exists() {
-                std::fs::write(path, $generate.mls_encode_to_vec().unwrap()).unwrap();
-            }
-
-            aws_mls_codec::MlsDecode::mls_decode(&mut std::fs::read(path).unwrap().as_slice())
-                .unwrap()
-        }
-    }};
-}
-
 mod cipher_suite {
     pub use aws_mls_core::crypto::CipherSuite;
 }
@@ -214,15 +174,6 @@ pub mod time {
     pub use aws_mls_core::time::*;
 }
 
-#[cfg(feature = "benchmark")]
-#[doc(hidden)]
-pub mod bench_utils;
-
-#[cfg(feature = "benchmark")]
-#[doc(hidden)]
-pub mod tree_kem;
-
-#[cfg(not(feature = "benchmark"))]
 mod tree_kem;
 
 pub use aws_mls_codec;

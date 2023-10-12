@@ -5,7 +5,7 @@ pub use aws_mls_core::crypto::{
     SignatureSecretKey,
 };
 
-#[cfg(any(test, feature = "benchmark"))]
+#[cfg(test)]
 pub(crate) mod test_utils {
     use aws_mls_core::crypto::CryptoProvider;
     use cfg_if::cfg_if;

@@ -209,7 +209,7 @@ impl TreeKemPublic {
             .all(|(_, l)| l.capabilities.proposals.contains(&proposal_type))
     }
 
-    #[cfg(any(test, feature = "benchmark"))]
+    #[cfg(test)]
     #[maybe_async::maybe_async]
     pub async fn add_leaves<I: IdentityProvider, CP: CipherSuiteProvider>(
         &mut self,

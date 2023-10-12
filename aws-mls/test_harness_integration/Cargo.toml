@@ -6,7 +6,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
-aws-mls = { path = "..", features = ["benchmark", "external_client", "rfc_compliant"]}
+aws-mls = { path = "..", features = ["external_client", "rfc_compliant"]}
 tonic = "0.7"
 prost = "0.10"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

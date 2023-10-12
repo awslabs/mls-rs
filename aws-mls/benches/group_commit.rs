@@ -1,41 +1,22 @@
 #[cfg(sync)]
-use aws_mls::{
-    bench_utils::group_functions::load_test_cases, client_builder::MlsConfig, CipherSuite, Group,
-};
+use aws_mls::{test_utils::benchmarks::load_group_states, CipherSuite};
 #[cfg(sync)]
-use criterion::{measurement::WallTime, BatchSize, BenchmarkGroup, BenchmarkId, Criterion};
+use criterion::{BatchSize, BenchmarkId, Criterion};
 
 #[cfg(sync)]
 fn bench(c: &mut Criterion) {
-    let mut group_commit = c.benchmark_group("group_commit");
-
     let cipher_suite = CipherSuite::CURVE25519_AES128;
+    let group_states = load_group_states(cipher_suite);
+    let mut bench_group = c.benchmark_group("group_commit");
 
-    // creates groups of the desired sizes
-    let container = load_test_cases(cipher_suite);
-
-    bench_group_commit(&mut group_commit, cipher_suite, container);
-
-    group_commit.finish();
-}
-
-// benches a single commit creation
-#[cfg(sync)]
-fn bench_group_commit<C: MlsConfig>(
-    bench_group: &mut BenchmarkGroup<WallTime>,
-    cipher_suite: CipherSuite,
-    mut container: Vec<Vec<Group<C>>>,
-) {
-    for groups in &mut container {
+    for (i, group_states) in group_states.into_iter().enumerate() {
         bench_group.bench_with_input(
-            BenchmarkId::new(format!("{cipher_suite:?}"), groups.len()),
-            &groups.len(),
+            BenchmarkId::new(format!("{cipher_suite:?}"), i),
+            &i,
             |b, _| {
                 b.iter_batched_ref(
-                    || groups[0].clone(),
-                    move |sender| {
-                        sender.commit(Vec::new()).unwrap();
-                    },
+                    || group_states.sender.clone(),
+                    move |sender| sender.commit(vec![]).unwrap(),
                     BatchSize::SmallInput,
                 )
             },

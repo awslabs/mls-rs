@@ -1,21 +1,15 @@
 #![no_main]
-use aws_mls::aws_mls_codec::MlsDecode;
-use aws_mls::bench_utils::group_functions::{create_group, TestClientConfig};
-use aws_mls::Group;
-use aws_mls::{CipherSuite, MLSMessage};
-use futures::executor::block_on;
-use libfuzzer_sys::fuzz_target;
-use once_cell::sync::Lazy;
-use std::sync::Mutex;
 
-static GROUP_DATA: Lazy<Mutex<Vec<Group<TestClientConfig>>>> = Lazy::new(|| {
-    let cipher_suite = CipherSuite::CURVE25519_AES128;
-    let container = block_on(create_group(cipher_suite, 2));
-    Mutex::new(container)
-});
+#[cfg(sync)]
+mod process_bytes {
+    use aws_mls::aws_mls_codec::MlsDecode;
+    use aws_mls::test_utils::fuzz_tests::GROUP;
+    use aws_mls::MLSMessage;
+    use libfuzzer_sys::fuzz_target;
 
-fuzz_target!(|data: &[u8]| {
-    if let Ok(message) = MLSMessage::mls_decode(&mut &*data) {
-        block_on(GROUP_DATA.lock().unwrap()[1].process_incoming_message(message)).ok();
-    }
-});
+    fuzz_target!(|data: &[u8]| {
+        if let Ok(message) = MLSMessage::mls_decode(&mut &*data) {
+            GROUP.lock().unwrap().process_incoming_message(message).ok();
+        }
+    });
+}

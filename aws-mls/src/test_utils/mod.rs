@@ -1,3 +1,8 @@
+#[cfg(all(sync, feature = "std"))]
+pub mod benchmarks;
+#[cfg(all(sync, feature = "std"))]
+pub mod fuzz_tests;
+
 use aws_mls_core::{
     crypto::{CipherSuite, CipherSuiteProvider, CryptoProvider},
     identity::{BasicCredential, Credential, SigningIdentity},

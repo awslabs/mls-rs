@@ -1,45 +1,32 @@
-use aws_mls::{
-    bench_utils::group_functions::{get_snapshot, load_test_cases},
-    client_builder::MlsConfig,
-    CipherSuite, Group,
-};
-use criterion::{
-    criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Criterion,
-};
-use futures::executor::block_on;
+#[cfg(sync)]
+use aws_mls::{test_utils::benchmarks::load_group_states, CipherSuite};
 
-fn group_setup(c: &mut Criterion) {
-    let mut group_serialize = c.benchmark_group("group_serialize");
+#[cfg(sync)]
+use criterion::{BenchmarkId, Criterion};
 
-    let cipher_suite = CipherSuite::CURVE25519_AES128;
+#[cfg(sync)]
+fn bench_serialize(c: &mut Criterion) {
+    use criterion::BatchSize;
 
-    println!("Benchmarking group state serialization for: {cipher_suite:?}");
+    let cs = CipherSuite::CURVE25519_AES128;
+    let group_states = load_group_states(cs);
+    let mut bench_group = c.benchmark_group("group_serialize");
 
-    let container = block_on(load_test_cases(cipher_suite));
-
-    bench_group_snapshot(&mut group_serialize, cipher_suite, container);
-
-    group_serialize.finish();
-}
-
-// benches JSON serialization of group state
-fn bench_group_snapshot<C: MlsConfig>(
-    bench_group: &mut BenchmarkGroup<WallTime>,
-    cipher_suite: CipherSuite,
-    container: Vec<Vec<Group<C>>>,
-) {
-    for groups in container {
-        bench_group.bench_with_input(
-            BenchmarkId::new(format!("{cipher_suite:?}"), groups.len()),
-            &groups.len(),
-            |b, _| {
-                b.iter(|| {
-                    get_snapshot(&groups[0]).unwrap();
-                })
-            },
-        );
+    for (i, group_states) in group_states.into_iter().enumerate() {
+        bench_group.bench_with_input(BenchmarkId::new(format!("{cs:?}"), i), &i, |b, _| {
+            b.iter_batched_ref(
+                || group_states.sender.clone(),
+                move |sender| sender.write_to_storage().unwrap(),
+                BatchSize::SmallInput,
+            )
+        });
     }
+
+    bench_group.finish();
 }
 
-criterion_group!(benches, group_setup);
-criterion_main!(benches);
+#[cfg(not(sync))]
+fn bench_serialize(_c: &mut criterion::Criterion) {}
+
+criterion::criterion_group!(benches, bench_serialize);
+criterion::criterion_main!(benches);

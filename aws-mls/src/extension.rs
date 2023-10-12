@@ -5,7 +5,7 @@ pub(crate) use built_in::*;
 /// Default extension types required by the MLS RFC.
 pub mod built_in;
 
-#[cfg(any(test, feature = "benchmark"))]
+#[cfg(test)]
 pub(crate) mod test_utils {
     use alloc::vec::Vec;
     use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};

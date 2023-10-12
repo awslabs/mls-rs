@@ -9,7 +9,7 @@ edition = "2021"
 cargo-fuzz = true
 
 [dependencies]
-aws-mls = { path = "..", features = ["benchmark", "arbitrary"] }
+aws-mls = { path = "..", features = ["test_utils", "arbitrary"] }
 futures = "0.3.25"
 libfuzzer-sys = "0.4"
 once_cell = "1.13.0"

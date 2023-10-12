@@ -15,4 +15,4 @@ jobs:
     - name: Install cargo-hack
       run: cargo install cargo-hack
     - name: Build one feature at a time
-      run: cargo hack build --each-feature
+      run: cargo hack build --each-feature --workspace --exclude fuzz
