@@ -2,47 +2,66 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use crate::{
-    CertificateGeneration, CertificateIssuer, CertificateParameters, CertificateRequest,
-    DerCertificate, SubjectAltName, SubjectComponent,
-};
+use crate::{DerCertificate, DerCertificateRequest};
 
 use alloc::vec::Vec;
-use aws_mls_core::{
-    crypto::{CipherSuite, SignaturePublicKey, SignatureSecretKey},
-    error::IntoAnyError,
-};
+use aws_mls_core::{crypto::SignaturePublicKey, error::IntoAnyError};
+
 #[cfg(all(test, feature = "std"))]
 use mockall::automock;
 
+use alloc::string::String;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// Subject alt name extension values.
+pub enum SubjectAltName {
+    Email(String),
+    Uri(String),
+    Dns(String),
+    Rid(String),
+    Ip(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// X.509 name components.
+pub enum SubjectComponent {
+    CommonName(String),
+    Surname(String),
+    SerialNumber(String),
+    CountryName(String),
+    Locality(String),
+    State(String),
+    StreetAddress(String),
+    OrganizationName(String),
+    OrganizationalUnit(String),
+    Title(String),
+    GivenName(String),
+    EmailAddress(String),
+    UserId(String),
+    DomainComponent(String),
+    Initials(String),
+    GenerationQualifier(String),
+    DistinguishedNameQualifier(String),
+    Pseudonym(String),
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// Parameters used to generate certificate requests.
+pub struct CertificateRequestParameters {
+    pub subject: Vec<SubjectComponent>,
+    pub subject_alt_names: Vec<SubjectAltName>,
+    pub is_ca: bool,
+}
+
 #[cfg_attr(all(test, feature = "std"), automock(type Error = crate::test_utils::TestError;))]
-/// Trait for X.509 certificate writing.
-pub trait X509CertificateWriter {
+/// Trait for X.509 CSR writing.
+pub trait X509RequestWriter {
     type Error: IntoAnyError;
 
-    /// Build a CSR from parameters.
-    ///
-    /// `cipher_suite` is used to indicate
-    /// what type of key pair should be generated if `signer` is set
-    /// to `None`.
-    fn build_csr(
+    fn write(
         &self,
-        cipher_suite: CipherSuite,
-        signer: Option<SignatureSecretKey>,
-        params: CertificateParameters,
-    ) -> Result<CertificateRequest, Self::Error>;
-
-    /// Build a certificate chain from parameters.
-    ///
-    /// `subject_cipher_suite` is used to indicate what type of key
-    /// pair should be generated if `subject_pubkey` is set to `None`.
-    fn build_cert_chain(
-        &self,
-        subject_cipher_suite: CipherSuite,
-        issuer: &CertificateIssuer,
-        subject_pubkey: Option<SignaturePublicKey>,
-        subject_params: CertificateParameters,
-    ) -> Result<CertificateGeneration, Self::Error>;
+        params: CertificateRequestParameters,
+    ) -> Result<DerCertificateRequest, Self::Error>;
 }
 
 #[cfg_attr(all(test, feature = "std"), automock(type Error = crate::test_utils::TestError;))]

@@ -5,20 +5,50 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 extern crate alloc;
 
-mod builder;
 mod error;
 mod identity_extractor;
 mod provider;
 mod traits;
 mod util;
 
-pub use builder::*;
+use alloc::vec::Vec;
+
 pub use error::*;
 pub use identity_extractor::*;
 pub use provider::*;
 pub use traits::*;
 
 pub use aws_mls_core::identity::{CertificateChain, DerCertificate};
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+/// X.509 certificate request in DER format.
+pub struct DerCertificateRequest(Vec<u8>);
+
+#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
+impl DerCertificateRequest {
+    /// Create a DER certificate request from raw bytes.
+    pub fn new(data: Vec<u8>) -> DerCertificateRequest {
+        DerCertificateRequest(data)
+    }
+
+    /// Convert this certificate request into raw bytes.
+    pub fn into_vec(self) -> Vec<u8> {
+        self.0
+    }
+}
+
+impl From<Vec<u8>> for DerCertificateRequest {
+    fn from(data: Vec<u8>) -> Self {
+        DerCertificateRequest(data)
+    }
+}
+
+impl AsRef<[u8]> for DerCertificateRequest {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
 
 #[cfg(all(test, feature = "std"))]
 pub(crate) mod test_utils {

@@ -17,7 +17,7 @@ mod writer;
 
 pub use reader::X509Reader;
 pub use validator::X509Validator;
-pub use writer::X509Writer;
+pub use writer::CertificateRequestWriter;
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
