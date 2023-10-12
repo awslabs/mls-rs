@@ -94,8 +94,10 @@ where
                 }
 
                 #[cfg(not(feature = "all_extensions"))]
-                self.apply_tree_changes(proposals, &p.proposal, commit_time)
-                    .await
+                {
+                    self.apply_tree_changes(proposals, &p.proposal, commit_time)
+                        .await
+                }
             }
             None => {
                 self.apply_tree_changes(proposals, self.original_group_extensions, commit_time)
