@@ -1,3 +1,7 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// Copyright by contributors to this project.
+// SPDX-License-Identifier: (Apache-2.0 OR MIT)
+
 use crate::ec::{
     generate_keypair, private_key_bytes_to_public, private_key_from_bytes,
     pub_key_from_uncompressed, sign_ed25519, sign_p256, verify_ed25519, verify_p256, EcError,

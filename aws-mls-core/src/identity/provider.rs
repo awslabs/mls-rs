@@ -1,3 +1,7 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// Copyright by contributors to this project.
+// SPDX-License-Identifier: (Apache-2.0 OR MIT)
+
 use crate::{error::IntoAnyError, extension::ExtensionList, group::RosterUpdate, time::MlsTime};
 #[cfg(not(sync))]
 use alloc::boxed::Box;

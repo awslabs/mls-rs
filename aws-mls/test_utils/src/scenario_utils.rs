@@ -1,3 +1,7 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// Copyright by contributors to this project.
+// SPDX-License-Identifier: (Apache-2.0 OR MIT)
+
 use aws_mls::client_builder::Preferences;
 use aws_mls::group::{ReceivedMessage, StateUpdate};
 use aws_mls::{CipherSuite, ExtensionList, Group, MLSMessage, ProtocolVersion};

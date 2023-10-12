@@ -1,3 +1,7 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// Copyright by contributors to this project.
+// SPDX-License-Identifier: (Apache-2.0 OR MIT)
+
 use crate::SqLiteDataStorageError;
 use aws_mls_core::psk::{ExternalPskId, PreSharedKey, PreSharedKeyStorage};
 use rusqlite::{params, Connection, OptionalExtension};

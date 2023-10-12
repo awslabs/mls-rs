@@ -1,3 +1,7 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// Copyright by contributors to this project.
+// SPDX-License-Identifier: (Apache-2.0 OR MIT)
+
 //! This is the OpenMLS client for the interop harness as described here:
 //! <https://github.com/mlswg/mls-implementations/tree/master/interop>
 //!

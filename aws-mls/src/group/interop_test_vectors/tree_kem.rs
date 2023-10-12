@@ -1,3 +1,7 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// Copyright by contributors to this project.
+// SPDX-License-Identifier: (Apache-2.0 OR MIT)
+
 use crate::{
     client::test_utils::TEST_PROTOCOL_VERSION,
     crypto::test_utils::try_test_cipher_suite_provider,

@@ -1,3 +1,7 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// Copyright by contributors to this project.
+// SPDX-License-Identifier: (Apache-2.0 OR MIT)
+
 use std::{os::raw::c_void, ptr::null_mut};
 
 use aws_lc_rs::error::Unspecified;
