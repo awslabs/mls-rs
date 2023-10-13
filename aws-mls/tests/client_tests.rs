@@ -19,7 +19,7 @@ use rand::RngCore;
 
 use aws_mls::test_utils::{all_process_message, get_test_basic_credential};
 
-#[cfg(not(sync))]
+#[cfg(mls_build_async)]
 use futures::Future;
 
 cfg_if! {
@@ -45,7 +45,7 @@ fn generate_client(
     )
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 pub async fn get_test_groups(
     version: ProtocolVersion,
     cipher_suite: CipherSuite,
@@ -67,14 +67,14 @@ use rand::seq::IteratorRandom;
 #[cfg(target_arch = "wasm32")]
 wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
 
-#[cfg(all(test, not(sync), target_arch = "wasm32"))]
+#[cfg(target_arch = "wasm32")]
 use wasm_bindgen_test::wasm_bindgen_test as futures_test;
 
-#[cfg(all(test, not(sync), not(target_arch = "wasm32")))]
+#[cfg(all(mls_build_async, not(target_arch = "wasm32")))]
 use futures_test::test as futures_test;
 
 #[cfg(feature = "private_message")]
-#[maybe_async::async_impl]
+#[cfg(mls_build_async)]
 async fn test_on_all_params<F, Fut>(test: F)
 where
     F: Fn(ProtocolVersion, CipherSuite, usize, Preferences) -> Fut,
@@ -92,7 +92,7 @@ where
 }
 
 #[cfg(feature = "private_message")]
-#[maybe_async::sync_impl]
+#[cfg(not(mls_build_async))]
 fn test_on_all_params<F>(test: F)
 where
     F: Fn(ProtocolVersion, CipherSuite, usize, Preferences),
@@ -109,7 +109,7 @@ where
 }
 
 #[cfg(not(feature = "private_message"))]
-#[maybe_async::async_impl]
+#[cfg(mls_build_async)]
 async fn test_on_all_params<F, Fut>(test: F)
 where
     F: Fn(ProtocolVersion, CipherSuite, usize, Preferences) -> Fut,
@@ -118,7 +118,16 @@ where
     test_on_all_params_plaintext(test).await;
 }
 
-#[maybe_async::async_impl]
+#[cfg(not(feature = "private_message"))]
+#[cfg(not(mls_build_async))]
+fn test_on_all_params<F>(test: F)
+where
+    F: Fn(ProtocolVersion, CipherSuite, usize, Preferences),
+{
+    test_on_all_params_plaintext(test);
+}
+
+#[cfg(mls_build_async)]
 async fn test_on_all_params_plaintext<F, Fut>(test: F)
 where
     F: Fn(ProtocolVersion, CipherSuite, usize, Preferences) -> Fut,
@@ -131,7 +140,7 @@ where
     }
 }
 
-#[maybe_async::sync_impl]
+#[cfg(not(mls_build_async))]
 fn test_on_all_params_plaintext<F>(test: F)
 where
     F: Fn(ProtocolVersion, CipherSuite, usize, Preferences),
@@ -143,7 +152,7 @@ where
     }
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 async fn test_create(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
@@ -184,12 +193,12 @@ async fn test_create(
     assert!(Group::equal_group_state(&alice_group, &bob_group));
 }
 
-#[maybe_async::test(sync, async(not(sync), futures_test))]
+#[maybe_async::test(not(mls_build_async), async(mls_build_async, futures_test))]
 async fn test_create_group() {
     test_on_all_params(test_create).await;
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 async fn test_empty_commits(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
@@ -220,13 +229,13 @@ async fn test_empty_commits(
     }
 }
 
-#[maybe_async::test(sync, async(not(sync), futures_test))]
+#[maybe_async::test(not(mls_build_async), async(mls_build_async, futures_test))]
 async fn test_group_path_updates() {
     test_on_all_params(test_empty_commits).await;
 }
 
 #[cfg(feature = "by_ref_proposal")]
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 async fn test_update_proposals(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
@@ -265,12 +274,12 @@ async fn test_update_proposals(
 }
 
 #[cfg(feature = "by_ref_proposal")]
-#[maybe_async::test(sync, async(not(sync), futures_test))]
+#[maybe_async::test(not(mls_build_async), async(mls_build_async, futures_test))]
 async fn test_group_update_proposals() {
     test_on_all_params(test_update_proposals).await;
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 async fn test_remove_proposals(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
@@ -326,13 +335,13 @@ async fn test_remove_proposals(
     }
 }
 
-#[maybe_async::test(sync, async(not(sync), futures_test))]
+#[maybe_async::test(not(mls_build_async), async(mls_build_async, futures_test))]
 async fn test_group_remove_proposals() {
     test_on_all_params(test_remove_proposals).await;
 }
 
 #[cfg(feature = "private_message")]
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 async fn test_application_messages(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
@@ -373,7 +382,7 @@ async fn test_application_messages(
 }
 
 #[cfg(all(feature = "private_message", feature = "out_of_order"))]
-#[maybe_async::test(sync, async(not(sync), futures_test))]
+#[maybe_async::test(not(mls_build_async), async(mls_build_async, futures_test))]
 async fn test_out_of_order_application_messages() {
     let mut groups = get_test_groups(
         ProtocolVersion::MLS_10,
@@ -434,12 +443,12 @@ async fn test_out_of_order_application_messages() {
 }
 
 #[cfg(feature = "private_message")]
-#[maybe_async::test(sync, async(not(sync), futures_test))]
+#[maybe_async::test(not(mls_build_async), async(mls_build_async, futures_test))]
 async fn test_group_application_messages() {
     test_on_all_params(test_application_messages).await
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 async fn processing_message_from_self_returns_error(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
@@ -467,13 +476,13 @@ async fn processing_message_from_self_returns_error(
     assert_matches!(error, MlsError::CantProcessMessageFromSelf);
 }
 
-#[maybe_async::test(sync, async(not(sync), futures_test))]
+#[maybe_async::test(not(mls_build_async), async(mls_build_async, futures_test))]
 async fn test_processing_message_from_self_returns_error() {
     test_on_all_params(processing_message_from_self_returns_error).await;
 }
 
 #[cfg(feature = "external_commit")]
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 async fn external_commits_work(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
@@ -548,12 +557,12 @@ async fn external_commits_work(
 }
 
 #[cfg(feature = "external_commit")]
-#[maybe_async::test(sync, async(not(sync), futures_test))]
+#[maybe_async::test(not(mls_build_async), async(mls_build_async, futures_test))]
 async fn test_external_commits() {
     test_on_all_params_plaintext(external_commits_work).await
 }
 
-#[maybe_async::test(sync, async(not(sync), futures_test))]
+#[maybe_async::test(not(mls_build_async), async(mls_build_async, futures_test))]
 async fn test_remove_nonexisting_leaf() {
     let mut groups = get_test_groups(
         ProtocolVersion::MLS_10,
@@ -580,7 +589,7 @@ async fn test_remove_nonexisting_leaf() {
 }
 
 #[cfg(feature = "psk")]
-#[maybe_async::test(sync, async(not(sync), futures_test))]
+#[maybe_async::test(not(mls_build_async), async(mls_build_async, futures_test))]
 async fn reinit_works() {
     let suite1 = CipherSuite::CURVE25519_AES128;
     let suite2 = CipherSuite::P256_AES128;
@@ -723,7 +732,7 @@ async fn reinit_works() {
 }
 
 #[cfg(feature = "external_commit")]
-#[futures_test::test]
+#[maybe_async::test(not(mls_build_async), async(mls_build_async, futures_test))]
 async fn external_joiner_can_process_siblings_update() {
     let mut groups = get_test_groups(
         ProtocolVersion::MLS_10,

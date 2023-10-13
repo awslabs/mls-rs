@@ -83,7 +83,7 @@ where
         package.sign(self.cipher_suite_provider, self.signing_key, &())
     }
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn generate(
         &self,
         lifetime: Lifetime,
@@ -173,7 +173,7 @@ mod tests {
         Lifetime::years(1).unwrap()
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_key_generation() {
         for (protocol_version, cipher_suite) in ProtocolVersion::all().flat_map(|p| {
             TestCryptoProvider::all_supported_cipher_suites()
@@ -282,7 +282,7 @@ mod tests {
         }
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_randomness() {
         for (protocol_version, cipher_suite) in ProtocolVersion::all().flat_map(|p| {
             TestCryptoProvider::all_supported_cipher_suites()

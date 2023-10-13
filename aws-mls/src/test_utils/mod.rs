@@ -2,9 +2,10 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-#[cfg(all(sync, feature = "std"))]
+#[cfg(feature = "benchmark_util")]
 pub mod benchmarks;
-#[cfg(all(sync, feature = "std"))]
+
+#[cfg(feature = "fuzz_util")]
 pub mod fuzz_tests;
 
 use aws_mls_core::{
@@ -69,7 +70,7 @@ pub fn generate_basic_client<C: CryptoProvider + Clone>(
         .build()
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 pub async fn get_test_groups<C: CryptoProvider + Clone>(
     version: ProtocolVersion,
     cipher_suite: CipherSuite,
@@ -113,7 +114,7 @@ pub async fn get_test_groups<C: CryptoProvider + Clone>(
     groups
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 pub async fn all_process_message<C: MlsConfig>(
     groups: &mut [Group<C>],
     message: &MLSMessage,

@@ -21,7 +21,7 @@ use aws_mls_core::key_package::{KeyPackageData, KeyPackageStorage};
 #[cfg(feature = "std")]
 use std::sync::Mutex;
 
-#[cfg(not(sync))]
+#[cfg(mls_build_async)]
 use alloc::boxed::Box;
 #[cfg(not(feature = "std"))]
 use spin::Mutex;
@@ -88,7 +88,8 @@ impl InMemoryKeyPackageStorage {
     }
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
 impl KeyPackageStorage for InMemoryKeyPackageStorage {
     type Error = Infallible;
 

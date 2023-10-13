@@ -128,13 +128,13 @@ impl From<InteropGroupContext> for GroupContext {
 
 // The test vector can be found here:
 // https://github.com/mlswg/mls-implementations/blob/main/test-vectors/message-protection.json
-#[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+#[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
 async fn framing_proposal() {
-    #[cfg(sync)]
+    #[cfg(not(mls_build_async))]
     let test_cases: Vec<FramingTestCase> =
         load_test_case_json!(framing, generate_framing_test_vector());
 
-    #[cfg(not(sync))]
+    #[cfg(mls_build_async)]
     let test_cases: Vec<FramingTestCase> =
         load_test_case_json!(framing, generate_framing_test_vector().await);
 
@@ -175,13 +175,13 @@ async fn framing_proposal() {
 
 // The test vector can be found here:
 // https://github.com/mlswg/mls-implementations/blob/main/test-vectors/message-protection.json
-#[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+#[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
 async fn framing_application() {
-    #[cfg(sync)]
+    #[cfg(not(mls_build_async))]
     let test_cases: Vec<FramingTestCase> =
         load_test_case_json!(framing, generate_framing_test_vector());
 
-    #[cfg(not(sync))]
+    #[cfg(mls_build_async)]
     let test_cases: Vec<FramingTestCase> =
         load_test_case_json!(framing, generate_framing_test_vector().await);
 
@@ -209,13 +209,13 @@ async fn framing_application() {
 
 // The test vector can be found here:
 // https://github.com/mlswg/mls-implementations/blob/main/test-vectors/message-protection.json
-#[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+#[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
 async fn framing_commit() {
-    #[cfg(sync)]
+    #[cfg(not(mls_build_async))]
     let test_cases: Vec<FramingTestCase> =
         load_test_case_json!(framing, generate_framing_test_vector());
 
-    #[cfg(not(sync))]
+    #[cfg(mls_build_async)]
     let test_cases: Vec<FramingTestCase> =
         load_test_case_json!(framing, generate_framing_test_vector().await);
 
@@ -273,7 +273,7 @@ async fn framing_commit() {
     }
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 async fn generate_framing_test_vector() -> Vec<FramingTestCase> {
     let mut test_vector = vec![];
 
@@ -356,7 +356,7 @@ async fn generate_framing_test_vector() -> Vec<FramingTestCase> {
     test_vector
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 async fn make_group<P: CipherSuiteProvider>(
     test_case: &FramingTestCase,
     for_send: bool,
@@ -420,7 +420,7 @@ async fn make_group<P: CipherSuiteProvider>(
     group
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 async fn process_message<P: CipherSuiteProvider>(
     test_case: &FramingTestCase,
     message: &[u8],

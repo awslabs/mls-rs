@@ -31,7 +31,7 @@ where
     S: GroupStateStorage,
     K: KeyPackageStorage,
 {
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn new(
         storage: S,
         key_package_repo: K,
@@ -45,7 +45,7 @@ where
         })
     }
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn write_to_storage(&mut self, group_snapshot: Snapshot) -> Result<(), MlsError> {
         self.storage
             .write(group_snapshot, Vec::<PriorEpoch>::new(), Vec::new(), None)
@@ -91,7 +91,7 @@ mod tests {
         get_test_snapshot(TEST_CIPHER_SUITE, epoch_id)
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_stored_groups_list() {
         let mut test_repo = GroupStateRepository::new(
             InMemoryGroupStateStorage::default(),
@@ -106,7 +106,7 @@ mod tests {
         assert_eq!(test_repo.storage.stored_groups(), vec![TEST_GROUP])
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn used_key_package_is_deleted() {
         let key_package_repo = InMemoryKeyPackageStorage::default();
 

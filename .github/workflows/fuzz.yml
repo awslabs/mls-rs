@@ -16,9 +16,9 @@ jobs:
         - name: Run Fuzz Targets
           working-directory: aws-mls
           run: |
-            RUSTFLAGS='--cfg sync' cargo +nightly fuzz run application_data -- -runs=$RUNS -timeout=$TIME
-            RUSTFLAGS='--cfg sync' cargo +nightly fuzz run cipher_text -- -runs=$RUNS -timeout=$TIME
-            RUSTFLAGS='--cfg sync' cargo +nightly fuzz run deserialize -- -runs=$RUNS -timeout=$TIME
-            RUSTFLAGS='--cfg sync' cargo +nightly fuzz run export_secret -- -runs=$RUNS -timeout=$TIME
-            RUSTFLAGS='--cfg sync' cargo +nightly fuzz run mls_message -- -runs=$RUNS -timeout=$TIME
-            RUSTFLAGS='--cfg sync' cargo +nightly fuzz run process_bytes -- -runs=$RUNS -timeout=$TIME
+            cargo +nightly fuzz run application_data -- -runs=$RUNS -timeout=$TIME
+            cargo +nightly fuzz run cipher_text -- -runs=$RUNS -timeout=$TIME
+            cargo +nightly fuzz run deserialize -- -runs=$RUNS -timeout=$TIME
+            cargo +nightly fuzz run export_secret -- -runs=$RUNS -timeout=$TIME
+            cargo +nightly fuzz run mls_message -- -runs=$RUNS -timeout=$TIME
+            cargo +nightly fuzz run process_bytes -- -runs=$RUNS -timeout=$TIME

@@ -104,7 +104,7 @@ where
 }
 
 impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn join(
         config: C,
         signing_data: Option<(SignatureSecretKey, SigningIdentity)>,
@@ -173,7 +173,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     /// as processing an encrypted application message. Proper tracking of
     /// the group state requires that all proposal and commit messages are
     /// readable.
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn process_incoming_message(
         &mut self,
         message: MLSMessage,
@@ -231,7 +231,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     /// within an [ExternalSendersExt](crate::extension::built_in::ExternalSendersExt)
     /// as part of its group context extensions.
     #[cfg(feature = "external_proposal")]
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn propose_add(
         &mut self,
         key_package: MLSMessage,
@@ -276,7 +276,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     /// within an [ExternalSendersExt](crate::extension::built_in::ExternalSendersExt)
     /// as part of its group context extensions.
     #[cfg(feature = "external_proposal")]
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn propose_remove(
         &mut self,
         index: u32,
@@ -304,7 +304,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     /// within an [ExternalSendersExt](crate::extension::built_in::ExternalSendersExt)
     /// as part of its group context extensions.
     #[cfg(all(feature = "external_proposal", feature = "psk"))]
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn propose_external_psk(
         &mut self,
         psk: ExternalPskId,
@@ -324,7 +324,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     /// within an [ExternalSendersExt](crate::extension::built_in::ExternalSendersExt)
     /// as part of its group context extensions.
     #[cfg(all(feature = "external_proposal", feature = "psk"))]
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn propose_resumption_psk(
         &mut self,
         psk_epoch: u64,
@@ -361,7 +361,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     /// within an [ExternalSendersExt](crate::extension::built_in::ExternalSendersExt)
     /// as part of its group context extensions.
     #[cfg(feature = "external_proposal")]
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn propose_group_context_extensions(
         &mut self,
         extensions: ExtensionList,
@@ -380,7 +380,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     /// within an [ExternalSendersExt](crate::extension::built_in::ExternalSendersExt)
     /// as part of its group context extensions.
     #[cfg(feature = "external_proposal")]
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn propose_reinit(
         &mut self,
         group_id: Option<Vec<u8>>,
@@ -414,7 +414,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     /// within an [ExternalSendersExt](crate::extension::built_in::ExternalSendersExt)
     /// as part of its group context extensions.
     #[cfg(all(feature = "external_proposal", feature = "custom_proposal"))]
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn propose_custom(
         &mut self,
         proposal: CustomProposal,
@@ -425,7 +425,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     }
 
     #[cfg(feature = "external_proposal")]
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn propose(
         &mut self,
         proposal: Proposal,
@@ -539,7 +539,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     /// Identities are matched based on the
     /// [IdentityProvider](crate::IdentityProvider)
     /// that this group was configured with.
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn get_member_with_identity(
         &self,
         identity_id: &SigningIdentity,
@@ -567,7 +567,8 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     }
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
 impl<C> MessageProcessor for ExternalGroup<C>
 where
     C: ExternalClientConfig + Clone,
@@ -690,7 +691,7 @@ where
         }
     }
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn from_snapshot(
         config: C,
         snapshot: ExternalSnapshot,
@@ -747,7 +748,7 @@ pub(crate) mod test_utils {
 
     use super::ExternalGroup;
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn make_external_group(
         group: &TestGroup,
     ) -> ExternalGroup<TestExternalClientConfig> {
@@ -758,7 +759,7 @@ pub(crate) mod test_utils {
         .await
     }
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn make_external_group_with_config(
         group: &TestGroup,
         config: TestExternalClientConfig,
@@ -811,7 +812,7 @@ mod tests {
     use assert_matches::assert_matches;
     use aws_mls_codec::{MlsDecode, MlsEncode};
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn test_group_with_one_commit(v: ProtocolVersion, cs: CipherSuite) -> TestGroup {
         let mut group = test_group(v, cs).await;
         group.group.commit(Vec::new()).await.unwrap();
@@ -819,7 +820,7 @@ mod tests {
         group
     }
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn test_group_two_members(
         v: ProtocolVersion,
         cs: CipherSuite,
@@ -854,7 +855,7 @@ mod tests {
         group
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_group_can_be_created() {
         for (v, cs) in ProtocolVersion::all().flat_map(|v| {
             TestCryptoProvider::all_supported_cipher_suites()
@@ -865,7 +866,7 @@ mod tests {
         }
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_group_can_process_commit() {
         let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let mut server = make_external_group(&alice).await;
@@ -880,7 +881,7 @@ mod tests {
         assert_eq!(alice.group.state, server.state);
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_group_can_process_proposals_by_reference() {
         let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let mut server = make_external_group(&alice).await;
@@ -922,7 +923,7 @@ mod tests {
         assert_eq!(alice.group.state, server.state);
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_group_can_process_commit_adding_member() {
         let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let mut server = make_external_group(&alice).await;
@@ -941,7 +942,7 @@ mod tests {
         assert_eq!(alice.group.state, server.state);
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_group_rejects_commit_not_for_current_epoch() {
         let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let mut server = make_external_group(&alice).await;
@@ -960,7 +961,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::InvalidEpoch));
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_group_can_reject_message_with_invalid_signature() {
         let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
@@ -984,7 +985,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::InvalidSignature));
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_group_rejects_unencrypted_application_message() {
         let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let mut server = make_external_group(&alice).await;
@@ -998,7 +999,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::UnencryptedApplicationMessage));
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_group_will_reject_unsupported_cipher_suites() {
         let alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
@@ -1025,7 +1026,7 @@ mod tests {
         );
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_group_will_reject_unsupported_protocol_versions() {
         let alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
@@ -1050,7 +1051,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_proposal")]
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn setup_extern_proposal_test(
         extern_proposals_allowed: bool,
     ) -> (SigningIdentity, SignatureSecretKey, TestGroup) {
@@ -1067,7 +1068,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_proposal")]
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn test_external_proposal(
         server: &mut ExternalGroup<TestExternalClientConfig>,
         alice: &mut TestGroup,
@@ -1112,7 +1113,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_proposal")]
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_group_can_propose_add() {
         let (server_identity, server_key, mut alice) = setup_extern_proposal_test(true).await;
 
@@ -1132,7 +1133,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_proposal")]
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_group_can_propose_remove() {
         let (server_identity, server_key, mut alice) = setup_extern_proposal_test(true).await;
 
@@ -1146,7 +1147,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_proposal")]
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_group_external_proposal_not_allowed() {
         let (signing_id, secret_key, alice) = setup_extern_proposal_test(false).await;
         let mut server = make_external_group(&alice).await;
@@ -1162,7 +1163,7 @@ mod tests {
     }
 
     #[cfg(feature = "external_proposal")]
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_group_external_signing_identity_invalid() {
         let (server_identity, server_key) = get_test_signing_identity(TEST_CIPHER_SUITE, b"server");
 
@@ -1182,7 +1183,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::InvalidExternalSigningIdentity));
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_group_errors_on_old_epoch() {
         let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
@@ -1212,7 +1213,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::InvalidEpoch));
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn proposals_can_be_cached_externally() {
         let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
@@ -1239,7 +1240,7 @@ mod tests {
             .unwrap();
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_group_can_observe_since_creation() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
@@ -1259,7 +1260,7 @@ mod tests {
         }
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_group_can_be_serialized_to_tls_encoding() {
         let server =
             make_external_group(&test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await).await;

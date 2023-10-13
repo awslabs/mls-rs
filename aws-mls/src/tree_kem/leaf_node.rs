@@ -39,7 +39,7 @@ pub struct ConfigProperties {
 }
 
 impl LeafNode {
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn generate<CSP>(
         cipher_suite_provider: &CSP,
         properties: ConfigProperties,
@@ -247,7 +247,7 @@ pub(crate) mod test_utils {
     use super::*;
 
     #[allow(unused)]
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn get_test_node(
         cipher_suite: CipherSuite,
         signing_identity: SigningIdentity,
@@ -266,7 +266,7 @@ pub(crate) mod test_utils {
         .await
     }
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn get_test_node_with_lifetime(
         cipher_suite: CipherSuite,
         signing_identity: SigningIdentity,
@@ -292,7 +292,7 @@ pub(crate) mod test_utils {
     }
 
     #[allow(unused)]
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn get_basic_test_node(cipher_suite: CipherSuite, id: &str) -> LeafNode {
         get_basic_test_node_sig_key(cipher_suite, id).await.0
     }
@@ -305,7 +305,7 @@ pub(crate) mod test_utils {
         }
     }
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn get_basic_test_node_capabilities(
         cipher_suite: CipherSuite,
         id: &str,
@@ -329,7 +329,7 @@ pub(crate) mod test_utils {
         .unwrap()
     }
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn get_basic_test_node_sig_key(
         cipher_suite: CipherSuite,
         id: &str,
@@ -389,7 +389,7 @@ mod tests {
     use crate::identity::test_utils::get_test_signing_identity;
     use assert_matches::assert_matches;
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_node_generation() {
         let capabilities = get_test_capabilities();
         let extensions = get_test_extensions();
@@ -444,7 +444,7 @@ mod tests {
         }
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_node_generation_randomness() {
         let cipher_suite = TEST_CIPHER_SUITE;
 
@@ -462,7 +462,7 @@ mod tests {
         }
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_node_update_no_meta_changes() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
@@ -510,7 +510,7 @@ mod tests {
         }
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_node_update_meta_changes() {
         let cipher_suite = TEST_CIPHER_SUITE;
 
@@ -538,7 +538,7 @@ mod tests {
         assert_eq!(leaf.ungreased_extensions(), new_properties.extensions);
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_node_commit_no_meta_changes() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
@@ -585,7 +585,7 @@ mod tests {
         }
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_node_commit_meta_changes() {
         let cipher_suite = TEST_CIPHER_SUITE;
 
@@ -616,7 +616,7 @@ mod tests {
         assert_eq!(leaf.signing_identity, new_signing_identity);
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn context_is_signed() {
         let provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 

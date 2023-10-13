@@ -17,15 +17,15 @@ jobs:
     - name: Clippy Full RFC Compliance
       run: cargo clippy --all-targets --all-features --workspace -- -D warnings
     - name: Clippy Bare Bones
-      run: cargo clippy --all-targets --no-default-features --features std,test_utils --workspace -- -D warnings
+      run: cargo clippy --all-targets --no-default-features --features std,test_util --workspace -- -D warnings
     - name: Test Full RFC Compliance
       run: cargo test --all-features --verbose --workspace
     - name: Test Bare Bones
-      run: cargo test --no-default-features --features std,test_utils  --verbose --workspace
-    - name: Test Sync Full RFC
-      run: RUSTFLAGS='--cfg sync' cargo test --all-features --lib --verbose --workspace 
-    - name: Test Sync Bare Bones 
-      run: RUSTFLAGS='--cfg sync' cargo test --no-default-features --lib --features std,test_utils --verbose --workspace
+      run: cargo test --no-default-features --features std,test_util  --verbose --workspace
+    - name: Test Async Full RFC
+      run: RUSTFLAGS='--cfg mls_build_async' cargo test --lib --test '*' --verbose --features test_util --workspace --exclude aws-mls-provider-sqlite --exclude fuzz --exclude aws-mls-ffi
+    - name: Test Async Bare Bones 
+      run: RUSTFLAGS='--cfg mls_build_async' cargo test --no-default-features --lib --test '*' --features std,test_util --verbose --workspace --exclude aws-mls-provider-sqlite --exclude fuzz --exclude aws-mls-ffi
     - name: Examples
       working-directory: aws-mls
-      run: cargo run --example basic_usage --features=tokio 
+      run: cargo run --example basic_usage

@@ -6,7 +6,7 @@ use super::*;
 use crate::client::MlsError;
 use crate::CipherSuiteProvider;
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 pub(crate) async fn validate_key_package_properties<CSP: CipherSuiteProvider>(
     package: &KeyPackage,
     version: ProtocolVersion,

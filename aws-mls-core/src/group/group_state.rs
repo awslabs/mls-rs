@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use crate::error::IntoAnyError;
-#[cfg(not(sync))]
+#[cfg(mls_build_async)]
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode};
@@ -35,7 +35,8 @@ pub trait EpochRecord {
 /// to delete records that can be used by an application.
 ///
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
 pub trait GroupStateStorage: Send + Sync {
     type Error: IntoAnyError;
 

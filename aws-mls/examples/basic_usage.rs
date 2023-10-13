@@ -41,8 +41,7 @@ fn make_client<P: CryptoProvider + Clone>(
         .build())
 }
 
-#[tokio::main]
-async fn main() -> Result<(), MlsError> {
+fn main() -> Result<(), MlsError> {
     let crypto_provider = aws_mls_crypto_openssl::OpensslCryptoProvider::default();
 
     // Create clients for Alice and Bob
@@ -50,41 +49,36 @@ async fn main() -> Result<(), MlsError> {
     let bob = make_client(crypto_provider.clone(), "bob")?;
 
     // Alice creates a new group.
-    let mut alice_group = alice.create_group(ExtensionList::default()).await?;
+    let mut alice_group = alice.create_group(ExtensionList::default())?;
 
     // Bob generates a key package that Alice needs to add Bob to the group.
-    let bob_key_package = bob.generate_key_package_message().await?;
+    let bob_key_package = bob.generate_key_package_message()?;
 
     // Alice issues a commit that adds Bob to the group.
     let alice_commit = alice_group
         .commit_builder()
         .add_member(bob_key_package)?
-        .build()
-        .await?;
+        .build()?;
 
     // Alice confirms that the commit was accepted by the group so it can be applied locally.
     // This would normally happen after a server confirmed your commit was accepted and can
     // be broadcasted.
-    alice_group.apply_pending_commit().await?;
+    alice_group.apply_pending_commit()?;
 
     // Bob joins the group with the welcome message created as part of Alice's commit.
-    let (mut bob_group, _) = bob
-        .join_group(None, alice_commit.welcome_message.unwrap())
-        .await?;
+    let (mut bob_group, _) = bob.join_group(None, alice_commit.welcome_message.unwrap())?;
 
     // Alice encrypts an application message to Bob.
-    let msg = alice_group
-        .encrypt_application_message(b"hello world", Default::default())
-        .await?;
+    let msg = alice_group.encrypt_application_message(b"hello world", Default::default())?;
 
     // Bob decrypts the application message from Alice.
-    let msg = bob_group.process_incoming_message(msg).await?;
+    let msg = bob_group.process_incoming_message(msg)?;
 
     println!("Received message: {:?}", msg);
 
     // Alice and bob write the group state to their configured storage engine
-    alice_group.write_to_storage().await?;
-    bob_group.write_to_storage().await?;
+    alice_group.write_to_storage()?;
+    bob_group.write_to_storage()?;
 
     Ok(())
 }

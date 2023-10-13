@@ -4,7 +4,6 @@
 
 #![no_main]
 
-#[cfg(sync)]
 mod export_secret {
     use aws_mls::test_utils::fuzz_tests::GROUP;
     use libfuzzer_sys::{arbitrary, fuzz_target};

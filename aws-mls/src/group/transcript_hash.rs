@@ -135,13 +135,13 @@ mod tests {
         pub interim_transcript_hash_after: Vec<u8>,
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn transcript_hash() {
-        #[cfg(not(sync))]
+        #[cfg(mls_build_async)]
         let test_cases: Vec<TestCase> =
             load_test_case_json!(interop_transcript_hashes, generate_test_vector().await);
 
-        #[cfg(sync)]
+        #[cfg(not(mls_build_async))]
         let test_cases: Vec<TestCase> =
             load_test_case_json!(interop_transcript_hashes, generate_test_vector());
 
@@ -173,7 +173,7 @@ mod tests {
         }
     }
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn generate_test_vector() -> Vec<TestCase> {
         CipherSuite::all().fold(vec![], |mut test_cases, cs| {
             let cs = test_cipher_suite_provider(cs);

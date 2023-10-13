@@ -44,7 +44,7 @@ where
     /// is determined using the
     /// [`IdentityProvider`](crate::IdentityProvider)
     /// that is currently in use by this group instance.
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn branch(
         &self,
         sub_group_id: Vec<u8>,
@@ -72,7 +72,7 @@ where
     }
 
     /// Join a subgroup that was created by [`Group::branch`].
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn join_subgroup(
         &self,
         welcome: MLSMessage,
@@ -164,7 +164,7 @@ where
 impl<C: ClientConfig + Clone> ReinitClient<C> {
     /// Generate a key package for the new group. The key package can
     /// be used in [`ReinitClient::commit`].
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn generate_key_package(&self) -> Result<MLSMessage, MlsError> {
         self.client.generate_key_package_message().await
     }
@@ -176,7 +176,7 @@ impl<C: ClientConfig + Clone> ReinitClient<C> {
     ///
     /// This function will fail if the number of members in the reinitialized
     /// group is not the same as the prior group roster.
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn commit(
         self,
         new_key_packages: Vec<MLSMessage>,
@@ -203,7 +203,7 @@ impl<C: ClientConfig + Clone> ReinitClient<C> {
     }
 
     /// Join a reinitialized group that was created by [`ReinitClient::commit`].
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn join(
         self,
         welcome: MLSMessage,
@@ -232,7 +232,7 @@ impl<C: ClientConfig + Clone> ReinitClient<C> {
     }
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 async fn resumption_create_group<C: ClientConfig + Clone>(
     config: C,
     new_key_packages: Vec<MLSMessage>,
@@ -277,7 +277,7 @@ async fn resumption_create_group<C: ClientConfig + Clone>(
     Ok((group, commit.welcome_message))
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 async fn resumption_join_group<C: ClientConfig + Clone>(
     config: C,
     signer: SignatureSecretKey,

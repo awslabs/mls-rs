@@ -39,10 +39,10 @@ struct BasicServer {
 
 impl BasicServer {
     // Client uploads group data after creating the group
-    async fn create_group(group_info: &[u8], tree: &[u8]) -> Result<Self, MlsError> {
+    fn create_group(group_info: &[u8], tree: &[u8]) -> Result<Self, MlsError> {
         let server = make_server();
         let group_info = MLSMessage::from_bytes(group_info)?;
-        let group = server.observe_group(group_info, Some(tree)).await?;
+        let group = server.observe_group(group_info, Some(tree))?;
 
         Ok(Self {
             group_state: group.snapshot().to_bytes()?,
@@ -53,13 +53,13 @@ impl BasicServer {
     // Client uploads a proposal. This doesn't change the server's group state, so clients can
     // upload prposals without synchronization (`cached_proposals` and `message_queue` collect
     // all proposals in any order).
-    async fn upload_proposal(&mut self, proposal: Vec<u8>) -> Result<(), MlsError> {
+    fn upload_proposal(&mut self, proposal: Vec<u8>) -> Result<(), MlsError> {
         let server = make_server();
         let group_state = ExternalSnapshot::from_bytes(&self.group_state)?;
-        let mut group = server.load_group(group_state).await?;
+        let mut group = server.load_group(group_state)?;
 
         let proposal_msg = MLSMessage::from_bytes(&proposal)?;
-        let res = group.process_incoming_message(proposal_msg).await?;
+        let res = group.process_incoming_message(proposal_msg)?;
 
         let ExternalReceivedMessage::Proposal(proposal_desc) = res else {
             panic!("expected proposal message!")
@@ -75,17 +75,17 @@ impl BasicServer {
 
     // Client uploads a commit. This changes the server's group state, so in a real application,
     // it must be synchronized. That is, only one `upload_commit` operation can succeed.
-    async fn upload_commit(&mut self, commit: Vec<u8>) -> Result<(), MlsError> {
+    fn upload_commit(&mut self, commit: Vec<u8>) -> Result<(), MlsError> {
         let server = make_server();
         let group_state = ExternalSnapshot::from_bytes(&self.group_state)?;
-        let mut group = server.load_group(group_state).await?;
+        let mut group = server.load_group(group_state)?;
 
         for p in &self.cached_proposals {
             group.insert_proposal(CachedProposal::from_bytes(p)?);
         }
 
         let commit_msg = MLSMessage::from_bytes(&commit)?;
-        let res = group.process_incoming_message(commit_msg).await?;
+        let res = group.process_incoming_message(commit_msg)?;
 
         let ExternalReceivedMessage::Commit(_commit_desc) = res else {
             panic!("expected commit message!")
@@ -134,65 +134,57 @@ fn make_identity(name: &str) -> (SignatureSecretKey, SigningIdentity) {
     (secret, identity)
 }
 
-#[tokio::main]
-async fn main() -> Result<(), MlsError> {
+fn main() -> Result<(), MlsError> {
     // Create clients for Alice and Bob
     let alice = make_client("alice")?;
     let bob = make_client("bob")?;
 
     // Alice creates a group with bob
-    let mut alice_group = alice.create_group(ExtensionList::default()).await?;
-    let bob_key_package = bob.generate_key_package_message().await?;
+    let mut alice_group = alice.create_group(ExtensionList::default())?;
+    let bob_key_package = bob.generate_key_package_message()?;
 
     let welcome = alice_group
         .commit_builder()
         .add_member(bob_key_package)?
-        .build()
-        .await?
+        .build()?
         .welcome_message
         .expect("key package shouldn't be rejected");
 
-    let (mut bob_group, _) = bob.join_group(None, welcome).await?;
-    alice_group.apply_pending_commit().await?;
+    let (mut bob_group, _) = bob.join_group(None, welcome)?;
+    alice_group.apply_pending_commit()?;
 
     // Server starts observing Alice's group
-    let group_info = alice_group.group_info_message().await?.to_bytes()?;
+    let group_info = alice_group.group_info_message()?.to_bytes()?;
     let tree = alice_group.export_tree()?;
 
-    let mut server = BasicServer::create_group(&group_info, &tree).await?;
+    let mut server = BasicServer::create_group(&group_info, &tree)?;
 
     // Bob uploads a proposal
     let proposal = bob_group
-        .propose_group_context_extensions(ExtensionList::new(), Vec::new())
-        .await?
+        .propose_group_context_extensions(ExtensionList::new(), Vec::new())?
         .to_bytes()?;
 
-    server.upload_proposal(proposal).await?;
+    server.upload_proposal(proposal)?;
 
     // Alice downloads all messages and commits
     for m in server.download_messages(0) {
-        alice_group
-            .process_incoming_message(MLSMessage::from_bytes(m)?)
-            .await?;
+        alice_group.process_incoming_message(MLSMessage::from_bytes(m)?)?;
     }
 
     let commit = alice_group
-        .commit(b"changing extensions".to_vec())
-        .await?
+        .commit(b"changing extensions".to_vec())?
         .commit_message
         .to_bytes()?;
 
-    server.upload_commit(commit).await?;
+    server.upload_commit(commit)?;
 
     // Alice waits for an ACK from the server and applies the commit
-    alice_group.apply_pending_commit().await?;
+    alice_group.apply_pending_commit()?;
 
     // Bob downloads the commit
     let message = server.download_messages(1).first().unwrap();
 
-    let res = bob_group
-        .process_incoming_message(MLSMessage::from_bytes(message)?)
-        .await?;
+    let res = bob_group.process_incoming_message(MLSMessage::from_bytes(message)?)?;
 
     let ReceivedMessage::Commit(commit_desc) = res else {
         panic!("expected commit message")

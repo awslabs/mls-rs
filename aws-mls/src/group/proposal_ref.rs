@@ -104,7 +104,7 @@ mod test {
         output: Vec<u8>,
     }
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn generate_proposal_test_cases() -> Vec<TestCase> {
         let mut test_cases = Vec::new();
 
@@ -177,17 +177,17 @@ mod test {
         test_cases
     }
 
-    #[maybe_async::async_impl]
+    #[cfg(mls_build_async)]
     async fn load_test_cases() -> Vec<TestCase> {
         load_test_case_json!(proposal_ref, generate_proposal_test_cases().await)
     }
 
-    #[maybe_async::sync_impl]
+    #[cfg(not(mls_build_async))]
     fn load_test_cases() -> Vec<TestCase> {
         load_test_case_json!(proposal_ref, generate_proposal_test_cases())
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_proposal_ref() {
         let test_cases = load_test_cases().await;
 

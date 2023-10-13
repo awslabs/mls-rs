@@ -4,7 +4,6 @@
 
 #![no_main]
 
-#[cfg(sync)]
 mod application_data {
     use aws_mls::test_utils::fuzz_tests::GROUP;
 

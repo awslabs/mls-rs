@@ -74,19 +74,18 @@ impl SqLiteKeyPackageStorage {
     }
 }
 
-#[maybe_async::maybe_async]
 impl KeyPackageStorage for SqLiteKeyPackageStorage {
     type Error = SqLiteDataStorageError;
 
-    async fn insert(&mut self, id: Vec<u8>, pkg: KeyPackageData) -> Result<(), Self::Error> {
+    fn insert(&mut self, id: Vec<u8>, pkg: KeyPackageData) -> Result<(), Self::Error> {
         self.insert(id.as_slice(), pkg)
     }
 
-    async fn get(&self, id: &[u8]) -> Result<Option<KeyPackageData>, Self::Error> {
+    fn get(&self, id: &[u8]) -> Result<Option<KeyPackageData>, Self::Error> {
         self.get(id)
     }
 
-    async fn delete(&mut self, id: &[u8]) -> Result<(), Self::Error> {
+    fn delete(&mut self, id: &[u8]) -> Result<(), Self::Error> {
         (*self).delete(id)
     }
 }

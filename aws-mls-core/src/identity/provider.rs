@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use crate::{error::IntoAnyError, extension::ExtensionList, group::RosterUpdate, time::MlsTime};
-#[cfg(not(sync))]
+#[cfg(mls_build_async)]
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
@@ -36,7 +36,8 @@ impl IdentityWarning {
 
 /// Identity system that can be used to validate a
 /// [`SigningIdentity`](aws-mls-core::identity::SigningIdentity)
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
 pub trait IdentityProvider: Send + Sync {
     /// Error type that this provider returns on internal failure.
     type Error: IntoAnyError;

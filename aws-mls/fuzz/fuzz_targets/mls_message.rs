@@ -4,7 +4,6 @@
 
 #![no_main]
 
-#[cfg(sync)]
 mod mls_message {
     use aws_mls::test_utils::fuzz_tests::GROUP;
     use aws_mls::MLSMessage;

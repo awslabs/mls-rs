@@ -38,7 +38,7 @@ struct TreeModsTestCase {
 }
 
 impl TreeModsTestCase {
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn new(tree_before: TreeKemPublic, proposal: Proposal, proposal_sender: u32) -> Self {
         let tree_after = apply_proposal(proposal.clone(), proposal_sender, &tree_before).await;
 
@@ -51,7 +51,7 @@ impl TreeModsTestCase {
     }
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 async fn generate_tree_mods_tests() -> Vec<TreeModsTestCase> {
     let mut test_vector = vec![];
     let cs = test_cipher_suite_provider(TEST_CIPHER_SUITE);
@@ -89,14 +89,14 @@ async fn generate_tree_mods_tests() -> Vec<TreeModsTestCase> {
     test_vector
 }
 
-#[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+#[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
 async fn tree_modifications_interop() {
     // The test vector can be found here https://github.com/mlswg/mls-implementations/blob/main/test-vectors/tree-operations.json
-    #[cfg(sync)]
+    #[cfg(not(mls_build_async))]
     let test_cases: Vec<TreeModsTestCase> =
         load_test_case_json!(tree_modifications_interop, generate_tree_mods_tests());
 
-    #[cfg(not(sync))]
+    #[cfg(mls_build_async)]
     let test_cases: Vec<TreeModsTestCase> =
         load_test_case_json!(tree_modifications_interop, generate_tree_mods_tests().await);
 
@@ -121,7 +121,7 @@ async fn tree_modifications_interop() {
     }
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 async fn apply_proposal(
     proposal: Proposal,
     sender: u32,
@@ -138,7 +138,7 @@ async fn apply_proposal(
         .public_tree
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 async fn generate_add() -> Proposal {
     let key_package = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "Roger").await;
     Proposal::Add(Box::new(AddProposal { key_package }))
@@ -149,7 +149,7 @@ fn generate_remove(i: u32) -> Proposal {
     Proposal::Remove(RemoveProposal { to_remove })
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 async fn generate_update(i: u32, tree: &TreeWithSigners) -> Proposal {
     let signer = tree.signers[i as usize].as_ref().unwrap();
     let mut leaf_node = tree.tree.get_leaf_node(LeafIndex(i)).unwrap().clone();

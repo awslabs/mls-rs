@@ -196,7 +196,7 @@ impl ExternalSendersExt {
         &self.allowed_senders
     }
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn verify_all<I: IdentityProvider>(
         &self,
         provider: &I,

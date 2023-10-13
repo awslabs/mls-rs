@@ -37,7 +37,6 @@ use aws_mls::{
 
 use aws_mls_crypto_openssl::OpensslCryptoProvider;
 use clap::Parser;
-use futures::future::{BoxFuture, FutureExt};
 use std::net::IpAddr;
 use tokio::sync::Mutex;
 use tonic::{transport::Server, Request, Response, Status};
@@ -141,7 +140,6 @@ impl MlsClient for MlsClientImpl {
         let group = client
             .client
             .create_group_with_id(request.group_id, ExtensionList::default())
-            .await
             .map_err(abort)?;
 
         client.group = Some(group);
@@ -166,7 +164,6 @@ impl MlsClient for MlsClientImpl {
         let key_package = client
             .client
             .generate_key_package_message()
-            .await
             .map_err(abort)?;
 
         let (_, key_pckg_secrets) = client.key_package_repo.key_packages()[0].clone();
@@ -202,7 +199,6 @@ impl MlsClient for MlsClientImpl {
         let (group, _) = client
             .client
             .join_group(get_tree(&request.ratchet_tree), welcome_msg)
-            .await
             .map_err(abort)?;
 
         let epoch_authenticator = group.epoch_authenticator().map_err(abort)?.to_vec();
@@ -246,7 +242,6 @@ impl MlsClient for MlsClientImpl {
 
             let server = server
                 .observe_group(group_info.clone(), tree)
-                .await
                 .map_err(abort)?;
 
             let idx = find_member(
@@ -268,7 +263,7 @@ impl MlsClient for MlsClientImpl {
             builder = builder.with_removal(removed_index);
         }
 
-        let (group, commit) = builder.build(group_info.clone()).await.map_err(abort)?;
+        let (group, commit) = builder.build(group_info.clone()).map_err(abort)?;
 
         let epoch_authenticator = group.epoch_authenticator().map_err(abort)?.to_vec();
 
@@ -302,7 +297,6 @@ impl MlsClient for MlsClientImpl {
 
         let group_info = group
             .group_info_message_allowing_ext_commit()
-            .await
             .and_then(|m| m.to_bytes())
             .map_err(abort)?;
 
@@ -342,7 +336,6 @@ impl MlsClient for MlsClientImpl {
             .as_mut()
             .ok_or_else(|| Status::aborted("no group with such index."))?
             .encrypt_application_message(&request.plaintext, request.authenticated_data)
-            .await
             .and_then(|m| m.to_bytes())
             .map_err(abort)?;
 
@@ -364,7 +357,6 @@ impl MlsClient for MlsClientImpl {
             .as_mut()
             .ok_or_else(|| Status::aborted("no group with such index."))?
             .process_incoming_message(ciphertext)
-            .await
             .map_err(abort)?;
 
         let app_msg = match message {
@@ -406,7 +398,7 @@ impl MlsClient for MlsClientImpl {
         let key_package = MLSMessage::from_bytes(&request.key_package).map_err(abort)?;
 
         self.send_proposal(request.state_id, move |group| {
-            Ok(group.propose_add(key_package, vec![]).boxed())
+            group.propose_add(key_package, vec![]).map_err(abort)
         })
         .await
     }
@@ -418,7 +410,7 @@ impl MlsClient for MlsClientImpl {
         let request = request.into_inner();
 
         self.send_proposal(request.state_id, move |group| {
-            Ok(group.propose_update(vec![]).boxed())
+            group.propose_update(vec![]).map_err(abort)
         })
         .await
     }
@@ -432,7 +424,8 @@ impl MlsClient for MlsClientImpl {
         self.send_proposal(request.state_id, move |group| {
             let removed_cred = Credential::Basic(BasicCredential::new(request.removed_id));
             let removed_index = find_member(&group.roster().members(), &removed_cred)?;
-            Ok(group.propose_remove(removed_index, vec![]).boxed())
+
+            group.propose_remove(removed_index, vec![]).map_err(abort)
         })
         .await
     }
@@ -445,7 +438,7 @@ impl MlsClient for MlsClientImpl {
 
         self.send_proposal(request.state_id, move |group| {
             let psk_id = ExternalPskId::new(request.psk_id);
-            Ok(group.propose_external_psk(psk_id, vec![]).boxed())
+            group.propose_external_psk(psk_id, vec![]).map_err(abort)
         })
         .await
     }
@@ -458,7 +451,10 @@ impl MlsClient for MlsClientImpl {
 
         self.send_proposal(request.state_id, move |group| {
             let epoch_id = request.epoch_id;
-            Ok(group.propose_resumption_psk(epoch_id, vec![]).boxed())
+
+            group
+                .propose_resumption_psk(epoch_id, vec![])
+                .map_err(abort)
         })
         .await
     }
@@ -470,7 +466,7 @@ impl MlsClient for MlsClientImpl {
         let request = request.into_inner();
 
         self.send_proposal(request.state_id, move |group| {
-            Ok(group
+            group
                 .propose_reinit(
                     Some(request.group_id),
                     ProtocolVersion::MLS_10,
@@ -478,7 +474,7 @@ impl MlsClient for MlsClientImpl {
                     parse_extensions(request.extensions),
                     vec![],
                 )
-                .boxed())
+                .map_err(abort)
         })
         .await
     }
@@ -491,7 +487,10 @@ impl MlsClient for MlsClientImpl {
 
         self.send_proposal(request.state_id, move |group| {
             let ext = parse_extensions(request.extensions);
-            Ok(group.propose_group_context_extensions(ext, vec![]).boxed())
+
+            group
+                .propose_group_context_extensions(ext, vec![])
+                .map_err(abort)
         })
         .await
     }
@@ -541,7 +540,7 @@ impl MlsClient for MlsClientImpl {
                 .as_mut()
                 .ok_or_else(|| Status::aborted("no group with such index."))?;
 
-            let update = group.apply_pending_commit().await.map_err(abort)?;
+            let update = group.apply_pending_commit().map_err(abort)?;
 
             let resp = HandleCommitResponse {
                 state_id: request.state_id,
@@ -569,7 +568,7 @@ impl MlsClient for MlsClientImpl {
             .as_mut()
             .ok_or_else(|| Status::aborted("no group with such index."))?;
 
-        group.apply_pending_commit().await.map_err(abort)?;
+        group.apply_pending_commit().map_err(abort)?;
 
         let resp = HandleCommitResponse {
             state_id: request_ref.state_id,
@@ -623,7 +622,6 @@ impl MlsClient for MlsClientImpl {
 
         let (group, _info) = reinit_client
             .join(welcome, get_tree(&request.ratchet_tree))
-            .await
             .map_err(abort)?;
 
         let resp = JoinGroupResponse {
@@ -683,7 +681,7 @@ impl MlsClient for MlsClientImpl {
         let tree = get_tree(&request.ratchet_tree);
         let welcome = MLSMessage::from_bytes(&request.welcome).map_err(abort)?;
 
-        let (new_group, _info) = group.join_subgroup(welcome, tree).await.map_err(abort)?;
+        let (new_group, _info) = group.join_subgroup(welcome, tree).map_err(abort)?;
 
         let resp = HandleBranchResponse {
             state_id: request.state_id,
@@ -712,7 +710,6 @@ impl MlsClient for MlsClientImpl {
         let proposal = client
             .client
             .external_add_proposal(group_info, None, vec![])
-            .await
             .map_err(abort)?
             .to_bytes()
             .map_err(abort)?;
@@ -793,9 +790,9 @@ impl MlsClient for MlsClientImpl {
                 .set_from(ExternalSendersExt::new(ext_senders))
                 .map_err(abort)?;
 
-            Ok(group
+            group
                 .propose_group_context_extensions(extensions, vec![])
-                .boxed())
+                .map_err(abort)
         })
         .await
     }
@@ -816,7 +813,6 @@ impl MlsClient for MlsClientImpl {
         let mut server = ext_client
             .ext_client
             .observe_group(group_info, get_tree(&request.ratchet_tree))
-            .await
             .map_err(abort)?;
 
         let proposal = request
@@ -827,28 +823,22 @@ impl MlsClient for MlsClientImpl {
             PROPOSAL_DESC_ADD => {
                 let key_package = MLSMessage::from_bytes(&proposal.key_package).map_err(abort)?;
 
-                server.propose_add(key_package, vec![]).await.map_err(abort)
+                server.propose_add(key_package, vec![]).map_err(abort)
             }
             PROPOSAL_DESC_REMOVE => {
                 let cred = Credential::Basic(BasicCredential::new(proposal.removed_id.clone()));
                 let removed_index = find_member(&server.roster().members(), &cred)?;
 
-                server
-                    .propose_remove(removed_index, vec![])
-                    .await
-                    .map_err(abort)
+                server.propose_remove(removed_index, vec![]).map_err(abort)
             }
             PROPOSAL_DESC_EXTERNAL_PSK => server
                 .propose_external_psk(ExternalPskId::new(proposal.psk_id), vec![])
-                .await
                 .map_err(abort),
             PROPOSAL_DESC_RESUMPTION_PSK => server
                 .propose_resumption_psk(proposal.epoch_id, vec![])
-                .await
                 .map_err(abort),
             PROPOSAL_DESC_GCE => server
                 .propose_group_context_extensions(parse_extensions(proposal.extensions), vec![])
-                .await
                 .map_err(abort),
             PROPOSAL_DESC_REINIT => server
                 .propose_reinit(
@@ -858,7 +848,6 @@ impl MlsClient for MlsClientImpl {
                     parse_extensions(proposal.extensions),
                     vec![],
                 )
-                .await
                 .map_err(abort),
             _ => Err(Status::aborted("unsupported proposal type")),
         }?;
@@ -905,7 +894,6 @@ impl MlsClientImpl {
         let (new_group, welcome) = if let Some(id) = subgroup_id {
             group
                 .branch(id, new_key_pkgs, Some(preferences))
-                .await
                 .map_err(abort)?
         } else {
             let client = group
@@ -918,7 +906,6 @@ impl MlsClientImpl {
 
             client
                 .commit(new_key_pkgs, Some(preferences))
-                .await
                 .map_err(abort)?
         };
 
@@ -988,7 +975,7 @@ impl MlsClientImpl {
             .get_reinit_client(Some(secret_key.clone()), Some(signing_identity.clone()))
             .map_err(abort)?;
 
-        let key_package = reinit_client.generate_key_package().await.map_err(abort)?;
+        let key_package = reinit_client.generate_key_package().map_err(abort)?;
 
         let resp = HandleReInitCommitResponse {
             epoch_authenticator: commit_resp.epoch_authenticator,
@@ -1021,7 +1008,7 @@ impl MlsClientImpl {
         for proposal_bytes in &request.by_reference {
             let proposal = MLSMessage::from_bytes(proposal_bytes).map_err(abort)?;
 
-            match group.process_incoming_message(proposal).await {
+            match group.process_incoming_message(proposal) {
                 Ok(_) | Err(MlsError::CantProcessMessageFromSelf) => Ok(()),
                 Err(e) => Err(abort(e)),
             }?;
@@ -1069,10 +1056,10 @@ impl MlsClientImpl {
             }
         }
 
-        let commit_output = commit_builder.build().await.map_err(abort)?;
+        let commit_output = commit_builder.build().map_err(abort)?;
 
         let mut group_clone = group.clone();
-        group_clone.apply_pending_commit().await.unwrap();
+        group_clone.apply_pending_commit().unwrap();
 
         let ratchet_tree = if request.external_tree {
             group_clone.export_tree().unwrap()
@@ -1113,7 +1100,7 @@ impl MlsClientImpl {
         for proposal in &request.proposal {
             let proposal = MLSMessage::from_bytes(proposal).map_err(abort)?;
 
-            match group.process_incoming_message(proposal).await {
+            match group.process_incoming_message(proposal) {
                 Ok(_) | Err(MlsError::CantProcessMessageFromSelf) => Ok(()),
                 Err(e) => Err(abort(e)),
             }?;
@@ -1121,10 +1108,7 @@ impl MlsClientImpl {
 
         let commit = MLSMessage::from_bytes(&request.commit).map_err(abort)?;
 
-        let message = group
-            .process_incoming_message(commit)
-            .await
-            .map_err(abort)?;
+        let message = group.process_incoming_message(commit).map_err(abort)?;
 
         let resp = HandleCommitResponse {
             state_id: request.state_id,
@@ -1143,9 +1127,7 @@ impl MlsClientImpl {
         propose: F,
     ) -> Result<tonic::Response<ProposalResponse>, tonic::Status>
     where
-        F: FnOnce(
-            &mut Group<TestClientConfig>,
-        ) -> Result<BoxFuture<'_, Result<MLSMessage, MlsError>>, tonic::Status>,
+        F: FnOnce(&mut Group<TestClientConfig>) -> Result<MLSMessage, tonic::Status>,
     {
         let mut clients = self.clients.lock().await;
 
@@ -1156,10 +1138,7 @@ impl MlsClientImpl {
             .as_mut()
             .ok_or_else(|| Status::aborted("no group with such index."))?;
 
-        let proposal = propose(group)?
-            .await
-            .and_then(|p| p.to_bytes())
-            .map_err(abort)?;
+        let proposal = propose(group).and_then(|p| p.to_bytes().map_err(abort))?;
 
         Ok(Response::new(ProposalResponse { proposal }))
     }

@@ -429,7 +429,7 @@ pub(crate) mod test_utils {
         client::test_utils::TEST_CIPHER_SUITE, tree_kem::leaf_node::test_utils::get_basic_test_node,
     };
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn get_test_node_vec() -> NodeVec {
         let mut nodes = vec![None; 7];
 
@@ -459,7 +459,7 @@ mod tests {
         },
     };
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn node_key_getters() {
         let test_node_parent: Node = Parent {
             public_key: b"pub".to_vec().into(),
@@ -475,7 +475,7 @@ mod tests {
         assert_eq!(test_node_leaf.public_key(), &test_leaf.public_key);
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_empty_leaves() {
         let mut test_vec = get_test_node_vec().await;
         let mut test_vec_clone = get_test_node_vec().await;
@@ -486,7 +486,7 @@ mod tests {
         );
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_direct_path() {
         let test_vec = get_test_node_vec().await;
         // Tree math is already tested in that module, just ensure equality
@@ -495,7 +495,7 @@ mod tests {
         assert_eq!(actual, expected);
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_filtered_direct_path_co_path() {
         let test_vec = get_test_node_vec().await;
         let expected = [true, false];
@@ -503,7 +503,7 @@ mod tests {
         assert_eq!(actual, expected);
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_get_parent_node() {
         let mut test_vec = get_test_node_vec().await;
 
@@ -525,7 +525,7 @@ mod tests {
         assert_eq!(test_vec.borrow_as_parent_mut(5).unwrap(), &mut expected);
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_get_resolution() {
         let test_vec = get_test_node_vec().await;
 
@@ -538,7 +538,7 @@ mod tests {
         assert_eq!(&resolution_node_3, &[0, 5, 4]);
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_get_or_fill_existing() {
         let mut test_vec = get_test_node_vec().await;
         let mut test_vec2 = test_vec.clone();
@@ -551,7 +551,7 @@ mod tests {
         assert_eq!(actual, expected);
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_get_or_fill_empty() {
         let mut test_vec = get_test_node_vec().await;
 
@@ -568,7 +568,7 @@ mod tests {
         assert_eq!(actual, &mut expected);
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_leaf_count() {
         let test_vec = get_test_node_vec().await;
         assert_eq!(test_vec.len(), 7);
@@ -579,7 +579,7 @@ mod tests {
         );
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_total_leaf_count() {
         let test_vec = get_test_node_vec().await;
         assert_eq!(test_vec.occupied_leaf_count(), 3);

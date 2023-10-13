@@ -37,7 +37,7 @@ pub struct ValidatedUpdatePath {
     pub nodes: Vec<Option<UpdatePathNode>>,
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 pub(crate) async fn validate_update_path<C: IdentityProvider, CSP: CipherSuiteProvider>(
     identity_provider: &C,
     cipher_suite_provider: &CSP,
@@ -135,7 +135,7 @@ mod tests {
 
     use alloc::vec::Vec;
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn test_update_path(cipher_suite: CipherSuite, cred: &str) -> UpdatePath {
         let (mut leaf_node, _, signer) = get_basic_test_node_sig_key(cipher_suite, cred).await;
 
@@ -166,7 +166,7 @@ mod tests {
         }
     }
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn test_provisional_state(cipher_suite: CipherSuite) -> ProvisionalState {
         let mut tree = get_test_tree(cipher_suite).await.public;
         let leaf_nodes = get_test_leaf_nodes(cipher_suite).await;
@@ -191,7 +191,7 @@ mod tests {
         }
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_valid_leaf_node() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let update_path = test_update_path(TEST_CIPHER_SUITE, "creator").await;
@@ -213,7 +213,7 @@ mod tests {
         assert_eq!(validated.leaf_node, update_path.leaf_node);
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_invalid_key_package() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let mut update_path = test_update_path(TEST_CIPHER_SUITE, "creator").await;
@@ -232,7 +232,7 @@ mod tests {
         assert_matches!(validated, Err(MlsError::InvalidSignature));
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn validating_path_fails_with_different_identity() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let cipher_suite = TEST_CIPHER_SUITE;
@@ -251,7 +251,7 @@ mod tests {
         assert_matches!(validated, Err(MlsError::InvalidSuccessor));
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn validating_path_fails_with_same_hpke_key() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let update_path = test_update_path(TEST_CIPHER_SUITE, "creator").await;

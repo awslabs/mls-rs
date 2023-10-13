@@ -73,7 +73,7 @@ impl TestEpoch {
     }
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 pub async fn get_test_groups(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
@@ -180,7 +180,7 @@ pub async fn get_test_groups(
     receiver_groups
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 pub async fn all_process_commit_with_update(
     groups: &mut [Group<TestClientConfig>],
     commit: &MLSMessage,
@@ -206,7 +206,7 @@ pub async fn all_process_commit_with_update(
     state_updates
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 pub async fn all_process_message(
     groups: &mut [Group<TestClientConfig>],
     message: &MLSMessage,
@@ -225,7 +225,7 @@ pub async fn all_process_message(
     }
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 pub async fn add_random_members(
     first_id: usize,
     num_added: usize,
@@ -300,7 +300,7 @@ pub async fn add_random_members(
     groups.append(&mut new_groups);
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 pub async fn remove_members(
     removed_members: Vec<usize>,
     committer: usize,

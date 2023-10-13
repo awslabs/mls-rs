@@ -20,7 +20,7 @@ enum Case {
     Worst,
 }
 
-async fn bench_commit_size<P: CryptoProvider + Clone>(
+fn bench_commit_size<P: CryptoProvider + Clone>(
     case_group: Case,
     crypto_provider: &P,
 ) -> Result<(Vec<usize>, Vec<usize>), MlsError> {
@@ -30,15 +30,15 @@ async fn bench_commit_size<P: CryptoProvider + Clone>(
     for num_groups in GROUP_SIZES.iter().copied() {
         let (small_commit, large_commit) = match case_group {
             Case::Best => {
-                let mut groups = make_groups_best_case(num_groups, crypto_provider).await?;
-                let small_commit = groups[num_groups - 1].commit(vec![]).await?.commit_message;
-                let large_commit = groups[0].commit(vec![]).await?.commit_message;
+                let mut groups = make_groups_best_case(num_groups, crypto_provider)?;
+                let small_commit = groups[num_groups - 1].commit(vec![])?.commit_message;
+                let large_commit = groups[0].commit(vec![])?.commit_message;
                 (small_commit, large_commit)
             }
             Case::Worst => {
-                let mut groups = make_groups_worst_case(num_groups, crypto_provider).await?;
-                let small_commit = groups[num_groups - 1].commit(vec![]).await?.commit_message;
-                let large_commit = groups[0].commit(vec![]).await?.commit_message;
+                let mut groups = make_groups_worst_case(num_groups, crypto_provider)?;
+                let small_commit = groups[num_groups - 1].commit(vec![])?.commit_message;
+                let large_commit = groups[0].commit(vec![])?.commit_message;
                 (small_commit, large_commit)
             }
         };
@@ -51,13 +51,13 @@ async fn bench_commit_size<P: CryptoProvider + Clone>(
 }
 
 // Bob[0] crates a group. Repeat for `i=0` to `num_groups - 1` times : Bob[i] adds Bob[i+1]
-async fn make_groups_best_case<P: CryptoProvider + Clone>(
+fn make_groups_best_case<P: CryptoProvider + Clone>(
     num_groups: usize,
     crypto_provider: &P,
 ) -> Result<Vec<Group<impl MlsConfig>>, MlsError> {
     let bob_client = make_client(crypto_provider.clone(), &make_name(0))?;
 
-    let bob_group = bob_client.create_group(Default::default()).await?;
+    let bob_group = bob_client.create_group(Default::default())?;
 
     let mut groups = vec![bob_group];
 
@@ -65,7 +65,7 @@ async fn make_groups_best_case<P: CryptoProvider + Clone>(
         let bob_client = make_client(crypto_provider.clone(), &make_name(i + 1))?;
 
         // The new client generates a key package.
-        let bob_kpkg = bob_client.generate_key_package_message().await?;
+        let bob_kpkg = bob_client.generate_key_package_message()?;
 
         // Last group sends a commit adding the new client to the group.
         let commit = groups
@@ -73,22 +73,19 @@ async fn make_groups_best_case<P: CryptoProvider + Clone>(
             .unwrap()
             .commit_builder()
             .add_member(bob_kpkg)?
-            .build()
-            .await?;
+            .build()?;
 
         // All other groups process the commit.
         for group in groups.iter_mut().rev().skip(1) {
-            group
-                .process_incoming_message(commit.commit_message.clone())
-                .await?;
+            group.process_incoming_message(commit.commit_message.clone())?;
         }
 
         // The last group applies the generated commit.
-        groups.last_mut().unwrap().apply_pending_commit().await?;
+        groups.last_mut().unwrap().apply_pending_commit()?;
 
         // The new member joins.
         let welcome_message = commit.welcome_message.unwrap();
-        let (bob_group, _info) = bob_client.join_group(None, welcome_message).await?;
+        let (bob_group, _info) = bob_client.join_group(None, welcome_message)?;
 
         groups.push(bob_group);
     }
@@ -97,13 +94,13 @@ async fn make_groups_best_case<P: CryptoProvider + Clone>(
 }
 
 // Alice creates a group by adding `num_groups - 1` clients in one commit.
-async fn make_groups_worst_case<P: CryptoProvider + Clone>(
+fn make_groups_worst_case<P: CryptoProvider + Clone>(
     num_groups: usize,
     crypto_provider: &P,
 ) -> Result<Vec<Group<impl MlsConfig>>, MlsError> {
     let alice_client = make_client(crypto_provider.clone(), &make_name(0))?;
 
-    let mut alice_group = alice_client.create_group(Default::default()).await?;
+    let mut alice_group = alice_client.create_group(Default::default())?;
 
     let bob_clients = (0..(num_groups - 1))
         .map(|i| make_client(crypto_provider.clone(), &make_name(i + 1)))
@@ -113,19 +110,19 @@ async fn make_groups_worst_case<P: CryptoProvider + Clone>(
     let mut commit_builder = alice_group.commit_builder();
 
     for bob_client in &bob_clients {
-        let bob_kpkg = bob_client.generate_key_package_message().await?;
+        let bob_kpkg = bob_client.generate_key_package_message()?;
         commit_builder = commit_builder.add_member(bob_kpkg)?;
     }
 
-    let welcome_message = commit_builder.build().await?.welcome_message.unwrap();
+    let welcome_message = commit_builder.build()?.welcome_message.unwrap();
 
-    alice_group.apply_pending_commit().await?;
+    alice_group.apply_pending_commit()?;
 
     // Bob's clients join the group.
     let mut groups = vec![alice_group];
 
     for bob_client in &bob_clients {
-        let (bob_group, _info) = bob_client.join_group(None, welcome_message.clone()).await?;
+        let (bob_group, _info) = bob_client.join_group(None, welcome_message.clone())?;
         groups.push(bob_group);
     }
 
@@ -163,14 +160,13 @@ fn make_name(i: usize) -> String {
     format!("bob {i:08}")
 }
 
-#[tokio::main]
-async fn main() -> Result<(), MlsError> {
+fn main() -> Result<(), MlsError> {
     let crypto_provider = aws_mls_crypto_openssl::OpensslCryptoProvider::default();
 
     println!("Demonstrate that performance depends on a) group evolution and b) a members position in the tree.\n");
 
-    let (small_bench_bc, large_bench_bc) = bench_commit_size(Case::Best, &crypto_provider).await?;
-    let (small_bench_wc, large_bench_wc) = bench_commit_size(Case::Worst, &crypto_provider).await?;
+    let (small_bench_bc, large_bench_bc) = bench_commit_size(Case::Best, &crypto_provider)?;
+    let (small_bench_wc, large_bench_wc) = bench_commit_size(Case::Worst, &crypto_provider)?;
 
     println!("\nBest case a), worst case b) : commit size is θ(log(n)) bytes.");
     println!("group sizes n :\n{GROUP_SIZES:?}\ncommit sizes :\n{large_bench_bc:?}");

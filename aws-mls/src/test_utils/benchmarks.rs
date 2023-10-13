@@ -60,7 +60,7 @@ macro_rules! load_test_case_mls {
     }};
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 async fn generate_test_cases(cs: CipherSuite) -> Vec<MLSMessage> {
     let mut cases = Vec::new();
 
@@ -95,13 +95,13 @@ pub struct GroupStates<C: MlsConfig> {
     pub receiver: Group<C>,
 }
 
-#[maybe_async::async_impl]
+#[cfg(mls_build_async)]
 pub fn load_group_states(cs: CipherSuite) -> Vec<GroupStates<impl MlsConfig>> {
     let group_info = load_test_case_mls!(group_state, block_on(generate_test_cases(cs)), to_vec);
     join_group(cs, group_info)
 }
 
-#[maybe_async::sync_impl]
+#[cfg(not(mls_build_async))]
 pub fn load_group_states(cs: CipherSuite) -> Vec<GroupStates<impl MlsConfig>> {
     let group_infos: Vec<MLSMessage> =
         load_test_case_mls!(group_state, generate_test_cases(cs), to_vec);
@@ -112,7 +112,7 @@ pub fn load_group_states(cs: CipherSuite) -> Vec<GroupStates<impl MlsConfig>> {
         .collect()
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 pub async fn join_group(cs: CipherSuite, group_info: MLSMessage) -> GroupStates<impl MlsConfig> {
     let client = generate_basic_client(
         cs,

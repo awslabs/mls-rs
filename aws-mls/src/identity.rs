@@ -74,7 +74,7 @@ pub(crate) mod test_utils {
             }
         }
 
-        #[maybe_async::maybe_async]
+        #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
         async fn resolve_custom_identity(
             &self,
             signing_id: &SigningIdentity,
@@ -100,7 +100,8 @@ pub(crate) mod test_utils {
         }
     }
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    #[cfg_attr(mls_build_async, maybe_async::must_be_async)]
     impl IdentityProvider for BasicWithCustomProvider {
         type Error = BasicWithCustomProviderError;
 

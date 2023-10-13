@@ -32,7 +32,8 @@ pub enum CommitSource {
 ///
 /// Each member of a group MUST apply the same proposal rules in order to
 /// maintain a working group.
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
 pub trait ProposalRules: Send + Sync {
     type Error: IntoAnyError;
 
@@ -51,11 +52,12 @@ pub trait ProposalRules: Send + Sync {
 
 macro_rules! delegate_proposal_rules {
     ($implementer:ty) => {
-        #[maybe_async::maybe_async]
+        #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+        #[cfg_attr(mls_build_async, maybe_async::must_be_async)]
         impl<T: ProposalRules + ?Sized> ProposalRules for $implementer {
             type Error = T::Error;
 
-            #[maybe_async::maybe_async]
+            #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
             async fn filter(
                 &self,
                 direction: CommitDirection,
@@ -85,7 +87,8 @@ impl PassThroughProposalRules {
     }
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
 impl ProposalRules for PassThroughProposalRules {
     type Error = Infallible;
 

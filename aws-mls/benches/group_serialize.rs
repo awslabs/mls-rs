@@ -2,13 +2,10 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-#[cfg(sync)]
 use aws_mls::{test_utils::benchmarks::load_group_states, CipherSuite};
 
-#[cfg(sync)]
 use criterion::{BenchmarkId, Criterion};
 
-#[cfg(sync)]
 fn bench_serialize(c: &mut Criterion) {
     use criterion::BatchSize;
 
@@ -28,9 +25,6 @@ fn bench_serialize(c: &mut Criterion) {
 
     bench_group.finish();
 }
-
-#[cfg(not(sync))]
-fn bench_serialize(_c: &mut criterion::Criterion) {}
 
 criterion::criterion_group!(benches, bench_serialize);
 criterion::criterion_main!(benches);

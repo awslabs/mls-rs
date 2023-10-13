@@ -7,8 +7,7 @@ use aws_mls_crypto_openssl::OpensslCryptoProvider;
 
 const CIPHERSUITE: CipherSuite = CipherSuite::CURVE25519_AES128;
 
-#[tokio::main]
-async fn main() {
+fn main() {
     let crypto_provider = OpensslCryptoProvider::new();
 
     let secret_key = aws_mls_crypto_openssl::x509::signature_secret_key_from_bytes(include_bytes!(
@@ -32,8 +31,8 @@ async fn main() {
         .signing_identity(signing_identity, secret_key, CIPHERSUITE)
         .build();
 
-    let mut alice_group = alice_client.create_group(Default::default()).await.unwrap();
+    let mut alice_group = alice_client.create_group(Default::default()).unwrap();
 
-    alice_group.commit(Vec::new()).await.unwrap();
-    alice_group.apply_pending_commit().await.unwrap();
+    alice_group.commit(Vec::new()).unwrap();
+    alice_group.apply_pending_commit().unwrap();
 }

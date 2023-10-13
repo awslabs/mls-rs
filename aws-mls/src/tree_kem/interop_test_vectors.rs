@@ -69,15 +69,15 @@ impl ValidationTestCase {
     }
 }
 
-#[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+#[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
 async fn validation() {
-    #[cfg(not(sync))]
+    #[cfg(mls_build_async)]
     let test_cases: Vec<ValidationTestCase> = load_test_case_json!(
         interop_tree_validation,
         generate_validation_test_vector().await
     );
 
-    #[cfg(sync)]
+    #[cfg(not(mls_build_async))]
     let test_cases: Vec<ValidationTestCase> =
         load_test_case_json!(interop_tree_validation, generate_validation_test_vector());
 
@@ -125,7 +125,7 @@ async fn validation() {
     }
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 async fn generate_validation_test_vector() -> Vec<ValidationTestCase> {
     let mut test_cases = vec![];
 

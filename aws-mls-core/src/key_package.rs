@@ -2,7 +2,7 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-#[cfg(not(sync))]
+#[cfg(mls_build_async)]
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
@@ -33,7 +33,8 @@ impl KeyPackageData {
 }
 
 /// Storage trait that maintains key package secrets.
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
 pub trait KeyPackageStorage: Send + Sync {
     /// Error type that the underlying storage mechanism returns on internal
     /// failure.

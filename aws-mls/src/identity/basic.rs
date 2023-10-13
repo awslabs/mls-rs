@@ -3,8 +3,6 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use crate::{identity::CredentialType, identity::SigningIdentity, time::MlsTime};
-#[cfg(not(sync))]
-use alloc::boxed::Box;
 use alloc::vec;
 use alloc::vec::Vec;
 pub use aws_mls_core::identity::BasicCredential;
@@ -66,7 +64,8 @@ fn resolve_basic_identity(
         .ok_or_else(|| BasicIdentityProviderError(signing_id.credential.credential_type()))
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
 impl IdentityProvider for BasicIdentityProvider {
     type Error = BasicIdentityProviderError;
 

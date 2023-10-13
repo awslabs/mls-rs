@@ -138,10 +138,10 @@ pub(crate) mod test_utils {
         CipherSuiteProvider, MLSMessage,
     };
 
-    #[cfg(not(sync))]
+    #[cfg(mls_build_async)]
     use futures::FutureExt;
 
-    #[maybe_async::async_impl]
+    #[cfg(mls_build_async)]
     pub(crate) async fn test_key_package_custom<F, CSP>(
         cipher_suite_provider: &CSP,
         protocol_version: ProtocolVersion,
@@ -168,7 +168,7 @@ pub(crate) mod test_utils {
         custom(generator).await.key_package
     }
 
-    #[maybe_async::sync_impl]
+    #[cfg(not(mls_build_async))]
     pub(crate) fn test_key_package_custom<F, CSP>(
         cipher_suite_provider: &CSP,
         protocol_version: ProtocolVersion,
@@ -193,7 +193,7 @@ pub(crate) mod test_utils {
         custom(generator).key_package
     }
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn default_key_package<CSP: CipherSuiteProvider>(
         generator: KeyPackageGenerator<'_, BasicIdentityProvider, CSP>,
     ) -> KeyPackageGeneration {
@@ -208,7 +208,7 @@ pub(crate) mod test_utils {
             .unwrap()
     }
 
-    #[maybe_async::async_impl]
+    #[cfg(mls_build_async)]
     pub(crate) async fn test_key_package(
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
@@ -223,7 +223,7 @@ pub(crate) mod test_utils {
         .await
     }
 
-    #[maybe_async::sync_impl]
+    #[cfg(not(mls_build_async))]
     pub(crate) fn test_key_package(
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
@@ -233,11 +233,11 @@ pub(crate) mod test_utils {
             &test_cipher_suite_provider(cipher_suite),
             protocol_version,
             id,
-            |generator| default_key_package(generator),
+            default_key_package,
         )
     }
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn test_key_package_message(
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
@@ -273,7 +273,7 @@ mod tests {
     }
 
     impl TestCase {
-        #[maybe_async::maybe_async]
+        #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
         async fn generate() -> Vec<TestCase> {
             let mut test_cases = Vec::new();
 
@@ -299,17 +299,17 @@ mod tests {
         }
     }
 
-    #[maybe_async::async_impl]
+    #[cfg(mls_build_async)]
     async fn load_test_cases() -> Vec<TestCase> {
         load_test_case_json!(key_package_ref, TestCase::generate().await)
     }
 
-    #[maybe_async::sync_impl]
+    #[cfg(not(mls_build_async))]
     fn load_test_cases() -> Vec<TestCase> {
         load_test_case_json!(key_package_ref, TestCase::generate())
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_key_package_ref() {
         let cases = load_test_cases().await;
 
@@ -327,7 +327,7 @@ mod tests {
         }
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn key_package_ref_fails_invalid_cipher_suite() {
         let key_package = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "test").await;
 

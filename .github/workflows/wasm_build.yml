@@ -16,10 +16,10 @@ jobs:
         version: 'v0.10.3'
     - name: WASM aws-mls-crypto-rustcrypto
       working-directory: aws-mls-crypto-rustcrypto
-      run: wasm-pack test --headless --chrome --release -- --features="browser"
+      run: wasm-pack test --headless --chrome --release --features browser
     - name: WASM aws-mls
       working-directory: aws-mls
-      run: wasm-pack test --headless --chrome --release
+      run: wasm-pack test --headless --chrome --release --lib --test '*' --features test_util
     - name: WASM aws-mls-core
       working-directory: aws-mls-core
       run: wasm-pack test --headless --chrome --release

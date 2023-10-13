@@ -85,7 +85,7 @@ impl TreeKemPublic {
     }
 
     #[cfg(not(feature = "tree_index"))]
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn import_node_data(nodes: NodeVec) -> Result<TreeKemPublic, MlsError> {
         Ok(TreeKemPublic {
             nodes,
@@ -94,7 +94,7 @@ impl TreeKemPublic {
     }
 
     #[cfg(feature = "tree_index")]
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn import_node_data<IP>(
         nodes: NodeVec,
         identity_provider: &IP,
@@ -114,7 +114,7 @@ impl TreeKemPublic {
     }
 
     #[cfg(feature = "tree_index")]
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn initialize_index_if_necessary<IP: IdentityProvider>(
         &mut self,
         identity_provider: &IP,
@@ -136,7 +136,7 @@ impl TreeKemPublic {
     }
 
     #[cfg(not(feature = "tree_index"))]
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn get_leaf_node_with_identity<I: IdentityProvider>(
         &self,
         identity: &[u8],
@@ -160,7 +160,7 @@ impl TreeKemPublic {
         self.nodes.clone()
     }
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn derive<I: IdentityProvider>(
         leaf_node: LeafNode,
         secret_key: HpkeSecretKey,
@@ -214,7 +214,7 @@ impl TreeKemPublic {
     }
 
     #[cfg(test)]
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn add_leaves<I: IdentityProvider, CP: CipherSuiteProvider>(
         &mut self,
         leaf_nodes: Vec<LeafNode>,
@@ -256,7 +256,7 @@ impl TreeKemPublic {
             })
     }
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn apply_update_path<IP, CP>(
         &mut self,
         sender: LeafIndex,
@@ -324,7 +324,7 @@ impl TreeKemPublic {
     }
 
     #[cfg(feature = "by_ref_proposal")]
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn batch_edit<I, CP>(
         &mut self,
         proposal_bundle: &mut ProposalBundle,
@@ -495,7 +495,7 @@ impl TreeKemPublic {
     }
 
     #[cfg(not(feature = "by_ref_proposal"))]
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn batch_edit_lite<I, CP>(
         &mut self,
         proposal_bundle: &ProposalBundle,
@@ -548,7 +548,7 @@ impl TreeKemPublic {
         Ok(added)
     }
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn add_leaf<I: IdentityProvider>(
         &mut self,
         leaf: LeafNode,
@@ -571,7 +571,7 @@ impl TreeKemPublic {
 }
 
 #[cfg(feature = "tree_index")]
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 async fn identity<I: IdentityProvider>(
     signing_id: &SigningIdentity,
     provider: &I,
@@ -595,7 +595,7 @@ use crate::group::{proposal::Proposal, proposal_filter::ProposalSource, Sender};
 #[cfg(test)]
 impl TreeKemPublic {
     #[cfg(feature = "by_ref_proposal")]
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn update_leaf<I, CP>(
         &mut self,
         leaf_index: u32,
@@ -619,7 +619,7 @@ impl TreeKemPublic {
         Ok(())
     }
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn remove_leaves<I, CP>(
         &mut self,
         indexes: Vec<LeafIndex>,
@@ -702,7 +702,7 @@ pub(crate) mod test_utils {
         pub creator_hpke_secret: HpkeSecretKey,
     }
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn get_test_tree(cipher_suite: CipherSuite) -> TestTree {
         let (creator_leaf, creator_hpke_secret, creator_signing_key) =
             get_basic_test_node_sig_key(cipher_suite, "creator").await;
@@ -724,7 +724,7 @@ pub(crate) mod test_utils {
         }
     }
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn get_test_leaf_nodes(cipher_suite: CipherSuite) -> Vec<LeafNode> {
         [
             get_basic_test_node(cipher_suite, "A").await,
@@ -749,7 +749,7 @@ pub(crate) mod test_utils {
     }
 
     impl TreeWithSigners {
-        #[maybe_async::maybe_async]
+        #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
         pub async fn make_full_tree<P: CipherSuiteProvider>(
             n_leaves: u32,
             cs: &P,
@@ -771,7 +771,7 @@ pub(crate) mod test_utils {
             tree
         }
 
-        #[maybe_async::maybe_async]
+        #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
         pub async fn add_member<P: CipherSuiteProvider>(&mut self, name: &str, cs: &P) {
             let (leaf, signer) = make_leaf(name, cs).await;
             let index = self.tree.nodes.next_empty_leaf(LeafIndex(0));
@@ -801,7 +801,7 @@ pub(crate) mod test_utils {
                 .expect("signer tree size mismatch") = None;
         }
 
-        #[maybe_async::maybe_async]
+        #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
         pub async fn update_committer_path<P: CipherSuiteProvider>(
             &mut self,
             committer: u32,
@@ -849,7 +849,7 @@ pub(crate) mod test_utils {
         }
     }
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn make_leaf<P: CipherSuiteProvider>(
         name: &str,
         cs: &P,
@@ -919,7 +919,7 @@ mod tests {
     #[cfg(any(feature = "by_ref_proposal", feature = "custo_proposal"))]
     use crate::tree_kem::leaf_node::test_utils::get_basic_test_node;
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_derive() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let test_tree = get_test_tree(cipher_suite).await;
@@ -938,7 +938,7 @@ mod tests {
         }
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_import_export() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let mut test_tree = get_test_tree(TEST_CIPHER_SUITE).await;
@@ -971,7 +971,7 @@ mod tests {
         assert_eq!(test_tree.public.index, imported.index);
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_add_leaf() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let mut tree = TreeKemPublic::new();
@@ -1008,7 +1008,7 @@ mod tests {
         assert_eq!(tree.nodes[4], leaf_nodes[2].clone().into());
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_get_key_packages() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let mut tree = TreeKemPublic::new();
@@ -1023,7 +1023,7 @@ mod tests {
         assert_eq!(key_packages, key_packages.to_owned());
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_add_leaf_duplicate() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let mut tree = TreeKemPublic::new();
@@ -1045,7 +1045,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::DuplicateLeafData(_)));
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_add_leaf_empty_leaf() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let mut tree = get_test_tree(TEST_CIPHER_SUITE).await.public;
@@ -1075,7 +1075,7 @@ mod tests {
         assert_eq!(tree.nodes.len(), 3)
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_add_leaf_unmerged() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let mut tree = get_test_tree(TEST_CIPHER_SUITE).await.public;
@@ -1111,7 +1111,7 @@ mod tests {
     }
 
     #[cfg(feature = "by_ref_proposal")]
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_update_leaf() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         // Create a tree
@@ -1172,7 +1172,7 @@ mod tests {
     }
 
     #[cfg(feature = "by_ref_proposal")]
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_update_leaf_not_found() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
@@ -1199,7 +1199,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::UpdatingNonExistingMember));
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_remove_leaf() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
@@ -1246,7 +1246,7 @@ mod tests {
         );
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_remove_leaf_middle() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
@@ -1286,7 +1286,7 @@ mod tests {
         );
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_create_blanks() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
@@ -1323,7 +1323,7 @@ mod tests {
         assert_eq!(removed_location, &None);
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_remove_leaf_failure() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
@@ -1341,7 +1341,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::InvalidNodeIndex(256)));
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_find_leaf_node() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         // Create a tree
@@ -1366,7 +1366,7 @@ mod tests {
 
     // TODO add test for the lite version
     #[cfg(feature = "by_ref_proposal")]
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn batch_edit_works() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
@@ -1418,7 +1418,7 @@ mod tests {
     }
 
     #[cfg(feature = "custom_proposal")]
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn custom_proposal_support() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let mut tree = TreeKemPublic::new();

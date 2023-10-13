@@ -43,18 +43,18 @@ pub(crate) struct TestGroup {
 
 impl TestGroup {
     #[cfg(feature = "external_client")]
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn propose(&mut self, proposal: Proposal) -> MLSMessage {
         self.group.proposal_message(proposal, vec![]).await.unwrap()
     }
 
     #[cfg(feature = "by_ref_proposal")]
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn update_proposal(&mut self) -> Proposal {
         self.group.update_proposal(None, None).await.unwrap()
     }
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn join_with_preferences(
         &mut self,
         name: &str,
@@ -67,7 +67,7 @@ impl TestGroup {
         .unwrap()
     }
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn join_with_custom_config<F>(
         &mut self,
         name: &str,
@@ -131,20 +131,20 @@ impl TestGroup {
         Ok((new_test_group, commit_output.commit_message))
     }
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn join(&mut self, name: &str) -> (TestGroup, MLSMessage) {
         self.join_with_preferences(name, self.group.config.preferences())
             .await
     }
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn process_pending_commit(
         &mut self,
     ) -> Result<CommitMessageDescription, MlsError> {
         self.group.apply_pending_commit().await
     }
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn process_message(
         &mut self,
         message: MLSMessage,
@@ -153,7 +153,7 @@ impl TestGroup {
     }
 
     #[cfg(feature = "private_message")]
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn make_plaintext(&mut self, content: Content) -> MLSMessage {
         let auth_content = AuthenticatedContent::new_signed(
             &self.group.cipher_suite_provider,
@@ -219,7 +219,7 @@ pub(crate) fn lifetime() -> Lifetime {
     Lifetime::years(1).unwrap()
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 pub(crate) async fn test_member(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
@@ -248,7 +248,7 @@ pub(crate) async fn test_member(
     (key_package, signing_key)
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 pub(crate) async fn test_group_custom(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
@@ -277,7 +277,7 @@ pub(crate) async fn test_group_custom(
     TestGroup { group }
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 pub(crate) async fn test_group(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
@@ -292,7 +292,7 @@ pub(crate) async fn test_group(
     .await
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 pub(crate) async fn test_group_custom_config<F>(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
@@ -317,7 +317,7 @@ where
     TestGroup { group }
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 pub(crate) async fn test_n_member_group(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
@@ -336,7 +336,7 @@ pub(crate) async fn test_n_member_group(
     groups
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 pub(crate) async fn process_commit(groups: &mut [TestGroup], commit: MLSMessage, excluded: u32) {
     for g in groups
         .iter_mut()
@@ -350,7 +350,7 @@ pub(crate) fn get_test_25519_key(key_byte: u8) -> HpkePublicKey {
     vec![key_byte; 32].into()
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 pub(crate) async fn get_test_groups_with_features(
     n: usize,
     extensions: ExtensionList,
@@ -437,7 +437,7 @@ impl DerefMut for GroupWithoutKeySchedule {
 
 #[cfg(feature = "rfc_compliant")]
 impl GroupWithoutKeySchedule {
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn new(cs: CipherSuite) -> Self {
         Self {
             inner: test_group(TEST_PROTOCOL_VERSION, cs).await.group,
@@ -447,7 +447,8 @@ impl GroupWithoutKeySchedule {
     }
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
 impl MessageProcessor for GroupWithoutKeySchedule {
     type CipherSuiteProvider = <Group<TestClientConfig> as MessageProcessor>::CipherSuiteProvider;
     type OutputType = <Group<TestClientConfig> as MessageProcessor>::OutputType;

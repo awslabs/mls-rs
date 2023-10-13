@@ -21,4 +21,4 @@ jobs:
           aws-region: us-east-1
       - name: Run benchmark
         working-directory: aws-mls
-        run: ( set -o pipefail; RUSTFLAGS='--cfg sync' cargo bench --features test_utils --bench group_commit --bench group_receive_commit --bench group_application --bench group_serialize -- --output-format bencher | tee -a output.txt )
+        run: ( set -o pipefail; cargo bench --features benchmark_util --bench group_commit --bench group_receive_commit --bench group_application --bench group_serialize -- --output-format bencher | tee -a output.txt )

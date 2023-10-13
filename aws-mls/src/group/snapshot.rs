@@ -93,7 +93,7 @@ impl RawGroupState {
     }
 
     #[cfg(feature = "tree_index")]
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn import<C>(self, identity_provider: &C) -> Result<GroupState, MlsError>
     where
         C: IdentityProvider,
@@ -125,7 +125,7 @@ impl RawGroupState {
     }
 
     #[cfg(not(feature = "tree_index"))]
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn import(self) -> Result<GroupState, MlsError> {
         let context = self.context;
 
@@ -155,7 +155,7 @@ where
     /// Write the current state of the group to the
     /// [`GroupStorageProvider`](crate::GroupStateStorage)
     /// that is currently in use by the group.
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn write_to_storage(&mut self) -> Result<(), MlsError> {
         self.state_repo.write_to_storage(self.snapshot()).await
     }
@@ -174,7 +174,7 @@ where
         }
     }
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn from_snapshot(config: C, snapshot: Snapshot) -> Result<Self, MlsError> {
         let cipher_suite_provider = cipher_suite_provider(
             config.crypto_provider(),
@@ -273,7 +273,7 @@ mod tests {
         },
     };
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn snapshot_restore(group: TestGroup) {
         let snapshot = group.group.snapshot();
 
@@ -290,7 +290,7 @@ mod tests {
             .equal_internals(&group.group.state.public_tree))
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn snapshot_with_pending_commit_can_be_serialized_to_json() {
         let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         group.group.commit(vec![]).await.unwrap();
@@ -299,7 +299,7 @@ mod tests {
     }
 
     #[cfg(feature = "by_ref_proposal")]
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn snapshot_with_pending_updates_can_be_serialized_to_json() {
         let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
@@ -312,7 +312,7 @@ mod tests {
         snapshot_restore(group).await
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn snapshot_can_be_serialized_to_json_with_internals() {
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 

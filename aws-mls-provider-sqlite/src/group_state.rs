@@ -180,11 +180,10 @@ impl SqLiteGroupStateStorage {
     }
 }
 
-#[maybe_async::maybe_async]
 impl GroupStateStorage for SqLiteGroupStateStorage {
     type Error = SqLiteDataStorageError;
 
-    async fn write<ST, ET>(
+    fn write<ST, ET>(
         &mut self,
         state: ST,
         epoch_inserts: Vec<ET>,
@@ -226,7 +225,7 @@ impl GroupStateStorage for SqLiteGroupStateStorage {
         )
     }
 
-    async fn state<T>(&self, group_id: &[u8]) -> Result<Option<T>, Self::Error>
+    fn state<T>(&self, group_id: &[u8]) -> Result<Option<T>, Self::Error>
     where
         T: GroupState + MlsEncode + MlsDecode,
     {
@@ -236,11 +235,11 @@ impl GroupStateStorage for SqLiteGroupStateStorage {
             .map_err(|e| SqLiteDataStorageError::DataConversionError(e.into()))
     }
 
-    async fn max_epoch_id(&self, group_id: &[u8]) -> Result<Option<u64>, Self::Error> {
+    fn max_epoch_id(&self, group_id: &[u8]) -> Result<Option<u64>, Self::Error> {
         self.max_epoch_id(group_id)
     }
 
-    async fn epoch<T>(&self, group_id: &[u8], epoch_id: u64) -> Result<Option<T>, Self::Error>
+    fn epoch<T>(&self, group_id: &[u8], epoch_id: u64) -> Result<Option<T>, Self::Error>
     where
         T: EpochRecord + MlsEncode + MlsDecode,
     {

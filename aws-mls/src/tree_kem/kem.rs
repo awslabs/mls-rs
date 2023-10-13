@@ -53,7 +53,7 @@ impl<'a> TreeKem<'a> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn encap<P>(
         self,
         context: &mut GroupContext,
@@ -166,7 +166,7 @@ impl<'a> TreeKem<'a> {
         })
     }
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn decap<CP>(
         self,
         sender_index: LeafIndex,
@@ -445,7 +445,7 @@ mod tests {
         }
     }
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn encap_decap(
         cipher_suite: CipherSuite,
         size: usize,
@@ -573,14 +573,14 @@ mod tests {
         }
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_encap_decap() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             encap_decap(cipher_suite, 10, None, None).await;
         }
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_encap_capabilities() {
         let cipher_suite = TEST_CIPHER_SUITE;
         let mut capabilities = get_test_capabilities();
@@ -589,7 +589,7 @@ mod tests {
         encap_decap(cipher_suite, 10, Some(capabilities.clone()), None).await;
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_encap_extensions() {
         let cipher_suite = TEST_CIPHER_SUITE;
         let mut extensions = ExtensionList::default();
@@ -598,7 +598,7 @@ mod tests {
         encap_decap(cipher_suite, 10, None, Some(extensions)).await;
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_encap_capabilities_extensions() {
         let cipher_suite = TEST_CIPHER_SUITE;
         let mut capabilities = get_test_capabilities();

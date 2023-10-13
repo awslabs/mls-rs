@@ -106,7 +106,7 @@ where
         }
     }
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn apply_proposals(
         &self,
         #[cfg(feature = "by_ref_proposal")] strategy: FilterStrategy,
@@ -154,7 +154,7 @@ where
     }
 
     #[cfg(feature = "external_commit")]
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn apply_proposals_from_new_member(
         &self,
         #[cfg(not(feature = "by_ref_proposal"))] proposals: &ProposalBundle,
@@ -215,7 +215,7 @@ where
     }
 
     #[cfg(feature = "all_extensions")]
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(super) async fn apply_proposals_with_new_capabilities(
         &self,
         #[cfg(feature = "by_ref_proposal")] strategy: FilterStrategy,
@@ -318,7 +318,7 @@ pub(super) fn leaf_supports_extensions(
 }
 
 #[cfg(feature = "psk")]
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 pub(crate) async fn filter_out_invalid_psks<P, CP>(
     #[cfg(feature = "by_ref_proposal")] strategy: FilterStrategy,
     cipher_suite_provider: &CP,
@@ -419,7 +419,7 @@ where
 }
 
 #[cfg(not(feature = "psk"))]
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 pub(crate) async fn filter_out_invalid_psks<P, CP>(
     #[cfg(feature = "by_ref_proposal")] _: FilterStrategy,
     _: &CP,
@@ -461,7 +461,7 @@ fn ensure_proposals_in_external_commit_are_allowed(
 }
 
 #[cfg(feature = "external_commit")]
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 async fn ensure_at_most_one_removal_for_self<C>(
     proposals: &ProposalBundle,
     external_leaf: &LeafNode,
@@ -484,7 +484,7 @@ where
 }
 
 #[cfg(feature = "external_commit")]
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 async fn ensure_removal_is_for_self<C>(
     removal: &RemoveProposal,
     external_leaf: &LeafNode,
@@ -514,7 +514,7 @@ fn ensure_no_proposal_by_ref(proposals: &ProposalBundle) -> Result<(), MlsError>
 }
 
 #[cfg(feature = "external_commit")]
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 async fn insert_external_leaf<I: IdentityProvider>(
     tree: &mut TreeKemPublic,
     leaf_node: LeafNode,

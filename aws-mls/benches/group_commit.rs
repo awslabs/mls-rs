@@ -2,12 +2,9 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-#[cfg(sync)]
 use aws_mls::{test_utils::benchmarks::load_group_states, CipherSuite};
-#[cfg(sync)]
 use criterion::{BatchSize, BenchmarkId, Criterion};
 
-#[cfg(sync)]
 fn bench(c: &mut Criterion) {
     let cipher_suite = CipherSuite::CURVE25519_AES128;
     let group_states = load_group_states(cipher_suite);
@@ -27,9 +24,6 @@ fn bench(c: &mut Criterion) {
         );
     }
 }
-
-#[cfg(not(sync))]
-fn bench(_: &mut criterion::Criterion) {}
 
 criterion::criterion_group!(benches, bench);
 criterion::criterion_main!(benches);

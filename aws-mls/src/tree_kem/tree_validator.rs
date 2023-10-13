@@ -56,7 +56,7 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> TreeValidator<'a, C, CSP
         }
     }
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn validate(&self, tree: &mut TreeKemPublic) -> Result<(), MlsError> {
         self.validate_tree_hash(tree)?;
         tree.validate_parent_hashes(self.cipher_suite_provider)?;
@@ -85,7 +85,7 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> TreeValidator<'a, C, CSP
         Ok(())
     }
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn validate_leaves(&self, tree: &TreeKemPublic) -> Result<(), MlsError> {
         for (index, leaf_node) in tree.nodes.non_empty_leaves() {
             self.leaf_node_validator
@@ -185,7 +185,7 @@ mod tests {
         }
     }
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn get_valid_tree(cipher_suite: CipherSuite) -> TreeKemPublic {
         let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
 
@@ -224,7 +224,7 @@ mod tests {
         test_tree.public
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_valid_tree() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
@@ -248,7 +248,7 @@ mod tests {
         }
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_tree_hash_mismatch() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let mut test_tree = get_valid_tree(cipher_suite).await;
@@ -273,7 +273,7 @@ mod tests {
         }
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_parent_hash_mismatch() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let mut test_tree = get_valid_tree(cipher_suite).await;
@@ -302,7 +302,7 @@ mod tests {
         }
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_key_package_validation_failure() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let mut test_tree = get_valid_tree(cipher_suite).await;
@@ -333,13 +333,13 @@ mod tests {
         }
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn verify_unmerged_with_correct_tree() {
         let tree = get_test_tree_fig_12(TEST_CIPHER_SUITE).await;
         validate_unmerged(&tree).unwrap();
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn verify_unmerged_with_blank_leaf() {
         let mut tree = get_test_tree_fig_12(TEST_CIPHER_SUITE).await;
 
@@ -352,7 +352,7 @@ mod tests {
         );
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn verify_unmerged_with_broken_path() {
         let mut tree = get_test_tree_fig_12(TEST_CIPHER_SUITE).await;
 
@@ -365,7 +365,7 @@ mod tests {
         );
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn verify_unmerged_with_leaf_outside_tree() {
         let mut tree = get_test_tree_fig_12(TEST_CIPHER_SUITE).await;
 

@@ -4,7 +4,6 @@
 
 #![no_main]
 
-#[cfg(sync)]
 mod deserialize {
     use aws_mls::{aws_mls_codec::MlsDecode, MLSMessage};
     use libfuzzer_sys::fuzz_target;

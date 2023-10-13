@@ -4,7 +4,6 @@
 
 #![no_main]
 
-#[cfg(sync)]
 mod ciphertext {
     use aws_mls::test_utils::fuzz_tests::{create_fuzz_commit_message, GROUP};
     use libfuzzer_sys::fuzz_target;

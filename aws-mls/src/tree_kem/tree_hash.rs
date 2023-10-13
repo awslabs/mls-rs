@@ -349,7 +349,7 @@ mod tests {
     }
 
     impl TestCase {
-        #[maybe_async::maybe_async]
+        #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
         async fn generate() -> Vec<TestCase> {
             let mut test_cases = Vec::new();
 
@@ -369,17 +369,17 @@ mod tests {
         }
     }
 
-    #[maybe_async::async_impl]
+    #[cfg(mls_build_async)]
     async fn load_test_cases() -> Vec<TestCase> {
         load_test_case_json!(tree_hash, TestCase::generate().await)
     }
 
-    #[maybe_async::sync_impl]
+    #[cfg(not(mls_build_async))]
     fn load_test_cases() -> Vec<TestCase> {
         load_test_case_json!(tree_hash, TestCase::generate())
     }
 
-    #[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_tree_hash() {
         let cases = load_test_cases().await;
 

@@ -7,7 +7,7 @@ use alloc::collections::VecDeque;
 #[cfg(feature = "std")]
 use alloc::sync::Arc;
 
-#[cfg(not(sync))]
+#[cfg(mls_build_async)]
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode};
@@ -146,7 +146,8 @@ impl Default for InMemoryGroupStateStorage {
     }
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
 impl GroupStateStorage for InMemoryGroupStateStorage {
     type Error = aws_mls_codec::Error;
 

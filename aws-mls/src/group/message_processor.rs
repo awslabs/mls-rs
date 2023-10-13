@@ -23,7 +23,7 @@ use crate::{
     },
     CipherSuiteProvider,
 };
-#[cfg(not(sync))]
+#[cfg(mls_build_async)]
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use aws_mls_core::{identity::IdentityProvider, psk::PreSharedKeyStorage};
@@ -362,7 +362,8 @@ pub(crate) enum EventOrContent<E> {
     Content(AuthenticatedContent),
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
 pub(crate) trait MessageProcessor: Send + Sync {
     type OutputType: TryFrom<ApplicationMessageDescription, Error = MlsError>
         + From<CommitMessageDescription>

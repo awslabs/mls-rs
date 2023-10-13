@@ -5,7 +5,7 @@
 use alloc::vec::Vec;
 
 #[cfg(any(test, feature = "external_client"))]
-use alloc::{boxed::Box, vec};
+use alloc::vec;
 
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 
@@ -104,7 +104,8 @@ struct PSKLabel<'a> {
 pub(crate) struct AlwaysFoundPskStorage;
 
 #[cfg(any(test, feature = "external_client"))]
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
 impl PreSharedKeyStorage for AlwaysFoundPskStorage {
     type Error = Infallible;
 

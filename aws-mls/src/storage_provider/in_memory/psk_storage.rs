@@ -18,7 +18,7 @@ use alloc::collections::BTreeMap;
 
 use aws_mls_core::psk::{ExternalPskId, PreSharedKey, PreSharedKeyStorage};
 
-#[cfg(not(sync))]
+#[cfg(mls_build_async)]
 use alloc::boxed::Box;
 #[cfg(feature = "std")]
 use std::sync::Mutex;
@@ -72,7 +72,8 @@ impl InMemoryPreSharedKeyStorage {
     }
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
 impl PreSharedKeyStorage for InMemoryPreSharedKeyStorage {
     type Error = Infallible;
 

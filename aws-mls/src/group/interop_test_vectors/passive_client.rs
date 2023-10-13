@@ -95,14 +95,14 @@ impl TestEpoch {
     }
 }
 
-#[maybe_async::test(sync, async(not(sync), crate::futures_test))]
+#[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
 async fn interop_passive_client() {
     // Test vectors can be found here:
     // * https://github.com/mlswg/mls-implementations/blob/main/test-vectors/passive-client-welcome.json
     // * https://github.com/mlswg/mls-implementations/blob/main/test-vectors/passive-client-handle-commit.json
     // * https://github.com/mlswg/mls-implementations/blob/main/test-vectors/passive-client-random.json
 
-    #[cfg(not(sync))]
+    #[cfg(mls_build_async)]
     let (test_cases_wel, test_cases_com, test_cases_rand) = {
         let test_cases_wel: Vec<TestCase> = load_test_case_json!(
             interop_passive_client_welcome,
@@ -122,7 +122,7 @@ async fn interop_passive_client() {
         (test_cases_wel, test_cases_com, test_cases_rand)
     };
 
-    #[cfg(sync)]
+    #[cfg(not(mls_build_async))]
     let (test_cases_wel, test_cases_com, test_cases_rand) = {
         let test_cases_wel: Vec<TestCase> = load_test_case_json!(
             interop_passive_client_welcome,
@@ -207,7 +207,7 @@ async fn interop_passive_client() {
     }
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 async fn invite_passive_client<P: CipherSuiteProvider>(
     groups: &mut [Group<impl MlsConfig>],
     with_psk: bool,
@@ -265,7 +265,7 @@ async fn invite_passive_client<P: CipherSuiteProvider>(
     }
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 pub async fn generate_passive_client_proposal_tests() {
     let mut test_cases: Vec<TestCase> = vec![];
 
@@ -435,7 +435,7 @@ pub async fn generate_passive_client_proposal_tests() {
     }
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 async fn commit_by_value<F, C: MlsConfig>(
     group: &mut Group<C>,
     proposal_adder: F,
@@ -454,7 +454,7 @@ where
     test_case
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 async fn create_key_package(cs: CipherSuite) -> MLSMessage {
     let client = generate_basic_client(
         cs,
@@ -467,7 +467,7 @@ async fn create_key_package(cs: CipherSuite) -> MLSMessage {
     client.generate_key_package_message().await.unwrap()
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 pub async fn generate_passive_client_welcome_tests() {
     let mut test_cases: Vec<TestCase> = vec![];
 
@@ -508,7 +508,7 @@ pub async fn generate_passive_client_welcome_tests() {
     }
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 pub async fn generate_passive_client_random_tests() {
     let mut test_cases: Vec<TestCase> = vec![];
 
@@ -578,7 +578,7 @@ pub async fn generate_passive_client_random_tests() {
     }
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 pub async fn add_random_members<C: MlsConfig>(
     committer: usize,
     groups: &mut Vec<Group<C>>,
@@ -638,7 +638,7 @@ pub async fn add_random_members<C: MlsConfig>(
     }
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 pub async fn remove_members<C: MlsConfig>(
     removed_members: Vec<usize>,
     committer: usize,

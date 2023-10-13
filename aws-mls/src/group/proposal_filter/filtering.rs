@@ -46,7 +46,7 @@ where
     P: PreSharedKeyStorage,
     CSP: CipherSuiteProvider,
 {
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(super) async fn apply_proposals_from_member(
         &self,
         strategy: FilterStrategy,
@@ -97,7 +97,7 @@ where
     }
 
     #[cfg(not(feature = "all_extensions"))]
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(super) async fn apply_proposal_changes(
         &self,
         strategy: FilterStrategy,
@@ -122,7 +122,7 @@ where
     }
 
     #[cfg(feature = "all_extensions")]
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(super) async fn apply_proposal_changes(
         &self,
         strategy: FilterStrategy,
@@ -172,7 +172,7 @@ where
         }
     }
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(super) async fn apply_tree_changes(
         &self,
         strategy: FilterStrategy,
@@ -204,7 +204,7 @@ where
         })
     }
 
-    #[maybe_async::maybe_async]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn validate_new_nodes(
         &self,
         strategy: FilterStrategy,
@@ -368,7 +368,7 @@ fn filter_out_removal_of_committer(
 }
 
 #[cfg(feature = "external_proposal")]
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 async fn filter_out_invalid_group_extensions<C>(
     strategy: FilterStrategy,
     mut proposals: ProposalBundle,

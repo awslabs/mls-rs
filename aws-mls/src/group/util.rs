@@ -45,7 +45,7 @@ pub(crate) struct JoinContext {
 }
 
 #[cfg(not(feature = "tree_index"))]
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 pub(crate) async fn process_group_info<C>(
     msg_protocol_version: ProtocolVersion,
     group_info: GroupInfo,
@@ -60,7 +60,7 @@ where
 }
 
 #[cfg(feature = "tree_index")]
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 pub(crate) async fn process_group_info<C, I>(
     msg_protocol_version: ProtocolVersion,
     group_info: GroupInfo,
@@ -76,7 +76,7 @@ where
     process_group_info_with_tree(msg_protocol_version, group_info, public_tree, cs).await
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 async fn process_group_info_with_tree<C>(
     msg_protocol_version: ProtocolVersion,
     group_info: GroupInfo,
@@ -128,7 +128,7 @@ where
     })
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 pub(crate) async fn validate_group_info<I: IdentityProvider, C: CipherSuiteProvider>(
     msg_protocol_version: ProtocolVersion,
     group_info: GroupInfo,
@@ -185,7 +185,7 @@ pub(crate) async fn validate_group_info<I: IdentityProvider, C: CipherSuiteProvi
 }
 
 #[cfg(feature = "tree_index")]
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 pub(crate) async fn find_tree<C>(
     tree_data: Option<&[u8]>,
     extension: Option<RatchetTreeExt>,
@@ -198,7 +198,7 @@ where
 }
 
 #[cfg(not(feature = "tree_index"))]
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 pub(crate) async fn find_tree(
     tree_data: Option<&[u8]>,
     extension: Option<RatchetTreeExt>,
@@ -262,7 +262,7 @@ pub(super) fn transcript_hashes<P: CipherSuiteProvider>(
     Ok((interim_transcript_hash, confirmed_transcript_hash))
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 pub(crate) async fn find_key_package_generation<'a, K: KeyPackageStorage>(
     key_package_repo: &K,
     secrets: &'a [EncryptedGroupSecrets],

@@ -183,7 +183,8 @@ where
     }
 }
 
-#[maybe_async::maybe_async]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
 impl<IE, V, IEP> IdentityProvider for X509IdentityProvider<IE, V, IEP>
 where
     IE: X509IdentityExtractor + Send + Sync,

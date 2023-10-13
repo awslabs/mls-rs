@@ -4,7 +4,6 @@
 
 #![no_main]
 
-#[cfg(sync)]
 mod process_bytes {
     use aws_mls::aws_mls_codec::MlsDecode;
     use aws_mls::test_utils::fuzz_tests::GROUP;
