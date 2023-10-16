@@ -16,7 +16,7 @@ x509 = []
 test_suite = ["dep:serde", "dep:serde_json", "dep:hex", "dep:itertools"]
 
 [dependencies]
-async-trait = "0.1.61"
+async-trait = "0.1.74"
 aws-mls-codec = { version = "*", path = "../aws-mls-codec", default-features = false}
 zeroize = { version = "1", default-features = false, features = ["alloc", "zeroize_derive"] }
 arbitrary = { version = "1", features = ["derive"], optional = true }

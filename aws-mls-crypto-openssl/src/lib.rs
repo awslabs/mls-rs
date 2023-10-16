@@ -175,6 +175,8 @@ where
     }
 }
 
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
 impl<KEM, KDF, AEAD> CipherSuiteProvider for OpensslCipherSuite<KEM, KDF, AEAD>
 where
     KEM: KemType + Clone + Send + Sync,
@@ -194,7 +196,7 @@ where
         Ok(self.hash.mac(key, data)?)
     }
 
-    fn aead_seal(
+    async fn aead_seal(
         &self,
         key: &[u8],
         data: &[u8],
@@ -206,7 +208,7 @@ where
             .map_err(|e| OpensslCryptoError::AeadError(e.into_any_error()))
     }
 
-    fn aead_open(
+    async fn aead_open(
         &self,
         key: &[u8],
         cipher_text: &[u8],
@@ -227,7 +229,7 @@ where
         self.aead.nonce_size()
     }
 
-    fn kdf_expand(
+    async fn kdf_expand(
         &self,
         prk: &[u8],
         info: &[u8],
@@ -239,7 +241,11 @@ where
             .map(Zeroizing::new)
     }
 
-    fn kdf_extract(&self, salt: &[u8], ikm: &[u8]) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
+    async fn kdf_extract(
+        &self,
+        salt: &[u8],
+        ikm: &[u8],
+    ) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
         self.kdf
             .extract(salt, ikm)
             .map_err(|e| OpensslCryptoError::KdfError(e.into_any_error()))
@@ -340,6 +346,7 @@ where
     }
 }
 
+#[cfg(not(mls_build_async))]
 #[test]
 fn mls_core_tests() {
     // Uncomment this to generate the tests instead.

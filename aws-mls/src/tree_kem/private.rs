@@ -29,7 +29,8 @@ impl TreeKemPrivate {
         }
     }
 
-    pub fn update_secrets<P: CipherSuiteProvider>(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn update_secrets<P: CipherSuiteProvider>(
         &mut self,
         cipher_suite_provider: &P,
         signer_index: LeafIndex,
@@ -59,7 +60,7 @@ impl TreeKemPrivate {
                 continue;
             }
 
-            let secret = node_secret_gen.next_secret()?;
+            let secret = node_secret_gen.next_secret().await?;
 
             let expected_pub_key = public_tree
                 .nodes
@@ -68,7 +69,7 @@ impl TreeKemPrivate {
                 .map(|n| n.public_key())
                 .ok_or(MlsError::PubKeyMismatch)?;
 
-            let (secret_key, public_key) = secret.to_hpke_key_pair(cipher_suite_provider)?;
+            let (secret_key, public_key) = secret.to_hpke_key_pair(cipher_suite_provider).await?;
 
             if expected_pub_key != &public_key {
                 return Err(MlsError::PubKeyMismatch);
@@ -217,6 +218,7 @@ mod tests {
                 path_secret,
                 &public_tree,
             )
+            .await
             .unwrap();
 
         // Make sure that Charlie's private key didn't lose keys
@@ -247,12 +249,14 @@ mod tests {
             .public_key = random_bytes(32).into();
 
         // Add the secrets for Charlie to his private key
-        let res = charlie_private.update_secrets(
-            &test_cipher_suite_provider(cipher_suite),
-            LeafIndex(0),
-            path_secret,
-            &public_tree,
-        );
+        let res = charlie_private
+            .update_secrets(
+                &test_cipher_suite_provider(cipher_suite),
+                LeafIndex(0),
+                path_secret,
+                &public_tree,
+            )
+            .await;
 
         assert_matches!(res, Err(MlsError::PubKeyMismatch));
     }

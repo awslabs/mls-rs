@@ -78,8 +78,11 @@ impl<'a> TreeKem<'a> {
 
         for (i, ((dp, _), f)) in path.iter().zip(&filtered).enumerate() {
             if !f {
-                let secret = secret_generator.next_secret()?;
-                let (secret_key, public_key) = secret.to_hpke_key_pair(cipher_suite_provider)?;
+                let secret = secret_generator.next_secret().await?;
+
+                let (secret_key, public_key) =
+                    secret.to_hpke_key_pair(cipher_suite_provider).await?;
+
                 self.private_key.secret_keys[i + 1] = Some(secret_key);
                 self.tree_kem_public.update_node(public_key, *dp)?;
                 path_secrets.push(Some(secret));
@@ -162,7 +165,7 @@ impl<'a> TreeKem<'a> {
         Ok(EncapGeneration {
             update_path,
             path_secrets,
-            commit_secret: secret_generator.next_secret()?,
+            commit_secret: secret_generator.next_secret().await?,
         })
     }
 
@@ -221,11 +224,12 @@ impl<'a> TreeKem<'a> {
 
         for (i, update) in update_path.nodes.iter().enumerate().skip(lca_index) {
             if let Some(update) = update {
-                let secret = node_secret_gen.next_secret()?;
+                let secret = node_secret_gen.next_secret().await?;
 
                 // Verify the private key we calculated properly matches the public key we inserted into the tree. This guarantees
                 // that we will be able to decrypt later.
-                let (hpke_private, hpke_public) = secret.to_hpke_key_pair(cipher_suite_provider)?;
+                let (hpke_private, hpke_public) =
+                    secret.to_hpke_key_pair(cipher_suite_provider).await?;
 
                 if hpke_public != update.public_key {
                     return Err(MlsError::PubKeyMismatch);
@@ -237,7 +241,7 @@ impl<'a> TreeKem<'a> {
             }
         }
 
-        node_secret_gen.next_secret()
+        node_secret_gen.next_secret().await
     }
 
     fn encrypt_copath_node_resolution<P: CipherSuiteProvider>(

@@ -333,7 +333,8 @@ where
             &cipher_suite_provider,
             #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
             public_tree.total_leaf_count(),
-        )?;
+        )
+        .await?;
 
         let confirmation_tag = ConfirmationTag::create(
             &key_schedule_result.confirmation_key,
@@ -446,7 +447,7 @@ where
 
             let mut psk = psk;
             psk.id.psk_nonce = psk_id.psk_nonce.clone();
-            PskSecret::calculate(&[psk], &cipher_suite_provider)?
+            PskSecret::calculate(&[psk], &cipher_suite_provider).await?
         } else {
             PskResolver::<
                 <C as ClientConfig>::GroupStateStorage,
@@ -472,10 +473,14 @@ where
             &cipher_suite_provider,
             &group_secrets.joiner_secret,
             &psk_secret,
-        )?;
+        )
+        .await?;
 
         // Use the key and nonce to decrypt the encrypted_group_info field.
-        let decrypted_group_info = welcome_secret.decrypt(&welcome.encrypted_group_info)?;
+        let decrypted_group_info = welcome_secret
+            .decrypt(&welcome.encrypted_group_info)
+            .await?;
+
         let group_info = GroupInfo::mls_decode(&mut &**decrypted_group_info)?;
 
         let join_context = validate_group_info(
@@ -503,12 +508,14 @@ where
 
         // If the path_secret value is set in the GroupSecrets object
         if let Some(path_secret) = group_secrets.path_secret {
-            private_tree.update_secrets(
-                &cipher_suite_provider,
-                join_context.signer_index,
-                path_secret,
-                &join_context.public_tree,
-            )?;
+            private_tree
+                .update_secrets(
+                    &cipher_suite_provider,
+                    join_context.signer_index,
+                    path_secret,
+                    &join_context.public_tree,
+                )
+                .await?;
         }
 
         // Use the joiner_secret from the GroupSecrets object to generate the epoch secret and
@@ -520,7 +527,8 @@ where
             #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
             join_context.public_tree.total_leaf_count(),
             &psk_secret,
-        )?;
+        )
+        .await?;
 
         // Verify the confirmation tag in the GroupInfo using the derived confirmation key and the
         // confirmed_transcript_hash from the GroupInfo.
@@ -675,7 +683,7 @@ where
             .proposals
             .insert(proposal_ref, proposal, auth_content.content.sender);
 
-        self.format_for_wire(auth_content)
+        self.format_for_wire(auth_content).await
     }
 
     /// Unique identifier for this group.
@@ -741,7 +749,8 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn make_welcome_message(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn make_welcome_message(
         &self,
         new_members_kpkgs: Vec<KeyPackage>,
         new_members_indexes: Vec<LeafIndex>,
@@ -757,10 +766,11 @@ where
             &self.cipher_suite_provider,
             joiner_secret,
             psk_secret,
-        )?;
+        )
+        .await?;
 
         let group_info_data = group_info.mls_encode_to_vec()?;
-        let encrypted_group_info = welcome_secret.encrypt(&group_info_data)?;
+        let encrypted_group_info = welcome_secret.encrypt(&group_info_data).await?;
 
         let secrets = new_members_kpkgs
             .into_iter()
@@ -1108,13 +1118,14 @@ where
             .await
     }
 
-    pub(crate) fn format_for_wire(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub(crate) async fn format_for_wire(
         &mut self,
         content: AuthenticatedContent,
     ) -> Result<MLSMessage, MlsError> {
         #[cfg(feature = "private_message")]
         let payload = if content.wire_format == WireFormat::PrivateMessage {
-            MLSMessagePayload::Cipher(self.create_ciphertext(content)?)
+            MLSMessagePayload::Cipher(self.create_ciphertext(content).await?)
         } else {
             MLSMessagePayload::Plain(self.create_plaintext(content)?)
         };
@@ -1146,7 +1157,8 @@ where
     }
 
     #[cfg(feature = "private_message")]
-    fn create_ciphertext(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn create_ciphertext(
         &mut self,
         auth_content: AuthenticatedContent,
     ) -> Result<PrivateMessage, MlsError> {
@@ -1154,7 +1166,7 @@ where
 
         let mut encryptor = CiphertextProcessor::new(self, self.cipher_suite_provider.clone());
 
-        encryptor.seal(auth_content, preferences.padding_mode)
+        encryptor.seal(auth_content, preferences.padding_mode).await
     }
 
     /// Encrypt an application message using the current group state.
@@ -1185,7 +1197,7 @@ where
             authenticated_data,
         )?;
 
-        self.format_for_wire(auth_content)
+        self.format_for_wire(auth_content).await
     }
 
     #[cfg(feature = "private_message")]
@@ -1197,8 +1209,9 @@ where
         let epoch_id = message.epoch;
 
         let auth_content = if epoch_id == self.context().epoch {
-            let content =
-                CiphertextProcessor::new(self, self.cipher_suite_provider.clone()).open(message)?;
+            let content = CiphertextProcessor::new(self, self.cipher_suite_provider.clone())
+                .open(message)
+                .await?;
 
             verify_auth_content_signature(
                 &self.cipher_suite_provider,
@@ -1220,7 +1233,8 @@ where
                     .ok_or(MlsError::EpochNotFound)?;
 
                 let content = CiphertextProcessor::new(epoch, self.cipher_suite_provider.clone())
-                    .open(message)?;
+                    .open(message)
+                    .await?;
 
                 verify_auth_content_signature(
                     &self.cipher_suite_provider,
@@ -1413,7 +1427,8 @@ where
         Ok(self.key_schedule.authentication_secret.clone().into())
     }
 
-    pub fn export_secret(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn export_secret(
         &self,
         label: &[u8],
         context: &[u8],
@@ -1421,6 +1436,7 @@ where
     ) -> Result<Secret, MlsError> {
         self.key_schedule
             .export_secret(label, context, len, &self.cipher_suite_provider)
+            .await
             .map(Into::into)
     }
 
@@ -1468,7 +1484,7 @@ where
         if let Some(psk) = self.previous_psk.clone() {
             // TODO consider throwing error if psks not empty
             let psk_id = vec![psk.id.clone()];
-            let psk = PskSecret::calculate(&[psk], self.cipher_suite_provider())?;
+            let psk = PskSecret::calculate(&[psk], self.cipher_suite_provider()).await?;
 
             Ok((psk, psk_id))
         } else {
@@ -1686,7 +1702,8 @@ where
             provisional_state.public_tree.total_leaf_count(),
             &psk,
             &self.cipher_suite_provider,
-        )?;
+        )
+        .await?;
 
         // Use the confirmation_key for the new epoch to compute the confirmation tag for
         // this message, as described below, and verify that it is the same as the

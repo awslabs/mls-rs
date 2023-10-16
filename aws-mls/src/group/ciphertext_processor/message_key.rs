@@ -17,34 +17,40 @@ impl MessageKey {
         MessageKey(key)
     }
 
-    pub(crate) fn encrypt<P: CipherSuiteProvider>(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub(crate) async fn encrypt<P: CipherSuiteProvider>(
         &self,
         provider: &P,
         data: &[u8],
         aad: &[u8],
         reuse_guard: &ReuseGuard,
     ) -> Result<Vec<u8>, P::Error> {
-        provider.aead_seal(
-            &self.0.key,
-            data,
-            Some(aad),
-            &reuse_guard.apply(&self.0.nonce),
-        )
+        provider
+            .aead_seal(
+                &self.0.key,
+                data,
+                Some(aad),
+                &reuse_guard.apply(&self.0.nonce),
+            )
+            .await
     }
 
-    pub(crate) fn decrypt<P: CipherSuiteProvider>(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub(crate) async fn decrypt<P: CipherSuiteProvider>(
         &self,
         provider: &P,
         data: &[u8],
         aad: &[u8],
         reuse_guard: &ReuseGuard,
     ) -> Result<Zeroizing<Vec<u8>>, P::Error> {
-        provider.aead_open(
-            &self.0.key,
-            data,
-            Some(aad),
-            &reuse_guard.apply(&self.0.nonce),
-        )
+        provider
+            .aead_open(
+                &self.0.key,
+                data,
+                Some(aad),
+                &reuse_guard.apply(&self.0.nonce),
+            )
+            .await
     }
 }
 

@@ -109,27 +109,30 @@ async fn tree_kem() {
             // Set and validate HPKE keys on direct path
             let path = tree.nodes.direct_path(tree_private.self_index).unwrap();
 
-            tree_private.secret_keys = path
-                .into_iter()
-                .map(|dp| {
-                    let secret = leaf
-                        .path_secrets
-                        .iter()
-                        .find_map(|s| (s.node == dp).then_some(s.path_secret.clone()));
+            tree_private.secret_keys = Vec::new();
 
-                    if let Some(secret) = secret {
-                        let (secret_key, public_key) =
-                            PathSecret::from(secret).to_hpke_key_pair(&cs).unwrap();
+            for dp in path {
+                let secret = leaf
+                    .path_secrets
+                    .iter()
+                    .find_map(|s| (s.node == dp).then_some(s.path_secret.clone()));
 
-                        let tree_public = &tree.nodes.borrow_as_parent(dp).unwrap().public_key;
-                        assert_eq!(&public_key, tree_public);
+                let private_key = if let Some(secret) = secret {
+                    let (secret_key, public_key) = PathSecret::from(secret)
+                        .to_hpke_key_pair(&cs)
+                        .await
+                        .unwrap();
 
-                        Some(secret_key)
-                    } else {
-                        None
-                    }
-                })
-                .collect();
+                    let tree_public = &tree.nodes.borrow_as_parent(dp).unwrap().public_key;
+                    assert_eq!(&public_key, tree_public);
+
+                    Some(secret_key)
+                } else {
+                    None
+                };
+
+                tree_private.secret_keys.push(private_key);
+            }
 
             // Set HPKE key for leaf
             tree_private

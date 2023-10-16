@@ -102,8 +102,7 @@ impl<GS: GroupStateStorage, K: KeyPackageStorage, PS: PreSharedKeyStorage>
         id: &[PreSharedKeyID],
         cipher_suite_provider: &P,
     ) -> Result<PskSecret, MlsError> {
-        self.resolve(id)
-            .await
-            .and_then(|psk| PskSecret::calculate(&psk, cipher_suite_provider))
+        let psk = self.resolve(id).await?;
+        PskSecret::calculate(&psk, cipher_suite_provider).await
     }
 }

@@ -52,66 +52,70 @@ impl PskSecret {
     }
 
     #[cfg(feature = "psk")]
-    pub(crate) fn calculate<P: CipherSuiteProvider>(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub(crate) async fn calculate<P: CipherSuiteProvider>(
         input: &[PskSecretInput],
         cipher_suite_provider: &P,
     ) -> Result<PskSecret, MlsError> {
         let len = u16::try_from(input.len()).map_err(|_| MlsError::TooManyPskIds)?;
+        let mut psk_secret = PskSecret::new(cipher_suite_provider);
 
-        input.iter().enumerate().try_fold(
-            PskSecret::new(cipher_suite_provider),
-            |psk_secret, (index, psk_secret_input)| {
-                let index = index as u16;
+        for (index, psk_secret_input) in input.iter().enumerate() {
+            let index = index as u16;
 
-                let label = PSKLabel {
-                    id: &psk_secret_input.id,
-                    index,
-                    count: len,
-                };
+            let label = PSKLabel {
+                id: &psk_secret_input.id,
+                index,
+                count: len,
+            };
 
-                let psk_extracted = cipher_suite_provider
-                    .kdf_extract(
-                        &vec![0; cipher_suite_provider.kdf_extract_size()],
-                        &psk_secret_input.psk,
-                    )
-                    .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
+            let psk_extracted = cipher_suite_provider
+                .kdf_extract(
+                    &vec![0; cipher_suite_provider.kdf_extract_size()],
+                    &psk_secret_input.psk,
+                )
+                .await
+                .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
-                let psk_input = kdf_expand_with_label(
-                    cipher_suite_provider,
-                    &psk_extracted,
-                    b"derived psk",
-                    &label.mls_encode_to_vec()?,
-                    None,
-                )?;
+            let psk_input = kdf_expand_with_label(
+                cipher_suite_provider,
+                &psk_extracted,
+                b"derived psk",
+                &label.mls_encode_to_vec()?,
+                None,
+            )
+            .await?;
 
-                cipher_suite_provider
-                    .kdf_extract(&psk_input, &psk_secret)
-                    .map(PskSecret)
-                    .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
-            },
-        )
+            psk_secret = cipher_suite_provider
+                .kdf_extract(&psk_input, &psk_secret)
+                .await
+                .map(PskSecret)
+                .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
+        }
+
+        Ok(psk_secret)
     }
 }
 
 #[cfg(feature = "psk")]
 #[cfg(test)]
 mod tests {
+    use alloc::vec::Vec;
     use core::iter;
-
-    use alloc::{format, vec::Vec};
-    use aws_mls_core::{
-        crypto::{CipherSuite, CipherSuiteProvider},
-        psk::ExternalPskId,
-    };
     use serde::{Deserialize, Serialize};
 
     use crate::{
-        crypto::test_utils::{test_cipher_suite_provider, try_test_cipher_suite_provider},
+        crypto::test_utils::try_test_cipher_suite_provider,
+        psk::ExternalPskId,
         psk::{
             test_utils::{make_external_psk_id, make_nonce},
             JustPreSharedKeyID, PreSharedKeyID, PskNonce,
         },
+        CipherSuiteProvider,
     };
+
+    #[cfg(not(mls_build_async))]
+    use crate::{crypto::test_utils::test_cipher_suite_provider, CipherSuite};
 
     use super::{PskSecret, PskSecretInput};
 
@@ -158,6 +162,7 @@ mod tests {
             .collect::<Vec<_>>()
         }
 
+        #[cfg(not(mls_build_async))]
         fn generate() -> Vec<TestScenario> {
             CipherSuite::all()
                 .flat_map(|cs| (1..=10).map(move |n| (cs, n)))
@@ -174,11 +179,13 @@ mod tests {
                 .collect()
         }
 
-        fn load() -> Vec<TestScenario> {
-            load_test_case_json!(psk_secret, TestScenario::generate())
+        #[cfg(mls_build_async)]
+        fn generate() -> Vec<TestScenario> {
+            panic!("Tests cannot be generated in async mode");
         }
 
-        fn compute_psk_secret<P: CipherSuiteProvider>(
+        #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+        async fn compute_psk_secret<P: CipherSuiteProvider>(
             provider: &P,
             psks: Vec<PskInfo>,
         ) -> PskSecret {
@@ -187,27 +194,22 @@ mod tests {
                 .map(PskSecretInput::from)
                 .collect::<Vec<_>>();
 
-            PskSecret::calculate(&input, provider).unwrap()
+            PskSecret::calculate(&input, provider).await.unwrap()
         }
     }
 
-    #[test]
-    fn expected_psk_secret_is_produced() {
-        assert_eq!(
-            TestScenario::load()
-                .into_iter()
-                .enumerate()
-                .map(|(i, scenario)| (format!("Scenario #{i}"), scenario))
-                .find(|(_, scenario)| {
-                    if let Some(provider) = try_test_cipher_suite_provider(scenario.cipher_suite) {
-                        scenario.psk_secret
-                            != TestScenario::compute_psk_secret(&provider, scenario.psks.clone())
-                                .to_vec()
-                    } else {
-                        false
-                    }
-                }),
-            None
-        );
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn expected_psk_secret_is_produced() {
+        let scenarios: Vec<TestScenario> =
+            load_test_case_json!(psk_secret, TestScenario::generate());
+
+        for scenario in scenarios {
+            if let Some(provider) = try_test_cipher_suite_provider(scenario.cipher_suite) {
+                let computed =
+                    TestScenario::compute_psk_secret(&provider, scenario.psks.clone()).await;
+
+                assert_eq!(scenario.psk_secret, computed.to_vec());
+            }
+        }
     }
 }

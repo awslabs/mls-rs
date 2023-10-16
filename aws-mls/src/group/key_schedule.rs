@@ -71,7 +71,8 @@ impl KeySchedule {
 
     /// Returns the derived epoch as well as the joiner secret required for building welcome
     /// messages
-    pub(crate) fn from_key_schedule<P: CipherSuiteProvider>(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub(crate) async fn from_key_schedule<P: CipherSuiteProvider>(
         last_key_schedule: &KeySchedule,
         commit_secret: &PathSecret,
         context: &GroupContext,
@@ -82,6 +83,7 @@ impl KeySchedule {
     ) -> Result<KeyScheduleDerivationResult, MlsError> {
         let joiner_seed = cipher_suite_provider
             .kdf_extract(&last_key_schedule.init_secret.0, commit_secret)
+            .await
             .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
         let joiner_secret = kdf_expand_with_label(
@@ -90,7 +92,8 @@ impl KeySchedule {
             b"joiner",
             &context.mls_encode_to_vec()?,
             None,
-        )?
+        )
+        .await?
         .into();
 
         let key_schedule_result = Self::from_joiner(
@@ -100,7 +103,8 @@ impl KeySchedule {
             #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
             secret_tree_size,
             psk_secret,
-        )?;
+        )
+        .await?;
 
         Ok(KeyScheduleDerivationResult {
             key_schedule: key_schedule_result.key_schedule,
@@ -110,7 +114,8 @@ impl KeySchedule {
         })
     }
 
-    pub(crate) fn from_joiner<P: CipherSuiteProvider>(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub(crate) async fn from_joiner<P: CipherSuiteProvider>(
         cipher_suite_provider: &P,
         joiner_secret: &JoinerSecret,
         context: &GroupContext,
@@ -118,11 +123,13 @@ impl KeySchedule {
         secret_tree_size: u32,
         psk_secret: &PskSecret,
     ) -> Result<KeyScheduleDerivationResult, MlsError> {
-        let epoch_seed = get_pre_epoch_secret(cipher_suite_provider, psk_secret, joiner_secret)?;
+        let epoch_seed =
+            get_pre_epoch_secret(cipher_suite_provider, psk_secret, joiner_secret).await?;
         let context = context.mls_encode_to_vec()?;
 
         let epoch_secret =
-            kdf_expand_with_label(cipher_suite_provider, &epoch_seed, b"epoch", &context, None)?;
+            kdf_expand_with_label(cipher_suite_provider, &epoch_seed, b"epoch", &context, None)
+                .await?;
 
         Self::from_epoch_secret(
             cipher_suite_provider,
@@ -130,9 +137,11 @@ impl KeySchedule {
             #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
             secret_tree_size,
         )
+        .await
     }
 
-    pub(crate) fn from_random_epoch_secret<P: CipherSuiteProvider>(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub(crate) async fn from_random_epoch_secret<P: CipherSuiteProvider>(
         cipher_suite_provider: &P,
         #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
         secret_tree_size: u32,
@@ -148,9 +157,11 @@ impl KeySchedule {
             #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
             secret_tree_size,
         )
+        .await
     }
 
-    fn from_epoch_secret<P: CipherSuiteProvider>(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn from_epoch_secret<P: CipherSuiteProvider>(
         cipher_suite_provider: &P,
         epoch_secret: &[u8],
         #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
@@ -160,43 +171,49 @@ impl KeySchedule {
 
         let epoch_secrets = EpochSecrets {
             #[cfg(feature = "psk")]
-            resumption_secret: PreSharedKey::from(secrets_producer.derive(b"resumption")?),
-            sender_data_secret: SenderDataSecret::from(secrets_producer.derive(b"sender data")?),
+            resumption_secret: PreSharedKey::from(secrets_producer.derive(b"resumption").await?),
+            sender_data_secret: SenderDataSecret::from(
+                secrets_producer.derive(b"sender data").await?,
+            ),
             #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
-            secret_tree: SecretTree::new(secret_tree_size, secrets_producer.derive(b"encryption")?),
+            secret_tree: SecretTree::new(
+                secret_tree_size,
+                secrets_producer.derive(b"encryption").await?,
+            ),
         };
 
         let key_schedule = Self {
-            exporter_secret: secrets_producer.derive(b"exporter")?,
-            authentication_secret: secrets_producer.derive(b"authentication")?,
+            exporter_secret: secrets_producer.derive(b"exporter").await?,
+            authentication_secret: secrets_producer.derive(b"authentication").await?,
             #[cfg(feature = "external_commit")]
-            external_secret: secrets_producer.derive(b"external")?,
-            membership_key: secrets_producer.derive(b"membership")?,
-            init_secret: InitSecret(secrets_producer.derive(b"init")?),
+            external_secret: secrets_producer.derive(b"external").await?,
+            membership_key: secrets_producer.derive(b"membership").await?,
+            init_secret: InitSecret(secrets_producer.derive(b"init").await?),
         };
 
         Ok(KeyScheduleDerivationResult {
             key_schedule,
-            confirmation_key: secrets_producer.derive(b"confirm")?,
+            confirmation_key: secrets_producer.derive(b"confirm").await?,
             joiner_secret: Zeroizing::new(vec![]).into(),
             epoch_secrets,
         })
     }
 
-    pub fn export_secret<P: CipherSuiteProvider>(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn export_secret<P: CipherSuiteProvider>(
         &self,
         label: &[u8],
         context: &[u8],
         len: usize,
         cipher_suite: &P,
     ) -> Result<Zeroizing<Vec<u8>>, MlsError> {
-        let secret = kdf_derive_secret(cipher_suite, &self.exporter_secret, label)?;
+        let secret = kdf_derive_secret(cipher_suite, &self.exporter_secret, label).await?;
 
         let context_hash = cipher_suite
             .hash(context)
             .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
-        kdf_expand_with_label(cipher_suite, &secret, b"exported", &context_hash, Some(len))
+        kdf_expand_with_label(cipher_suite, &secret, b"exported", &context_hash, Some(len)).await
     }
 
     pub fn get_membership_tag<P: CipherSuiteProvider>(
@@ -243,7 +260,8 @@ impl<'a> Label<'a> {
     }
 }
 
-pub(crate) fn kdf_expand_with_label<P: CipherSuiteProvider>(
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+pub(crate) async fn kdf_expand_with_label<P: CipherSuiteProvider>(
     cipher_suite_provider: &P,
     secret: &[u8],
     label: &[u8],
@@ -256,15 +274,17 @@ pub(crate) fn kdf_expand_with_label<P: CipherSuiteProvider>(
 
     cipher_suite_provider
         .kdf_expand(secret, &label.mls_encode_to_vec()?, len)
+        .await
         .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
 }
 
-pub(crate) fn kdf_derive_secret<P: CipherSuiteProvider>(
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+pub(crate) async fn kdf_derive_secret<P: CipherSuiteProvider>(
     cipher_suite_provider: &P,
     secret: &[u8],
     label: &[u8],
 ) -> Result<Zeroizing<Vec<u8>>, MlsError> {
-    kdf_expand_with_label(cipher_suite_provider, secret, label, &[], None)
+    kdf_expand_with_label(cipher_suite_provider, secret, label, &[], None).await
 }
 
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
@@ -276,13 +296,15 @@ impl From<Zeroizing<Vec<u8>>> for JoinerSecret {
     }
 }
 
-pub(crate) fn get_pre_epoch_secret<P: CipherSuiteProvider>(
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+pub(crate) async fn get_pre_epoch_secret<P: CipherSuiteProvider>(
     cipher_suite_provider: &P,
     psk_secret: &PskSecret,
     joiner_secret: &JoinerSecret,
 ) -> Result<Zeroizing<Vec<u8>>, MlsError> {
     cipher_suite_provider
         .kdf_extract(&joiner_secret.0, psk_secret)
+        .await
         .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
 }
 
@@ -302,8 +324,9 @@ impl<'a, P: CipherSuiteProvider> SecretsProducer<'a, P> {
     // TODO document somewhere in the crypto provider that the RFC defines the length of all secrets as
     // KDF extract size but then inputs secrets as MAC keys etc, therefore, we require that these
     // lengths match in the crypto provider
-    fn derive(&self, label: &[u8]) -> Result<Zeroizing<Vec<u8>>, MlsError> {
-        kdf_derive_secret(self.cipher_suite_provider, self.epoch_secret, label)
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn derive(&self, label: &[u8]) -> Result<Zeroizing<Vec<u8>>, MlsError> {
+        kdf_derive_secret(self.cipher_suite_provider, self.epoch_secret, label).await
     }
 }
 
@@ -356,15 +379,17 @@ pub(crate) struct WelcomeSecret<'a, P: CipherSuiteProvider> {
 }
 
 impl<'a, P: CipherSuiteProvider> WelcomeSecret<'a, P> {
-    pub(crate) fn from_joiner_secret(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub(crate) async fn from_joiner_secret(
         cipher_suite: &'a P,
         joiner_secret: &JoinerSecret,
         psk_secret: &PskSecret,
-    ) -> Result<Self, MlsError> {
-        let welcome_secret = get_welcome_secret(cipher_suite, joiner_secret, psk_secret)?;
+    ) -> Result<WelcomeSecret<'a, P>, MlsError> {
+        let welcome_secret = get_welcome_secret(cipher_suite, joiner_secret, psk_secret).await?;
 
         let key_len = cipher_suite.aead_key_size();
-        let key = kdf_expand_with_label(cipher_suite, &welcome_secret, b"key", &[], Some(key_len))?;
+        let key = kdf_expand_with_label(cipher_suite, &welcome_secret, b"key", &[], Some(key_len))
+            .await?;
 
         let nonce_len = cipher_suite.aead_nonce_size();
 
@@ -374,7 +399,8 @@ impl<'a, P: CipherSuiteProvider> WelcomeSecret<'a, P> {
             b"nonce",
             &[],
             Some(nonce_len),
-        )?;
+        )
+        .await?;
 
         Ok(Self {
             cipher_suite,
@@ -383,26 +409,31 @@ impl<'a, P: CipherSuiteProvider> WelcomeSecret<'a, P> {
         })
     }
 
-    pub(crate) fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>, MlsError> {
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub(crate) async fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>, MlsError> {
         self.cipher_suite
             .aead_seal(&self.key, plaintext, None, &self.nonce)
+            .await
             .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
     }
 
-    pub(crate) fn decrypt(&self, ciphertext: &[u8]) -> Result<Zeroizing<Vec<u8>>, MlsError> {
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub(crate) async fn decrypt(&self, ciphertext: &[u8]) -> Result<Zeroizing<Vec<u8>>, MlsError> {
         self.cipher_suite
             .aead_open(&self.key, ciphertext, None, &self.nonce)
+            .await
             .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
     }
 }
 
-fn get_welcome_secret<P: CipherSuiteProvider>(
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+async fn get_welcome_secret<P: CipherSuiteProvider>(
     cipher_suite: &P,
     joiner_secret: &JoinerSecret,
     psk_secret: &PskSecret,
 ) -> Result<Zeroizing<Vec<u8>>, MlsError> {
-    let epoch_seed = get_pre_epoch_secret(cipher_suite, psk_secret, joiner_secret)?;
-    kdf_derive_secret(cipher_suite, &epoch_seed, b"welcome")
+    let epoch_seed = get_pre_epoch_secret(cipher_suite, psk_secret, joiner_secret).await?;
+    kdf_derive_secret(cipher_suite, &epoch_seed, b"welcome").await
 }
 
 #[cfg(test)]
@@ -479,7 +510,7 @@ mod tests {
     use aws_mls_core::crypto::CipherSuiteProvider;
     use aws_mls_core::extension::ExtensionList;
 
-    #[cfg(feature = "rfc_compliant")]
+    #[cfg(all(not(mls_build_async), feature = "rfc_compliant"))]
     use crate::{
         crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider},
         group::{
@@ -488,7 +519,7 @@ mod tests {
         },
     };
 
-    #[cfg(feature = "rfc_compliant")]
+    #[cfg(all(not(mls_build_async), feature = "rfc_compliant"))]
     use alloc::{string::ToString, vec};
 
     #[cfg(target_arch = "wasm32")]
@@ -499,7 +530,7 @@ mod tests {
     use super::KeySchedule;
 
     #[derive(serde::Deserialize, serde::Serialize)]
-    struct KeyScheduleTestCase {
+    struct TestCase {
         cipher_suite: u16,
         #[serde(with = "hex::serde")]
         group_id: Vec<u8>,
@@ -566,10 +597,10 @@ mod tests {
         secret: Vec<u8>,
     }
 
-    #[test]
-    fn test_key_schedule() {
-        let test_cases: Vec<KeyScheduleTestCase> =
-            load_test_case_json!(key_schedule_test_vector, generate_key_schedule_tests());
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_key_schedule() {
+        let test_cases: Vec<TestCase> =
+            load_test_case_json!(key_schedule_test_vector, generate_test_vector());
 
         for test_case in test_cases {
             let Some(cs_provider) = try_test_cipher_suite_provider(test_case.cipher_suite) else {
@@ -604,12 +635,14 @@ mod tests {
                     &psk,
                     &cs_provider,
                 )
+                .await
                 .unwrap();
 
                 key_schedule = key_schedule_res.key_schedule;
 
                 let welcome =
                     get_welcome_secret(&cs_provider, &key_schedule_res.joiner_secret, &psk)
+                        .await
                         .unwrap();
 
                 assert_eq!(*welcome, epoch.welcome_secret);
@@ -667,6 +700,7 @@ mod tests {
 
                 let exported = key_schedule
                     .export_secret(exp.label.as_bytes(), &exp.context, exp.length, &cs_provider)
+                    .await
                     .unwrap();
 
                 assert_eq!(exported.to_vec(), exp.secret);
@@ -674,8 +708,8 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "rfc_compliant")]
-    fn generate_key_schedule_tests() -> Vec<KeyScheduleTestCase> {
+    #[cfg(all(not(mls_build_async), feature = "rfc_compliant"))]
+    fn generate_test_vector() -> Vec<TestCase> {
         let mut test_cases = vec![];
 
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
@@ -746,7 +780,7 @@ mod tests {
                 &cs_provider,
             );
 
-            let test_case = KeyScheduleTestCase {
+            let test_case = TestCase {
                 cipher_suite: cs_provider.cipher_suite().into(),
                 group_id: group_context.group_id.clone(),
                 initial_init_secret: initial_init_secret.0.to_vec(),
@@ -759,12 +793,12 @@ mod tests {
         test_cases
     }
 
-    #[cfg(not(feature = "rfc_compliant"))]
-    fn generate_key_schedule_tests() -> Vec<KeyScheduleTestCase> {
-        panic!("key schedule test vectors can only be generated with the feature \"rfc_compliant\"")
+    #[cfg(not(all(not(mls_build_async), feature = "rfc_compliant")))]
+    fn generate_test_vector() -> Vec<TestCase> {
+        panic!("Tests cannot be generated in async mode");
     }
 
-    #[cfg(feature = "rfc_compliant")]
+    #[cfg(all(not(mls_build_async), feature = "rfc_compliant"))]
     impl KeyScheduleEpoch {
         fn new<P: CipherSuiteProvider>(
             key_schedule_res: KeyScheduleDerivationResult,
@@ -857,13 +891,13 @@ mod tests {
         derive_secret: DeriveSecretTestCase,
     }
 
-    #[test]
-    fn test_basic_crypto_test_vectors() {
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_basic_crypto_test_vectors() {
         // The test vector can be found here https://github.com/mlswg/mls-implementations/blob/main/test-vectors/crypto-basics.json
         let test_cases: Vec<InteropTestCase> =
             load_test_case_json!(basic_crypto, Vec::<InteropTestCase>::new());
 
-        test_cases.into_iter().for_each(|test_case| {
+        for test_case in test_cases {
             if let Some(cs) = try_test_cipher_suite_provider(test_case.cipher_suite) {
                 let test_exp = &test_case.expand_with_label;
 
@@ -874,6 +908,7 @@ mod tests {
                     &test_exp.context,
                     Some(test_exp.length),
                 )
+                .await
                 .unwrap();
 
                 assert_eq!(&computed.to_vec(), &test_exp.out);
@@ -882,10 +917,11 @@ mod tests {
 
                 let computed =
                     kdf_derive_secret(&cs, &test_derive.secret, test_derive.label.as_bytes())
+                        .await
                         .unwrap();
 
                 assert_eq!(&computed.to_vec(), &test_derive.out);
             }
-        })
+        }
     }
 }

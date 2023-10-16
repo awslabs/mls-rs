@@ -166,7 +166,7 @@ impl TestGroup {
         )
         .unwrap();
 
-        self.group.format_for_wire(auth_content).unwrap()
+        self.group.format_for_wire(auth_content).await.unwrap()
     }
 }
 

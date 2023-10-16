@@ -39,7 +39,7 @@ struct TestSuite {
     mac_tests: Vec<MacTestCase>,
 }
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "std"))]
+#[cfg(all(not(mls_build_async), not(target_arch = "wasm32"), feature = "std"))]
 pub fn generate_tests<C: CryptoProvider>(crypto: &C) {
     for cs in crypto.supported_cipher_suites() {
         crypto.cipher_suite_provider(cs).unwrap();
@@ -59,7 +59,7 @@ pub fn generate_tests<C: CryptoProvider>(crypto: &C) {
     std::fs::write(PATH, serde_json::to_string_pretty(&test_suites).unwrap()).unwrap();
 }
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "std"))]
+#[cfg(all(not(mls_build_async), not(target_arch = "wasm32"), feature = "std"))]
 fn create_or_load_tests<C: CryptoProvider>(crypto: &C) -> Vec<TestSuite> {
     if std::path::Path::new(PATH).exists() {
         serde_json::from_slice(&std::fs::read(PATH).unwrap()).unwrap()
@@ -75,7 +75,8 @@ fn create_or_load_tests<C: CryptoProvider>(crypto: &C) -> Vec<TestSuite> {
     }
 }
 
-pub fn verify_tests<C: CryptoProvider>(crypto: &C) {
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+pub async fn verify_tests<C: CryptoProvider>(crypto: &C) {
     #[cfg(any(target_arch = "wasm32", not(feature = "std")))]
     let test_suites: Vec<TestSuite> = serde_json::from_slice(SERIALIZED_TEST_SUITES).unwrap();
 
@@ -89,8 +90,8 @@ pub fn verify_tests<C: CryptoProvider>(crypto: &C) {
             continue;
         };
 
-        verify_hkdf_tests(&cs, test_suite.hkdf_tests);
-        verify_aead_tests(&cs, test_suite.aead_tests);
+        verify_hkdf_tests(&cs, test_suite.hkdf_tests).await;
+        verify_aead_tests(&cs, test_suite.aead_tests).await;
         verify_mac_tests(&cs, test_suite.mac_tests);
         verify_hpke_tests(&cs, test_suite.hpke_tests);
         verify_signature_tests(&cs, test_suite.signature_tests);
@@ -165,16 +166,19 @@ struct AeadTestCase {
     pub pt: Vec<u8>,
 }
 
-fn verify_aead_tests<C: CipherSuiteProvider>(cs: &C, test_cases: Vec<AeadTestCase>) {
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+async fn verify_aead_tests<C: CipherSuiteProvider>(cs: &C, test_cases: Vec<AeadTestCase>) {
     for case in test_cases {
         let ciphertext = cs
             .aead_seal(&case.key, &case.pt, Some(&case.aad), &case.iv)
+            .await
             .unwrap();
 
         assert_eq!(ciphertext, case.ct);
 
         let plaintext = cs
             .aead_open(&case.key, &ciphertext, Some(&case.aad), &case.iv)
+            .await
             .unwrap();
 
         assert_eq!(plaintext.to_vec(), case.pt);
@@ -371,19 +375,23 @@ struct HkdfTestCase {
     pub okm: Vec<u8>,
 }
 
-fn verify_hkdf_tests<C: CipherSuiteProvider>(cs: &C, test_cases: Vec<HkdfTestCase>) {
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+async fn verify_hkdf_tests<C: CipherSuiteProvider>(cs: &C, test_cases: Vec<HkdfTestCase>) {
     for case in test_cases {
-        let extracted = cs.kdf_extract(&case.salt, &case.ikm).unwrap();
+        let extracted = cs.kdf_extract(&case.salt, &case.ikm).await.unwrap();
 
         assert_eq!(extracted.to_vec(), case.prk);
 
-        let expanded = cs.kdf_expand(&case.prk, &case.info, case.len).unwrap();
+        let expanded = cs
+            .kdf_expand(&case.prk, &case.info, case.len)
+            .await
+            .unwrap();
 
         assert_eq!(expanded.to_vec(), case.okm);
     }
 }
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "std"))]
+#[cfg(all(not(mls_build_async), not(target_arch = "wasm32"), feature = "std"))]
 fn generate_hkdf_tests<C: CipherSuiteProvider>(cs: &C) -> Vec<HkdfTestCase> {
     let iter = DATA_SIZES.iter().copied();
 

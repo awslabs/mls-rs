@@ -251,6 +251,7 @@ async fn framing_commit() {
             let built = make_group(&test_case, true, enable_encryption, &cs)
                 .await
                 .format_for_wire(auth_content.clone())
+                .await
                 .unwrap()
                 .mls_encode_to_vec()
                 .unwrap();
@@ -330,7 +331,7 @@ async fn generate_framing_test_vector() -> Vec<FramingTestCase> {
         auth_content.auth.confirmation_tag = Some(ConfirmationTag::empty(&cs));
 
         let mut group = make_group(&test_case, true, false, &cs).await;
-        let commit_pub = group.format_for_wire(auth_content.clone()).unwrap();
+        let commit_pub = group.format_for_wire(auth_content.clone()).await.unwrap();
         test_case.commit_pub = commit_pub.mls_encode_to_vec().unwrap();
 
         let mut auth_content = AuthenticatedContent::new_signed(
@@ -347,7 +348,7 @@ async fn generate_framing_test_vector() -> Vec<FramingTestCase> {
         auth_content.auth.confirmation_tag = Some(ConfirmationTag::empty(&cs));
 
         let mut group = make_group(&test_case, true, true, &cs).await;
-        let commit_priv = group.format_for_wire(auth_content.clone()).unwrap();
+        let commit_priv = group.format_for_wire(auth_content.clone()).await.unwrap();
         test_case.commit_priv = commit_priv.mls_encode_to_vec().unwrap();
 
         test_vector.push(test_case);

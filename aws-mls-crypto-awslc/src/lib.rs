@@ -135,6 +135,8 @@ impl From<Unspecified> for AwsLcCryptoError {
 
 impl IntoAnyError for AwsLcCryptoError {}
 
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
 impl CipherSuiteProvider for AwsLcCipherSuite {
     type Error = AwsLcCryptoError;
 
@@ -154,7 +156,7 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
         Ok(hmac::sign(&key, data).as_ref().to_vec())
     }
 
-    fn aead_seal(
+    async fn aead_seal(
         &self,
         key: &[u8],
         data: &[u8],
@@ -164,7 +166,7 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
         self.aead.seal(key, data, aad, nonce)
     }
 
-    fn aead_open(
+    async fn aead_open(
         &self,
         key: &[u8],
         ciphertext: &[u8],
@@ -182,11 +184,15 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
         self.aead.nonce_size()
     }
 
-    fn kdf_extract(&self, salt: &[u8], ikm: &[u8]) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
+    async fn kdf_extract(
+        &self,
+        salt: &[u8],
+        ikm: &[u8],
+    ) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
         self.kdf.extract(salt, ikm).map(Into::into)
     }
 
-    fn kdf_expand(
+    async fn kdf_expand(
         &self,
         prk: &[u8],
         info: &[u8],
@@ -304,7 +310,7 @@ pub fn sha256(data: &[u8]) -> [u8; 32] {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(not(mls_build_async), test))]
 mod tests {
     #[test]
     fn cipher_suite_standard_conformance() {

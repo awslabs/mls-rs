@@ -143,30 +143,36 @@ pub struct SecretRatchets {
 }
 
 impl SecretRatchets {
-    pub fn message_key_generation<P: CipherSuiteProvider>(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn message_key_generation<P: CipherSuiteProvider>(
         &mut self,
         cipher_suite_provider: &P,
         generation: u32,
         key_type: KeyType,
     ) -> Result<MessageKeyData, MlsError> {
         match key_type {
-            KeyType::Handshake => self
-                .handshake
-                .get_message_key(cipher_suite_provider, generation),
-            KeyType::Application => self
-                .application
-                .get_message_key(cipher_suite_provider, generation),
+            KeyType::Handshake => {
+                self.handshake
+                    .get_message_key(cipher_suite_provider, generation)
+                    .await
+            }
+            KeyType::Application => {
+                self.application
+                    .get_message_key(cipher_suite_provider, generation)
+                    .await
+            }
         }
     }
 
-    pub fn next_message_key<P: CipherSuiteProvider>(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn next_message_key<P: CipherSuiteProvider>(
         &mut self,
-        cipher_suite_provider: &P,
+        cipher_suite: &P,
         key_type: KeyType,
     ) -> Result<MessageKeyData, MlsError> {
         match key_type {
-            KeyType::Handshake => self.handshake.next_message_key(cipher_suite_provider),
-            KeyType::Application => self.application.next_message_key(cipher_suite_provider),
+            KeyType::Handshake => self.handshake.next_message_key(cipher_suite).await,
+            KeyType::Application => self.application.next_message_key(cipher_suite).await,
         }
     }
 }
@@ -184,7 +190,8 @@ impl SecretTree {
         }
     }
 
-    fn consume_node<P: CipherSuiteProvider>(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn consume_node<P: CipherSuiteProvider>(
         &mut self,
         cipher_suite_provider: &P,
         index: NodeIndex,
@@ -194,10 +201,12 @@ impl SecretTree {
             let right_index = tree_math::right(index)?;
 
             let left_secret =
-                kdf_expand_with_label(cipher_suite_provider, &secret, b"tree", b"left", None)?;
+                kdf_expand_with_label(cipher_suite_provider, &secret, b"tree", b"left", None)
+                    .await?;
 
             let right_secret =
-                kdf_expand_with_label(cipher_suite_provider, &secret, b"tree", b"right", None)?;
+                kdf_expand_with_label(cipher_suite_provider, &secret, b"tree", b"right", None)
+                    .await?;
 
             self.write_node(left_index, Some(SecretTreeNode::Secret(left_secret.into())))?;
 
@@ -225,9 +234,10 @@ impl SecretTree {
     }
 
     // Start at the root node and work your way down consuming any intermediates needed
-    fn leaf_secret_ratchets<P: CipherSuiteProvider>(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn leaf_secret_ratchets<P: CipherSuiteProvider>(
         &mut self,
-        cipher_suite_provider: &P,
+        cipher_suite: &P,
         leaf_index: LeafIndex,
     ) -> Result<SecretRatchets, MlsError> {
         if let Some(ratchet) = self
@@ -237,11 +247,11 @@ impl SecretTree {
             return Ok(ratchet);
         }
 
-        leaf_index
-            .direct_path(self.known_secrets.total_leaf_count())?
-            .iter()
-            .rev()
-            .try_for_each(|&i| self.consume_node(cipher_suite_provider, i))?;
+        let path = leaf_index.direct_path(self.known_secrets.total_leaf_count())?;
+
+        for i in path.into_iter().rev() {
+            self.consume_node(cipher_suite, i).await?;
+        }
 
         let secret = self
             .read_node(leaf_index.into())?
@@ -251,50 +261,38 @@ impl SecretTree {
         self.write_node(leaf_index.into(), None)?;
 
         Ok(SecretRatchets {
-            application: SecretKeyRatchet::new(
-                cipher_suite_provider,
-                &secret,
-                KeyType::Application,
-            )?,
-            handshake: SecretKeyRatchet::new(cipher_suite_provider, &secret, KeyType::Handshake)?,
+            application: SecretKeyRatchet::new(cipher_suite, &secret, KeyType::Application).await?,
+            handshake: SecretKeyRatchet::new(cipher_suite, &secret, KeyType::Handshake).await?,
         })
     }
 
-    pub fn next_message_key<P: CipherSuiteProvider>(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn next_message_key<P: CipherSuiteProvider>(
         &mut self,
-        cipher_suite_provider: &P,
+        cipher_suite: &P,
         leaf_index: LeafIndex,
         key_type: KeyType,
     ) -> Result<MessageKeyData, MlsError> {
-        self.message_key(cipher_suite_provider, leaf_index, |ratchet| {
-            ratchet.next_message_key(cipher_suite_provider, key_type)
-        })
+        let mut ratchet = self.leaf_secret_ratchets(cipher_suite, leaf_index).await?;
+        let res = ratchet.next_message_key(cipher_suite, key_type).await?;
+        self.write_node(leaf_index.into(), Some(SecretTreeNode::Ratchet(ratchet)))?;
+
+        Ok(res)
     }
 
-    pub fn message_key_generation<P: CipherSuiteProvider>(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn message_key_generation<P: CipherSuiteProvider>(
         &mut self,
-        cipher_suite_provider: &P,
+        cipher_suite: &P,
         leaf_index: LeafIndex,
         key_type: KeyType,
         generation: u32,
     ) -> Result<MessageKeyData, MlsError> {
-        self.message_key(cipher_suite_provider, leaf_index, |ratchet| {
-            ratchet.message_key_generation(cipher_suite_provider, generation, key_type)
-        })
-    }
+        let mut ratchet = self.leaf_secret_ratchets(cipher_suite, leaf_index).await?;
 
-    fn message_key<T, F, P>(
-        &mut self,
-        cipher_suite_provider: &P,
-        leaf_index: LeafIndex,
-        mut op: F,
-    ) -> Result<T, MlsError>
-    where
-        F: FnMut(&mut SecretRatchets) -> Result<T, MlsError>,
-        P: CipherSuiteProvider,
-    {
-        let mut ratchet = self.leaf_secret_ratchets(cipher_suite_provider, leaf_index)?;
-        let res = op(&mut ratchet)?;
+        let res = ratchet
+            .message_key_generation(cipher_suite, generation, key_type)
+            .await?;
 
         self.write_node(leaf_index.into(), Some(SecretTreeNode::Ratchet(ratchet)))?;
 
@@ -414,7 +412,8 @@ impl MlsDecode for SecretKeyRatchet {
 }
 
 impl SecretKeyRatchet {
-    fn new<P: CipherSuiteProvider>(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn new<P: CipherSuiteProvider>(
         cipher_suite_provider: &P,
         secret: &[u8],
         key_type: KeyType,
@@ -425,6 +424,7 @@ impl SecretKeyRatchet {
         };
 
         let secret = kdf_expand_with_label(cipher_suite_provider, secret, label, &[], None)
+            .await
             .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
         Ok(Self {
@@ -435,7 +435,8 @@ impl SecretKeyRatchet {
         })
     }
 
-    fn get_message_key<P: CipherSuiteProvider>(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn get_message_key<P: CipherSuiteProvider>(
         &mut self,
         cipher_suite_provider: &P,
         generation: u32,
@@ -467,45 +468,54 @@ impl SecretKeyRatchet {
 
         #[cfg(feature = "out_of_order")]
         while self.generation < generation {
-            let key_data = self.next_message_key(cipher_suite_provider)?;
+            let key_data = self.next_message_key(cipher_suite_provider).await?;
             self.history.insert(key_data.generation, key_data);
         }
 
-        self.next_message_key(cipher_suite_provider)
+        self.next_message_key(cipher_suite_provider).await
     }
 
-    fn next_message_key<P: CipherSuiteProvider>(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn next_message_key<P: CipherSuiteProvider>(
         &mut self,
         cipher_suite_provider: &P,
     ) -> Result<MessageKeyData, MlsError> {
         let generation = self.generation;
 
         let key = MessageKeyData {
-            nonce: self.derive_secret(
-                cipher_suite_provider,
-                b"nonce",
-                cipher_suite_provider.aead_nonce_size(),
-            )?,
-            key: self.derive_secret(
-                cipher_suite_provider,
-                b"key",
-                cipher_suite_provider.aead_key_size(),
-            )?,
+            nonce: self
+                .derive_secret(
+                    cipher_suite_provider,
+                    b"nonce",
+                    cipher_suite_provider.aead_nonce_size(),
+                )
+                .await?,
+            key: self
+                .derive_secret(
+                    cipher_suite_provider,
+                    b"key",
+                    cipher_suite_provider.aead_key_size(),
+                )
+                .await?,
             generation,
         };
 
-        self.secret = TreeSecret::from(self.derive_secret(
-            cipher_suite_provider,
-            b"secret",
-            cipher_suite_provider.kdf_extract_size(),
-        )?);
+        self.secret = self
+            .derive_secret(
+                cipher_suite_provider,
+                b"secret",
+                cipher_suite_provider.kdf_extract_size(),
+            )
+            .await?
+            .into();
 
         self.generation = generation + 1;
 
         Ok(key)
     }
 
-    fn derive_secret<P: CipherSuiteProvider>(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn derive_secret<P: CipherSuiteProvider>(
         &self,
         cipher_suite_provider: &P,
         label: &[u8],
@@ -518,6 +528,7 @@ impl SecretKeyRatchet {
             &self.generation.to_be_bytes(),
             Some(len),
         )
+        .await
         .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
     }
 }
@@ -565,27 +576,31 @@ pub(crate) mod test_utils {
         derive_tree_secret: RatchetInteropTestCase,
     }
 
-    #[test]
-    fn test_basic_crypto_test_vectors() {
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_basic_crypto_test_vectors() {
         let test_cases: Vec<InteropTestCase> =
             load_test_case_json!(basic_crypto, Vec::<InteropTestCase>::new());
 
-        test_cases.into_iter().for_each(|test_case| {
+        for test_case in test_cases {
             if let Some(cs) = try_test_cipher_suite_provider(test_case.cipher_suite) {
-                test_case.derive_tree_secret.verify(&cs)
+                test_case.derive_tree_secret.verify(&cs).await
             }
-        })
+        }
     }
 
     impl RatchetInteropTestCase {
-        pub fn verify<P: CipherSuiteProvider>(&self, cs: &P) {
-            let mut ratchet =
-                SecretKeyRatchet::new(cs, &self.secret, KeyType::Application).unwrap();
+        #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+        pub async fn verify<P: CipherSuiteProvider>(&self, cs: &P) {
+            let mut ratchet = SecretKeyRatchet::new(cs, &self.secret, KeyType::Application)
+                .await
+                .unwrap();
 
             ratchet.secret = self.secret.clone().into();
             ratchet.generation = self.generation;
+
             let computed = ratchet
                 .derive_secret(cs, self.label.as_bytes(), self.length)
+                .await
                 .unwrap();
 
             assert_eq!(&computed.to_vec(), &self.out);
@@ -601,8 +616,10 @@ mod tests {
         crypto::test_utils::{
             test_cipher_suite_provider, try_test_cipher_suite_provider, TestCryptoProvider,
         },
-        group::test_utils::random_bytes,
     };
+
+    #[cfg(not(mls_build_async))]
+    use crate::group::test_utils::random_bytes;
 
     use super::{test_utils::get_test_tree, *};
 
@@ -611,8 +628,8 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    #[test]
-    fn test_secret_tree() {
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_secret_tree() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let cs_provider = test_cipher_suite_provider(cipher_suite);
 
@@ -620,16 +637,16 @@ mod tests {
 
             let mut test_tree = get_test_tree(test_secret.clone(), 16);
 
-            let mut secrets: Vec<SecretRatchets> = (0..16)
-                .map(|i| {
-                    test_tree
-                        .leaf_secret_ratchets(
-                            &test_cipher_suite_provider(cipher_suite),
-                            LeafIndex(i),
-                        )
-                        .unwrap()
-                })
-                .collect();
+            let mut secrets = Vec::<SecretRatchets>::new();
+
+            for i in 0..16 {
+                let secret = test_tree
+                    .leaf_secret_ratchets(&test_cipher_suite_provider(cipher_suite), LeafIndex(i))
+                    .await
+                    .unwrap();
+
+                secrets.push(secret);
+            }
 
             // Verify the tree is now completely empty
             let full = test_tree
@@ -646,8 +663,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_secret_key_ratchet() {
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_secret_key_ratchet() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let provider = test_cipher_suite_provider(cipher_suite);
 
@@ -656,6 +673,7 @@ mod tests {
                 &vec![0u8; provider.kdf_extract_size()],
                 KeyType::Application,
             )
+            .await
             .unwrap();
 
             let mut handshake_ratchet = SecretKeyRatchet::new(
@@ -663,17 +681,16 @@ mod tests {
                 &vec![0u8; provider.kdf_extract_size()],
                 KeyType::Handshake,
             )
+            .await
             .unwrap();
 
-            let app_keys: Vec<MessageKeyData> = vec![
-                app_ratchet.next_message_key(&provider).unwrap(),
-                app_ratchet.next_message_key(&provider).unwrap(),
-            ];
+            let app_key_one = app_ratchet.next_message_key(&provider).await.unwrap();
+            let app_key_two = app_ratchet.next_message_key(&provider).await.unwrap();
+            let app_keys = vec![app_key_one, app_key_two];
 
-            let handshake_keys: Vec<MessageKeyData> = vec![
-                handshake_ratchet.next_message_key(&provider).unwrap(),
-                handshake_ratchet.next_message_key(&provider).unwrap(),
-            ];
+            let handshake_key_one = handshake_ratchet.next_message_key(&provider).await.unwrap();
+            let handshake_key_two = handshake_ratchet.next_message_key(&provider).await.unwrap();
+            let handshake_keys = vec![handshake_key_one, handshake_key_two];
 
             // Verify that the keys have different outcomes due to their different labels
             assert_ne!(app_keys, handshake_keys);
@@ -683,8 +700,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_get_key() {
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_get_key() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let provider = test_cipher_suite_provider(cipher_suite);
 
@@ -693,28 +710,31 @@ mod tests {
                 &vec![0u8; provider.kdf_extract_size()],
                 KeyType::Application,
             )
+            .await
             .unwrap();
 
             let mut ratchet_clone = ratchet.clone();
 
             // This will generate keys 0 and 1 in ratchet_clone
-            let _ = ratchet_clone.next_message_key(&provider).unwrap();
-            let clone_2 = ratchet_clone.next_message_key(&provider).unwrap();
+            let _ = ratchet_clone.next_message_key(&provider).await.unwrap();
+            let clone_2 = ratchet_clone.next_message_key(&provider).await.unwrap();
 
             // Going back in time should result in an error
-            assert!(ratchet_clone.get_message_key(&provider, 0).is_err());
+            let res = ratchet_clone.get_message_key(&provider, 0).await;
+            assert!(res.is_err());
 
             // Calling get key should be the same as calling next until hitting the desired generation
             let second_key = ratchet
                 .get_message_key(&provider, ratchet_clone.generation - 1)
+                .await
                 .unwrap();
 
             assert_eq!(clone_2, second_key)
         }
     }
 
-    #[test]
-    fn test_secret_ratchet() {
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_secret_ratchet() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let provider = test_cipher_suite_provider(cipher_suite);
 
@@ -723,40 +743,48 @@ mod tests {
                 &vec![0u8; provider.kdf_extract_size()],
                 KeyType::Application,
             )
+            .await
             .unwrap();
 
             let original_secret = ratchet.secret.clone();
-            let _ = ratchet.next_message_key(&provider).unwrap();
+            let _ = ratchet.next_message_key(&provider).await.unwrap();
             let new_secret = ratchet.secret;
             assert_ne!(original_secret, new_secret)
         }
     }
 
     #[cfg(feature = "out_of_order")]
-    #[test]
-    fn test_out_of_order_keys() {
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_out_of_order_keys() {
         let cipher_suite = TEST_CIPHER_SUITE;
         let provider = test_cipher_suite_provider(cipher_suite);
 
-        let mut ratchet = SecretKeyRatchet::new(&provider, &[0u8; 32], KeyType::Handshake).unwrap();
+        let mut ratchet = SecretKeyRatchet::new(&provider, &[0u8; 32], KeyType::Handshake)
+            .await
+            .unwrap();
         let mut ratchet_clone = ratchet.clone();
 
         // Ask for all the keys in order from the original ratchet
-        let ordered_keys = (0..=MAX_RATCHET_BACK_HISTORY)
-            .map(|i| ratchet.get_message_key(&provider, i).unwrap())
-            .collect::<Vec<MessageKeyData>>();
+        let mut ordered_keys = Vec::<MessageKeyData>::new();
+
+        for i in 0..=MAX_RATCHET_BACK_HISTORY {
+            ordered_keys.push(ratchet.get_message_key(&provider, i).await.unwrap());
+        }
 
         // Ask for a key at index MAX_RATCHET_BACK_HISTORY in the clone
         let last_key = ratchet_clone
             .get_message_key(&provider, MAX_RATCHET_BACK_HISTORY)
+            .await
             .unwrap();
 
         assert_eq!(last_key, ordered_keys[ordered_keys.len() - 1]);
 
         // Get all the other keys
-        let back_history_keys = (0..MAX_RATCHET_BACK_HISTORY - 1)
-            .map(|i| ratchet_clone.get_message_key(&provider, i).unwrap())
-            .collect::<Vec<MessageKeyData>>();
+        let mut back_history_keys = Vec::<MessageKeyData>::new();
+
+        for i in 0..MAX_RATCHET_BACK_HISTORY - 1 {
+            back_history_keys.push(ratchet_clone.get_message_key(&provider, i).await.unwrap());
+        }
 
         assert_eq!(
             back_history_keys,
@@ -765,29 +793,33 @@ mod tests {
     }
 
     #[cfg(not(feature = "out_of_order"))]
-    #[test]
-    fn out_of_order_keys_should_throw_error() {
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn out_of_order_keys_should_throw_error() {
         let cipher_suite = TEST_CIPHER_SUITE;
         let provider = test_cipher_suite_provider(cipher_suite);
 
-        let mut ratchet = SecretKeyRatchet::new(&provider, &[0u8; 32], KeyType::Handshake).unwrap();
+        let mut ratchet = SecretKeyRatchet::new(&provider, &[0u8; 32], KeyType::Handshake)
+            .await
+            .unwrap();
 
-        ratchet.get_message_key(&provider, 10).unwrap();
-
-        assert_matches!(
-            ratchet.get_message_key(&provider, 9),
-            Err(MlsError::KeyMissing(9))
-        )
+        ratchet.get_message_key(&provider, 10).await.unwrap();
+        let res = ratchet.get_message_key(&provider, 9).await;
+        assert_matches!(res, Err(MlsError::KeyMissing(9)))
     }
 
-    #[test]
-    fn test_too_out_of_order() {
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_too_out_of_order() {
         let cipher_suite = TEST_CIPHER_SUITE;
         let provider = test_cipher_suite_provider(cipher_suite);
 
-        let mut ratchet = SecretKeyRatchet::new(&provider, &[0u8; 32], KeyType::Handshake).unwrap();
+        let mut ratchet = SecretKeyRatchet::new(&provider, &[0u8; 32], KeyType::Handshake)
+            .await
+            .unwrap();
 
-        let res = ratchet.get_message_key(&provider, MAX_RATCHET_BACK_HISTORY + 1);
+        let res = ratchet
+            .get_message_key(&provider, MAX_RATCHET_BACK_HISTORY + 1)
+            .await;
+
         let invalid_generation = MAX_RATCHET_BACK_HISTORY + 1;
 
         assert_matches!(
@@ -811,45 +843,59 @@ mod tests {
         ratchets: Vec<Ratchet>,
     }
 
-    fn get_ratchet_data(secret_tree: &mut SecretTree, cipher_suite: CipherSuite) -> Vec<Ratchet> {
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn get_ratchet_data(
+        secret_tree: &mut SecretTree,
+        cipher_suite: CipherSuite,
+    ) -> Vec<Ratchet> {
         let provider = test_cipher_suite_provider(cipher_suite);
-        (0..16)
-            .map(|index| {
-                let mut ratchets = secret_tree
-                    .leaf_secret_ratchets(&provider, LeafIndex(index))
+        let mut ratchet_data = Vec::new();
+
+        for index in 0..16 {
+            let mut ratchets = secret_tree
+                .leaf_secret_ratchets(&provider, LeafIndex(index))
+                .await
+                .unwrap();
+
+            let mut application_keys = Vec::new();
+
+            for _ in 0..20 {
+                let key = ratchets
+                    .handshake
+                    .next_message_key(&provider)
+                    .await
+                    .unwrap()
+                    .mls_encode_to_vec()
                     .unwrap();
 
-                let application_keys = (0..20)
-                    .map(|_| {
-                        ratchets
-                            .handshake
-                            .next_message_key(&provider)
-                            .unwrap()
-                            .mls_encode_to_vec()
-                            .unwrap()
-                    })
-                    .collect();
+                application_keys.push(key);
+            }
 
-                let handshake_keys = (0..20)
-                    .map(|_| {
-                        ratchets
-                            .handshake
-                            .next_message_key(&provider)
-                            .unwrap()
-                            .mls_encode_to_vec()
-                            .unwrap()
-                    })
-                    .collect();
+            let mut handshake_keys = Vec::new();
 
-                Ratchet {
-                    application_keys,
-                    handshake_keys,
-                }
-            })
-            .collect()
+            for _ in 0..20 {
+                let key = ratchets
+                    .handshake
+                    .next_message_key(&provider)
+                    .await
+                    .unwrap()
+                    .mls_encode_to_vec()
+                    .unwrap();
+
+                handshake_keys.push(key);
+            }
+
+            ratchet_data.push(Ratchet {
+                application_keys,
+                handshake_keys,
+            });
+        }
+
+        ratchet_data
     }
 
-    fn generate_secret_tree_test_vectors() -> Vec<TestCase> {
+    #[cfg(not(mls_build_async))]
+    fn generate_test_vector() -> Vec<TestCase> {
         CipherSuite::all()
             .map(|cipher_suite| {
                 let provider = test_cipher_suite_provider(cipher_suite);
@@ -867,13 +913,14 @@ mod tests {
             .collect()
     }
 
-    fn load_test_cases() -> Vec<TestCase> {
-        load_test_case_json!(secret_tree, generate_secret_tree_test_vectors())
+    #[cfg(mls_build_async)]
+    fn generate_test_vector() -> Vec<TestCase> {
+        panic!("Tests cannot be generated in async mode");
     }
 
-    #[test]
-    fn test_secret_tree_test_vectors() {
-        let test_cases = load_test_cases();
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_secret_tree_test_vectors() {
+        let test_cases: Vec<TestCase> = load_test_case_json!(secret_tree, generate_test_vector());
 
         for case in test_cases {
             let Some(cs_provider) = try_test_cipher_suite_provider(case.cipher_suite) else {
@@ -881,7 +928,7 @@ mod tests {
             };
 
             let mut secret_tree = SecretTree::new(16, Zeroizing::new(case.encryption_secret));
-            let ratchet_data = get_ratchet_data(&mut secret_tree, cs_provider.cipher_suite());
+            let ratchet_data = get_ratchet_data(&mut secret_tree, cs_provider.cipher_suite()).await;
 
             assert_eq!(ratchet_data, case.ratchets);
         }
@@ -890,6 +937,7 @@ mod tests {
 
 #[cfg(all(test, feature = "rfc_compliant", feature = "std"))]
 mod interop_tests {
+    #[cfg(not(mls_build_async))]
     use aws_mls_core::crypto::{CipherSuite, CipherSuiteProvider};
     use zeroize::Zeroizing;
 
@@ -900,8 +948,8 @@ mod interop_tests {
 
     use super::SecretTree;
 
-    #[test]
-    fn interop_test_vector() {
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn interop_test_vector() {
         // The test vector can be found here https://github.com/mlswg/mls-implementations/blob/main/test-vectors/secret-tree.json
         let test_cases = load_interop_test_cases();
 
@@ -926,6 +974,7 @@ mod interop_tests {
                             KeyType::Application,
                             leaf.generation,
                         )
+                        .await
                         .unwrap();
 
                     assert_eq!(key.key.to_vec(), leaf.application_key);
@@ -938,6 +987,7 @@ mod interop_tests {
                             KeyType::Handshake,
                             leaf.generation,
                         )
+                        .await
                         .unwrap();
 
                     assert_eq!(key.key.to_vec(), leaf.handshake_key);
@@ -970,10 +1020,11 @@ mod interop_tests {
     }
 
     fn load_interop_test_cases() -> Vec<InteropTestCase> {
-        load_test_case_json!(secret_tree_interop, generate_interop_test_vectors())
+        load_test_case_json!(secret_tree_interop, generate_test_vector())
     }
 
-    fn generate_interop_test_vectors() -> Vec<InteropTestCase> {
+    #[cfg(not(mls_build_async))]
+    fn generate_test_vector() -> Vec<InteropTestCase> {
         let mut test_cases = vec![];
 
         for cs in CipherSuite::all() {
@@ -1027,5 +1078,10 @@ mod interop_tests {
         }
 
         test_cases
+    }
+
+    #[cfg(mls_build_async)]
+    fn generate_test_vector() -> Vec<InteropTestCase> {
+        panic!("Tests cannot be generated in async mode");
     }
 }

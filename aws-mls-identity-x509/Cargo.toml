@@ -9,7 +9,7 @@ std = ["aws-mls-core/std", "dep:thiserror"]
 external_proposal = ["aws-mls-core/external_proposal"]
 
 [dependencies]
-async-trait = "0.1.68"
+async-trait = "0.1.74"
 aws-mls-core = { path = "../aws-mls-core", default-features = false, features = ["x509"], version = "*" }
 maybe-async = "0.2.7"
 thiserror = { version = "1.0.40", optional = true }

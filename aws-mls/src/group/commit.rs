@@ -593,7 +593,8 @@ where
             self.state.public_tree.total_leaf_count(),
             &psk_secret,
             &self.cipher_suite_provider,
-        )?;
+        )
+        .await?;
 
         let confirmation_tag = ConfirmationTag::create(
             &key_schedule_result.confirmation_key,
@@ -618,18 +619,20 @@ where
         // Sign the GroupInfo using the member's private signing key
         group_info.sign(&self.cipher_suite_provider, new_signer_ref, &())?;
 
-        let welcome_message = self.make_welcome_message(
-            added_key_pkgs,
-            provisional_state.indexes_of_added_kpkgs,
-            &key_schedule_result.joiner_secret,
-            &psk_secret,
-            path_secrets.as_ref(),
-            #[cfg(feature = "psk")]
-            psks,
-            &group_info,
-        )?;
+        let welcome_message = self
+            .make_welcome_message(
+                added_key_pkgs,
+                provisional_state.indexes_of_added_kpkgs,
+                &key_schedule_result.joiner_secret,
+                &psk_secret,
+                path_secrets.as_ref(),
+                #[cfg(feature = "psk")]
+                psks,
+                &group_info,
+            )
+            .await?;
 
-        let commit_message = self.format_for_wire(auth_content.clone())?;
+        let commit_message = self.format_for_wire(auth_content.clone()).await?;
 
         let pending_commit = CommitGeneration {
             content: auth_content,

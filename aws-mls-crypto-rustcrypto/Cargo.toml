@@ -59,6 +59,7 @@ x509-cert = { version = "0.2", optional = true, features = ["std"] }
 spki = { version = "0.7", optional = true, features = ["std", "alloc"] }
 sha1 = { version = "0.10", optional = true, features = ["std"] }
 const-oid = { version = "0.9", optional = true, features = ["std"] }
+maybe-async = "0.2.7"
 
 [dev-dependencies]
 hex = { version = "^0.4.3", features = ["serde"] }
@@ -66,3 +67,6 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "^1.0" }
 assert_matches = "1.5.0"
 aws-mls-core = { path = "../aws-mls-core", version = "*", features = ["test_suite"] }
+
+[target.'cfg(mls_build_async)'.dependencies]
+async-trait = "0.1.74"
