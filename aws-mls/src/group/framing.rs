@@ -389,6 +389,36 @@ impl MLSMessage {
     pub fn to_bytes(&self) -> Result<Vec<u8>, MlsError> {
         self.mls_encode_to_vec().map_err(Into::into)
     }
+
+    /// If this is a plaintext commit message, return all custom proposals committed by value.
+    /// If this is not a plaintext or not a commit, this returns an empty list.
+    #[cfg(feature = "custom_proposal")]
+    pub fn custom_proposals_by_value(&self) -> Vec<&CustomProposal> {
+        match &self.payload {
+            MLSMessagePayload::Plain(plaintext) => match &plaintext.content.content {
+                Content::Commit(commit) => Self::find_custom_proposals(commit),
+                _ => Vec::new(),
+            },
+            _ => Vec::new(),
+        }
+    }
+}
+
+#[cfg(feature = "custom_proposal")]
+impl MLSMessage {
+    fn find_custom_proposals(commit: &Commit) -> Vec<&CustomProposal> {
+        commit
+            .proposals
+            .iter()
+            .filter_map(|p| match p {
+                ProposalOrRef::Proposal(p) => match p.as_ref() {
+                    Proposal::Custom(p) => Some(p),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .collect()
+    }
 }
 
 #[allow(clippy::large_enum_variant)]
