@@ -236,7 +236,8 @@ pub(crate) fn commit_sender(
     }
 }
 
-pub(super) fn transcript_hashes<P: CipherSuiteProvider>(
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+pub(super) async fn transcript_hashes<P: CipherSuiteProvider>(
     cipher_suite_provider: &P,
     prev_interim_transcript_hash: &InterimTranscriptHash,
     content: &AuthenticatedContent,
@@ -245,7 +246,8 @@ pub(super) fn transcript_hashes<P: CipherSuiteProvider>(
         cipher_suite_provider,
         prev_interim_transcript_hash,
         content,
-    )?;
+    )
+    .await?;
 
     let confirmation_tag = content
         .auth
@@ -257,7 +259,8 @@ pub(super) fn transcript_hashes<P: CipherSuiteProvider>(
         cipher_suite_provider,
         &confirmed_transcript_hash,
         confirmation_tag,
-    )?;
+    )
+    .await?;
 
     Ok((interim_transcript_hash, confirmed_transcript_hash))
 }

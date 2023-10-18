@@ -147,11 +147,11 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
         CipherSuite::P521_AES256
     }
 
-    fn hash(&self, data: &[u8]) -> Result<Vec<u8>, Self::Error> {
+    async fn hash(&self, data: &[u8]) -> Result<Vec<u8>, Self::Error> {
         Ok(digest::digest(&digest::SHA512, data).as_ref().to_vec())
     }
 
-    fn mac(&self, key: &[u8], data: &[u8]) -> Result<Vec<u8>, Self::Error> {
+    async fn mac(&self, key: &[u8], data: &[u8]) -> Result<Vec<u8>, Self::Error> {
         let key = hmac::Key::new(self.mac_algo, key);
         Ok(hmac::sign(&key, data).as_ref().to_vec())
     }
@@ -205,7 +205,7 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
         self.kdf.extract_size()
     }
 
-    fn hpke_seal(
+    async fn hpke_seal(
         &self,
         remote_key: &HpkePublicKey,
         info: &[u8],
@@ -214,10 +214,11 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
     ) -> Result<HpkeCiphertext, Self::Error> {
         self.hpke
             .seal(remote_key, info, None, aad, pt)
+            .await
             .map_err(Into::into)
     }
 
-    fn hpke_open(
+    async fn hpke_open(
         &self,
         ciphertext: &HpkeCiphertext,
         local_secret: &HpkeSecretKey,
@@ -227,10 +228,11 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
     ) -> Result<Vec<u8>, Self::Error> {
         self.hpke
             .open(ciphertext, local_secret, local_public, info, None, aad)
+            .await
             .map_err(Into::into)
     }
 
-    fn hpke_setup_s(
+    async fn hpke_setup_s(
         &self,
         remote_key: &HpkePublicKey,
         info: &[u8],
@@ -240,7 +242,7 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
             .map_err(Into::into)
     }
 
-    fn hpke_setup_r(
+    async fn hpke_setup_r(
         &self,
         kem_output: &[u8],
         local_secret: &HpkeSecretKey,
@@ -253,11 +255,11 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
             .map_err(Into::into)
     }
 
-    fn kem_derive(&self, ikm: &[u8]) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
+    async fn kem_derive(&self, ikm: &[u8]) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
         self.hpke.derive(ikm).map_err(Into::into)
     }
 
-    fn kem_generate(&self) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
+    async fn kem_generate(&self) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
         self.hpke.generate().map_err(Into::into)
     }
 

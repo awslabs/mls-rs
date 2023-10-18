@@ -52,6 +52,7 @@ impl LeafNode {
     {
         let (secret_key, public_key) = cipher_suite_provider
             .kem_generate()
+            .await
             .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
         let mut leaf_node = LeafNode {
@@ -74,7 +75,8 @@ impl LeafNode {
         Ok((leaf_node, secret_key))
     }
 
-    pub fn update<P: CipherSuiteProvider>(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn update<P: CipherSuiteProvider>(
         &mut self,
         cipher_suite_provider: &P,
         group_id: &[u8],
@@ -85,6 +87,7 @@ impl LeafNode {
     ) -> Result<HpkeSecretKey, MlsError> {
         let (secret, public) = cipher_suite_provider
             .kem_generate()
+            .await
             .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
         self.public_key = public;
@@ -108,7 +111,8 @@ impl LeafNode {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn commit<P: CipherSuiteProvider>(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn commit<P: CipherSuiteProvider>(
         &mut self,
         cipher_suite_provider: &P,
         group_id: &[u8],
@@ -119,6 +123,7 @@ impl LeafNode {
     ) -> Result<HpkeSecretKey, MlsError> {
         let (secret, public) = cipher_suite_provider
             .kem_generate()
+            .await
             .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
         self.public_key = public;
@@ -426,10 +431,12 @@ mod tests {
 
             let sealed = provider
                 .hpke_seal(&leaf_node.public_key, &[], None, &test_data)
+                .await
                 .unwrap();
 
             let opened = provider
                 .hpke_open(&sealed, &secret_key, &leaf_node.public_key, &[], None)
+                .await
                 .unwrap();
 
             assert_eq!(opened, test_data);
@@ -483,6 +490,7 @@ mod tests {
                     None,
                     &secret,
                 )
+                .await
                 .unwrap();
 
             assert_ne!(new_secret, leaf_secret);
@@ -532,6 +540,7 @@ mod tests {
             None,
             &secret,
         )
+        .await
         .unwrap();
 
         assert_eq!(leaf.ungreased_capabilities(), new_properties.capabilities);
@@ -559,6 +568,7 @@ mod tests {
                     None,
                     &secret,
                 )
+                .await
                 .unwrap();
 
             assert_ne!(new_secret, leaf_secret);
@@ -609,6 +619,7 @@ mod tests {
             Some(new_signing_identity.clone()),
             &secret,
         )
+        .await
         .unwrap();
 
         assert_eq!(leaf.capabilities, new_properties.capabilities);

@@ -202,11 +202,11 @@ where
     type HpkeContextR = ContextR<KDF, AEAD>;
     type HpkeContextS = ContextS<KDF, AEAD>;
 
-    fn hash(&self, data: &[u8]) -> Result<Vec<u8>, Self::Error> {
+    async fn hash(&self, data: &[u8]) -> Result<Vec<u8>, Self::Error> {
         Ok(self.hash.hash(data))
     }
 
-    fn mac(&self, key: &[u8], data: &[u8]) -> Result<Vec<u8>, Self::Error> {
+    async fn mac(&self, key: &[u8], data: &[u8]) -> Result<Vec<u8>, Self::Error> {
         Ok(self.hash.mac(key, data)?)
     }
 
@@ -270,17 +270,17 @@ where
         self.kdf.extract_size()
     }
 
-    fn hpke_seal(
+    async fn hpke_seal(
         &self,
         remote_key: &HpkePublicKey,
         info: &[u8],
         aad: Option<&[u8]>,
         pt: &[u8],
     ) -> Result<HpkeCiphertext, Self::Error> {
-        Ok(self.hpke.seal(remote_key, info, None, aad, pt)?)
+        Ok(self.hpke.seal(remote_key, info, None, aad, pt).await?)
     }
 
-    fn hpke_open(
+    async fn hpke_open(
         &self,
         ciphertext: &HpkeCiphertext,
         local_secret: &HpkeSecretKey,
@@ -290,10 +290,11 @@ where
     ) -> Result<Vec<u8>, Self::Error> {
         Ok(self
             .hpke
-            .open(ciphertext, local_secret, local_public, info, None, aad)?)
+            .open(ciphertext, local_secret, local_public, info, None, aad)
+            .await?)
     }
 
-    fn hpke_setup_r(
+    async fn hpke_setup_r(
         &self,
         enc: &[u8],
         local_secret: &HpkeSecretKey,
@@ -305,7 +306,7 @@ where
             .setup_receiver(enc, local_secret, local_public, info, None)?)
     }
 
-    fn hpke_setup_s(
+    async fn hpke_setup_s(
         &self,
         remote_key: &HpkePublicKey,
         info: &[u8],
@@ -313,11 +314,11 @@ where
         Ok(self.hpke.setup_sender(remote_key, info, None)?)
     }
 
-    fn kem_derive(&self, ikm: &[u8]) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
+    async fn kem_derive(&self, ikm: &[u8]) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
         Ok(self.hpke.derive(ikm)?)
     }
 
-    fn kem_generate(&self) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
+    async fn kem_generate(&self) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
         Ok(self.hpke.generate()?)
     }
 

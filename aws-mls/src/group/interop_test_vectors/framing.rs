@@ -243,7 +243,7 @@ async fn framing_commit() {
         )
         .unwrap();
 
-        auth_content.auth.confirmation_tag = Some(ConfirmationTag::empty(&cs));
+        auth_content.auth.confirmation_tag = Some(ConfirmationTag::empty(&cs).await);
 
         let mut to_check = vec![test_case.commit_priv.clone(), test_case.commit_pub.clone()];
 
@@ -328,7 +328,7 @@ async fn generate_framing_test_vector() -> Vec<FramingTestCase> {
         )
         .unwrap();
 
-        auth_content.auth.confirmation_tag = Some(ConfirmationTag::empty(&cs));
+        auth_content.auth.confirmation_tag = Some(ConfirmationTag::empty(&cs).await);
 
         let mut group = make_group(&test_case, true, false, &cs).await;
         let commit_pub = group.format_for_wire(auth_content.clone()).await.unwrap();
@@ -345,7 +345,7 @@ async fn generate_framing_test_vector() -> Vec<FramingTestCase> {
         )
         .unwrap();
 
-        auth_content.auth.confirmation_tag = Some(ConfirmationTag::empty(&cs));
+        auth_content.auth.confirmation_tag = Some(ConfirmationTag::empty(&cs).await);
 
         let mut group = make_group(&test_case, true, true, &cs).await;
         let commit_priv = group.format_for_wire(auth_content.clone()).await.unwrap();

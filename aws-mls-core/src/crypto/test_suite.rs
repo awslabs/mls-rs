@@ -92,8 +92,8 @@ pub async fn verify_tests<C: CryptoProvider>(crypto: &C) {
 
         verify_hkdf_tests(&cs, test_suite.hkdf_tests).await;
         verify_aead_tests(&cs, test_suite.aead_tests).await;
-        verify_mac_tests(&cs, test_suite.mac_tests);
-        verify_hpke_tests(&cs, test_suite.hpke_tests);
+        verify_mac_tests(&cs, test_suite.mac_tests).await;
+        verify_hpke_tests(&cs, test_suite.hpke_tests).await;
         verify_signature_tests(&cs, test_suite.signature_tests);
     }
 }
@@ -234,14 +234,16 @@ struct HpkeExportTestCase {
     exported: Vec<u8>,
 }
 
-fn verify_hpke_tests<C: CipherSuiteProvider>(cs: &C, test_cases: HpkeTestCases) {
-    let generated = generate_hpke_tests(cs);
-    verify_hpke_test(cs, generated);
-    verify_hpke_test(cs, test_cases);
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+async fn verify_hpke_tests<C: CipherSuiteProvider>(cs: &C, test_cases: HpkeTestCases) {
+    let generated = generate_hpke_tests(cs).await;
+    verify_hpke_test(cs, generated).await;
+    verify_hpke_test(cs, test_cases).await;
 }
 
-fn verify_hpke_test<C: CipherSuiteProvider>(cs: &C, test_cases: HpkeTestCases) {
-    let (secret, public) = cs.kem_derive(&test_cases.ikm).unwrap();
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+async fn verify_hpke_test<C: CipherSuiteProvider>(cs: &C, test_cases: HpkeTestCases) {
+    let (secret, public) = cs.kem_derive(&test_cases.ikm).await.unwrap();
 
     assert_eq!(&secret, &test_cases.secret.into());
     assert_eq!(&public, &test_cases.public.into());
@@ -252,30 +254,33 @@ fn verify_hpke_test<C: CipherSuiteProvider>(cs: &C, test_cases: HpkeTestCases) {
             ciphertext: test.sealed_ciphertext.clone(),
         };
 
-        test_open_ciphertext(cs, &secret, &public, &ct, &test);
+        test_open_ciphertext(cs, &secret, &public, &ct, &test).await;
 
         let ct = HpkeCiphertext {
             kem_output: test.setup_s_kem_output.clone(),
             ciphertext: test.setup_s_ciphertext.clone(),
         };
 
-        test_open_ciphertext(cs, &secret, &public, &ct, &test);
+        test_open_ciphertext(cs, &secret, &public, &ct, &test).await;
     }
 
     for test in test_cases.export_tests {
         let context_r = cs
             .hpke_setup_r(&test.kem_output, &secret, &public, &test.info)
+            .await
             .unwrap();
 
         let exported = context_r
             .export(&test.exporter_context, test.exported_len)
+            .await
             .unwrap();
 
         assert_eq!(exported, test.exported);
     }
 }
 
-fn test_open_ciphertext<C: CipherSuiteProvider>(
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+async fn test_open_ciphertext<C: CipherSuiteProvider>(
     cs: &C,
     secret: &HpkeSecretKey,
     public: &HpkePublicKey,
@@ -283,73 +288,87 @@ fn test_open_ciphertext<C: CipherSuiteProvider>(
     test: &HpkeSealTestCase,
 ) {
     let aad = (!test.aad.is_empty()).then_some(test.aad.as_slice());
-    let opened = cs.hpke_open(ct, secret, public, &test.info, aad).unwrap();
+    let opened = cs
+        .hpke_open(ct, secret, public, &test.info, aad)
+        .await
+        .unwrap();
     assert_eq!(&opened, &test.plaintext);
 
     let mut context_r = cs
         .hpke_setup_r(&ct.kem_output, secret, public, &test.info)
+        .await
         .unwrap();
-    let opened = context_r.open(aad, &ct.ciphertext).unwrap();
+
+    let opened = context_r.open(aad, &ct.ciphertext).await.unwrap();
     assert_eq!(&opened, &test.plaintext);
 }
 
-fn generate_hpke_tests<C: CipherSuiteProvider>(cs: &C) -> HpkeTestCases {
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+async fn generate_hpke_tests<C: CipherSuiteProvider>(cs: &C) -> HpkeTestCases {
     let ikm = cs.random_bytes_vec(cs.kdf_extract_size()).unwrap();
-    let (secret, public) = cs.kem_derive(&ikm).unwrap();
+    let (secret, public) = cs.kem_derive(&ikm).await.unwrap();
 
     let sizes_iter = DATA_SIZES.iter().copied();
 
-    let seal_tests = sizes_iter
+    let mut seal_tests = Vec::new();
+
+    for ((pt_size, info_size), aad_size) in sizes_iter
         .clone()
         .skip(1)
         .cartesian_product(sizes_iter.clone())
         .cartesian_product(sizes_iter.clone())
-        .map(|((pt_size, info_size), aad_size)| {
-            let plaintext = cs.random_bytes_vec(pt_size).unwrap();
-            let info = cs.random_bytes_vec(info_size).unwrap();
-            let aad = cs.random_bytes_vec(aad_size).unwrap();
+    {
+        let plaintext = cs.random_bytes_vec(pt_size).unwrap();
+        let info = cs.random_bytes_vec(info_size).unwrap();
+        let aad = cs.random_bytes_vec(aad_size).unwrap();
 
-            let sealed = cs
-                .hpke_seal(&public, &info, (aad_size > 0).then_some(&aad), &plaintext)
-                .unwrap();
+        let sealed = cs
+            .hpke_seal(&public, &info, (aad_size > 0).then_some(&aad), &plaintext)
+            .await
+            .unwrap();
 
-            let (setup_s_kem_output, mut context_s) = cs.hpke_setup_s(&public, &info).unwrap();
+        let (setup_s_kem_output, mut context_s) = cs.hpke_setup_s(&public, &info).await.unwrap();
 
-            let setup_s_ciphertext = context_s
-                .seal((aad_size > 0).then_some(&aad), &plaintext)
-                .unwrap();
+        let setup_s_ciphertext = context_s
+            .seal((aad_size > 0).then_some(&aad), &plaintext)
+            .await
+            .unwrap();
 
-            HpkeSealTestCase {
-                plaintext,
-                info,
-                aad,
-                sealed_kem_output: sealed.kem_output,
-                sealed_ciphertext: sealed.ciphertext,
-                setup_s_kem_output,
-                setup_s_ciphertext,
-            }
+        seal_tests.push(HpkeSealTestCase {
+            plaintext,
+            info,
+            aad,
+            sealed_kem_output: sealed.kem_output,
+            sealed_ciphertext: sealed.ciphertext,
+            setup_s_kem_output,
+            setup_s_ciphertext,
         })
-        .collect();
+    }
 
-    let export_tests = sizes_iter
+    let mut export_tests = Vec::new();
+
+    for ((context_len, exported_len), info_size) in sizes_iter
         .clone()
         .cartesian_product(sizes_iter.clone().skip(1))
         .cartesian_product(sizes_iter)
-        .map(|((context_len, exported_len), info_size)| {
-            let exporter_context = cs.random_bytes_vec(context_len).unwrap();
-            let info = cs.random_bytes_vec(info_size).unwrap();
-            let (kem_output, context) = cs.hpke_setup_s(&public, &info).unwrap();
-            let exported = context.export(&exporter_context, exported_len).unwrap();
+    {
+        let exporter_context = cs.random_bytes_vec(context_len).unwrap();
+        let info = cs.random_bytes_vec(info_size).unwrap();
+        let (kem_output, context) = cs.hpke_setup_s(&public, &info).await.unwrap();
 
-            HpkeExportTestCase {
-                info,
-                kem_output,
-                exporter_context,
-                exported_len,
-                exported,
-            }
-        })
-        .collect();
+        let exported = context
+            .export(&exporter_context, exported_len)
+            .await
+            .unwrap();
+
+        export_tests.push(HpkeExportTestCase {
+            info,
+            kem_output,
+            exporter_context,
+            exported_len,
+            exported,
+        });
+    }
 
     HpkeTestCases {
         ikm,
@@ -433,8 +452,10 @@ struct MacTestCase {
     tag: Vec<u8>,
 }
 
-fn verify_mac_tests<C: CipherSuiteProvider>(cs: &C, test_cases: Vec<MacTestCase>) {
-    assert!(test_cases
-        .iter()
-        .all(|case| (cs.mac(&case.key, &case.data).unwrap() == case.tag)));
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+async fn verify_mac_tests<C: CipherSuiteProvider>(cs: &C, test_cases: Vec<MacTestCase>) {
+    for case in test_cases {
+        let computed = cs.mac(&case.key, &case.data).await.unwrap();
+        assert_eq!(computed, case.tag);
+    }
 }

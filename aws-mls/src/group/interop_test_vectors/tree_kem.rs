@@ -97,7 +97,7 @@ async fn tree_kem() {
             cipher_suite: cs.cipher_suite(),
             group_id: test_case.group_id,
             epoch: test_case.epoch,
-            tree_hash: tree.tree_hash(&cs).unwrap(),
+            tree_hash: tree.tree_hash(&cs).await.unwrap(),
             confirmed_transcript_hash: test_case.confirmed_transcript_hash.into(),
             extensions: ExtensionList::new(),
         };
@@ -165,7 +165,7 @@ async fn tree_kem() {
                     WireFormat::PublicMessage,
                 );
 
-                auth_content.auth.confirmation_tag = Some(ConfirmationTag::empty(&cs));
+                auth_content.auth.confirmation_tag = Some(ConfirmationTag::empty(&cs).await);
 
                 // Hack not to increment epoch
                 group.state.context.epoch -= 1;
@@ -179,7 +179,7 @@ async fn tree_kem() {
                 assert_eq!(&*commit_secret, &update_path.commit_secret);
 
                 let new_tree = &mut group.provisional_public_state.unwrap().public_tree;
-                let new_tree_hash = new_tree.tree_hash(&cs).unwrap();
+                let new_tree_hash = new_tree.tree_hash(&cs).await.unwrap();
 
                 assert_eq!(&new_tree_hash, &update_path.tree_hash_after);
             }

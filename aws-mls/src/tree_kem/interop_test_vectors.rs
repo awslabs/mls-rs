@@ -94,7 +94,7 @@ async fn validation() {
         .await
         .unwrap();
 
-        let tree_hash = tree.tree_hash(&cs).unwrap();
+        let tree_hash = tree.tree_hash(&cs).await.unwrap();
 
         tree.tree_hashes
             .current
@@ -178,7 +178,7 @@ async fn generate_validation_test_vector() -> Vec<ValidationTestCase> {
         tree.update_committer_path(4, &cs).await;
         tree.add_member("Bob", &cs).await;
         tree.tree.tree_hashes.current = vec![];
-        tree.tree.tree_hash(&cs).unwrap();
+        tree.tree.tree_hash(&cs).await.unwrap();
         trees.push(tree);
 
         // Generate tests

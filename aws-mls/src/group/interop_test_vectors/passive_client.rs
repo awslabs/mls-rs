@@ -171,7 +171,7 @@ async fn interop_passive_client() {
             .build();
 
         let key_pckg_gen = KeyPackageGeneration {
-            reference: key_package.to_reference(&cs).unwrap(),
+            reference: key_package.to_reference(&cs).await.unwrap(),
             key_package,
             init_secret_key: test_case.init_priv.into(),
             leaf_node_secret_key: test_case.encryption_priv.into(),

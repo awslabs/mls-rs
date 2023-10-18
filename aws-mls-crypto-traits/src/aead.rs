@@ -13,7 +13,7 @@ pub const AES_TAG_LEN: usize = 16;
 
 /// A trait that provides the required AEAD functions
 #[cfg_attr(feature = "mock", automock(type Error = crate::mock::TestError;))]
-pub trait AeadType {
+pub trait AeadType: Send + Sync {
     type Error: IntoAnyError;
 
     fn aead_id(&self) -> u16;

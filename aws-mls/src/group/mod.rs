@@ -302,7 +302,7 @@ where
         let (mut public_tree, private_tree) =
             TreeKemPublic::derive(leaf_node, leaf_node_secret, &config.identity_provider()).await?;
 
-        let tree_hash = public_tree.tree_hash(&cipher_suite_provider)?;
+        let tree_hash = public_tree.tree_hash(&cipher_suite_provider).await?;
 
         let group_id = group_id.map(Ok).unwrap_or_else(|| {
             cipher_suite_provider
@@ -340,13 +340,15 @@ where
             &key_schedule_result.confirmation_key,
             &vec![].into(),
             &cipher_suite_provider,
-        )?;
+        )
+        .await?;
 
         let interim_hash = InterimTranscriptHash::create(
             &cipher_suite_provider,
             &vec![].into(),
             &confirmation_tag,
-        )?;
+        )
+        .await?;
 
         Ok(Self {
             config,
@@ -429,7 +431,8 @@ where
             &key_package_generation.key_package.hpke_init_key,
             &welcome.encrypted_group_info,
             &encrypted_group_secrets.encrypted_group_secrets,
-        )?;
+        )
+        .await?;
 
         #[cfg(feature = "psk")]
         let psk_secret = if let Some(psk) = additional_psk {
@@ -532,11 +535,15 @@ where
 
         // Verify the confirmation tag in the GroupInfo using the derived confirmation key and the
         // confirmed_transcript_hash from the GroupInfo.
-        if !join_context.confirmation_tag.matches(
-            &key_schedule_result.confirmation_key,
-            &join_context.group_context.confirmed_transcript_hash,
-            &cipher_suite_provider,
-        )? {
+        if !join_context
+            .confirmation_tag
+            .matches(
+                &key_schedule_result.confirmation_key,
+                &join_context.group_context.confirmed_transcript_hash,
+                &cipher_suite_provider,
+            )
+            .await?
+        {
             return Err(MlsError::InvalidConfirmationTag);
         }
 
@@ -571,7 +578,8 @@ where
             &cipher_suite_provider,
             &join_context.group_context.confirmed_transcript_hash,
             &join_context.confirmation_tag,
-        )?;
+        )
+        .await?;
 
         let state_repo = GroupStateRepository::new(
             #[cfg(feature = "prior_epoch")]
@@ -677,7 +685,8 @@ where
             authenticated_data,
         )?;
 
-        let proposal_ref = ProposalRef::from_content(&self.cipher_suite_provider, &auth_content)?;
+        let proposal_ref =
+            ProposalRef::from_content(&self.cipher_suite_provider, &auth_content).await?;
 
         self.state
             .proposals
@@ -771,11 +780,10 @@ where
 
         let group_info_data = group_info.mls_encode_to_vec()?;
         let encrypted_group_info = welcome_secret.encrypt(&group_info_data).await?;
+        let mut secrets = Vec::new();
 
-        let secrets = new_members_kpkgs
-            .into_iter()
-            .zip(new_members_indexes)
-            .map(|(key_package, leaf_index)| {
+        for (key_package, leaf_index) in new_members_kpkgs.into_iter().zip(new_members_indexes) {
+            secrets.push(
                 self.encrypt_group_secrets(
                     &key_package,
                     leaf_index,
@@ -785,8 +793,9 @@ where
                     psks.clone(),
                     &encrypted_group_info,
                 )
-            })
-            .collect::<Result<Vec<EncryptedGroupSecrets>, MlsError>>()?;
+                .await?,
+            );
+        }
 
         Ok((!secrets.is_empty()).then_some(MLSMessage::new(
             self.context().protocol_version,
@@ -798,7 +807,8 @@ where
         )))
     }
 
-    fn encrypt_group_secrets(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn encrypt_group_secrets(
         &self,
         key_package: &KeyPackage,
         leaf_index: LeafIndex,
@@ -828,14 +838,18 @@ where
             psks,
         };
 
-        let encrypted_group_secrets = group_secrets.encrypt(
-            &self.cipher_suite_provider,
-            &key_package.hpke_init_key,
-            encrypted_group_info,
-        )?;
+        let encrypted_group_secrets = group_secrets
+            .encrypt(
+                &self.cipher_suite_provider,
+                &key_package.hpke_init_key,
+                encrypted_group_info,
+            )
+            .await?;
 
         Ok(EncryptedGroupSecrets {
-            new_member: key_package.to_reference(&self.cipher_suite_provider)?,
+            new_member: key_package
+                .to_reference(&self.cipher_suite_provider)
+                .await?,
             encrypted_group_secrets,
         })
     }
@@ -923,14 +937,16 @@ where
         // Grab a copy of the current node and update it to have new key material
         let mut new_leaf_node = self.current_user_leaf_node()?.clone();
 
-        let secret_key = new_leaf_node.update(
-            &self.cipher_suite_provider,
-            self.group_id(),
-            self.current_member_index(),
-            self.config.leaf_properties(),
-            signing_identity,
-            signer.as_ref().unwrap_or(&self.signer),
-        )?;
+        let secret_key = new_leaf_node
+            .update(
+                &self.cipher_suite_provider,
+                self.group_id(),
+                self.current_member_index(),
+                self.config.leaf_properties(),
+                signing_identity,
+                signer.as_ref().unwrap_or(&self.signer),
+            )
+            .await?;
 
         // Store the secret key in the pending updates storage for later
         #[cfg(feature = "std")]
@@ -1127,7 +1143,7 @@ where
         let payload = if content.wire_format == WireFormat::PrivateMessage {
             MLSMessagePayload::Cipher(self.create_ciphertext(content).await?)
         } else {
-            MLSMessagePayload::Plain(self.create_plaintext(content)?)
+            MLSMessagePayload::Plain(self.create_plaintext(content).await?)
         };
         #[cfg(not(feature = "private_message"))]
         let payload = MLSMessagePayload::Plain(self.create_plaintext(content)?);
@@ -1135,19 +1151,21 @@ where
         Ok(MLSMessage::new(self.protocol_version(), payload))
     }
 
-    fn create_plaintext(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn create_plaintext(
         &self,
         auth_content: AuthenticatedContent,
     ) -> Result<PublicMessage, MlsError> {
-        let membership_tag = matches!(auth_content.content.sender, Sender::Member(_))
-            .then(|| {
-                self.key_schedule.get_membership_tag(
-                    &auth_content,
-                    self.context(),
-                    &self.cipher_suite_provider,
-                )
-            })
-            .transpose()?;
+        let membership_tag = if matches!(auth_content.content.sender, Sender::Member(_)) {
+            let tag = self
+                .key_schedule
+                .get_membership_tag(&auth_content, self.context(), &self.cipher_suite_provider)
+                .await?;
+
+            Some(tag)
+        } else {
+            None
+        };
 
         Ok(PublicMessage {
             content: auth_content.content,
@@ -1366,7 +1384,8 @@ where
         extensions.set_from({
             let (_external_secret, external_pub) = self
                 .key_schedule
-                .get_external_key_pair(&self.cipher_suite_provider)?;
+                .get_external_key_pair(&self.cipher_suite_provider)
+                .await?;
 
             ExternalPubExt { external_pub }
         })?;
@@ -1584,7 +1603,7 @@ where
             .map(EventOrContent::Content)
     }
 
-    fn verify_plaintext_authentication(
+    async fn verify_plaintext_authentication(
         &self,
         message: PublicMessage,
     ) -> Result<EventOrContent<Self::OutputType>, MlsError> {
@@ -1594,7 +1613,8 @@ where
             Some(&self.key_schedule),
             Some(self.private_tree.self_index),
             &self.state,
-        )?;
+        )
+        .await?;
 
         Ok(EventOrContent::Content(auth_content))
     }
@@ -1632,7 +1652,8 @@ where
             // Update the tree hash to get context for decryption
             provisional_state.group_context.tree_hash = provisional_state
                 .public_tree
-                .tree_hash(&self.cipher_suite_provider)?;
+                .tree_hash(&self.cipher_suite_provider)
+                .await?;
 
             let context_bytes = provisional_state.group_context.mls_encode_to_vec()?;
 
@@ -1680,9 +1701,11 @@ where
             .get(0)
             .cloned()
         {
-            Some(ext_init) if self.pending_commit.is_none() => self
-                .key_schedule
-                .derive_for_external(&ext_init.proposal.kem_output, &self.cipher_suite_provider)?,
+            Some(ext_init) if self.pending_commit.is_none() => {
+                self.key_schedule
+                    .derive_for_external(&ext_init.proposal.kem_output, &self.cipher_suite_provider)
+                    .await?
+            }
             _ => self.key_schedule.clone(),
         };
 
@@ -1712,7 +1735,8 @@ where
             &key_schedule_result.confirmation_key,
             &provisional_state.group_context.confirmed_transcript_hash,
             &self.cipher_suite_provider,
-        )?;
+        )
+        .await?;
 
         if &new_confirmation_tag != confirmation_tag {
             return Err(MlsError::InvalidConfirmationTag);
@@ -2037,6 +2061,7 @@ mod tests {
             &bob_group.group.cipher_suite_provider,
             &proposal_plaintext.clone().into(),
         )
+        .await
         .unwrap();
 
         // Hack bob's receipt of the proposal

@@ -288,8 +288,9 @@ mod tests {
         get_test_epoch_with_id(TEST_GROUP.to_vec(), TEST_CIPHER_SUITE, epoch_id)
     }
 
-    fn test_snapshot(epoch_id: u64) -> Snapshot {
-        crate::group::snapshot::test_utils::get_test_snapshot(TEST_CIPHER_SUITE, epoch_id)
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn test_snapshot(epoch_id: u64) -> Snapshot {
+        crate::group::snapshot::test_utils::get_test_snapshot(TEST_CIPHER_SUITE, epoch_id).await
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -344,7 +345,7 @@ mod tests {
         assert_eq!(prior_epoch.unwrap(), test_epoch);
 
         // Write to the storage
-        let snapshot = test_snapshot(test_epoch.epoch_id());
+        let snapshot = test_snapshot(test_epoch.epoch_id()).await;
         test_repo.write_to_storage(snapshot.clone()).await.unwrap();
 
         // Make sure the memory cache cleared
@@ -393,7 +394,10 @@ mod tests {
         #[cfg(not(feature = "std"))]
         assert!(test_repo.storage.inner.lock().is_empty());
 
-        test_repo.write_to_storage(test_snapshot(1)).await.unwrap();
+        test_repo
+            .write_to_storage(test_snapshot(1).await)
+            .await
+            .unwrap();
 
         // Make sure the storage was written
         #[cfg(feature = "std")]
@@ -420,7 +424,10 @@ mod tests {
         test_repo.insert(test_epoch_0).await.unwrap();
 
         // Write epoch 0 to storage
-        test_repo.write_to_storage(test_snapshot(0)).await.unwrap();
+        test_repo
+            .write_to_storage(test_snapshot(0).await)
+            .await
+            .unwrap();
 
         // Pull epoch 0 back into memory
         test_repo.get_epoch_mut(0).await.unwrap().unwrap();
@@ -440,7 +447,10 @@ mod tests {
         assert!(test_repo.pending_commit.updates.is_empty());
         assert_eq!(test_repo.pending_commit.inserts.len(), 1);
 
-        test_repo.write_to_storage(test_snapshot(2)).await.unwrap();
+        test_repo
+            .write_to_storage(test_snapshot(2).await)
+            .await
+            .unwrap();
 
         // Make sure the storage was written
         #[cfg(feature = "std")]
@@ -467,7 +477,10 @@ mod tests {
 
         test_repo.insert(test_epoch_0.clone()).await.unwrap();
 
-        test_repo.write_to_storage(test_snapshot(0)).await.unwrap();
+        test_repo
+            .write_to_storage(test_snapshot(0).await)
+            .await
+            .unwrap();
 
         // Update the stored epoch
         let to_update = test_repo.get_epoch_mut(0).await.unwrap().unwrap();
@@ -493,7 +506,7 @@ mod tests {
         assert_eq!(owned.as_ref(), Some(&to_update.secrets.resumption_secret));
 
         // Write the update to storage
-        let snapshot = test_snapshot(1);
+        let snapshot = test_snapshot(1).await;
         test_repo.write_to_storage(snapshot.clone()).await.unwrap();
 
         assert!(test_repo.pending_commit.updates.is_empty());
@@ -526,7 +539,10 @@ mod tests {
 
         test_repo.insert(test_epoch_0).await.unwrap();
 
-        test_repo.write_to_storage(test_snapshot(0)).await.unwrap();
+        test_repo
+            .write_to_storage(test_snapshot(0).await)
+            .await
+            .unwrap();
 
         // Update the stored epoch
         let to_update = test_repo.get_epoch_mut(0).await.unwrap().unwrap();
@@ -538,7 +554,10 @@ mod tests {
         let test_epoch_1 = test_epoch(1);
         test_repo.insert(test_epoch_1.clone()).await.unwrap();
 
-        test_repo.write_to_storage(test_snapshot(1)).await.unwrap();
+        test_repo
+            .write_to_storage(test_snapshot(1).await)
+            .await
+            .unwrap();
 
         assert!(test_repo.pending_commit.inserts.is_empty());
         assert!(test_repo.pending_commit.updates.is_empty());
@@ -576,7 +595,10 @@ mod tests {
             test_repo.insert(epoch).await.unwrap()
         }
 
-        test_repo.write_to_storage(test_snapshot(9)).await.unwrap();
+        test_repo
+            .write_to_storage(test_snapshot(9).await)
+            .await
+            .unwrap();
 
         for mut epoch in epochs {
             let res = test_repo.get_epoch_mut(epoch.epoch_id()).await.unwrap();
@@ -616,7 +638,10 @@ mod tests {
 
         test_repo.insert(test_epoch_0.clone()).await.unwrap();
 
-        test_repo.write_to_storage(test_snapshot(0)).await.unwrap();
+        test_repo
+            .write_to_storage(test_snapshot(0).await)
+            .await
+            .unwrap();
 
         assert_eq!(
             test_repo.storage.stored_groups(),
@@ -631,7 +656,7 @@ mod tests {
         repo.insert(test_epoch(0)).await.unwrap();
         repo.insert(test_epoch(1)).await.unwrap();
 
-        repo.write_to_storage(test_snapshot(0)).await.unwrap();
+        repo.write_to_storage(test_snapshot(0).await).await.unwrap();
 
         let mut repo = GroupStateRepository {
             storage: repo.storage,
@@ -648,9 +673,9 @@ mod tests {
         let mut repo = test_group_state_repo(1).await;
 
         repo.insert(test_epoch(0)).await.unwrap();
-        repo.write_to_storage(test_snapshot(0)).await.unwrap();
+        repo.write_to_storage(test_snapshot(0).await).await.unwrap();
         repo.insert(test_epoch(1)).await.unwrap();
-        repo.write_to_storage(test_snapshot(1)).await.unwrap();
+        repo.write_to_storage(test_snapshot(1).await).await.unwrap();
 
         #[cfg(feature = "std")]
         let lock = repo.storage.inner.lock().unwrap();
@@ -671,7 +696,7 @@ mod tests {
             repo.insert(test_epoch(i)).await.unwrap()
         }
 
-        repo.write_to_storage(test_snapshot(2)).await.unwrap();
+        repo.write_to_storage(test_snapshot(2).await).await.unwrap();
 
         repo
     }
@@ -680,7 +705,7 @@ mod tests {
     async fn existing_storage_can_be_imported_with_delete_under() {
         let mut repo = existing_storage_setup(3).await;
         repo.insert(test_epoch(3)).await.unwrap();
-        repo.write_to_storage(test_snapshot(3)).await.unwrap();
+        repo.write_to_storage(test_snapshot(3).await).await.unwrap();
 
         let new_repo = GroupStateRepository::new(
             TEST_GROUP.to_vec(),
@@ -717,7 +742,10 @@ mod tests {
         new_repo.insert(test_epoch(3)).await.unwrap();
         new_repo.insert(test_epoch(4)).await.unwrap();
 
-        new_repo.write_to_storage(test_snapshot(4)).await.unwrap();
+        new_repo
+            .write_to_storage(test_snapshot(4).await)
+            .await
+            .unwrap();
 
         assert!(new_repo.pending_commit.delete_under.is_none());
 
@@ -744,7 +772,10 @@ mod tests {
         assert_eq!(new_repo.pending_commit.delete_under.unwrap(), 2);
 
         // Writing to storage should clean up
-        new_repo.write_to_storage(test_snapshot(4)).await.unwrap();
+        new_repo
+            .write_to_storage(test_snapshot(4).await)
+            .await
+            .unwrap();
 
         assert_eq!(
             new_repo.storage.export_epoch_data(TEST_GROUP).unwrap()[0].epoch_id(),
@@ -776,7 +807,7 @@ mod tests {
 
         repo.key_package_repo.get(&key_package.reference).unwrap();
 
-        repo.write_to_storage(test_snapshot(4)).await.unwrap();
+        repo.write_to_storage(test_snapshot(4).await).await.unwrap();
 
         assert!(repo.key_package_repo.get(&key_package.reference).is_none());
     }

@@ -60,10 +60,12 @@ impl<KDF: KdfType, AEAD: AeadType> Context<KDF, AEAD> {
 #[derive(Debug, Clone)]
 pub struct ContextS<KDF: KdfType, AEAD: AeadType>(pub(super) Context<KDF, AEAD>);
 
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
 impl<KDF: KdfType, AEAD: AeadType> HpkeContextS for ContextS<KDF, AEAD> {
     type Error = HpkeError;
 
-    fn export(&self, exporter_context: &[u8], len: usize) -> Result<Vec<u8>, Self::Error> {
+    async fn export(&self, exporter_context: &[u8], len: usize) -> Result<Vec<u8>, Self::Error> {
         self.0.export(exporter_context, len)
     }
 
@@ -72,7 +74,7 @@ impl<KDF: KdfType, AEAD: AeadType> HpkeContextS for ContextS<KDF, AEAD> {
     /// Returns [SequenceNumberOverflow](HpkeError::SequenceNumberOverflow)
     /// in the event that the sequence number overflows. The sequence number is a u64 and starts
     /// at 0.
-    fn seal(&mut self, aad: Option<&[u8]>, data: &[u8]) -> Result<Vec<u8>, Self::Error> {
+    async fn seal(&mut self, aad: Option<&[u8]>, data: &[u8]) -> Result<Vec<u8>, Self::Error> {
         self.0.seal(aad, data)
     }
 }
@@ -80,10 +82,12 @@ impl<KDF: KdfType, AEAD: AeadType> HpkeContextS for ContextS<KDF, AEAD> {
 #[derive(Debug, Clone)]
 pub struct ContextR<KDF: KdfType, AEAD: AeadType>(pub(super) Context<KDF, AEAD>);
 
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
 impl<KDF: KdfType, AEAD: AeadType> HpkeContextR for ContextR<KDF, AEAD> {
     type Error = HpkeError;
 
-    fn export(&self, exporter_context: &[u8], len: usize) -> Result<Vec<u8>, Self::Error> {
+    async fn export(&self, exporter_context: &[u8], len: usize) -> Result<Vec<u8>, Self::Error> {
         self.0.export(exporter_context, len)
     }
 
@@ -95,7 +99,11 @@ impl<KDF: KdfType, AEAD: AeadType> HpkeContextR for ContextR<KDF, AEAD> {
     ///
     /// Returns [AeadError](HpkeError::AeadError) if decryption fails due to either an invalid
     /// `aad` value, or incorrect cipher key.
-    fn open(&mut self, aad: Option<&[u8]>, ciphertext: &[u8]) -> Result<Vec<u8>, Self::Error> {
+    async fn open(
+        &mut self,
+        aad: Option<&[u8]>,
+        ciphertext: &[u8],
+    ) -> Result<Vec<u8>, Self::Error> {
         self.0.open(aad, ciphertext)
     }
 }

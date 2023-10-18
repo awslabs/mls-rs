@@ -13,6 +13,7 @@ aws-mls-crypto-traits = { path = "../aws-mls-crypto-traits", default-features = 
 thiserror = { version = "1.0.40", optional = true }
 zeroize = { version = "1", default-features = false, features = ["alloc", "zeroize_derive"] }
 cfg-if = "^1"
+maybe-async = "0.2.7"
 
 [dev-dependencies]
 serde = { version = "1.0", features = ["derive"] }
@@ -29,3 +30,9 @@ aws-mls-crypto-openssl = { path = "../aws-mls-crypto-openssl", version = "*"}
 wasm-bindgen-test = { version = "0.3.26", default-features = false }
 aws-mls-crypto-rustcrypto = { path = "../aws-mls-crypto-rustcrypto", version = "*"}
 getrandom = { version = "0.2", features = ["js"] }
+
+[target.'cfg(mls_build_async)'.dependencies]
+async-trait = "0.1.74"
+
+[target.'cfg(mls_build_async)'.dev-dependencies]
+futures-test = "0.3.25"

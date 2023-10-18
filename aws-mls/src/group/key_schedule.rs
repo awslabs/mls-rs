@@ -56,15 +56,16 @@ impl KeySchedule {
     }
 
     #[cfg(feature = "external_commit")]
-    pub fn derive_for_external<P: CipherSuiteProvider>(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn derive_for_external<P: CipherSuiteProvider>(
         &self,
         kem_output: &[u8],
         cipher_suite: &P,
     ) -> Result<KeySchedule, MlsError> {
-        let (secret, public) = self.get_external_key_pair(cipher_suite)?;
+        let (secret, public) = self.get_external_key_pair(cipher_suite).await?;
 
         let init_secret =
-            InitSecret::decode_for_external(cipher_suite, kem_output, &secret, &public)?;
+            InitSecret::decode_for_external(cipher_suite, kem_output, &secret, &public).await?;
 
         Ok(KeySchedule::new(init_secret))
     }
@@ -211,12 +212,14 @@ impl KeySchedule {
 
         let context_hash = cipher_suite
             .hash(context)
+            .await
             .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
         kdf_expand_with_label(cipher_suite, &secret, b"exported", &context_hash, Some(len)).await
     }
 
-    pub fn get_membership_tag<P: CipherSuiteProvider>(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn get_membership_tag<P: CipherSuiteProvider>(
         &self,
         content: &AuthenticatedContent,
         context: &GroupContext,
@@ -228,15 +231,18 @@ impl KeySchedule {
             &self.membership_key,
             cipher_suite_provider,
         )
+        .await
     }
 
     #[cfg(feature = "external_commit")]
-    pub fn get_external_key_pair<P: CipherSuiteProvider>(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn get_external_key_pair<P: CipherSuiteProvider>(
         &self,
         cipher_suite: &P,
     ) -> Result<(HpkeSecretKey, HpkePublicKey), MlsError> {
         cipher_suite
             .kem_derive(&self.external_secret)
+            .await
             .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
     }
 }
@@ -339,22 +345,26 @@ pub struct InitSecret(#[mls_codec(with = "aws_mls_codec::byte_vec")] Zeroizing<V
 #[cfg(feature = "external_commit")]
 impl InitSecret {
     /// Returns init secret and KEM output to be used when creating an external commit.
-    pub fn encode_for_external<P: CipherSuiteProvider>(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn encode_for_external<P: CipherSuiteProvider>(
         cipher_suite: &P,
         external_pub: &HpkePublicKey,
     ) -> Result<(Self, Vec<u8>), MlsError> {
         let (kem_output, context) = cipher_suite
             .hpke_setup_s(external_pub, &[])
+            .await
             .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
         let init_secret = context
             .export(EXPORTER_CONTEXT, cipher_suite.kdf_extract_size())
+            .await
             .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
         Ok((InitSecret(Zeroizing::new(init_secret)), kem_output))
     }
 
-    pub fn decode_for_external<P: CipherSuiteProvider>(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn decode_for_external<P: CipherSuiteProvider>(
         cipher_suite: &P,
         kem_output: &[u8],
         external_secret: &HpkeSecretKey,
@@ -362,10 +372,12 @@ impl InitSecret {
     ) -> Result<Self, MlsError> {
         let context = cipher_suite
             .hpke_setup_r(kem_output, external_secret, external_pub, &[])
+            .await
             .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
         context
             .export(EXPORTER_CONTEXT, cipher_suite.kdf_extract_size())
+            .await
             .map(Zeroizing::new)
             .map(InitSecret)
             .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
@@ -690,8 +702,10 @@ mod tests {
 
                 #[cfg(feature = "external_commit")]
                 {
-                    let (_external_sec, external_pub) =
-                        key_schedule.get_external_key_pair(&cs_provider).unwrap();
+                    let (_external_sec, external_pub) = key_schedule
+                        .get_external_key_pair(&cs_provider)
+                        .await
+                        .unwrap();
 
                     assert_eq!(epoch.external_pub, *external_pub);
                 }

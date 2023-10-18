@@ -516,14 +516,18 @@ where
             )
         } else {
             // Update the tree hash, since it was not updated by encap.
-            provisional_state.public_tree.update_hashes(
-                &[provisional_private_tree.self_index],
-                &self.cipher_suite_provider,
-            )?;
+            provisional_state
+                .public_tree
+                .update_hashes(
+                    &[provisional_private_tree.self_index],
+                    &self.cipher_suite_provider,
+                )
+                .await?;
 
             provisional_group_context.tree_hash = provisional_state
                 .public_tree
-                .tree_hash(&self.cipher_suite_provider)?;
+                .tree_hash(&self.cipher_suite_provider)
+                .await?;
 
             (None, None, PathSecret::empty(&self.cipher_suite_provider))
         };
@@ -567,7 +571,8 @@ where
             self.cipher_suite_provider(),
             &self.state.interim_transcript_hash,
             &auth_content,
-        )?;
+        )
+        .await?;
 
         provisional_group_context.confirmed_transcript_hash = confirmed_transcript_hash;
 
@@ -600,7 +605,8 @@ where
             &key_schedule_result.confirmation_key,
             &provisional_group_context.confirmed_transcript_hash,
             &self.cipher_suite_provider,
-        )?;
+        )
+        .await?;
 
         auth_content.auth.confirmation_tag = Some(confirmation_tag.clone());
 

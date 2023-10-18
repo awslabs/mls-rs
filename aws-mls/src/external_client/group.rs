@@ -139,7 +139,8 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             &cipher_suite_provider,
             &join_context.group_context.confirmed_transcript_hash,
             &join_context.confirmation_tag,
-        )?;
+        )
+        .await?;
 
         Ok(Self {
             config,
@@ -189,14 +190,21 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
 
     /// Replay a proposal message into the group skipping all validation steps.
     #[cfg(feature = "by_ref_proposal")]
-    pub fn insert_proposal_from_message(&mut self, message: MLSMessage) -> Result<(), MlsError> {
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn insert_proposal_from_message(
+        &mut self,
+        message: MLSMessage,
+    ) -> Result<(), MlsError> {
         let ptxt = match message.payload {
             MLSMessagePayload::Plain(p) => Ok(p),
             _ => Err(MlsError::UnexpectedMessageType),
         }?;
 
         let auth_content: AuthenticatedContent = ptxt.into();
-        let proposal_ref = ProposalRef::from_content(&self.cipher_suite_provider, &auth_content)?;
+
+        let proposal_ref =
+            ProposalRef::from_content(&self.cipher_suite_provider, &auth_content).await?;
+
         let sender = auth_content.content.sender;
 
         let proposal = match auth_content.content.content {
@@ -460,7 +468,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         )?;
 
         self.state.proposals.insert(
-            ProposalRef::from_content(&self.cipher_suite_provider, &auth_content)?,
+            ProposalRef::from_content(&self.cipher_suite_provider, &auth_content).await?,
             proposal,
             sender,
         );
@@ -587,7 +595,8 @@ where
         self.config.proposal_rules()
     }
 
-    fn verify_plaintext_authentication(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn verify_plaintext_authentication(
         &self,
         message: PublicMessage,
     ) -> Result<EventOrContent<Self::OutputType>, MlsError> {
@@ -597,7 +606,8 @@ where
             None,
             None,
             &self.state,
-        )?;
+        )
+        .await?;
 
         Ok(EventOrContent::Content(auth_content))
     }
@@ -1076,8 +1086,9 @@ mod tests {
     ) {
         let auth_content = external_proposal.clone().into_plaintext().unwrap().into();
 
-        let proposal_ref =
-            ProposalRef::from_content(&server.cipher_suite_provider, &auth_content).unwrap();
+        let proposal_ref = ProposalRef::from_content(&server.cipher_suite_provider, &auth_content)
+            .await
+            .unwrap();
 
         // Alice receives the proposal
         alice.process_message(external_proposal).await.unwrap();
@@ -1233,7 +1244,9 @@ mod tests {
             .process_incoming_message(proposal.clone())
             .await
             .unwrap();
-        server.insert_proposal_from_message(proposal).unwrap();
+
+        server.insert_proposal_from_message(proposal).await.unwrap();
+
         server
             .process_incoming_message(commit_output.commit_message)
             .await

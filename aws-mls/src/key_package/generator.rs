@@ -94,6 +94,7 @@ where
         let (init_secret_key, public_init) = self
             .cipher_suite_provider
             .kem_generate()
+            .await
             .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
         let properties = ConfigProperties {
@@ -123,7 +124,7 @@ where
 
         self.sign(&mut package)?;
 
-        let reference = package.to_reference(self.cipher_suite_provider)?;
+        let reference = package.to_reference(self.cipher_suite_provider).await?;
 
         Ok(KeyPackageGeneration {
             key_package: package,
@@ -242,6 +243,7 @@ mod tests {
 
             let sealed = cipher_suite_provider
                 .hpke_seal(&generated.key_package.hpke_init_key, &[], None, &test_data)
+                .await
                 .unwrap();
 
             let opened = cipher_suite_provider
@@ -252,6 +254,7 @@ mod tests {
                     &[],
                     None,
                 )
+                .await
                 .unwrap();
 
             assert_eq!(opened, test_data);

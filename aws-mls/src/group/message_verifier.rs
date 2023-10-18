@@ -33,7 +33,8 @@ pub(crate) enum SignaturePublicKeysContainer<'a> {
     List(&'a [Option<SignaturePublicKey>]),
 }
 
-pub(crate) fn verify_plaintext_authentication<P: CipherSuiteProvider>(
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+pub(crate) async fn verify_plaintext_authentication<P: CipherSuiteProvider>(
     cipher_suite_provider: &P,
     plaintext: PublicMessage,
     key_schedule: Option<&KeySchedule>,
@@ -53,11 +54,9 @@ pub(crate) fn verify_plaintext_authentication<P: CipherSuiteProvider>(
     match &auth_content.content.sender {
         Sender::Member(index) => {
             if let Some(key_schedule) = key_schedule {
-                let expected_tag = &key_schedule.get_membership_tag(
-                    &auth_content,
-                    context,
-                    cipher_suite_provider,
-                )?;
+                let expected_tag = &key_schedule
+                    .get_membership_tag(&auth_content, context, cipher_suite_provider)
+                    .await?;
 
                 let plaintext_tag = tag.as_ref().ok_or(MlsError::InvalidMembershipTag)?;
 
@@ -354,6 +353,7 @@ mod tests {
             None,
             &env.bob.group.state,
         )
+        .await
         .unwrap();
     }
 
@@ -389,6 +389,7 @@ mod tests {
                 env.alice.group.context(),
                 &test_cipher_suite_provider(env.alice.group.cipher_suite()),
             )
+            .await
             .unwrap()
             .into();
 
@@ -398,7 +399,8 @@ mod tests {
             Some(&env.bob.group.key_schedule),
             None,
             &env.bob.group.state,
-        );
+        )
+        .await;
 
         assert_matches!(res, Err(MlsError::InvalidSignature));
     }
@@ -415,7 +417,8 @@ mod tests {
             Some(&env.bob.group.key_schedule),
             None,
             &env.bob.group.state,
-        );
+        )
+        .await;
 
         assert_matches!(res, Err(MlsError::InvalidMembershipTag));
     }
@@ -432,7 +435,8 @@ mod tests {
             Some(&env.bob.group.key_schedule),
             None,
             &env.bob.group.state,
-        );
+        )
+        .await;
 
         assert_matches!(res, Err(MlsError::InvalidMembershipTag));
     }
@@ -497,6 +501,7 @@ mod tests {
             None,
             &test_group.group.state,
         )
+        .await
         .unwrap();
     }
 
@@ -516,7 +521,8 @@ mod tests {
             Some(&test_group.group.key_schedule),
             None,
             &test_group.group.state,
-        );
+        )
+        .await;
 
         assert_matches!(res, Err(MlsError::MembershipTagForNonMember));
     }
@@ -540,7 +546,8 @@ mod tests {
             Some(&test_group.group.key_schedule),
             None,
             &test_group.group.state,
-        );
+        )
+        .await;
 
         assert_matches!(res, Err(MlsError::ExpectedAddProposalForNewMemberProposal));
     }
@@ -562,7 +569,8 @@ mod tests {
             Some(&test_group.group.key_schedule),
             None,
             &test_group.group.state,
-        );
+        )
+        .await;
 
         assert_matches!(res, Err(MlsError::ExpectedCommitForNewMemberCommit));
     }
@@ -606,6 +614,7 @@ mod tests {
             None,
             &test_group.group.state,
         )
+        .await
         .unwrap();
     }
 
@@ -627,7 +636,8 @@ mod tests {
             Some(&test_group.group.key_schedule),
             None,
             &test_group.group.state,
-        );
+        )
+        .await;
 
         assert_matches!(res, Err(MlsError::UnknownSigningIdentityForExternalSender));
     }
@@ -653,7 +663,8 @@ mod tests {
             Some(&test_group.group.key_schedule),
             None,
             &test_group.group.state,
-        );
+        )
+        .await;
 
         assert_matches!(res, Err(MlsError::MembershipTagForNonMember));
     }
@@ -670,7 +681,8 @@ mod tests {
             Some(&env.alice.group.key_schedule),
             Some(LeafIndex::new(env.alice.group.current_member_index())),
             &env.alice.group.state,
-        );
+        )
+        .await;
 
         assert_matches!(res, Err(MlsError::CantProcessMessageFromSelf))
     }

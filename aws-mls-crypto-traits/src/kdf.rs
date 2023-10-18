@@ -10,7 +10,7 @@ use aws_mls_core::{crypto::CipherSuite, error::IntoAnyError};
 
 /// A trait that provides the required KDF functions
 #[cfg_attr(feature = "mock", automock(type Error = crate::mock::TestError;))]
-pub trait KdfType {
+pub trait KdfType: Send + Sync {
     type Error: IntoAnyError;
 
     /// KDF Id, as specified in RFC 9180, Section 5.1 and Table 3.

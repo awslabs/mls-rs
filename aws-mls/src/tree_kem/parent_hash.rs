@@ -49,7 +49,8 @@ impl Deref for ParentHash {
 }
 
 impl ParentHash {
-    pub fn new<P: CipherSuiteProvider>(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn new<P: CipherSuiteProvider>(
         cipher_suite_provider: &P,
         public_key: &HpkePublicKey,
         parent_hash: &ParentHash,
@@ -65,6 +66,7 @@ impl ParentHash {
 
         let hash = cipher_suite_provider
             .hash(&input_bytes)
+            .await
             .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
         Ok(Self(hash))
@@ -93,7 +95,8 @@ impl Node {
 }
 
 impl TreeKemPublic {
-    fn parent_hash_for_leaf<P: CipherSuiteProvider>(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn parent_hash_for_leaf<P: CipherSuiteProvider>(
         &mut self,
         cipher_suite_provider: &P,
         index: LeafIndex,
@@ -112,7 +115,8 @@ impl TreeKemPublic {
                 &parent.public_key,
                 &hash,
                 &self.tree_hashes.current[cp as usize],
-            )?;
+            )
+            .await?;
 
             (parent.parent_hash, hash) = (hash, calculated);
         }
@@ -122,16 +126,20 @@ impl TreeKemPublic {
 
     // Updates all of the required parent hash values, and returns the calculated parent hash value for the leaf node
     // If an update path is provided, additionally verify that the calculated parent hash matches
-    pub(crate) fn update_parent_hashes<P: CipherSuiteProvider>(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub(crate) async fn update_parent_hashes<P: CipherSuiteProvider>(
         &mut self,
         index: LeafIndex,
         verify_leaf_hash: bool,
         cipher_suite_provider: &P,
     ) -> Result<(), MlsError> {
         // First update the relevant original hashes used for parent hash computation.
-        self.update_hashes(&[index], cipher_suite_provider)?;
+        self.update_hashes(&[index], cipher_suite_provider).await?;
 
-        let leaf_hash = self.parent_hash_for_leaf(cipher_suite_provider, index)?;
+        let leaf_hash = self
+            .parent_hash_for_leaf(cipher_suite_provider, index)
+            .await?;
+
         let leaf = self.nodes.borrow_as_leaf_mut(index)?;
 
         if verify_leaf_hash {
@@ -149,14 +157,15 @@ impl TreeKemPublic {
         }
 
         // Update hashes after changes to the tree.
-        self.update_hashes(&[index], cipher_suite_provider)
+        self.update_hashes(&[index], cipher_suite_provider).await
     }
 
-    pub(super) fn validate_parent_hashes<P: CipherSuiteProvider>(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub(super) async fn validate_parent_hashes<P: CipherSuiteProvider>(
         &self,
         cipher_suite_provider: &P,
     ) -> Result<(), MlsError> {
-        let original_hashes = self.compute_original_hashes(cipher_suite_provider)?;
+        let original_hashes = self.compute_original_hashes(cipher_suite_provider).await?;
 
         let nodes_to_validate = self
             .nodes
@@ -172,85 +181,80 @@ impl TreeKemPublic {
         let root = tree_math::root(num_leaves);
 
         // For each leaf l, validate all non-blank nodes on the chain from l up the tree.
-        self.nodes
-            .non_empty_leaves()
-            .try_for_each(|(leaf_index, _)| {
-                let mut n = NodeIndex::from(leaf_index);
+        for (leaf_index, _) in self.nodes.non_empty_leaves() {
+            let mut n = NodeIndex::from(leaf_index);
 
-                while n != root {
-                    // Find the first non-blank ancestor p of n and p's co-path child s.
-                    let mut p = tree_math::parent(n);
-                    let mut s = tree_math::sibling(n);
+            while n != root {
+                // Find the first non-blank ancestor p of n and p's co-path child s.
+                let mut p = tree_math::parent(n);
+                let mut s = tree_math::sibling(n);
 
-                    while self.nodes.is_blank(p)? {
-                        // If we reached the root, we're done with this chain.
-                        if p == root {
-                            return Ok(());
-                        }
-
-                        s = tree_math::sibling(p);
-                        p = tree_math::parent(p);
-                    }
-
-                    // Check is n's parent_hash field matches the parent hash of p with co-path child s.
-                    let p_parent = self.nodes.borrow_as_parent(p)?;
-
-                    let n_node = self
-                        .nodes
-                        .borrow_node(n)?
-                        .as_ref()
-                        .ok_or(MlsError::ExpectedNode)?;
-
-                    let calculated = ParentHash::new(
-                        cipher_suite_provider,
-                        &p_parent.public_key,
-                        &p_parent.parent_hash,
-                        &original_hashes[s as usize],
-                    )?;
-
-                    if n_node.get_parent_hash() == Some(calculated) {
-                        // Check that "n is in the resolution of c, and the intersection of p's unmerged_leaves with the subtree
-                        // under c is equal to the resolution of c with n removed".
-                        let c = tree_math::sibling(s);
-
-                        let c_resolution = self.nodes.get_resolution_index(c)?.into_iter();
-
-                        #[cfg(feature = "std")]
-                        let mut c_resolution = c_resolution.collect::<HashSet<_>>();
-                        #[cfg(not(feature = "std"))]
-                        let mut c_resolution = c_resolution.collect::<BTreeSet<_>>();
-
-                        let p_unmerged_in_c_subtree = self
-                            .unmerged_in_subtree(p, c)?
-                            .iter()
-                            .copied()
-                            .map(|x| *x * 2);
-
-                        #[cfg(feature = "std")]
-                        let p_unmerged_in_c_subtree =
-                            p_unmerged_in_c_subtree.collect::<HashSet<_>>();
-                        #[cfg(not(feature = "std"))]
-                        let p_unmerged_in_c_subtree =
-                            p_unmerged_in_c_subtree.collect::<BTreeSet<_>>();
-
-                        if c_resolution.remove(&n)
-                            && c_resolution == p_unmerged_in_c_subtree
-                            && nodes_to_validate.remove(&p)
-                        {
-                            // If n's parent_hash field matches and p has not been validated yet, mark p as validated and continue.
-                            n = p;
-                        } else {
-                            // If p is validated for the second time, the check fails ("all non-blank parent nodes are covered by exactly one such chain").
-                            return Err(MlsError::ParentHashMismatch);
-                        }
-                    } else {
-                        // If n's parent_hash field doesn't match, we're done with this chain.
+                while self.nodes.is_blank(p)? {
+                    // If we reached the root, we're done with this chain.
+                    if p == root {
                         return Ok(());
                     }
+
+                    s = tree_math::sibling(p);
+                    p = tree_math::parent(p);
                 }
 
-                Ok(())
-            })?;
+                // Check is n's parent_hash field matches the parent hash of p with co-path child s.
+                let p_parent = self.nodes.borrow_as_parent(p)?;
+
+                let n_node = self
+                    .nodes
+                    .borrow_node(n)?
+                    .as_ref()
+                    .ok_or(MlsError::ExpectedNode)?;
+
+                let calculated = ParentHash::new(
+                    cipher_suite_provider,
+                    &p_parent.public_key,
+                    &p_parent.parent_hash,
+                    &original_hashes[s as usize],
+                )
+                .await?;
+
+                if n_node.get_parent_hash() == Some(calculated) {
+                    // Check that "n is in the resolution of c, and the intersection of p's unmerged_leaves with the subtree
+                    // under c is equal to the resolution of c with n removed".
+                    let c = tree_math::sibling(s);
+
+                    let c_resolution = self.nodes.get_resolution_index(c)?.into_iter();
+
+                    #[cfg(feature = "std")]
+                    let mut c_resolution = c_resolution.collect::<HashSet<_>>();
+                    #[cfg(not(feature = "std"))]
+                    let mut c_resolution = c_resolution.collect::<BTreeSet<_>>();
+
+                    let p_unmerged_in_c_subtree = self
+                        .unmerged_in_subtree(p, c)?
+                        .iter()
+                        .copied()
+                        .map(|x| *x * 2);
+
+                    #[cfg(feature = "std")]
+                    let p_unmerged_in_c_subtree = p_unmerged_in_c_subtree.collect::<HashSet<_>>();
+                    #[cfg(not(feature = "std"))]
+                    let p_unmerged_in_c_subtree = p_unmerged_in_c_subtree.collect::<BTreeSet<_>>();
+
+                    if c_resolution.remove(&n)
+                        && c_resolution == p_unmerged_in_c_subtree
+                        && nodes_to_validate.remove(&p)
+                    {
+                        // If n's parent_hash field matches and p has not been validated yet, mark p as validated and continue.
+                        n = p;
+                    } else {
+                        // If p is validated for the second time, the check fails ("all non-blank parent nodes are covered by exactly one such chain").
+                        return Err(MlsError::ParentHashMismatch);
+                    }
+                } else {
+                    // If n's parent_hash field doesn't match, we're done with this chain.
+                    break;
+                }
+            }
+        }
 
         // The check passes iff all non-blank nodes are validated.
         if nodes_to_validate.is_empty() {
@@ -274,12 +278,14 @@ pub(crate) mod test_utils {
 
     use alloc::vec;
 
-    pub(crate) fn test_parent(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub(crate) async fn test_parent(
         cipher_suite: CipherSuite,
         unmerged_leaves: Vec<LeafIndex>,
     ) -> Parent {
         let (_, public_key) = test_cipher_suite_provider(cipher_suite)
             .kem_generate()
+            .await
             .unwrap();
 
         Parent {
@@ -289,11 +295,12 @@ pub(crate) mod test_utils {
         }
     }
 
-    pub(crate) fn test_parent_node(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub(crate) async fn test_parent_node(
         cipher_suite: CipherSuite,
         unmerged_leaves: Vec<LeafIndex>,
     ) -> Node {
-        Node::Parent(test_parent(cipher_suite, unmerged_leaves))
+        Node::Parent(test_parent(cipher_suite, unmerged_leaves).await)
     }
 
     // Create figure 12 from MLS RFC
@@ -313,25 +320,23 @@ pub(crate) mod test_utils {
             .await
             .unwrap();
 
-        tree.nodes[1] = Some(test_parent_node(cipher_suite, vec![]));
-        tree.nodes[3] = Some(test_parent_node(cipher_suite, vec![LeafIndex(3)]));
+        tree.nodes[1] = Some(test_parent_node(cipher_suite, vec![]).await);
+        tree.nodes[3] = Some(test_parent_node(cipher_suite, vec![LeafIndex(3)]).await);
 
-        tree.nodes[7] = Some(test_parent_node(
-            cipher_suite,
-            vec![LeafIndex(3), LeafIndex(6)],
-        ));
+        tree.nodes[7] =
+            Some(test_parent_node(cipher_suite, vec![LeafIndex(3), LeafIndex(6)]).await);
 
-        tree.nodes[9] = Some(test_parent_node(cipher_suite, vec![LeafIndex(5)]));
+        tree.nodes[9] = Some(test_parent_node(cipher_suite, vec![LeafIndex(5)]).await);
 
-        tree.nodes[11] = Some(test_parent_node(
-            cipher_suite,
-            vec![LeafIndex(5), LeafIndex(6)],
-        ));
+        tree.nodes[11] =
+            Some(test_parent_node(cipher_suite, vec![LeafIndex(5), LeafIndex(6)]).await);
 
         tree.update_parent_hashes(LeafIndex(0), false, &cipher_suite_provider)
+            .await
             .unwrap();
 
         tree.update_parent_hashes(LeafIndex(4), false, &cipher_suite_provider)
+            .await
             .unwrap();
 
         tree
@@ -357,11 +362,13 @@ mod tests {
         *test_tree.nodes.borrow_as_leaf_mut(LeafIndex(0)).unwrap() =
             get_basic_test_node(TEST_CIPHER_SUITE, "foo").await;
 
-        let missing_parent_hash_res = test_tree.update_parent_hashes(
-            LeafIndex(0),
-            true,
-            &test_cipher_suite_provider(TEST_CIPHER_SUITE),
-        );
+        let missing_parent_hash_res = test_tree
+            .update_parent_hashes(
+                LeafIndex(0),
+                true,
+                &test_cipher_suite_provider(TEST_CIPHER_SUITE),
+            )
+            .await;
 
         assert_matches!(
             missing_parent_hash_res,
@@ -382,11 +389,13 @@ mod tests {
             .unwrap()
             .leaf_node_source = LeafNodeSource::Commit(unexpected_parent_hash);
 
-        let invalid_parent_hash_res = test_tree.update_parent_hashes(
-            LeafIndex(0),
-            true,
-            &test_cipher_suite_provider(TEST_CIPHER_SUITE),
-        );
+        let invalid_parent_hash_res = test_tree
+            .update_parent_hashes(
+                LeafIndex(0),
+                true,
+                &test_cipher_suite_provider(TEST_CIPHER_SUITE),
+            )
+            .await;
 
         assert_matches!(invalid_parent_hash_res, Err(MlsError::ParentHashMismatch));
     }
@@ -398,7 +407,10 @@ mod tests {
 
         test_tree.nodes[2] = None;
 
-        let res = test_tree.validate_parent_hashes(&test_cipher_suite_provider(TEST_CIPHER_SUITE));
+        let res = test_tree
+            .validate_parent_hashes(&test_cipher_suite_provider(TEST_CIPHER_SUITE))
+            .await;
+
         assert_matches!(res, Err(MlsError::ParentHashMismatch));
     }
 }

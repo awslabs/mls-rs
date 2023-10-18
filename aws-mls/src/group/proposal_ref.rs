@@ -19,15 +19,19 @@ impl Deref for ProposalRef {
 }
 
 impl ProposalRef {
-    pub(crate) fn from_content<CS: CipherSuiteProvider>(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub(crate) async fn from_content<CS: CipherSuiteProvider>(
         cipher_suite_provider: &CS,
         content: &AuthenticatedContent,
     ) -> Result<Self, MlsError> {
-        Ok(ProposalRef(HashReference::compute(
-            &content.mls_encode_to_vec()?,
-            b"MLS 1.0 Proposal Reference",
-            cipher_suite_provider,
-        )?))
+        Ok(ProposalRef(
+            HashReference::compute(
+                &content.mls_encode_to_vec()?,
+                b"MLS 1.0 Proposal Reference",
+                cipher_suite_provider,
+            )
+            .await?,
+        ))
     }
 }
 
@@ -145,6 +149,7 @@ mod test {
                 cipher_suite: cipher_suite.into(),
                 input: add.mls_encode_to_vec().unwrap(),
                 output: ProposalRef::from_content(&cipher_suite_provider, &add)
+                    .await
                     .unwrap()
                     .to_vec(),
             });
@@ -153,6 +158,7 @@ mod test {
                 cipher_suite: cipher_suite.into(),
                 input: update.mls_encode_to_vec().unwrap(),
                 output: ProposalRef::from_content(&cipher_suite_provider, &update)
+                    .await
                     .unwrap()
                     .to_vec(),
             });
@@ -161,6 +167,7 @@ mod test {
                 cipher_suite: cipher_suite.into(),
                 input: remove.mls_encode_to_vec().unwrap(),
                 output: ProposalRef::from_content(&cipher_suite_provider, &remove)
+                    .await
                     .unwrap()
                     .to_vec(),
             });
@@ -169,6 +176,7 @@ mod test {
                 cipher_suite: cipher_suite.into(),
                 input: group_context_ext.mls_encode_to_vec().unwrap(),
                 output: ProposalRef::from_content(&cipher_suite_provider, &group_context_ext)
+                    .await
                     .unwrap()
                     .to_vec(),
             });
@@ -199,7 +207,9 @@ mod test {
             let proposal_content =
                 AuthenticatedContent::mls_decode(&mut one_case.input.as_slice()).unwrap();
 
-            let proposal_ref = ProposalRef::from_content(&cs_provider, &proposal_content).unwrap();
+            let proposal_ref = ProposalRef::from_content(&cs_provider, &proposal_content)
+                .await
+                .unwrap();
 
             let expected_out = ProposalRef(HashReference::from(one_case.output));
 

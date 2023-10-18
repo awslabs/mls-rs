@@ -285,6 +285,7 @@ mod tests {
                 None,
                 &secret,
             )
+            .await
             .unwrap();
 
         let test_validator = LeafNodeValidator::new(
@@ -320,6 +321,7 @@ mod tests {
                 None,
                 &secret,
             )
+            .await
             .unwrap();
 
         let test_validator = LeafNodeValidator::new(
@@ -372,6 +374,7 @@ mod tests {
                 None,
                 &secret,
             )
+            .await
             .unwrap();
 
         let res = test_validator
@@ -397,6 +400,7 @@ mod tests {
                 None,
                 &secret,
             )
+            .await
             .unwrap();
 
         let res = test_validator

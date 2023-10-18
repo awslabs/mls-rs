@@ -238,16 +238,18 @@ pub(crate) mod test_utils {
 
     use super::{RawGroupState, Snapshot};
 
-    pub(crate) fn get_test_snapshot(cipher_suite: CipherSuite, epoch_id: u64) -> Snapshot {
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub(crate) async fn get_test_snapshot(cipher_suite: CipherSuite, epoch_id: u64) -> Snapshot {
         Snapshot {
             state: RawGroupState {
-                context: get_test_group_context(epoch_id, cipher_suite),
+                context: get_test_group_context(epoch_id, cipher_suite).await,
                 #[cfg(feature = "by_ref_proposal")]
                 proposals: Default::default(),
                 public_tree: Default::default(),
                 interim_transcript_hash: InterimTranscriptHash::from(vec![]),
                 pending_reinit: None,
-                confirmation_tag: ConfirmationTag::empty(&test_cipher_suite_provider(cipher_suite)),
+                confirmation_tag: ConfirmationTag::empty(&test_cipher_suite_provider(cipher_suite))
+                    .await,
             },
             private_tree: TreeKemPrivate::new(LeafIndex(0)),
             epoch_secrets: get_test_epoch_secrets(cipher_suite),

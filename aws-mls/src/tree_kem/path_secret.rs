@@ -74,6 +74,7 @@ impl PathSecret {
         let node_secret = Zeroizing::new(kdf_derive_secret(cs, self, b"node").await?);
 
         cs.kem_derive(&node_secret)
+            .await
             .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
     }
 }

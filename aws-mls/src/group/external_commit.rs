@@ -140,10 +140,9 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
         )
         .await?;
 
-        let (init_secret, kem_output) = InitSecret::encode_for_external(
-            &cipher_suite_provider,
-            &external_pub_ext.external_pub,
-        )?;
+        let (init_secret, kem_output) =
+            InitSecret::encode_for_external(&cipher_suite_provider, &external_pub_ext.external_pub)
+                .await?;
 
         let epoch_secrets = EpochSecrets {
             #[cfg(feature = "psk")]

@@ -958,7 +958,7 @@ mod interop_tests {
                 continue;
             };
 
-            case.sender_data.verify(&cs);
+            case.sender_data.verify(&cs).await;
 
             let mut tree = SecretTree::new(
                 case.leaves.len() as u32,

@@ -123,11 +123,14 @@ where
     /// Based on RFC 9180 Single-Shot APIs. This function combines the action
     /// of the [setup_sender](Hpke::setup_sender) and then calling [seal](ContextS::seal)
     /// on the resulting [ContextS](self::ContextS).
-    pub fn seal(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    // Lifetimes are needed for the async build
+    #[allow(clippy::needless_lifetimes)]
+    pub async fn seal<'a>(
         &self,
         remote_key: &HpkePublicKey,
         info: &[u8],
-        psk: Option<Psk>,
+        psk: Option<Psk<'a>>,
         aad: Option<&[u8]>,
         pt: &[u8],
     ) -> Result<HpkeCiphertext, HpkeError> {
@@ -135,20 +138,23 @@ where
 
         Ok(HpkeCiphertext {
             kem_output,
-            ciphertext: ctx.seal(aad, pt)?,
+            ciphertext: ctx.seal(aad, pt).await?,
         })
     }
 
     /// Based on RFC 9180 Single-Shot APIs. This function combines the action
     /// of the [setup_receiver](Hpke::setup_receiver) and then calling
     /// [open](ContextR::open) on the resulting [ContextR](self::ContextR).
-    pub fn open(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    // Lifetimes are needed for the async build
+    #[allow(clippy::needless_lifetimes)]
+    pub async fn open<'a>(
         &self,
         ciphertext: &HpkeCiphertext,
         local_secret: &HpkeSecretKey,
         local_public: &HpkePublicKey,
         info: &[u8],
-        psk: Option<Psk>,
+        psk: Option<Psk<'a>>,
         aad: Option<&[u8]>,
     ) -> Result<Vec<u8>, HpkeError> {
         let mut hpke_ctx = self.setup_receiver(
@@ -159,7 +165,7 @@ where
             psk,
         )?;
 
-        hpke_ctx.open(aad, &ciphertext.ciphertext)
+        hpke_ctx.open(aad, &ciphertext.ciphertext).await
     }
 
     /// Generate an HPKE context using the base setup mode. This function returns a tuple
@@ -344,6 +350,12 @@ mod test {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::wasm_bindgen_test as futures_test;
+
+    #[cfg(all(mls_build_async, not(target_arch = "wasm32")))]
+    use futures_test::test as futures_test;
+
     #[test]
     fn rfc_test_vector() {
         let file = include_str!("../test_data/test_hpke.json");
@@ -430,8 +442,8 @@ mod test {
         assert_matches!(basic_res, Err(HpkeError::InsufficientPskLength));
     }
 
-    #[test]
-    fn test_encrypt_api_disabled() {
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, futures_test))]
+    async fn test_encrypt_api_disabled() {
         let hpke = test_hpke(CipherSuite::CURVE25519_AES128, true);
         let (secret, remote_pub) = hpke.generate().unwrap();
 
@@ -441,15 +453,11 @@ mod test {
             .setup_receiver(&enc, &secret, &remote_pub, &[], None)
             .unwrap();
 
-        assert_matches!(
-            sender_ctx.seal(None, b"test"),
-            Err(HpkeError::ExportOnlyMode)
-        );
+        let res = sender_ctx.seal(None, b"test").await;
+        assert_matches!(res, Err(HpkeError::ExportOnlyMode));
 
-        assert_matches!(
-            receiver_ctx.open(None, b"test"),
-            Err(HpkeError::ExportOnlyMode)
-        );
+        let res = receiver_ctx.open(None, b"test").await;
+        assert_matches!(res, Err(HpkeError::ExportOnlyMode));
     }
 
     fn test_hpke(

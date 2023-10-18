@@ -10,9 +10,8 @@ use crate::tree_kem::math as tree_math;
 use alloc::vec;
 use alloc::vec::Vec;
 use aws_mls_codec::MlsEncode;
-use cfg_if::cfg_if;
 
-#[cfg(feature = "rayon")]
+#[cfg(all(not(mls_build_async), feature = "rayon"))]
 use rayon::prelude::*;
 
 #[cfg(feature = "std")]
@@ -96,19 +95,24 @@ impl<'a> TreeKem<'a> {
         (commit_modifiers.modify_tree)(self.tree_kem_public);
 
         self.tree_kem_public
-            .update_parent_hashes(self_index, false, cipher_suite_provider)?;
+            .update_parent_hashes(self_index, false, cipher_suite_provider)
+            .await?;
 
         let update_path_leaf = {
             let own_leaf = self.tree_kem_public.nodes.borrow_as_leaf_mut(self_index)?;
 
-            self.private_key.secret_keys[0] = Some(own_leaf.commit(
-                cipher_suite_provider,
-                &context.group_id,
-                *self_index,
-                update_leaf_properties,
-                signing_identity,
-                signer,
-            )?);
+            self.private_key.secret_keys[0] = Some(
+                own_leaf
+                    .commit(
+                        cipher_suite_provider,
+                        &context.group_id,
+                        *self_index,
+                        update_leaf_properties,
+                        signing_identity,
+                        signer,
+                    )
+                    .await?,
+            );
 
             #[cfg(test)]
             (commit_modifiers.modify_leaf)(own_leaf, signer, cipher_suite_provider);
@@ -118,40 +122,25 @@ impl<'a> TreeKem<'a> {
 
         // Tree modifications are all done so we can update the tree hash and encrypt with the new context
         self.tree_kem_public
-            .update_hashes(&[self_index], cipher_suite_provider)?;
+            .update_hashes(&[self_index], cipher_suite_provider)
+            .await?;
 
-        context.tree_hash = self.tree_kem_public.tree_hash(cipher_suite_provider)?;
+        context.tree_hash = self
+            .tree_kem_public
+            .tree_hash(cipher_suite_provider)
+            .await?;
 
         let context_bytes = context.mls_encode_to_vec()?;
 
-        let excluding = excluding.iter().copied().map(NodeIndex::from);
-
-        #[cfg(feature = "std")]
-        let excluding = excluding.collect::<HashSet<NodeIndex>>();
-        #[cfg(not(feature = "std"))]
-        let excluding = excluding.collect::<Vec<NodeIndex>>();
-
-        cfg_if! {
-            if #[cfg(feature = "rayon")] {
-                let copath_iter = path.into_par_iter().zip(path_secrets.par_iter());
-            } else {
-                let copath_iter = path.into_iter().zip(path_secrets.iter());
-            }
-        }
-
-        let node_updates = copath_iter
-            .filter_map(|((_, copath_index), path_secret)| {
-                path_secret.as_ref().map(|path_secret| {
-                    self.encrypt_copath_node_resolution(
-                        cipher_suite_provider,
-                        path_secret,
-                        copath_index,
-                        &context_bytes,
-                        &excluding,
-                    )
-                })
-            })
-            .collect::<Result<Vec<_>, MlsError>>()?;
+        let node_updates = self
+            .encrypt_path_secrets(
+                path,
+                &path_secrets,
+                &context_bytes,
+                cipher_suite_provider,
+                excluding,
+            )
+            .await?;
 
         #[cfg(test)]
         let node_updates = (commit_modifiers.modify_path)(node_updates);
@@ -167,6 +156,75 @@ impl<'a> TreeKem<'a> {
             path_secrets,
             commit_secret: secret_generator.next_secret().await?,
         })
+    }
+
+    #[cfg(any(mls_build_async, not(feature = "rayon")))]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn encrypt_path_secrets<P: CipherSuiteProvider>(
+        &self,
+        path: Vec<(u32, u32)>,
+        path_secrets: &[Option<PathSecret>],
+        context_bytes: &[u8],
+        cipher_suite: &P,
+        excluding: &[LeafIndex],
+    ) -> Result<Vec<UpdatePathNode>, MlsError> {
+        let excluding = excluding.iter().copied().map(NodeIndex::from);
+
+        #[cfg(feature = "std")]
+        let excluding = excluding.collect::<HashSet<NodeIndex>>();
+        #[cfg(not(feature = "std"))]
+        let excluding = excluding.collect::<Vec<NodeIndex>>();
+
+        let mut node_updates = Vec::new();
+
+        for ((_, copath_index), path_secret) in path.into_iter().zip(path_secrets.iter()) {
+            if let Some(path_secret) = path_secret {
+                node_updates.push(
+                    self.encrypt_copath_node_resolution(
+                        cipher_suite,
+                        path_secret,
+                        copath_index,
+                        context_bytes,
+                        &excluding,
+                    )
+                    .await?,
+                );
+            }
+        }
+
+        Ok(node_updates)
+    }
+
+    #[cfg(all(not(mls_build_async), feature = "rayon"))]
+    fn encrypt_path_secrets<P: CipherSuiteProvider>(
+        &self,
+        path: Vec<(u32, u32)>,
+        path_secrets: &[Option<PathSecret>],
+        context_bytes: &[u8],
+        cipher_suite: &P,
+        excluding: &[LeafIndex],
+    ) -> Result<Vec<UpdatePathNode>, MlsError> {
+        let excluding = excluding.iter().copied().map(NodeIndex::from);
+
+        #[cfg(feature = "std")]
+        let excluding = excluding.collect::<HashSet<NodeIndex>>();
+        #[cfg(not(feature = "std"))]
+        let excluding = excluding.collect::<Vec<NodeIndex>>();
+
+        path.into_par_iter()
+            .zip(path_secrets.par_iter())
+            .filter_map(|((_, copath_index), path_secret)| {
+                path_secret.as_ref().map(|path_secret| {
+                    self.encrypt_copath_node_resolution(
+                        cipher_suite,
+                        path_secret,
+                        copath_index,
+                        context_bytes,
+                        &excluding,
+                    )
+                })
+            })
+            .collect()
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -213,7 +271,7 @@ impl<'a> TreeKem<'a> {
             .public_key();
 
         let lca_path_secret =
-            PathSecret::decrypt(cipher_suite_provider, secret, public, context_bytes, ct)?;
+            PathSecret::decrypt(cipher_suite_provider, secret, public, context_bytes, ct).await?;
 
         // Derive the rest of the secrets for the tree and assign to the proper nodes
         let mut node_secret_gen =
@@ -244,7 +302,8 @@ impl<'a> TreeKem<'a> {
         node_secret_gen.next_secret().await
     }
 
-    fn encrypt_copath_node_resolution<P: CipherSuiteProvider>(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn encrypt_copath_node_resolution<P: CipherSuiteProvider>(
         &self,
         cipher_suite_provider: &P,
         path_secret: &PathSecret,
@@ -267,7 +326,9 @@ impl<'a> TreeKem<'a> {
                 .borrow_node(idx)?
                 .as_non_empty()?;
 
-            let ctxt = path_secret.encrypt(cipher_suite_provider, node.public_key(), context)?;
+            let ctxt = path_secret
+                .encrypt(cipher_suite_provider, node.public_key(), context)
+                .await?;
             ctxts.push(ctxt);
         }
 
@@ -406,7 +467,8 @@ mod tests {
         assert!(tree.nodes.borrow_node(root).unwrap().is_some());
     }
 
-    fn verify_tree_private_path(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn verify_tree_private_path(
         cipher_suite: &CipherSuite,
         public_tree: &TreeKemPublic,
         private_tree: &TreeKemPrivate,
@@ -439,10 +501,12 @@ mod tests {
 
             let sealed = provider
                 .hpke_seal(public_key, &[], None, &test_data)
+                .await
                 .unwrap();
 
             let opened = provider
                 .hpke_open(&sealed, secret_key, public_key, &[], None)
+                .await
                 .unwrap();
 
             assert_eq!(test_data, opened);
@@ -499,7 +563,7 @@ mod tests {
         // Perform the encap function
         let encap_gen = TreeKem::new(&mut encap_tree, &mut encap_private_key)
             .encap(
-                &mut get_test_group_context(42, cipher_suite),
+                &mut get_test_group_context(42, cipher_suite).await,
                 &[],
                 &encap_signer,
                 update_leaf_properties,
@@ -521,7 +585,8 @@ mod tests {
         );
 
         // Verify that the private key matches the data in the public key
-        verify_tree_private_path(&cipher_suite, &encap_tree, &encap_private_key, LeafIndex(0));
+        verify_tree_private_path(&cipher_suite, &encap_tree, &encap_private_key, LeafIndex(0))
+            .await;
 
         let filtered = test_tree.nodes.filtered(LeafIndex(0)).unwrap();
         let mut unfiltered_nodes = vec![None; filtered.len()];
@@ -542,6 +607,7 @@ mod tests {
 
         encap_tree
             .update_hashes(&[LeafIndex(0)], &cipher_suite_provider)
+            .await
             .unwrap();
 
         let mut receiver_trees: Vec<TreeKemPublic> = (1..size).map(|_| test_tree.clone()).collect();
@@ -556,8 +622,8 @@ mod tests {
             .await
             .unwrap();
 
-            let mut context = get_test_group_context(42, cipher_suite);
-            context.tree_hash = tree.tree_hash(&cipher_suite_provider).unwrap();
+            let mut context = get_test_group_context(42, cipher_suite).await;
+            context.tree_hash = tree.tree_hash(&cipher_suite_provider).await.unwrap();
 
             TreeKem::new(tree, &mut private_keys[i])
                 .decap(
@@ -571,6 +637,7 @@ mod tests {
                 .unwrap();
 
             tree.update_hashes(&[LeafIndex(0)], &cipher_suite_provider)
+                .await
                 .unwrap();
 
             assert_eq!(tree, &encap_tree);

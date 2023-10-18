@@ -82,7 +82,8 @@ impl KeyPackage {
         &self.leaf_node.signing_identity
     }
 
-    pub(crate) fn to_reference<CP: CipherSuiteProvider>(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub(crate) async fn to_reference<CP: CipherSuiteProvider>(
         &self,
         cipher_suite_provider: &CP,
     ) -> Result<KeyPackageRef, MlsError> {
@@ -90,11 +91,14 @@ impl KeyPackage {
             return Err(MlsError::CipherSuiteMismatch);
         }
 
-        Ok(KeyPackageRef(HashReference::compute(
-            &self.mls_encode_to_vec()?,
-            b"MLS 1.0 KeyPackage Reference",
-            cipher_suite_provider,
-        )?))
+        Ok(KeyPackageRef(
+            HashReference::compute(
+                &self.mls_encode_to_vec()?,
+                b"MLS 1.0 KeyPackage Reference",
+                cipher_suite_provider,
+            )
+            .await?,
+        ))
     }
 }
 
@@ -283,9 +287,12 @@ mod tests {
             {
                 let pkg =
                     test_key_package(protocol_version, cipher_suite, &format!("alice{i}")).await;
+
                 let pkg_ref = pkg
                     .to_reference(&test_cipher_suite_provider(cipher_suite))
+                    .await
                     .unwrap();
+
                 let case = TestCase {
                     cipher_suite: cipher_suite.into(),
                     input: pkg.mls_encode_to_vec().unwrap(),
@@ -320,7 +327,7 @@ mod tests {
 
             let key_package = KeyPackage::mls_decode(&mut one_case.input.as_slice()).unwrap();
 
-            let key_package_ref = key_package.to_reference(&provider).unwrap();
+            let key_package_ref = key_package.to_reference(&provider).await.unwrap();
 
             let expected_out = KeyPackageRef::from(one_case.output);
             assert_eq!(expected_out, key_package_ref);
@@ -331,9 +338,10 @@ mod tests {
     async fn key_package_ref_fails_invalid_cipher_suite() {
         let key_package = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "test").await;
 
-        assert_matches!(
-            key_package.to_reference(&test_cipher_suite_provider(CipherSuite::P256_AES128)),
-            Err(MlsError::CipherSuiteMismatch)
-        )
+        let res = key_package
+            .to_reference(&test_cipher_suite_provider(CipherSuite::P256_AES128))
+            .await;
+
+        assert_matches!(res, Err(MlsError::CipherSuiteMismatch))
     }
 }

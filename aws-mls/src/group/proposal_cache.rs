@@ -529,14 +529,16 @@ pub(crate) mod test_utils {
             P: PreSharedKeyStorage,
             CSP: CipherSuiteProvider,
         {
-            let mut context = get_test_group_context(123, cipher_suite_provider.cipher_suite());
+            let mut context =
+                get_test_group_context(123, cipher_suite_provider.cipher_suite()).await;
+
             context.extensions = group_extensions.clone();
 
             let state = GroupState::new(
                 context,
                 public_tree.clone(),
                 Vec::new().into(),
-                ConfirmationTag::empty(cipher_suite_provider),
+                ConfirmationTag::empty(cipher_suite_provider).await,
             );
 
             let proposals = self.resolve_for_commit(sender, proposal_list)?;
@@ -583,7 +585,7 @@ pub(crate) mod test_utils {
                 context.clone(),
                 public_tree.clone(),
                 Vec::new().into(),
-                ConfirmationTag::empty(cipher_suite_provider),
+                ConfirmationTag::empty(cipher_suite_provider).await,
             );
 
             let proposals = self.prepare_commit(sender, additional_proposals);
@@ -726,6 +728,7 @@ mod tests {
             None,
             &signer,
         )
+        .await
         .unwrap();
 
         leaf
@@ -793,7 +796,9 @@ mod tests {
             .collect_vec();
 
         for i in 0..proposals.len() {
-            let pref = ProposalRef::from_content(&cipher_suite_provider, &plaintext[i]).unwrap();
+            let pref = ProposalRef::from_content(&cipher_suite_provider, &plaintext[i])
+                .await
+                .unwrap();
 
             bundle.add(
                 proposals[i].clone(),
@@ -814,7 +819,7 @@ mod tests {
 
         let expected_effects = ProvisionalState {
             public_tree: expected_tree,
-            group_context: get_test_group_context(1, cipher_suite),
+            group_context: get_test_group_context(1, cipher_suite).await,
             #[cfg(feature = "external_commit")]
             external_init_index: None,
             indexes_of_added_kpkgs: vec![LeafIndex(1)],
@@ -831,27 +836,31 @@ mod tests {
         }
     }
 
-    fn filter_proposals(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn filter_proposals(
         cipher_suite: CipherSuite,
         proposals: Vec<AuthenticatedContent>,
-    ) -> impl Iterator<Item = (ProposalRef, CachedProposal)> {
-        proposals
-            .into_iter()
-            .filter_map(move |p| match &p.content.content {
-                Content::Proposal(proposal) => {
-                    let proposal_ref =
-                        ProposalRef::from_content(&test_cipher_suite_provider(cipher_suite), &p)
-                            .unwrap();
-                    Some((
-                        proposal_ref,
-                        CachedProposal::new(proposal.as_ref().clone(), p.content.sender),
-                    ))
-                }
-                _ => None,
-            })
+    ) -> Vec<(ProposalRef, CachedProposal)> {
+        let mut contents = Vec::new();
+
+        for p in proposals {
+            if let Content::Proposal(proposal) = &p.content.content {
+                let proposal_ref =
+                    ProposalRef::from_content(&test_cipher_suite_provider(cipher_suite), &p)
+                        .await
+                        .unwrap();
+                contents.push((
+                    proposal_ref,
+                    CachedProposal::new(proposal.as_ref().clone(), p.content.sender),
+                ));
+            }
+        }
+
+        contents
     }
 
-    fn make_proposal_ref<S>(p: &Proposal, sender: S) -> ProposalRef
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn make_proposal_ref<S>(p: &Proposal, sender: S) -> ProposalRef
     where
         S: Into<Sender>,
     {
@@ -859,12 +868,14 @@ mod tests {
             &test_cipher_suite_provider(TEST_CIPHER_SUITE),
             &auth_content_from_proposal(p.clone(), sender),
         )
+        .await
         .unwrap()
     }
 
-    fn test_proposal_cache_setup(proposals: Vec<AuthenticatedContent>) -> ProposalCache {
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn test_proposal_cache_setup(proposals: Vec<AuthenticatedContent>) -> ProposalCache {
         let mut cache = make_proposal_cache();
-        cache.extend(filter_proposals(TEST_CIPHER_SUITE, proposals));
+        cache.extend(filter_proposals(TEST_CIPHER_SUITE, proposals).await);
         cache
     }
 
@@ -918,13 +929,13 @@ mod tests {
             ..
         } = test_proposals(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
-        let cache = test_proposal_cache_setup(test_proposals.clone());
+        let cache = test_proposal_cache_setup(test_proposals.clone()).await;
 
         let provisional_state = cache
             .prepare_commit_default(
                 Sender::Member(test_sender),
                 vec![],
-                &get_test_group_context(0, TEST_CIPHER_SUITE),
+                &get_test_group_context(0, TEST_CIPHER_SUITE).await,
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
@@ -958,13 +969,13 @@ mod tests {
             key_package: additional_key_package.clone(),
         };
 
-        let cache = test_proposal_cache_setup(test_proposals.clone());
+        let cache = test_proposal_cache_setup(test_proposals.clone()).await;
 
         let provisional_state = cache
             .prepare_commit_default(
                 Sender::Member(test_sender),
                 vec![Proposal::Add(Box::new(additional.clone()))],
-                &get_test_group_context(0, TEST_CIPHER_SUITE),
+                &get_test_group_context(0, TEST_CIPHER_SUITE).await,
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
@@ -1009,13 +1020,13 @@ mod tests {
 
         let additional = vec![Proposal::Update(update_proposal)];
 
-        let cache = test_proposal_cache_setup(test_proposals);
+        let cache = test_proposal_cache_setup(test_proposals).await;
 
         let res = cache
             .prepare_commit_default(
                 Sender::Member(test_sender()),
                 additional,
-                &get_test_group_context(0, TEST_CIPHER_SUITE),
+                &get_test_group_context(0, TEST_CIPHER_SUITE).await,
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
@@ -1041,8 +1052,8 @@ mod tests {
         } = test_proposals(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
         let update = Proposal::Update(make_update_proposal("foo").await);
-        let update_proposal_ref = make_proposal_ref(&update, LeafIndex(1));
-        let mut cache = test_proposal_cache_setup(test_proposals);
+        let update_proposal_ref = make_proposal_ref(&update, LeafIndex(1)).await;
+        let mut cache = test_proposal_cache_setup(test_proposals).await;
 
         cache.insert(update_proposal_ref.clone(), update, Sender::Member(1));
 
@@ -1050,7 +1061,7 @@ mod tests {
             .prepare_commit_default(
                 Sender::Member(test_sender),
                 vec![],
-                &get_test_group_context(0, TEST_CIPHER_SUITE),
+                &get_test_group_context(0, TEST_CIPHER_SUITE).await,
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
@@ -1086,14 +1097,14 @@ mod tests {
             ..
         } = test_proposals(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
-        let mut cache = test_proposal_cache_setup(test_proposals.clone());
-        cache.extend(filter_proposals(TEST_CIPHER_SUITE, test_proposals.clone()));
+        let mut cache = test_proposal_cache_setup(test_proposals.clone()).await;
+        cache.extend(filter_proposals(TEST_CIPHER_SUITE, test_proposals.clone()).await);
 
         let provisional_state = cache
             .prepare_commit_default(
                 Sender::Member(test_sender),
                 vec![],
-                &get_test_group_context(0, TEST_CIPHER_SUITE),
+                &get_test_group_context(0, TEST_CIPHER_SUITE).await,
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
@@ -1119,7 +1130,7 @@ mod tests {
             ..
         } = test_proposals(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
-        let mut cache = test_proposal_cache_setup(test_proposals.clone());
+        let mut cache = test_proposal_cache_setup(test_proposals.clone()).await;
 
         // Updates from different senders will be allowed so we test duplicates for add / remove
         let additional = test_proposals
@@ -1132,13 +1143,13 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        cache.extend(filter_proposals(TEST_CIPHER_SUITE, additional));
+        cache.extend(filter_proposals(TEST_CIPHER_SUITE, additional).await);
 
         let provisional_state = cache
             .prepare_commit_default(
                 Sender::Member(2),
                 Vec::new(),
-                &get_test_group_context(0, TEST_CIPHER_SUITE),
+                &get_test_group_context(0, TEST_CIPHER_SUITE).await,
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
@@ -1164,7 +1175,7 @@ mod tests {
         });
 
         let proposer = test_sender();
-        let test_proposal_ref = make_proposal_ref(&test_proposal, LeafIndex(proposer));
+        let test_proposal_ref = make_proposal_ref(&test_proposal, LeafIndex(proposer)).await;
         cache.insert(test_proposal_ref, test_proposal, Sender::Member(proposer));
 
         assert!(!cache.is_empty())
@@ -1181,7 +1192,7 @@ mod tests {
             ..
         } = test_proposals(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
-        let cache = test_proposal_cache_setup(test_proposals);
+        let cache = test_proposal_cache_setup(test_proposals).await;
 
         let proposal = Proposal::Add(Box::new(AddProposal {
             key_package: test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "frank").await,
@@ -1193,7 +1204,7 @@ mod tests {
             .prepare_commit_default(
                 Sender::Member(test_sender),
                 additional,
-                &get_test_group_context(0, TEST_CIPHER_SUITE),
+                &get_test_group_context(0, TEST_CIPHER_SUITE).await,
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
@@ -1247,7 +1258,7 @@ mod tests {
             .prepare_commit_default(
                 Sender::Member(*alice),
                 vec![proposal.clone(), proposal],
-                &get_test_group_context(0, TEST_CIPHER_SUITE),
+                &get_test_group_context(0, TEST_CIPHER_SUITE).await,
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
@@ -1275,6 +1286,7 @@ mod tests {
                 None,
                 &signer,
             )
+            .await
             .unwrap();
 
         leaf_node
@@ -1322,7 +1334,7 @@ mod tests {
             Proposal::ExternalInit(ExternalInit { kem_output })
         };
 
-        let proposal_ref = make_proposal_ref(&proposal, test_sender());
+        let proposal_ref = make_proposal_ref(&proposal, test_sender()).await;
 
         cache.insert(
             proposal_ref.clone(),
@@ -1693,7 +1705,7 @@ mod tests {
             .prepare_commit_default(
                 Sender::Member(test_sender()),
                 vec![],
-                &get_test_group_context(1, TEST_CIPHER_SUITE),
+                &get_test_group_context(1, TEST_CIPHER_SUITE).await,
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
@@ -1715,7 +1727,7 @@ mod tests {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         cache.insert(
-            make_proposal_ref(&update, LeafIndex(2)),
+            make_proposal_ref(&update, LeafIndex(2)).await,
             update,
             Sender::Member(2),
         );
@@ -1729,7 +1741,7 @@ mod tests {
             .prepare_commit_default(
                 Sender::Member(test_sender()),
                 Vec::new(),
-                &get_test_group_context(1, TEST_CIPHER_SUITE),
+                &get_test_group_context(1, TEST_CIPHER_SUITE).await,
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
@@ -1774,7 +1786,7 @@ mod tests {
             .prepare_commit_default(
                 Sender::Member(alice),
                 vec![remove],
-                &get_test_group_context(1, TEST_CIPHER_SUITE),
+                &get_test_group_context(1, TEST_CIPHER_SUITE).await,
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
@@ -1812,7 +1824,7 @@ mod tests {
             .prepare_commit_default(
                 Sender::Member(*alice),
                 vec![psk, add],
-                &get_test_group_context(1, TEST_CIPHER_SUITE),
+                &get_test_group_context(1, TEST_CIPHER_SUITE).await,
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
@@ -1844,7 +1856,7 @@ mod tests {
             .prepare_commit_default(
                 Sender::Member(*alice),
                 vec![reinit],
-                &get_test_group_context(1, TEST_CIPHER_SUITE),
+                &get_test_group_context(1, TEST_CIPHER_SUITE).await,
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
@@ -1973,7 +1985,7 @@ mod tests {
                 .prepare_commit_default(
                     Sender::Member(*self.sender),
                     self.additional_proposals.clone(),
-                    &get_test_group_context(1, TEST_CIPHER_SUITE),
+                    &get_test_group_context(1, TEST_CIPHER_SUITE).await,
                     &self.identity_provider,
                     &self.cipher_suite_provider,
                     self.tree,
@@ -2099,7 +2111,7 @@ mod tests {
         let proposal = Proposal::Add(Box::new(AddProposal {
             key_package: key_package_with_invalid_signature().await,
         }));
-        let proposal_ref = make_proposal_ref(&proposal, alice);
+        let proposal_ref = make_proposal_ref(&proposal, alice).await;
 
         let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
@@ -2145,7 +2157,7 @@ mod tests {
             .await,
         }));
 
-        let proposal_ref = make_proposal_ref(&proposal, alice);
+        let proposal_ref = make_proposal_ref(&proposal, alice).await;
 
         let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
@@ -2172,7 +2184,7 @@ mod tests {
             leaf_node: get_basic_test_node(TEST_CIPHER_SUITE, "alice").await,
         });
 
-        let proposal_ref = make_proposal_ref(&proposal, bob);
+        let proposal_ref = make_proposal_ref(&proposal, bob).await;
 
         let res = CommitReceiver::new(
             &tree,
@@ -2195,7 +2207,7 @@ mod tests {
         let proposal = Proposal::Update(UpdateProposal {
             leaf_node: get_basic_test_node(TEST_CIPHER_SUITE, "alice").await,
         });
-        let proposal_ref = make_proposal_ref(&proposal, bob);
+        let proposal_ref = make_proposal_ref(&proposal, bob).await;
 
         let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
@@ -2251,7 +2263,7 @@ mod tests {
         let proposal = Proposal::Remove(RemoveProposal {
             to_remove: LeafIndex(10),
         });
-        let proposal_ref = make_proposal_ref(&proposal, alice);
+        let proposal_ref = make_proposal_ref(&proposal, alice).await;
 
         let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
@@ -2331,7 +2343,7 @@ mod tests {
         let invalid_nonce = PskNonce(vec![0, 1, 2]);
         let (alice, tree) = new_tree("alice").await;
         let proposal = Proposal::Psk(make_external_psk(b"foo", invalid_nonce));
-        let proposal_ref = make_proposal_ref(&proposal, alice);
+        let proposal_ref = make_proposal_ref(&proposal, alice).await;
 
         let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
@@ -2399,7 +2411,7 @@ mod tests {
     async fn sending_resumption_psk_with_bad_usage_filters_it_out(usage: ResumptionPSKUsage) {
         let (alice, tree) = new_tree("alice").await;
         let proposal = Proposal::Psk(make_resumption_psk(usage));
-        let proposal_ref = make_proposal_ref(&proposal, alice);
+        let proposal_ref = make_proposal_ref(&proposal, alice).await;
 
         let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
@@ -2497,7 +2509,7 @@ mod tests {
         let smaller_protocol_version = ProtocolVersion::from(0);
         let (alice, tree) = new_tree("alice").await;
         let proposal = Proposal::ReInit(make_reinit(smaller_protocol_version));
-        let proposal_ref = make_proposal_ref(&proposal, alice);
+        let proposal_ref = make_proposal_ref(&proposal, alice).await;
 
         let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
@@ -2519,7 +2531,7 @@ mod tests {
     async fn receiving_update_for_committer_fails() {
         let (alice, tree) = new_tree("alice").await;
         let update = Proposal::Update(make_update_proposal("alice").await);
-        let update_ref = make_proposal_ref(&update, alice);
+        let update_ref = make_proposal_ref(&update, alice).await;
 
         let res = CommitReceiver::new(
             &tree,
@@ -2550,7 +2562,7 @@ mod tests {
     async fn sending_update_for_committer_filters_it_out() {
         let (alice, tree) = new_tree("alice").await;
         let proposal = Proposal::Update(make_update_proposal("alice").await);
-        let proposal_ref = make_proposal_ref(&proposal, alice);
+        let proposal_ref = make_proposal_ref(&proposal, alice).await;
 
         let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
@@ -2600,7 +2612,7 @@ mod tests {
     async fn sending_remove_for_committer_filters_it_out() {
         let (alice, tree) = new_tree("alice").await;
         let proposal = Proposal::Remove(RemoveProposal { to_remove: alice });
-        let proposal_ref = make_proposal_ref(&proposal, alice);
+        let proposal_ref = make_proposal_ref(&proposal, alice).await;
 
         let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
@@ -2624,10 +2636,10 @@ mod tests {
         let bob = add_member(&mut tree, "bob").await;
 
         let update = Proposal::Update(make_update_proposal("bob").await);
-        let update_ref = make_proposal_ref(&update, bob);
+        let update_ref = make_proposal_ref(&update, bob).await;
 
         let remove = Proposal::Remove(RemoveProposal { to_remove: bob });
-        let remove_ref = make_proposal_ref(&remove, bob);
+        let remove_ref = make_proposal_ref(&remove, bob).await;
 
         let res = CommitReceiver::new(
             &tree,
@@ -2649,10 +2661,10 @@ mod tests {
         let bob = add_member(&mut tree, "bob").await;
 
         let update = Proposal::Update(make_update_proposal("bob").await);
-        let update_ref = make_proposal_ref(&update, alice);
+        let update_ref = make_proposal_ref(&update, alice).await;
 
         let remove = Proposal::Remove(RemoveProposal { to_remove: bob });
-        let remove_ref = make_proposal_ref(&remove, alice);
+        let remove_ref = make_proposal_ref(&remove, alice).await;
 
         let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
@@ -2716,16 +2728,15 @@ mod tests {
     async fn sending_add_proposals_for_same_client_keeps_only_one() {
         let (alice, tree) = new_tree("alice").await;
 
-        let adds = [
-            Proposal::Add(make_add_proposal().await),
-            Proposal::Add(make_add_proposal().await),
-        ];
-        let add_refs = adds.clone().map(|p| make_proposal_ref(&p, alice));
+        let add_one = Proposal::Add(make_add_proposal().await);
+        let add_two = Proposal::Add(make_add_proposal().await);
+        let add_ref_one = make_proposal_ref(&add_one, alice).await;
+        let add_ref_two = make_proposal_ref(&add_two, alice).await;
 
         let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
-                .cache(add_refs[0].clone(), adds[0].clone(), alice)
-                .cache(add_refs[1].clone(), adds[1].clone(), alice)
+                .cache(add_ref_one.clone(), add_one.clone(), alice)
+                .cache(add_ref_two.clone(), add_two.clone(), alice)
                 .send()
                 .await
                 .unwrap();
@@ -2735,6 +2746,7 @@ mod tests {
             _ => panic!("committed proposals list does not contain exactly one reference"),
         };
 
+        let add_refs = [add_ref_one, add_ref_two];
         assert!(add_refs.contains(committed_add_ref));
 
         #[cfg(feature = "state_update")]
@@ -2750,7 +2762,7 @@ mod tests {
         let bob = add_member(&mut tree, "bob").await;
 
         let update = Proposal::Update(make_update_proposal_custom("carol", 1).await);
-        let update_ref = make_proposal_ref(&update, bob);
+        let update_ref = make_proposal_ref(&update, bob).await;
 
         let res = CommitReceiver::new(
             &tree,
@@ -2771,7 +2783,7 @@ mod tests {
         let bob = add_member(&mut tree, "bob").await;
 
         let update = Proposal::Update(make_update_proposal("carol").await);
-        let update_ref = make_proposal_ref(&update, bob);
+        let update_ref = make_proposal_ref(&update, bob).await;
 
         let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
@@ -2857,7 +2869,7 @@ mod tests {
         .await
         .unwrap();
 
-        let proposal_ref = make_proposal_ref(&add, alice);
+        let proposal_ref = make_proposal_ref(&add, alice).await;
 
         let processed_proposals = CommitSender::new(
             &public_tree,
@@ -2919,8 +2931,8 @@ mod tests {
         let proposal = Proposal::Psk(new_external_psk(b"foo"));
 
         let proposal_refs = [
-            make_proposal_ref(&proposal, alice),
-            make_proposal_ref(&proposal, bob),
+            make_proposal_ref(&proposal, alice).await,
+            make_proposal_ref(&proposal, bob).await,
         ];
 
         let processed_proposals =
@@ -3036,7 +3048,10 @@ mod tests {
             Proposal::GroupContextExtensions(make_extension_list(1)),
         ];
 
-        let gce_refs = proposals.clone().map(|p| make_proposal_ref(&p, alice));
+        let gce_refs = [
+            make_proposal_ref(&proposals[0], alice).await,
+            make_proposal_ref(&proposals[1], alice).await,
+        ];
 
         let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
@@ -3113,7 +3128,7 @@ mod tests {
 
         let proposal = Proposal::GroupContextExtensions(make_external_senders_extension());
 
-        let proposal_ref = make_proposal_ref(&proposal, alice);
+        let proposal_ref = make_proposal_ref(&proposal, alice).await;
 
         let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
@@ -3170,9 +3185,9 @@ mod tests {
     async fn sending_reinit_with_other_proposals_filters_it_out() {
         let (alice, tree) = new_tree("alice").await;
         let reinit = Proposal::ReInit(make_reinit(TEST_PROTOCOL_VERSION));
-        let reinit_ref = make_proposal_ref(&reinit, alice);
+        let reinit_ref = make_proposal_ref(&reinit, alice).await;
         let add = Proposal::Add(make_add_proposal().await);
-        let add_ref = make_proposal_ref(&add, alice);
+        let add_ref = make_proposal_ref(&add, alice).await;
 
         let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
@@ -3229,12 +3244,12 @@ mod tests {
     async fn sending_multiple_reinits_keeps_only_one() {
         let (alice, tree) = new_tree("alice").await;
         let reinit = Proposal::ReInit(make_reinit(TEST_PROTOCOL_VERSION));
-        let reinit_ref = make_proposal_ref(&reinit, alice);
+        let reinit_ref = make_proposal_ref(&reinit, alice).await;
         let other_reinit = Proposal::ReInit(ReInitProposal {
             group_id: b"other_group".to_vec(),
             ..make_reinit(TEST_PROTOCOL_VERSION)
         });
-        let other_reinit_ref = make_proposal_ref(&other_reinit, alice);
+        let other_reinit_ref = make_proposal_ref(&other_reinit, alice).await;
 
         let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
@@ -3307,7 +3322,7 @@ mod tests {
     async fn sending_external_init_from_member_filters_it_out() {
         let (alice, tree) = new_tree("alice").await;
         let external_init = Proposal::ExternalInit(make_external_init());
-        let external_init_ref = make_proposal_ref(&external_init, alice);
+        let external_init_ref = make_proposal_ref(&external_init, alice).await;
 
         let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
@@ -3379,7 +3394,7 @@ mod tests {
         let (alice, tree) = new_tree("alice").await;
 
         let proposal = required_capabilities_proposal(33);
-        let proposal_ref = make_proposal_ref(&proposal, alice);
+        let proposal_ref = make_proposal_ref(&proposal, alice).await;
 
         let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
@@ -3434,13 +3449,13 @@ mod tests {
             leaf_node: alice_new_leaf.clone(),
         });
 
-        let pk1_to_pk2_ref = make_proposal_ref(&pk1_to_pk2, alice);
+        let pk1_to_pk2_ref = make_proposal_ref(&pk1_to_pk2, alice).await;
 
         let pk2_to_pk3 = Proposal::Update(UpdateProposal {
             leaf_node: bob_new_leaf.clone(),
         });
 
-        let pk2_to_pk3_ref = make_proposal_ref(&pk2_to_pk3, bob);
+        let pk2_to_pk3_ref = make_proposal_ref(&pk2_to_pk3, bob).await;
 
         let effects = CommitReceiver::new(
             &tree,
@@ -3504,11 +3519,11 @@ mod tests {
             leaf_node: alice_new_leaf.clone(),
         });
 
-        let pk1_to_pk2_ref = make_proposal_ref(&pk1_to_pk2, alice);
+        let pk1_to_pk2_ref = make_proposal_ref(&pk1_to_pk2, alice).await;
 
         let remove_pk2 = Proposal::Remove(RemoveProposal { to_remove: bob });
 
-        let remove_pk2_ref = make_proposal_ref(&remove_pk2, bob);
+        let remove_pk2_ref = make_proposal_ref(&remove_pk2, bob).await;
 
         let effects = CommitReceiver::new(
             &tree,
@@ -3618,7 +3633,7 @@ mod tests {
             key_package: unsupported_credential_key_package("bob").await,
         }));
 
-        let add_ref = make_proposal_ref(&add, alice);
+        let add_ref = make_proposal_ref(&add, alice).await;
 
         let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
@@ -3663,7 +3678,7 @@ mod tests {
 
         let custom_proposal = Proposal::Custom(CustomProposal::new(ProposalType::new(42), vec![]));
 
-        let custom_ref = make_proposal_ref(&custom_proposal, alice);
+        let custom_ref = make_proposal_ref(&custom_proposal, alice).await;
 
         let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
@@ -3749,7 +3764,7 @@ mod tests {
         let (alice, tree) = new_tree("alice").await;
 
         let proposal = Proposal::GroupContextExtensions(make_extension_list(0));
-        let proposal_ref = make_proposal_ref(&proposal, alice);
+        let proposal_ref = make_proposal_ref(&proposal, alice).await;
 
         let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
@@ -3819,7 +3834,7 @@ mod tests {
     async fn sending_external_psk_with_unknown_id_filters_it_out() {
         let (alice, tree) = new_tree("alice").await;
         let proposal = Proposal::Psk(new_external_psk(b"abc"));
-        let proposal_ref = make_proposal_ref(&proposal, alice);
+        let proposal_ref = make_proposal_ref(&proposal, alice).await;
 
         let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
@@ -4065,7 +4080,7 @@ mod tests {
             let receiver = receiver.with_extensions(extensions);
 
             let (receiver, proposals, proposer) = if by_ref {
-                let proposal_ref = make_proposal_ref(proposal, proposer);
+                let proposal_ref = make_proposal_ref(proposal, proposer).await;
                 let receiver = receiver.cache(proposal_ref.clone(), proposal.clone(), proposer);
                 (receiver, vec![ProposalOrRef::from(proposal_ref)], proposer)
             } else {

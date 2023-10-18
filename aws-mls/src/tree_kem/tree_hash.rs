@@ -58,22 +58,24 @@ enum TreeHashInput<'a> {
 }
 
 impl TreeKemPublic {
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     #[inline(never)]
-    pub fn tree_hash<P: CipherSuiteProvider>(
+    pub async fn tree_hash<P: CipherSuiteProvider>(
         &mut self,
         cipher_suite_provider: &P,
     ) -> Result<Vec<u8>, MlsError>
     where
         P: CipherSuiteProvider,
     {
-        self.initialize_hashes(cipher_suite_provider)?;
+        self.initialize_hashes(cipher_suite_provider).await?;
         let root = tree_math::root(self.total_leaf_count());
         Ok(self.tree_hashes.current[root as usize].to_vec())
     }
 
     // Update hashes after `committer` makes changes to the tree. `path_blank` is the
     // list of leaves whose paths were blanked, i.e. updates and removes.
-    pub fn update_hashes<P: CipherSuiteProvider>(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn update_hashes<P: CipherSuiteProvider>(
         &mut self,
         updated_leaves: &[LeafIndex],
         cipher_suite_provider: &P,
@@ -102,13 +104,15 @@ impl TreeKemPublic {
             &[],
             num_leaves,
             cipher_suite_provider,
-        )?;
+        )
+        .await?;
 
         Ok(())
     }
 
     // Initialize all hashes after creating / importing a tree.
-    fn initialize_hashes<P>(&mut self, cipher_suite_provider: &P) -> Result<(), MlsError>
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn initialize_hashes<P>(&mut self, cipher_suite_provider: &P) -> Result<(), MlsError>
     where
         P: CipherSuiteProvider,
     {
@@ -122,7 +126,8 @@ impl TreeKemPublic {
                 &[],
                 num_leaves,
                 cipher_suite_provider,
-            )?;
+            )
+            .await?;
         }
 
         Ok(())
@@ -153,7 +158,8 @@ impl TreeKemPublic {
                 != self.nodes.borrow_as_parent(descendant)?.unmerged_leaves)
     }
 
-    pub(crate) fn compute_original_hashes<P: CipherSuiteProvider>(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub(crate) async fn compute_original_hashes<P: CipherSuiteProvider>(
         &self,
         cipher_suite: &P,
     ) -> Result<Vec<TreeHash>, MlsError> {
@@ -186,7 +192,8 @@ impl TreeKemPublic {
                     &self.nodes.borrow_as_parent(p)?.unmerged_leaves,
                     num_leaves as u32,
                     cipher_suite,
-                )?;
+                )
+                .await?;
             }
         }
 
@@ -197,22 +204,23 @@ impl TreeKemPublic {
         let root_original = if !self.nodes.is_blank(root)? && !self.nodes.is_leaf(root) {
             let root_unmerged = &self.nodes.borrow_as_parent(root)?.unmerged_leaves;
 
-            (!root_unmerged.is_empty())
-                .then(|| {
-                    let mut hashes = vec![];
+            if !root_unmerged.is_empty() {
+                let mut hashes = vec![];
 
-                    tree_hash(
-                        &mut hashes,
-                        &self.nodes,
-                        None,
-                        root_unmerged,
-                        num_leaves as u32,
-                        cipher_suite,
-                    )?;
+                tree_hash(
+                    &mut hashes,
+                    &self.nodes,
+                    None,
+                    root_unmerged,
+                    num_leaves as u32,
+                    cipher_suite,
+                )
+                .await?;
 
-                    Ok::<_, MlsError>(hashes)
-                })
-                .transpose()?
+                Some(hashes)
+            } else {
+                None
+            }
         } else {
             None
         };
@@ -234,7 +242,8 @@ impl TreeKemPublic {
     }
 }
 
-fn tree_hash<P: CipherSuiteProvider>(
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+async fn tree_hash<P: CipherSuiteProvider>(
     hashes: &mut Vec<TreeHash>,
     nodes: &NodeVec,
     leaves_to_update: Option<Vec<LeafIndex>>,
@@ -255,7 +264,7 @@ fn tree_hash<P: CipherSuiteProvider>(
             .then_some(nodes.borrow_as_leaf(*l).ok())
             .flatten();
 
-        hashes[2 * **l as usize] = TreeHash(hash_for_leaf(*l, leaf, cipher_suite_provider)?);
+        hashes[2 * **l as usize] = TreeHash(hash_for_leaf(*l, leaf, cipher_suite_provider).await?);
 
         if 2 * **l != tree_math::root(num_leaves) {
             node_queue.push_back(tree_math::parent(2 * **l));
@@ -265,13 +274,16 @@ fn tree_hash<P: CipherSuiteProvider>(
     let root = tree_math::root(num_leaves);
 
     while let Some(n) = node_queue.pop_front() {
-        let hash = TreeHash(hash_for_parent(
-            nodes.borrow_as_parent(n).ok(),
-            cipher_suite_provider,
-            filtered_leaves,
-            &hashes[tree_math::left_unchecked(n) as usize],
-            &hashes[tree_math::right_unchecked(n) as usize],
-        )?);
+        let hash = TreeHash(
+            hash_for_parent(
+                nodes.borrow_as_parent(n).ok(),
+                cipher_suite_provider,
+                filtered_leaves,
+                &hashes[tree_math::left_unchecked(n) as usize],
+                &hashes[tree_math::right_unchecked(n) as usize],
+            )
+            .await?,
+        );
 
         hashes[n as usize] = hash;
 
@@ -283,7 +295,8 @@ fn tree_hash<P: CipherSuiteProvider>(
     Ok(())
 }
 
-fn hash_for_leaf<P: CipherSuiteProvider>(
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+async fn hash_for_leaf<P: CipherSuiteProvider>(
     leaf_index: LeafIndex,
     leaf_node: Option<&LeafNode>,
     cipher_suite_provider: &P,
@@ -295,10 +308,12 @@ fn hash_for_leaf<P: CipherSuiteProvider>(
 
     cipher_suite_provider
         .hash(&input.mls_encode_to_vec()?)
+        .await
         .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
 }
 
-fn hash_for_parent<P: CipherSuiteProvider>(
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+async fn hash_for_parent<P: CipherSuiteProvider>(
     parent_node: Option<&Parent>,
     cipher_suite_provider: &P,
     filtered: &[LeafIndex],
@@ -321,6 +336,7 @@ fn hash_for_parent<P: CipherSuiteProvider>(
 
     cipher_suite_provider
         .hash(&input.mls_encode_to_vec()?)
+        .await
         .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
 }
 
@@ -361,6 +377,7 @@ mod tests {
                     tree_data: tree.export_node_data().mls_encode_to_vec().unwrap(),
                     tree_hash: tree
                         .tree_hash(&test_cipher_suite_provider(cipher_suite))
+                        .await
                         .unwrap(),
                 })
             }
@@ -396,7 +413,7 @@ mod tests {
             .await
             .unwrap();
 
-            let calculated_hash = tree.tree_hash(&cs_provider).unwrap();
+            let calculated_hash = tree.tree_hash(&cs_provider).await.unwrap();
 
             assert_eq!(calculated_hash, one_case.tree_hash);
         }

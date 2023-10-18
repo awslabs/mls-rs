@@ -163,6 +163,7 @@ async fn generate_update(i: u32, tree: &TreeWithSigners) -> Proposal {
             None,
             signer,
         )
+        .await
         .unwrap();
 
     Proposal::Update(UpdateProposal { leaf_node })

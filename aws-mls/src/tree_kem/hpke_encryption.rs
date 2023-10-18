@@ -29,10 +29,13 @@ impl<'a> EncryptContext<'a> {
     }
 }
 
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
+
 pub(crate) trait HpkeEncryptable: Sized {
     const ENCRYPT_LABEL: &'static str;
 
-    fn encrypt<P: CipherSuiteProvider>(
+    async fn encrypt<P: CipherSuiteProvider>(
         &self,
         cipher_suite_provider: &P,
         public_key: &HpkePublicKey,
@@ -46,10 +49,11 @@ pub(crate) trait HpkeEncryptable: Sized {
 
         cipher_suite_provider
             .hpke_seal(public_key, &context, None, &content)
+            .await
             .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
     }
 
-    fn decrypt<P: CipherSuiteProvider>(
+    async fn decrypt<P: CipherSuiteProvider>(
         cipher_suite_provider: &P,
         secret_key: &HpkeSecretKey,
         public_key: &HpkePublicKey,
@@ -60,6 +64,7 @@ pub(crate) trait HpkeEncryptable: Sized {
 
         let plaintext = cipher_suite_provider
             .hpke_open(ciphertext, secret_key, public_key, &context, None)
+            .await
             .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
         Self::from_bytes(plaintext.to_vec())
@@ -102,17 +107,17 @@ pub(crate) mod test_utils {
         encrypt_with_label: HpkeInteropTestCase,
     }
 
-    #[test]
-    fn test_basic_crypto_test_vectors() {
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_basic_crypto_test_vectors() {
         // The test vector can be found here https://github.com/mlswg/mls-implementations/blob/main/test-vectors/crypto-basics.json
         let test_cases: Vec<InteropTestCase> =
             load_test_case_json!(basic_crypto, Vec::<InteropTestCase>::new());
 
-        test_cases.into_iter().for_each(|test_case| {
+        for test_case in test_cases {
             if let Some(cs) = try_test_cipher_suite_provider(test_case.cipher_suite) {
-                test_case.encrypt_with_label.verify(&cs)
+                test_case.encrypt_with_label.verify(&cs).await
             }
-        })
+        }
     }
 
     #[derive(Clone, Debug, MlsSize, MlsEncode, MlsDecode)]
@@ -131,7 +136,8 @@ pub(crate) mod test_utils {
     }
 
     impl HpkeInteropTestCase {
-        pub fn verify<P: CipherSuiteProvider>(&self, cs: &P) {
+        #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+        pub async fn verify<P: CipherSuiteProvider>(&self, cs: &P) {
             let secret = self.secret.clone().into();
             let public = self.public.clone().into();
 
@@ -141,7 +147,9 @@ pub(crate) mod test_utils {
             };
 
             let computed_plaintext =
-                TestEncryptable::decrypt(cs, &secret, &public, &self.context, &ciphertext).unwrap();
+                TestEncryptable::decrypt(cs, &secret, &public, &self.context, &ciphertext)
+                    .await
+                    .unwrap();
 
             assert_eq!(&computed_plaintext.0, &self.plaintext)
         }

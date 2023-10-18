@@ -120,9 +120,11 @@ mod tests {
 
     use super::*;
 
-    fn random_hpke_secret_key() -> HpkeSecretKey {
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn random_hpke_secret_key() -> HpkeSecretKey {
         let (secret, _) = test_cipher_suite_provider(TEST_CIPHER_SUITE)
             .kem_derive(&random_bytes(32))
+            .await
             .unwrap();
 
         secret
@@ -130,7 +132,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_create_self_leaf() {
-        let secret = random_hpke_secret_key();
+        let secret = random_hpke_secret_key().await;
 
         let self_index = LeafIndex(42);
 
@@ -180,7 +182,7 @@ mod tests {
         // Generate an update path for Alice
         let encap_gen = TreeKem::new(&mut public_tree, &mut alice_private)
             .encap(
-                &mut get_test_group_context(42, cipher_suite),
+                &mut get_test_group_context(42, cipher_suite).await,
                 &[],
                 &alice_signing,
                 default_properties(),
@@ -262,8 +264,9 @@ mod tests {
     }
 
     #[cfg(feature = "by_ref_proposal")]
-    fn setup_direct_path(self_index: LeafIndex, leaf_count: u32) -> TreeKemPrivate {
-        let secret = random_hpke_secret_key();
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn setup_direct_path(self_index: LeafIndex, leaf_count: u32) -> TreeKemPrivate {
+        let secret = random_hpke_secret_key().await;
 
         let mut private_key = TreeKemPrivate::new_self_leaf(self_index, secret.clone());
 
@@ -278,9 +281,9 @@ mod tests {
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_update_leaf() {
         let self_leaf = LeafIndex(42);
-        let mut private_key = setup_direct_path(self_leaf, 128);
+        let mut private_key = setup_direct_path(self_leaf, 128).await;
 
-        let new_secret = random_hpke_secret_key();
+        let new_secret = random_hpke_secret_key().await;
 
         private_key.update_leaf(new_secret.clone());
 

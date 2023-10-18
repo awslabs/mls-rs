@@ -25,7 +25,8 @@ impl From<Vec<u8>> for ConfirmedTranscriptHash {
 }
 
 impl ConfirmedTranscriptHash {
-    pub(crate) fn create<P: CipherSuiteProvider>(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub(crate) async fn create<P: CipherSuiteProvider>(
         cipher_suite_provider: &P,
         interim_transcript_hash: &InterimTranscriptHash,
         content: &AuthenticatedContent,
@@ -51,6 +52,7 @@ impl ConfirmedTranscriptHash {
 
         cipher_suite_provider
             .hash(&hash_input)
+            .await
             .map(Into::into)
             .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
     }
@@ -74,7 +76,8 @@ impl From<Vec<u8>> for InterimTranscriptHash {
 }
 
 impl InterimTranscriptHash {
-    pub fn create<P: CipherSuiteProvider>(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn create<P: CipherSuiteProvider>(
         cipher_suite_provider: &P,
         confirmed: &ConfirmedTranscriptHash,
         confirmation_tag: &ConfirmationTag,
@@ -88,6 +91,7 @@ impl InterimTranscriptHash {
 
         cipher_suite_provider
             .hash(&[confirmed.0.deref(), &input].concat())
+            .await
             .map(Into::into)
             .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
     }
@@ -97,25 +101,33 @@ impl InterimTranscriptHash {
 #[cfg(feature = "by_ref_proposal")]
 #[cfg(test)]
 mod tests {
-    use alloc::boxed::Box;
-    use alloc::vec;
     use alloc::vec::Vec;
-    use aws_mls_codec::{MlsDecode, MlsEncode};
-    use aws_mls_core::crypto::{CipherSuite, CipherSuiteProvider};
+
+    use aws_mls_codec::MlsDecode;
 
     use crate::{
-        crypto::test_utils::{test_cipher_suite_provider, try_test_cipher_suite_provider},
-        group::{
-            confirmation_tag::ConfirmationTag,
-            framing::{Content, ContentType},
-            message_signature::AuthenticatedContent,
-            proposal::{Proposal, ProposalOrRef, RemoveProposal},
-            test_utils::get_test_group_context,
-            transcript_hashes, Commit, LeafIndex, Sender,
-        },
-        WireFormat,
+        crypto::test_utils::try_test_cipher_suite_provider,
+        group::{framing::ContentType, message_signature::AuthenticatedContent, transcript_hashes},
     };
 
+    #[cfg(not(mls_build_async))]
+    use alloc::{boxed::Box, vec};
+
+    #[cfg(not(mls_build_async))]
+    use crate::{
+        aws_mls_codec::MlsEncode,
+        crypto::test_utils::test_cipher_suite_provider,
+        group::{
+            confirmation_tag::ConfirmationTag,
+            framing::Content,
+            proposal::{Proposal, ProposalOrRef, RemoveProposal},
+            test_utils::get_test_group_context,
+            Commit, LeafIndex, Sender,
+        },
+        CipherSuite, CipherSuiteProvider, WireFormat,
+    };
+
+    #[cfg(not(mls_build_async))]
     use super::{ConfirmedTranscriptHash, InterimTranscriptHash};
 
     #[derive(serde::Serialize, serde::Deserialize, Debug, Default, Clone)]
@@ -137,11 +149,6 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn transcript_hash() {
-        #[cfg(mls_build_async)]
-        let test_cases: Vec<TestCase> =
-            load_test_case_json!(interop_transcript_hashes, generate_test_vector().await);
-
-        #[cfg(not(mls_build_async))]
         let test_cases: Vec<TestCase> =
             load_test_case_json!(interop_transcript_hashes, generate_test_vector());
 
@@ -159,13 +166,19 @@ mod tests {
             let conf_hash_after = test_case.confirmed_transcript_hash_after.into();
             let conf_tag = auth_content.auth.confirmation_tag.clone().unwrap();
 
-            assert!(conf_tag.matches(conf_key, &conf_hash_after, &cs).unwrap());
+            let matches = conf_tag
+                .matches(conf_key, &conf_hash_after, &cs)
+                .await
+                .unwrap();
+
+            assert!(matches);
 
             let (expected_interim, expected_conf) = transcript_hashes(
                 &cs,
                 &test_case.interim_transcript_hash_before.into(),
                 &auth_content,
             )
+            .await
             .unwrap();
 
             assert_eq!(*expected_interim, test_case.interim_transcript_hash_after);
@@ -173,8 +186,8 @@ mod tests {
         }
     }
 
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn generate_test_vector() -> Vec<TestCase> {
+    #[cfg(not(mls_build_async))]
+    fn generate_test_vector() -> Vec<TestCase> {
         CipherSuite::all().fold(vec![], |mut test_cases, cs| {
             let cs = test_cipher_suite_provider(cs);
 
@@ -231,5 +244,10 @@ mod tests {
             test_cases.push(test_case);
             test_cases
         })
+    }
+
+    #[cfg(mls_build_async)]
+    fn generate_test_vector() -> Vec<TestCase> {
+        panic!("Tests cannot be generated in async mode");
     }
 }

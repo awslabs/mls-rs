@@ -170,7 +170,8 @@ impl TestGroup {
     }
 }
 
-pub(crate) fn get_test_group_context(epoch: u64, cipher_suite: CipherSuite) -> GroupContext {
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+pub(crate) async fn get_test_group_context(epoch: u64, cipher_suite: CipherSuite) -> GroupContext {
     let cs = test_cipher_suite_provider(cipher_suite);
 
     GroupContext {
@@ -178,8 +179,8 @@ pub(crate) fn get_test_group_context(epoch: u64, cipher_suite: CipherSuite) -> G
         cipher_suite,
         group_id: TEST_GROUP.to_vec(),
         epoch,
-        tree_hash: cs.hash(&[1, 2, 3]).unwrap(),
-        confirmed_transcript_hash: ConfirmedTranscriptHash::from(cs.hash(&[3, 2, 1]).unwrap()),
+        tree_hash: cs.hash(&[1, 2, 3]).await.unwrap(),
+        confirmed_transcript_hash: cs.hash(&[3, 2, 1]).await.unwrap().into(),
         extensions: ExtensionList::from(vec![]),
     }
 }
@@ -507,11 +508,11 @@ impl MessageProcessor for GroupWithoutKeySchedule {
         self.inner.process_ciphertext(cipher_text).await
     }
 
-    fn verify_plaintext_authentication(
+    async fn verify_plaintext_authentication(
         &self,
         message: PublicMessage,
     ) -> Result<EventOrContent<Self::OutputType>, MlsError> {
-        self.inner.verify_plaintext_authentication(message)
+        self.inner.verify_plaintext_authentication(message).await
     }
 
     async fn update_key_schedule(

@@ -58,8 +58,11 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> TreeValidator<'a, C, CSP
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn validate(&self, tree: &mut TreeKemPublic) -> Result<(), MlsError> {
-        self.validate_tree_hash(tree)?;
-        tree.validate_parent_hashes(self.cipher_suite_provider)?;
+        self.validate_tree_hash(tree).await?;
+
+        tree.validate_parent_hashes(self.cipher_suite_provider)
+            .await?;
+
         self.validate_no_trailing_blanks(tree)?;
         self.validate_leaves(tree).await?;
         validate_unmerged(tree)
@@ -74,9 +77,10 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> TreeValidator<'a, C, CSP
             .ok_or(MlsError::UnexpectedTrailingBlanks)
     }
 
-    fn validate_tree_hash(&self, tree: &mut TreeKemPublic) -> Result<(), MlsError> {
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn validate_tree_hash(&self, tree: &mut TreeKemPublic) -> Result<(), MlsError> {
         //Verify that the tree hash of the ratchet tree matches the tree_hash field in the GroupInfo.
-        let tree_hash = tree.tree_hash(self.cipher_suite_provider)?;
+        let tree_hash = tree.tree_hash(self.cipher_suite_provider).await?;
 
         if tree_hash != self.expected_tree_hash {
             return Err(MlsError::TreeHashMismatch);
@@ -173,9 +177,11 @@ mod tests {
         },
     };
 
-    fn test_parent_node(cipher_suite: CipherSuite) -> Parent {
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn test_parent_node(cipher_suite: CipherSuite) -> Parent {
         let (_, public_key) = test_cipher_suite_provider(cipher_suite)
             .kem_generate()
+            .await
             .unwrap();
 
         Parent {
@@ -204,12 +210,12 @@ mod tests {
             .await
             .unwrap();
 
-        test_tree.public.nodes[1] = Some(Node::Parent(test_parent_node(cipher_suite)));
-        test_tree.public.nodes[3] = Some(Node::Parent(test_parent_node(cipher_suite)));
+        test_tree.public.nodes[1] = Some(Node::Parent(test_parent_node(cipher_suite).await));
+        test_tree.public.nodes[3] = Some(Node::Parent(test_parent_node(cipher_suite).await));
 
         TreeKem::new(&mut test_tree.public, &mut test_tree.private)
             .encap(
-                &mut get_test_group_context(42, cipher_suite),
+                &mut get_test_group_context(42, cipher_suite).await,
                 &[LeafIndex(1), LeafIndex(2)],
                 &test_tree.creator_signing_key,
                 default_properties(),
@@ -230,7 +236,7 @@ mod tests {
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
 
             let mut test_tree = get_valid_tree(cipher_suite).await;
-            let expected_tree_hash = test_tree.tree_hash(&cipher_suite_provider).unwrap();
+            let expected_tree_hash = test_tree.tree_hash(&cipher_suite_provider).await.unwrap();
 
             let extensions = ExtensionList::new();
 
@@ -282,7 +288,7 @@ mod tests {
             parent_node.parent_hash = ParentHash::from(random_bytes(32));
 
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
-            let expected_tree_hash = test_tree.tree_hash(&cipher_suite_provider).unwrap();
+            let expected_tree_hash = test_tree.tree_hash(&cipher_suite_provider).await.unwrap();
 
             let extensions = ExtensionList::new();
 
@@ -314,7 +320,7 @@ mod tests {
                 .signature = random_bytes(32);
 
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
-            let expected_tree_hash = test_tree.tree_hash(&cipher_suite_provider).unwrap();
+            let expected_tree_hash = test_tree.tree_hash(&cipher_suite_provider).await.unwrap();
             let extensions = ExtensionList::new();
 
             let validator = TreeValidator::new(

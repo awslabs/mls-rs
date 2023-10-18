@@ -229,7 +229,7 @@ impl TreeKemPublic {
             added.push(start);
         }
 
-        self.update_hashes(&added, cipher_suite_provider)?;
+        self.update_hashes(&added, cipher_suite_provider).await?;
 
         Ok(added)
     }
@@ -307,7 +307,8 @@ impl TreeKemPublic {
 
         // Verify the parent hash of the new sender leaf node and update the parent hash values
         // in the local tree
-        self.update_parent_hashes(sender, true, cipher_suite_provider)?;
+        self.update_parent_hashes(sender, true, cipher_suite_provider)
+            .await?;
 
         Ok(())
     }
@@ -489,7 +490,8 @@ impl TreeKemPublic {
             .chain(added.iter().copied())
             .collect_vec();
 
-        self.update_hashes(&updated_leaves, cipher_suite_provider)?;
+        self.update_hashes(&updated_leaves, cipher_suite_provider)
+            .await?;
 
         Ok(added)
     }
@@ -815,20 +817,21 @@ pub(crate) mod test_utils {
             for (i, f) in path.into_iter().zip(filtered) {
                 if !f {
                     self.tree
-                        .update_node(cs.kem_generate().unwrap().1, i)
+                        .update_node(cs.kem_generate().await.unwrap().1, i)
                         .unwrap();
                 }
             }
 
             self.tree.tree_hashes.current = vec![];
-            self.tree.tree_hash(cs).unwrap();
+            self.tree.tree_hash(cs).await.unwrap();
 
             self.tree
                 .update_parent_hashes(committer, false, cs)
+                .await
                 .unwrap();
 
             self.tree.tree_hashes.current = vec![];
-            self.tree.tree_hash(cs).unwrap();
+            self.tree.tree_hash(cs).await.unwrap();
 
             let context = LeafNodeSigningContext {
                 group_id: Some(&self.group_id),
@@ -845,7 +848,7 @@ pub(crate) mod test_utils {
                 .unwrap();
 
             self.tree.tree_hashes.current = vec![];
-            self.tree.tree_hash(cs).unwrap();
+            self.tree.tree_hash(cs).await.unwrap();
         }
     }
 

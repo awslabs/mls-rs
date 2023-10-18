@@ -413,7 +413,9 @@ pub(crate) trait MessageProcessor: Send + Sync {
         self.check_metadata(&message)?;
 
         match message.payload {
-            MLSMessagePayload::Plain(plaintext) => self.verify_plaintext_authentication(plaintext),
+            MLSMessagePayload::Plain(plaintext) => {
+                self.verify_plaintext_authentication(plaintext).await
+            }
             #[cfg(feature = "private_message")]
             MLSMessagePayload::Cipher(cipher_text) => self.process_ciphertext(cipher_text).await,
             _ => Err(MlsError::UnexpectedMessageType),
@@ -464,6 +466,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
             #[cfg(feature = "by_ref_proposal")]
             Content::Proposal(ref proposal) => self
                 .process_proposal(&auth_content, proposal, cache_proposal)
+                .await
                 .map(Self::OutputType::from),
         }?;
 
@@ -501,13 +504,15 @@ pub(crate) trait MessageProcessor: Send + Sync {
     }
 
     #[cfg(feature = "by_ref_proposal")]
-    fn process_proposal(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn process_proposal(
         &mut self,
         auth_content: &AuthenticatedContent,
         proposal: &Proposal,
         cache_proposal: bool,
     ) -> Result<ProposalMessageDescription, MlsError> {
-        let proposal_ref = ProposalRef::from_content(self.cipher_suite_provider(), auth_content)?;
+        let proposal_ref =
+            ProposalRef::from_content(self.cipher_suite_provider(), auth_content).await?;
 
         let group_state = self.group_state_mut();
 
@@ -671,7 +676,8 @@ pub(crate) trait MessageProcessor: Send + Sync {
             self.cipher_suite_provider(),
             &self.group_state().interim_transcript_hash,
             &auth_content,
-        )?;
+        )
+        .await?;
 
         #[cfg(any(feature = "private_message", feature = "by_ref_proposal"))]
         let commit = match auth_content.content.content {
@@ -774,12 +780,14 @@ pub(crate) trait MessageProcessor: Send + Sync {
         // Update the parent hashes in the new context
         provisional_state
             .public_tree
-            .update_hashes(&[sender], self.cipher_suite_provider())?;
+            .update_hashes(&[sender], self.cipher_suite_provider())
+            .await?;
 
         // Update the tree hash in the new context
         provisional_state.group_context.tree_hash = provisional_state
             .public_tree
-            .tree_hash(self.cipher_suite_provider())?;
+            .tree_hash(self.cipher_suite_provider())
+            .await?;
 
         if let Some(reinit) = provisional_state.applied_proposals.reinitializations.pop() {
             self.group_state_mut().pending_reinit = Some(reinit.proposal);
@@ -905,7 +913,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
         cipher_text: PrivateMessage,
     ) -> Result<EventOrContent<Self::OutputType>, MlsError>;
 
-    fn verify_plaintext_authentication(
+    async fn verify_plaintext_authentication(
         &self,
         message: PublicMessage,
     ) -> Result<EventOrContent<Self::OutputType>, MlsError>;
