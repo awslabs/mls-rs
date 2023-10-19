@@ -24,7 +24,7 @@ impl SqLiteApplicationStorage {
     /// Insert `value` into storage indexed by `key`.
     ///
     /// If a value already exists for `key` it will be overwritten.
-    pub fn insert(&self, key: Vec<u8>, value: Vec<u8>) -> Result<(), SqLiteDataStorageError> {
+    pub fn insert(&self, key: String, value: Vec<u8>) -> Result<(), SqLiteDataStorageError> {
         let connection = self.connection.lock().unwrap();
 
         // Upsert into the database
@@ -38,7 +38,7 @@ impl SqLiteApplicationStorage {
     }
 
     /// Get a value from storage based on its `key`.
-    pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>, SqLiteDataStorageError> {
+    pub fn get(&self, key: &str) -> Result<Option<Vec<u8>>, SqLiteDataStorageError> {
         let connection = self.connection.lock().unwrap();
 
         connection
@@ -50,7 +50,7 @@ impl SqLiteApplicationStorage {
     }
 
     /// Delete a value from storage based on its `key`.
-    pub fn delete(&self, key: &[u8]) -> Result<(), SqLiteDataStorageError> {
+    pub fn delete(&self, key: &str) -> Result<(), SqLiteDataStorageError> {
         let connection = self.connection.lock().unwrap();
 
         connection
@@ -58,18 +58,77 @@ impl SqLiteApplicationStorage {
             .map(|_| ())
             .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))
     }
+
+    /// Get all keys and values from storage for which key starts with `key_prefix`.
+    pub fn get_by_prefix(&self, key_prefix: &str) -> Result<Vec<Item>, SqLiteDataStorageError> {
+        let connection = self.connection.lock().unwrap();
+        let mut key_prefix = sanitize(key_prefix);
+        key_prefix.push('%');
+
+        let mut stmt = connection
+            .prepare("SELECT key, value FROM kvs WHERE key LIKE ? ESCAPE '$'")
+            .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))?;
+
+        let rows = stmt
+            .query(params![key_prefix])
+            .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))?
+            .mapped(|row| Ok(Item::new(row.get(0)?, row.get(1)?)));
+
+        rows.collect::<Result<_, _>>()
+            .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))
+    }
+
+    /// Delete all values from storage for which key starts with `key_prefix`.
+    pub fn delete_by_prefix(&self, key_prefix: &str) -> Result<(), SqLiteDataStorageError> {
+        let connection = self.connection.lock().unwrap();
+        let mut key_prefix = sanitize(key_prefix);
+        key_prefix.push('%');
+
+        connection
+            .execute(
+                "DELETE FROM kvs WHERE key LIKE ? ESCAPE '$'",
+                params![key_prefix],
+            )
+            .map(|_| ())
+            .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))
+    }
+}
+
+fn sanitize(string: &str) -> String {
+    string.replace('_', "$_").replace('%', "$%")
+}
+
+#[derive(Debug, Clone, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Item {
+    pub key: String,
+    pub value: Vec<u8>,
+}
+
+impl Item {
+    pub fn new(key: String, value: Vec<u8>) -> Self {
+        Self { key, value }
+    }
+
+    pub fn key(&self) -> &str {
+        &self.key
+    }
+
+    pub fn value(&self) -> &[u8] {
+        &self.value
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::{
-        connection_strategy::MemoryStrategy, test_utils::gen_rand_bytes, SqLiteDataStorageEngine,
+        application::Item, connection_strategy::MemoryStrategy, test_utils::gen_rand_bytes,
+        SqLiteDataStorageEngine,
     };
 
     use super::SqLiteApplicationStorage;
 
-    fn test_kv() -> (Vec<u8>, Vec<u8>) {
-        let key = gen_rand_bytes(32);
+    fn test_kv() -> (String, Vec<u8>) {
+        let key = hex::encode(gen_rand_bytes(32));
         let value = gen_rand_bytes(64);
 
         (key, value)
@@ -116,5 +175,59 @@ mod tests {
         storage.delete(&key).unwrap();
 
         assert!(storage.get(&key).unwrap().is_none());
+    }
+
+    #[test]
+    fn test_by_prefix() {
+        let keys = ["prefix one", "prefix two", "prefiy ", "prefiw "].map(ToString::to_string);
+        let value = gen_rand_bytes(5);
+
+        let storage = test_storage();
+
+        keys.iter()
+            .for_each(|k| storage.insert(k.clone(), value.clone()).unwrap());
+
+        let mut expected = vec![
+            Item::new(keys[0].clone(), value.clone()),
+            Item::new(keys[1].clone(), value.clone()),
+        ];
+
+        expected.sort();
+
+        let mut result = storage.get_by_prefix("prefix").unwrap();
+        result.sort();
+
+        assert_eq!(result, expected);
+
+        let result = storage.get_by_prefix("a").unwrap();
+        assert!(result.is_empty());
+
+        let result = storage.get_by_prefix("").unwrap();
+        assert_eq!(result.len(), keys.len());
+
+        storage.delete_by_prefix("prefix").unwrap();
+        let result = storage.get_by_prefix("").unwrap();
+        assert_eq!(result.len(), 2);
+        assert!(result.contains(&Item::new("prefiy ".to_string(), value.clone())));
+        assert!(result.contains(&Item::new("prefiw ".to_string(), value)));
+    }
+
+    #[test]
+    fn test_special_characters() {
+        let storage = test_storage();
+
+        storage
+            .insert("%$_ƕ❤_$%".to_string(), gen_rand_bytes(5))
+            .unwrap();
+        storage
+            .insert("%$_ƕ❤a$%".to_string(), gen_rand_bytes(5))
+            .unwrap();
+        storage
+            .insert("%$_ƕ❤Ḉ$%".to_string(), gen_rand_bytes(5))
+            .unwrap();
+
+        let items = storage.get_by_prefix("%$_ƕ❤_").unwrap();
+        let keys = items.into_iter().map(|i| i.key).collect::<Vec<_>>();
+        assert_eq!(vec!["%$_ƕ❤_$%".to_string()], keys);
     }
 }

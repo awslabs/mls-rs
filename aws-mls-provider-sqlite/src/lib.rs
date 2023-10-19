@@ -137,7 +137,7 @@ fn create_tables_v1(connection: &Connection) -> Result<(), SqLiteDataStorageErro
                 data BLOB NOT NULL
             ) WITHOUT ROWID;
             CREATE TABLE kvs (
-                key BLOB PRIMARY KEY,
+                key TEXT PRIMARY KEY,
                 value BLOB NOT NULL
             ) WITHOUT ROWID;
             PRAGMA user_version = 1;
