@@ -2,7 +2,7 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use std::{ffi::c_void, mem::MaybeUninit};
+use std::{ffi::c_void, mem::MaybeUninit, ops::Deref, ptr::null_mut};
 
 use aws_lc_rs::{
     digest,
@@ -11,19 +11,29 @@ use aws_lc_rs::{
 };
 
 use aws_lc_sys::{
-    ECDSA_SIG_free, ECDSA_SIG_to_bytes, ECDSA_do_sign, ED25519_keypair, ED25519_sign, OPENSSL_free,
-    ED25519_PRIVATE_KEY_LEN, ED25519_SIGNATURE_LEN,
+    ECDSA_SIG_free, ECDSA_SIG_to_bytes, ECDSA_do_sign, ED25519_keypair, ED25519_sign,
+    EVP_PKEY_new_raw_private_key, EVP_PKEY_new_raw_public_key, OPENSSL_free,
+    ED25519_PRIVATE_KEY_LEN, ED25519_SIGNATURE_LEN, EVP_PKEY_ED25519,
 };
 use aws_mls_core::crypto::{CipherSuite, SignaturePublicKey, SignatureSecretKey};
 use aws_mls_crypto_traits::Curve;
 
 use crate::{
-    ec::{ec_generate, ec_public_key, EcPrivateKey, EcPublicKey, SUPPORTED_NIST_CURVES},
+    check_non_null,
+    ec::{ec_generate, ec_public_key, EcPrivateKey, EcPublicKey, EvpPkey, SUPPORTED_NIST_CURVES},
     AwsLcCryptoError,
 };
 
 #[derive(Clone)]
 pub struct AwsLcEcdsa(Curve);
+
+impl Deref for AwsLcEcdsa {
+    type Target = Curve;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 impl AwsLcEcdsa {
     pub fn new(cipher_suite: CipherSuite) -> Option<Self> {
@@ -61,6 +71,56 @@ impl AwsLcEcdsa {
         }?;
 
         Ok((secret.into(), public.into()))
+    }
+
+    pub(crate) fn evp_public_key(
+        &self,
+        key: &SignaturePublicKey,
+    ) -> Result<EvpPkey, AwsLcCryptoError> {
+        if self.0 == Curve::Ed25519 {
+            if key.len() != ED25519_PUBLIC_KEY_LEN {
+                return Err(AwsLcCryptoError::InvalidKeyData);
+            }
+
+            unsafe {
+                check_non_null(EVP_PKEY_new_raw_public_key(
+                    EVP_PKEY_ED25519,
+                    null_mut(),
+                    key.as_ptr(),
+                    key.len(),
+                ))
+                .map(EvpPkey)
+            }
+        } else {
+            EcPublicKey::from_bytes(key, self.0)?
+                .try_into()
+                .map_err(Into::into)
+        }
+    }
+
+    pub(crate) fn evp_private_key(
+        &self,
+        key: &SignatureSecretKey,
+    ) -> Result<EvpPkey, AwsLcCryptoError> {
+        if self.0 == Curve::Ed25519 {
+            if key.len() != ED25519_PUBLIC_KEY_LEN * 2 {
+                return Err(AwsLcCryptoError::InvalidKeyData);
+            }
+
+            unsafe {
+                check_non_null(EVP_PKEY_new_raw_private_key(
+                    EVP_PKEY_ED25519,
+                    null_mut(),
+                    key.as_ptr(),
+                    key.len() / 2,
+                ))
+                .map(EvpPkey)
+            }
+        } else {
+            EcPrivateKey::from_bytes(key, self.0)?
+                .try_into()
+                .map_err(Into::into)
+        }
     }
 
     pub fn signature_key_derive_public(
@@ -115,9 +175,7 @@ impl AwsLcEcdsa {
 
     fn hash(&self, data: &[u8]) -> Result<Vec<u8>, AwsLcCryptoError> {
         match self.0 {
-            Curve::Ed25519 | Curve::P256 => {
-                Ok(digest::digest(&digest::SHA256, data).as_ref().to_vec())
-            }
+            Curve::P256 => Ok(digest::digest(&digest::SHA256, data).as_ref().to_vec()),
             Curve::P384 => Ok(digest::digest(&digest::SHA384, data).as_ref().to_vec()),
             Curve::P521 => Ok(digest::digest(&digest::SHA512, data).as_ref().to_vec()),
             _ => Err(AwsLcCryptoError::UnsupportedCipherSuite),

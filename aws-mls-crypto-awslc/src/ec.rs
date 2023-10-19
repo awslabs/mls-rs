@@ -10,8 +10,9 @@ use aws_lc_sys::{
     EC_GROUP_free, EC_GROUP_new_by_curve_name, EC_KEY_free, EC_KEY_generate_key, EC_KEY_get0_group,
     EC_KEY_get0_private_key, EC_KEY_get0_public_key, EC_KEY_new_by_curve_name,
     EC_KEY_set_private_key, EC_KEY_set_public_key, EC_POINT_copy, EC_POINT_free, EC_POINT_mul,
-    EC_POINT_new, EC_POINT_oct2point, EC_POINT_point2oct, NID_X9_62_prime256v1, NID_secp384r1,
-    NID_secp521r1, X25519_keypair, X25519_public_from_private, EC_POINT, X25519,
+    EC_POINT_new, EC_POINT_oct2point, EC_POINT_point2oct, EVP_PKEY_free, EVP_PKEY_new,
+    EVP_PKEY_set1_EC_KEY, NID_X9_62_prime256v1, NID_secp384r1, NID_secp521r1, X25519_keypair,
+    X25519_public_from_private, EC_POINT, EVP_PKEY, X25519,
 };
 use aws_mls_core::crypto::{CipherSuite, HpkePublicKey, HpkeSecretKey};
 use aws_mls_crypto_traits::Curve;
@@ -295,6 +296,26 @@ impl Drop for EcPrivateKey {
     }
 }
 
+impl TryInto<EvpPkey> for EcPrivateKey {
+    type Error = Unspecified;
+
+    fn try_into(self) -> Result<EvpPkey, Unspecified> {
+        unsafe {
+            let key = EVP_PKEY_new();
+
+            if key.is_null() {
+                return Err(Unspecified);
+            }
+
+            if 1 != EVP_PKEY_set1_EC_KEY(key, self.inner) {
+                return Err(Unspecified);
+            }
+
+            Ok(EvpPkey(key))
+        }
+    }
+}
+
 pub struct EcPublicKey {
     pub(crate) inner: *mut EC_POINT,
     curve: Curve,
@@ -348,6 +369,50 @@ impl EcPublicKey {
         (out_len == pub_key_data.len())
             .then_some(pub_key_data)
             .ok_or(Unspecified)
+    }
+}
+
+pub struct EvpPkey(pub(crate) *mut EVP_PKEY);
+
+impl Drop for EvpPkey {
+    fn drop(&mut self) {
+        unsafe { EVP_PKEY_free(self.0) }
+    }
+}
+
+impl TryInto<EvpPkey> for EcPublicKey {
+    type Error = Unspecified;
+
+    fn try_into(self) -> Result<EvpPkey, Unspecified> {
+        unsafe {
+            let nid = nid(self.curve).ok_or(Unspecified)?;
+            let ec_key = EC_KEY_new_by_curve_name(nid);
+
+            if ec_key.is_null() {
+                return Err(Unspecified);
+            }
+
+            if 1 != EC_KEY_set_public_key(ec_key, self.inner) {
+                EC_KEY_free(ec_key);
+                return Err(Unspecified);
+            }
+
+            let key = EVP_PKEY_new();
+
+            if key.is_null() {
+                EC_KEY_free(ec_key);
+                return Err(Unspecified);
+            }
+
+            let res = EVP_PKEY_set1_EC_KEY(key, ec_key);
+            EC_KEY_free(ec_key);
+
+            if res != 1 {
+                return Err(Unspecified);
+            }
+
+            Ok(EvpPkey(key))
+        }
     }
 }
 

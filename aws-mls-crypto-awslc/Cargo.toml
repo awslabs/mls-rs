@@ -1,6 +1,6 @@
 [package]
 name = "aws-mls-crypto-awslc"
-version = "0.4.2"
+version = "0.5.0"
 edition = "2021"
 
 [dependencies]
@@ -9,6 +9,7 @@ aws-lc-sys = { version = "0.10.0", features = ["bindgen"] }
 aws-mls-core = { path = "../aws-mls-core", version = "*" }
 aws-mls-crypto-hpke = { path = "../aws-mls-crypto-hpke", version = "*" }
 aws-mls-crypto-traits = { path = "../aws-mls-crypto-traits", version = "*" }
+aws-mls-identity-x509 = { path = "../aws-mls-identity-x509", version = "*" }
 thiserror = "1.0.40"
 zeroize = { version = "1", features = ["zeroize_derive"] }
 maybe-async = "0.2.7"

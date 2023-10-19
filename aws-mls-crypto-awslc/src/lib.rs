@@ -7,7 +7,9 @@ mod ec;
 mod ecdsa;
 mod kdf;
 
-use std::mem::MaybeUninit;
+pub mod x509;
+
+use std::{ffi::c_int, mem::MaybeUninit};
 
 use aead::AwsLcAead;
 use aws_lc_rs::{digest, error::Unspecified, hmac};
@@ -310,6 +312,26 @@ pub fn sha256(data: &[u8]) -> [u8; 32] {
         SHA256(data.as_ptr(), data.len(), out.as_mut_ptr() as *mut u8);
         out.assume_init()
     }
+}
+
+fn check_res(r: c_int) -> Result<(), AwsLcCryptoError> {
+    check_int_return(r).map(|_| ())
+}
+
+fn check_int_return(r: c_int) -> Result<c_int, AwsLcCryptoError> {
+    if r <= 0 {
+        Err(AwsLcCryptoError::CryptoError)
+    } else {
+        Ok(r)
+    }
+}
+
+fn check_non_null<T>(r: *mut T) -> Result<*mut T, AwsLcCryptoError> {
+    if r.is_null() {
+        return Err(AwsLcCryptoError::CryptoError);
+    }
+
+    Ok(r)
 }
 
 #[cfg(all(not(mls_build_async), test))]
