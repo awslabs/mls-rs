@@ -1,2 +1,0 @@
-[build]
-rustflags = ["-Aclippy::incorrect_clone_impl_on_copy_type"]
