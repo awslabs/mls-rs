@@ -130,12 +130,13 @@ mod tests {
         test_writing_csr(false)
     }
 
-    #[test]
-    fn test_csr_nist() {
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, futures_test::test))]
+    async fn test_csr_nist() {
         let (secret, _) = AwsLcCryptoProvider::new()
             .cipher_suite_provider(CipherSuite::P256_AES128)
             .unwrap()
             .signature_key_generate()
+            .await
             .unwrap();
 
         let writer = CertificateRequestWriter::new(CipherSuite::P256_AES128, secret).unwrap();

@@ -16,6 +16,7 @@ maybe-async = "0.2.7"
 
 [dev-dependencies]
 aws-mls-core = { path = "../aws-mls-core", version = "*", features = ["test_suite"] }
+futures-test = "0.3.25"
 
 [target.'cfg(mls_build_async)'.dependencies]
 async-trait = "0.1.74"
