@@ -12,7 +12,9 @@ pub(crate) async fn validate_key_package_properties<CSP: CipherSuiteProvider>(
     version: ProtocolVersion,
     cs: &CSP,
 ) -> Result<(), MlsError> {
-    package.verify(cs, &package.leaf_node.signing_identity.signature_key, &())?;
+    package
+        .verify(cs, &package.leaf_node.signing_identity.signature_key, &())
+        .await?;
 
     // Verify that the protocol version matches
     if package.version != version {

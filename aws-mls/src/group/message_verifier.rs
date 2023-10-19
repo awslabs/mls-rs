@@ -90,7 +90,8 @@ pub(crate) async fn verify_plaintext_authentication<P: CipherSuiteProvider>(
         &auth_content,
         #[cfg(feature = "external_proposal")]
         &external_signers,
-    )?;
+    )
+    .await?;
 
     Ok(auth_content)
 }
@@ -106,9 +107,10 @@ fn external_signers(context: &GroupContext) -> Vec<SigningIdentity> {
         })
 }
 
-pub(crate) fn verify_auth_content_signature<P: CipherSuiteProvider>(
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+pub(crate) async fn verify_auth_content_signature<P: CipherSuiteProvider>(
     cipher_suite_provider: &P,
-    signature_keys_container: SignaturePublicKeysContainer,
+    signature_keys_container: SignaturePublicKeysContainer<'_>,
     context: &GroupContext,
     auth_content: &AuthenticatedContent,
     #[cfg(feature = "external_proposal")] external_signers: &[SigningIdentity],
@@ -131,7 +133,9 @@ pub(crate) fn verify_auth_content_signature<P: CipherSuiteProvider>(
         protocol_version: context.protocol_version,
     };
 
-    auth_content.verify(cipher_suite_provider, &sender_public_key, &context)?;
+    auth_content
+        .verify(cipher_suite_provider, &sender_public_key, &context)
+        .await?;
 
     Ok(())
 }
@@ -371,6 +375,7 @@ mod tests {
             #[cfg(feature = "external_proposal")]
             &[],
         )
+        .await
         .unwrap();
     }
 
@@ -442,7 +447,8 @@ mod tests {
     }
 
     #[cfg(feature = "by_ref_proposal")]
-    fn test_new_member_proposal<F>(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn test_new_member_proposal<F>(
         key_pkg_gen: KeyPackageGeneration,
         signer: &SignatureSecretKey,
         test_group: &TestGroup,
@@ -462,6 +468,7 @@ mod tests {
             WireFormat::PublicMessage,
             vec![],
         )
+        .await
         .unwrap();
 
         edit(&mut content);
@@ -477,6 +484,7 @@ mod tests {
                 signer,
                 &signing_context,
             )
+            .await
             .unwrap();
 
         PublicMessage {
@@ -492,7 +500,7 @@ mod tests {
         let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let (key_pkg_gen, signer) =
             test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob").await;
-        let message = test_new_member_proposal(key_pkg_gen, &signer, &test_group, |_| {});
+        let message = test_new_member_proposal(key_pkg_gen, &signer, &test_group, |_| {}).await;
 
         verify_plaintext_authentication(
             &test_group.group.cipher_suite_provider,
@@ -512,7 +520,7 @@ mod tests {
         let (key_pkg_gen, signer) =
             test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob").await;
 
-        let mut message = test_new_member_proposal(key_pkg_gen, &signer, &test_group, |_| {});
+        let mut message = test_new_member_proposal(key_pkg_gen, &signer, &test_group, |_| {}).await;
         message.membership_tag = Some(MembershipTag::from(vec![]));
 
         let res = verify_plaintext_authentication(
@@ -538,7 +546,8 @@ mod tests {
             msg.content.content = Content::Proposal(Box::new(Proposal::Remove(RemoveProposal {
                 to_remove: LeafIndex(0),
             })))
-        });
+        })
+        .await;
 
         let res: Result<AuthenticatedContent, MlsError> = verify_plaintext_authentication(
             &test_group.group.cipher_suite_provider,
@@ -561,7 +570,8 @@ mod tests {
 
         let message = test_new_member_proposal(key_pkg_gen, &signer, &test_group, |msg| {
             msg.content.sender = Sender::NewMemberCommit;
-        });
+        })
+        .await;
 
         let res = verify_plaintext_authentication(
             &test_group.group.cipher_suite_provider,
@@ -581,7 +591,7 @@ mod tests {
         let (bob_key_pkg_gen, _) =
             test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob").await;
 
-        let (ted_signing, ted_secret) = get_test_signing_identity(TEST_CIPHER_SUITE, b"ted");
+        let (ted_signing, ted_secret) = get_test_signing_identity(TEST_CIPHER_SUITE, b"ted").await;
 
         let mut test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let mut extensions = ExtensionList::default();
@@ -605,7 +615,8 @@ mod tests {
 
         let message = test_new_member_proposal(bob_key_pkg_gen, &ted_secret, &test_group, |msg| {
             msg.content.sender = Sender::External(0)
-        });
+        })
+        .await;
 
         verify_plaintext_authentication(
             &test_group.group.cipher_suite_provider,
@@ -623,12 +634,13 @@ mod tests {
     async fn external_proposal_must_be_from_valid_sender() {
         let (bob_key_pkg_gen, _) =
             test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob").await;
-        let (_, ted_secret) = get_test_signing_identity(TEST_CIPHER_SUITE, b"ted");
+        let (_, ted_secret) = get_test_signing_identity(TEST_CIPHER_SUITE, b"ted").await;
         let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
         let message = test_new_member_proposal(bob_key_pkg_gen, &ted_secret, &test_group, |msg| {
             msg.content.sender = Sender::External(0)
-        });
+        })
+        .await;
 
         let res = verify_plaintext_authentication(
             &test_group.group.cipher_suite_provider,
@@ -648,12 +660,12 @@ mod tests {
         let (bob_key_pkg_gen, _) =
             test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob").await;
 
-        let (_, ted_secret) = get_test_signing_identity(TEST_CIPHER_SUITE, b"ted");
+        let (_, ted_secret) = get_test_signing_identity(TEST_CIPHER_SUITE, b"ted").await;
 
         let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
         let mut message =
-            test_new_member_proposal(bob_key_pkg_gen, &ted_secret, &test_group, |_| {});
+            test_new_member_proposal(bob_key_pkg_gen, &ted_secret, &test_group, |_| {}).await;
 
         message.membership_tag = Some(MembershipTag::from(vec![]));
 

@@ -465,7 +465,8 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             signer,
             WireFormat::PublicMessage,
             authenticated_data,
-        )?;
+        )
+        .await?;
 
         self.state.proposals.insert(
             ProposalRef::from_content(&self.cipher_suite_provider, &auth_content).await?,
@@ -1065,7 +1066,8 @@ mod tests {
     async fn setup_extern_proposal_test(
         extern_proposals_allowed: bool,
     ) -> (SigningIdentity, SignatureSecretKey, TestGroup) {
-        let (server_identity, server_key) = get_test_signing_identity(TEST_CIPHER_SUITE, b"server");
+        let (server_identity, server_key) =
+            get_test_signing_identity(TEST_CIPHER_SUITE, b"server").await;
 
         let alice = test_group_two_members(
             TEST_PROTOCOL_VERSION,
@@ -1176,12 +1178,17 @@ mod tests {
     #[cfg(feature = "external_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_group_external_signing_identity_invalid() {
-        let (server_identity, server_key) = get_test_signing_identity(TEST_CIPHER_SUITE, b"server");
+        let (server_identity, server_key) =
+            get_test_signing_identity(TEST_CIPHER_SUITE, b"server").await;
 
         let alice = test_group_two_members(
             TEST_PROTOCOL_VERSION,
             TEST_CIPHER_SUITE,
-            Some(get_test_signing_identity(TEST_CIPHER_SUITE, b"not server").0),
+            Some(
+                get_test_signing_identity(TEST_CIPHER_SUITE, b"not server")
+                    .await
+                    .0,
+            ),
         )
         .await;
 

@@ -164,11 +164,13 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
             .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?;
 
         // Verify that the credential signed the leaf node
-        leaf_node.verify(
-            self.cipher_suite_provider,
-            &leaf_node.signing_identity.signature_key,
-            &context.signing_context(),
-        )?;
+        leaf_node
+            .verify(
+                self.cipher_suite_provider,
+                &leaf_node.signing_identity.signature_key,
+                &context.signing_context(),
+            )
+            .await?;
 
         // If required capabilities are specified, verify the leaf node meets the requirements
         #[cfg(feature = "all_extensions")]
@@ -219,7 +221,7 @@ mod tests {
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn get_test_add_node() -> (LeafNode, SignatureSecretKey) {
-        let (signing_identity, secret) = get_test_signing_identity(TEST_CIPHER_SUITE, b"foo");
+        let (signing_identity, secret) = get_test_signing_identity(TEST_CIPHER_SUITE, b"foo").await;
 
         let (leaf_node, _) =
             get_test_node(TEST_CIPHER_SUITE, signing_identity, &secret, None, None).await;
@@ -421,7 +423,7 @@ mod tests {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
 
-            let (signing_identity, secret) = get_test_signing_identity(cipher_suite, b"foo");
+            let (signing_identity, secret) = get_test_signing_identity(cipher_suite, b"foo").await;
 
             let (mut leaf_node, _) =
                 get_test_node(cipher_suite, signing_identity, &secret, None, None).await;
@@ -446,7 +448,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_capabilities_mismatch() {
-        let (signing_identity, secret) = get_test_signing_identity(TEST_CIPHER_SUITE, b"foo");
+        let (signing_identity, secret) = get_test_signing_identity(TEST_CIPHER_SUITE, b"foo").await;
 
         let mut extensions = ExtensionList::new();
 

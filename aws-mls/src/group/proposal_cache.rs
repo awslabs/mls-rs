@@ -2038,12 +2038,15 @@ mod tests {
                     leaf_index: None,
                 },
             )
+            .await
             .unwrap();
 
         key_package_gen
             .key_package
             .sign(provider, gen.signing_key, &())
+            .await
             .unwrap();
+
         key_package_gen
     }
 
@@ -3016,7 +3019,7 @@ mod tests {
 
         let (alice, tree) = {
             let (signing_identity, signature_key) =
-                get_test_signing_identity(TEST_CIPHER_SUITE, b"alice");
+                get_test_signing_identity(TEST_CIPHER_SUITE, b"alice").await;
 
             let properties = ConfigProperties {
                 capabilities: Capabilities {
@@ -3076,12 +3079,15 @@ mod tests {
     }
 
     #[cfg(feature = "external_proposal")]
-    fn make_external_senders_extension() -> ExtensionList {
-        vec![ExternalSendersExt::new(vec![
-            get_test_signing_identity(TEST_CIPHER_SUITE, b"alice").0,
-        ])
-        .into_extension()
-        .unwrap()]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn make_external_senders_extension() -> ExtensionList {
+        let identity = get_test_signing_identity(TEST_CIPHER_SUITE, b"alice")
+            .await
+            .0;
+
+        vec![ExternalSendersExt::new(vec![identity])
+            .into_extension()
+            .unwrap()]
         .into()
     }
 
@@ -3098,7 +3104,7 @@ mod tests {
         )
         .with_identity_provider(FailureIdentityProvider::new())
         .receive([Proposal::GroupContextExtensions(
-            make_external_senders_extension(),
+            make_external_senders_extension().await,
         )])
         .await;
 
@@ -3113,7 +3119,7 @@ mod tests {
         let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
             .with_identity_provider(FailureIdentityProvider::new())
             .with_additional([Proposal::GroupContextExtensions(
-                make_external_senders_extension(),
+                make_external_senders_extension().await,
             )])
             .send()
             .await;
@@ -3126,7 +3132,7 @@ mod tests {
     async fn sending_invalid_external_senders_extension_filters_it_out() {
         let (alice, tree) = new_tree("alice").await;
 
-        let proposal = Proposal::GroupContextExtensions(make_external_senders_extension());
+        let proposal = Proposal::GroupContextExtensions(make_external_senders_extension().await);
 
         let proposal_ref = make_proposal_ref(&proposal, alice).await;
 
@@ -3441,6 +3447,7 @@ mod tests {
                 &alice_signer,
                 &(TEST_GROUP, 0).into(),
             )
+            .await
             .unwrap();
 
         let bob_new_leaf = update_leaf_node("bob", 1).await;
@@ -3513,6 +3520,7 @@ mod tests {
                 &alice_signer,
                 &(TEST_GROUP, 0).into(),
             )
+            .await
             .unwrap();
 
         let pk1_to_pk2 = Proposal::Update(UpdateProposal {
@@ -3563,7 +3571,7 @@ mod tests {
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn unsupported_credential_key_package(name: &str) -> KeyPackage {
         let (mut signing_identity, secret_key) =
-            get_test_signing_identity(TEST_CIPHER_SUITE, name.as_bytes());
+            get_test_signing_identity(TEST_CIPHER_SUITE, name.as_bytes()).await;
 
         signing_identity.credential = Credential::Custom(CustomCredential::new(
             CredentialType::new(BasicWithCustomProvider::CUSTOM_CREDENTIAL_TYPE),
@@ -4030,9 +4038,12 @@ mod tests {
         let bob = add_member(&mut tree, "bob").await;
 
         #[cfg(feature = "external_proposal")]
-        let external_senders = ExternalSendersExt::new(vec![
-            get_test_signing_identity(TEST_CIPHER_SUITE, b"carol").0,
-        ]);
+        let identity = get_test_signing_identity(TEST_CIPHER_SUITE, b"carol")
+            .await
+            .0;
+
+        #[cfg(feature = "external_proposal")]
+        let external_senders = ExternalSendersExt::new(vec![identity]);
 
         let proposals: &[Proposal] = &[
             Proposal::Add(make_add_proposal().await),

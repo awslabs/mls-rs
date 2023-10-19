@@ -79,8 +79,11 @@ where
     IP: IdentityProvider,
     CP: CipherSuiteProvider,
 {
-    pub(super) fn sign(&self, package: &mut KeyPackage) -> Result<(), MlsError> {
-        package.sign(self.cipher_suite_provider, self.signing_key, &())
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub(super) async fn sign(&self, package: &mut KeyPackage) -> Result<(), MlsError> {
+        package
+            .sign(self.cipher_suite_provider, self.signing_key, &())
+            .await
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -122,7 +125,7 @@ where
 
         package.grease(self.cipher_suite_provider)?;
 
-        self.sign(&mut package)?;
+        self.sign(&mut package).await?;
 
         let reference = package.to_reference(self.cipher_suite_provider).await?;
 
@@ -183,7 +186,8 @@ mod tests {
         }) {
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
 
-            let (signing_identity, signing_key) = get_test_signing_identity(cipher_suite, b"foo");
+            let (signing_identity, signing_key) =
+                get_test_signing_identity(cipher_suite, b"foo").await;
 
             let key_package_ext = test_key_package_ext(32);
             let leaf_node_ext = test_leaf_node_ext(42);
@@ -292,7 +296,8 @@ mod tests {
                 .into_iter()
                 .map(move |cs| (p, cs))
         }) {
-            let (signing_identity, signing_key) = get_test_signing_identity(cipher_suite, b"foo");
+            let (signing_identity, signing_key) =
+                get_test_signing_identity(cipher_suite, b"foo").await;
 
             let test_generator = KeyPackageGenerator {
                 protocol_version,

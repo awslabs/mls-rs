@@ -289,10 +289,10 @@ mod tests {
     }
 
     #[cfg(feature = "external_proposal")]
-    #[test]
-    fn test_external_senders() {
-        let ext =
-            ExternalSendersExt::new(vec![get_test_signing_identity(TEST_CIPHER_SUITE, &[1]).0]);
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_external_senders() {
+        let identity = get_test_signing_identity(TEST_CIPHER_SUITE, &[1]).await.0;
+        let ext = ExternalSendersExt::new(vec![identity]);
 
         let as_extension = ext.clone().into_extension().unwrap();
 

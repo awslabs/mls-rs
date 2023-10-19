@@ -677,7 +677,8 @@ where
             self.signer()?,
             WireFormat::PublicMessage,
             authenticated_data,
-        )?;
+        )
+        .await?;
 
         let plaintext = PublicMessage {
             content: message.content,
@@ -738,7 +739,8 @@ pub(crate) mod test_utils {
     where
         F: FnMut(&mut TestClientConfig),
     {
-        let (identity, secret_key) = get_test_signing_identity(cipher_suite, identity.as_bytes());
+        let (identity, secret_key) =
+            get_test_signing_identity(cipher_suite, identity.as_bytes()).await;
 
         let mut client = TestClientBuilder::new_for_test()
             .used_protocol_version(protocol_version)
@@ -788,7 +790,7 @@ mod tests {
                 .into_iter()
                 .map(move |cs| (p, cs))
         }) {
-            let (identity, secret_key) = get_test_signing_identity(cipher_suite, b"foo");
+            let (identity, secret_key) = get_test_signing_identity(cipher_suite, b"foo").await;
 
             let client = TestClientBuilder::new_for_test()
                 .signing_identity(identity.clone(), secret_key, cipher_suite)
@@ -823,7 +825,7 @@ mod tests {
     async fn new_member_add_proposal_adds_to_group() {
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
-        let (bob_identity, secret_key) = get_test_signing_identity(TEST_CIPHER_SUITE, b"bob");
+        let (bob_identity, secret_key) = get_test_signing_identity(TEST_CIPHER_SUITE, b"bob").await;
 
         let bob = TestClientBuilder::new_for_test()
             .signing_identity(bob_identity.clone(), secret_key, TEST_CIPHER_SUITE)
@@ -898,7 +900,7 @@ mod tests {
         let new_client_id = if do_remove { "bob" } else { "charlie" };
 
         let (new_client_identity, secret_key) =
-            get_test_signing_identity(TEST_CIPHER_SUITE, new_client_id.as_bytes());
+            get_test_signing_identity(TEST_CIPHER_SUITE, new_client_id.as_bytes()).await;
 
         let new_client = TestClientBuilder::new_for_test()
             .psk(psk_id.clone(), psk)
@@ -978,7 +980,8 @@ mod tests {
     #[cfg(feature = "external_commit")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn creating_an_external_commit_requires_a_group_info_message() {
-        let (alice_identity, secret_key) = get_test_signing_identity(TEST_CIPHER_SUITE, b"alice");
+        let (alice_identity, secret_key) =
+            get_test_signing_identity(TEST_CIPHER_SUITE, b"alice").await;
 
         let alice = TestClientBuilder::new_for_test()
             .signing_identity(alice_identity.clone(), secret_key, TEST_CIPHER_SUITE)
@@ -1005,7 +1008,8 @@ mod tests {
             .await
             .unwrap();
 
-        let (carol_identity, secret_key) = get_test_signing_identity(TEST_CIPHER_SUITE, b"carol");
+        let (carol_identity, secret_key) =
+            get_test_signing_identity(TEST_CIPHER_SUITE, b"carol").await;
 
         let carol = TestClientBuilder::new_for_test()
             .signing_identity(carol_identity, secret_key, TEST_CIPHER_SUITE)

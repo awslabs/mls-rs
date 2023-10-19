@@ -158,12 +158,13 @@ pub(crate) mod test_utils {
         }
     }
 
-    pub fn get_test_signing_identity(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn get_test_signing_identity(
         cipher_suite: CipherSuite,
         identity: &[u8],
     ) -> (SigningIdentity, SignatureSecretKey) {
         let provider = test_cipher_suite_provider(cipher_suite);
-        let (secret_key, public_key) = provider.signature_key_generate().unwrap();
+        let (secret_key, public_key) = provider.signature_key_generate().await.unwrap();
 
         let basic = get_test_basic_credential(identity.to_vec());
 

@@ -104,7 +104,8 @@ impl AuthenticatedContent {
     }
 
     #[inline(never)]
-    pub(crate) fn new_signed<P: CipherSuiteProvider>(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub(crate) async fn new_signed<P: CipherSuiteProvider>(
         signature_provider: &P,
         context: &GroupContext,
         sender: Sender,
@@ -123,7 +124,9 @@ impl AuthenticatedContent {
         };
 
         // Sign the MLSPlaintext using the current epoch's GroupContext as context.
-        plaintext.sign(signature_provider, signer, &signing_context)?;
+        plaintext
+            .sign(signature_provider, signer, &signing_context)
+            .await?;
 
         Ok(plaintext)
     }

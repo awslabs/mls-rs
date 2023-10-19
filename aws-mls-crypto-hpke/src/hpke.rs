@@ -124,13 +124,11 @@ where
     /// of the [setup_sender](Hpke::setup_sender) and then calling [seal](ContextS::seal)
     /// on the resulting [ContextS](self::ContextS).
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    // Lifetimes are needed for the async build
-    #[allow(clippy::needless_lifetimes)]
-    pub async fn seal<'a>(
+    pub async fn seal(
         &self,
         remote_key: &HpkePublicKey,
         info: &[u8],
-        psk: Option<Psk<'a>>,
+        psk: Option<Psk<'_>>,
         aad: Option<&[u8]>,
         pt: &[u8],
     ) -> Result<HpkeCiphertext, HpkeError> {
@@ -146,15 +144,13 @@ where
     /// of the [setup_receiver](Hpke::setup_receiver) and then calling
     /// [open](ContextR::open) on the resulting [ContextR](self::ContextR).
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    // Lifetimes are needed for the async build
-    #[allow(clippy::needless_lifetimes)]
-    pub async fn open<'a>(
+    pub async fn open(
         &self,
         ciphertext: &HpkeCiphertext,
         local_secret: &HpkeSecretKey,
         local_public: &HpkePublicKey,
         info: &[u8],
-        psk: Option<Psk<'a>>,
+        psk: Option<Psk<'_>>,
         aad: Option<&[u8]>,
     ) -> Result<Vec<u8>, HpkeError> {
         let mut hpke_ctx = self.setup_receiver(

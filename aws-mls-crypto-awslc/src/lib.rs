@@ -279,24 +279,28 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
         Ok(())
     }
 
-    fn signature_key_generate(
+    async fn signature_key_generate(
         &self,
     ) -> Result<(SignatureSecretKey, SignaturePublicKey), Self::Error> {
         self.signing.signature_key_generate()
     }
 
-    fn signature_key_derive_public(
+    async fn signature_key_derive_public(
         &self,
         secret_key: &SignatureSecretKey,
     ) -> Result<SignaturePublicKey, Self::Error> {
         self.signing.signature_key_derive_public(secret_key)
     }
 
-    fn sign(&self, secret_key: &SignatureSecretKey, data: &[u8]) -> Result<Vec<u8>, Self::Error> {
+    async fn sign(
+        &self,
+        secret_key: &SignatureSecretKey,
+        data: &[u8],
+    ) -> Result<Vec<u8>, Self::Error> {
         self.signing.sign(secret_key, data)
     }
 
-    fn verify(
+    async fn verify(
         &self,
         public_key: &SignaturePublicKey,
         signature: &[u8],

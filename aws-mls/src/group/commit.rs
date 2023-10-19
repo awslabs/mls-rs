@@ -563,7 +563,8 @@ where
             #[cfg(not(feature = "private_message"))]
             WireFormat::PublicMessage,
             authenticated_data,
-        )?;
+        )
+        .await?;
 
         // Use the signature, the commit_secret and the psk_secret to advance the key schedule and
         // compute the confirmation_tag value in the MLSPlaintext.
@@ -623,7 +624,9 @@ where
         group_info.grease(self.cipher_suite_provider())?;
 
         // Sign the GroupInfo using the member's private signing key
-        group_info.sign(&self.cipher_suite_provider, new_signer_ref, &())?;
+        group_info
+            .sign(&self.cipher_suite_provider, new_signer_ref, &())
+            .await?;
 
         let welcome_message = self
             .make_welcome_message(
@@ -677,32 +680,18 @@ pub(crate) mod test_utils {
         crypto::SignatureSecretKey,
         tree_kem::{leaf_node::LeafNode, TreeKemPublic, UpdatePathNode},
     };
-    use core::fmt;
 
-    pub struct CommitModifiers<CP> {
-        pub modify_leaf: fn(&mut LeafNode, &SignatureSecretKey, &CP),
+    #[derive(Copy, Clone, Debug)]
+    pub struct CommitModifiers {
+        pub modify_leaf: fn(&mut LeafNode, &SignatureSecretKey) -> Option<SignatureSecretKey>,
         pub modify_tree: fn(&mut TreeKemPublic),
         pub modify_path: fn(Vec<UpdatePathNode>) -> Vec<UpdatePathNode>,
     }
 
-    impl<CP> fmt::Debug for CommitModifiers<CP> {
-        fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-            write!(fmt, "CommitModifiers")
-        }
-    }
-
-    impl<CP> Copy for CommitModifiers<CP> {}
-
-    impl<CP> Clone for CommitModifiers<CP> {
-        fn clone(&self) -> Self {
-            *self
-        }
-    }
-
-    impl<CP> Default for CommitModifiers<CP> {
+    impl Default for CommitModifiers {
         fn default() -> Self {
             Self {
-                modify_leaf: |_, _, _| (),
+                modify_leaf: |_, _| None,
                 modify_tree: |_| (),
                 modify_path: |a| a,
             }
@@ -1064,7 +1053,7 @@ mod tests {
     async fn commit_can_change_credential() {
         let cs = TEST_CIPHER_SUITE;
         let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, cs, 3).await;
-        let (identity, secret_key) = get_test_signing_identity(cs, b"member");
+        let (identity, secret_key) = get_test_signing_identity(cs, b"member").await;
 
         let commit_output = groups[0]
             .group
@@ -1141,10 +1130,10 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn member_identity_is_validated_against_new_extensions() {
-        let alice = client_with_test_extension(b"alice");
+        let alice = client_with_test_extension(b"alice").await;
         let mut alice = alice.create_group(ExtensionList::new()).await.unwrap();
 
-        let bob = client_with_test_extension(b"bob");
+        let bob = client_with_test_extension(b"bob").await;
         let bob_kp = bob.generate_key_package_message().await.unwrap();
 
         let mut extension_list = ExtensionList::new();
@@ -1162,7 +1151,7 @@ mod tests {
 
         assert!(res.is_err());
 
-        let alex = client_with_test_extension(b"alex");
+        let alex = client_with_test_extension(b"alex").await;
 
         alice
             .commit_builder()
@@ -1178,14 +1167,14 @@ mod tests {
     #[cfg(feature = "external_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn server_identity_is_validated_against_new_extensions() {
-        let alice = client_with_test_extension(b"alice");
+        let alice = client_with_test_extension(b"alice").await;
         let mut alice = alice.create_group(ExtensionList::new()).await.unwrap();
 
         let mut extension_list = ExtensionList::new();
         let extension = TestExtension { foo: b'a' };
         extension_list.set_from(extension).unwrap();
 
-        let (alex_server, _) = get_test_signing_identity(TEST_CIPHER_SUITE, b"alex");
+        let (alex_server, _) = get_test_signing_identity(TEST_CIPHER_SUITE, b"alex").await;
 
         let mut alex_extensions = extension_list.clone();
 
@@ -1204,7 +1193,7 @@ mod tests {
 
         assert!(res.is_err());
 
-        let (bob_server, _) = get_test_signing_identity(TEST_CIPHER_SUITE, b"bob");
+        let (bob_server, _) = get_test_signing_identity(TEST_CIPHER_SUITE, b"bob").await;
 
         let mut bob_extensions = extension_list;
 
@@ -1324,8 +1313,9 @@ mod tests {
         WithCryptoProvider<TestCryptoProvider, BaseConfig>,
     >;
 
-    fn client_with_test_extension(name: &[u8]) -> Client<ExtensionClientConfig> {
-        let (identity, secret_key) = get_test_signing_identity(TEST_CIPHER_SUITE, name);
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn client_with_test_extension(name: &[u8]) -> Client<ExtensionClientConfig> {
+        let (identity, secret_key) = get_test_signing_identity(TEST_CIPHER_SUITE, name).await;
 
         ClientBuilder::new()
             .crypto_provider(TestCryptoProvider::new())

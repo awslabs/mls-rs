@@ -320,11 +320,15 @@ where
         self.cipher_suite
     }
 
-    fn sign(&self, secret_key: &SignatureSecretKey, data: &[u8]) -> Result<Vec<u8>, Self::Error> {
+    async fn sign(
+        &self,
+        secret_key: &SignatureSecretKey,
+        data: &[u8],
+    ) -> Result<Vec<u8>, Self::Error> {
         Ok(self.ec_signer.sign(secret_key, data)?)
     }
 
-    fn verify(
+    async fn verify(
         &self,
         public_key: &SignaturePublicKey,
         signature: &[u8],
@@ -333,13 +337,13 @@ where
         Ok(self.ec_signer.verify(public_key, signature, data)?)
     }
 
-    fn signature_key_generate(
+    async fn signature_key_generate(
         &self,
     ) -> Result<(SignatureSecretKey, SignaturePublicKey), Self::Error> {
         Ok(self.ec_signer.signature_key_generate()?)
     }
 
-    fn signature_key_derive_public(
+    async fn signature_key_derive_public(
         &self,
         secret_key: &SignatureSecretKey,
     ) -> Result<SignaturePublicKey, Self::Error> {

@@ -27,7 +27,7 @@ use super::{
 };
 
 #[cfg(test)]
-use crate::group::CommitModifiers;
+use crate::{group::CommitModifiers, signer::Signable};
 
 pub struct TreeKem<'a> {
     tree_kem_public: &'a mut TreeKemPublic,
@@ -61,7 +61,7 @@ impl<'a> TreeKem<'a> {
         update_leaf_properties: ConfigProperties,
         signing_identity: Option<SigningIdentity>,
         cipher_suite_provider: &P,
-        #[cfg(test)] commit_modifiers: &CommitModifiers<P>,
+        #[cfg(test)] commit_modifiers: &CommitModifiers,
     ) -> Result<EncapGeneration, MlsError>
     where
         P: CipherSuiteProvider + Send + Sync,
@@ -115,7 +115,14 @@ impl<'a> TreeKem<'a> {
             );
 
             #[cfg(test)]
-            (commit_modifiers.modify_leaf)(own_leaf, signer, cipher_suite_provider);
+            if let Some(signer) = (commit_modifiers.modify_leaf)(own_leaf, signer) {
+                let context = &(context.group_id.as_slice(), *self_index).into();
+
+                own_leaf
+                    .sign(cipher_suite_provider, &signer, context)
+                    .await
+                    .unwrap();
+            }
 
             own_leaf.clone()
         };

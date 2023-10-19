@@ -845,6 +845,7 @@ pub(crate) mod test_utils {
                 .borrow_as_leaf_mut(committer)
                 .unwrap()
                 .sign(cs, signer, &context)
+                .await
                 .unwrap();
 
             self.tree.tree_hashes.current = vec![];
@@ -858,7 +859,7 @@ pub(crate) mod test_utils {
         cs: &P,
     ) -> (LeafNode, SignatureSecretKey) {
         let (signing_identity, signature_key) =
-            get_test_signing_identity(cs.cipher_suite(), name.as_bytes());
+            get_test_signing_identity(cs.cipher_suite(), name.as_bytes()).await;
 
         let capabilities = Capabilities {
             credentials: vec![BasicCredential::credential_type()],

@@ -215,7 +215,7 @@ async fn invite_passive_client<P: CipherSuiteProvider>(
 ) -> TestCase {
     let crypto_provider = TestCryptoProvider::new();
 
-    let (secret_key, public_key) = cs.signature_key_generate().unwrap();
+    let (secret_key, public_key) = cs.signature_key_generate().await.unwrap();
     let credential = get_test_basic_credential(b"Arnold".to_vec());
     let identity = SigningIdentity::new(credential, public_key);
     let key_package_repo = InMemoryKeyPackageStorage::new();
@@ -462,7 +462,8 @@ async fn create_key_package(cs: CipherSuite) -> MLSMessage {
         0xbeef,
         &Default::default(),
         &TestCryptoProvider::new(),
-    );
+    )
+    .await;
 
     client.generate_key_package_message().await.unwrap()
 }
@@ -518,14 +519,17 @@ pub async fn generate_passive_client_random_tests() {
             continue;
         };
 
-        let creator = generate_basic_client(cs, VERSION, 0, &Default::default(), &crypto);
+        let creator = generate_basic_client(cs, VERSION, 0, &Default::default(), &crypto).await;
         let creator_group = creator.create_group(Default::default()).await.unwrap();
 
         let mut groups = vec![creator_group];
 
-        let new_clients = (0..10)
-            .map(|i| generate_basic_client(cs, VERSION, i + 1, &Default::default(), &crypto))
-            .collect();
+        let mut new_clients = Vec::new();
+
+        for i in 0..10 {
+            new_clients
+                .push(generate_basic_client(cs, VERSION, i + 1, &Default::default(), &crypto).await)
+        }
 
         add_random_members(0, &mut groups, new_clients, None).await;
 
@@ -557,8 +561,10 @@ pub async fn generate_passive_client_random_tests() {
                 .choose(&mut rng)
                 .unwrap();
 
-            let new_clients = (0..num_added)
-                .map(|i| {
+            let mut new_clients = Vec::new();
+
+            for i in 0..num_added {
+                new_clients.push(
                     generate_basic_client(
                         cs,
                         VERSION,
@@ -566,8 +572,9 @@ pub async fn generate_passive_client_random_tests() {
                         &Default::default(),
                         &crypto,
                     )
-                })
-                .collect();
+                    .await,
+                );
+            }
 
             add_random_members(sender, &mut groups, new_clients, Some(&mut test_case)).await;
 

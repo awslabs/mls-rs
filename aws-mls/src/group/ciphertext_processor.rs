@@ -307,6 +307,7 @@ mod test {
             WireFormat::PrivateMessage,
             vec![],
         )
+        .await
         .unwrap();
 
         TestData { group, content }

@@ -400,21 +400,25 @@ pub trait CipherSuiteProvider: Send + Sync {
 
     /// Generate fresh signature keys to be used as inputs to [sign](CipherSuiteProvider::sign)
     /// and [verify](CipherSuiteProvider::verify)
-    fn signature_key_generate(
+    async fn signature_key_generate(
         &self,
     ) -> Result<(SignatureSecretKey, SignaturePublicKey), Self::Error>;
 
     /// Output a public key corresponding to `secret_key`.
-    fn signature_key_derive_public(
+    async fn signature_key_derive_public(
         &self,
         secret_key: &SignatureSecretKey,
     ) -> Result<SignaturePublicKey, Self::Error>;
 
     /// Sign `data` using `secret_key`.
-    fn sign(&self, secret_key: &SignatureSecretKey, data: &[u8]) -> Result<Vec<u8>, Self::Error>;
+    async fn sign(
+        &self,
+        secret_key: &SignatureSecretKey,
+        data: &[u8],
+    ) -> Result<Vec<u8>, Self::Error>;
 
     /// Verify that the secret key corresponding to `public_key` created the `signature` over `data`.
-    fn verify(
+    async fn verify(
         &self,
         public_key: &SignaturePublicKey,
         signature: &[u8],

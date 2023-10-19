@@ -66,11 +66,12 @@ struct FramingTestCase {
 }
 
 impl FramingTestCase {
-    fn random<P: CipherSuiteProvider>(cs: &P) -> Self {
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn random<P: CipherSuiteProvider>(cs: &P) -> Self {
         let mut context = InteropGroupContext::random(cs);
         context.cipher_suite = cs.cipher_suite().into();
 
-        let (mut signature_priv, signature_pub) = cs.signature_key_generate().unwrap();
+        let (mut signature_priv, signature_pub) = cs.signature_key_generate().await.unwrap();
 
         if is_edwards(*cs.cipher_suite()) {
             signature_priv = signature_priv[0..signature_priv.len() / 2].to_vec().into();
@@ -241,6 +242,7 @@ async fn framing_commit() {
             WireFormat::PublicMessage,
             vec![],
         )
+        .await
         .unwrap();
 
         auth_content.auth.confirmation_tag = Some(ConfirmationTag::empty(&cs).await);
@@ -281,7 +283,7 @@ async fn generate_framing_test_vector() -> Vec<FramingTestCase> {
     for cs in CipherSuite::all() {
         let cs = test_cipher_suite_provider(cs);
 
-        let mut test_case = FramingTestCase::random(&cs);
+        let mut test_case = FramingTestCase::random(&cs).await;
 
         // Generate private application message
         test_case.application = cs.random_bytes_vec(42).unwrap();
@@ -326,6 +328,7 @@ async fn generate_framing_test_vector() -> Vec<FramingTestCase> {
             WireFormat::PublicMessage,
             vec![],
         )
+        .await
         .unwrap();
 
         auth_content.auth.confirmation_tag = Some(ConfirmationTag::empty(&cs).await);
@@ -343,6 +346,7 @@ async fn generate_framing_test_vector() -> Vec<FramingTestCase> {
             WireFormat::PrivateMessage,
             vec![],
         )
+        .await
         .unwrap();
 
         auth_content.auth.confirmation_tag = Some(ConfirmationTag::empty(&cs).await);

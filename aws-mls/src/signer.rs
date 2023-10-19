@@ -26,10 +26,12 @@ impl SignContent {
     }
 }
 
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
 pub(crate) trait Signable<'a> {
     const SIGN_LABEL: &'static str;
 
-    type SigningContext;
+    type SigningContext: Send + Sync;
 
     fn signature(&self) -> &[u8];
 
@@ -40,7 +42,7 @@ pub(crate) trait Signable<'a> {
 
     fn write_signature(&mut self, signature: Vec<u8>);
 
-    fn sign<P: CipherSuiteProvider>(
+    async fn sign<P: CipherSuiteProvider>(
         &mut self,
         signature_provider: &P,
         signer: &SignatureSecretKey,
@@ -50,6 +52,7 @@ pub(crate) trait Signable<'a> {
 
         let signature = signature_provider
             .sign(signer, &sign_content.mls_encode_to_vec()?)
+            .await
             .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
         self.write_signature(signature);
@@ -57,7 +60,7 @@ pub(crate) trait Signable<'a> {
         Ok(())
     }
 
-    fn verify<P: CipherSuiteProvider>(
+    async fn verify<P: CipherSuiteProvider>(
         &self,
         signature_provider: &P,
         public_key: &SignaturePublicKey,
@@ -71,6 +74,7 @@ pub(crate) trait Signable<'a> {
                 self.signature(),
                 &sign_content.mls_encode_to_vec()?,
             )
+            .await
             .map_err(|_| MlsError::InvalidSignature)
     }
 }
@@ -104,16 +108,16 @@ pub(crate) mod test_utils {
         sign_with_label: SignatureInteropTestCase,
     }
 
-    #[test]
-    fn test_basic_crypto_test_vectors() {
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_basic_crypto_test_vectors() {
         let test_cases: Vec<InteropTestCase> =
             load_test_case_json!(basic_crypto, Vec::<InteropTestCase>::new());
 
-        test_cases.into_iter().for_each(|test_case| {
+        for test_case in test_cases {
             if let Some(cs) = try_test_cipher_suite_provider(test_case.cipher_suite) {
-                test_case.sign_with_label.verify(&cs)
+                test_case.sign_with_label.verify(&cs).await;
             }
-        })
+        }
     }
 
     pub struct TestSignable {
@@ -143,7 +147,8 @@ pub(crate) mod test_utils {
     }
 
     impl SignatureInteropTestCase {
-        pub fn verify<P: CipherSuiteProvider>(&self, cs: &P) {
+        #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+        pub async fn verify<P: CipherSuiteProvider>(&self, cs: &P) {
             let public = self.public.clone().into();
 
             let signable = TestSignable {
@@ -151,7 +156,7 @@ pub(crate) mod test_utils {
                 signature: self.signature.clone(),
             };
 
-            signable.verify(cs, &public, &vec![]).unwrap();
+            signable.verify(cs, &public, &vec![]).await.unwrap();
         }
     }
 }
@@ -187,13 +192,14 @@ mod tests {
         public: Vec<u8>,
     }
 
-    fn generate_test_cases() -> Vec<TestCase> {
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn generate_test_cases() -> Vec<TestCase> {
         let mut test_cases = Vec::new();
 
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let provider = test_cipher_suite_provider(cipher_suite);
 
-            let (signer, public) = provider.signature_key_generate().unwrap();
+            let (signer, public) = provider.signature_key_generate().await.unwrap();
 
             let content = random_bytes(32);
             let context = random_bytes(32);
@@ -203,7 +209,10 @@ mod tests {
                 signature: Vec::new(),
             };
 
-            test_signable.sign(&provider, &signer, &context).unwrap();
+            test_signable
+                .sign(&provider, &signer, &context)
+                .await
+                .unwrap();
 
             test_cases.push(TestCase {
                 cipher_suite: cipher_suite.into(),
@@ -218,13 +227,19 @@ mod tests {
         test_cases
     }
 
+    #[cfg(mls_build_async)]
+    async fn load_test_cases() -> Vec<TestCase> {
+        load_test_case_json!(signatures, generate_test_cases().await)
+    }
+
+    #[cfg(not(mls_build_async))]
     fn load_test_cases() -> Vec<TestCase> {
         load_test_case_json!(signatures, generate_test_cases())
     }
 
-    #[test]
-    fn test_signatures() {
-        let cases = load_test_cases();
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_signatures() {
+        let cases = load_test_cases().await;
 
         for one_case in cases {
             let Some(cipher_suite_provider) = try_test_cipher_suite_provider(one_case.cipher_suite)
@@ -243,10 +258,12 @@ mod tests {
 
             test_signable
                 .sign(&cipher_suite_provider, &signature_key, &one_case.context)
+                .await
                 .unwrap();
 
             test_signable
                 .verify(&cipher_suite_provider, &public_key, &one_case.context)
+                .await
                 .unwrap();
 
             // Test verifying an existing signature
@@ -257,16 +274,23 @@ mod tests {
 
             test_signable
                 .verify(&cipher_suite_provider, &public_key, &one_case.context)
+                .await
                 .unwrap();
         }
     }
 
-    #[test]
-    fn test_invalid_signature() {
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_invalid_signature() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
-        let (correct_secret, _) = cipher_suite_provider.signature_key_generate().unwrap();
-        let (_, incorrect_public) = cipher_suite_provider.signature_key_generate().unwrap();
+        let (correct_secret, _) = cipher_suite_provider
+            .signature_key_generate()
+            .await
+            .unwrap();
+        let (_, incorrect_public) = cipher_suite_provider
+            .signature_key_generate()
+            .await
+            .unwrap();
 
         let mut test_signable = TestSignable {
             content: random_bytes(32),
@@ -275,18 +299,24 @@ mod tests {
 
         test_signable
             .sign(&cipher_suite_provider, &correct_secret, &vec![])
+            .await
             .unwrap();
 
-        let res = test_signable.verify(&cipher_suite_provider, &incorrect_public, &vec![]);
+        let res = test_signable
+            .verify(&cipher_suite_provider, &incorrect_public, &vec![])
+            .await;
 
         assert_matches!(res, Err(MlsError::InvalidSignature));
     }
 
-    #[test]
-    fn test_invalid_context() {
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_invalid_context() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
-        let (secret, public) = cipher_suite_provider.signature_key_generate().unwrap();
+        let (secret, public) = cipher_suite_provider
+            .signature_key_generate()
+            .await
+            .unwrap();
 
         let correct_context = random_bytes(32);
         let incorrect_context = random_bytes(32);
@@ -298,9 +328,13 @@ mod tests {
 
         test_signable
             .sign(&cipher_suite_provider, &secret, &correct_context)
+            .await
             .unwrap();
 
-        let res = test_signable.verify(&cipher_suite_provider, &public, &incorrect_context);
+        let res = test_signable
+            .verify(&cipher_suite_provider, &public, &incorrect_context)
+            .await;
+
         assert_matches!(res, Err(MlsError::InvalidSignature));
     }
 }

@@ -30,7 +30,8 @@ cfg_if! {
     }
 }
 
-fn generate_client(
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+async fn generate_client(
     cipher_suite: CipherSuite,
     protocol_version: ProtocolVersion,
     id: usize,
@@ -43,6 +44,7 @@ fn generate_client(
         preferences,
         &TestCryptoProvider::default(),
     )
+    .await
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -163,8 +165,8 @@ async fn test_create(
         "Testing group creation for cipher suite: {protocol_version:?} {cipher_suite:?}, participants: 1, {preferences:?}"
     );
 
-    let alice = generate_client(cipher_suite, protocol_version, 0, &preferences);
-    let bob = generate_client(cipher_suite, protocol_version, 1, &preferences);
+    let alice = generate_client(cipher_suite, protocol_version, 0, &preferences).await;
+    let bob = generate_client(cipher_suite, protocol_version, 1, &preferences).await;
     let bob_key_pkg = bob.generate_key_package_message().await.unwrap();
 
     // Alice creates a group and adds bob
@@ -489,7 +491,7 @@ async fn external_commits_work(
     _n_participants: usize,
     preferences: Preferences,
 ) {
-    let creator = generate_client(cipher_suite, protocol_version, 0, &preferences);
+    let creator = generate_client(cipher_suite, protocol_version, 0, &preferences).await;
 
     let creator_group = creator
         .create_group_with_id(b"group".to_vec(), ExtensionList::default())
@@ -498,9 +500,11 @@ async fn external_commits_work(
 
     const PARTICIPANT_COUNT: usize = 10;
 
-    let others = (1..PARTICIPANT_COUNT)
-        .map(|i| generate_client(cipher_suite, protocol_version, i, &Default::default()))
-        .collect::<Vec<_>>();
+    let mut others = Vec::new();
+
+    for i in 1..PARTICIPANT_COUNT {
+        others.push(generate_client(cipher_suite, protocol_version, i, &Default::default()).await)
+    }
 
     let mut groups = vec![creator_group];
 
@@ -595,8 +599,8 @@ async fn reinit_works() {
     let suite2 = CipherSuite::P256_AES128;
     let version = ProtocolVersion::MLS_10;
 
-    let alice1 = generate_client(suite1, version, 1, &Default::default());
-    let bob1 = generate_client(suite1, version, 2, &Default::default());
+    let alice1 = generate_client(suite1, version, 1, &Default::default()).await;
+    let bob1 = generate_client(suite1, version, 2, &Default::default()).await;
 
     // Create a group with 2 parties
     let mut alice_group = alice1.create_group(ExtensionList::new()).await.unwrap();
@@ -675,6 +679,7 @@ async fn reinit_works() {
         .cipher_suite_provider(suite2)
         .unwrap()
         .signature_key_generate()
+        .await
         .unwrap();
 
     let identity = SigningIdentity::new(get_test_basic_credential(b"bob".to_vec()), public_key);
@@ -687,6 +692,7 @@ async fn reinit_works() {
         .cipher_suite_provider(suite2)
         .unwrap()
         .signature_key_generate()
+        .await
         .unwrap();
 
     let identity = SigningIdentity::new(get_test_basic_credential(b"alice".to_vec()), public_key);
@@ -704,7 +710,7 @@ async fn reinit_works() {
     assert!(bob_group.cipher_suite() == suite2);
 
     // They can talk
-    let carol = generate_client(suite2, version, 3, &Default::default());
+    let carol = generate_client(suite2, version, 3, &Default::default()).await;
 
     let kp = carol.generate_key_package_message().await.unwrap();
 
@@ -764,7 +770,8 @@ async fn external_joiner_can_process_siblings_update() {
         ProtocolVersion::MLS_10,
         0xabba,
         &Preferences::default(),
-    );
+    )
+    .await;
 
     let (mut group, commit) = new_client.commit_external(info).await.unwrap();
 

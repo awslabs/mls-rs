@@ -164,6 +164,7 @@ impl TestGroup {
             WireFormat::PublicMessage,
             Vec::new(),
         )
+        .await
         .unwrap();
 
         self.group.format_for_wire(auth_content).await.unwrap()
@@ -226,7 +227,7 @@ pub(crate) async fn test_member(
     cipher_suite: CipherSuite,
     identifier: &[u8],
 ) -> (KeyPackageGeneration, SignatureSecretKey) {
-    let (signing_identity, signing_key) = get_test_signing_identity(cipher_suite, identifier);
+    let (signing_identity, signing_key) = get_test_signing_identity(cipher_suite, identifier).await;
 
     let key_package_generator = KeyPackageGenerator {
         protocol_version,
@@ -261,7 +262,7 @@ pub(crate) async fn test_group_custom(
     let leaf_extensions = leaf_extensions.unwrap_or_default();
     let preferences = preferences.unwrap_or_default();
 
-    let (signing_identity, secret_key) = get_test_signing_identity(cipher_suite, b"member");
+    let (signing_identity, secret_key) = get_test_signing_identity(cipher_suite, b"member").await;
 
     let group = TestClientBuilder::new_for_test()
         .leaf_node_extensions(leaf_extensions)
@@ -302,7 +303,7 @@ pub(crate) async fn test_group_custom_config<F>(
 where
     F: FnOnce(TestClientBuilder) -> TestClientBuilder,
 {
-    let (signing_identity, secret_key) = get_test_signing_identity(cipher_suite, b"member");
+    let (signing_identity, secret_key) = get_test_signing_identity(cipher_suite, b"member").await;
 
     let client_builder = TestClientBuilder::new_for_test()
         .used_protocol_version(protocol_version)
@@ -357,19 +358,21 @@ pub(crate) async fn get_test_groups_with_features(
     extensions: ExtensionList,
     leaf_extensions: ExtensionList,
 ) -> Vec<Group<TestClientConfig>> {
-    let clients = (0..n)
-        .map(|i| {
-            let (identity, secret_key) =
-                get_test_signing_identity(TEST_CIPHER_SUITE, format!("member{i}").as_bytes());
+    let mut clients = Vec::new();
 
+    for i in 0..n {
+        let (identity, secret_key) =
+            get_test_signing_identity(TEST_CIPHER_SUITE, format!("member{i}").as_bytes()).await;
+
+        clients.push(
             TestClientBuilder::new_for_test()
                 .extension_type(999.into())
                 .preferences(Preferences::default().with_ratchet_tree_extension(true))
                 .leaf_node_extensions(leaf_extensions.clone())
                 .signing_identity(identity, secret_key, TEST_CIPHER_SUITE)
-                .build()
-        })
-        .collect::<Vec<_>>();
+                .build(),
+        );
+    }
 
     let group = clients[0]
         .create_group_with_id(b"TEST GROUP".to_vec(), extensions)

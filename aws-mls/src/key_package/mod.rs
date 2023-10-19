@@ -159,7 +159,7 @@ pub(crate) mod test_utils {
         ) -> futures::future::BoxFuture<'_, KeyPackageGeneration>,
     {
         let (signing_identity, secret_key) =
-            get_test_signing_identity(cipher_suite_provider.cipher_suite(), id.as_bytes());
+            get_test_signing_identity(cipher_suite_provider.cipher_suite(), id.as_bytes()).await;
 
         let generator = KeyPackageGenerator {
             protocol_version,

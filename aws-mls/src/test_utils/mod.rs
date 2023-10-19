@@ -43,7 +43,8 @@ pub fn is_edwards(cs: u16) -> bool {
     .contains(&cs.into())
 }
 
-pub fn generate_basic_client<C: CryptoProvider + Clone>(
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+pub async fn generate_basic_client<C: CryptoProvider + Clone>(
     cipher_suite: CipherSuite,
     protocol_version: ProtocolVersion,
     id: usize,
@@ -52,7 +53,7 @@ pub fn generate_basic_client<C: CryptoProvider + Clone>(
 ) -> Client<impl MlsConfig> {
     let cs = crypto.cipher_suite_provider(cipher_suite).unwrap();
 
-    let (secret_key, public_key) = cs.signature_key_generate().unwrap();
+    let (secret_key, public_key) = cs.signature_key_generate().await.unwrap();
     let credential = get_test_basic_credential(alloc::format!("{id}").into_bytes());
 
     let identity = SigningIdentity::new(credential, public_key);
@@ -79,7 +80,7 @@ pub async fn get_test_groups<C: CryptoProvider + Clone>(
     crypto: &C,
 ) -> Vec<Group<impl MlsConfig>> {
     // Create the group with Alice as the group initiator
-    let creator = generate_basic_client(cipher_suite, version, 0, preferences, crypto);
+    let creator = generate_basic_client(cipher_suite, version, 0, preferences, crypto).await;
 
     let mut creator_group = creator.create_group(Default::default()).await.unwrap();
 
@@ -87,7 +88,7 @@ pub async fn get_test_groups<C: CryptoProvider + Clone>(
     let mut commit_builder = creator_group.commit_builder();
 
     for i in 1..num_participants {
-        let client = generate_basic_client(cipher_suite, version, i, preferences, crypto);
+        let client = generate_basic_client(cipher_suite, version, i, preferences, crypto).await;
         let kp = client.generate_key_package_message().await.unwrap();
 
         receiver_clients.push(client);

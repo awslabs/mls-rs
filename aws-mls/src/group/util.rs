@@ -100,11 +100,13 @@ where
 
     let sender_key_package = public_tree.get_leaf_node(group_info.signer)?;
 
-    group_info.verify(
-        cipher_suite_provider,
-        &sender_key_package.signing_identity.signature_key,
-        &(),
-    )?;
+    group_info
+        .verify(
+            cipher_suite_provider,
+            &sender_key_package.signing_identity.signature_key,
+            &(),
+        )
+        .await?;
 
     let confirmation_tag = group_info.confirmation_tag;
     let signer_index = group_info.signer;
