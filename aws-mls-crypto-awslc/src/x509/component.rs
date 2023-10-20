@@ -1,26 +1,28 @@
+use core::slice;
 use std::{
-    ffi::{c_char, c_void, CString},
+    ffi::{c_int, c_void, CString},
     marker::PhantomData,
     mem,
+    net::IpAddr,
     ptr::null_mut,
 };
 
 use aws_lc_sys::{
-    sk_free, sk_new_null, sk_pop, sk_push, stack_st, ASN1_OBJECT_free, ASN1_STRING_free,
-    ASN1_STRING_set, ASN1_STRING_type_new, GENERAL_NAME_free, GENERAL_NAME_new,
-    GENERAL_NAME_set0_value, NID_basic_constraints, NID_commonName, NID_countryName,
-    NID_distinguishedName, NID_domainComponent, NID_generationQualifier, NID_givenName,
-    NID_initials, NID_key_usage, NID_localityName, NID_organizationName,
-    NID_organizationalUnitName, NID_pkcs9_emailAddress, NID_pseudonym, NID_serialNumber,
-    NID_stateOrProvinceName, NID_streetAddress, NID_subject_alt_name, NID_surname, NID_title,
-    NID_userId, OBJ_txt2obj, X509V3_EXT_conf_nid, X509V3_EXT_i2d, X509_EXTENSION_free,
-    X509_NAME_add_entry_by_NID, X509_NAME_free, X509_NAME_new, X509_name_st, ASN1_OBJECT,
-    ASN1_STRING, GENERAL_NAME, GEN_DNS, GEN_EMAIL, GEN_RID, GEN_URI, MBSTRING_UTF8,
-    V_ASN1_IA5STRING, V_ASN1_OCTET_STRING, X509_EXTENSION,
+    sk_free, sk_new_null, sk_pop, sk_push, stack_st, ASN1_STRING_free, ASN1_STRING_get0_data,
+    ASN1_STRING_length, ASN1_STRING_set, ASN1_STRING_type_new, GENERAL_NAME_free,
+    GENERAL_NAME_get0_value, GENERAL_NAME_new, GENERAL_NAME_set0_value, NID_basic_constraints,
+    NID_commonName, NID_countryName, NID_distinguishedName, NID_domainComponent,
+    NID_generationQualifier, NID_givenName, NID_initials, NID_key_usage, NID_localityName,
+    NID_organizationName, NID_organizationalUnitName, NID_pkcs9_emailAddress, NID_pseudonym,
+    NID_serialNumber, NID_stateOrProvinceName, NID_streetAddress, NID_subject_alt_name,
+    NID_surname, NID_title, NID_userId, X509V3_EXT_conf_nid, X509V3_EXT_i2d, X509_EXTENSION_free,
+    X509_NAME_add_entry_by_NID, X509_NAME_free, X509_NAME_new, X509_name_st, ASN1_STRING,
+    GENERAL_NAME, GEN_DNS, GEN_EMAIL, GEN_IPADD, GEN_RID, GEN_URI, MBSTRING_UTF8, V_ASN1_IA5STRING,
+    V_ASN1_OCTET_STRING, X509_EXTENSION,
 };
 use aws_mls_identity_x509::{SubjectAltName, SubjectComponent};
 
-use crate::{check_non_null, check_res, AwsLcCryptoError};
+use crate::{check_int_return, check_non_null, check_non_null_const, check_res, AwsLcCryptoError};
 
 pub struct X509Name(pub(crate) *mut X509_name_st);
 
@@ -74,6 +76,19 @@ impl X509Name {
                 Ok(name)
             })
     }
+
+    #[cfg(test)]
+    pub fn to_der(&self) -> Result<Vec<u8>, AwsLcCryptoError> {
+        use aws_lc_sys::i2d_X509_NAME;
+
+        unsafe {
+            let len = check_int_return(i2d_X509_NAME(self.0, null_mut()))?;
+            let mut out = vec![0u8; len as usize];
+            check_res(i2d_X509_NAME(self.0, &mut out.as_mut_ptr()))?;
+
+            Ok(out)
+        }
+    }
 }
 
 impl Drop for X509Name {
@@ -89,18 +104,18 @@ impl Asn1String {
         unsafe { check_non_null(ASN1_STRING_type_new(string_type)).map(Self) }
     }
 
-    pub fn new_value(string_type: i32, value: &str) -> Result<Self, AwsLcCryptoError> {
+    pub fn new_value(string_type: i32, value: &[u8]) -> Result<Self, AwsLcCryptoError> {
         let mut new_val = Self::new(string_type)?;
         new_val.set_value(value)?;
 
         Ok(new_val)
     }
 
-    pub fn set_value(&mut self, value: &str) -> Result<(), AwsLcCryptoError> {
+    pub fn set_value(&mut self, value: &[u8]) -> Result<(), AwsLcCryptoError> {
         unsafe {
             check_res(ASN1_STRING_set(
                 self.0,
-                value.as_bytes().as_ptr() as *const c_void,
+                value.as_ptr() as *const c_void,
                 value
                     .len()
                     .try_into()
@@ -125,32 +140,6 @@ impl Drop for Asn1String {
     }
 }
 
-struct Asn1Object(*mut ASN1_OBJECT);
-
-impl Asn1Object {
-    pub fn from_string(string: &str) -> Result<Self, AwsLcCryptoError> {
-        unsafe {
-            let string = CString::new(string).map_err(|_| AwsLcCryptoError::CryptoError)?;
-
-            check_non_null(OBJ_txt2obj(string.as_ptr() as *const c_char, 0)).map(Self)
-        }
-    }
-}
-
-impl From<Asn1Object> for *mut c_void {
-    fn from(val: Asn1Object) -> Self {
-        let inner = val.0 as *mut c_void;
-        mem::forget(val);
-        inner
-    }
-}
-
-impl Drop for Asn1Object {
-    fn drop(&mut self) {
-        unsafe { ASN1_OBJECT_free(self.0) }
-    }
-}
-
 pub(super) struct GeneralName(*mut GENERAL_NAME);
 
 impl GeneralName {
@@ -168,24 +157,59 @@ impl GeneralName {
         }
     }
 
+    pub fn subject_alt_name(&self) -> Result<SubjectAltName, AwsLcCryptoError> {
+        unsafe {
+            let mut name_type = c_int::default();
+
+            let value = check_non_null(GENERAL_NAME_get0_value(self.0, &mut name_type))?;
+
+            match name_type {
+                GEN_EMAIL => Ok(SubjectAltName::Email(asn1_to_string(value.cast())?)),
+                GEN_URI => Ok(SubjectAltName::Uri(asn1_to_string(value.cast())?)),
+                GEN_DNS => Ok(SubjectAltName::Dns(asn1_to_string(value.cast())?)),
+                // Rid is currently not supported
+                GEN_RID => Err(AwsLcCryptoError::CryptoError),
+                GEN_IPADD => Ok(SubjectAltName::Ip(asn1_to_ip(value.cast())?)),
+                _ => Err(AwsLcCryptoError::CryptoError),
+            }
+        }
+    }
+
     pub fn email(addr: &str) -> Result<Self, AwsLcCryptoError> {
-        Self::new_value(GEN_EMAIL, Asn1String::new_value(V_ASN1_IA5STRING, addr)?)
+        Self::new_value(
+            GEN_EMAIL,
+            Asn1String::new_value(V_ASN1_IA5STRING, addr.as_bytes())?,
+        )
     }
 
     pub fn uri(uri: &str) -> Result<Self, AwsLcCryptoError> {
-        Self::new_value(GEN_URI, Asn1String::new_value(V_ASN1_IA5STRING, uri)?)
+        Self::new_value(
+            GEN_URI,
+            Asn1String::new_value(V_ASN1_IA5STRING, uri.as_bytes())?,
+        )
     }
 
     pub fn dns(dns: &str) -> Result<Self, AwsLcCryptoError> {
-        Self::new_value(GEN_DNS, Asn1String::new_value(V_ASN1_IA5STRING, dns)?)
-    }
-
-    pub fn rid(rid: &str) -> Result<Self, AwsLcCryptoError> {
-        Self::new_value(GEN_RID, Asn1Object::from_string(rid)?)
+        Self::new_value(
+            GEN_DNS,
+            Asn1String::new_value(V_ASN1_IA5STRING, dns.as_bytes())?,
+        )
     }
 
     pub fn ip(ip: &str) -> Result<Self, AwsLcCryptoError> {
-        Self::new_value(GEN_URI, Asn1String::new_value(V_ASN1_OCTET_STRING, ip)?)
+        let ip = ip
+            .parse::<IpAddr>()
+            .map_err(|_| AwsLcCryptoError::CryptoError)?;
+
+        let data = match ip {
+            IpAddr::V4(v4) => v4.octets().to_vec(),
+            IpAddr::V6(v6) => v6.octets().to_vec(),
+        };
+
+        Self::new_value(
+            GEN_IPADD,
+            Asn1String::new_value(V_ASN1_OCTET_STRING, &data)?,
+        )
     }
 }
 
@@ -233,6 +257,40 @@ where
     pub fn push(&mut self, val: T) {
         unsafe {
             sk_push(self.inner, val.into());
+        }
+    }
+
+    pub fn pop(&mut self) -> Option<T> {
+        unsafe {
+            let val = sk_pop(self.inner);
+
+            if val.is_null() {
+                return None;
+            }
+
+            Some(T::from(val))
+        }
+    }
+
+    pub fn into_vec(mut self) -> Vec<T> {
+        let mut res = Vec::new();
+
+        while let Some(item) = self.pop() {
+            res.push(item)
+        }
+
+        res
+    }
+}
+
+impl<T> From<*mut stack_st> for Stack<T>
+where
+    T: Into<*mut c_void> + From<*mut c_void>,
+{
+    fn from(value: *mut stack_st) -> Self {
+        Self {
+            inner: value,
+            phantom: Default::default(),
         }
     }
 }
@@ -297,7 +355,8 @@ impl X509Extension {
                     SubjectAltName::Email(email) => GeneralName::email(email),
                     SubjectAltName::Uri(uri) => GeneralName::uri(uri),
                     SubjectAltName::Dns(dns) => GeneralName::dns(dns),
-                    SubjectAltName::Rid(rid) => GeneralName::rid(rid),
+                    // Rid is currently unsupported
+                    SubjectAltName::Rid(_) => Err(AwsLcCryptoError::CryptoError),
                     SubjectAltName::Ip(ip) => GeneralName::ip(ip),
                 }?;
 
@@ -382,5 +441,37 @@ fn string_to_ext(string: String, nid: i32) -> Result<X509Extension, AwsLcCryptoE
             c_string.as_ptr(),
         ))
         .map(X509Extension)
+    }
+}
+
+unsafe fn asn1_to_string(value: *mut ASN1_STRING) -> Result<String, AwsLcCryptoError> {
+    unsafe {
+        let ptr = check_non_null_const(ASN1_STRING_get0_data(value))?;
+        let len = check_int_return(ASN1_STRING_length(value))?;
+
+        let slice = slice::from_raw_parts(ptr, len as usize);
+
+        String::from_utf8(slice.to_vec()).map_err(|_| AwsLcCryptoError::CryptoError)
+    }
+}
+
+unsafe fn asn1_to_ip(value: *mut ASN1_STRING) -> Result<String, AwsLcCryptoError> {
+    unsafe {
+        let ptr = check_non_null_const(ASN1_STRING_get0_data(value))?;
+        let len = check_int_return(ASN1_STRING_length(value))?;
+
+        let slice = slice::from_raw_parts(ptr, len as usize);
+
+        match len {
+            4 => {
+                let octets: [u8; 4] = slice.try_into().unwrap();
+                Ok(IpAddr::from(octets).to_string())
+            }
+            16 => {
+                let octets: [u8; 16] = slice.try_into().unwrap();
+                Ok(IpAddr::from(octets).to_string())
+            }
+            _ => Err(AwsLcCryptoError::CryptoError),
+        }
     }
 }

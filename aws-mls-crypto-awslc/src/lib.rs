@@ -338,6 +338,14 @@ fn check_non_null<T>(r: *mut T) -> Result<*mut T, AwsLcCryptoError> {
     Ok(r)
 }
 
+fn check_non_null_const<T>(r: *const T) -> Result<*const T, AwsLcCryptoError> {
+    if r.is_null() {
+        return Err(AwsLcCryptoError::CryptoError);
+    }
+
+    Ok(r)
+}
+
 #[cfg(all(not(mls_build_async), test))]
 mod tests {
     #[test]
