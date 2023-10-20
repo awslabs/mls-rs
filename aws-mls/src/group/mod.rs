@@ -1873,7 +1873,7 @@ mod tests {
 
     use assert_matches::assert_matches;
 
-    use aws_mls_core::extension::Extension;
+    use aws_mls_core::extension::{Extension, ExtensionType};
     use aws_mls_core::identity::{Credential, CredentialType, CustomCredential};
 
     #[cfg(feature = "external_proposal")]
@@ -3154,13 +3154,13 @@ mod tests {
         assert_matches!(res, Err(MlsError::InvalidSignature));
     }
 
-    // FIXME!
-    #[ignore]
     #[cfg(not(target_arch = "wasm32"))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn commit_leaf_not_supporting_used_context_extension() {
+        const EXT_TYPE: ExtensionType = ExtensionType::new(999);
+
         // The new leaf of the committer doesn't support an extension set in group context
-        let extension = Extension::new(999.into(), vec![]);
+        let extension = Extension::new(EXT_TYPE, vec![]);
 
         let mut groups =
             get_test_groups_with_features(3, vec![extension].into(), Default::default()).await;
@@ -3176,7 +3176,7 @@ mod tests {
             .process_incoming_message(commit_output.commit_message)
             .await;
 
-        assert!(res.is_err());
+        assert_matches!(res, Err(MlsError::UnsupportedGroupExtension(EXT_TYPE)));
     }
 
     // FIXME!

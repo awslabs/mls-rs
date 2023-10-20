@@ -304,19 +304,6 @@ where
     }
 }
 
-#[cfg(feature = "all_extensions")]
-pub(super) fn leaf_supports_extensions(
-    leaf: &LeafNode,
-    extensions: &ExtensionList,
-) -> Result<(), MlsError> {
-    extensions
-        .iter()
-        .map(|ext| ext.extension_type())
-        .filter(|&ext_type| !ext_type.is_default())
-        .find(|ext_type| !leaf.capabilities.extensions.contains(ext_type))
-        .map_or(Ok(()), |ext| Err(MlsError::UnsupportedGroupExtension(ext)))
-}
-
 #[cfg(feature = "psk")]
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 pub(crate) async fn filter_out_invalid_psks<P, CP>(

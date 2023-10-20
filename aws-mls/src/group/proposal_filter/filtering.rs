@@ -22,9 +22,6 @@ use crate::{
 
 use super::filtering_common::{filter_out_invalid_psks, ApplyProposalsOutput, ProposalApplier};
 
-#[cfg(feature = "all_extensions")]
-use super::filtering_common::leaf_supports_extensions;
-
 #[cfg(feature = "external_proposal")]
 use crate::extension::ExternalSendersExt;
 
@@ -239,9 +236,6 @@ where
                     )
                     .await;
 
-                #[cfg(feature = "all_extensions")]
-                let res = res.and(leaf_supports_extensions(leaf, group_extensions_in_use));
-
                 let old_leaf = self.original_tree.get_leaf_node(sender_index)?;
 
                 let valid_successor = self
@@ -272,12 +266,6 @@ where
                     ValidationContext::Add(commit_time),
                 )
                 .await;
-
-            #[cfg(feature = "all_extensions")]
-            let res = res.and(leaf_supports_extensions(
-                &p.proposal.key_package.leaf_node,
-                group_extensions_in_use,
-            ));
 
             let res = res.and(
                 validate_key_package_properties(

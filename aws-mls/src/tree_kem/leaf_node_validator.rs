@@ -189,6 +189,17 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
             }
         }
 
+        // Verify that group extensions are supported by the leaf
+        self.group_context_extensions
+            .into_iter()
+            .flat_map(|exts| &**exts)
+            .map(|ext| ext.extension_type())
+            .find(|ext_type| {
+                !ext_type.is_default() && !leaf_node.capabilities.extensions.contains(ext_type)
+            })
+            .map(MlsError::UnsupportedGroupExtension)
+            .map_or(Ok(()), Err)?;
+
         Ok(())
     }
 }

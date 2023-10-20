@@ -18,9 +18,6 @@ use crate::{
 #[cfg(feature = "all_extensions")]
 use crate::extension::RequiredCapabilitiesExt;
 
-#[cfg(feature = "all_extensions")]
-use super::filtering_common::leaf_supports_extensions;
-
 use super::filtering_common::{filter_out_invalid_psks, ApplyProposalsOutput, ProposalApplier};
 
 #[cfg(feature = "external_proposal")]
@@ -159,9 +156,6 @@ where
                     ValidationContext::Add(commit_time),
                 )
                 .await?;
-
-            #[cfg(feature = "all_extensions")]
-            leaf_supports_extensions(&p.proposal.key_package.leaf_node, group_extensions_in_use)?;
 
             validate_key_package_properties(
                 &p.proposal.key_package,
