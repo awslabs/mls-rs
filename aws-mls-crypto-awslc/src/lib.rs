@@ -127,6 +127,8 @@ pub enum AwsLcCryptoError {
     HpkeError(#[from] HpkeError),
     #[error("Unsupported ciphersuite")]
     UnsupportedCipherSuite,
+    #[error("Cert validation error: {0}")]
+    CertValidationFailure(String),
 }
 
 impl From<Unspecified> for AwsLcCryptoError {

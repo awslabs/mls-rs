@@ -41,6 +41,12 @@ impl MlsTime {
     }
 }
 
+impl From<u64> for MlsTime {
+    fn from(value: u64) -> Self {
+        Self { seconds: value }
+    }
+}
+
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(inline_js = r#"
 export function date_now() {

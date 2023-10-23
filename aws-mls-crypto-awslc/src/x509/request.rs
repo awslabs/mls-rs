@@ -1,3 +1,7 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// Copyright by contributors to this project.
+// SPDX-License-Identifier: (Apache-2.0 OR MIT)
+
 use std::{
     ffi::c_long,
     ptr::{null, null_mut},
@@ -80,7 +84,7 @@ impl Drop for X509Request {
     }
 }
 
-fn digest_for_curve(curve: Curve) -> *const EVP_MD {
+pub(crate) fn digest_for_curve(curve: Curve) -> *const EVP_MD {
     unsafe {
         match curve {
             Curve::P256 => EVP_sha256(),

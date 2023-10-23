@@ -1,9 +1,14 @@
+mod certificate;
 mod component;
 mod parser;
 mod request;
+mod validator;
 mod writer;
 
+pub use certificate::Certificate;
+pub use component::{X509Extension, X509ExtensionContext};
 pub use parser::CertificateParser;
+pub use validator::CertificateValidator;
 pub use writer::CertificateRequestWriter;
 
 #[cfg(test)]
@@ -15,7 +20,7 @@ mod test_utils {
         EVP_PKEY_get_raw_public_key, PEM_read_bio_PrivateKey, PEM_read_bio_X509_REQ, X509_REQ_free,
     };
     use aws_mls_core::crypto::SignatureSecretKey;
-    use aws_mls_identity_x509::DerCertificate;
+    use aws_mls_identity_x509::{CertificateChain, DerCertificate};
 
     pub fn load_test_ca() -> DerCertificate {
         DerCertificate::from(include_bytes!("../test_data/x509/ca.der").to_vec())
@@ -35,6 +40,45 @@ mod test_utils {
 
     pub fn test_leaf_key() -> SignatureSecretKey {
         ec_key_from_pem(include_bytes!("../test_data/x509/leaf/key.pem"))
+    }
+
+    pub fn test_root_ca_key() -> SignatureSecretKey {
+        ec_key_from_pem(include_bytes!("../test_data/x509/root_ca/key.pem"))
+    }
+
+    pub fn test_root_ca() -> DerCertificate {
+        DerCertificate::from(include_bytes!("../test_data/x509/root_ca/cert.der").to_vec())
+    }
+
+    pub fn load_test_cert_chain() -> CertificateChain {
+        let entry0 = include_bytes!("../test_data/x509/leaf.der").to_vec();
+        let entry1 = include_bytes!("../test_data/x509/intermediate.der").to_vec();
+        let entry2 = include_bytes!("../test_data/x509/ca.der").to_vec();
+
+        CertificateChain::from_iter(
+            [entry0, entry1, entry2]
+                .into_iter()
+                .map(DerCertificate::from),
+        )
+    }
+
+    pub fn load_test_invalid_chain() -> CertificateChain {
+        let entry0 = include_bytes!("../test_data/x509/github_leaf.der").to_vec();
+        let entry1 = include_bytes!("../test_data/x509/intermediate.der").to_vec();
+
+        CertificateChain::from_iter([entry0, entry1].into_iter().map(DerCertificate::from))
+    }
+
+    pub fn load_test_invalid_ca_chain() -> CertificateChain {
+        let entry0 = include_bytes!("../test_data/x509/leaf.der").to_vec();
+        let entry1 = include_bytes!("../test_data/x509/intermediate.der").to_vec();
+        let entry2 = include_bytes!("../test_data/x509/another_ca.der").to_vec();
+
+        CertificateChain::from_iter(
+            [entry0, entry1, entry2]
+                .into_iter()
+                .map(DerCertificate::from),
+        )
     }
 
     // NOTE: This only works with Ed25519 keys, but that is what we use for our test CSR
