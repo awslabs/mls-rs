@@ -11,8 +11,8 @@ use crate::{
     extension::ExtensionType,
     external_client::{ExternalClient, ExternalClientConfig},
     group::{
+        mls_rules::{DefaultMlsRules, MlsRules},
         proposal::ProposalType,
-        proposal_filter::{PassThroughProposalRules, ProposalRules},
     },
     identity::CredentialType,
     protocol_version::ProtocolVersion,
@@ -22,7 +22,7 @@ use crate::{
 use std::collections::HashMap;
 
 /// Base client configuration type when instantiating `ExternalClientBuilder`
-pub type ExternalBaseConfig = Config<Missing, PassThroughProposalRules, Missing>;
+pub type ExternalBaseConfig = Config<Missing, DefaultMlsRules, Missing>;
 
 /// Builder for [`ExternalClient`]
 ///
@@ -107,7 +107,7 @@ impl ExternalClientBuilder<ExternalBaseConfig> {
         Self(Config(ConfigInner {
             settings: Default::default(),
             identity_provider: Missing,
-            proposal_rules: PassThroughProposalRules,
+            mls_rules: DefaultMlsRules::new(),
             crypto_provider: Missing,
             signing_data: None,
         }))
@@ -219,7 +219,7 @@ impl<C: IntoConfig> ExternalClientBuilder<C> {
         ExternalClientBuilder(Config(ConfigInner {
             settings: c.settings,
             identity_provider,
-            proposal_rules: c.proposal_rules,
+            mls_rules: c.mls_rules,
             crypto_provider: c.crypto_provider,
             signing_data: c.signing_data,
         }))
@@ -239,7 +239,7 @@ impl<C: IntoConfig> ExternalClientBuilder<C> {
         ExternalClientBuilder(Config(ConfigInner {
             settings: c.settings,
             identity_provider: c.identity_provider,
-            proposal_rules: c.proposal_rules,
+            mls_rules: c.mls_rules,
             crypto_provider,
             signing_data: c.signing_data,
         }))
@@ -252,18 +252,15 @@ impl<C: IntoConfig> ExternalClientBuilder<C> {
     /// receiving a commit, the entire commit is considered invalid. If the
     /// rule set would return an error when sending a commit, individual proposals
     /// may be filtered out to compensate.
-    pub fn proposal_rules<Pr>(
-        self,
-        proposal_rules: Pr,
-    ) -> ExternalClientBuilder<WithProposalRules<Pr, C>>
+    pub fn mls_rules<Pr>(self, mls_rules: Pr) -> ExternalClientBuilder<WithMlsRules<Pr, C>>
     where
-        Pr: ProposalRules,
+        Pr: MlsRules,
     {
         let Config(c) = self.0.into_config();
         ExternalClientBuilder(Config(ConfigInner {
             settings: c.settings,
             identity_provider: c.identity_provider,
-            proposal_rules,
+            mls_rules,
             crypto_provider: c.crypto_provider,
             signing_data: c.signing_data,
         }))
@@ -284,7 +281,7 @@ impl<C: IntoConfig> ExternalClientBuilder<C> {
 impl<C: IntoConfig> ExternalClientBuilder<C>
 where
     C::IdentityProvider: IdentityProvider + Clone,
-    C::ProposalRules: ProposalRules + Clone,
+    C::MlsRules: MlsRules + Clone,
     C::CryptoProvider: CryptoProvider + Clone,
 {
     pub(crate) fn build_config(self) -> IntoConfigOutput<C> {
@@ -316,35 +313,35 @@ pub struct Missing;
 ///
 /// See [`ExternalClientBuilder::identity_provider`].
 pub type WithIdentityProvider<I, C> =
-    Config<I, <C as IntoConfig>::ProposalRules, <C as IntoConfig>::CryptoProvider>;
+    Config<I, <C as IntoConfig>::MlsRules, <C as IntoConfig>::CryptoProvider>;
 
 /// Change the proposal filter used by a client configuration.
 ///
-/// See [`ExternalClientBuilder::proposal_rules`].
-pub type WithProposalRules<Pr, C> =
+/// See [`ExternalClientBuilder::mls_rules`].
+pub type WithMlsRules<Pr, C> =
     Config<<C as IntoConfig>::IdentityProvider, Pr, <C as IntoConfig>::CryptoProvider>;
 
 /// Change the crypto provider used by a client configuration.
 ///
 /// See [`ExternalClientBuilder::crypto_provider`].
 pub type WithCryptoProvider<Cp, C> =
-    Config<<C as IntoConfig>::IdentityProvider, <C as IntoConfig>::ProposalRules, Cp>;
+    Config<<C as IntoConfig>::IdentityProvider, <C as IntoConfig>::MlsRules, Cp>;
 
 /// Helper alias for `Config`.
 pub type IntoConfigOutput<C> = Config<
     <C as IntoConfig>::IdentityProvider,
-    <C as IntoConfig>::ProposalRules,
+    <C as IntoConfig>::MlsRules,
     <C as IntoConfig>::CryptoProvider,
 >;
 
 impl<Ip, Pr, Cp> ExternalClientConfig for ConfigInner<Ip, Pr, Cp>
 where
     Ip: IdentityProvider + Clone,
-    Pr: ProposalRules + Clone,
+    Pr: MlsRules + Clone,
     Cp: CryptoProvider + Clone,
 {
     type IdentityProvider = Ip;
-    type ProposalRules = Pr;
+    type MlsRules = Pr;
     type CryptoProvider = Cp;
 
     fn supported_extensions(&self) -> Vec<ExtensionType> {
@@ -370,8 +367,8 @@ where
             .cloned()
     }
 
-    fn proposal_rules(&self) -> Self::ProposalRules {
-        self.proposal_rules.clone()
+    fn mls_rules(&self) -> Self::MlsRules {
+        self.mls_rules.clone()
     }
 
     fn max_epoch_jitter(&self) -> Option<u64> {
@@ -392,7 +389,7 @@ impl<Ip, Mpf, Cp> Sealed for Config<Ip, Mpf, Cp> {}
 impl<Ip, Pr, Cp> MlsConfig for Config<Ip, Pr, Cp>
 where
     Ip: IdentityProvider + Clone,
-    Pr: ProposalRules + Clone,
+    Pr: MlsRules + Clone,
     Cp: CryptoProvider + Clone,
 {
     type Output = ConfigInner<Ip, Pr, Cp>;
@@ -418,7 +415,7 @@ pub trait MlsConfig: Send + Sync + Clone + Sealed {
 /// Blanket implementation so that `T: MlsConfig` implies `T: ExternalClientConfig`
 impl<T: MlsConfig> ExternalClientConfig for T {
     type IdentityProvider = <T::Output as ExternalClientConfig>::IdentityProvider;
-    type ProposalRules = <T::Output as ExternalClientConfig>::ProposalRules;
+    type MlsRules = <T::Output as ExternalClientConfig>::MlsRules;
     type CryptoProvider = <T::Output as ExternalClientConfig>::CryptoProvider;
 
     fn supported_extensions(&self) -> Vec<ExtensionType> {
@@ -445,8 +442,8 @@ impl<T: MlsConfig> ExternalClientConfig for T {
         self.get().external_signing_key(external_key_id)
     }
 
-    fn proposal_rules(&self) -> Self::ProposalRules {
-        self.get().proposal_rules()
+    fn mls_rules(&self) -> Self::MlsRules {
+        self.get().mls_rules()
     }
 
     fn cache_proposals(&self) -> bool {
@@ -507,14 +504,14 @@ mod private {
     pub struct ConfigInner<Ip, Mpf, Cp> {
         pub(crate) settings: Settings,
         pub(crate) identity_provider: Ip,
-        pub(crate) proposal_rules: Mpf,
+        pub(crate) mls_rules: Mpf,
         pub(crate) crypto_provider: Cp,
         pub(crate) signing_data: Option<(SignatureSecretKey, SigningIdentity)>,
     }
 
     pub trait IntoConfig {
         type IdentityProvider;
-        type ProposalRules;
+        type MlsRules;
         type CryptoProvider;
 
         fn into_config(self) -> IntoConfigOutput<Self>;
@@ -522,7 +519,7 @@ mod private {
 
     impl<Ip, Pr, Cp> IntoConfig for Config<Ip, Pr, Cp> {
         type IdentityProvider = Ip;
-        type ProposalRules = Pr;
+        type MlsRules = Pr;
         type CryptoProvider = Cp;
 
         fn into_config(self) -> Self {

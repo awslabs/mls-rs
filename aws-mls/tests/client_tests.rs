@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use assert_matches::assert_matches;
-use aws_mls::client_builder::{MlsConfig, Preferences};
+use aws_mls::client_builder::MlsConfig;
 use aws_mls::error::MlsError;
 use aws_mls::group::proposal::Proposal;
 use aws_mls::group::ReceivedMessage;
@@ -35,13 +35,14 @@ async fn generate_client(
     cipher_suite: CipherSuite,
     protocol_version: ProtocolVersion,
     id: usize,
-    preferences: &Preferences,
+    encrypt_controls: bool,
 ) -> Client<impl MlsConfig> {
     aws_mls::test_utils::generate_basic_client(
         cipher_suite,
         protocol_version,
         id,
-        preferences,
+        None,
+        encrypt_controls,
         &TestCryptoProvider::default(),
     )
     .await
@@ -52,13 +53,14 @@ pub async fn get_test_groups(
     version: ProtocolVersion,
     cipher_suite: CipherSuite,
     num_participants: usize,
-    preferences: &Preferences,
+    encrypt_controls: bool,
 ) -> Vec<Group<impl MlsConfig>> {
     aws_mls::test_utils::get_test_groups(
         version,
         cipher_suite,
         num_participants,
-        preferences,
+        None,
+        encrypt_controls,
         &TestCryptoProvider::default(),
     )
     .await
@@ -79,15 +81,13 @@ use futures_test::test as futures_test;
 #[cfg(mls_build_async)]
 async fn test_on_all_params<F, Fut>(test: F)
 where
-    F: Fn(ProtocolVersion, CipherSuite, usize, Preferences) -> Fut,
+    F: Fn(ProtocolVersion, CipherSuite, usize, bool) -> Fut,
     Fut: Future<Output = ()>,
 {
     for version in ProtocolVersion::all() {
         for cs in TestCryptoProvider::all_supported_cipher_suites() {
             for encrypt_controls in [true, false] {
-                let preferences = Preferences::default().with_control_encryption(encrypt_controls);
-
-                test(version, cs, 10, preferences).await;
+                test(version, cs, 10, encrypt_controls).await;
             }
         }
     }
@@ -97,14 +97,12 @@ where
 #[cfg(not(mls_build_async))]
 fn test_on_all_params<F>(test: F)
 where
-    F: Fn(ProtocolVersion, CipherSuite, usize, Preferences),
+    F: Fn(ProtocolVersion, CipherSuite, usize, bool),
 {
     for version in ProtocolVersion::all() {
         for cs in TestCryptoProvider::all_supported_cipher_suites() {
             for encrypt_controls in [true, false] {
-                let preferences = Preferences::default().with_control_encryption(encrypt_controls);
-
-                test(version, cs, 10, preferences);
+                test(version, cs, 10, encrypt_controls);
             }
         }
     }
@@ -114,7 +112,7 @@ where
 #[cfg(mls_build_async)]
 async fn test_on_all_params<F, Fut>(test: F)
 where
-    F: Fn(ProtocolVersion, CipherSuite, usize, Preferences) -> Fut,
+    F: Fn(ProtocolVersion, CipherSuite, usize, bool) -> Fut,
     Fut: Future<Output = ()>,
 {
     test_on_all_params_plaintext(test).await;
@@ -124,7 +122,7 @@ where
 #[cfg(not(mls_build_async))]
 fn test_on_all_params<F>(test: F)
 where
-    F: Fn(ProtocolVersion, CipherSuite, usize, Preferences),
+    F: Fn(ProtocolVersion, CipherSuite, usize, bool),
 {
     test_on_all_params_plaintext(test);
 }
@@ -132,12 +130,12 @@ where
 #[cfg(mls_build_async)]
 async fn test_on_all_params_plaintext<F, Fut>(test: F)
 where
-    F: Fn(ProtocolVersion, CipherSuite, usize, Preferences) -> Fut,
+    F: Fn(ProtocolVersion, CipherSuite, usize, bool) -> Fut,
     Fut: Future<Output = ()>,
 {
     for version in ProtocolVersion::all() {
         for cs in TestCryptoProvider::all_supported_cipher_suites() {
-            test(version, cs, 10, Preferences::default()).await;
+            test(version, cs, 10, false).await;
         }
     }
 }
@@ -145,11 +143,11 @@ where
 #[cfg(not(mls_build_async))]
 fn test_on_all_params_plaintext<F>(test: F)
 where
-    F: Fn(ProtocolVersion, CipherSuite, usize, Preferences),
+    F: Fn(ProtocolVersion, CipherSuite, usize, bool),
 {
     for version in ProtocolVersion::all() {
         for cs in TestCryptoProvider::all_supported_cipher_suites() {
-            test(version, cs, 10, Preferences::default());
+            test(version, cs, 10, false);
         }
     }
 }
@@ -159,14 +157,10 @@ async fn test_create(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
     _n_participants: usize,
-    preferences: Preferences,
+    encrypt_controls: bool,
 ) {
-    println!(
-        "Testing group creation for cipher suite: {protocol_version:?} {cipher_suite:?}, participants: 1, {preferences:?}"
-    );
-
-    let alice = generate_client(cipher_suite, protocol_version, 0, &preferences).await;
-    let bob = generate_client(cipher_suite, protocol_version, 1, &preferences).await;
+    let alice = generate_client(cipher_suite, protocol_version, 0, encrypt_controls).await;
+    let bob = generate_client(cipher_suite, protocol_version, 1, encrypt_controls).await;
     let bob_key_pkg = bob.generate_key_package_message().await.unwrap();
 
     // Alice creates a group and adds bob
@@ -205,14 +199,15 @@ async fn test_empty_commits(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
     participants: usize,
-    preferences: Preferences,
+    encrypt_controls: bool,
 ) {
-    println!(
-        "Testing empty commits for cipher suite: {cipher_suite:?}, participants: {participants}, {preferences:?}",
-    );
-
-    let mut groups =
-        get_test_groups(protocol_version, cipher_suite, participants, &preferences).await;
+    let mut groups = get_test_groups(
+        protocol_version,
+        cipher_suite,
+        participants,
+        encrypt_controls,
+    )
+    .await;
 
     // Loop through each participant and send a path update
 
@@ -242,14 +237,15 @@ async fn test_update_proposals(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
     participants: usize,
-    preferences: Preferences,
+    encrypt_controls: bool,
 ) {
-    println!(
-        "Testing update proposals for cipher suite: {cipher_suite:?}, participants: {participants}, {preferences:?}",
-    );
-
-    let mut groups =
-        get_test_groups(protocol_version, cipher_suite, participants, &preferences).await;
+    let mut groups = get_test_groups(
+        protocol_version,
+        cipher_suite,
+        participants,
+        encrypt_controls,
+    )
+    .await;
 
     // Create an update from the ith member, have the ith + 1 member commit it
     for i in 0..groups.len() - 1 {
@@ -286,14 +282,15 @@ async fn test_remove_proposals(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
     participants: usize,
-    preferences: Preferences,
+    encrypt_controls: bool,
 ) {
-    println!(
-        "Testing remove proposals for cipher suite: {cipher_suite:?}, participants: {participants}, {preferences:?}",
-    );
-
-    let mut groups =
-        get_test_groups(protocol_version, cipher_suite, participants, &preferences).await;
+    let mut groups = get_test_groups(
+        protocol_version,
+        cipher_suite,
+        participants,
+        encrypt_controls,
+    )
+    .await;
 
     // Remove people from the group one at a time
     while groups.len() > 1 {
@@ -348,12 +345,17 @@ async fn test_application_messages(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
     participants: usize,
-    preferences: Preferences,
+    encrypt_controls: bool,
 ) {
     let message_count = 20;
 
-    let mut groups =
-        get_test_groups(protocol_version, cipher_suite, participants, &preferences).await;
+    let mut groups = get_test_groups(
+        protocol_version,
+        cipher_suite,
+        participants,
+        encrypt_controls,
+    )
+    .await;
 
     // Loop through each participant and send application messages
     for i in 0..groups.len() {
@@ -390,7 +392,7 @@ async fn test_out_of_order_application_messages() {
         ProtocolVersion::MLS_10,
         CipherSuite::CURVE25519_AES128,
         2,
-        &Preferences::default(),
+        false,
     )
     .await;
 
@@ -455,13 +457,10 @@ async fn processing_message_from_self_returns_error(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
     _n_participants: usize,
-    preferences: Preferences,
+    encrypt_controls: bool,
 ) {
-    println!(
-        "Verifying that processing one's own message returns an error for cipher suite: {cipher_suite:?}, {preferences:?}",
-    );
-
-    let mut creator_group = get_test_groups(protocol_version, cipher_suite, 1, &preferences).await;
+    let mut creator_group =
+        get_test_groups(protocol_version, cipher_suite, 1, encrypt_controls).await;
     let creator_group = &mut creator_group[0];
 
     let commit = creator_group
@@ -489,9 +488,9 @@ async fn external_commits_work(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
     _n_participants: usize,
-    preferences: Preferences,
+    _encrypt_controls: bool,
 ) {
-    let creator = generate_client(cipher_suite, protocol_version, 0, &preferences).await;
+    let creator = generate_client(cipher_suite, protocol_version, 0, false).await;
 
     let creator_group = creator
         .create_group_with_id(b"group".to_vec(), ExtensionList::default())
@@ -503,7 +502,7 @@ async fn external_commits_work(
     let mut others = Vec::new();
 
     for i in 1..PARTICIPANT_COUNT {
-        others.push(generate_client(cipher_suite, protocol_version, i, &Default::default()).await)
+        others.push(generate_client(cipher_suite, protocol_version, i, Default::default()).await)
     }
 
     let mut groups = vec![creator_group];
@@ -512,7 +511,7 @@ async fn external_commits_work(
         let existing_group = groups.choose_mut(&mut rand::thread_rng()).unwrap();
 
         let group_info = existing_group
-            .group_info_message_allowing_ext_commit()
+            .group_info_message_allowing_ext_commit(true)
             .await
             .unwrap();
 
@@ -572,7 +571,7 @@ async fn test_remove_nonexisting_leaf() {
         ProtocolVersion::MLS_10,
         CipherSuite::CURVE25519_AES128,
         10,
-        &Preferences::default(),
+        false,
     )
     .await;
 
@@ -599,8 +598,8 @@ async fn reinit_works() {
     let suite2 = CipherSuite::P256_AES128;
     let version = ProtocolVersion::MLS_10;
 
-    let alice1 = generate_client(suite1, version, 1, &Default::default()).await;
-    let bob1 = generate_client(suite1, version, 2, &Default::default()).await;
+    let alice1 = generate_client(suite1, version, 1, Default::default()).await;
+    let bob1 = generate_client(suite1, version, 2, Default::default()).await;
 
     // Create a group with 2 parties
     let mut alice_group = alice1.create_group(ExtensionList::new()).await.unwrap();
@@ -703,14 +702,14 @@ async fn reinit_works() {
 
     // Bob produces key package, alice commits, bob joins
     let kp = bob2.generate_key_package().await.unwrap();
-    let (mut alice_group, welcome) = alice2.commit(vec![kp], None).await.unwrap();
+    let (mut alice_group, welcome) = alice2.commit(vec![kp]).await.unwrap();
     let tree = alice_group.export_tree().unwrap();
     let (mut bob_group, _) = bob2.join(welcome.unwrap(), Some(&tree)).await.unwrap();
 
     assert!(bob_group.cipher_suite() == suite2);
 
     // They can talk
-    let carol = generate_client(suite2, version, 3, &Default::default()).await;
+    let carol = generate_client(suite2, version, 3, Default::default()).await;
 
     let kp = carol.generate_key_package_message().await.unwrap();
 
@@ -740,13 +739,8 @@ async fn reinit_works() {
 #[cfg(feature = "external_commit")]
 #[maybe_async::test(not(mls_build_async), async(mls_build_async, futures_test))]
 async fn external_joiner_can_process_siblings_update() {
-    let mut groups = get_test_groups(
-        ProtocolVersion::MLS_10,
-        CipherSuite::P256_AES128,
-        3,
-        &Preferences::default().with_ratchet_tree_extension(true),
-    )
-    .await;
+    let mut groups =
+        get_test_groups(ProtocolVersion::MLS_10, CipherSuite::P256_AES128, 3, false).await;
 
     // Remove leaf 1 s.t. the external joiner joins in its place
     let c = groups[0]
@@ -760,7 +754,7 @@ async fn external_joiner_can_process_siblings_update() {
     all_process_message(&mut groups, &c.commit_message, 0, true).await;
 
     let info = groups[0]
-        .group_info_message_allowing_ext_commit()
+        .group_info_message_allowing_ext_commit(true)
         .await
         .unwrap();
 
@@ -769,7 +763,7 @@ async fn external_joiner_can_process_siblings_update() {
         CipherSuite::P256_AES128,
         ProtocolVersion::MLS_10,
         0xabba,
-        &Preferences::default(),
+        false,
     )
     .await;
 

@@ -3,9 +3,8 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use crate::{
-    client_builder::Preferences,
     extension::ExtensionType,
-    group::{proposal::ProposalType, proposal_filter::ProposalRules},
+    group::{mls_rules::MlsRules, proposal::ProposalType},
     identity::CredentialType,
     protocol_version::ProtocolVersion,
     tree_kem::{leaf_node::ConfigProperties, Capabilities, Lifetime},
@@ -22,17 +21,16 @@ pub trait ClientConfig: Send + Sync + Clone {
     type PskStore: PreSharedKeyStorage + Clone;
     type GroupStateStorage: GroupStateStorage + Clone;
     type IdentityProvider: IdentityProvider + Clone;
-    type ProposalRules: ProposalRules + Clone;
+    type MlsRules: MlsRules + Clone;
     type CryptoProvider: CryptoProvider + Clone;
 
     fn supported_extensions(&self) -> Vec<ExtensionType>;
     fn supported_custom_proposals(&self) -> Vec<ProposalType>;
     fn supported_protocol_versions(&self) -> Vec<ProtocolVersion>;
 
-    fn preferences(&self) -> Preferences;
     fn key_package_repo(&self) -> Self::KeyPackageRepository;
 
-    fn proposal_rules(&self) -> Self::ProposalRules;
+    fn mls_rules(&self) -> Self::MlsRules;
 
     fn secret_store(&self) -> Self::PskStore;
     fn group_state_storage(&self) -> Self::GroupStateStorage;

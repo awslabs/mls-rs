@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use aws_mls::{
-    client_builder::{MlsConfig, Preferences},
+    client_builder::MlsConfig,
     error::MlsError,
     external_client::{
         builder::MlsConfig as ExternalMlsConfig, ExternalClient, ExternalReceivedMessage,
@@ -116,7 +116,6 @@ fn make_client(name: &str) -> Result<Client<impl MlsConfig>, MlsError> {
     Ok(Client::builder()
         .identity_provider(BasicIdentityProvider)
         .crypto_provider(crypto_provider())
-        .preferences(Preferences::default().with_ratchet_tree_extension(true))
         .signing_identity(signing_identity, secret, CIPHERSUITE)
         .build())
 }
@@ -154,7 +153,7 @@ fn main() -> Result<(), MlsError> {
     alice_group.apply_pending_commit()?;
 
     // Server starts observing Alice's group
-    let group_info = alice_group.group_info_message()?.to_bytes()?;
+    let group_info = alice_group.group_info_message(true)?.to_bytes()?;
     let tree = alice_group.export_tree()?;
 
     let mut server = BasicServer::create_group(&group_info, &tree)?;

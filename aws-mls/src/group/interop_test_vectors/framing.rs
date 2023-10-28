@@ -9,19 +9,20 @@ use aws_mls_core::crypto::{CipherSuite, CipherSuiteProvider, SignaturePublicKey}
 
 use crate::{
     client::test_utils::{TestClientConfig, TEST_PROTOCOL_VERSION},
-    client_builder::Preferences,
     crypto::test_utils::{test_cipher_suite_provider, try_test_cipher_suite_provider},
     group::{
         confirmation_tag::ConfirmationTag,
         epoch::EpochSecrets,
         framing::{Content, WireFormat},
         message_processor::{EventOrContent, MessageProcessor},
+        mls_rules::EncryptionOptions,
+        padding::PaddingMode,
         proposal::{Proposal, RemoveProposal},
         secret_tree::test_utils::get_test_tree,
-        test_utils::random_bytes,
-        test_utils::test_group_custom,
-        AuthenticatedContent, Commit, Group, GroupContext, MLSMessage, PaddingMode, Sender,
+        test_utils::{random_bytes, test_group_custom_config},
+        AuthenticatedContent, Commit, Group, GroupContext, MLSMessage, Sender,
     },
+    mls_rules::DefaultMlsRules,
     test_utils::is_edwards,
     tree_kem::{leaf_node::test_utils::get_basic_test_node, node::LeafIndex},
 };
@@ -368,20 +369,18 @@ async fn make_group<P: CipherSuiteProvider>(
     control_encryption_enabled: bool,
     cs: &P,
 ) -> Group<TestClientConfig> {
-    let preferences = Preferences::default()
-        .with_ratchet_tree_extension(true)
-        .with_padding_mode(PaddingMode::None)
-        .with_control_encryption(control_encryption_enabled);
-
-    let mut group = test_group_custom(
-        TEST_PROTOCOL_VERSION,
-        test_case.context.cipher_suite.into(),
-        None,
-        None,
-        Some(preferences),
-    )
-    .await
-    .group;
+    let mut group =
+        test_group_custom_config(
+            TEST_PROTOCOL_VERSION,
+            test_case.context.cipher_suite.into(),
+            |b| {
+                b.mls_rules(DefaultMlsRules::default().with_encryption_options(
+                    EncryptionOptions::new(control_encryption_enabled, PaddingMode::None),
+                ))
+            },
+        )
+        .await
+        .group;
 
     // Add a leaf for the sender. It will get index 1.
     let mut leaf = get_basic_test_node(cs.cipher_suite(), "leaf").await;

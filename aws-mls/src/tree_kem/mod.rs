@@ -545,7 +545,8 @@ impl TreeKemPublic {
             .chain(added.iter().copied())
             .collect_vec();
 
-        self.update_hashes(&updated_leaves, cipher_suite_provider)?;
+        self.update_hashes(&updated_leaves, cipher_suite_provider)
+            .await?;
 
         Ok(added)
     }

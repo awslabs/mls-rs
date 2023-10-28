@@ -7,7 +7,7 @@ use aws_mls_core::identity::IdentityProvider;
 use crate::{
     crypto::SignaturePublicKey,
     extension::ExtensionType,
-    group::{proposal::ProposalType, proposal_filter::ProposalRules},
+    group::{mls_rules::MlsRules, proposal::ProposalType},
     identity::CredentialType,
     protocol_version::ProtocolVersion,
     tree_kem::Capabilities,
@@ -16,7 +16,7 @@ use crate::{
 
 pub trait ExternalClientConfig: Send + Sync + Clone {
     type IdentityProvider: IdentityProvider + Clone;
-    type ProposalRules: ProposalRules + Clone;
+    type MlsRules: MlsRules + Clone;
     type CryptoProvider: CryptoProvider;
 
     fn supported_extensions(&self) -> Vec<ExtensionType>;
@@ -26,7 +26,7 @@ pub trait ExternalClientConfig: Send + Sync + Clone {
     fn crypto_provider(&self) -> Self::CryptoProvider;
     fn external_signing_key(&self, external_key_id: &[u8]) -> Option<SignaturePublicKey>;
 
-    fn proposal_rules(&self) -> Self::ProposalRules;
+    fn mls_rules(&self) -> Self::MlsRules;
 
     fn cache_proposals(&self) -> bool;
 

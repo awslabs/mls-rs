@@ -187,8 +187,6 @@ where
         let state_repo = GroupStateRepository::new(
             #[cfg(feature = "prior_epoch")]
             snapshot.state.context.group_id.clone(),
-            #[cfg(feature = "prior_epoch")]
-            config.preferences().max_epoch_retention,
             config.group_state_storage(),
             config.key_package_repo(),
             None,

@@ -9,7 +9,8 @@ use super::{
         ApplicationData, Content, ContentType, MLSMessage, MLSMessagePayload, PublicMessage, Sender,
     },
     message_signature::AuthenticatedContent,
-    proposal_filter::{CommitDirection, ProposalBundle, ProposalRules},
+    mls_rules::{CommitDirection, MlsRules},
+    proposal_filter::ProposalBundle,
     state::GroupState,
     transcript_hash::InterimTranscriptHash,
     transcript_hashes, GroupContext,
@@ -370,7 +371,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
         + From<ProposalMessageDescription>
         + Send;
 
-    type ProposalRules: ProposalRules;
+    type MlsRules: MlsRules;
     type IdentityProvider: IdentityProvider;
     type CipherSuiteProvider: CipherSuiteProvider;
     type PreSharedKeyStorage: PreSharedKeyStorage;
@@ -710,7 +711,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
                 &id_provider,
                 self.cipher_suite_provider(),
                 &self.psk_storage(),
-                self.proposal_rules(),
+                &self.mls_rules(),
                 time_sent,
                 CommitDirection::Receive,
             )
@@ -823,7 +824,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
     fn group_state(&self) -> &GroupState;
     fn group_state_mut(&mut self) -> &mut GroupState;
     fn self_index(&self) -> Option<LeafIndex>;
-    fn proposal_rules(&self) -> Self::ProposalRules;
+    fn mls_rules(&self) -> Self::MlsRules;
     fn identity_provider(&self) -> Self::IdentityProvider;
     fn cipher_suite_provider(&self) -> &Self::CipherSuiteProvider;
     fn psk_storage(&self) -> Self::PreSharedKeyStorage;

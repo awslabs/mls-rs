@@ -11,6 +11,8 @@ use std::sync::{Arc, Mutex};
 
 use crate::SqLiteDataStorageError;
 
+pub(crate) const DEFAULT_EPOCH_RETENTION_LIMIT: u64 = 3;
+
 #[derive(Debug, Clone)]
 struct StoredEpoch {
     data: Vec<u8>,
@@ -27,12 +29,21 @@ impl StoredEpoch {
 /// SQLite Storage for MLS group states.
 pub struct SqLiteGroupStateStorage {
     connection: Arc<Mutex<Connection>>,
+    max_epoch_retention: u64,
 }
 
 impl SqLiteGroupStateStorage {
     pub(crate) fn new(connection: Connection) -> SqLiteGroupStateStorage {
         SqLiteGroupStateStorage {
             connection: Arc::new(Mutex::new(connection)),
+            max_epoch_retention: DEFAULT_EPOCH_RETENTION_LIMIT,
+        }
+    }
+
+    pub fn with_max_epoch_retention(self, max_epoch_retention: u64) -> Self {
+        Self {
+            connection: self.connection,
+            max_epoch_retention,
         }
     }
 
@@ -67,6 +78,10 @@ impl SqLiteGroupStateStorage {
             )
             .map(|_| ())
             .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))
+    }
+
+    pub fn max_epoch_retention(&self) -> u64 {
+        self.max_epoch_retention
     }
 
     fn get_snapshot_data(
@@ -118,14 +133,15 @@ impl SqLiteGroupStateStorage {
         &self,
         group_id: &[u8],
         group_snapshot: Vec<u8>,
-        mut inserts: I,
+        inserts: I,
         mut updates: U,
-        delete_under: Option<u64>,
     ) -> Result<(), SqLiteDataStorageError>
     where
         I: Iterator<Item = Result<StoredEpoch, SqLiteDataStorageError>>,
         U: Iterator<Item = Result<StoredEpoch, SqLiteDataStorageError>>,
     {
+        let mut max_epoch_id = None;
+
         let mut connection = self.connection.lock().unwrap();
         let transaction = connection
             .transaction()
@@ -138,8 +154,9 @@ impl SqLiteGroupStateStorage {
         ).map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))?;
 
         // Insert new epochs as needed
-        inserts.try_for_each(|epoch| {
+        for epoch in inserts {
             let epoch = epoch.map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))?;
+            max_epoch_id = Some(epoch.id);
 
             transaction
                 .execute(
@@ -147,8 +164,8 @@ impl SqLiteGroupStateStorage {
                     params![group_id, epoch.id, epoch.data],
                 )
                 .map(|_| ())
-                .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))
-        })?;
+                .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))?;
+        }
 
         // Update existing epochs as needed
         updates.try_for_each(|epoch| {
@@ -164,13 +181,17 @@ impl SqLiteGroupStateStorage {
         })?;
 
         // Delete old epochs as needed
-        if let Some(delete_under) = delete_under {
-            transaction
-                .execute(
-                    "DELETE FROM epoch WHERE group_id = ? AND epoch_id < ?",
-                    params![group_id, delete_under],
-                )
-                .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))?;
+        if let Some(max_epoch_id) = max_epoch_id {
+            if max_epoch_id >= self.max_epoch_retention {
+                let delete_under = max_epoch_id - self.max_epoch_retention;
+
+                transaction
+                    .execute(
+                        "DELETE FROM epoch WHERE group_id = ? AND epoch_id <= ?",
+                        params![group_id, delete_under],
+                    )
+                    .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))?;
+            }
         }
 
         // Execute the full transaction
@@ -188,7 +209,6 @@ impl GroupStateStorage for SqLiteGroupStateStorage {
         state: ST,
         epoch_inserts: Vec<ET>,
         epoch_updates: Vec<ET>,
-        delete_epoch_under: Option<u64>,
     ) -> Result<(), Self::Error>
     where
         ST: GroupState + MlsEncode + MlsDecode + Send + Sync,
@@ -216,13 +236,7 @@ impl GroupStateStorage for SqLiteGroupStateStorage {
             ))
         });
 
-        self.update_group_state(
-            group_id.as_slice(),
-            snapshot_data,
-            inserts,
-            updates,
-            delete_epoch_under,
-        )
+        self.update_group_state(group_id.as_slice(), snapshot_data, inserts, updates)
     }
 
     fn state<T>(&self, group_id: &[u8]) -> Result<Option<T>, Self::Error>
@@ -300,7 +314,6 @@ mod tests {
                 test_snapshot.clone(),
                 vec![test_epoch_0.clone()].into_iter().map(Ok),
                 vec![].into_iter(),
-                None,
             )
             .unwrap();
 
@@ -345,7 +358,6 @@ mod tests {
                 test_snapshot.clone(),
                 vec![].into_iter(),
                 vec![Ok(epoch_update.clone())].into_iter(),
-                None,
             )
             .unwrap();
 
@@ -369,10 +381,15 @@ mod tests {
     }
 
     #[test]
-    fn epochs_are_truncated_with_delete_under() {
+    fn epochs_are_truncated() {
+        test_epochs_are_truncated(9);
+        test_epochs_are_truncated(DEFAULT_EPOCH_RETENTION_LIMIT);
+    }
+
+    fn test_epochs_are_truncated(n: u64) {
         let test_data = setup_group_storage_test();
 
-        let test_epochs = (1..10).map(test_epoch).collect::<Vec<_>>();
+        let mut test_epochs = (1..n + 1).map(test_epoch).collect::<Vec<_>>();
 
         test_data
             .storage
@@ -381,27 +398,27 @@ mod tests {
                 test_snapshot(),
                 test_epochs.clone().into_iter().map(Ok),
                 vec![].into_iter(),
-                Some(1),
             )
             .unwrap();
 
-        assert!(test_data
-            .storage
-            .get_epoch_data(&test_data.group_id, 0)
-            .unwrap()
-            .is_none());
+        test_epochs.insert(0, test_data.epoch_0);
 
-        test_epochs.into_iter().for_each(|epoch| {
+        for epoch in test_epochs {
             let stored = test_data
                 .storage
                 .get_epoch_data(&test_data.group_id, epoch.id)
                 .unwrap();
-            assert_eq!(stored.unwrap(), epoch.data);
-        })
+
+            if epoch.id <= n - DEFAULT_EPOCH_RETENTION_LIMIT {
+                assert!(stored.is_none());
+            } else {
+                assert_eq!(stored.unwrap(), epoch.data);
+            }
+        }
     }
 
     #[test]
-    fn epoch_insert_update_delete_under() {
+    fn epoch_insert_update_old_epoch() {
         let test_data = setup_group_storage_test();
 
         test_data
@@ -411,7 +428,6 @@ mod tests {
                 test_snapshot(),
                 vec![test_epoch(1)].into_iter().map(Ok),
                 vec![].into_iter(),
-                None,
             )
             .unwrap();
 
@@ -425,32 +441,14 @@ mod tests {
                 test_snapshot(),
                 test_epochs.clone().into_iter().map(Ok),
                 vec![Ok(new_epoch_1.clone())].into_iter(),
-                Some(1),
             )
             .unwrap();
 
         assert!(test_data
             .storage
-            .get_epoch_data(&test_data.group_id, 0)
+            .get_epoch_data(&test_data.group_id, 1)
             .unwrap()
             .is_none());
-
-        assert_eq!(
-            test_data
-                .storage
-                .get_epoch_data(&test_data.group_id, 1)
-                .unwrap()
-                .unwrap(),
-            new_epoch_1.data
-        );
-
-        test_epochs.into_iter().for_each(|epoch| {
-            let stored = test_data
-                .storage
-                .get_epoch_data(&test_data.group_id, epoch.id)
-                .unwrap();
-            assert_eq!(stored.unwrap(), epoch.data);
-        })
     }
 
     #[test]
@@ -473,7 +471,6 @@ mod tests {
                 vec![0, 1, 2],
                 vec![].into_iter(),
                 vec![].into_iter().map(Ok),
-                None,
             )
             .unwrap();
 
@@ -493,7 +490,6 @@ mod tests {
                 test_snapshot(),
                 (1..10).map(test_epoch).map(Ok),
                 vec![].into_iter().map(Ok),
-                None,
             )
             .unwrap();
 
@@ -521,7 +517,6 @@ mod tests {
                 test_snapshot(),
                 vec![new_group_epoch.clone()].into_iter().map(Ok),
                 vec![].into_iter(),
-                None,
             )
             .unwrap();
 

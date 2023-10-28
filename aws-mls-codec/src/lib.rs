@@ -25,12 +25,7 @@ mod tuple;
 mod varint;
 mod vec;
 
-pub use array::*;
-pub use option::*;
-pub use stdint::*;
-pub use tuple::*;
 pub use varint::*;
-pub use vec::*;
 
 pub use aws_mls_codec_derive::*;
 

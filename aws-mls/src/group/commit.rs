@@ -5,19 +5,18 @@
 use alloc::vec;
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
-use aws_mls_core::crypto::SignatureSecretKey;
+use aws_mls_core::{crypto::SignatureSecretKey, error::IntoAnyError};
 
 use crate::{
     cipher_suite::CipherSuite,
     client::MlsError,
-    client_builder::Preferences,
     client_config::ClientConfig,
     extension::RatchetTreeExt,
     identity::SigningIdentity,
     protocol_version::ProtocolVersion,
     signer::Signable,
     tree_kem::{kem::TreeKem, path_secret::PathSecret, TreeKemPrivate, UpdatePath},
-    ExtensionList,
+    ExtensionList, MlsRules,
 };
 
 #[cfg(feature = "external_commit")]
@@ -38,8 +37,8 @@ use super::{
     key_schedule::KeySchedule,
     message_processor::{path_update_required, MessageProcessor},
     message_signature::AuthenticatedContent,
+    mls_rules::CommitDirection,
     proposal::{Proposal, ProposalOrRef},
-    proposal_filter::CommitDirection,
     ConfirmedTranscriptHash, Group, GroupInfo,
 };
 
@@ -48,9 +47,6 @@ use super::proposal_cache::prepare_commit;
 
 #[cfg(feature = "custom_proposal")]
 use super::proposal::CustomProposal;
-
-#[cfg(feature = "private_message")]
-use super::ControlEncryptionMode;
 
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(aws_mls_core::arbitrary::Arbitrary))]
@@ -64,14 +60,6 @@ pub(super) struct CommitGeneration {
     pub content: AuthenticatedContent,
     pub pending_private_tree: TreeKemPrivate,
     pub pending_commit_secret: PathSecret,
-}
-
-#[derive(Clone, Debug)]
-struct CommitOptions {
-    pub prefer_path_update: bool,
-    #[cfg(feature = "private_message")]
-    pub encryption_mode: ControlEncryptionMode,
-    pub ratchet_tree_extension: bool,
 }
 
 #[cfg_attr(
@@ -118,7 +106,7 @@ impl CommitOutput {
 /// Proposals received during the current epoch will be added to the resulting
 /// commit by-reference automatically so long as they pass the rules defined
 /// in the current
-/// [proposal rules](crate::client_builder::ClientBuilder::proposal_rules).
+/// [proposal rules](crate::client_builder::ClientBuilder::mls_rules).
 pub struct CommitBuilder<'a, C>
 where
     C: ClientConfig + Clone,
@@ -129,7 +117,6 @@ where
     group_info_extensions: ExtensionList,
     new_signer: Option<SignatureSecretKey>,
     new_signing_identity: Option<SigningIdentity>,
-    preferences: Option<Preferences>,
 }
 
 impl<'a, C> CommitBuilder<'a, C>
@@ -278,16 +265,6 @@ where
         }
     }
 
-    /// Set [`Preferences`](crate::client_builder::Preferences) used to make
-    /// this commit. By default, preferences set with [`ClientBuilder::preferences`](crate::client_builder::ClientBuilder::preferences)
-    /// (by default [Preferences::default]) are used.
-    pub fn set_commit_preferences(self, preferences: Preferences) -> Self {
-        Self {
-            preferences: Some(preferences),
-            ..self
-        }
-    }
-
     /// Finalize the commit to send.
     ///
     /// # Errors
@@ -295,7 +272,7 @@ where
     /// This function will return an error if any of the proposals provided
     /// are not contextually valid according to the rules defined by the
     /// MLS RFC, or if they do not pass the custom rules defined by the current
-    /// [proposal rules](crate::client_builder::ClientBuilder::proposal_rules).
+    /// [proposal rules](crate::client_builder::ClientBuilder::mls_rules).
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn build(self) -> Result<CommitOutput, MlsError> {
         self.group
@@ -307,7 +284,6 @@ where
                 self.group_info_extensions,
                 self.new_signer,
                 self.new_signing_identity,
-                self.preferences,
             )
             .await
     }
@@ -367,7 +343,6 @@ where
             Default::default(),
             None,
             None,
-            None,
         )
         .await
     }
@@ -382,7 +357,6 @@ where
             group_info_extensions: Default::default(),
             new_signer: Default::default(),
             new_signing_identity: Default::default(),
-            preferences: Default::default(),
         }
     }
 
@@ -398,7 +372,6 @@ where
         group_info_extensions: ExtensionList,
         new_signer: Option<SignatureSecretKey>,
         new_signing_identity: Option<SigningIdentity>,
-        preferences: Option<Preferences>,
     ) -> Result<CommitOutput, MlsError> {
         if self.pending_commit.is_some() {
             return Err(MlsError::ExistingPendingCommit);
@@ -408,14 +381,7 @@ where
             return Err(MlsError::GroupUsedAfterReInit);
         }
 
-        let preferences = preferences.unwrap_or(self.config.preferences());
-
-        let options = CommitOptions {
-            prefer_path_update: preferences.force_commit_path_update,
-            #[cfg(feature = "private_message")]
-            encryption_mode: preferences.encryption_mode(),
-            ratchet_tree_extension: preferences.ratchet_tree_extension,
-        };
+        let mls_rules = self.config.mls_rules();
 
         #[cfg(feature = "external_commit")]
         let is_external = external_leaf.is_some();
@@ -460,7 +426,7 @@ where
                 &self.config.identity_provider(),
                 &self.cipher_suite_provider,
                 &self.config.secret_store(),
-                self.config.proposal_rules(),
+                &mls_rules,
                 time,
                 CommitDirection::Send,
             )
@@ -483,7 +449,15 @@ where
         // Decide whether to populate the path field: If the path field is required based on the
         // proposals that are in the commit (see above), then it MUST be populated. Otherwise, the
         // sender MAY omit the path field at its discretion.
-        let perform_path_update = options.prefer_path_update
+        let commit_options = mls_rules
+            .commit_options(
+                &provisional_state.public_tree.roster(),
+                &provisional_group_context.extensions,
+                &provisional_state.applied_proposals,
+            )
+            .map_err(|e| MlsError::MlsRulesError(e.into_any_error()))?;
+
+        let perform_path_update = commit_options.path_required
             || path_update_required(&provisional_state.applied_proposals);
 
         let (update_path, path_secrets, commit_secret) = if perform_path_update {
@@ -559,7 +533,7 @@ where
             Content::Commit(alloc::boxed::Box::new(commit)),
             old_signer,
             #[cfg(feature = "private_message")]
-            options.encryption_mode.into(),
+            self.encryption_options()?.control_wire_format(sender),
             #[cfg(not(feature = "private_message"))]
             WireFormat::PublicMessage,
             authenticated_data,
@@ -580,7 +554,7 @@ where
         // Add the ratchet tree extension if necessary
         let mut extensions = ExtensionList::new();
 
-        if options.ratchet_tree_extension {
+        if commit_options.ratchet_tree_extension {
             let ratchet_tree_ext = RatchetTreeExt {
                 tree_data: provisional_state.public_tree.export_node_data(),
             };
@@ -651,7 +625,7 @@ where
 
         self.pending_commit = Some(pending_commit);
 
-        let ratchet_tree = (!options.ratchet_tree_extension)
+        let ratchet_tree = (!commit_options.ratchet_tree_extension)
             .then(|| {
                 provisional_state
                     .public_tree
@@ -710,7 +684,10 @@ mod tests {
         time::MlsTime,
     };
 
-    use crate::{crypto::test_utils::TestCryptoProvider, Client};
+    use crate::{
+        crypto::test_utils::TestCryptoProvider, group::test_utils::test_group_custom,
+        mls_rules::CommitOptions, Client,
+    };
 
     #[cfg(feature = "external_proposal")]
     use crate::extension::ExternalSendersExt;
@@ -1098,10 +1075,13 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn commit_includes_tree_if_no_ratchet_tree_ext() {
-        let mut group = test_group_custom_config(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, |b| {
-            b.custom_proposal_type(ProposalType::from(42))
-                .preferences(Preferences::default())
-        })
+        let mut group = test_group_custom(
+            TEST_PROTOCOL_VERSION,
+            TEST_CIPHER_SUITE,
+            None,
+            None,
+            Some(CommitOptions::new(false, false)),
+        )
         .await
         .group;
 
@@ -1116,10 +1096,13 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn commit_does_not_include_tree_if_ratchet_tree_ext() {
-        let mut group = test_group_custom_config(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, |b| {
-            b.custom_proposal_type(ProposalType::from(42))
-                .preferences(Preferences::default().with_ratchet_tree_extension(true))
-        })
+        let mut group = test_group_custom(
+            TEST_PROTOCOL_VERSION,
+            TEST_CIPHER_SUITE,
+            None,
+            None,
+            Some(CommitOptions::new(false, true)),
+        )
         .await
         .group;
 

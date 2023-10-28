@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use aws_mls::{
-    client_builder::{MlsConfig, Preferences},
+    client_builder::MlsConfig,
     error::MlsError,
     identity::{
         basic::{BasicCredential, BasicIdentityProvider},
@@ -144,12 +144,7 @@ fn make_client<P: CryptoProvider + Clone>(
     let basic_identity = BasicCredential::new(name.as_bytes().to_vec());
     let signing_identity = SigningIdentity::new(basic_identity.into_credential(), public);
 
-    // Use default preferences but with the ratchet tree extension on so that commits will
-    // include a copy of the MLS ratchet tree.
-    let preferences = Preferences::default().with_ratchet_tree_extension(true);
-
     Ok(Client::builder()
-        .preferences(preferences)
         .identity_provider(BasicIdentityProvider)
         .crypto_provider(crypto_provider)
         .signing_identity(signing_identity, secret, CIPHERSUITE)

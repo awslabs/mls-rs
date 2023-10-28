@@ -26,8 +26,10 @@ pub mod connection_strategy;
 /// SQLite storage components.
 pub mod storage {
     pub use {
-        crate::application::SqLiteApplicationStorage, crate::group_state::SqLiteGroupStateStorage,
-        crate::key_package::SqLiteKeyPackageStorage, crate::psk::SqLitePreSharedKeyStorage,
+        crate::application::{Item, SqLiteApplicationStorage},
+        crate::group_state::SqLiteGroupStateStorage,
+        crate::key_package::SqLiteKeyPackageStorage,
+        crate::psk::SqLitePreSharedKeyStorage,
     };
 }
 

@@ -12,8 +12,8 @@ use crate::{
     client_config::ClientConfig,
     extension::{ExtensionType, MlsExtension},
     group::{
+        mls_rules::{DefaultMlsRules, MlsRules},
         proposal::ProposalType,
-        proposal_filter::{PassThroughProposalRules, ProposalRules},
     },
     identity::CredentialType,
     identity::SigningIdentity,
@@ -25,12 +25,6 @@ use crate::{
     tree_kem::{Capabilities, Lifetime},
     Sealed,
 };
-
-#[cfg(feature = "prior_epoch")]
-use crate::group::state_repo::DEFAULT_EPOCH_RETENTION_LIMIT;
-
-#[cfg(feature = "private_message")]
-use crate::group::ControlEncryptionMode;
 
 #[cfg(feature = "std")]
 use crate::time::MlsTime;
@@ -55,12 +49,21 @@ pub type BaseConfig = Config<
     InMemoryPreSharedKeyStorage,
     InMemoryGroupStateStorage,
     Missing,
-    PassThroughProposalRules,
+    DefaultMlsRules,
     Missing,
 >;
 
-pub type EmptyConfig =
-    Config<Missing, Missing, Missing, Missing, PassThroughProposalRules, Missing>;
+/// Base client configuration type when instantiating `ClientBuilder`
+pub type BaseInMemoryConfig = Config<
+    InMemoryKeyPackageStorage,
+    InMemoryPreSharedKeyStorage,
+    InMemoryGroupStateStorage,
+    Missing,
+    Missing,
+    Missing,
+>;
+
+pub type EmptyConfig = Config<Missing, Missing, Missing, Missing, Missing, Missing>;
 
 /// Base client configuration that is backed by SQLite storage.
 #[cfg(feature = "sqlite")]
@@ -69,7 +72,7 @@ pub type BaseSqlConfig = Config<
     SqLitePreSharedKeyStorage,
     SqLiteGroupStateStorage,
     Missing,
-    PassThroughProposalRules,
+    DefaultMlsRules,
     Missing,
 >;
 
@@ -195,7 +198,7 @@ impl ClientBuilder<BaseConfig> {
             psk_store: Default::default(),
             group_state_storage: Default::default(),
             identity_provider: Missing,
-            proposal_rules: PassThroughProposalRules,
+            mls_rules: DefaultMlsRules::new(),
             crypto_provider: Missing,
             signer: Default::default(),
             signing_identity: Default::default(),
@@ -212,7 +215,7 @@ impl ClientBuilder<EmptyConfig> {
             psk_store: Missing,
             group_state_storage: Missing,
             identity_provider: Missing,
-            proposal_rules: PassThroughProposalRules,
+            mls_rules: Missing,
             crypto_provider: Missing,
             signer: Default::default(),
             signing_identity: Default::default(),
@@ -233,7 +236,7 @@ impl ClientBuilder<BaseSqlConfig> {
             psk_store: storage.pre_shared_key_storage()?,
             group_state_storage: storage.group_state_storage()?,
             identity_provider: Missing,
-            proposal_rules: PassThroughProposalRules,
+            mls_rules: DefaultMlsRules::new(),
             crypto_provider: Missing,
             signer: Default::default(),
             signing_identity: Default::default(),
@@ -291,13 +294,6 @@ impl<C: IntoConfig> ClientBuilder<C> {
     {
         let mut c = self.0.into_config();
         c.0.settings.protocol_versions.extend(versions);
-        ClientBuilder(c)
-    }
-
-    /// Set preferences to be used by the client.
-    pub fn preferences(self, prefs: Preferences) -> ClientBuilder<IntoConfigOutput<C>> {
-        let mut c = self.0.into_config();
-        c.0.settings.preferences = prefs;
         ClientBuilder(c)
     }
 
@@ -373,7 +369,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
             psk_store: c.psk_store,
             group_state_storage: c.group_state_storage,
             identity_provider: c.identity_provider,
-            proposal_rules: c.proposal_rules,
+            mls_rules: c.mls_rules,
             crypto_provider: c.crypto_provider,
             signer: c.signer,
             signing_identity: c.signing_identity,
@@ -396,7 +392,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
             psk_store,
             group_state_storage: c.group_state_storage,
             identity_provider: c.identity_provider,
-            proposal_rules: c.proposal_rules,
+            mls_rules: c.mls_rules,
             crypto_provider: c.crypto_provider,
             signer: c.signer,
             signing_identity: c.signing_identity,
@@ -423,7 +419,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
             group_state_storage,
             identity_provider: c.identity_provider,
             crypto_provider: c.crypto_provider,
-            proposal_rules: c.proposal_rules,
+            mls_rules: c.mls_rules,
             signer: c.signer,
             signing_identity: c.signing_identity,
             version: c.version,
@@ -446,7 +442,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
             psk_store: c.psk_store,
             group_state_storage: c.group_state_storage,
             identity_provider,
-            proposal_rules: c.proposal_rules,
+            mls_rules: c.mls_rules,
             crypto_provider: c.crypto_provider,
             signer: c.signer,
             signing_identity: c.signing_identity,
@@ -470,7 +466,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
             psk_store: c.psk_store,
             group_state_storage: c.group_state_storage,
             identity_provider: c.identity_provider,
-            proposal_rules: c.proposal_rules,
+            mls_rules: c.mls_rules,
             crypto_provider,
             signer: c.signer,
             signing_identity: c.signing_identity,
@@ -485,9 +481,9 @@ impl<C: IntoConfig> ClientBuilder<C> {
     /// receiving a commit, the entire commit is considered invalid. If the
     /// rule set would return an error when sending a commit, individual proposals
     /// may be filtered out to compensate.
-    pub fn proposal_rules<Pr>(self, proposal_rules: Pr) -> ClientBuilder<WithProposalRules<Pr, C>>
+    pub fn mls_rules<Pr>(self, mls_rules: Pr) -> ClientBuilder<WithMlsRules<Pr, C>>
     where
-        Pr: ProposalRules,
+        Pr: MlsRules,
     {
         let Config(c) = self.0.into_config();
 
@@ -497,7 +493,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
             psk_store: c.psk_store,
             group_state_storage: c.group_state_storage,
             identity_provider: c.identity_provider,
-            proposal_rules,
+            mls_rules,
             crypto_provider: c.crypto_provider,
             signer: c.signer,
             signing_identity: c.signing_identity,
@@ -543,7 +539,7 @@ where
     C::PskStore: PreSharedKeyStorage + Clone,
     C::GroupStateStorage: GroupStateStorage + Clone,
     C::IdentityProvider: IdentityProvider + Clone,
-    C::ProposalRules: ProposalRules + Clone,
+    C::MlsRules: MlsRules + Clone,
     C::CryptoProvider: CryptoProvider + Clone,
 {
     pub(crate) fn build_config(self) -> IntoConfigOutput<C> {
@@ -595,7 +591,7 @@ pub type WithKeyPackageRepo<K, C> = Config<
     <C as IntoConfig>::PskStore,
     <C as IntoConfig>::GroupStateStorage,
     <C as IntoConfig>::IdentityProvider,
-    <C as IntoConfig>::ProposalRules,
+    <C as IntoConfig>::MlsRules,
     <C as IntoConfig>::CryptoProvider,
 >;
 
@@ -607,7 +603,7 @@ pub type WithPskStore<P, C> = Config<
     P,
     <C as IntoConfig>::GroupStateStorage,
     <C as IntoConfig>::IdentityProvider,
-    <C as IntoConfig>::ProposalRules,
+    <C as IntoConfig>::MlsRules,
     <C as IntoConfig>::CryptoProvider,
 >;
 
@@ -619,7 +615,7 @@ pub type WithGroupStateStorage<G, C> = Config<
     <C as IntoConfig>::PskStore,
     G,
     <C as IntoConfig>::IdentityProvider,
-    <C as IntoConfig>::ProposalRules,
+    <C as IntoConfig>::MlsRules,
     <C as IntoConfig>::CryptoProvider,
 >;
 
@@ -631,14 +627,14 @@ pub type WithIdentityProvider<I, C> = Config<
     <C as IntoConfig>::PskStore,
     <C as IntoConfig>::GroupStateStorage,
     I,
-    <C as IntoConfig>::ProposalRules,
+    <C as IntoConfig>::MlsRules,
     <C as IntoConfig>::CryptoProvider,
 >;
 
 /// Change the proposal rules used by a client configuration.
 ///
-/// See [`ClientBuilder::proposal_rules`].
-pub type WithProposalRules<Pr, C> = Config<
+/// See [`ClientBuilder::mls_rules`].
+pub type WithMlsRules<Pr, C> = Config<
     <C as IntoConfig>::KeyPackageRepository,
     <C as IntoConfig>::PskStore,
     <C as IntoConfig>::GroupStateStorage,
@@ -655,7 +651,7 @@ pub type WithCryptoProvider<Cp, C> = Config<
     <C as IntoConfig>::PskStore,
     <C as IntoConfig>::GroupStateStorage,
     <C as IntoConfig>::IdentityProvider,
-    <C as IntoConfig>::ProposalRules,
+    <C as IntoConfig>::MlsRules,
     Cp,
 >;
 
@@ -665,7 +661,7 @@ pub type IntoConfigOutput<C> = Config<
     <C as IntoConfig>::PskStore,
     <C as IntoConfig>::GroupStateStorage,
     <C as IntoConfig>::IdentityProvider,
-    <C as IntoConfig>::ProposalRules,
+    <C as IntoConfig>::MlsRules,
     <C as IntoConfig>::CryptoProvider,
 >;
 
@@ -675,7 +671,7 @@ pub type MakeConfig<C> = Config<
     <C as ClientConfig>::PskStore,
     <C as ClientConfig>::GroupStateStorage,
     <C as ClientConfig>::IdentityProvider,
-    <C as ClientConfig>::ProposalRules,
+    <C as ClientConfig>::MlsRules,
     <C as ClientConfig>::CryptoProvider,
 >;
 
@@ -685,14 +681,14 @@ where
     Ps: PreSharedKeyStorage + Clone,
     Gss: GroupStateStorage + Clone,
     Ip: IdentityProvider + Clone,
-    Pr: ProposalRules + Clone,
+    Pr: MlsRules + Clone,
     Cp: CryptoProvider + Clone,
 {
     type KeyPackageRepository = Kpr;
     type PskStore = Ps;
     type GroupStateStorage = Gss;
     type IdentityProvider = Ip;
-    type ProposalRules = Pr;
+    type MlsRules = Pr;
     type CryptoProvider = Cp;
 
     fn supported_extensions(&self) -> Vec<ExtensionType> {
@@ -703,16 +699,12 @@ where
         self.settings.protocol_versions.clone()
     }
 
-    fn preferences(&self) -> Preferences {
-        self.settings.preferences.clone()
-    }
-
     fn key_package_repo(&self) -> Self::KeyPackageRepository {
         self.key_package_repo.clone()
     }
 
-    fn proposal_rules(&self) -> Self::ProposalRules {
-        self.proposal_rules.clone()
+    fn mls_rules(&self) -> Self::MlsRules {
+        self.mls_rules.clone()
     }
 
     fn secret_store(&self) -> Self::PskStore {
@@ -766,7 +758,7 @@ where
     Ps: PreSharedKeyStorage + Clone,
     Gss: GroupStateStorage + Clone,
     Ip: IdentityProvider + Clone,
-    Pr: ProposalRules + Clone,
+    Pr: MlsRules + Clone,
     Cp: CryptoProvider + Clone,
 {
     type Output = ConfigInner<Kpr, Ps, Gss, Ip, Pr, Cp>;
@@ -793,7 +785,7 @@ impl<T: MlsConfig> ClientConfig for T {
     type PskStore = <T::Output as ClientConfig>::PskStore;
     type GroupStateStorage = <T::Output as ClientConfig>::GroupStateStorage;
     type IdentityProvider = <T::Output as ClientConfig>::IdentityProvider;
-    type ProposalRules = <T::Output as ClientConfig>::ProposalRules;
+    type MlsRules = <T::Output as ClientConfig>::MlsRules;
     type CryptoProvider = <T::Output as ClientConfig>::CryptoProvider;
 
     fn supported_extensions(&self) -> Vec<ExtensionType> {
@@ -808,16 +800,12 @@ impl<T: MlsConfig> ClientConfig for T {
         self.get().supported_protocol_versions()
     }
 
-    fn preferences(&self) -> Preferences {
-        self.get().preferences()
-    }
-
     fn key_package_repo(&self) -> Self::KeyPackageRepository {
         self.get().key_package_repo()
     }
 
-    fn proposal_rules(&self) -> Self::ProposalRules {
-        self.get().proposal_rules()
+    fn mls_rules(&self) -> Self::MlsRules {
+        self.get().mls_rules()
     }
 
     fn secret_store(&self) -> Self::PskStore {
@@ -866,7 +854,6 @@ pub(crate) struct Settings {
     pub(crate) extension_types: Vec<ExtensionType>,
     pub(crate) protocol_versions: Vec<ProtocolVersion>,
     pub(crate) custom_proposal_types: Vec<ProposalType>,
-    pub(crate) preferences: Preferences,
     pub(crate) key_package_extensions: ExtensionList,
     pub(crate) leaf_node_extensions: ExtensionList,
     pub(crate) lifetime_in_s: u64,
@@ -877,90 +864,10 @@ impl Default for Settings {
         Self {
             extension_types: Default::default(),
             protocol_versions: Default::default(),
-            preferences: Default::default(),
             key_package_extensions: Default::default(),
             leaf_node_extensions: Default::default(),
             lifetime_in_s: 365 * 24 * 3600,
             custom_proposal_types: Default::default(),
-        }
-    }
-}
-
-#[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::ffi_type(opaque))]
-#[derive(Clone, Debug)]
-#[non_exhaustive]
-pub struct Preferences {
-    #[cfg(feature = "private_message")]
-    pub encrypt_controls: bool,
-    pub ratchet_tree_extension: bool,
-    #[cfg(feature = "private_message")]
-    pub padding_mode: PaddingMode,
-    pub force_commit_path_update: bool,
-    #[cfg(feature = "prior_epoch")]
-    pub max_epoch_retention: u64,
-}
-
-impl Default for Preferences {
-    fn default() -> Self {
-        Self {
-            #[cfg(feature = "private_message")]
-            encrypt_controls: Default::default(),
-            ratchet_tree_extension: Default::default(),
-            #[cfg(feature = "private_message")]
-            padding_mode: Default::default(),
-            force_commit_path_update: true,
-            #[cfg(feature = "prior_epoch")]
-            max_epoch_retention: DEFAULT_EPOCH_RETENTION_LIMIT,
-        }
-    }
-}
-
-#[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen)]
-impl Preferences {
-    pub fn new() -> Self {
-        Default::default()
-    }
-
-    #[cfg(feature = "private_message")]
-    #[must_use]
-    pub fn with_control_encryption(self, enabled: bool) -> Self {
-        Self {
-            encrypt_controls: enabled,
-            ..self
-        }
-    }
-
-    #[must_use]
-    pub fn with_ratchet_tree_extension(self, enabled: bool) -> Self {
-        Self {
-            ratchet_tree_extension: enabled,
-            ..self
-        }
-    }
-
-    #[cfg(feature = "private_message")]
-    #[must_use]
-    pub fn with_padding_mode(self, padding_mode: PaddingMode) -> Self {
-        Self {
-            padding_mode,
-            ..self
-        }
-    }
-
-    #[must_use]
-    pub fn force_commit_path_update(self, enabled: bool) -> Self {
-        Self {
-            force_commit_path_update: enabled,
-            ..self
-        }
-    }
-
-    #[cfg(feature = "private_message")]
-    pub(crate) fn encryption_mode(&self) -> ControlEncryptionMode {
-        if self.encrypt_controls {
-            ControlEncryptionMode::Encrypted(self.padding_mode)
-        } else {
-            ControlEncryptionMode::Plaintext
         }
     }
 }
@@ -976,7 +883,6 @@ pub(crate) fn recreate_config<T: ClientConfig>(
             extension_types: c.supported_extensions(),
             protocol_versions: c.supported_protocol_versions(),
             custom_proposal_types: c.supported_custom_proposals(),
-            preferences: c.preferences(),
             key_package_extensions: c.key_package_extensions(),
             leaf_node_extensions: c.leaf_node_extensions(),
             lifetime_in_s: {
@@ -988,7 +894,7 @@ pub(crate) fn recreate_config<T: ClientConfig>(
         psk_store: c.secret_store(),
         group_state_storage: c.group_state_storage(),
         identity_provider: c.identity_provider(),
-        proposal_rules: c.proposal_rules(),
+        mls_rules: c.mls_rules(),
         crypto_provider: c.crypto_provider(),
         signer,
         signing_identity,
@@ -1017,7 +923,7 @@ mod private {
         pub(crate) psk_store: Ps,
         pub(crate) group_state_storage: Gss,
         pub(crate) identity_provider: Ip,
-        pub(crate) proposal_rules: Pr,
+        pub(crate) mls_rules: Pr,
         pub(crate) crypto_provider: Cp,
         pub(crate) signer: Option<SignatureSecretKey>,
         pub(crate) signing_identity: Option<(SigningIdentity, CipherSuite)>,
@@ -1029,7 +935,7 @@ mod private {
         type PskStore;
         type GroupStateStorage;
         type IdentityProvider;
-        type ProposalRules;
+        type MlsRules;
         type CryptoProvider;
 
         fn into_config(self) -> IntoConfigOutput<Self>;
@@ -1040,7 +946,7 @@ mod private {
         type PskStore = Ps;
         type GroupStateStorage = Gss;
         type IdentityProvider = Ip;
-        type ProposalRules = Pr;
+        type MlsRules = Pr;
         type CryptoProvider = Cp;
 
         fn into_config(self) -> Self {

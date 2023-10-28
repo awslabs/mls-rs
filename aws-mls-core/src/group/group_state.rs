@@ -74,7 +74,6 @@ pub trait GroupStateStorage: Send + Sync {
         state: ST,
         epoch_inserts: Vec<ET>,
         epoch_updates: Vec<ET>,
-        delete_epoch_under: Option<u64>,
     ) -> Result<(), Self::Error>
     where
         ST: GroupState + MlsEncode + MlsDecode + Send + Sync,

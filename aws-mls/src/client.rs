@@ -49,7 +49,7 @@ pub enum MlsError {
     #[cfg_attr(feature = "std", error(transparent))]
     PskStoreError(AnyError),
     #[cfg_attr(feature = "std", error(transparent))]
-    UserDefinedProposalFilterError(AnyError),
+    MlsRulesError(AnyError),
     #[cfg_attr(feature = "std", error(transparent))]
     SerializationError(AnyError),
     #[cfg_attr(feature = "std", error(transparent))]
@@ -835,7 +835,7 @@ mod tests {
             .external_add_proposal(
                 alice_group
                     .group
-                    .group_info_message_allowing_ext_commit()
+                    .group_info_message_allowing_ext_commit(true)
                     .await
                     .unwrap(),
                 Some(&alice_group.group.export_tree().unwrap()),
@@ -893,7 +893,7 @@ mod tests {
 
         let group_info_msg = alice_group
             .group
-            .group_info_message_allowing_ext_commit()
+            .group_info_message_allowing_ext_commit(false)
             .await
             .unwrap();
 
@@ -1004,7 +1004,7 @@ mod tests {
 
         let group_info_msg = bob_group
             .group
-            .group_info_message_allowing_ext_commit()
+            .group_info_message_allowing_ext_commit(true)
             .await
             .unwrap();
 

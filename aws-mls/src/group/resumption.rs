@@ -15,7 +15,7 @@ use crate::{client::MlsError, Client, Group, MLSMessage};
 
 use super::{
     proposal::ReInitProposal, ClientConfig, JustPreSharedKeyID, MessageProcessor, NewMemberInfo,
-    PreSharedKeyID, Preferences, PskGroupId, PskSecretInput, ResumptionPSKUsage, ResumptionPsk,
+    PreSharedKeyID, PskGroupId, PskSecretInput, ResumptionPSKUsage, ResumptionPsk,
 };
 
 struct ResumptionGroupParameters<'a> {
@@ -49,7 +49,6 @@ where
         &self,
         sub_group_id: Vec<u8>,
         new_key_packages: Vec<MLSMessage>,
-        preferences: Option<Preferences>,
     ) -> Result<(Group<C>, Option<MLSMessage>), MlsError> {
         let new_group_params = ResumptionGroupParameters {
             group_id: &sub_group_id,
@@ -65,7 +64,7 @@ where
             // TODO investigate if it's worth updating your own signing identity here
             self.current_member_signing_identity()?.clone(),
             self.signer.clone(),
-            preferences,
+            #[cfg(any(feature = "private_message", feature = "psk"))]
             self.resumption_psk_input(ResumptionPSKUsage::Branch)?,
         )
         .await
@@ -180,7 +179,6 @@ impl<C: ClientConfig + Clone> ReinitClient<C> {
     pub async fn commit(
         self,
         new_key_packages: Vec<MLSMessage>,
-        preferences: Option<Preferences>,
     ) -> Result<(Group<C>, Option<MLSMessage>), MlsError> {
         let new_group_params = ResumptionGroupParameters {
             group_id: self.reinit.group_id(),
@@ -196,7 +194,7 @@ impl<C: ClientConfig + Clone> ReinitClient<C> {
             // These private fields are created with `Some(x)` by `get_reinit_client`
             self.client.signing_identity.unwrap().0,
             self.client.signer.unwrap(),
-            preferences,
+            #[cfg(any(feature = "private_message", feature = "psk"))]
             self.psk_input,
         )
         .await
@@ -239,7 +237,6 @@ async fn resumption_create_group<C: ClientConfig + Clone>(
     new_group_params: &ResumptionGroupParameters<'_>,
     signing_identity: SigningIdentity,
     signer: SignatureSecretKey,
-    preferences: Option<Preferences>,
     psk_input: PskSecretInput,
 ) -> Result<(Group<C>, Option<MLSMessage>), MlsError> {
     // Create a new group with new parameters
@@ -262,10 +259,6 @@ async fn resumption_create_group<C: ClientConfig + Clone>(
 
     for kp in new_key_packages.into_iter() {
         commit = commit.add_member(kp)?;
-    }
-
-    if let Some(preferences) = preferences {
-        commit = commit.set_commit_preferences(preferences);
     }
 
     let commit = commit.build().await?;

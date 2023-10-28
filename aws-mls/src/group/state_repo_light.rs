@@ -48,7 +48,7 @@ where
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn write_to_storage(&mut self, group_snapshot: Snapshot) -> Result<(), MlsError> {
         self.storage
-            .write(group_snapshot, Vec::<PriorEpoch>::new(), Vec::new(), None)
+            .write(group_snapshot, Vec::<PriorEpoch>::new(), Vec::new())
             .await
             .map_err(|e| MlsError::GroupStorageError(e.into_any_error()))?;
 
@@ -87,8 +87,9 @@ mod tests {
 
     use super::GroupStateRepository;
 
-    fn test_snapshot(epoch_id: u64) -> Snapshot {
-        get_test_snapshot(TEST_CIPHER_SUITE, epoch_id)
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn test_snapshot(epoch_id: u64) -> Snapshot {
+        get_test_snapshot(TEST_CIPHER_SUITE, epoch_id).await
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -101,7 +102,10 @@ mod tests {
         .await
         .unwrap();
 
-        test_repo.write_to_storage(test_snapshot(0)).await.unwrap();
+        test_repo
+            .write_to_storage(test_snapshot(0).await)
+            .await
+            .unwrap();
 
         assert_eq!(test_repo.storage.stored_groups(), vec![TEST_GROUP])
     }
@@ -128,7 +132,7 @@ mod tests {
 
         repo.key_package_repo.get(&key_package.reference).unwrap();
 
-        repo.write_to_storage(test_snapshot(4)).await.unwrap();
+        repo.write_to_storage(test_snapshot(4).await).await.unwrap();
 
         assert!(repo.key_package_repo.get(&key_package.reference).is_none());
     }

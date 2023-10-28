@@ -16,15 +16,12 @@ use crate::{
         },
         MlsError,
     },
-    client_builder::{
-        test_utils::{TestClientBuilder, TestClientConfig},
-        Preferences,
-    },
-    client_config::ClientConfig,
+    client_builder::test_utils::{TestClientBuilder, TestClientConfig},
     crypto::test_utils::test_cipher_suite_provider,
     identity::basic::BasicIdentityProvider,
     identity::test_utils::get_test_signing_identity,
     key_package::{KeyPackageGeneration, KeyPackageGenerator},
+    mls_rules::{CommitOptions, DefaultMlsRules},
     tree_kem::{leaf_node::test_utils::get_test_capabilities, Lifetime},
 };
 
@@ -55,19 +52,6 @@ impl TestGroup {
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub(crate) async fn join_with_preferences(
-        &mut self,
-        name: &str,
-        preferences: Preferences,
-    ) -> (TestGroup, MLSMessage) {
-        self.join_with_custom_config(name, false, |config| {
-            config.0.settings.preferences = preferences.clone();
-        })
-        .await
-        .unwrap()
-    }
-
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn join_with_custom_config<F>(
         &mut self,
         name: &str,
@@ -95,7 +79,11 @@ impl TestGroup {
         };
 
         // Add new member to the group
-        let commit_output = self
+        let CommitOutput {
+            welcome_message,
+            ratchet_tree,
+            commit_message,
+        } = self
             .group
             .commit_builder()
             .add_member(new_key_package)
@@ -109,18 +97,10 @@ impl TestGroup {
 
         config(&mut new_client.config);
 
-        let tree = (!new_client
-            .config
-            .0
-            .settings
-            .preferences
-            .ratchet_tree_extension)
-            .then(|| self.group.export_tree().unwrap());
-
         // Group from new member's perspective
         let (new_group, _) = Group::join(
-            commit_output.welcome_message.unwrap(),
-            tree.as_ref().map(Vec::as_ref),
+            welcome_message.unwrap(),
+            ratchet_tree.as_deref(),
             new_client.config.clone(),
             new_client.signer.clone().unwrap(),
         )
@@ -128,13 +108,14 @@ impl TestGroup {
 
         let new_test_group = TestGroup { group: new_group };
 
-        Ok((new_test_group, commit_output.commit_message))
+        Ok((new_test_group, commit_message))
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn join(&mut self, name: &str) -> (TestGroup, MLSMessage) {
-        self.join_with_preferences(name, self.group.config.preferences())
+        self.join_with_custom_config(name, false, |_| ())
             .await
+            .unwrap()
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -256,17 +237,17 @@ pub(crate) async fn test_group_custom(
     cipher_suite: CipherSuite,
     capabilities: Option<Capabilities>,
     leaf_extensions: Option<ExtensionList>,
-    preferences: Option<Preferences>,
+    commit_options: Option<CommitOptions>,
 ) -> TestGroup {
     let capabilities = capabilities.unwrap_or_default();
     let leaf_extensions = leaf_extensions.unwrap_or_default();
-    let preferences = preferences.unwrap_or_default();
+    let commit_options = commit_options.unwrap_or_default();
 
     let (signing_identity, secret_key) = get_test_signing_identity(cipher_suite, b"member").await;
 
     let group = TestClientBuilder::new_for_test()
         .leaf_node_extensions(leaf_extensions)
-        .preferences(preferences)
+        .mls_rules(DefaultMlsRules::default().with_commit_options(commit_options))
         .extension_types(capabilities.extensions)
         .protocol_versions(capabilities.protocol_versions)
         .used_protocol_version(protocol_version)
@@ -284,14 +265,7 @@ pub(crate) async fn test_group(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
 ) -> TestGroup {
-    test_group_custom(
-        protocol_version,
-        cipher_suite,
-        None,
-        None,
-        Some(Preferences::default().with_ratchet_tree_extension(true)),
-    )
-    .await
+    test_group_custom(protocol_version, cipher_suite, None, None, None).await
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -305,9 +279,7 @@ where
 {
     let (signing_identity, secret_key) = get_test_signing_identity(cipher_suite, b"member").await;
 
-    let client_builder = TestClientBuilder::new_for_test()
-        .used_protocol_version(protocol_version)
-        .preferences(Preferences::default().with_ratchet_tree_extension(true));
+    let client_builder = TestClientBuilder::new_for_test().used_protocol_version(protocol_version);
 
     let group = custom(client_builder)
         .signing_identity(signing_identity.clone(), secret_key, cipher_suite)
@@ -367,7 +339,6 @@ pub(crate) async fn get_test_groups_with_features(
         clients.push(
             TestClientBuilder::new_for_test()
                 .extension_type(999.into())
-                .preferences(Preferences::default().with_ratchet_tree_extension(true))
                 .leaf_node_extensions(leaf_extensions.clone())
                 .signing_identity(identity, secret_key, TEST_CIPHER_SUITE)
                 .build(),
@@ -458,7 +429,7 @@ impl MessageProcessor for GroupWithoutKeySchedule {
     type OutputType = <Group<TestClientConfig> as MessageProcessor>::OutputType;
     type PreSharedKeyStorage = <Group<TestClientConfig> as MessageProcessor>::PreSharedKeyStorage;
     type IdentityProvider = <Group<TestClientConfig> as MessageProcessor>::IdentityProvider;
-    type ProposalRules = <Group<TestClientConfig> as MessageProcessor>::ProposalRules;
+    type MlsRules = <Group<TestClientConfig> as MessageProcessor>::MlsRules;
 
     fn group_state(&self) -> &GroupState {
         self.inner.group_state()
@@ -468,8 +439,8 @@ impl MessageProcessor for GroupWithoutKeySchedule {
         self.inner.group_state_mut()
     }
 
-    fn proposal_rules(&self) -> Self::ProposalRules {
-        self.inner.proposal_rules()
+    fn mls_rules(&self) -> Self::MlsRules {
+        self.inner.mls_rules()
     }
 
     fn identity_provider(&self) -> Self::IdentityProvider {

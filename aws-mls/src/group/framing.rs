@@ -455,16 +455,6 @@ pub enum WireFormat {
     KeyPackage = 5u16,
 }
 
-#[cfg(feature = "private_message")]
-impl From<ControlEncryptionMode> for WireFormat {
-    fn from(mode: ControlEncryptionMode) -> Self {
-        match mode {
-            ControlEncryptionMode::Plaintext => WireFormat::PublicMessage,
-            ControlEncryptionMode::Encrypted(_) => WireFormat::PrivateMessage,
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) struct FramedContent {

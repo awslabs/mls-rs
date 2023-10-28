@@ -204,7 +204,6 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
                 Default::default(),
                 None,
                 None,
-                None,
             )
             .await?;
 

@@ -454,7 +454,7 @@ pub enum ProposalSource {
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "custom_proposal", derive(PartialEq))]
 /// Proposal description used as input to a
-/// [`ProposalRules`](crate::ProposalRules).
+/// [`MlsRules`](crate::MlsRules).
 pub struct ProposalInfo<T> {
     pub(crate) proposal: T,
     pub(crate) sender: Sender,
@@ -469,7 +469,7 @@ impl ProposalInfo<Proposal> {
     /// `can_transmit` flag.
     ///
     /// This function is useful when implementing custom
-    /// [`ProposalRules`](crate::ProposalRules).
+    /// [`MlsRules`](crate::MlsRules).
     pub fn new(proposal: Proposal, sender: Sender, can_transmit: bool) -> ProposalInfo<Proposal> {
         let source = if can_transmit {
             ProposalSource::ByValue

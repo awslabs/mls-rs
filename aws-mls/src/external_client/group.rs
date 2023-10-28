@@ -527,7 +527,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     /// Get the current roster of the group.
     #[inline(always)]
     pub fn roster(&self) -> Roster {
-        self.group_state().roster()
+        self.group_state().public_tree.roster()
     }
 
     #[inline(always)]
@@ -582,7 +582,7 @@ impl<C> MessageProcessor for ExternalGroup<C>
 where
     C: ExternalClientConfig + Clone,
 {
-    type ProposalRules = C::ProposalRules;
+    type MlsRules = C::MlsRules;
     type IdentityProvider = C::IdentityProvider;
     type PreSharedKeyStorage = AlwaysFoundPskStorage;
     type OutputType = ExternalReceivedMessage;
@@ -592,8 +592,8 @@ where
         None
     }
 
-    fn proposal_rules(&self) -> Self::ProposalRules {
-        self.config.proposal_rules()
+    fn mls_rules(&self) -> Self::MlsRules {
+        self.config.mls_rules()
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -775,17 +775,15 @@ pub(crate) mod test_utils {
         group: &TestGroup,
         config: TestExternalClientConfig,
     ) -> ExternalGroup<TestExternalClientConfig> {
-        let public_tree = group.group.export_tree().unwrap();
-
         ExternalGroup::join(
             config,
             None,
             group
                 .group
-                .group_info_message_allowing_ext_commit()
+                .group_info_message_allowing_ext_commit(true)
                 .await
                 .unwrap(),
-            Some(&public_tree),
+            None,
         )
         .await
         .unwrap()
@@ -1023,7 +1021,7 @@ mod tests {
             None,
             alice
                 .group
-                .group_info_message_allowing_ext_commit()
+                .group_info_message_allowing_ext_commit(true)
                 .await
                 .unwrap(),
             None,
@@ -1045,9 +1043,10 @@ mod tests {
 
         let mut group_info = alice
             .group
-            .group_info_message_allowing_ext_commit()
+            .group_info_message_allowing_ext_commit(true)
             .await
             .unwrap();
+
         group_info.version = ProtocolVersion::from(64);
 
         let res = ExternalGroup::join(config, None, group_info, None)
@@ -1266,7 +1265,7 @@ mod tests {
 
         let info = alice
             .group
-            .group_info_message_allowing_ext_commit()
+            .group_info_message_allowing_ext_commit(true)
             .await
             .unwrap();
 

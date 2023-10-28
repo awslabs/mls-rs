@@ -15,10 +15,7 @@ use aws_mls_core::group::{EpochRecord, GroupState, GroupStateStorage};
 #[cfg(not(feature = "std"))]
 use portable_atomic_util::Arc;
 
-use crate::storage_provider::group_state::EpochData;
-
-#[cfg(all(feature = "prior_epoch", test))]
-use crate::group::epoch::PriorEpoch;
+use crate::{client::MlsError, storage_provider::group_state::EpochData};
 
 #[cfg(feature = "std")]
 use std::collections::{hash_map::Entry, HashMap};
@@ -31,6 +28,8 @@ use std::sync::Mutex;
 
 #[cfg(not(feature = "std"))]
 use spin::Mutex;
+
+pub(crate) const DEFAULT_EPOCH_RETENTION_LIMIT: usize = 3;
 
 #[derive(Debug, Clone)]
 pub(crate) struct InMemoryGroupData {
@@ -75,13 +74,9 @@ impl InMemoryGroupData {
         }
     }
 
-    pub fn trim_epochs(&mut self, min_epoch: u64) {
-        while let Some(min) = self.epoch_data.front() {
-            if min.id < min_epoch {
-                self.epoch_data.pop_front();
-            } else {
-                break;
-            }
+    pub fn trim_epochs(&mut self, max_epoch_retention: usize) {
+        while self.epoch_data.len() > max_epoch_retention {
+            self.epoch_data.pop_front();
         }
     }
 }
@@ -95,6 +90,7 @@ pub struct InMemoryGroupStateStorage {
     pub(crate) inner: Arc<Mutex<HashMap<Vec<u8>, InMemoryGroupData>>>,
     #[cfg(not(feature = "std"))]
     pub(crate) inner: Arc<Mutex<BTreeMap<Vec<u8>, InMemoryGroupData>>>,
+    pub(crate) max_epoch_retention: usize,
 }
 
 impl InMemoryGroupStateStorage {
@@ -102,22 +98,18 @@ impl InMemoryGroupStateStorage {
     pub fn new() -> Self {
         Self {
             inner: Default::default(),
+            max_epoch_retention: DEFAULT_EPOCH_RETENTION_LIMIT,
         }
     }
 
-    #[cfg(all(feature = "prior_epoch", test))]
-    pub(crate) fn export_epoch_data(&self, group_id: &[u8]) -> Option<Vec<PriorEpoch>> {
-        #[cfg(feature = "std")]
-        let lock = self.inner.lock().unwrap();
-        #[cfg(not(feature = "std"))]
-        let lock = self.inner.lock();
+    pub fn with_max_epoch_retention(self, max_epoch_retention: usize) -> Result<Self, MlsError> {
+        (max_epoch_retention > 0)
+            .then_some(())
+            .ok_or(MlsError::NonZeroRetentionRequired)?;
 
-        lock.get(group_id).map(|data| {
-            Vec::from_iter(
-                data.epoch_data
-                    .iter()
-                    .map(|v| PriorEpoch::mls_decode(&mut v.data.as_slice()).unwrap()),
-            )
+        Ok(Self {
+            inner: self.inner,
+            max_epoch_retention,
         })
     }
 
@@ -200,7 +192,6 @@ impl GroupStateStorage for InMemoryGroupStateStorage {
         state: ST,
         epoch_inserts: Vec<ET>,
         epoch_updates: Vec<ET>,
-        delete_epoch_under: Option<u64>,
     ) -> Result<(), Self::Error>
     where
         ST: GroupState + MlsEncode + MlsDecode + Send + Sync,
@@ -233,10 +224,141 @@ impl GroupStateStorage for InMemoryGroupStateStorage {
             Ok::<_, Self::Error>(())
         })?;
 
-        if let Some(min_epoch) = delete_epoch_under {
-            group_data.trim_epochs(min_epoch);
-        }
+        group_data.trim_epochs(self.max_epoch_retention);
 
         Ok(())
+    }
+}
+
+#[cfg(all(test, feature = "prior_epoch"))]
+mod tests {
+    use alloc::{vec, vec::Vec};
+    use assert_matches::assert_matches;
+
+    use super::{InMemoryGroupData, InMemoryGroupStateStorage};
+    use crate::{
+        client::{test_utils::TEST_CIPHER_SUITE, MlsError},
+        group::{
+            epoch::{test_utils::get_test_epoch_with_id, PriorEpoch},
+            snapshot::{test_utils::get_test_snapshot, Snapshot},
+            test_utils::TEST_GROUP,
+        },
+        storage_provider::EpochData,
+    };
+
+    use aws_mls_codec::MlsEncode;
+    use aws_mls_core::group::GroupStateStorage;
+
+    impl InMemoryGroupStateStorage {
+        fn test_data(&self) -> InMemoryGroupData {
+            #[cfg(feature = "std")]
+            let storage = self.inner.lock().unwrap();
+            #[cfg(not(feature = "std"))]
+            let storage = self.inner.lock();
+
+            storage.get(TEST_GROUP).unwrap().clone()
+        }
+    }
+
+    fn test_storage(retention_limit: usize) -> Result<InMemoryGroupStateStorage, MlsError> {
+        InMemoryGroupStateStorage::new().with_max_epoch_retention(retention_limit)
+    }
+
+    fn test_epoch(epoch_id: u64) -> PriorEpoch {
+        get_test_epoch_with_id(Vec::new(), TEST_CIPHER_SUITE, epoch_id)
+    }
+
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn test_snapshot(epoch_id: u64) -> Snapshot {
+        get_test_snapshot(TEST_CIPHER_SUITE, epoch_id).await
+    }
+
+    #[test]
+    fn test_zero_max_retention() {
+        assert_matches!(test_storage(0), Err(MlsError::NonZeroRetentionRequired))
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn existing_storage_can_have_larger_epoch_count() {
+        let mut storage = test_storage(2).unwrap();
+
+        let epoch_inserts = vec![test_epoch(0), test_epoch(1)];
+
+        storage
+            .write(test_snapshot(1).await, epoch_inserts, Vec::new())
+            .await
+            .unwrap();
+
+        assert_eq!(storage.test_data().epoch_data.len(), 2);
+
+        storage.max_epoch_retention = 4;
+
+        let epoch_inserts = vec![test_epoch(3), test_epoch(4)];
+
+        storage
+            .write(test_snapshot(1).await, epoch_inserts, Vec::new())
+            .await
+            .unwrap();
+
+        assert_eq!(storage.test_data().epoch_data.len(), 4);
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn existing_storage_can_have_smaller_epoch_count() {
+        let mut storage = test_storage(4).unwrap();
+
+        let epoch_inserts = vec![test_epoch(0), test_epoch(1), test_epoch(3), test_epoch(4)];
+
+        storage
+            .write(test_snapshot(1).await, epoch_inserts, Vec::new())
+            .await
+            .unwrap();
+
+        assert_eq!(storage.test_data().epoch_data.len(), 4);
+
+        storage.max_epoch_retention = 2;
+
+        let epoch_inserts = vec![test_epoch(5)];
+
+        storage
+            .write(test_snapshot(1).await, epoch_inserts, Vec::new())
+            .await
+            .unwrap();
+
+        assert_eq!(storage.test_data().epoch_data.len(), 2);
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn epoch_insert_over_limit() {
+        test_epoch_insert_over_limit(false).await
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn epoch_insert_over_limit_with_update() {
+        test_epoch_insert_over_limit(true).await
+    }
+
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn test_epoch_insert_over_limit(with_update: bool) {
+        let mut storage = test_storage(1).unwrap();
+
+        let mut epoch_inserts = vec![test_epoch(0), test_epoch(1)];
+        let updates = with_update
+            .then_some(vec![test_epoch(0)])
+            .unwrap_or_default();
+        let snapshot = test_snapshot(1).await;
+
+        storage
+            .write(snapshot.clone(), epoch_inserts.clone(), updates)
+            .await
+            .unwrap();
+
+        let stored = storage.test_data();
+
+        assert_eq!(stored.state_data, snapshot.mls_encode_to_vec().unwrap());
+        assert_eq!(stored.epoch_data.len(), 1);
+
+        let expected = EpochData::new(epoch_inserts.pop().unwrap()).unwrap();
+        assert_eq!(stored.epoch_data[0], expected);
     }
 }

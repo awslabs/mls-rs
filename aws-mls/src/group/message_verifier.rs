@@ -239,7 +239,7 @@ mod tests {
             test_utils::{test_client_with_key_pkg, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
             MlsError,
         },
-        client_builder::{test_utils::TestClientConfig, Preferences},
+        client_builder::test_utils::TestClientConfig,
         crypto::test_utils::test_cipher_suite_provider,
         group::{
             membership_tag::MembershipTag,
@@ -305,14 +305,8 @@ mod tests {
     impl TestEnv {
         #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
         async fn new() -> Self {
-            let mut alice = test_group_custom(
-                TEST_PROTOCOL_VERSION,
-                TEST_CIPHER_SUITE,
-                None,
-                None,
-                Some(Preferences::default().with_ratchet_tree_extension(true)),
-            )
-            .await;
+            let mut alice =
+                test_group_custom(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, None, None, None).await;
 
             let (bob_client, bob_key_pkg) =
                 test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;

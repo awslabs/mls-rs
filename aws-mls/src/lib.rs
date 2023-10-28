@@ -148,15 +148,18 @@ pub use aws_mls_core::{
     psk::PreSharedKeyStorage,
 };
 
-/// Dependencies of [`ProposalRules`].
-pub mod proposal_rules {
-    pub use crate::group::proposal_filter::{
-        CommitDirection, CommitSource, PassThroughProposalRules, ProposalBundle, ProposalInfo,
-        ProposalSource,
+/// Dependencies of [`MlsRules`].
+pub mod mls_rules {
+    pub use crate::group::{
+        mls_rules::{CommitDirection, CommitOptions, CommitSource, DefaultMlsRules},
+        proposal_filter::{ProposalBundle, ProposalInfo, ProposalSource},
     };
+
+    #[cfg(feature = "private_message")]
+    pub use crate::group::mls_rules::EncryptionOptions;
 }
 
-pub use crate::group::proposal_filter::ProposalRules;
+pub use crate::group::mls_rules::MlsRules;
 
 pub use aws_mls_core::extension::{Extension, ExtensionList};
 

@@ -190,7 +190,7 @@ mod tests {
         let group_info = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
             .await
             .group
-            .group_info_message_allowing_ext_commit()
+            .group_info_message_allowing_ext_commit(false)
             .await
             .unwrap()
             .into_group_info()

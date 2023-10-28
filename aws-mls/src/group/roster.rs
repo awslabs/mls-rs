@@ -26,7 +26,7 @@ pub(crate) fn member_from_leaf_node(leaf_node: &LeafNode, leaf_index: LeafIndex)
 )]
 #[derive(Clone, Debug)]
 pub struct Roster<'a> {
-    pub(crate) group_state: &'a GroupState,
+    pub(crate) public_tree: &'a TreeKemPublic,
 }
 
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
@@ -41,8 +41,7 @@ impl<'a> Roster<'a> {
     /// member information within a MLS group state.
     #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     pub fn members_iter(&self) -> impl Iterator<Item = Member> + 'a {
-        self.group_state
-            .public_tree
+        self.public_tree
             .non_empty_leaves()
             .map(|(index, node)| member_from_leaf_node(node, index))
     }
@@ -65,8 +64,7 @@ impl<'a> Roster<'a> {
     pub fn member_with_index(&self, index: u32) -> Result<Member, MlsError> {
         let index = LeafIndex(index);
 
-        self.group_state
-            .public_tree
+        self.public_tree
             .get_leaf_node(index)
             .map(|l| member_from_leaf_node(l, index))
     }
@@ -80,15 +78,14 @@ impl<'a> Roster<'a> {
     /// member information within a MLS group state.
     #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     pub fn member_identities_iter(&self) -> impl Iterator<Item = &SigningIdentity> + '_ {
-        self.group_state
-            .public_tree
+        self.public_tree
             .non_empty_leaves()
             .map(|(_, node)| &node.signing_identity)
     }
 }
 
-impl GroupState {
+impl TreeKemPublic {
     pub(crate) fn roster(&self) -> Roster {
-        Roster { group_state: self }
+        Roster { public_tree: self }
     }
 }

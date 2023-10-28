@@ -10,7 +10,7 @@ use once_cell::sync::Lazy;
 use crate::{
     cipher_suite::CipherSuite,
     client::MlsError,
-    client_builder::{BaseConfig, Preferences, WithCryptoProvider, WithIdentityProvider},
+    client_builder::{BaseConfig, WithCryptoProvider, WithIdentityProvider},
     group::{
         framing::{Content, MLSMessage, Sender, WireFormat},
         message_processor::MessageProcessor,
@@ -88,8 +88,8 @@ pub fn create_fuzz_commit_message(
 fn make_client(cipher_suite: CipherSuite, name: &str) -> Client<TestClientConfig> {
     let (secret, signing_identity) = make_identity(cipher_suite, name);
 
+    // TODO : consider fuzzing on encrypted controls (doesn't seem very useful)
     Client::builder()
-        .preferences(make_preferences())
         .identity_provider(BasicIdentityProvider)
         .crypto_provider(MlsCryptoProvider::default())
         .signing_identity(signing_identity, secret, cipher_suite)
@@ -106,16 +106,4 @@ fn make_identity(cipher_suite: CipherSuite, name: &str) -> (SignatureSecretKey, 
     let signing_identity = SigningIdentity::new(basic_identity.into_credential(), public);
 
     (secret, signing_identity)
-}
-
-fn make_preferences() -> Preferences {
-    let mut preferences = Preferences::default();
-    preferences = preferences.with_ratchet_tree_extension(true);
-
-    #[cfg(feature = "private_message")]
-    {
-        preferences = preferences.with_control_encryption(true);
-    }
-
-    preferences
 }

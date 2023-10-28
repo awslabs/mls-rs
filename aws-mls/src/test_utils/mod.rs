@@ -16,10 +16,14 @@ use aws_mls_core::{
 };
 
 use crate::{
-    client_builder::{ClientBuilder, MlsConfig, Preferences},
+    client_builder::{ClientBuilder, MlsConfig},
     identity::basic::BasicIdentityProvider,
+    mls_rules::{CommitOptions, DefaultMlsRules},
     Client, Group, MLSMessage,
 };
+
+#[cfg(feature = "private_message")]
+use crate::group::{mls_rules::EncryptionOptions, padding::PaddingMode};
 
 use alloc::{vec, vec::Vec};
 
@@ -48,7 +52,9 @@ pub async fn generate_basic_client<C: CryptoProvider + Clone>(
     cipher_suite: CipherSuite,
     protocol_version: ProtocolVersion,
     id: usize,
-    preferences: &Preferences,
+    commit_options: Option<CommitOptions>,
+    #[cfg(feature = "private_message")] encrypt_controls: bool,
+    #[cfg(not(feature = "private_message"))] _encrypt_controls: bool,
     crypto: &C,
 ) -> Client<impl MlsConfig> {
     let cs = crypto.cipher_suite_provider(cipher_suite).unwrap();
@@ -58,10 +64,20 @@ pub async fn generate_basic_client<C: CryptoProvider + Clone>(
 
     let identity = SigningIdentity::new(credential, public_key);
 
+    let mls_rules =
+        DefaultMlsRules::default().with_commit_options(commit_options.unwrap_or_default());
+
+    #[cfg(feature = "private_message")]
+    let mls_rules = if encrypt_controls {
+        mls_rules.with_encryption_options(EncryptionOptions::new(true, PaddingMode::None))
+    } else {
+        mls_rules
+    };
+
     ClientBuilder::new()
         .crypto_provider(crypto.clone())
         .identity_provider(BasicIdentityProvider::new())
-        .preferences(preferences.clone())
+        .mls_rules(mls_rules)
         .psk(
             ExternalPskId::new(TEST_EXT_PSK_ID.to_vec()),
             make_test_ext_psk().into(),
@@ -76,11 +92,20 @@ pub async fn get_test_groups<C: CryptoProvider + Clone>(
     version: ProtocolVersion,
     cipher_suite: CipherSuite,
     num_participants: usize,
-    preferences: &Preferences,
+    commit_options: Option<CommitOptions>,
+    encrypt_controls: bool,
     crypto: &C,
 ) -> Vec<Group<impl MlsConfig>> {
     // Create the group with Alice as the group initiator
-    let creator = generate_basic_client(cipher_suite, version, 0, preferences, crypto).await;
+    let creator = generate_basic_client(
+        cipher_suite,
+        version,
+        0,
+        commit_options,
+        encrypt_controls,
+        crypto,
+    )
+    .await;
 
     let mut creator_group = creator.create_group(Default::default()).await.unwrap();
 
@@ -88,7 +113,15 @@ pub async fn get_test_groups<C: CryptoProvider + Clone>(
     let mut commit_builder = creator_group.commit_builder();
 
     for i in 1..num_participants {
-        let client = generate_basic_client(cipher_suite, version, i, preferences, crypto).await;
+        let client = generate_basic_client(
+            cipher_suite,
+            version,
+            i,
+            commit_options,
+            encrypt_controls,
+            crypto,
+        )
+        .await;
         let kp = client.generate_key_package_message().await.unwrap();
 
         receiver_clients.push(client);

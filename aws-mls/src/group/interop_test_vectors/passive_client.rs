@@ -17,9 +17,10 @@ use rand::{seq::IteratorRandom, Rng, SeedableRng};
 use crate::{
     client_builder::{ClientBuilder, MlsConfig},
     crypto::test_utils::TestCryptoProvider,
-    group::{ClientConfig, CommitBuilder, Preferences},
+    group::{ClientConfig, CommitBuilder},
     identity::basic::BasicIdentityProvider,
     key_package::KeyPackageGeneration,
+    mls_rules::CommitOptions,
     storage_provider::in_memory::InMemoryKeyPackageStorage,
     test_utils::{
         all_process_message, generate_basic_client, get_test_basic_credential, get_test_groups,
@@ -275,14 +276,8 @@ pub async fn generate_passive_client_proposal_tests() {
             continue;
         };
 
-        let mut groups = get_test_groups(
-            VERSION,
-            cs.cipher_suite(),
-            7,
-            &Preferences::default().with_ratchet_tree_extension(true),
-            &crypto_provider,
-        )
-        .await;
+        let mut groups =
+            get_test_groups(VERSION, cs.cipher_suite(), 7, None, false, &crypto_provider).await;
 
         let mut partial_test_case = invite_passive_client(&mut groups, false, &cs).await;
 
@@ -456,14 +451,8 @@ where
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 async fn create_key_package(cs: CipherSuite) -> MLSMessage {
-    let client = generate_basic_client(
-        cs,
-        VERSION,
-        0xbeef,
-        &Default::default(),
-        &TestCryptoProvider::new(),
-    )
-    .await;
+    let client =
+        generate_basic_client(cs, VERSION, 0xbeef, None, false, &TestCryptoProvider::new()).await;
 
     client.generate_key_package_message().await.unwrap()
 }
@@ -485,9 +474,8 @@ pub async fn generate_passive_client_welcome_tests() {
                     VERSION,
                     cs.cipher_suite(),
                     16,
-                    &Preferences::default()
-                        .with_ratchet_tree_extension(with_tree_in_extension)
-                        .force_commit_path_update(with_path),
+                    Some(CommitOptions::new(with_path, with_tree_in_extension)),
+                    false,
                     &crypto_provider,
                 )
                 .await;
@@ -519,7 +507,7 @@ pub async fn generate_passive_client_random_tests() {
             continue;
         };
 
-        let creator = generate_basic_client(cs, VERSION, 0, &Default::default(), &crypto).await;
+        let creator = generate_basic_client(cs, VERSION, 0, None, false, &crypto).await;
         let creator_group = creator.create_group(Default::default()).await.unwrap();
 
         let mut groups = vec![creator_group];
@@ -527,8 +515,7 @@ pub async fn generate_passive_client_random_tests() {
         let mut new_clients = Vec::new();
 
         for i in 0..10 {
-            new_clients
-                .push(generate_basic_client(cs, VERSION, i + 1, &Default::default(), &crypto).await)
+            new_clients.push(generate_basic_client(cs, VERSION, i + 1, None, false, &crypto).await)
         }
 
         add_random_members(0, &mut groups, new_clients, None).await;
@@ -565,14 +552,8 @@ pub async fn generate_passive_client_random_tests() {
 
             for i in 0..num_added {
                 new_clients.push(
-                    generate_basic_client(
-                        cs,
-                        VERSION,
-                        next_free_idx + i,
-                        &Default::default(),
-                        &crypto,
-                    )
-                    .await,
+                    generate_basic_client(cs, VERSION, next_free_idx + i, None, false, &crypto)
+                        .await,
                 );
             }
 

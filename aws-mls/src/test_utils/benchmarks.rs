@@ -3,9 +3,7 @@ use aws_mls_core::protocol_version::ProtocolVersion;
 
 use crate::{
     cipher_suite::CipherSuite,
-    client_builder::{
-        BaseConfig, MlsConfig, Preferences, WithCryptoProvider, WithIdentityProvider,
-    },
+    client_builder::{BaseConfig, MlsConfig, WithCryptoProvider, WithIdentityProvider},
     group::{framing::MLSMessage, Group},
     identity::basic::BasicIdentityProvider,
     test_utils::{generate_basic_client, get_test_groups},
@@ -65,13 +63,12 @@ async fn generate_test_cases(cs: CipherSuite) -> Vec<MLSMessage> {
     let mut cases = Vec::new();
 
     for size in [16, 64, 128] {
-        let preferences = Preferences::default().with_ratchet_tree_extension(true);
-
         let group = get_test_groups(
             ProtocolVersion::MLS_10,
             cs,
             size,
-            &preferences,
+            None,
+            false,
             &MlsCryptoProvider::new(),
         )
         .await
@@ -79,7 +76,7 @@ async fn generate_test_cases(cs: CipherSuite) -> Vec<MLSMessage> {
         .unwrap();
 
         let group_info = group
-            .group_info_message_allowing_ext_commit()
+            .group_info_message_allowing_ext_commit(true)
             .await
             .unwrap();
 
@@ -118,7 +115,8 @@ pub async fn join_group(cs: CipherSuite, group_info: MLSMessage) -> GroupStates<
         cs,
         ProtocolVersion::MLS_10,
         99999999999,
-        &Preferences::default().with_ratchet_tree_extension(true),
+        None,
+        false,
         &MlsCryptoProvider::new(),
     );
 
@@ -128,12 +126,13 @@ pub async fn join_group(cs: CipherSuite, group_info: MLSMessage) -> GroupStates<
         cs,
         ProtocolVersion::MLS_10,
         99999999998,
-        &Preferences::default(),
+        None,
+        false,
         &MlsCryptoProvider::new(),
     );
 
     let group_info = sender
-        .group_info_message_allowing_ext_commit()
+        .group_info_message_allowing_ext_commit(true)
         .await
         .unwrap();
 
