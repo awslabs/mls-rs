@@ -5,6 +5,7 @@
 use aws_mls_core::{
     aws_mls_codec::{MlsDecode, MlsEncode},
     key_package::{KeyPackageData, KeyPackageStorage},
+    time::MlsTime,
 };
 use rusqlite::{params, Connection, OptionalExtension};
 use std::sync::{Arc, Mutex};
@@ -33,9 +34,10 @@ impl SqLiteKeyPackageStorage {
 
         connection
             .execute(
-                "INSERT INTO key_package (id, data) VALUES (?,?)",
+                "INSERT INTO key_package (id, expiration, data) VALUES (?,?,?)",
                 params![
                     id,
+                    key_package.expiration,
                     key_package
                         .mls_encode_to_vec()
                         .map_err(|e| SqLiteDataStorageError::DataConversionError(e.into()))?
@@ -69,6 +71,22 @@ impl SqLiteKeyPackageStorage {
 
         connection
             .execute("DELETE FROM key_package where id = ?", params![id])
+            .map(|_| ())
+            .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))
+    }
+
+    pub fn delete_expired(&self) -> Result<(), SqLiteDataStorageError> {
+        self.delete_expired_by_time(MlsTime::now().seconds_since_epoch())
+    }
+
+    pub fn delete_expired_by_time(&self, time: u64) -> Result<(), SqLiteDataStorageError> {
+        let connection = self.connection.lock().unwrap();
+
+        connection
+            .execute(
+                "DELETE FROM key_package where expiration < ?",
+                params![time],
+            )
             .map(|_| ())
             .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))
     }
@@ -113,6 +131,7 @@ mod tests {
             gen_rand_bytes(256),
             HpkeSecretKey::from(gen_rand_bytes(256)),
             HpkeSecretKey::from(gen_rand_bytes(256)),
+            123,
         );
 
         (key_id, key_package)
@@ -166,5 +185,32 @@ mod tests {
 
         storage.delete(&key_package_id).unwrap();
         assert!(storage.get(&key_package_id).unwrap().is_none());
+    }
+
+    #[test]
+    fn expired_key_package_gelete() {
+        let mut storage = test_storage();
+
+        let data = [1, 15, 30, 1698652376].map(|exp| {
+            let mut kp = test_key_package();
+            kp.1.expiration = exp;
+            kp
+        });
+
+        for (id, data) in &data {
+            storage.insert(id, data.clone()).unwrap();
+        }
+
+        storage.delete_expired_by_time(30).unwrap();
+
+        assert!(storage.get(&data[0].0).unwrap().is_none());
+        assert!(storage.get(&data[1].0).unwrap().is_none());
+        storage.get(&data[2].0).unwrap().unwrap();
+        storage.get(&data[3].0).unwrap().unwrap();
+
+        storage.delete_expired().unwrap();
+
+        assert!(storage.get(&data[2].0).unwrap().is_none());
+        assert!(storage.get(&data[3].0).unwrap().is_none());
     }
 }

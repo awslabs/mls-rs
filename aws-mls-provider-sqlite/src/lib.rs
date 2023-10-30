@@ -132,8 +132,10 @@ fn create_tables_v1(connection: &Connection) -> Result<(), SqLiteDataStorageErro
             ) WITHOUT ROWID;
             CREATE TABLE key_package (
                 id BLOB PRIMARY KEY,
+                expiration INTEGER,
                 data BLOB NOT NULL
             ) WITHOUT ROWID;
+            CREATE INDEX key_package_exp ON key_package (expiration);
             CREATE TABLE psk (
                 psk_id BLOB PRIMARY KEY,
                 data BLOB NOT NULL

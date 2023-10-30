@@ -16,6 +16,7 @@ pub struct KeyPackageData {
     pub key_package_bytes: Vec<u8>,
     pub init_key: HpkeSecretKey,
     pub leaf_node_key: HpkeSecretKey,
+    pub expiration: u64,
 }
 
 impl KeyPackageData {
@@ -23,11 +24,13 @@ impl KeyPackageData {
         key_package_bytes: Vec<u8>,
         init_key: HpkeSecretKey,
         leaf_node_key: HpkeSecretKey,
+        expiration: u64,
     ) -> KeyPackageData {
         Self {
             key_package_bytes,
             init_key,
             leaf_node_key,
+            expiration,
         }
     }
 }

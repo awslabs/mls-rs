@@ -9,7 +9,7 @@ use crate::hash_reference::HashReference;
 use crate::identity::SigningIdentity;
 use crate::protocol_version::ProtocolVersion;
 use crate::signer::Signable;
-use crate::tree_kem::leaf_node::LeafNode;
+use crate::tree_kem::leaf_node::{LeafNode, LeafNodeSource};
 use crate::CipherSuiteProvider;
 use alloc::vec::Vec;
 use aws_mls_codec::MlsDecode;
@@ -99,6 +99,14 @@ impl KeyPackage {
             )
             .await?,
         ))
+    }
+
+    pub fn expiration(&self) -> Result<u64, MlsError> {
+        if let LeafNodeSource::KeyPackage(lifetime) = &self.leaf_node.leaf_node_source {
+            Ok(lifetime.not_after)
+        } else {
+            Err(MlsError::InvalidLeafNodeSource)
+        }
     }
 }
 

@@ -52,6 +52,7 @@ impl KeyPackageGeneration {
             self.key_package.mls_encode_to_vec()?,
             self.init_secret_key.clone(),
             self.leaf_node_secret_key.clone(),
+            self.key_package.expiration()?,
         );
 
         Ok((id, data))

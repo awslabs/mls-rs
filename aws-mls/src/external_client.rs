@@ -9,10 +9,7 @@ use crate::{
     key_package::validate_key_package_properties,
     protocol_version::ProtocolVersion,
     time::MlsTime,
-    tree_kem::{
-        leaf_node::LeafNodeSource,
-        leaf_node_validator::{LeafNodeValidator, ValidationContext},
-    },
+    tree_kem::leaf_node_validator::{LeafNodeValidator, ValidationContext},
     CryptoProvider,
 };
 
@@ -137,15 +134,8 @@ where
 
         validate_key_package_properties(&key_package, protocol, &cs).await?;
 
-        let expiration_timestamp =
-            if let LeafNodeSource::KeyPackage(lifetime) = &key_package.leaf_node.leaf_node_source {
-                lifetime.not_after
-            } else {
-                return Err(MlsError::InvalidLeafNodeSource);
-            };
-
         Ok(KeyPackageValidationOutput {
-            expiration_timestamp,
+            expiration_timestamp: key_package.expiration()?,
         })
     }
 }
