@@ -78,7 +78,6 @@ impl IdentityProvider for BasicIdentityProvider {
         resolve_basic_identity(signing_identity).map(|_| ())
     }
 
-    #[cfg(feature = "external_proposal")]
     async fn validate_external_sender(
         &self,
         signing_identity: &SigningIdentity,

@@ -1251,7 +1251,6 @@ mod tests {
                 .ok_or(IdentityProviderWithExtensionError {})
         }
 
-        #[cfg(feature = "external_proposal")]
         async fn validate_external_sender(
             &self,
             identity: &SigningIdentity,

@@ -60,7 +60,6 @@ pub trait IdentityProvider: Send + Sync {
     /// A `timestamp` value can optionally be supplied to aid with validation
     /// of a [`Credential`](aws-mls-core::identity::Credential) that requires
     /// time based context. For example, X.509 certificates can become expired.
-    #[cfg(feature = "external_proposal")]
     async fn validate_external_sender(
         &self,
         signing_identity: &SigningIdentity,

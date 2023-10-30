@@ -116,7 +116,6 @@ pub(crate) mod test_utils {
             Ok(())
         }
 
-        #[cfg(feature = "external_proposal")]
         async fn validate_external_sender(
             &self,
             _signing_identity: &SigningIdentity,
