@@ -22,12 +22,15 @@ pub enum CommitDirection {
     Receive,
 }
 
+/// The source of the commit: either a current member or a new member joining
+/// via external commit.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CommitSource {
     ExistingMember(Member),
     NewMember(SigningIdentity),
 }
 
+/// Options controlling commit generation
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct CommitOptions {
@@ -53,6 +56,7 @@ impl CommitOptions {
     }
 }
 
+/// Options controlling encryption of control and application messages
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct EncryptionOptions {
@@ -79,26 +83,27 @@ impl EncryptionOptions {
     }
 }
 
-/// A user controlled proposal rules that can pre-process a set of proposals
-/// during commit processing.
-///
-/// Both proposals received during the current epoch and at the time of commit
-/// will be presented for validation and filtering. Filter and validate will
-/// present a raw list of proposals. Standard MLS rules are applied internally
-/// on the result of these rules.
-///
-/// Each member of a group MUST apply the same proposal rules in order to
-/// maintain a working group.
+/// A set of user controlled rules that customize the behavior of MLS.
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 #[cfg_attr(mls_build_async, maybe_async::must_be_async)]
 pub trait MlsRules: Send + Sync {
     type Error: IntoAnyError;
 
-    /// This is called when preparing or receiving a commit. Typically, any invalid proposal
-    /// should result in an error. The exception are invalid by-reference proposals
-    /// processed when _preparing_ a commit, which should be filtered out instead. This is to
-    /// avoid the deadlock situation when no commit can be generated after receiving an invalid
-    /// set of proposal messages.
+    /// This is called when preparing or receiving a commit to pre-process the set of committed
+    /// proposals.
+    ///
+    /// Both proposals received during the current epoch and at the time of commit
+    /// will be presented for validation and filtering. Filter and validate will
+    /// present a raw list of proposals. Standard MLS rules are applied internally
+    /// on the result of these rules.
+    ///
+    /// Each member of a group MUST apply the same proposal rules in order to
+    /// maintain a working group.
+    ///
+    /// Typically, any invalid proposal should result in an error. The exception are invalid
+    /// by-reference proposals processed when _preparing_ a commit, which should be filtered
+    /// out instead. This is to avoid the deadlock situation when no commit can be generated
+    /// after receiving an invalid set of proposal messages.
     ///
     /// `ProposalBundle` can be arbitrarily modified. For example, a Remove proposal that
     /// removes a moderator can result in adding a GroupContextExtensions proposal that updates

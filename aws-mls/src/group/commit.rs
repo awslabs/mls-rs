@@ -76,8 +76,9 @@ pub struct CommitOutput {
     pub commit_message: MLSMessage,
     /// Welcome message to send to new group members.
     pub welcome_message: Option<MLSMessage>,
-    /// Ratchet tree to send out of band if
-    /// [`Preferences::ratchet_tree_extension`] is not in use
+    /// Ratchet tree that can be sent out of band if
+    /// `ratchet_tree_extension` is not used according to
+    /// [`MlsRules::encryption_options`].
     pub ratchet_tree: Option<Vec<u8>>,
 }
 
@@ -93,8 +94,9 @@ impl CommitOutput {
         self.welcome_message.as_ref()
     }
 
-    /// Ratchet tree to send out of band if
-    /// [`Preferences::ratchet_tree_extension`] is not in use
+    /// Ratchet tree that can be sent out of band if
+    /// `ratchet_tree_extension` is not used according to
+    /// [`MlsRules::encryption_options`].
     pub fn ratchet_tree(&self) -> Option<&[u8]> {
         self.ratchet_tree.as_deref()
     }
@@ -326,7 +328,7 @@ where
     ///
     /// Path updates provide forward secrecy and post-compromise security
     /// within the MLS protocol.
-    /// The [force_commit_path_update](crate::client_builder::Preferences)
+    /// The `path_required` option returned by [`MlsRules::commit_options`](`crate::MlsRules::commit_options`)
     /// controls the ability of a group to send a commit without a path update.
     /// An update path will automatically be sent if there are no proposals
     /// in the commit, or if any proposal other than

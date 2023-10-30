@@ -166,7 +166,7 @@ where
 
     /// Generate an HPKE context using the base setup mode. This function returns a tuple
     /// containing the `enc` value that can be used as the input to
-    /// [setup_receiver](Hpke::setup_receiver), as well as the [ContextS](self::ContextS)
+    /// [setup_receiver](Hpke::setup_receiver), as well as the [ContextS]
     /// that can be used to generate AEAD ciphertexts. Note that for ECDH based kem
     /// functions, `remote_key` is expected to be in uncompressed public key format.
     pub fn setup_sender(

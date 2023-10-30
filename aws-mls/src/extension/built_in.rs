@@ -61,9 +61,7 @@ impl MlsCodecExtension for ApplicationIdExt {
 /// Representation of an MLS ratchet tree.
 ///
 /// Used to provide new members
-/// a copy of the current group state in-band. This extension is enabled
-/// via the `ratchet_tree_extension`
-/// [Preferences](crate::client_builder::Preferences).
+/// a copy of the current group state in-band.
 #[cfg_attr(
     all(feature = "ffi", not(test)),
     safer_ffi_gen::ffi_type(clone, opaque)

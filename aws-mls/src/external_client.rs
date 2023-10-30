@@ -34,8 +34,8 @@ pub use group::{ExternalGroup, ExternalReceivedMessage, ExternalSnapshot};
 /// # Warning
 ///
 /// This structure will only be able to observe groups that were
-/// created by clients that have the encrypt_controls
-/// [preference](crate::client_builder::Preferences)
+/// created by clients that have the `encrypt_control_messages`
+/// option returned by [`MlsRules::encryption_options`](`crate::MlsRules::encryption_options`)
 /// set to `false`. Any control messages that are sent encrypted
 /// over the wire will break the ability of this client to track
 /// the resulting group state.
@@ -68,10 +68,10 @@ where
     /// [Group::group_info_message](crate::group::Group::group_info_message)
     ///
     ///`tree_data` is required to be provided out of band if the client that
-    /// created GroupInfo message did not have the
-    /// [ratchet tree extension preference](crate::client_builder::Preferences::ratchet_tree_extension)
-    /// enabled at the time the welcome message was created. `tree_data` can
-    /// be exported from a group using the
+    /// created GroupInfo message did not did not use the `ratchet_tree_extension`
+    /// according to [`MlsRules::commit_options`](crate::MlsRules::commit_options)
+    /// at the time the welcome message
+    /// was created. `tree_data` can be exported from a group using the
     /// [export tree function](crate::group::Group::export_tree).
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn observe_group(

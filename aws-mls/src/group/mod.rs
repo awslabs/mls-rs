@@ -1369,7 +1369,7 @@ where
     /// If `with_tree_in_extension` is set to true, the returned `GroupInfo` contains the
     /// ratchet tree and therefore contains all information needed to join the group. Otherwise,
     /// the ratchet tree must be obtained separately, e.g. via
-    /// (ExternalClient::export_tree)[crate::ExternalClient::export_tree].
+    /// (ExternalClient::export_tree)[crate::external_client::ExternalGroup::export_tree].
     #[cfg(feature = "external_commit")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn group_info_message_allowing_ext_commit(
@@ -1464,9 +1464,7 @@ where
     /// Export the current epoch's ratchet tree in serialized format.
     ///
     /// This function is used to provide the current group tree to new members
-    /// when the
-    /// [ratchet_tree_extension preference](crate::client_builder::Preferences::ratchet_tree_extension)
-    /// is not in use.
+    /// when the `ratchet_tree_extension` is not used according to [`MlsRules::commit_options`].
     pub fn export_tree(&self) -> Result<Vec<u8>, MlsError> {
         self.current_epoch_tree()
             .export_node_data()

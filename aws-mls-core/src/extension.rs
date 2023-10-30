@@ -119,7 +119,7 @@ impl Extension {
     }
 }
 
-/// Trait used to convert a type to and from an [Extension](self::Extension)
+/// Trait used to convert a type to and from an [Extension]
 pub trait MlsExtension: Sized {
     /// Error type of the underlying serializer that can convert this type into a `Vec<u8>`.
     type SerializationError: IntoAnyError;
@@ -136,7 +136,7 @@ pub trait MlsExtension: Sized {
     /// Create this type from opaque bytes.
     fn from_bytes(data: &[u8]) -> Result<Self, Self::DeserializationError>;
 
-    /// Convert this type into an [Extension](self::Extension).
+    /// Convert this type into an [Extension].
     fn into_extension(self) -> Result<Extension, ExtensionError> {
         Ok(Extension::new(
             Self::extension_type(),
@@ -145,7 +145,7 @@ pub trait MlsExtension: Sized {
         ))
     }
 
-    /// Create this type from an [Extension](self::Extension).
+    /// Create this type from an [Extension].
     fn from_extension(ext: &Extension) -> Result<Self, ExtensionError> {
         if ext.extension_type != Self::extension_type() {
             return Err(ExtensionError::IncorrectType(ext.extension_type));
@@ -157,7 +157,7 @@ pub trait MlsExtension: Sized {
 }
 
 /// Convenience trait for custom extension types that use
-/// [aws_mls_codec](crate::aws_mls_codec) as an underlying serialization mechanism
+/// [aws_mls_codec] as an underlying serialization mechanism
 pub trait MlsCodecExtension: MlsSize + MlsEncode + MlsDecode {
     fn extension_type() -> ExtensionType;
 }

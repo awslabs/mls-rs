@@ -375,7 +375,7 @@ pub struct Client<C> {
 }
 
 impl Client<()> {
-    /// Returns a [ClientBuilder](crate::client_builder::ClientBuilder)
+    /// Returns a [`ClientBuilder`]
     /// used to configure client preferences and providers.
     pub fn builder() -> ClientBuilder<BaseConfig> {
         ClientBuilder::new()
@@ -526,9 +526,9 @@ where
     /// [Commit](crate::group::CommitOutput).
     ///
     /// `tree_data` is required to be provided out of band if the client that
-    /// created `welcome_message` did not have the
-    /// [ratchet tree extension preference](crate::client_builder::Preferences::ratchet_tree_extension)
-    /// enabled at the time the welcome message was created. `tree_data` can
+    /// created `welcome_message` did not use the `ratchet_tree_extension`
+    /// according to [`MlsRules::commit_options`](`crate::MlsRules::commit_options`).
+    /// at the time the welcome message was created. `tree_data` can
     /// be exported from a group using the
     /// [export tree function](crate::group::Group::export_tree).
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
