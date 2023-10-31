@@ -14,7 +14,7 @@ jobs:
         - name: Install cargo-fuzz
           run: cargo install cargo-fuzz
         - name: Run Fuzz Targets
-          working-directory: aws-mls
+          working-directory: mls-rs
           run: |
             cargo +nightly fuzz run application_data -- -runs=$RUNS -timeout=$TIME
             cargo +nightly fuzz run cipher_text -- -runs=$RUNS -timeout=$TIME

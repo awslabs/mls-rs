@@ -20,5 +20,5 @@ jobs:
           role-to-assume: arn:aws:iam::881928689264:role/Github-Actions-Role
           aws-region: us-east-1
       - name: Run benchmark
-        working-directory: aws-mls
+        working-directory: mls-rs
         run: ( set -o pipefail; cargo bench --features benchmark_util --bench group_commit --bench group_receive_commit --bench group_application --bench group_serialize -- --output-format bencher | tee -a output.txt )

@@ -1,0 +1,72 @@
+[package]
+name = "mls-rs-crypto-rustcrypto"
+version = "0.6.0"
+edition = "2021"
+
+[features]
+x509 = ["std", "mls-rs-identity-x509", "x509-cert", "spki", "sha1", "const-oid", "mls-rs-core/x509"]
+default = ["std", "x509"]
+browser = ["getrandom/js"]
+
+std = [
+    "mls-rs-core/std",
+    "mls-rs-crypto-hpke/std",
+    "mls-rs-crypto-traits/std",
+    "getrandom/std",
+    "rand_core/std",
+    "aead/std",
+    "sha2/std",
+    "hmac/std",
+    "hkdf/std",
+    "p256/std",
+    "sec1/std",
+    "dep:thiserror"
+]
+
+[dependencies]
+mls-rs-core = { path = "../mls-rs-core", default-features = false, version = "*" }
+mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", default-features = false, version = "*" }
+mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", default-features = false, version = "*" }
+
+thiserror = { version = "1.0.40", optional = true }
+zeroize = { version = "1", default-features = false, features = ["alloc", "zeroize_derive"] }
+enum-iterator = "1.1.2"
+
+# Random
+getrandom = { version = "0.2", default-features = false, features = ["custom"] }
+rand_core = { version = "0.6", default-features = false, features = ["alloc"] }
+
+# AEAD
+aes-gcm = { version = "0.10", features = ["zeroize"] }
+chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc", "getrandom"] }
+aead = { version = "0.5", default-features = false, features = ["alloc", "getrandom"] }
+
+# Hash
+sha2 = { version = "0.10", default-features = false }
+
+hmac = { version = "0.12", default-features = false, features = ["reset"] }
+hkdf = { version = "0.12", default-features = false }
+
+# KEM
+p256 = { version = "0.13", default-features = false, features = ["alloc", "ecdh", "ecdsa", "pem"] }
+x25519-dalek = { version = "2", default-features = false, features = ["alloc", "static_secrets"] }
+ed25519-dalek = { version = "2", default-features = false, features = ["alloc", "rand_core"] }
+sec1 = { version = "0.7", default-features = false, features = ["alloc"] }
+
+# X509 feature
+mls-rs-identity-x509 = { path = "../mls-rs-identity-x509", optional = true, version = "*" }
+x509-cert = { version = "0.2", optional = true, features = ["std"] }
+spki = { version = "0.7", optional = true, features = ["std", "alloc"] }
+sha1 = { version = "0.10", optional = true, features = ["std"] }
+const-oid = { version = "0.9", optional = true, features = ["std"] }
+maybe-async = "0.2.7"
+
+[dev-dependencies]
+hex = { version = "^0.4.3", features = ["serde"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "^1.0" }
+assert_matches = "1.5.0"
+mls-rs-core = { path = "../mls-rs-core", version = "*", features = ["test_suite"] }
+
+[target.'cfg(mls_build_async)'.dependencies]
+async-trait = "0.1.74"

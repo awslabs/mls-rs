@@ -12,14 +12,14 @@ jobs:
         targets: thumbv6m-none-eabi
         components: clippy
     - name: Clippy
-      run: cargo +nightly clippy --no-default-features -p aws-mls -- -D warnings
+      run: cargo +nightly clippy --no-default-features -p mls-rs -- -D warnings
     - name: Test
-      run: cargo +nightly test --no-default-features --features test_util --verbose -p aws-mls --lib --test '*'
+      run: cargo +nightly test --no-default-features --features test_util --verbose -p mls-rs --lib --test '*'
     - name: Test Full RFC Compliance
-      run: cargo +nightly test --no-default-features --features rfc_compliant,test_util --verbose -p aws-mls
+      run: cargo +nightly test --no-default-features --features rfc_compliant,test_util --verbose -p mls-rs
     - name: Build MLS Embedded
-      run: cargo +nightly build --package aws-mls --lib --no-default-features --target thumbv6m-none-eabi
+      run: cargo +nightly build --package mls-rs --lib --no-default-features --target thumbv6m-none-eabi
     - name: Build MLS Embedded Full RFC Compliance
-      run: cargo +nightly build --package aws-mls --lib --no-default-features --features rfc_compliant --target thumbv6m-none-eabi
+      run: cargo +nightly build --package mls-rs --lib --no-default-features --features rfc_compliant --target thumbv6m-none-eabi
     - name: Build rust crypto embedded 
-      run: cargo +nightly build --package aws-mls-crypto-rustcrypto --no-default-features --target thumbv6m-none-eabi
+      run: cargo +nightly build --package mls-rs-crypto-rustcrypto --no-default-features --target thumbv6m-none-eabi

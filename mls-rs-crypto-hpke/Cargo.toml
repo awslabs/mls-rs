@@ -1,0 +1,38 @@
+[package]
+name = "mls-rs-crypto-hpke"
+version = "0.4.0"
+edition = "2021"
+
+[features]
+default = ["std"]
+std = ["mls-rs-core/std", "mls-rs-crypto-traits/std", "dep:thiserror", "zeroize/std"]
+
+[dependencies]
+mls-rs-core = { path = "../mls-rs-core", default-features = false, version = "*" }
+mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", default-features = false, version = "*" }
+thiserror = { version = "1.0.40", optional = true }
+zeroize = { version = "1", default-features = false, features = ["alloc", "zeroize_derive"] }
+cfg-if = "^1"
+maybe-async = "0.2.7"
+
+[dev-dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "^1.0" }
+assert_matches = "1.5.0"
+mockall = "0.11"
+hex = { version = "^0.4.3", features = ["serde"] }
+mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", features = ["mock"], version = "*" }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+mls-rs-crypto-openssl = { path = "../mls-rs-crypto-openssl", version = "*"}
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = { version = "0.3.26", default-features = false }
+mls-rs-crypto-rustcrypto = { path = "../mls-rs-crypto-rustcrypto", version = "*"}
+getrandom = { version = "0.2", features = ["js"] }
+
+[target.'cfg(mls_build_async)'.dependencies]
+async-trait = "0.1.74"
+
+[target.'cfg(mls_build_async)'.dev-dependencies]
+futures-test = "0.3.25"

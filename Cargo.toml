@@ -2,32 +2,32 @@
 resolver = "2"
 
 members = [
-    "aws-mls",
-    "aws-mls-core",
-    "aws-mls-ffi",
-    "aws-mls-identity-x509",
-    "aws-mls/fuzz",
-    "aws-mls/test_harness_integration",
-    "aws-mls-crypto-openssl",
-    "aws-mls-crypto-rustcrypto",
-    "aws-mls-crypto-awslc",
-    "aws-mls-crypto-hpke",
-    "aws-mls-provider-sqlite",
-    "aws-mls-codec",
-    "aws-mls-codec-derive"
+    "mls-rs",
+    "mls-rs-core",
+    "mls-rs-ffi",
+    "mls-rs-identity-x509",
+    "mls-rs/fuzz",
+    "mls-rs/test_harness_integration",
+    "mls-rs-crypto-openssl",
+    "mls-rs-crypto-rustcrypto",
+    "mls-rs-crypto-awslc",
+    "mls-rs-crypto-hpke",
+    "mls-rs-provider-sqlite",
+    "mls-rs-codec",
+    "mls-rs-codec-derive"
 ]
 
 default-members = [
-    "aws-mls",
-    "aws-mls-core",
-    "aws-mls-ffi",
-    "aws-mls-identity-x509",
-    "aws-mls-crypto-hpke",
-    "aws-mls-crypto-openssl",
-    "aws-mls-crypto-rustcrypto",
-    "aws-mls-crypto-awslc",
-    "aws-mls-provider-sqlite",
-    "aws-mls-codec"
+    "mls-rs",
+    "mls-rs-core",
+    "mls-rs-ffi",
+    "mls-rs-identity-x509",
+    "mls-rs-crypto-hpke",
+    "mls-rs-crypto-openssl",
+    "mls-rs-crypto-rustcrypto",
+    "mls-rs-crypto-awslc",
+    "mls-rs-provider-sqlite",
+    "mls-rs-codec"
 ]
 
 [profile.release-mini]

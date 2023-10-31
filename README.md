@@ -1,13 +1,13 @@
-# aws-mls &emsp; [![Build Status]][actions] [![Latest Version]][crates.io]
+# mls-rs &emsp; [![Build Status]][actions] [![Latest Version]][crates.io]
 
 [![API Documentation]][docs.rs]
 
 [build status]: https://img.shields.io/github/workflow/status/WickrInc/mls/CI/master
 [actions]: https://github.com/WickrInc/mls/actions?query=branch%3Amaster
-[latest version]: https://img.shields.io/crates/v/aws-mls.svg
-[crates.io]: https://crates.io/crates/aws-mls
-[api documentation]: (https://docs.rs/aws-mls/badge.svg)
-[docs.rs]: (https://docs.rs/aws-mls)
+[latest version]: https://img.shields.io/crates/v/mls-rs.svg
+[crates.io]: https://crates.io/crates/mls-rs
+[api documentation]: (https://docs.rs/mls-rs/badge.svg)
+[docs.rs]: (https://docs.rs/mls-rs)
 
 <!-- cargo-sync-readme start -->
 

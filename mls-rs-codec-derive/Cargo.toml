@@ -1,0 +1,13 @@
+[package]
+name = "mls-rs-codec-derive"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+darling = "0.14.4"
+proc-macro2 = "1.0.54"
+quote = "1.0.26"
+syn = "1"

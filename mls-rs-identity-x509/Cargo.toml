@@ -1,0 +1,28 @@
+[package]
+name = "mls-rs-identity-x509"
+version = "0.6.0"
+edition = "2021"
+
+[features]
+default = ["std"]
+std = ["mls-rs-core/std", "dep:thiserror"]
+external_proposal = ["mls-rs-core/external_proposal"]
+
+[dependencies]
+async-trait = "0.1.74"
+mls-rs-core = { path = "../mls-rs-core", default-features = false, features = ["x509"], version = "*" }
+maybe-async = "0.2.7"
+thiserror = { version = "1.0.40", optional = true }
+
+[dev-dependencies]
+mockall = "0.11"
+assert_matches = "1"
+rand = "0.8"
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = { version = "0.3.26", default-features = false }
+getrandom = { version = "0.2", features = ["js"] }
+
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = { version = "^0.2.79" }

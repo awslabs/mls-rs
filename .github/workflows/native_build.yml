@@ -23,9 +23,9 @@ jobs:
     - name: Test Bare Bones
       run: cargo test --no-default-features --features std,test_util  --verbose --workspace
     - name: Test Async Full RFC
-      run: RUSTFLAGS='--cfg mls_build_async' cargo test --lib --test '*' --verbose --features test_util --workspace --exclude aws-mls-provider-sqlite --exclude fuzz --exclude aws-mls-ffi
+      run: RUSTFLAGS='--cfg mls_build_async' cargo test --lib --test '*' --verbose --features test_util --workspace --exclude mls-rs-provider-sqlite --exclude fuzz --exclude mls-rs-ffi
     - name: Test Async Bare Bones 
-      run: RUSTFLAGS='--cfg mls_build_async' cargo test --no-default-features --lib --test '*' --features std,test_util --verbose --workspace --exclude aws-mls-provider-sqlite --exclude fuzz --exclude aws-mls-ffi
+      run: RUSTFLAGS='--cfg mls_build_async' cargo test --no-default-features --lib --test '*' --features std,test_util --verbose --workspace --exclude mls-rs-provider-sqlite --exclude fuzz --exclude mls-rs-ffi
     - name: Examples
-      working-directory: aws-mls
+      working-directory: mls-rs
       run: cargo run --example basic_usage

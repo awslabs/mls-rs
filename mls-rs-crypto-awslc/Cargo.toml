@@ -1,0 +1,23 @@
+[package]
+name = "mls-rs-crypto-awslc"
+version = "0.6.0"
+edition = "2021"
+
+[dependencies]
+aws-lc-rs = "1.3"
+aws-lc-sys = { version = "0.10.0", features = ["bindgen"] }
+mls-rs-core = { path = "../mls-rs-core", version = "*" }
+mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", version = "*" }
+mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", version = "*" }
+mls-rs-identity-x509 = { path = "../mls-rs-identity-x509", version = "*" }
+thiserror = "1.0.40"
+zeroize = { version = "1", features = ["zeroize_derive"] }
+maybe-async = "0.2.7"
+
+[dev-dependencies]
+assert_matches = "1.5.0"
+mls-rs-core = { path = "../mls-rs-core", version = "*", features = ["test_suite"] }
+futures-test = "0.3.25"
+
+[target.'cfg(mls_build_async)'.dependencies]
+async-trait = "0.1.74"

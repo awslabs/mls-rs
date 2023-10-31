@@ -15,7 +15,7 @@ jobs:
       with:
         path: mls
     - name: Start test MLS client
-      working-directory: aws-mls/test_harness_integration 
+      working-directory: mls-rs/test_harness_integration 
       run: cargo run &
     - name: Clone test runner
       uses: actions/checkout@master
