@@ -257,7 +257,7 @@ async fn invite_passive_client<P: CipherSuiteProvider>(
         key_package: key_pckg.to_bytes().unwrap(),
         encryption_priv: key_pckg_secrets.leaf_node_key.to_vec(),
         init_priv: key_pckg_secrets.init_key.to_vec(),
-        welcome: commit.welcome_message.unwrap().to_bytes().unwrap(),
+        welcome: commit.welcome_messages[0].to_bytes().unwrap(),
         initial_epoch_authenticator: groups[0].epoch_authenticator().unwrap().to_vec(),
         epochs: vec![],
         signature_priv: secret_key.to_vec(),
@@ -470,11 +470,15 @@ pub async fn generate_passive_client_welcome_tests() {
         for with_tree_in_extension in [true, false] {
             for (with_psk, with_path) in [false, true].into_iter().cartesian_product([true, false])
             {
+                let options = CommitOptions::new()
+                    .with_path_required(with_path)
+                    .with_ratchet_tree_extension(with_tree_in_extension);
+
                 let mut groups = get_test_groups(
                     VERSION,
                     cs.cipher_suite(),
                     16,
-                    Some(CommitOptions::new(with_path, with_tree_in_extension)),
+                    Some(options),
                     false,
                     &crypto_provider,
                 )
@@ -614,7 +618,7 @@ pub async fn add_random_members<C: MlsConfig>(
 
     for client in &clients {
         let tree_data = tree_data.clone();
-        let commit = commit_output.welcome_message.clone().unwrap();
+        let commit = commit_output.welcome_messages[0].clone();
 
         let group = client
             .join_group(Some(&tree_data.clone()), commit)

@@ -146,7 +146,8 @@ fn main() -> Result<(), MlsError> {
         .commit_builder()
         .add_member(bob_key_package)?
         .build()?
-        .welcome_message
+        .welcome_messages
+        .pop()
         .expect("key package shouldn't be rejected");
 
     let (mut bob_group, _) = bob.join_group(None, welcome)?;

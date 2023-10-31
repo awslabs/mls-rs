@@ -128,7 +128,7 @@ pub async fn get_test_groups<C: CryptoProvider + Clone>(
         commit_builder = commit_builder.add_member(kp.clone()).unwrap();
     }
 
-    let welcome = commit_builder.build().await.unwrap().welcome_message;
+    let welcome = commit_builder.build().await.unwrap().welcome_messages;
 
     creator_group.apply_pending_commit().await.unwrap();
 
@@ -138,7 +138,7 @@ pub async fn get_test_groups<C: CryptoProvider + Clone>(
 
     for client in &receiver_clients {
         let (test_client, _info) = client
-            .join_group(Some(&tree_data), welcome.clone().unwrap())
+            .join_group(Some(&tree_data), welcome[0].clone())
             .await
             .unwrap();
 

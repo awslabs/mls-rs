@@ -402,6 +402,29 @@ impl MLSMessage {
             _ => Vec::new(),
         }
     }
+
+    /// If this is a welcome message, return key package references of all members who can
+    /// join using this message.
+    pub fn welcome_key_package_references(&self) -> Vec<&KeyPackageRef> {
+        let MLSMessagePayload::Welcome(welcome) = &self.payload else {
+            return Vec::new();
+        };
+
+        welcome.secrets.iter().map(|s| &s.new_member).collect()
+    }
+
+    /// If this is a key package, return its key package reference.
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn key_package_reference<C: CipherSuiteProvider>(
+        &self,
+        cipher_suite: &C,
+    ) -> Result<Option<KeyPackageRef>, MlsError> {
+        let MLSMessagePayload::KeyPackage(kp) = &self.payload else {
+            return Ok(None);
+        };
+
+        kp.to_reference(cipher_suite).await.map(Some)
+    }
 }
 
 #[cfg(feature = "custom_proposal")]

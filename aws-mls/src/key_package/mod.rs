@@ -39,6 +39,10 @@ pub struct KeyPackage {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(
+    all(feature = "ffi", not(test)),
+    safer_ffi_gen::ffi_type(clone, opaque)
+)]
 pub struct KeyPackageRef(HashReference);
 
 impl Deref for KeyPackageRef {
@@ -83,7 +87,7 @@ impl KeyPackage {
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub(crate) async fn to_reference<CP: CipherSuiteProvider>(
+    pub async fn to_reference<CP: CipherSuiteProvider>(
         &self,
         cipher_suite_provider: &CP,
     ) -> Result<KeyPackageRef, MlsError> {

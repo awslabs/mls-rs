@@ -15,7 +15,9 @@ use crate::{
     identity::SigningIdentity,
     protocol_version::ProtocolVersion,
     signer::Signable,
-    tree_kem::{kem::TreeKem, path_secret::PathSecret, TreeKemPrivate, UpdatePath},
+    tree_kem::{
+        kem::TreeKem, node::LeafIndex, path_secret::PathSecret, TreeKemPrivate, UpdatePath,
+    },
     ExtensionList, MlsRules,
 };
 
@@ -33,13 +35,13 @@ use crate::{
 
 use super::{
     confirmation_tag::ConfirmationTag,
-    framing::{Content, MLSMessage, Sender},
-    key_schedule::KeySchedule,
+    framing::{Content, MLSMessage, MLSMessagePayload, Sender},
+    key_schedule::{KeySchedule, WelcomeSecret},
     message_processor::{path_update_required, MessageProcessor},
     message_signature::AuthenticatedContent,
     mls_rules::CommitDirection,
     proposal::{Proposal, ProposalOrRef},
-    ConfirmedTranscriptHash, Group, GroupInfo,
+    ConfirmedTranscriptHash, EncryptedGroupSecrets, Group, GroupContext, GroupInfo, Welcome,
 };
 
 #[cfg(not(feature = "by_ref_proposal"))]
@@ -74,8 +76,13 @@ pub(super) struct CommitGeneration {
 pub struct CommitOutput {
     /// Commit message to send to other group members.
     pub commit_message: MLSMessage,
-    /// Welcome message to send to new group members.
-    pub welcome_message: Option<MLSMessage>,
+    /// Welcome messages to send to new group members. If the commit does not add members,
+    /// this list is empty. Otherwise, if [`MlsRules::commit_options`] returns `single_welcome_message`
+    /// set to true, then this list contains a single message sent to all members. Else, the list
+    /// contains one message for each added member. Recipients of each message can be identified using
+    /// [`MLSMessage::key_package_reference`] of their key packages and
+    /// [`MLSMessage::welcome_key_package_references`].
+    pub welcome_messages: Vec<MLSMessage>,
     /// Ratchet tree that can be sent out of band if
     /// `ratchet_tree_extension` is not used according to
     /// [`MlsRules::encryption_options`].
@@ -90,8 +97,8 @@ impl CommitOutput {
     }
 
     /// Welcome message to send to new group members.
-    pub fn welcome_message(&self) -> Option<&MLSMessage> {
-        self.welcome_message.as_ref()
+    pub fn welcome_messages(&self) -> &[MLSMessage] {
+        &self.welcome_messages
     }
 
     /// Ratchet tree that can be sent out of band if
@@ -508,13 +515,6 @@ where
             (None, None, PathSecret::empty(&self.cipher_suite_provider))
         };
 
-        let added_key_pkgs = provisional_state
-            .applied_proposals
-            .additions
-            .iter()
-            .map(|info| info.proposal.key_package.clone())
-            .collect();
-
         #[cfg(feature = "psk")]
         let (psk_secret, psks) = self
             .get_psk(&provisional_state.applied_proposals.psks)
@@ -522,6 +522,13 @@ where
 
         #[cfg(not(feature = "psk"))]
         let psk_secret = self.get_psk();
+
+        let added_key_pkgs: Vec<_> = provisional_state
+            .applied_proposals
+            .additions
+            .iter()
+            .map(|info| info.proposal.key_package.clone())
+            .collect();
 
         let commit = Commit {
             proposals: provisional_state.applied_proposals.into_proposals_or_refs(),
@@ -587,35 +594,60 @@ where
 
         auth_content.auth.confirmation_tag = Some(confirmation_tag.clone());
 
-        // Construct a GroupInfo reflecting the new state
-        // Group ID, epoch, tree, and confirmed transcript hash from the new state
-        let mut group_info = GroupInfo {
-            group_context: provisional_group_context,
-            extensions,
-            confirmation_tag, // The confirmation_tag from the MLSPlaintext object
-            signer: provisional_private_tree.self_index,
-            signature: vec![],
-        };
-
-        group_info.grease(self.cipher_suite_provider())?;
-
-        // Sign the GroupInfo using the member's private signing key
-        group_info
-            .sign(&self.cipher_suite_provider, new_signer_ref, &())
-            .await?;
-
-        let welcome_message = self
-            .make_welcome_message(
-                added_key_pkgs,
-                provisional_state.indexes_of_added_kpkgs,
-                &key_schedule_result.joiner_secret,
-                &psk_secret,
-                path_secrets.as_ref(),
-                #[cfg(feature = "psk")]
-                psks,
-                &group_info,
+        let group_info = self
+            .make_group_info(
+                provisional_group_context,
+                extensions,
+                confirmation_tag,
+                new_signer_ref,
             )
             .await?;
+
+        // Encrypt the GroupInfo using the key and nonce derived from the joiner_secret for
+        // the new epoch
+        let welcome_secret = WelcomeSecret::from_joiner_secret(
+            &self.cipher_suite_provider,
+            &key_schedule_result.joiner_secret,
+            &psk_secret,
+        )
+        .await?;
+
+        let encrypted_group_info = welcome_secret.encrypt(&group_info).await?;
+
+        // Encrypt path secrets and joiner secret to new members
+        let path_secrets = path_secrets.as_ref();
+        let mut welcome_messages = Vec::new();
+        let mut encrypted_path_secrets = Vec::new();
+
+        let added_key_pkgs = added_key_pkgs
+            .into_iter()
+            .zip(provisional_state.indexes_of_added_kpkgs);
+
+        for (key_package, leaf_index) in added_key_pkgs {
+            let secret = self
+                .encrypt_group_secrets(
+                    &key_package,
+                    leaf_index,
+                    &key_schedule_result.joiner_secret,
+                    path_secrets,
+                    #[cfg(feature = "psk")]
+                    psks.clone(),
+                    &encrypted_group_info,
+                )
+                .await?;
+
+            if commit_options.single_welcome_message {
+                encrypted_path_secrets.push(secret);
+            } else {
+                welcome_messages
+                    .push(self.make_welcome_message(vec![secret], encrypted_group_info.clone()));
+            }
+        }
+
+        if commit_options.single_welcome_message && !encrypted_path_secrets.is_empty() {
+            welcome_messages =
+                vec![self.make_welcome_message(encrypted_path_secrets, encrypted_group_info)];
+        }
 
         let commit_message = self.format_for_wire(auth_content.clone()).await?;
 
@@ -642,9 +674,52 @@ where
 
         Ok(CommitOutput {
             commit_message,
-            welcome_message,
+            welcome_messages,
             ratchet_tree,
         })
+    }
+
+    // Construct a GroupInfo reflecting the new state
+    // Group ID, epoch, tree, and confirmed transcript hash from the new state
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn make_group_info(
+        &self,
+        group_context: GroupContext,
+        extensions: ExtensionList,
+        confirmation_tag: ConfirmationTag,
+        signer: &SignatureSecretKey,
+    ) -> Result<Vec<u8>, MlsError> {
+        let mut group_info = GroupInfo {
+            group_context,
+            extensions,
+            confirmation_tag, // The confirmation_tag from the MLSPlaintext object
+            signer: LeafIndex(self.current_member_index()),
+            signature: vec![],
+        };
+
+        group_info.grease(self.cipher_suite_provider())?;
+
+        // Sign the GroupInfo using the member's private signing key
+        group_info
+            .sign(&self.cipher_suite_provider, signer, &())
+            .await?;
+
+        group_info.mls_encode_to_vec().map_err(Into::into)
+    }
+
+    fn make_welcome_message(
+        &self,
+        secrets: Vec<EncryptedGroupSecrets>,
+        encrypted_group_info: Vec<u8>,
+    ) -> MLSMessage {
+        MLSMessage::new(
+            self.context().protocol_version,
+            MLSMessagePayload::Welcome(Welcome {
+                cipher_suite: self.context().cipher_suite,
+                secrets,
+                encrypted_group_info,
+            }),
+        )
     }
 }
 
@@ -687,8 +762,10 @@ mod tests {
     };
 
     use crate::{
-        crypto::test_utils::TestCryptoProvider, group::test_utils::test_group_custom,
-        mls_rules::CommitOptions, Client,
+        crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider},
+        group::{mls_rules::DefaultMlsRules, test_utils::test_group_custom},
+        mls_rules::CommitOptions,
+        Client,
     };
 
     #[cfg(feature = "external_proposal")]
@@ -734,7 +811,7 @@ mod tests {
 
     fn assert_commit_builder_output<C: ClientConfig>(
         group: Group<C>,
-        commit_output: CommitOutput,
+        mut commit_output: CommitOutput,
         expected: Vec<Proposal>,
         welcome_count: usize,
     ) {
@@ -772,7 +849,7 @@ mod tests {
         });
 
         if welcome_count > 0 {
-            let welcome_msg = commit_output.welcome_message.unwrap();
+            let welcome_msg = commit_output.welcome_messages.pop().unwrap();
 
             assert_eq!(welcome_msg.version, group.state.context.protocol_version);
 
@@ -781,7 +858,7 @@ mod tests {
             assert_eq!(welcome_msg.cipher_suite, group.state.context.cipher_suite);
             assert_eq!(welcome_msg.secrets.len(), welcome_count);
         } else {
-            assert!(commit_output.welcome_message.is_none());
+            assert!(commit_output.welcome_messages.is_empty());
         }
     }
 
@@ -824,12 +901,10 @@ mod tests {
             .build()
             .await
             .unwrap()
-            .welcome_message;
+            .welcome_messages
+            .remove(0);
 
-        let (_, context) = bob_client
-            .join_group(None, welcome_message.unwrap())
-            .await
-            .unwrap();
+        let (_, context) = bob_client.join_group(None, welcome_message).await.unwrap();
 
         assert_eq!(
             context
@@ -1028,6 +1103,52 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "by_ref_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_commit_builder_multiple_welcome_messages() {
+        let mut group = test_group_custom_config(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, |b| {
+            let options = CommitOptions::new().with_single_welcome_message(false);
+            b.mls_rules(DefaultMlsRules::new().with_commit_options(options))
+        })
+        .await;
+
+        let (alice, alice_kp) =
+            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "a").await;
+
+        let (bob, bob_kp) =
+            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "b").await;
+
+        group
+            .group
+            .propose_add(alice_kp.clone(), vec![])
+            .await
+            .unwrap();
+
+        group
+            .group
+            .propose_add(bob_kp.clone(), vec![])
+            .await
+            .unwrap();
+
+        let output = group.group.commit(Vec::new()).await.unwrap();
+        let welcomes = output.welcome_messages;
+
+        let cs = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+
+        for (client, kp) in [(alice, alice_kp), (bob, bob_kp)] {
+            let kp_ref = kp.key_package_reference(&cs).await.unwrap().unwrap();
+
+            let welcome = welcomes
+                .iter()
+                .find(|w| w.welcome_key_package_references().contains(&&kp_ref))
+                .unwrap();
+
+            client.join_group(None, welcome.clone()).await.unwrap();
+
+            assert_eq!(welcome.clone().into_welcome().unwrap().secrets.len(), 1);
+        }
+    }
+
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn commit_can_change_credential() {
         let cs = TEST_CIPHER_SUITE;
@@ -1082,7 +1203,7 @@ mod tests {
             TEST_CIPHER_SUITE,
             Default::default(),
             None,
-            Some(CommitOptions::new(false, false)),
+            Some(CommitOptions::new().with_ratchet_tree_extension(false)),
         )
         .await
         .group;
@@ -1103,7 +1224,7 @@ mod tests {
             TEST_CIPHER_SUITE,
             Default::default(),
             None,
-            Some(CommitOptions::new(false, true)),
+            Some(CommitOptions::new().with_ratchet_tree_extension(true)),
         )
         .await
         .group;

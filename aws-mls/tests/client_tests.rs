@@ -176,7 +176,8 @@ async fn test_create(
         .build()
         .await
         .unwrap()
-        .welcome_message;
+        .welcome_messages
+        .remove(0);
 
     // Upon server confirmation, alice applies the commit to her own state
     alice_group.apply_pending_commit().await.unwrap();
@@ -184,7 +185,7 @@ async fn test_create(
     let tree = alice_group.export_tree().unwrap();
 
     // Bob receives the welcome message and joins the group
-    let (bob_group, _) = bob.join_group(Some(&tree), welcome.unwrap()).await.unwrap();
+    let (bob_group, _) = bob.join_group(Some(&tree), welcome).await.unwrap();
 
     assert!(Group::equal_group_state(&alice_group, &bob_group));
 }
@@ -215,7 +216,7 @@ async fn test_empty_commits(
         // Create the commit
         let commit_output = groups[i].commit(Vec::new()).await.unwrap();
 
-        assert!(commit_output.welcome_message.is_none());
+        assert!(commit_output.welcome_messages.is_empty());
 
         let index = groups[i].current_member_index() as usize;
         all_process_message(&mut groups, &commit_output.commit_message, index, true).await;
@@ -259,7 +260,7 @@ async fn test_update_proposals(
 
         let commit_output = groups[committer_index].commit(Vec::new()).await.unwrap();
 
-        assert!(commit_output.welcome_message.is_none());
+        assert!(commit_output.welcome_messages.is_empty());
 
         let commit = commit_output.commit_message();
 
@@ -310,7 +311,7 @@ async fn test_remove_proposals(
             .await
             .unwrap();
 
-        assert!(commit_output.welcome_message.is_none());
+        assert!(commit_output.welcome_messages.is_empty());
 
         let commit = commit_output.commit_message();
         let committer_index = groups[committer].current_member_index() as usize;
@@ -612,15 +613,13 @@ async fn reinit_works() {
         .build()
         .await
         .unwrap()
-        .welcome_message;
+        .welcome_messages
+        .remove(0);
 
     alice_group.apply_pending_commit().await.unwrap();
     let tree = alice_group.export_tree().unwrap();
 
-    let (mut bob_group, _) = bob1
-        .join_group(Some(&tree), welcome.unwrap())
-        .await
-        .unwrap();
+    let (mut bob_group, _) = bob1.join_group(Some(&tree), welcome).await.unwrap();
 
     // Alice proposes reinit
     let reinit_proposal_message = alice_group
@@ -702,9 +701,9 @@ async fn reinit_works() {
 
     // Bob produces key package, alice commits, bob joins
     let kp = bob2.generate_key_package().await.unwrap();
-    let (mut alice_group, welcome) = alice2.commit(vec![kp]).await.unwrap();
+    let (mut alice_group, mut welcome) = alice2.commit(vec![kp]).await.unwrap();
     let tree = alice_group.export_tree().unwrap();
-    let (mut bob_group, _) = bob2.join(welcome.unwrap(), Some(&tree)).await.unwrap();
+    let (mut bob_group, _) = bob2.join(welcome.remove(0), Some(&tree)).await.unwrap();
 
     assert!(bob_group.cipher_suite() == suite2);
 
@@ -713,7 +712,7 @@ async fn reinit_works() {
 
     let kp = carol.generate_key_package_message().await.unwrap();
 
-    let commit_output = alice_group
+    let mut commit_output = alice_group
         .commit_builder()
         .add_member(kp)
         .unwrap()
@@ -731,7 +730,7 @@ async fn reinit_works() {
     let tree = alice_group.export_tree().unwrap();
 
     carol
-        .join_group(Some(&tree), commit_output.welcome_message.unwrap())
+        .join_group(Some(&tree), commit_output.welcome_messages.remove(0))
         .await
         .unwrap();
 }

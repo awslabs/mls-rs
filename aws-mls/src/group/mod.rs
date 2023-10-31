@@ -759,56 +759,6 @@ where
         Ok((provisional_private_tree, new_signer))
     }
 
-    #[allow(clippy::too_many_arguments)]
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn make_welcome_message(
-        &self,
-        new_members_kpkgs: Vec<KeyPackage>,
-        new_members_indexes: Vec<LeafIndex>,
-        joiner_secret: &JoinerSecret,
-        psk_secret: &PskSecret,
-        path_secrets: Option<&Vec<Option<PathSecret>>>,
-        #[cfg(feature = "psk")] psks: Vec<PreSharedKeyID>,
-        group_info: &GroupInfo,
-    ) -> Result<Option<MLSMessage>, MlsError> {
-        // Encrypt the GroupInfo using the key and nonce derived from the joiner_secret for
-        // the new epoch
-        let welcome_secret = WelcomeSecret::from_joiner_secret(
-            &self.cipher_suite_provider,
-            joiner_secret,
-            psk_secret,
-        )
-        .await?;
-
-        let group_info_data = group_info.mls_encode_to_vec()?;
-        let encrypted_group_info = welcome_secret.encrypt(&group_info_data).await?;
-        let mut secrets = Vec::new();
-
-        for (key_package, leaf_index) in new_members_kpkgs.into_iter().zip(new_members_indexes) {
-            secrets.push(
-                self.encrypt_group_secrets(
-                    &key_package,
-                    leaf_index,
-                    joiner_secret,
-                    path_secrets,
-                    #[cfg(feature = "psk")]
-                    psks.clone(),
-                    &encrypted_group_info,
-                )
-                .await?,
-            );
-        }
-
-        Ok((!secrets.is_empty()).then_some(MLSMessage::new(
-            self.context().protocol_version,
-            MLSMessagePayload::Welcome(Welcome {
-                cipher_suite: self.context().cipher_suite,
-                secrets,
-                encrypted_group_info,
-            }),
-        )))
-    }
-
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn encrypt_group_secrets(
         &self,
@@ -2135,7 +2085,7 @@ mod tests {
             cipher_suite,
             Default::default(),
             None,
-            Some(CommitOptions::new(false, tree_ext)),
+            Some(CommitOptions::new().with_ratchet_tree_extension(tree_ext)),
         )
         .await;
 
@@ -2166,7 +2116,7 @@ mod tests {
             TEST_CIPHER_SUITE,
             Default::default(),
             None,
-            Some(CommitOptions::new(false, false)),
+            Some(CommitOptions::new().with_ratchet_tree_extension(false)),
         )
         .await;
 
@@ -2174,7 +2124,7 @@ mod tests {
             test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
 
         // Add bob to the group
-        let commit_output = test_group
+        let mut commit_output = test_group
             .group
             .commit_builder()
             .add_member(bob_key_package)
@@ -2185,7 +2135,7 @@ mod tests {
 
         // Group from Bob's perspective
         let bob_group = Group::join(
-            commit_output.welcome_message.unwrap(),
+            commit_output.welcome_messages.remove(0),
             None,
             bob_client.config,
             bob_client.signer.unwrap(),
@@ -2457,7 +2407,7 @@ mod tests {
             cipher_suite,
             Default::default(),
             None,
-            Some(CommitOptions::new(false, true)),
+            Some(CommitOptions::new()),
         )
         .await;
 
@@ -2486,7 +2436,7 @@ mod tests {
             cipher_suite,
             Default::default(),
             None,
-            Some(CommitOptions::new(true, true)),
+            Some(CommitOptions::new().with_path_required(true)),
         )
         .await;
 
@@ -2518,7 +2468,7 @@ mod tests {
             cipher_suite,
             Default::default(),
             None,
-            Some(CommitOptions::new(false, true)),
+            Some(CommitOptions::new()),
         )
         .await;
 
@@ -2891,13 +2841,13 @@ mod tests {
         .await
         .unwrap();
 
-        let (mut alice_sub_group, welcome) = alice
+        let (mut alice_sub_group, mut welcome) = alice
             .group
             .branch(b"subgroup".to_vec(), vec![new_key_pkg])
             .await
             .unwrap();
 
-        let welcome = welcome.unwrap();
+        let welcome = welcome.remove(0);
 
         let (mut bob_sub_group, _) = bob
             .group
@@ -3821,7 +3771,7 @@ mod tests {
 
         bob.config.secret_store().insert(psk_id.clone(), psk);
 
-        let commit = alice
+        let mut commit = alice
             .commit_builder()
             .add_member(key_pkg)
             .unwrap()
@@ -3831,7 +3781,7 @@ mod tests {
             .await
             .unwrap();
 
-        bob.join_group(None, commit.welcome_message.unwrap())
+        bob.join_group(None, commit.welcome_messages.remove(0))
             .await
             .unwrap();
     }

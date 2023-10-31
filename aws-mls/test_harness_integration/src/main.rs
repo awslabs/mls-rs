@@ -963,6 +963,7 @@ impl MlsClientImpl {
         };
 
         let welcome = welcome
+            .first()
             .map(|msg| msg.to_bytes())
             .transpose()
             .map_err(abort)?
@@ -1122,7 +1123,8 @@ impl MlsClientImpl {
         };
 
         let welcome = commit_output
-            .welcome_message
+            .welcome_messages
+            .first()
             .map(|w| w.to_bytes())
             .transpose()
             .map_err(abort)?

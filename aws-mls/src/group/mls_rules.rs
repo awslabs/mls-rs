@@ -36,6 +36,7 @@ pub enum CommitSource {
 pub struct CommitOptions {
     pub path_required: bool,
     pub ratchet_tree_extension: bool,
+    pub single_welcome_message: bool,
 }
 
 impl Default for CommitOptions {
@@ -43,15 +44,34 @@ impl Default for CommitOptions {
         CommitOptions {
             path_required: false,
             ratchet_tree_extension: true,
+            single_welcome_message: true,
         }
     }
 }
 
 impl CommitOptions {
-    pub fn new(path_required: bool, ratchet_tree_extension: bool) -> Self {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_path_required(self, path_required: bool) -> Self {
         Self {
             path_required,
+            ..self
+        }
+    }
+
+    pub fn with_ratchet_tree_extension(self, ratchet_tree_extension: bool) -> Self {
+        Self {
             ratchet_tree_extension,
+            ..self
+        }
+    }
+
+    pub fn with_single_welcome_message(self, single_welcome_message: bool) -> Self {
+        Self {
+            single_welcome_message,
+            ..self
         }
     }
 }
@@ -119,8 +139,9 @@ pub trait MlsRules: Send + Sync {
     ) -> Result<ProposalBundle, Self::Error>;
 
     /// This is called when preparing a commit to determine various options: whether to enforce an update
-    /// path in case it is not mandated by MLS, and whether to include the ratchet tree in the welcome
-    /// message (if the commit adds members).
+    /// path in case it is not mandated by MLS, whether to include the ratchet tree in the welcome
+    /// message (if the commit adds members) and whether to generate a single welcome message, or one
+    /// welcome message for each added member.
     ///
     /// The `new_roster` and `new_extension_list` describe the group state after the commit.
     fn commit_options(

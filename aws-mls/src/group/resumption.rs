@@ -49,7 +49,7 @@ where
         &self,
         sub_group_id: Vec<u8>,
         new_key_packages: Vec<MLSMessage>,
-    ) -> Result<(Group<C>, Option<MLSMessage>), MlsError> {
+    ) -> Result<(Group<C>, Vec<MLSMessage>), MlsError> {
         let new_group_params = ResumptionGroupParameters {
             group_id: &sub_group_id,
             cipher_suite: self.cipher_suite(),
@@ -179,7 +179,7 @@ impl<C: ClientConfig + Clone> ReinitClient<C> {
     pub async fn commit(
         self,
         new_key_packages: Vec<MLSMessage>,
-    ) -> Result<(Group<C>, Option<MLSMessage>), MlsError> {
+    ) -> Result<(Group<C>, Vec<MLSMessage>), MlsError> {
         let new_group_params = ResumptionGroupParameters {
             group_id: self.reinit.group_id(),
             cipher_suite: self.reinit.new_cipher_suite(),
@@ -238,7 +238,7 @@ async fn resumption_create_group<C: ClientConfig + Clone>(
     signing_identity: SigningIdentity,
     signer: SignatureSecretKey,
     psk_input: PskSecretInput,
-) -> Result<(Group<C>, Option<MLSMessage>), MlsError> {
+) -> Result<(Group<C>, Vec<MLSMessage>), MlsError> {
     // Create a new group with new parameters
     let mut group = Group::new(
         config,
@@ -267,7 +267,7 @@ async fn resumption_create_group<C: ClientConfig + Clone>(
     // Uninstall the resumption psk on success (in case of failure, the new group is discarded anyway)
     group.previous_psk = None;
 
-    Ok((group, commit.welcome_message))
+    Ok((group, commit.welcome_messages))
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
