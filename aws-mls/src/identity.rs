@@ -62,6 +62,7 @@ pub(crate) mod test_utils {
     pub struct BasicWithCustomProvider {
         pub(crate) basic: BasicIdentityProvider,
         pub(crate) allow_any_custom: bool,
+        supported_cred_types: Vec<CredentialType>,
     }
 
     impl BasicWithCustomProvider {
@@ -71,7 +72,16 @@ pub(crate) mod test_utils {
             BasicWithCustomProvider {
                 basic,
                 allow_any_custom: false,
+                supported_cred_types: vec![
+                    CredentialType::BASIC,
+                    Self::CUSTOM_CREDENTIAL_TYPE.into(),
+                ],
             }
+        }
+
+        pub fn with_credential_type(mut self, cred_type: CredentialType) -> Self {
+            self.supported_cred_types.push(cred_type);
+            self
         }
 
         #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -97,6 +107,12 @@ pub(crate) mod test_utils {
                         BasicWithCustomProviderError(signing_id.credential.credential_type())
                     })
             })
+        }
+    }
+
+    impl Default for BasicWithCustomProvider {
+        fn default() -> Self {
+            Self::new(BasicIdentityProvider::new())
         }
     }
 
@@ -143,10 +159,7 @@ pub(crate) mod test_utils {
         }
 
         fn supported_types(&self) -> Vec<CredentialType> {
-            vec![
-                BasicCredential::credential_type(),
-                CredentialType::new(Self::CUSTOM_CREDENTIAL_TYPE),
-            ]
+            self.supported_cred_types.clone()
         }
 
         async fn identity_warnings(

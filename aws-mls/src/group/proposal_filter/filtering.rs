@@ -123,39 +123,13 @@ where
     pub(super) async fn apply_proposal_changes(
         &self,
         strategy: FilterStrategy,
-        mut proposals: ProposalBundle,
+        proposals: ProposalBundle,
         commit_time: Option<MlsTime>,
     ) -> Result<ApplyProposalsOutput, MlsError> {
-        let extensions_proposal_and_capabilities = proposals
-            .group_context_extensions_proposal()
-            .cloned()
-            .and_then(|p| match p.proposal.get_as().map_err(MlsError::from) {
-                Ok(capabilities) => Some(Ok((p, capabilities))),
-                Err(e) => {
-                    if strategy.ignore(p.is_by_reference()) {
-                        None
-                    } else {
-                        Some(Err(e))
-                    }
-                }
-            })
-            .transpose()?;
-
-        // If the extensions proposal is ignored, remove it from the list of proposals.
-        if extensions_proposal_and_capabilities.is_none() {
-            proposals.group_context_extensions.clear();
-        }
-
-        match extensions_proposal_and_capabilities {
-            Some((group_context_extensions_proposal, new_required_capabilities)) => {
-                self.apply_proposals_with_new_capabilities(
-                    strategy,
-                    proposals,
-                    group_context_extensions_proposal,
-                    new_required_capabilities,
-                    commit_time,
-                )
-                .await
+        match proposals.group_context_extensions_proposal().cloned() {
+            Some(p) => {
+                self.apply_proposals_with_new_capabilities(strategy, proposals, p, commit_time)
+                    .await
             }
             None => {
                 self.apply_tree_changes(
@@ -209,13 +183,8 @@ where
         group_extensions_in_use: &ExtensionList,
         commit_time: Option<MlsTime>,
     ) -> Result<ProposalBundle, MlsError> {
-        #[cfg(feature = "all_extensions")]
-        let capabilities = group_extensions_in_use.get_as()?;
-
         let leaf_node_validator = &LeafNodeValidator::new(
             self.cipher_suite_provider,
-            #[cfg(feature = "all_extensions")]
-            capabilities.as_ref(),
             self.identity_provider,
             Some(group_extensions_in_use),
         );

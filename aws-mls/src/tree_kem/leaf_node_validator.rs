@@ -11,6 +11,9 @@ use aws_mls_core::{error::IntoAnyError, extension::ExtensionList, identity::Iden
 #[cfg(feature = "all_extensions")]
 use crate::extension::RequiredCapabilitiesExt;
 
+#[cfg(feature = "external_proposal")]
+use crate::extension::ExternalSendersExt;
+
 pub enum ValidationContext<'a> {
     Add(Option<MlsTime>),
     Update((&'a [u8], u32, Option<MlsTime>)),
@@ -43,24 +46,17 @@ where
 {
     cipher_suite_provider: &'a CP,
     identity_provider: &'a C,
-    #[cfg(feature = "all_extensions")]
-    required_capabilities: Option<&'a RequiredCapabilitiesExt>,
     group_context_extensions: Option<&'a ExtensionList>,
 }
 
 impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, CP> {
     pub fn new(
         cipher_suite_provider: &'a CP,
-        #[cfg(feature = "all_extensions")] required_capabilities: Option<
-            &'a RequiredCapabilitiesExt,
-        >,
         identity_provider: &'a C,
         group_context_extensions: Option<&'a ExtensionList>,
     ) -> Self {
         Self {
             cipher_suite_provider,
-            #[cfg(feature = "all_extensions")]
-            required_capabilities,
             identity_provider,
             group_context_extensions,
         }
@@ -121,27 +117,57 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
 
     #[cfg(feature = "all_extensions")]
     pub fn validate_required_capabilities(&self, leaf_node: &LeafNode) -> Result<(), MlsError> {
-        if let Some(required_capabilities) = self.required_capabilities {
-            for extension in &required_capabilities.extensions {
-                if !leaf_node.capabilities.extensions.contains(extension) {
-                    return Err(MlsError::RequiredExtensionNotFound(*extension));
-                }
-            }
+        let Some(required_capabilities) = self
+            .group_context_extensions
+            .and_then(|exts| exts.get_as::<RequiredCapabilitiesExt>().transpose())
+            .transpose()?
+        else {
+            return Ok(());
+        };
 
-            for proposal in &required_capabilities.proposals {
-                if !leaf_node.capabilities.proposals.contains(proposal) {
-                    return Err(MlsError::RequiredProposalNotFound(*proposal));
-                }
+        for extension in &required_capabilities.extensions {
+            if !leaf_node.capabilities.extensions.contains(extension) {
+                return Err(MlsError::RequiredExtensionNotFound(*extension));
             }
+        }
 
-            for credential in &required_capabilities.credentials {
-                if !leaf_node.capabilities.credentials.contains(credential) {
-                    return Err(MlsError::RequiredCredentialNotFound(*credential));
-                }
+        for proposal in &required_capabilities.proposals {
+            if !leaf_node.capabilities.proposals.contains(proposal) {
+                return Err(MlsError::RequiredProposalNotFound(*proposal));
+            }
+        }
+
+        for credential in &required_capabilities.credentials {
+            if !leaf_node.capabilities.credentials.contains(credential) {
+                return Err(MlsError::RequiredCredentialNotFound(*credential));
             }
         }
 
         Ok(())
+    }
+
+    #[cfg(feature = "external_proposal")]
+    pub fn validate_external_senders_ext_credentials(
+        &self,
+        leaf_node: &LeafNode,
+    ) -> Result<(), MlsError> {
+        let Some(ext) = self
+            .group_context_extensions
+            .and_then(|exts| exts.get_as::<ExternalSendersExt>().transpose())
+            .transpose()?
+        else {
+            return Ok(());
+        };
+
+        ext.allowed_senders().iter().try_for_each(|sender| {
+            let cred_type = sender.credential.credential_type();
+            leaf_node
+                .capabilities
+                .credentials
+                .contains(&cred_type)
+                .then_some(())
+                .ok_or(MlsError::RequiredCredentialNotFound(cred_type))
+        })
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -200,12 +226,17 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
             .map(MlsError::UnsupportedGroupExtension)
             .map_or(Ok(()), Err)?;
 
+        #[cfg(feature = "external_proposal")]
+        self.validate_external_senders_ext_credentials(leaf_node)?;
+
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "all_extensions")]
+    use crate::extension::MlsExtension;
     use alloc::vec;
     use assert_matches::assert_matches;
     use aws_mls_core::crypto::CipherSuite;
@@ -246,13 +277,8 @@ mod tests {
 
         let (leaf_node, _) = get_test_add_node().await;
 
-        let test_validator = LeafNodeValidator::new(
-            &cipher_suite_provider,
-            #[cfg(feature = "all_extensions")]
-            None,
-            &BasicIdentityProvider,
-            None,
-        );
+        let test_validator =
+            LeafNodeValidator::new(&cipher_suite_provider, &BasicIdentityProvider, None);
 
         let res = test_validator
             .check_if_valid(&leaf_node, ValidationContext::Add(None))
@@ -266,13 +292,8 @@ mod tests {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let (leaf_node, _) = get_test_add_node().await;
 
-        let fail_test_validator = LeafNodeValidator::new(
-            &cipher_suite_provider,
-            #[cfg(feature = "all_extensions")]
-            None,
-            &FailureIdentityProvider,
-            None,
-        );
+        let fail_test_validator =
+            LeafNodeValidator::new(&cipher_suite_provider, &FailureIdentityProvider, None);
 
         let res = fail_test_validator
             .check_if_valid(&leaf_node, ValidationContext::Add(None))
@@ -301,13 +322,8 @@ mod tests {
             .await
             .unwrap();
 
-        let test_validator = LeafNodeValidator::new(
-            &cipher_suite_provider,
-            #[cfg(feature = "all_extensions")]
-            None,
-            &BasicIdentityProvider,
-            None,
-        );
+        let test_validator =
+            LeafNodeValidator::new(&cipher_suite_provider, &BasicIdentityProvider, None);
 
         let res = test_validator
             .check_if_valid(&leaf_node, ValidationContext::Update((group_id, 0, None)))
@@ -337,13 +353,8 @@ mod tests {
             .await
             .unwrap();
 
-        let test_validator = LeafNodeValidator::new(
-            &cipher_suite_provider,
-            #[cfg(feature = "all_extensions")]
-            None,
-            &BasicIdentityProvider,
-            None,
-        );
+        let test_validator =
+            LeafNodeValidator::new(&cipher_suite_provider, &BasicIdentityProvider, None);
 
         let res = test_validator
             .check_if_valid(&leaf_node, ValidationContext::Commit((group_id, 0, None)))
@@ -356,13 +367,8 @@ mod tests {
     async fn test_incorrect_context() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
-        let test_validator = LeafNodeValidator::new(
-            &cipher_suite_provider,
-            #[cfg(feature = "all_extensions")]
-            None,
-            &BasicIdentityProvider,
-            None,
-        );
+        let test_validator =
+            LeafNodeValidator::new(&cipher_suite_provider, &BasicIdentityProvider, None);
 
         let (mut leaf_node, secret) = get_test_add_node().await;
 
@@ -441,13 +447,8 @@ mod tests {
 
             leaf_node.signature = random_bytes(leaf_node.signature.len());
 
-            let test_validator = LeafNodeValidator::new(
-                &cipher_suite_provider,
-                #[cfg(feature = "all_extensions")]
-                None,
-                &BasicIdentityProvider,
-                None,
-            );
+            let test_validator =
+                LeafNodeValidator::new(&cipher_suite_provider, &BasicIdentityProvider, None);
 
             let res = test_validator
                 .check_if_valid(&leaf_node, ValidationContext::Add(None))
@@ -481,13 +482,8 @@ mod tests {
 
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
-        let test_validator = LeafNodeValidator::new(
-            &cipher_suite_provider,
-            #[cfg(feature = "all_extensions")]
-            None,
-            &BasicIdentityProvider,
-            None,
-        );
+        let test_validator =
+            LeafNodeValidator::new(&cipher_suite_provider, &BasicIdentityProvider, None);
 
         let res = test_validator
             .check_if_valid(&leaf_node, ValidationContext::Add(None))
@@ -503,13 +499,8 @@ mod tests {
 
         let (leaf_node, _) = get_test_add_node().await;
 
-        let test_validator = LeafNodeValidator::new(
-            &cipher_suite_provider,
-            #[cfg(feature = "all_extensions")]
-            None,
-            &BasicIdentityProvider,
-            None,
-        );
+        let test_validator =
+            LeafNodeValidator::new(&cipher_suite_provider, &BasicIdentityProvider, None);
 
         let res = test_validator
             .check_if_valid(&leaf_node, ValidationContext::Add(None))
@@ -530,11 +521,13 @@ mod tests {
 
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
+        let group_context_extensions =
+            core::iter::once(required_capabilities.into_extension().unwrap()).collect();
+
         let test_validator = LeafNodeValidator::new(
             &cipher_suite_provider,
-            Some(&required_capabilities),
             &BasicIdentityProvider,
-            None,
+            Some(&group_context_extensions),
         );
 
         let res = test_validator
@@ -559,11 +552,13 @@ mod tests {
 
         let (leaf_node, _) = get_test_add_node().await;
 
+        let group_context_extensions =
+            core::iter::once(required_capabilities.into_extension().unwrap()).collect();
+
         let test_validator = LeafNodeValidator::new(
             &cipher_suite_provider,
-            Some(&required_capabilities),
             &BasicIdentityProvider,
-            None,
+            Some(&group_context_extensions),
         );
 
         let res = test_validator
@@ -588,11 +583,13 @@ mod tests {
 
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
+        let group_context_extensions =
+            core::iter::once(required_capabilities.into_extension().unwrap()).collect();
+
         let test_validator = LeafNodeValidator::new(
             &cipher_suite_provider,
-            Some(&required_capabilities),
             &BasicIdentityProvider,
-            None,
+            Some(&group_context_extensions),
         );
 
         let res = test_validator
@@ -611,13 +608,8 @@ mod tests {
 
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
-        let test_validator = LeafNodeValidator::new(
-            &cipher_suite_provider,
-            #[cfg(feature = "all_extensions")]
-            None,
-            &BasicIdentityProvider,
-            None,
-        );
+        let test_validator =
+            LeafNodeValidator::new(&cipher_suite_provider, &BasicIdentityProvider, None);
 
         let good_lifetime = MlsTime::now();
 

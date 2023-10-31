@@ -970,7 +970,11 @@ pub(crate) mod test_utils {
     use crate::{
         client_builder::{BaseConfig, ClientBuilder, WithIdentityProvider},
         crypto::test_utils::TestCryptoProvider,
-        identity::{basic::BasicIdentityProvider, test_utils::BasicWithCustomProvider},
+        identity::{
+            basic::BasicIdentityProvider,
+            test_utils::{get_test_signing_identity, BasicWithCustomProvider},
+        },
+        CipherSuite,
     };
 
     use super::WithCryptoProvider;
@@ -987,6 +991,17 @@ pub(crate) mod test_utils {
             ClientBuilder::new()
                 .crypto_provider(TestCryptoProvider::new())
                 .identity_provider(BasicWithCustomProvider::new(BasicIdentityProvider::new()))
+        }
+
+        #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+        pub async fn with_random_signing_identity(
+            self,
+            identity: &str,
+            cipher_suite: CipherSuite,
+        ) -> Self {
+            let (signing_identity, signer) =
+                get_test_signing_identity(cipher_suite, identity.as_bytes()).await;
+            self.signing_identity(signing_identity, signer, cipher_suite)
         }
     }
 }

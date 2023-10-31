@@ -305,8 +305,14 @@ mod tests {
     impl TestEnv {
         #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
         async fn new() -> Self {
-            let mut alice =
-                test_group_custom(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, None, None, None).await;
+            let mut alice = test_group_custom(
+                TEST_PROTOCOL_VERSION,
+                TEST_CIPHER_SUITE,
+                Default::default(),
+                None,
+                None,
+            )
+            .await;
 
             let (bob_client, bob_key_pkg) =
                 test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;

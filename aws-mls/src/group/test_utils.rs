@@ -18,6 +18,7 @@ use crate::{
     },
     client_builder::test_utils::{TestClientBuilder, TestClientConfig},
     crypto::test_utils::test_cipher_suite_provider,
+    extension::ExtensionType,
     identity::basic::BasicIdentityProvider,
     identity::test_utils::get_test_signing_identity,
     key_package::{KeyPackageGeneration, KeyPackageGenerator},
@@ -235,11 +236,10 @@ pub(crate) async fn test_member(
 pub(crate) async fn test_group_custom(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
-    capabilities: Option<Capabilities>,
+    extension_types: Vec<ExtensionType>,
     leaf_extensions: Option<ExtensionList>,
     commit_options: Option<CommitOptions>,
 ) -> TestGroup {
-    let capabilities = capabilities.unwrap_or_default();
     let leaf_extensions = leaf_extensions.unwrap_or_default();
     let commit_options = commit_options.unwrap_or_default();
 
@@ -248,8 +248,8 @@ pub(crate) async fn test_group_custom(
     let group = TestClientBuilder::new_for_test()
         .leaf_node_extensions(leaf_extensions)
         .mls_rules(DefaultMlsRules::default().with_commit_options(commit_options))
-        .extension_types(capabilities.extensions)
-        .protocol_versions(capabilities.protocol_versions)
+        .extension_types(extension_types)
+        .protocol_versions(ProtocolVersion::all())
         .used_protocol_version(protocol_version)
         .signing_identity(signing_identity.clone(), secret_key, cipher_suite)
         .build()
@@ -265,7 +265,14 @@ pub(crate) async fn test_group(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
 ) -> TestGroup {
-    test_group_custom(protocol_version, cipher_suite, None, None, None).await
+    test_group_custom(
+        protocol_version,
+        cipher_suite,
+        Default::default(),
+        None,
+        None,
+    )
+    .await
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]

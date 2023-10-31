@@ -8,17 +8,13 @@ use std::collections::HashSet;
 #[cfg(not(feature = "std"))]
 use alloc::{vec, vec::Vec};
 
+use super::node::{Node, NodeIndex};
 use crate::client::MlsError;
 use crate::crypto::CipherSuiteProvider;
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::{leaf_node_validator::LeafNodeValidator, TreeKemPublic};
 use aws_mls_core::extension::ExtensionList;
 use aws_mls_core::identity::IdentityProvider;
-
-#[cfg(feature = "all_extensions")]
-use crate::extension::RequiredCapabilitiesExt;
-
-use super::node::{Node, NodeIndex};
 
 pub(crate) struct TreeValidator<'a, C, CSP>
 where
@@ -36,9 +32,6 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> TreeValidator<'a, C, CSP
         cipher_suite_provider: &'a CSP,
         group_id: &'a [u8],
         tree_hash: &'a [u8],
-        #[cfg(feature = "all_extensions")] required_capabilities: Option<
-            &'a RequiredCapabilitiesExt,
-        >,
         group_context_extensions: &'a ExtensionList,
         identity_provider: &'a C,
     ) -> Self {
@@ -46,8 +39,6 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> TreeValidator<'a, C, CSP
             expected_tree_hash: tree_hash,
             leaf_node_validator: LeafNodeValidator::new(
                 cipher_suite_provider,
-                #[cfg(feature = "all_extensions")]
-                required_capabilities,
                 identity_provider,
                 Some(group_context_extensions),
             ),
@@ -244,8 +235,6 @@ mod tests {
                 &cipher_suite_provider,
                 TEST_GROUP,
                 &expected_tree_hash,
-                #[cfg(feature = "all_extensions")]
-                None,
                 &extensions,
                 &BasicIdentityProvider,
             );
@@ -267,8 +256,6 @@ mod tests {
                 &cipher_suite_provider,
                 b"",
                 &expected_tree_hash,
-                #[cfg(feature = "all_extensions")]
-                None,
                 &extensions,
                 &BasicIdentityProvider,
             );
@@ -296,8 +283,6 @@ mod tests {
                 &cipher_suite_provider,
                 b"",
                 &expected_tree_hash,
-                #[cfg(feature = "all_extensions")]
-                None,
                 &extensions,
                 &BasicIdentityProvider,
             );
@@ -327,8 +312,6 @@ mod tests {
                 &cipher_suite_provider,
                 b"",
                 &expected_tree_hash,
-                #[cfg(feature = "all_extensions")]
-                None,
                 &extensions,
                 &BasicIdentityProvider,
             );

@@ -26,10 +26,13 @@ use crate::psk::secret::PskSecret;
 use crate::signer::Signable;
 use crate::tree_kem::hpke_encryption::HpkeEncryptable;
 use crate::tree_kem::kem::TreeKem;
-use crate::tree_kem::leaf_node::LeafNode;
 use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::path_secret::PathSecret;
 pub use crate::tree_kem::Capabilities;
+use crate::tree_kem::{
+    leaf_node::LeafNode,
+    leaf_node_validator::{LeafNodeValidator, ValidationContext},
+};
 use crate::tree_kem::{math as tree_math, ValidatedUpdatePath};
 use crate::tree_kem::{TreeKemPrivate, TreeKemPublic};
 use crate::{CipherSuiteProvider, CryptoProvider};
@@ -290,6 +293,18 @@ where
             config.lifetime(),
         )
         .await?;
+
+        let identity_provider = config.identity_provider();
+
+        let leaf_node_validator = LeafNodeValidator::new(
+            &cipher_suite_provider,
+            &identity_provider,
+            Some(&group_context_extensions),
+        );
+
+        leaf_node_validator
+            .check_if_valid(&leaf_node, ValidationContext::Add(None))
+            .await?;
 
         let (mut public_tree, private_tree) =
             TreeKemPublic::derive(leaf_node, leaf_node_secret, &config.identity_provider()).await?;
@@ -1836,8 +1851,9 @@ pub(crate) mod test_utils;
 mod tests {
     use crate::{
         client::test_utils::{test_client_with_key_pkg, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
-        client_builder::test_utils::TestClientConfig,
+        client_builder::{test_utils::TestClientConfig, ClientBuilder},
         crypto::test_utils::TestCryptoProvider,
+        identity::test_utils::BasicWithCustomProvider,
         key_package::test_utils::test_key_package_message,
         mls_rules::CommitOptions,
         tree_kem::{
@@ -1983,9 +1999,6 @@ mod tests {
     #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_update_proposals() {
-        let mut new_capabilities = get_test_capabilities();
-        new_capabilities.extensions.push(42.into());
-
         let new_extension = TestExtension { foo: 10 };
         let mut extension_list = ExtensionList::default();
         extension_list.set_from(new_extension).unwrap();
@@ -1993,7 +2006,7 @@ mod tests {
         let mut test_group = test_group_custom(
             TEST_PROTOCOL_VERSION,
             TEST_CIPHER_SUITE,
-            Some(new_capabilities.clone()),
+            vec![42.into()],
             Some(extension_list.clone()),
             None,
         )
@@ -2017,7 +2030,13 @@ mod tests {
         );
 
         assert_eq!(update.leaf_node.ungreased_extensions(), extension_list);
-        assert_eq!(update.leaf_node.ungreased_capabilities(), new_capabilities);
+        assert_eq!(
+            update.leaf_node.ungreased_capabilities(),
+            Capabilities {
+                extensions: vec![42.into()],
+                ..get_test_capabilities()
+            }
+        );
     }
 
     #[cfg(feature = "by_ref_proposal")]
@@ -2114,7 +2133,7 @@ mod tests {
         let mut test_group = test_group_custom(
             protocol_version,
             cipher_suite,
-            None,
+            Default::default(),
             None,
             Some(CommitOptions::new(false, tree_ext)),
         )
@@ -2145,7 +2164,7 @@ mod tests {
         let mut test_group = test_group_custom(
             TEST_PROTOCOL_VERSION,
             TEST_CIPHER_SUITE,
-            None,
+            Default::default(),
             None,
             Some(CommitOptions::new(false, false)),
         )
@@ -2206,17 +2225,8 @@ mod tests {
         let protocol_version = TEST_PROTOCOL_VERSION;
         let cipher_suite = TEST_CIPHER_SUITE;
 
-        let mut capabilities = get_test_capabilities();
-        capabilities.extensions.push(42.into());
-
-        let mut test_group = test_group_custom(
-            protocol_version,
-            cipher_suite,
-            Some(capabilities),
-            None,
-            None,
-        )
-        .await;
+        let mut test_group =
+            test_group_custom(protocol_version, cipher_suite, vec![42.into()], None, None).await;
 
         let commit = test_group
             .group
@@ -2275,6 +2285,93 @@ mod tests {
         assert_matches!(
             commit,
             Err(MlsError::RequiredExtensionNotFound(a)) if a == 999.into()
+        );
+    }
+
+    #[cfg(feature = "all_extensions")]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn make_group_with_required_capabilities(
+        required_caps: RequiredCapabilitiesExt,
+    ) -> Result<Group<TestClientConfig>, MlsError> {
+        test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "alice")
+            .await
+            .0
+            .create_group(core::iter::once(required_caps.into_extension().unwrap()).collect())
+            .await
+    }
+
+    #[cfg(feature = "all_extensions")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn creating_group_with_member_not_supporting_required_credential_type_fails() {
+        let group_creation = make_group_with_required_capabilities(RequiredCapabilitiesExt {
+            credentials: vec![CredentialType::BASIC, CredentialType::X509],
+            ..Default::default()
+        })
+        .await
+        .map(|_| ());
+
+        assert_matches!(
+            group_creation,
+            Err(MlsError::RequiredCredentialNotFound(CredentialType::X509))
+        );
+    }
+
+    #[cfg(feature = "all_extensions")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn creating_group_with_member_not_supporting_required_extension_type_fails() {
+        const EXTENSION_TYPE: ExtensionType = ExtensionType::new(33);
+
+        let group_creation = make_group_with_required_capabilities(RequiredCapabilitiesExt {
+            extensions: vec![EXTENSION_TYPE],
+            ..Default::default()
+        })
+        .await
+        .map(|_| ());
+
+        assert_matches!(
+            group_creation,
+            Err(MlsError::RequiredExtensionNotFound(EXTENSION_TYPE))
+        );
+    }
+
+    #[cfg(feature = "all_extensions")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn creating_group_with_member_not_supporting_required_proposal_type_fails() {
+        const PROPOSAL_TYPE: ProposalType = ProposalType::new(33);
+
+        let group_creation = make_group_with_required_capabilities(RequiredCapabilitiesExt {
+            proposals: vec![PROPOSAL_TYPE],
+            ..Default::default()
+        })
+        .await
+        .map(|_| ());
+
+        assert_matches!(
+            group_creation,
+            Err(MlsError::RequiredProposalNotFound(PROPOSAL_TYPE))
+        );
+    }
+
+    #[cfg(feature = "external_proposal")]
+    #[cfg(not(target_arch = "wasm32"))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn creating_group_with_member_not_supporting_external_sender_credential_fails() {
+        let ext_senders = make_x509_external_senders_ext()
+            .await
+            .into_extension()
+            .unwrap();
+
+        let group_creation =
+            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "alice")
+                .await
+                .0
+                .create_group(core::iter::once(ext_senders).collect())
+                .await
+                .map(|_| ());
+
+        assert_matches!(
+            group_creation,
+            Err(MlsError::RequiredCredentialNotFound(CredentialType::X509))
         );
     }
 
@@ -2358,7 +2455,7 @@ mod tests {
         let mut test_group = test_group_custom(
             protocol_version,
             cipher_suite,
-            None,
+            Default::default(),
             None,
             Some(CommitOptions::new(false, true)),
         )
@@ -2387,7 +2484,7 @@ mod tests {
         let mut test_group = test_group_custom(
             protocol_version,
             cipher_suite,
-            None,
+            Default::default(),
             None,
             Some(CommitOptions::new(true, true)),
         )
@@ -2419,7 +2516,7 @@ mod tests {
         let mut test_group = test_group_custom(
             protocol_version,
             cipher_suite,
-            None,
+            Default::default(),
             None,
             Some(CommitOptions::new(false, true)),
         )
@@ -2939,13 +3036,10 @@ mod tests {
     #[cfg(feature = "all_extensions")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn removing_requirements_allows_to_add() {
-        let mut capabilities = get_test_capabilities();
-        capabilities.extensions = vec![17.into()];
-
         let mut alice_group = test_group_custom(
             TEST_PROTOCOL_VERSION,
             TEST_CIPHER_SUITE,
-            Some(capabilities),
+            vec![17.into()],
             None,
             None,
         )
@@ -3192,62 +3286,6 @@ mod tests {
         assert_matches!(res, Err(MlsError::UnsupportedGroupExtension(EXT_TYPE)));
     }
 
-    // FIXME!
-    #[ignore]
-    #[cfg(not(target_arch = "wasm32"))]
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn commit_leaf_not_supporting_used_leaf_extension() {
-        // The new leaf of the committer doesn't support an extension set in another leaf
-        let extension = Extension::new(999.into(), vec![]);
-
-        let mut groups =
-            get_test_groups_with_features(3, Default::default(), vec![extension].into()).await;
-
-        groups[0].commit_modifiers.modify_leaf = |leaf, sk| {
-            leaf.capabilities = get_test_capabilities();
-            leaf.extensions = ExtensionList::new();
-            Some(sk.clone())
-        };
-
-        let commit_output = groups[0].commit(vec![]).await.unwrap();
-
-        let res = groups[1]
-            .process_incoming_message(commit_output.commit_message)
-            .await;
-
-        assert!(res.is_err());
-    }
-
-    // FIXME!
-    #[ignore]
-    #[cfg(not(target_arch = "wasm32"))]
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn commit_leaf_uses_extension_unsupported_by_another_leaf() {
-        // The new leaf of the committer uses an extension unsupported by another leaf
-        let mut groups =
-            get_test_groups_with_features(3, Default::default(), Default::default()).await;
-
-        groups[0].commit_modifiers.modify_leaf = |leaf, sk| {
-            let extensions = [666, 999]
-                .into_iter()
-                .map(|extension_type| Extension::new(extension_type.into(), vec![]))
-                .collect::<Vec<_>>()
-                .into();
-
-            leaf.extensions = extensions;
-            leaf.capabilities.extensions = vec![666.into(), 999.into()];
-            Some(sk.clone())
-        };
-
-        let commit_output = groups[0].commit(vec![]).await.unwrap();
-
-        let res = groups[1]
-            .process_incoming_message(commit_output.commit_message)
-            .await;
-
-        assert!(res.is_err());
-    }
-
     #[cfg(feature = "all_extensions")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn commit_leaf_not_supporting_required_extension() {
@@ -3360,13 +3398,10 @@ mod tests {
         assert_matches!(res, Err(MlsError::RequiredCredentialNotFound(_)));
     }
 
-    // FIXME!
     #[cfg(feature = "external_proposal")]
-    #[ignore]
     #[cfg(not(target_arch = "wasm32"))]
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn commit_leaf_not_supporting_credential_used_by_external_sender() {
-        // The new leaf of the committer doesn't support credential used by an external sender
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn make_x509_external_senders_ext() -> ExternalSendersExt {
         let (_, ext_sender_pk) = test_cipher_suite_provider(TEST_CIPHER_SUITE)
             .signature_key_generate()
             .await
@@ -3377,26 +3412,128 @@ mod tests {
             credential: Credential::X509(CertificateChain::from(vec![random_bytes(32)])),
         };
 
-        let ext_senders = ExternalSendersExt::new(vec![ext_sender_id])
+        ExternalSendersExt::new(vec![ext_sender_id])
+    }
+
+    #[cfg(feature = "external_proposal")]
+    #[cfg(not(target_arch = "wasm32"))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn commit_leaf_not_supporting_external_sender_credential_leads_to_rejected_commit() {
+        let ext_senders = make_x509_external_senders_ext()
+            .await
             .into_extension()
             .unwrap();
 
-        let mut groups =
-            get_test_groups_with_features(3, vec![ext_senders].into(), Default::default()).await;
+        let mut alice = ClientBuilder::new()
+            .crypto_provider(TestCryptoProvider::new())
+            .identity_provider(
+                BasicWithCustomProvider::default().with_credential_type(CredentialType::X509),
+            )
+            .with_random_signing_identity("alice", TEST_CIPHER_SUITE)
+            .await
+            .build()
+            .create_group(core::iter::once(ext_senders).collect())
+            .await
+            .unwrap();
 
-        // New leaf for group 0 supports only basic credentials (used by the group) but not X509 used by external sender
-        groups[0].commit_modifiers.modify_leaf = |leaf, sk| {
-            leaf.capabilities.credentials = vec![1.into()];
+        // New leaf supports only basic credentials (used by the group) but not X509 used by external sender
+        alice.commit_modifiers.modify_leaf = |leaf, sk| {
+            leaf.capabilities.credentials = vec![CredentialType::BASIC];
             Some(sk.clone())
         };
 
-        let commit_output = groups[0].commit(vec![]).await.unwrap();
+        alice.commit(vec![]).await.unwrap();
+        let res = alice.apply_pending_commit().await;
 
-        let res = groups[2]
-            .process_incoming_message(commit_output.commit_message)
+        assert_matches!(
+            res,
+            Err(MlsError::RequiredCredentialNotFound(CredentialType::X509))
+        );
+    }
+
+    #[cfg(feature = "external_proposal")]
+    #[cfg(not(target_arch = "wasm32"))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn node_not_supporting_external_sender_credential_cannot_join_group() {
+        let ext_senders = make_x509_external_senders_ext()
+            .await
+            .into_extension()
+            .unwrap();
+
+        let mut alice = ClientBuilder::new()
+            .crypto_provider(TestCryptoProvider::new())
+            .identity_provider(
+                BasicWithCustomProvider::default().with_credential_type(CredentialType::X509),
+            )
+            .with_random_signing_identity("alice", TEST_CIPHER_SUITE)
+            .await
+            .build()
+            .create_group(core::iter::once(ext_senders).collect())
+            .await
+            .unwrap();
+
+        let (_, bob_key_pkg) =
+            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
+
+        let commit = alice
+            .commit_builder()
+            .add_member(bob_key_pkg)
+            .unwrap()
+            .build()
             .await;
 
-        assert!(res.is_err());
+        assert_matches!(
+            commit,
+            Err(MlsError::RequiredCredentialNotFound(CredentialType::X509))
+        );
+    }
+
+    #[cfg(feature = "external_proposal")]
+    #[cfg(not(target_arch = "wasm32"))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn external_senders_extension_is_rejected_if_member_does_not_support_credential_type() {
+        let mut alice = ClientBuilder::new()
+            .crypto_provider(TestCryptoProvider::new())
+            .identity_provider(
+                BasicWithCustomProvider::default().with_credential_type(CredentialType::X509),
+            )
+            .with_random_signing_identity("alice", TEST_CIPHER_SUITE)
+            .await
+            .build()
+            .create_group(Default::default())
+            .await
+            .unwrap();
+
+        let (_, bob_key_pkg) =
+            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
+
+        alice
+            .commit_builder()
+            .add_member(bob_key_pkg)
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+
+        alice.apply_pending_commit().await.unwrap();
+        assert_eq!(alice.roster().members_iter().count(), 2);
+
+        let ext_senders = make_x509_external_senders_ext()
+            .await
+            .into_extension()
+            .unwrap();
+
+        let res = alice
+            .commit_builder()
+            .set_group_context_ext(core::iter::once(ext_senders).collect())
+            .unwrap()
+            .build()
+            .await;
+
+        assert_matches!(
+            res,
+            Err(MlsError::RequiredCredentialNotFound(CredentialType::X509))
+        );
     }
 
     /*

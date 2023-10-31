@@ -15,9 +15,6 @@ use crate::{
     CipherSuiteProvider, ExtensionList,
 };
 
-#[cfg(feature = "all_extensions")]
-use crate::extension::RequiredCapabilitiesExt;
-
 use super::filtering_common::{filter_out_invalid_psks, ApplyProposalsOutput, ProposalApplier};
 
 #[cfg(feature = "external_proposal")]
@@ -85,8 +82,7 @@ where
             Some(p) => {
                 #[cfg(feature = "all_extensions")]
                 {
-                    let ext = p.proposal.get_as::<RequiredCapabilitiesExt>()?;
-                    self.apply_proposals_with_new_capabilities(proposals, p, ext, commit_time)
+                    self.apply_proposals_with_new_capabilities(proposals, p, commit_time)
                         .await
                 }
 
@@ -138,13 +134,8 @@ where
         group_extensions_in_use: &ExtensionList,
         commit_time: Option<MlsTime>,
     ) -> Result<(), MlsError> {
-        #[cfg(feature = "all_extensions")]
-        let capabilities = group_extensions_in_use.get_as()?;
-
         let leaf_node_validator = LeafNodeValidator::new(
             self.cipher_suite_provider,
-            #[cfg(feature = "all_extensions")]
-            capabilities.as_ref(),
             self.identity_provider,
             Some(group_extensions_in_use),
         );

@@ -148,16 +148,11 @@ pub(crate) async fn validate_group_info<I: IdentityProvider, C: CipherSuiteProvi
     )
     .await?;
 
-    #[cfg(feature = "all_extensions")]
-    let required_capabilities = join_context.group_context.extensions.get_as()?;
-
     // Verify the integrity of the ratchet tree
     let tree_validator = TreeValidator::new(
         cipher_suite_provider,
         &join_context.group_context.group_id,
         &join_context.group_context.tree_hash,
-        #[cfg(feature = "all_extensions")]
-        required_capabilities.as_ref(),
         &join_context.group_context.extensions,
         identity_provider,
     );

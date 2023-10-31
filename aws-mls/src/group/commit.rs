@@ -1080,7 +1080,7 @@ mod tests {
         let mut group = test_group_custom(
             TEST_PROTOCOL_VERSION,
             TEST_CIPHER_SUITE,
-            None,
+            Default::default(),
             None,
             Some(CommitOptions::new(false, false)),
         )
@@ -1101,7 +1101,7 @@ mod tests {
         let mut group = test_group_custom(
             TEST_PROTOCOL_VERSION,
             TEST_CIPHER_SUITE,
-            None,
+            Default::default(),
             None,
             Some(CommitOptions::new(false, true)),
         )

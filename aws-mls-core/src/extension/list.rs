@@ -105,7 +105,6 @@ impl ExtensionList {
     }
 
     /// Determine if a specific extension exists within the list.
-    #[cfg(any(test, feature = "std"))]
     pub fn has_extension(&self, ext_id: ExtensionType) -> bool {
         self.0.iter().any(|e| e.extension_type == ext_id)
     }

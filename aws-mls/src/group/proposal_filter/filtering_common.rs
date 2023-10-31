@@ -11,7 +11,7 @@ use crate::{
     CipherSuiteProvider, ExtensionList,
 };
 
-#[cfg(any(feature = "external_commit", feature = "all_extensions"))]
+#[cfg(feature = "external_commit")]
 use crate::tree_kem::leaf_node::LeafNode;
 
 #[cfg(feature = "all_extensions")]
@@ -21,7 +21,10 @@ use crate::tree_kem::leaf_node_validator::LeafNodeValidator;
 use super::ProposalInfo;
 
 #[cfg(feature = "all_extensions")]
-use crate::extension::RequiredCapabilitiesExt;
+use crate::extension::{MlsExtension, RequiredCapabilitiesExt};
+
+#[cfg(feature = "external_proposal")]
+use crate::extension::ExternalSendersExt;
 
 #[cfg(any(
     feature = "external_proposal",
@@ -222,7 +225,6 @@ where
         #[cfg(not(feature = "by_ref_proposal"))] proposals: &ProposalBundle,
         #[cfg(feature = "by_ref_proposal")] proposals: ProposalBundle,
         group_context_extensions_proposal: ProposalInfo<ExtensionList>,
-        new_required_capabilities: Option<RequiredCapabilitiesExt>,
         commit_time: Option<MlsTime>,
     ) -> Result<ApplyProposalsOutput, MlsError>
     where
@@ -245,20 +247,37 @@ where
         // Verify that capabilities and extensions are supported after modifications.
         // TODO: The newly inserted nodes have already been validated by `apply_tree_changes`
         // above. We should investigate if there is an easy way to avoid the double check.
-        let new_capabilities_supported =
-            new_required_capabilities.map_or(Ok(()), |new_required_capabilities| {
-                let leaf_validator = LeafNodeValidator::new(
-                    self.cipher_suite_provider,
-                    Some(&new_required_capabilities),
-                    self.identity_provider,
-                    Some(group_context_extensions_proposal.proposal()),
-                );
+        let must_check = group_context_extensions_proposal
+            .proposal
+            .has_extension(RequiredCapabilitiesExt::extension_type());
 
-                output
-                    .new_tree
-                    .non_empty_leaves()
-                    .try_for_each(|(_, leaf)| leaf_validator.validate_required_capabilities(leaf))
-            });
+        #[cfg(feature = "external_proposal")]
+        let must_check = must_check
+            || group_context_extensions_proposal
+                .proposal
+                .has_extension(ExternalSendersExt::extension_type());
+
+        let new_capabilities_supported = if must_check {
+            let leaf_validator = LeafNodeValidator::new(
+                self.cipher_suite_provider,
+                self.identity_provider,
+                Some(group_context_extensions_proposal.proposal()),
+            );
+
+            output
+                .new_tree
+                .non_empty_leaves()
+                .try_for_each(|(_, leaf)| {
+                    leaf_validator.validate_required_capabilities(leaf)?;
+
+                    #[cfg(feature = "external_proposal")]
+                    leaf_validator.validate_external_senders_ext_credentials(leaf)?;
+
+                    Ok(())
+                })
+        } else {
+            Ok(())
+        };
 
         let new_extensions_supported = group_context_extensions_proposal
             .proposal

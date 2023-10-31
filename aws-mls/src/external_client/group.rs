@@ -254,13 +254,8 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         let id_provider = self.config.identity_provider();
         let cs = &self.cipher_suite_provider;
 
-        let validator = LeafNodeValidator::new(
-            cs,
-            #[cfg(feature = "all_extensions")]
-            None,
-            &id_provider,
-            Some(&self.state.context.extensions),
-        );
+        let validator =
+            LeafNodeValidator::new(cs, &id_provider, Some(&self.state.context.extensions));
 
         validator
             .check_if_valid(&key_package.leaf_node, ValidationContext::Add(None))

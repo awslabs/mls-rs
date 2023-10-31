@@ -114,8 +114,6 @@ async fn validation() {
             &cs,
             &test_case.group_id,
             &tree_hash,
-            #[cfg(feature = "all_extensions")]
-            None,
             &ExtensionList::new(),
             &BasicIdentityProvider,
         )
