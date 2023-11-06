@@ -6,13 +6,20 @@ use crate::client::MlsError;
 use crate::crypto::{CipherSuiteProvider, SignatureSecretKey};
 use crate::group::GroupContext;
 use crate::identity::SigningIdentity;
+use crate::iter::wrap_iter;
 use crate::tree_kem::math as tree_math;
 use alloc::vec;
 use alloc::vec::Vec;
 use mls_rs_codec::MlsEncode;
 
 #[cfg(all(not(mls_build_async), feature = "rayon"))]
-use rayon::prelude::*;
+use {crate::iter::ParallelIteratorExt, rayon::prelude::*};
+
+#[cfg(not(any(mls_build_async, feature = "rayon")))]
+use itertools::Itertools;
+
+#[cfg(mls_build_async)]
+use futures::{StreamExt, TryStreamExt};
 
 #[cfg(feature = "std")]
 use std::collections::HashSet;
@@ -324,20 +331,27 @@ impl<'a> TreeKem<'a> {
             .nodes
             .get_resolution_index(copath_index)?;
 
-        let mut ctxts = Vec::new();
-
-        for idx in reso.into_iter().filter(|idx| !excluding.contains(idx)) {
+        let make_ctxt = |idx| async move {
             let node = self
                 .tree_kem_public
                 .nodes
                 .borrow_node(idx)?
                 .as_non_empty()?;
 
-            let ctxt = path_secret
+            path_secret
                 .encrypt(cipher_suite_provider, node.public_key(), context)
-                .await?;
-            ctxts.push(ctxt);
-        }
+                .await
+        };
+
+        let ctxts = wrap_iter(reso).filter(|&idx| async move { !excluding.contains(&idx) });
+
+        #[cfg(not(mls_build_async))]
+        let ctxts = ctxts.map(make_ctxt);
+
+        #[cfg(mls_build_async)]
+        let ctxts = ctxts.then(make_ctxt);
+
+        let ctxts = ctxts.try_collect().await?;
 
         let path_index = tree_math::parent(copath_index);
 

@@ -5,17 +5,19 @@
 use crate::{
     client::MlsError,
     group::{proposal_filter::ProposalBundle, Sender},
+    key_package::{validate_key_package_properties, KeyPackage},
     protocol_version::ProtocolVersion,
     time::MlsTime,
-    tree_kem::{node::LeafIndex, TreeKemPublic},
+    tree_kem::{
+        leaf_node_validator::{LeafNodeValidator, ValidationContext},
+        node::LeafIndex,
+        TreeKemPublic,
+    },
     CipherSuiteProvider, ExtensionList,
 };
 
 #[cfg(feature = "external_commit")]
 use crate::tree_kem::leaf_node::LeafNode;
-
-#[cfg(feature = "all_extensions")]
-use crate::tree_kem::leaf_node_validator::LeafNodeValidator;
 
 #[cfg(feature = "all_extensions")]
 use super::ProposalInfo;
@@ -320,6 +322,50 @@ where
                 }
             }
         }
+    }
+
+    #[cfg(any(mls_build_async, not(feature = "rayon")))]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn validate_new_node<Ip: IdentityProvider, Cp: CipherSuiteProvider>(
+        &self,
+        leaf_node_validator: &LeafNodeValidator<'_, Ip, Cp>,
+        key_package: &KeyPackage,
+        commit_time: Option<MlsTime>,
+    ) -> Result<(), MlsError> {
+        leaf_node_validator
+            .check_if_valid(&key_package.leaf_node, ValidationContext::Add(commit_time))
+            .await?;
+
+        validate_key_package_properties(
+            key_package,
+            self.protocol_version,
+            self.cipher_suite_provider,
+        )
+        .await
+    }
+
+    #[cfg(all(not(mls_build_async), feature = "rayon"))]
+    pub fn validate_new_node<Ip: IdentityProvider, Cp: CipherSuiteProvider>(
+        &self,
+        leaf_node_validator: &LeafNodeValidator<'_, Ip, Cp>,
+        key_package: &KeyPackage,
+        commit_time: Option<MlsTime>,
+    ) -> Result<(), MlsError> {
+        let (a, b) = rayon::join(
+            || {
+                leaf_node_validator
+                    .check_if_valid(&key_package.leaf_node, ValidationContext::Add(commit_time))
+            },
+            || {
+                validate_key_package_properties(
+                    key_package,
+                    self.protocol_version,
+                    self.cipher_suite_provider,
+                )
+            },
+        );
+        a?;
+        b
     }
 }
 

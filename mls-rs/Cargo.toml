@@ -112,6 +112,11 @@ name = "basic_server_usage"
 required-features = ["external_client"]
 
 [[bench]]
+name = "group_add"
+harness = false
+required-features = ["benchmark_util"]
+
+[[bench]]
 name = "group_commit"
 harness = false
 required-features = ["benchmark_util"]

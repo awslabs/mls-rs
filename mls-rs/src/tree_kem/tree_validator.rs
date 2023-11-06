@@ -11,10 +11,17 @@ use alloc::{vec, vec::Vec};
 use super::node::{Node, NodeIndex};
 use crate::client::MlsError;
 use crate::crypto::CipherSuiteProvider;
+use crate::iter::wrap_impl_iter;
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::{leaf_node_validator::LeafNodeValidator, TreeKemPublic};
 use mls_rs_core::extension::ExtensionList;
 use mls_rs_core::identity::IdentityProvider;
+
+#[cfg(all(not(mls_build_async), feature = "rayon"))]
+use rayon::prelude::*;
+
+#[cfg(mls_build_async)]
+use futures::{StreamExt, TryStreamExt};
 
 pub(crate) struct TreeValidator<'a, C, CSP>
 where
@@ -82,13 +89,18 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> TreeValidator<'a, C, CSP
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn validate_leaves(&self, tree: &TreeKemPublic) -> Result<(), MlsError> {
-        for (index, leaf_node) in tree.nodes.non_empty_leaves() {
-            self.leaf_node_validator
-                .revalidate(leaf_node, self.group_id, *index)
-                .await?;
-        }
+        let leaves = wrap_impl_iter(tree.nodes.non_empty_leaves());
 
-        Ok(())
+        #[cfg(mls_build_async)]
+        let leaves = leaves.map(Ok);
+
+        { leaves }
+            .try_for_each(|(index, leaf_node)| async move {
+                self.leaf_node_validator
+                    .revalidate(leaf_node, self.group_id, *index)
+                    .await
+            })
+            .await
     }
 }
 

@@ -132,6 +132,7 @@ pub mod group;
 mod hash_reference;
 /// Identity providers to use with [`ClientBuilder`](client_builder::ClientBuilder).
 pub mod identity;
+mod iter;
 mod key_package;
 /// Pre-shared key support.
 pub mod psk;

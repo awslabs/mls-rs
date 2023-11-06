@@ -4,14 +4,11 @@
 
 use crate::{
     client::MlsError,
-    group::{proposal_filter::ProposalBundle, AddProposal},
-    key_package::validate_key_package_properties,
+    group::proposal_filter::ProposalBundle,
+    iter::wrap_iter,
     protocol_version::ProtocolVersion,
     time::MlsTime,
-    tree_kem::{
-        leaf_node_validator::{LeafNodeValidator, ValidationContext},
-        node::LeafIndex,
-    },
+    tree_kem::{leaf_node_validator::LeafNodeValidator, node::LeafIndex},
     CipherSuiteProvider, ExtensionList,
 };
 
@@ -31,6 +28,12 @@ use mls_rs_core::{identity::IdentityProvider, psk::PreSharedKeyStorage};
 
 #[cfg(feature = "custom_proposal")]
 use itertools::Itertools;
+
+#[cfg(all(not(mls_build_async), feature = "rayon"))]
+use rayon::prelude::*;
+
+#[cfg(mls_build_async)]
+use futures::{StreamExt, TryStreamExt};
 
 #[cfg(feature = "custom_proposal")]
 use crate::tree_kem::TreeKemPublic;
@@ -134,29 +137,22 @@ where
         group_extensions_in_use: &ExtensionList,
         commit_time: Option<MlsTime>,
     ) -> Result<(), MlsError> {
-        let leaf_node_validator = LeafNodeValidator::new(
+        let leaf_node_validator = &LeafNodeValidator::new(
             self.cipher_suite_provider,
             self.identity_provider,
             Some(group_extensions_in_use),
         );
 
-        for p in proposals.by_type::<AddProposal>() {
-            leaf_node_validator
-                .check_if_valid(
-                    &p.proposal.key_package.leaf_node,
-                    ValidationContext::Add(commit_time),
-                )
-                .await?;
+        let adds = wrap_iter(proposals.add_proposals());
 
-            validate_key_package_properties(
-                &p.proposal.key_package,
-                self.protocol_version,
-                self.cipher_suite_provider,
-            )
-            .await?;
-        }
+        #[cfg(mls_build_async)]
+        let adds = adds.map(Ok);
 
-        Ok(())
+        { adds }
+            .try_for_each(|p| {
+                self.validate_new_node(leaf_node_validator, &p.proposal.key_package, commit_time)
+            })
+            .await
     }
 }
 

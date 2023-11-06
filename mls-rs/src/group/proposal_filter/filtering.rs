@@ -9,7 +9,7 @@ use crate::{
         proposal_filter::{ProposalBundle, ProposalInfo},
         AddProposal, ProposalType, RemoveProposal, Sender, UpdateProposal,
     },
-    key_package::validate_key_package_properties,
+    iter::wrap_iter,
     protocol_version::ProtocolVersion,
     time::MlsTime,
     tree_kem::{
@@ -28,7 +28,10 @@ use crate::extension::ExternalSendersExt;
 use alloc::vec::Vec;
 use mls_rs_core::{error::IntoAnyError, identity::IdentityProvider, psk::PreSharedKeyStorage};
 
-#[cfg(feature = "custom_proposal")]
+#[cfg(any(
+    feature = "custom_proposal",
+    not(any(mls_build_async, feature = "rayon"))
+))]
 use itertools::Itertools;
 
 #[cfg(feature = "external_commit")]
@@ -36,6 +39,12 @@ use crate::group::ExternalInit;
 
 #[cfg(feature = "psk")]
 use crate::group::proposal::PreSharedKeyProposal;
+
+#[cfg(all(not(mls_build_async), feature = "rayon"))]
+use {crate::iter::ParallelIteratorExt, rayon::prelude::*};
+
+#[cfg(mls_build_async)]
+use futures::{StreamExt, TryStreamExt};
 
 impl<'a, C, P, CSP> ProposalApplier<'a, C, P, CSP>
 where
@@ -189,66 +198,60 @@ where
             Some(group_extensions_in_use),
         );
 
-        for i in (0..proposals.update_proposals().len()).rev() {
-            let sender_index = *proposals
-                .update_senders
-                .get(i)
-                .ok_or(MlsError::InternalProposalFilterError)?;
+        let bad_indices: Vec<_> = wrap_iter(proposals.update_proposals())
+            .zip(wrap_iter(proposals.update_proposal_senders()))
+            .enumerate()
+            .filter_map(|(i, (p, &sender_index))| async move {
+                let res = {
+                    let leaf = &p.proposal.leaf_node;
 
-            let res = {
-                let leaf = &proposals.update_proposals()[i].proposal.leaf_node;
+                    let res = leaf_node_validator
+                        .check_if_valid(
+                            leaf,
+                            ValidationContext::Update((self.group_id, *sender_index, commit_time)),
+                        )
+                        .await;
 
-                let res = leaf_node_validator
-                    .check_if_valid(
-                        leaf,
-                        ValidationContext::Update((self.group_id, *sender_index, commit_time)),
-                    )
+                    let old_leaf = match self.original_tree.get_leaf_node(sender_index) {
+                        Ok(leaf) => leaf,
+                        Err(e) => return Some(Err(e)),
+                    };
+
+                    let valid_successor = self
+                        .identity_provider
+                        .valid_successor(&old_leaf.signing_identity, &leaf.signing_identity)
+                        .await
+                        .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))
+                        .and_then(|valid| valid.then_some(()).ok_or(MlsError::InvalidSuccessor));
+
+                    res.and(valid_successor)
+                };
+
+                apply_strategy(strategy, p.is_by_reference(), res)
+                    .map(|b| (!b).then_some(i))
+                    .transpose()
+            })
+            .try_collect()
+            .await?;
+
+        bad_indices
+            .into_iter()
+            .rev()
+            .for_each(|i| proposals.remove::<UpdateProposal>(i));
+
+        let bad_indices: Vec<_> = wrap_iter(proposals.add_proposals())
+            .enumerate()
+            .filter_map(|(i, p)| async move {
+                let res = self
+                    .validate_new_node(leaf_node_validator, &p.proposal.key_package, commit_time)
                     .await;
 
-                let old_leaf = self.original_tree.get_leaf_node(sender_index)?;
-
-                let valid_successor = self
-                    .identity_provider
-                    .valid_successor(&old_leaf.signing_identity, &leaf.signing_identity)
-                    .await
-                    .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))
-                    .and_then(|valid| valid.then_some(()).ok_or(MlsError::InvalidSuccessor));
-
-                res.and(valid_successor)
-            };
-
-            if !apply_strategy(
-                strategy,
-                proposals.update_proposals()[i].is_by_reference(),
-                res,
-            )? {
-                proposals.remove::<UpdateProposal>(i);
-            }
-        }
-
-        let mut bad_indices = Vec::new();
-
-        for (i, p) in proposals.by_type::<AddProposal>().enumerate() {
-            let res = leaf_node_validator
-                .check_if_valid(
-                    &p.proposal.key_package.leaf_node,
-                    ValidationContext::Add(commit_time),
-                )
-                .await;
-
-            let res = res.and(
-                validate_key_package_properties(
-                    &p.proposal.key_package,
-                    self.protocol_version,
-                    self.cipher_suite_provider,
-                )
-                .await,
-            );
-
-            if !apply_strategy(strategy, p.is_by_reference(), res)? {
-                bad_indices.push(i);
-            }
-        }
+                apply_strategy(strategy, p.is_by_reference(), res)
+                    .map(|b| (!b).then_some(i))
+                    .transpose()
+            })
+            .try_collect()
+            .await?;
 
         bad_indices
             .into_iter()
