@@ -3,7 +3,6 @@ name = "mls-rs-provider-sqlite"
 version = "0.6.0"
 edition = "2021"
 description = "SQLite based state storage for mls-rs"
-documentation = "https://docs.rs/crate/mls-rs"
 homepage = "https://github.com/awslabs/mls-rs"
 repository = "https://github.com/awslabs/mls-rs"
 keywords = ["mls", "mls-rs"]

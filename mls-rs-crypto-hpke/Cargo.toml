@@ -3,7 +3,6 @@ name = "mls-rs-crypto-hpke"
 version = "0.4.0"
 edition = "2021"
 description = "HPKE implementation based on mls-rs-crypto-traits used by mls-rs"
-documentation = "https://docs.rs/crate/mls-rs"
 homepage = "https://github.com/awslabs/mls-rs"
 repository = "https://github.com/awslabs/mls-rs"
 keywords = ["mls", "mls-rs", "HPKE"]

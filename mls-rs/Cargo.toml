@@ -3,7 +3,6 @@ name = "mls-rs"
 version = "0.33.0"
 edition = "2021"
 description = "An implementation of Messaging Layer Security (RFC 9420)"
-documentation = "https://docs.rs/crate/mls-rs"
 homepage = "https://github.com/awslabs/mls-rs"
 repository = "https://github.com/awslabs/mls-rs"
 keywords = ["crypto", "cryptography", "security", "mls", "e2ee"]

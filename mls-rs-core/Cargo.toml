@@ -3,7 +3,6 @@ name = "mls-rs-core"
 version = "0.13.0"
 edition = "2021"
 description = "Core components and traits for mls-rs"
-documentation = "https://docs.rs/crate/mls-rs"
 homepage = "https://github.com/awslabs/mls-rs"
 repository = "https://github.com/awslabs/mls-rs"
 keywords = ["mls", "mls-rs"]

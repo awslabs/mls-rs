@@ -3,7 +3,6 @@ name = "mls-rs-ffi"
 version = "0.1.1"
 edition = "2021"
 description = "Helper crate to generate FFI definitions for mls-rs"
-documentation = "https://docs.rs/crate/mls-rs"
 homepage = "https://github.com/awslabs/mls-rs"
 repository = "https://github.com/awslabs/mls-rs"
 keywords = ["mls", "mls-rs", "ffi"]

@@ -2,8 +2,7 @@
 name = "mls-rs-identity-x509"
 version = "0.6.0"
 edition = "2021"
-description = "X509 Identity utilities for mls-rs"
-documentation = "https://docs.rs/crate/mls-rs"
+description = "X509 Identity utlities for mls-rs"
 homepage = "https://github.com/awslabs/mls-rs"
 repository = "https://github.com/awslabs/mls-rs"
 keywords = ["mls", "mls-rs"]
