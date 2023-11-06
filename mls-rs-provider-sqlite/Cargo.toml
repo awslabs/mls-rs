@@ -2,8 +2,12 @@
 name = "mls-rs-provider-sqlite"
 version = "0.6.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+description = "SQLite based state storage for mls-rs"
+documentation = "https://docs.rs/crate/mls-rs"
+homepage = "https://github.com/awslabs/mls-rs"
+repository = "https://github.com/awslabs/mls-rs"
+keywords = ["mls", "mls-rs"]
+license = "Apache-2.0 OR MIT"
 
 [dependencies]
 mls-rs-core = { path = "../mls-rs-core", version = "*" }

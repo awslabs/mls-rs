@@ -2,6 +2,12 @@
 name = "mls-rs-crypto-awslc"
 version = "0.6.0"
 edition = "2021"
+description = "AWS-LC based CryptoProvider for mls-rs"
+documentation = "https://docs.rs/crate/mls-rs"
+homepage = "https://github.com/awslabs/mls-rs"
+repository = "https://github.com/awslabs/mls-rs"
+keywords = ["mls", "mls-rs", "aws-lc"]
+license = "Apache-2.0 OR MIT"
 
 [dependencies]
 aws-lc-rs = "1.3"

@@ -2,6 +2,12 @@
 name = "mls-rs-codec-derive"
 version = "0.1.0"
 edition = "2021"
+description = "Derive macro crate for mls-rs-codec"
+documentation = "https://docs.rs/crate/mls-rs"
+homepage = "https://github.com/awslabs/mls-rs"
+repository = "https://github.com/awslabs/mls-rs"
+keywords = ["mls", "mls-rs"]
+license = "Apache-2.0 OR MIT"
 
 [lib]
 proc-macro = true

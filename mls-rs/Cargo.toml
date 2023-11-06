@@ -1,8 +1,14 @@
 [package]
 name = "mls-rs"
 version = "0.33.0"
-authors = ["Tom Leavy <tom@wickr.com>"]
 edition = "2021"
+description = "An implementation of Messaging Layer Security (RFC 9420)"
+documentation = "https://docs.rs/crate/mls-rs"
+homepage = "https://github.com/awslabs/mls-rs"
+repository = "https://github.com/awslabs/mls-rs"
+keywords = ["crypto", "cryptography", "security", "mls", "e2ee"]
+categories = ["no-std", "cryptography"]
+license = "Apache-2.0 OR MIT"
 
 [features]
 default = ["std", "rayon", "rfc_compliant", "tree_index", "fast_serialize"]
