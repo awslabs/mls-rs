@@ -2,12 +2,10 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-#[cfg(any(feature = "by_ref_proposal", feature = "all_extensions"))]
 use alloc::vec::Vec;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::extension::{ExtensionType, MlsCodecExtension};
 
-#[cfg(feature = "all_extensions")]
 use mls_rs_core::{group::ProposalType, identity::CredentialType};
 
 #[cfg(feature = "by_ref_proposal")]
@@ -25,7 +23,6 @@ use mls_rs_core::crypto::HpkePublicKey;
 ///
 /// A custom application level identifier that can be optionally stored
 /// within the `leaf_node_extensions` of a group [Member](crate::group::Member).
-#[cfg(feature = "all_extensions")]
 #[cfg_attr(
     all(feature = "ffi", not(test)),
     safer_ffi_gen::ffi_type(clone, opaque)
@@ -36,7 +33,6 @@ pub struct ApplicationIdExt {
     pub(crate) identifier: Vec<u8>,
 }
 
-#[cfg(feature = "all_extensions")]
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl ApplicationIdExt {
     /// Create a new application level identifier extension.
@@ -50,7 +46,6 @@ impl ApplicationIdExt {
     }
 }
 
-#[cfg(feature = "all_extensions")]
 impl MlsCodecExtension for ApplicationIdExt {
     fn extension_type() -> ExtensionType {
         ExtensionType::APPLICATION_ID
@@ -88,7 +83,6 @@ impl MlsCodecExtension for RatchetTreeExt {
 /// Extension, proposal, and credential types defined by the MLS RFC and
 /// provided are considered required by default and should NOT be used
 /// within this extension.
-#[cfg(feature = "all_extensions")]
 #[cfg_attr(
     all(feature = "ffi", not(test)),
     safer_ffi_gen::ffi_type(clone, opaque)
@@ -100,7 +94,6 @@ pub struct RequiredCapabilitiesExt {
     pub credentials: Vec<CredentialType>,
 }
 
-#[cfg(feature = "all_extensions")]
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl RequiredCapabilitiesExt {
     /// Create a required capabilities extension.
@@ -132,7 +125,6 @@ impl RequiredCapabilitiesExt {
     }
 }
 
-#[cfg(feature = "all_extensions")]
 impl MlsCodecExtension for RequiredCapabilitiesExt {
     fn extension_type() -> ExtensionType {
         ExtensionType::REQUIRED_CAPABILITIES
@@ -225,7 +217,6 @@ mod tests {
 
     use mls_rs_core::extension::MlsExtension;
 
-    #[cfg(feature = "all_extensions")]
     use mls_rs_core::identity::BasicCredential;
 
     use alloc::vec;
@@ -233,7 +224,6 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    #[cfg(feature = "all_extensions")]
     #[test]
     fn test_application_id_extension() {
         let test_id = vec![0u8; 32];
@@ -262,7 +252,6 @@ mod tests {
         assert_eq!(ext, restored)
     }
 
-    #[cfg(feature = "all_extensions")]
     #[test]
     fn test_required_capabilities() {
         let ext = RequiredCapabilitiesExt {

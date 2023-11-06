@@ -18,10 +18,8 @@ use crate::{
 
 use crate::tree_kem::leaf_node::LeafNode;
 
-#[cfg(feature = "all_extensions")]
 use super::ProposalInfo;
 
-#[cfg(feature = "all_extensions")]
 use crate::extension::{MlsExtension, RequiredCapabilitiesExt};
 
 #[cfg(feature = "by_ref_proposal")]
@@ -207,7 +205,6 @@ where
         Ok(output)
     }
 
-    #[cfg(feature = "all_extensions")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(super) async fn apply_proposals_with_new_capabilities(
         &self,

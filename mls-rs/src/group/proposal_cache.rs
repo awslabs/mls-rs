@@ -638,7 +638,6 @@ mod tests {
         },
     };
 
-    #[cfg(feature = "all_extensions")]
     use crate::extension::RequiredCapabilitiesExt;
 
     #[cfg(feature = "by_ref_proposal")]
@@ -3296,7 +3295,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "all_extensions")]
     fn required_capabilities_proposal(extension: u16) -> Proposal {
         let required_capabilities = RequiredCapabilitiesExt {
             extensions: vec![extension.into()],
@@ -3308,7 +3306,6 @@ mod tests {
         Proposal::GroupContextExtensions(ext.into())
     }
 
-    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn receiving_required_capabilities_not_supported_by_member_fails() {
         let (alice, tree) = new_tree("alice").await;
@@ -3328,7 +3325,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn sending_required_capabilities_not_supported_by_member_fails() {
         let (alice, tree) = new_tree("alice").await;
@@ -3344,7 +3340,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn sending_additional_required_capabilities_not_supported_by_member_filters_it_out() {
         let (alice, tree) = new_tree("alice").await;
@@ -3676,7 +3671,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn receiving_group_extension_unsupported_by_leaf_fails() {
         let (alice, tree) = new_tree("alice").await;
@@ -3698,7 +3692,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn sending_additional_group_extension_unsupported_by_leaf_fails() {
         let (alice, tree) = new_tree("alice").await;
@@ -3716,7 +3709,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn sending_group_extension_unsupported_by_leaf_filters_it_out() {
         let (alice, tree) = new_tree("alice").await;

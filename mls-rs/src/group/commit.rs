@@ -778,7 +778,6 @@ mod tests {
         key_package::test_utils::test_key_package_message,
     };
 
-    #[cfg(feature = "all_extensions")]
     use crate::extension::RequiredCapabilitiesExt;
 
     #[cfg(feature = "psk")]
@@ -960,7 +959,6 @@ mod tests {
         assert_commit_builder_output(group, commit_output, vec![expected_psk], 0)
     }
 
-    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_commit_builder_group_context_ext() {
         let mut group = test_commit_builder_group().await;
@@ -982,7 +980,6 @@ mod tests {
         assert_commit_builder_output(group, commit_output, vec![expected_ext], 0);
     }
 
-    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_commit_builder_reinit() {
         let mut group = test_commit_builder_group().await;

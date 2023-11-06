@@ -26,7 +26,6 @@ use crate::{
     tree_kem::{leaf_node::test_utils::get_test_capabilities, Lifetime},
 };
 
-#[cfg(feature = "all_extensions")]
 use crate::extension::RequiredCapabilitiesExt;
 
 #[cfg(not(feature = "by_ref_proposal"))]
@@ -185,18 +184,12 @@ pub(crate) fn get_test_group_context_with_id(
     }
 }
 
-#[cfg(feature = "all_extensions")]
 pub(crate) fn group_extensions() -> ExtensionList {
     let required_capabilities = RequiredCapabilitiesExt::default();
 
     let mut extensions = ExtensionList::new();
     extensions.set_from(required_capabilities).unwrap();
     extensions
-}
-
-#[cfg(not(feature = "all_extensions"))]
-pub(crate) fn group_extensions() -> ExtensionList {
-    ExtensionList::new()
 }
 
 pub(crate) fn lifetime() -> Lifetime {

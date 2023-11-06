@@ -77,17 +77,8 @@ where
     ) -> Result<ApplyProposalsOutput, MlsError> {
         match proposals.group_context_extensions_proposal().cloned() {
             Some(p) => {
-                #[cfg(feature = "all_extensions")]
-                {
-                    self.apply_proposals_with_new_capabilities(proposals, p, commit_time)
-                        .await
-                }
-
-                #[cfg(not(feature = "all_extensions"))]
-                {
-                    self.apply_tree_changes(proposals, &p.proposal, commit_time)
-                        .await
-                }
+                self.apply_proposals_with_new_capabilities(proposals, p, commit_time)
+                    .await
             }
             None => {
                 self.apply_tree_changes(proposals, self.original_group_extensions, commit_time)

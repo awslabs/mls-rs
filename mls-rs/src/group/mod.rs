@@ -1811,7 +1811,6 @@ mod tests {
     #[cfg(feature = "prior_epoch")]
     use crate::group::padding::PaddingMode;
 
-    #[cfg(feature = "all_extensions")]
     use crate::{extension::RequiredCapabilitiesExt, key_package::test_utils::test_key_package};
 
     #[cfg(all(feature = "by_ref_proposal", feature = "custom_proposal"))]
@@ -1858,7 +1857,6 @@ mod tests {
     #[cfg(any(feature = "private_message", feature = "state_update"))]
     use super::test_utils::test_member;
 
-    #[cfg(any(feature = "all_extensions", feature = "by_ref_proposal"))]
     use mls_rs_core::extension::MlsExtension;
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -2135,7 +2133,6 @@ mod tests {
         assert_matches!(bob_group, Err(MlsError::RatchetTreeNotFound));
     }
 
-    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_group_context_ext_proposal_create() {
         let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
@@ -2156,7 +2153,6 @@ mod tests {
         assert_matches!(proposal, Proposal::GroupContextExtensions(ext) if ext == extension_list);
     }
 
-    #[cfg(feature = "all_extensions")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn group_context_extension_proposal_test(
         ext_list: ExtensionList,
@@ -2179,7 +2175,6 @@ mod tests {
         (test_group, commit)
     }
 
-    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_group_context_ext_proposal_commit() {
         let mut extension_list = ExtensionList::new();
@@ -2207,7 +2202,6 @@ mod tests {
         assert_eq!(test_group.group.state.context.extensions, extension_list)
     }
 
-    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_group_context_ext_proposal_invalid() {
         let mut extension_list = ExtensionList::new();
@@ -2227,7 +2221,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "all_extensions")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn make_group_with_required_capabilities(
         required_caps: RequiredCapabilitiesExt,
@@ -2239,7 +2232,6 @@ mod tests {
             .await
     }
 
-    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn creating_group_with_member_not_supporting_required_credential_type_fails() {
         let group_creation = make_group_with_required_capabilities(RequiredCapabilitiesExt {
@@ -2255,7 +2247,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn creating_group_with_member_not_supporting_required_extension_type_fails() {
         const EXTENSION_TYPE: ExtensionType = ExtensionType::new(33);
@@ -2273,7 +2264,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn creating_group_with_member_not_supporting_required_proposal_type_fails() {
         const PROPOSAL_TYPE: ProposalType = ProposalType::new(33);
@@ -2967,7 +2957,6 @@ mod tests {
         assert_matches!(res, Err(MlsError::KeyMissing(0)));
     }
 
-    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn removing_requirements_allows_to_add() {
         let mut alice_group = test_group_custom(
@@ -3220,7 +3209,6 @@ mod tests {
         assert_matches!(res, Err(MlsError::UnsupportedGroupExtension(EXT_TYPE)));
     }
 
-    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn commit_leaf_not_supporting_required_extension() {
         // The new leaf of the committer doesn't support an extension required by group context
@@ -3303,7 +3291,6 @@ mod tests {
         assert_matches!(res, Err(MlsError::InUseCredentialTypeUnsupportedByNewLeaf));
     }
 
-    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn commit_leaf_not_supporting_required_credential() {
         // The new leaf of the committer doesn't support a credential required by group context

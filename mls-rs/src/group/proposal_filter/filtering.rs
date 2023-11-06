@@ -100,32 +100,6 @@ where
             .await
     }
 
-    #[cfg(not(feature = "all_extensions"))]
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub(super) async fn apply_proposal_changes(
-        &self,
-        strategy: FilterStrategy,
-        proposals: ProposalBundle,
-        commit_time: Option<MlsTime>,
-    ) -> Result<ApplyProposalsOutput, MlsError> {
-        match proposals.group_context_extensions_proposal().cloned() {
-            Some(p) => {
-                self.apply_tree_changes(strategy, proposals, &p.proposal, commit_time)
-                    .await
-            }
-            None => {
-                self.apply_tree_changes(
-                    strategy,
-                    proposals,
-                    self.original_group_extensions,
-                    commit_time,
-                )
-                .await
-            }
-        }
-    }
-
-    #[cfg(feature = "all_extensions")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(super) async fn apply_proposal_changes(
         &self,
