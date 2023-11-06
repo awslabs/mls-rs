@@ -34,7 +34,6 @@ use mls_rs_core::{error::IntoAnyError, identity::IdentityProvider, psk::PreShare
 ))]
 use itertools::Itertools;
 
-#[cfg(feature = "external_commit")]
 use crate::group::ExternalInit;
 
 #[cfg(feature = "psk")]
@@ -95,7 +94,6 @@ where
         let proposals = filter_out_invalid_reinit(strategy, proposals, self.protocol_version)?;
         let proposals = filter_out_reinit_if_other_proposals(strategy.is_ignore(), proposals)?;
 
-        #[cfg(feature = "external_commit")]
         let proposals = filter_out_external_init(strategy, proposals)?;
 
         self.apply_proposal_changes(strategy, proposals, commit_time)
@@ -179,7 +177,6 @@ where
             applied_proposals,
             new_tree,
             indexes_of_added_kpkgs: added,
-            #[cfg(feature = "external_commit")]
             external_init_index: None,
         })
     }
@@ -430,7 +427,6 @@ fn filter_out_reinit_if_other_proposals(
     Ok(proposals)
 }
 
-#[cfg(feature = "external_commit")]
 fn filter_out_external_init(
     strategy: FilterStrategy,
     mut proposals: ProposalBundle,
@@ -480,12 +476,10 @@ pub(crate) fn proposer_can_propose(
                 | ProposalType::PSK
                 | ProposalType::GROUP_CONTEXT_EXTENSIONS
         ),
-        #[cfg(feature = "external_commit")]
         (Sender::NewMemberCommit, false) => matches!(
             proposal_type,
             ProposalType::REMOVE | ProposalType::PSK | ProposalType::EXTERNAL_INIT
         ),
-        #[cfg(feature = "external_commit")]
         (Sender::NewMemberCommit, true) => false,
         (Sender::NewMemberProposal, false) => false,
         (Sender::NewMemberProposal, true) => matches!(proposal_type, ProposalType::ADD),
@@ -546,7 +540,6 @@ pub(crate) fn filter_out_invalid_proposers(
         }
     }
 
-    #[cfg(feature = "external_commit")]
     for i in (0..proposals.external_init_proposals().len()).rev() {
         let p = &proposals.external_init_proposals()[i];
         let res = proposer_can_propose(p.sender, ProposalType::EXTERNAL_INIT, p.is_by_reference());

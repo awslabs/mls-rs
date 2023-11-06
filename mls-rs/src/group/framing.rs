@@ -54,7 +54,6 @@ pub enum Sender {
     #[cfg(feature = "by_ref_proposal")]
     NewMemberProposal = 3u8,
     /// A member sending an external commit.
-    #[cfg(feature = "external_commit")]
     NewMemberCommit = 4u8,
 }
 
@@ -149,7 +148,6 @@ impl MlsDecode for PublicMessage {
 
         let membership_tag = match content.sender {
             Sender::Member(_) => Some(MembershipTag::mls_decode(reader)?),
-            #[cfg(any(feature = "by_ref_proposal", feature = "external_commit"))]
             _ => None,
         };
 

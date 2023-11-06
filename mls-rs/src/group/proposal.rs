@@ -177,7 +177,6 @@ impl ReInitProposal {
     }
 }
 
-#[cfg(feature = "external_commit")]
 #[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// A proposal used for external commits.
@@ -271,7 +270,6 @@ pub enum Proposal {
     #[cfg(feature = "psk")]
     Psk(PreSharedKeyProposal),
     ReInit(ReInitProposal),
-    #[cfg(feature = "external_commit")]
     ExternalInit(ExternalInit),
     GroupContextExtensions(ExtensionList),
     #[cfg(feature = "custom_proposal")]
@@ -288,7 +286,6 @@ impl MlsSize for Proposal {
             #[cfg(feature = "psk")]
             Proposal::Psk(p) => p.mls_encoded_len(),
             Proposal::ReInit(p) => p.mls_encoded_len(),
-            #[cfg(feature = "external_commit")]
             Proposal::ExternalInit(p) => p.mls_encoded_len(),
             Proposal::GroupContextExtensions(p) => p.mls_encoded_len(),
             #[cfg(feature = "custom_proposal")]
@@ -311,7 +308,6 @@ impl MlsEncode for Proposal {
             #[cfg(feature = "psk")]
             Proposal::Psk(p) => p.mls_encode(writer),
             Proposal::ReInit(p) => p.mls_encode(writer),
-            #[cfg(feature = "external_commit")]
             Proposal::ExternalInit(p) => p.mls_encode(writer),
             Proposal::GroupContextExtensions(p) => p.mls_encode(writer),
             #[cfg(feature = "custom_proposal")]
@@ -345,7 +341,6 @@ impl MlsDecode for Proposal {
             #[cfg(feature = "psk")]
             ProposalType::PSK => Proposal::Psk(PreSharedKeyProposal::mls_decode(reader)?),
             ProposalType::RE_INIT => Proposal::ReInit(ReInitProposal::mls_decode(reader)?),
-            #[cfg(feature = "external_commit")]
             ProposalType::EXTERNAL_INIT => {
                 Proposal::ExternalInit(ExternalInit::mls_decode(reader)?)
             }
@@ -374,7 +369,6 @@ impl Proposal {
             #[cfg(feature = "psk")]
             Proposal::Psk(_) => ProposalType::PSK,
             Proposal::ReInit(_) => ProposalType::RE_INIT,
-            #[cfg(feature = "external_commit")]
             Proposal::ExternalInit(_) => ProposalType::EXTERNAL_INIT,
             Proposal::GroupContextExtensions(_) => ProposalType::GROUP_CONTEXT_EXTENSIONS,
             #[cfg(feature = "custom_proposal")]
@@ -393,7 +387,6 @@ pub enum BorrowedProposal<'a> {
     #[cfg(feature = "psk")]
     Psk(&'a PreSharedKeyProposal),
     ReInit(&'a ReInitProposal),
-    #[cfg(feature = "external_commit")]
     ExternalInit(&'a ExternalInit),
     GroupContextExtensions(&'a ExtensionList),
     #[cfg(feature = "custom_proposal")]
@@ -410,7 +403,6 @@ impl<'a> From<BorrowedProposal<'a>> for Proposal {
             #[cfg(feature = "psk")]
             BorrowedProposal::Psk(psk) => Proposal::Psk(psk.clone()),
             BorrowedProposal::ReInit(reinit) => Proposal::ReInit(reinit.clone()),
-            #[cfg(feature = "external_commit")]
             BorrowedProposal::ExternalInit(external) => Proposal::ExternalInit(external.clone()),
             BorrowedProposal::GroupContextExtensions(ext) => {
                 Proposal::GroupContextExtensions(ext.clone())
@@ -431,7 +423,6 @@ impl BorrowedProposal<'_> {
             #[cfg(feature = "psk")]
             BorrowedProposal::Psk(_) => ProposalType::PSK,
             BorrowedProposal::ReInit(_) => ProposalType::RE_INIT,
-            #[cfg(feature = "external_commit")]
             BorrowedProposal::ExternalInit(_) => ProposalType::EXTERNAL_INIT,
             BorrowedProposal::GroupContextExtensions(_) => ProposalType::GROUP_CONTEXT_EXTENSIONS,
             #[cfg(feature = "custom_proposal")]
@@ -450,7 +441,6 @@ impl<'a> From<&'a Proposal> for BorrowedProposal<'a> {
             #[cfg(feature = "psk")]
             Proposal::Psk(p) => BorrowedProposal::Psk(p),
             Proposal::ReInit(p) => BorrowedProposal::ReInit(p),
-            #[cfg(feature = "external_commit")]
             Proposal::ExternalInit(p) => BorrowedProposal::ExternalInit(p),
             Proposal::GroupContextExtensions(p) => BorrowedProposal::GroupContextExtensions(p),
             #[cfg(feature = "custom_proposal")]
@@ -491,7 +481,6 @@ impl<'a> From<&'a ReInitProposal> for BorrowedProposal<'a> {
     }
 }
 
-#[cfg(feature = "external_commit")]
 impl<'a> From<&'a ExternalInit> for BorrowedProposal<'a> {
     fn from(p: &'a ExternalInit) -> Self {
         Self::ExternalInit(p)

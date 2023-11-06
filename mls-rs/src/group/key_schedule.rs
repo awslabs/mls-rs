@@ -19,7 +19,6 @@ use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
 use zeroize::Zeroizing;
 
-#[cfg(feature = "external_commit")]
 use crate::crypto::{HpkeContextR, HpkeContextS, HpkePublicKey, HpkeSecretKey};
 
 use super::epoch::{EpochSecrets, SenderDataSecret};
@@ -31,7 +30,6 @@ pub struct KeySchedule {
     exporter_secret: Zeroizing<Vec<u8>>,
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     pub authentication_secret: Zeroizing<Vec<u8>>,
-    #[cfg(feature = "external_commit")]
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     external_secret: Zeroizing<Vec<u8>>,
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
@@ -47,7 +45,6 @@ pub(crate) struct KeyScheduleDerivationResult {
 }
 
 impl KeySchedule {
-    #[cfg(feature = "external_commit")]
     pub fn new(init_secret: InitSecret) -> Self {
         KeySchedule {
             init_secret,
@@ -55,7 +52,6 @@ impl KeySchedule {
         }
     }
 
-    #[cfg(feature = "external_commit")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn derive_for_external<P: CipherSuiteProvider>(
         &self,
@@ -186,7 +182,6 @@ impl KeySchedule {
         let key_schedule = Self {
             exporter_secret: secrets_producer.derive(b"exporter").await?,
             authentication_secret: secrets_producer.derive(b"authentication").await?,
-            #[cfg(feature = "external_commit")]
             external_secret: secrets_producer.derive(b"external").await?,
             membership_key: secrets_producer.derive(b"membership").await?,
             init_secret: InitSecret(secrets_producer.derive(b"init").await?),
@@ -234,7 +229,6 @@ impl KeySchedule {
         .await
     }
 
-    #[cfg(feature = "external_commit")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn get_external_key_pair<P: CipherSuiteProvider>(
         &self,
@@ -336,13 +330,11 @@ impl<'a, P: CipherSuiteProvider> SecretsProducer<'a, P> {
     }
 }
 
-#[cfg(feature = "external_commit")]
 const EXPORTER_CONTEXT: &[u8] = b"MLS 1.0 external init secret";
 
 #[derive(Clone, Debug, Eq, PartialEq, MlsEncode, MlsDecode, MlsSize, Default)]
 pub struct InitSecret(#[mls_codec(with = "mls_rs_codec::byte_vec")] Zeroizing<Vec<u8>>);
 
-#[cfg(feature = "external_commit")]
 impl InitSecret {
     /// Returns init secret and KEM output to be used when creating an external commit.
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -478,7 +470,6 @@ pub(crate) mod test_utils {
         KeySchedule {
             exporter_secret: fake_secret.clone(),
             authentication_secret: fake_secret.clone(),
-            #[cfg(feature = "external_commit")]
             external_secret: fake_secret.clone(),
             membership_key: fake_secret,
             init_secret: InitSecret::new(vec![0u8; key_size]),
@@ -581,7 +572,6 @@ mod tests {
         exporter_secret: Vec<u8>,
         #[serde(with = "hex::serde")]
         epoch_authenticator: Vec<u8>,
-        #[cfg(feature = "external_commit")]
         #[serde(with = "hex::serde")]
         external_secret: Vec<u8>,
         #[serde(with = "hex::serde")]
@@ -592,7 +582,6 @@ mod tests {
         #[serde(with = "hex::serde")]
         resumption_psk: Vec<u8>,
 
-        #[cfg(feature = "external_commit")]
         #[serde(with = "hex::serde")]
         external_pub: Vec<u8>,
 
@@ -682,7 +671,6 @@ mod tests {
                     key_schedule.authentication_secret.to_vec()
                 );
 
-                #[cfg(feature = "external_commit")]
                 assert_eq!(epoch.external_secret, key_schedule.external_secret.to_vec());
 
                 assert_eq!(
@@ -700,15 +688,12 @@ mod tests {
                     assert_eq!(epoch.resumption_psk, expected);
                 }
 
-                #[cfg(feature = "external_commit")]
-                {
-                    let (_external_sec, external_pub) = key_schedule
-                        .get_external_key_pair(&cs_provider)
-                        .await
-                        .unwrap();
+                let (_external_sec, external_pub) = key_schedule
+                    .get_external_key_pair(&cs_provider)
+                    .await
+                    .unwrap();
 
-                    assert_eq!(epoch.external_pub, *external_pub);
-                }
+                assert_eq!(epoch.external_pub, *external_pub);
 
                 let exp = epoch.exporter;
 
@@ -821,7 +806,6 @@ mod tests {
             group_context: &GroupContext,
             cs: &P,
         ) -> Self {
-            #[cfg(feature = "external_commit")]
             let (_external_sec, external_pub) = key_schedule_res
                 .key_schedule
                 .get_external_key_pair(cs)
@@ -862,13 +846,11 @@ mod tests {
                 encryption_secret: key_schedule_res.epoch_secrets.secret_tree.get_root_secret(),
                 exporter_secret: key_schedule_res.key_schedule.exporter_secret.to_vec(),
                 epoch_authenticator: key_schedule_res.key_schedule.authentication_secret.to_vec(),
-                #[cfg(feature = "external_commit")]
                 external_secret: key_schedule_res.key_schedule.external_secret.to_vec(),
                 confirmation_key: key_schedule_res.confirmation_key.to_vec(),
                 membership_key: key_schedule_res.key_schedule.membership_key.to_vec(),
                 #[cfg(feature = "psk")]
                 resumption_psk: key_schedule_res.epoch_secrets.resumption_secret.to_vec(),
-                #[cfg(feature = "external_commit")]
                 external_pub: external_pub.to_vec(),
                 exporter,
                 confirmed_transcript_hash: group_context.confirmed_transcript_hash.to_vec(),

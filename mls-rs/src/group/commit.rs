@@ -21,7 +21,6 @@ use crate::{
     ExtensionList, MlsRules,
 };
 
-#[cfg(feature = "external_commit")]
 use crate::tree_kem::leaf_node::LeafNode;
 
 #[cfg(not(feature = "private_message"))]
@@ -287,7 +286,6 @@ where
         self.group
             .commit_internal(
                 self.proposals,
-                #[cfg(feature = "external_commit")]
                 None,
                 self.authenticated_data,
                 self.group_info_extensions,
@@ -346,7 +344,6 @@ where
     pub async fn commit(&mut self, authenticated_data: Vec<u8>) -> Result<CommitOutput, MlsError> {
         self.commit_internal(
             vec![],
-            #[cfg(feature = "external_commit")]
             None,
             authenticated_data,
             Default::default(),
@@ -376,7 +373,7 @@ where
     pub(super) async fn commit_internal(
         &mut self,
         proposals: Vec<Proposal>,
-        #[cfg(feature = "external_commit")] external_leaf: Option<&LeafNode>,
+        external_leaf: Option<&LeafNode>,
         authenticated_data: Vec<u8>,
         group_info_extensions: ExtensionList,
         new_signer: Option<SignatureSecretKey>,
@@ -392,21 +389,16 @@ where
 
         let mls_rules = self.config.mls_rules();
 
-        #[cfg(feature = "external_commit")]
         let is_external = external_leaf.is_some();
 
         // Construct an initial Commit object with the proposals field populated from Proposals
         // received during the current epoch, and an empty path field. Add passed in proposals
         // by value
-        #[cfg(feature = "external_commit")]
         let sender = if is_external {
             Sender::NewMemberCommit
         } else {
             Sender::Member(*self.private_tree.self_index)
         };
-
-        #[cfg(not(feature = "external_commit"))]
-        let sender = Sender::Member(*self.private_tree.self_index);
 
         let new_signer_ref = new_signer.as_ref().unwrap_or(&self.signer);
         let old_signer = &self.signer;
@@ -430,7 +422,6 @@ where
                 #[cfg(all(feature = "by_ref_proposal", feature = "state_update"))]
                 Some(sender),
                 proposals,
-                #[cfg(feature = "external_commit")]
                 external_leaf,
                 &self.config.identity_provider(),
                 &self.cipher_suite_provider,
@@ -444,7 +435,6 @@ where
         let (mut provisional_private_tree, _) =
             self.provisional_private_tree(&provisional_state)?;
 
-        #[cfg(feature = "external_commit")]
         if is_external {
             provisional_private_tree.self_index = provisional_state
                 .external_init_index

@@ -59,7 +59,7 @@ mod tree_index;
 #[cfg(feature = "std")]
 pub(crate) mod tree_utils;
 
-#[cfg(all(test, feature = "external_commit"))]
+#[cfg(test)]
 mod interop_test_vectors;
 
 #[cfg(feature = "custom_proposal")]

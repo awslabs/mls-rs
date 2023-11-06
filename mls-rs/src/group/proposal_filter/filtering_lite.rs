@@ -17,11 +17,6 @@ use super::filtering_common::{filter_out_invalid_psks, ApplyProposalsOutput, Pro
 #[cfg(feature = "by_ref_proposal")]
 use crate::extension::ExternalSendersExt;
 
-#[cfg(any(
-    feature = "by_ref_proposal",
-    feature = "external_commit",
-    feature = "psk"
-))]
 use mls_rs_core::error::IntoAnyError;
 
 use mls_rs_core::{identity::IdentityProvider, psk::PreSharedKeyStorage};
@@ -38,7 +33,6 @@ use futures::{StreamExt, TryStreamExt};
 #[cfg(feature = "custom_proposal")]
 use crate::tree_kem::TreeKemPublic;
 
-#[cfg(feature = "external_commit")]
 use crate::group::{ExternalInit, ProposalType, RemoveProposal};
 
 #[cfg(feature = "psk")]
@@ -125,7 +119,6 @@ where
         Ok(ApplyProposalsOutput {
             new_tree,
             indexes_of_added_kpkgs: added,
-            #[cfg(feature = "external_commit")]
             external_init_index: None,
         })
     }

@@ -31,7 +31,6 @@ use super::{
     GroupContext, GroupInfo,
 };
 
-#[cfg(feature = "external_commit")]
 use super::message_processor::ProvisionalState;
 
 #[derive(Clone, Debug)]
@@ -218,7 +217,7 @@ pub(crate) fn find_node_data(
 
 pub(crate) fn commit_sender(
     sender: &Sender,
-    #[cfg(feature = "external_commit")] provisional_state: &ProvisionalState,
+    provisional_state: &ProvisionalState,
 ) -> Result<LeafIndex, MlsError> {
     match sender {
         Sender::Member(index) => Ok(LeafIndex(*index)),
@@ -226,7 +225,6 @@ pub(crate) fn commit_sender(
         Sender::External(_) => Err(MlsError::ExternalSenderCannotCommit),
         #[cfg(feature = "by_ref_proposal")]
         Sender::NewMemberProposal => Err(MlsError::ExpectedAddProposalForNewMemberProposal),
-        #[cfg(feature = "external_commit")]
         Sender::NewMemberCommit => provisional_state
             .external_init_index
             .ok_or(MlsError::ExternalCommitMissingExternalInit),

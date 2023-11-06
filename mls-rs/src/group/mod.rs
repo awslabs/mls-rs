@@ -40,7 +40,6 @@ use crate::{CipherSuiteProvider, CryptoProvider};
 #[cfg(feature = "by_ref_proposal")]
 use crate::crypto::{HpkePublicKey, HpkeSecretKey};
 
-#[cfg(feature = "external_commit")]
 use crate::extension::ExternalPubExt;
 
 #[cfg(feature = "private_message")]
@@ -152,7 +151,6 @@ pub(crate) use state_repo_light as state_repo;
 pub(crate) mod transcript_hash;
 mod util;
 
-#[cfg(feature = "external_commit")]
 /// External commit building.
 pub mod external_commit;
 
@@ -1335,7 +1333,6 @@ where
     /// ratchet tree and therefore contains all information needed to join the group. Otherwise,
     /// the ratchet tree must be obtained separately, e.g. via
     /// (ExternalClient::export_tree)[crate::external_client::ExternalGroup::export_tree].
-    #[cfg(feature = "external_commit")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn group_info_message_allowing_ext_commit(
         &self,
@@ -1664,10 +1661,6 @@ where
         // from the previous epoch (or from the external init) to compute the epoch secret and
         // derived secrets for the new epoch
 
-        #[cfg(not(feature = "external_commit"))]
-        let key_schedule = self.key_schedule.clone();
-
-        #[cfg(feature = "external_commit")]
         let key_schedule = match provisional_state
             .applied_proposals
             .external_initializations
@@ -2358,7 +2351,6 @@ mod tests {
         assert!(with_padding.mls_encoded_len() > without_padding.mls_encoded_len());
     }
 
-    #[cfg(feature = "external_commit")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_commit_requires_external_pub_extension() {
         let protocol_version = TEST_PROTOCOL_VERSION;
@@ -2566,7 +2558,6 @@ mod tests {
 
         let commit_description = alice.process_pending_commit().await.unwrap();
 
-        #[cfg(feature = "external_commit")]
         assert!(!commit_description.is_external);
 
         assert_eq!(
@@ -2625,7 +2616,6 @@ mod tests {
         assert_eq!(commit_description, bob_commit_description);
     }
 
-    #[cfg(feature = "external_commit")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn commit_description_external_commit() {
         use crate::client::test_utils::TestClientBuilder;
@@ -2672,7 +2662,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "external_commit")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn can_join_new_group_externally() {
         use crate::client::test_utils::TestClientBuilder;
@@ -2702,7 +2691,6 @@ mod tests {
         alice_group.process_message(commit).await.unwrap();
     }
 
-    #[cfg(feature = "external_commit")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_membership_tag_from_non_member() {
         let (mut alice_group, mut bob_group) =

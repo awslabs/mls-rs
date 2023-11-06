@@ -19,7 +19,6 @@ use mls_rs_core::{
 
 use crate::tree_kem::node::NodeVec;
 
-#[cfg(feature = "external_commit")]
 use mls_rs_core::crypto::HpkePublicKey;
 
 /// Application specific identifier.
@@ -144,7 +143,6 @@ impl MlsCodecExtension for RequiredCapabilitiesExt {
 ///
 /// This proposal type is optionally provided as part of a
 /// [Group Info](crate::group::Group::group_info_message).
-#[cfg(feature = "external_commit")]
 #[cfg_attr(
     all(feature = "ffi", not(test)),
     safer_ffi_gen::ffi_type(clone, opaque)
@@ -155,7 +153,6 @@ pub struct ExternalPubExt {
     pub(crate) external_pub: HpkePublicKey,
 }
 
-#[cfg(feature = "external_commit")]
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl ExternalPubExt {
     /// Get the public key to be used for an external commit.
@@ -164,7 +161,6 @@ impl ExternalPubExt {
     }
 }
 
-#[cfg(feature = "external_commit")]
 impl MlsCodecExtension for ExternalPubExt {
     fn extension_type() -> ExtensionType {
         ExtensionType::EXTERNAL_PUB
@@ -303,7 +299,6 @@ mod tests {
         assert_eq!(ext, restored)
     }
 
-    #[cfg(feature = "external_commit")]
     #[test]
     fn test_external_pub() {
         let ext = ExternalPubExt {

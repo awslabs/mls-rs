@@ -69,7 +69,6 @@ pub(crate) async fn verify_plaintext_authentication<P: CipherSuiteProvider>(
                 return Err(MlsError::CantProcessMessageFromSelf);
             }
         }
-        #[cfg(any(feature = "by_ref_proposal", feature = "external_commit"))]
         _ => {
             tag.is_none()
                 .then_some(())
@@ -114,7 +113,6 @@ pub(crate) async fn verify_auth_content_signature<P: CipherSuiteProvider>(
     let sender_public_key = signing_identity_for_sender(
         signature_keys_container,
         &auth_content.content.sender,
-        #[cfg(any(feature = "by_ref_proposal", feature = "external_commit"))]
         &auth_content.content.content,
         #[cfg(feature = "by_ref_proposal")]
         external_signers,
@@ -135,7 +133,6 @@ pub(crate) async fn verify_auth_content_signature<P: CipherSuiteProvider>(
 fn signing_identity_for_sender(
     signature_keys_container: SignaturePublicKeysContainer,
     sender: &Sender,
-    #[cfg(any(feature = "by_ref_proposal", feature = "external_commit"))]
     content: &super::framing::Content,
     #[cfg(feature = "by_ref_proposal")] external_signers: &[SigningIdentity],
 ) -> Result<SignaturePublicKey, MlsError> {
@@ -147,7 +144,6 @@ fn signing_identity_for_sender(
         Sender::External(external_key_index) => {
             signing_identity_for_external(*external_key_index, external_signers)
         }
-        #[cfg(feature = "external_commit")]
         Sender::NewMemberCommit => signing_identity_for_new_member_commit(content),
         #[cfg(feature = "by_ref_proposal")]
         Sender::NewMemberProposal => signing_identity_for_new_member_proposal(content),
@@ -184,7 +180,6 @@ fn signing_identity_for_external(
         .ok_or(MlsError::UnknownSigningIdentityForExternalSender)
 }
 
-#[cfg(feature = "external_commit")]
 fn signing_identity_for_new_member_commit(
     content: &super::framing::Content,
 ) -> Result<SignaturePublicKey, MlsError> {
@@ -259,7 +254,6 @@ mod tests {
     #[cfg(feature = "by_ref_proposal")]
     use alloc::boxed::Box;
 
-    #[cfg(any(feature = "by_ref_proposal", feature = "external_commit"))]
     use crate::group::{
         test_utils::{test_group, test_member},
         Sender,
@@ -545,7 +539,6 @@ mod tests {
         assert_matches!(res, Err(MlsError::ExpectedAddProposalForNewMemberProposal));
     }
 
-    #[cfg(feature = "external_commit")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn new_member_commit_must_be_external_commit() {
         let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;

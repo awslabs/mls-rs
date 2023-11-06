@@ -25,7 +25,6 @@ use crate::group::PreSharedKeyProposal;
 #[cfg(feature = "custom_proposal")]
 use crate::group::proposal::CustomProposal;
 
-#[cfg(feature = "external_commit")]
 use crate::group::ExternalInit;
 
 use core::iter::empty;
@@ -42,7 +41,6 @@ pub struct ProposalBundle {
     #[cfg(feature = "psk")]
     pub(crate) psks: Vec<ProposalInfo<PreSharedKeyProposal>>,
     pub(crate) reinitializations: Vec<ProposalInfo<ReInitProposal>>,
-    #[cfg(feature = "external_commit")]
     pub(crate) external_initializations: Vec<ProposalInfo<ExternalInit>>,
     pub(crate) group_context_extensions: Vec<ProposalInfo<ExtensionList>>,
     #[cfg(feature = "custom_proposal")]
@@ -79,7 +77,6 @@ impl ProposalBundle {
                 sender,
                 source,
             }),
-            #[cfg(feature = "external_commit")]
             Proposal::ExternalInit(proposal) => self.external_initializations.push(ProposalInfo {
                 proposal,
                 sender,
@@ -192,7 +189,6 @@ impl ProposalBundle {
             f(&proposal.as_ref().map(BorrowedProposal::from))
         })?;
 
-        #[cfg(feature = "external_commit")]
         self.retain_by_type::<ExternalInit, _, _>(|proposal| {
             f(&proposal.as_ref().map(BorrowedProposal::from))
         })?;
@@ -211,7 +207,6 @@ impl ProposalBundle {
         #[cfg(feature = "psk")]
         let len = len + self.psks.len();
 
-        #[cfg(feature = "external_commit")]
         let len = len + self.external_initializations.len();
 
         #[cfg(feature = "custom_proposal")]
@@ -257,7 +252,6 @@ impl ProposalBundle {
                 .map(|p| p.as_ref().map(BorrowedProposal::Psk)),
         );
 
-        #[cfg(feature = "external_commit")]
         let res = res.chain(
             self.external_initializations
                 .iter()
@@ -291,7 +285,6 @@ impl ProposalBundle {
                 .map(|p| p.map(Proposal::Custom)),
         );
 
-        #[cfg(feature = "external_commit")]
         let res = res.chain(
             self.external_initializations
                 .into_iter()
@@ -367,7 +360,6 @@ impl ProposalBundle {
     }
 
     /// External init proposals in the bundle.
-    #[cfg(feature = "external_commit")]
     pub fn external_init_proposals(&self) -> &[ProposalInfo<ExternalInit>] {
         &self.external_initializations
     }
@@ -422,7 +414,6 @@ impl ProposalBundle {
         #[cfg(feature = "psk")]
         let res = res.chain((!self.psks.is_empty()).then_some(ProposalType::PSK));
 
-        #[cfg(feature = "external_commit")]
         let res = res.chain(
             (!self.external_initializations.is_empty()).then_some(ProposalType::EXTERNAL_INIT),
         );
@@ -572,7 +563,6 @@ impl_proposable!(RemoveProposal, REMOVE, removals);
 #[cfg(feature = "psk")]
 impl_proposable!(PreSharedKeyProposal, PSK, psks);
 impl_proposable!(ReInitProposal, RE_INIT, reinitializations);
-#[cfg(feature = "external_commit")]
 impl_proposable!(ExternalInit, EXTERNAL_INIT, external_initializations);
 impl_proposable!(
     ExtensionList,
