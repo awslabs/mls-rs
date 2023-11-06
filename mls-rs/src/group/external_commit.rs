@@ -2,7 +2,7 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use mls_rs_core::{crypto::SignatureSecretKey, error::IntoAnyError, identity::SigningIdentity};
+use mls_rs_core::{crypto::SignatureSecretKey, identity::SigningIdentity};
 
 use crate::{
     client_config::ClientConfig,
@@ -24,7 +24,10 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 #[cfg(feature = "psk")]
-use mls_rs_core::psk::{ExternalPskId, PreSharedKey};
+use mls_rs_core::{
+    error::IntoAnyError,
+    psk::{ExternalPskId, PreSharedKey},
+};
 
 #[cfg(feature = "psk")]
 use crate::group::{

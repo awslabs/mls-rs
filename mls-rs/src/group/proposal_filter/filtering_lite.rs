@@ -15,9 +15,7 @@ use crate::{
 use super::filtering_common::{filter_out_invalid_psks, ApplyProposalsOutput, ProposalApplier};
 
 #[cfg(feature = "by_ref_proposal")]
-use crate::extension::ExternalSendersExt;
-
-use mls_rs_core::error::IntoAnyError;
+use {crate::extension::ExternalSendersExt, mls_rs_core::error::IntoAnyError};
 
 use mls_rs_core::{identity::IdentityProvider, psk::PreSharedKeyStorage};
 
@@ -32,8 +30,6 @@ use futures::{StreamExt, TryStreamExt};
 
 #[cfg(feature = "custom_proposal")]
 use crate::tree_kem::TreeKemPublic;
-
-use crate::group::{ExternalInit, ProposalType, RemoveProposal};
 
 #[cfg(feature = "psk")]
 use crate::group::{

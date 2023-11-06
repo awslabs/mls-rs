@@ -146,6 +146,8 @@ where
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    // The lint below is triggered by the `proposals` parameter which may or may not be a borrow.
+    #[allow(clippy::needless_borrow)]
     async fn apply_proposals_from_new_member(
         &self,
         #[cfg(not(feature = "by_ref_proposal"))] proposals: &ProposalBundle,

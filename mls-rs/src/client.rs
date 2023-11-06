@@ -813,6 +813,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn new_member_add_proposal_adds_to_group() {
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
@@ -860,6 +861,7 @@ mod tests {
             .any(|member| member.signing_identity() == &bob_identity))
     }
 
+    #[cfg(feature = "psk")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn join_via_external_commit(do_remove: bool, with_psk: bool) -> Result<(), MlsError> {
         // An external commit cannot be the first commit in a group as it requires
@@ -955,6 +957,7 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(feature = "psk")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_external_commit() {
         // New member can join

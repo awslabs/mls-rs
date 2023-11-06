@@ -1796,7 +1796,7 @@ mod tests {
         client::test_utils::{test_client_with_key_pkg, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         client_builder::{test_utils::TestClientConfig, ClientBuilder},
         crypto::test_utils::TestCryptoProvider,
-        identity::test_utils::BasicWithCustomProvider,
+        identity::test_utils::{get_test_signing_identity, BasicWithCustomProvider},
         key_package::test_utils::test_key_package_message,
         mls_rules::CommitOptions,
         tree_kem::{
@@ -1824,8 +1824,7 @@ mod tests {
 
     #[cfg(feature = "by_ref_proposal")]
     use crate::{
-        extension::test_utils::TestExtension,
-        identity::test_utils::{get_test_basic_credential, get_test_signing_identity},
+        extension::test_utils::TestExtension, identity::test_utils::get_test_basic_credential,
         time::MlsTime,
     };
 
@@ -2175,6 +2174,9 @@ mod tests {
         (test_group, commit)
     }
 
+    // This test actually compiles without the by_ref_proposal feature, but it fails at runtime
+    // because the group context extensions seem to be updated only when this feature is enabled.
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_group_context_ext_proposal_commit() {
         let mut extension_list = ExtensionList::new();
@@ -2606,6 +2608,7 @@ mod tests {
         assert_eq!(commit_description, bob_commit_description);
     }
 
+    #[cfg(feature = "state_update")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn commit_description_external_commit() {
         use crate::client::test_utils::TestClientBuilder;

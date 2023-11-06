@@ -191,6 +191,7 @@ fn signing_identity_for_new_member_commit(
                 Err(MlsError::CommitMissingPath)
             }
         }
+        #[cfg(any(feature = "private_message", feature = "by_ref_proposal"))]
         _ => Err(MlsError::ExpectedCommitForNewMemberCommit),
     }
 }
@@ -539,6 +540,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::ExpectedAddProposalForNewMemberProposal));
     }
 
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn new_member_commit_must_be_external_commit() {
         let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
