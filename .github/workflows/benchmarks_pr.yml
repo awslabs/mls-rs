@@ -3,14 +3,13 @@ on:
   pull_request:
     branches:
       - main
-env:
-  SSH_AUTH_SOCK: /tmp/ssh_agent.sock
 jobs:
   benchmark:
     runs-on: ubuntu-latest
     permissions:
       id-token: write
-      contents: read
+      contents: write
+      deployments: read
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
@@ -22,3 +21,13 @@ jobs:
       - name: Run benchmark
         working-directory: mls-rs
         run: ( set -o pipefail; cargo bench --features benchmark_util --bench group_commit --bench group_receive_commit --bench group_application --bench group_serialize -- --output-format bencher | tee -a output.txt )
+      - name: Report benchmark issues
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          tool: "cargo"
+          output-file-path: mls-rs/output.txt
+          fail-on-alert: true
+          auto-push: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          alert-threshold: "200%"
+          summary-always: true

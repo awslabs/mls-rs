@@ -3,8 +3,6 @@ on:
   push:
     branches:
       - main
-env:
-  SSH_AUTH_SOCK: /tmp/ssh_agent.sock
 jobs:
   benchmark:
     runs-on: ubuntu-latest
@@ -26,7 +24,7 @@ jobs:
       - name: Store benchmark result
         uses: benchmark-action/github-action-benchmark@v1
         with:
-          tool: 'cargo'
+          tool: "cargo"
           output-file-path: mls-rs/output.txt
           github-token: ${{ secrets.GITHUB_TOKEN }}
           auto-push: true
