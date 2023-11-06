@@ -22,7 +22,7 @@ use crate::{
     CipherSuiteProvider, CryptoProvider, ExtensionList,
 };
 
-#[cfg(feature = "external_proposal")]
+#[cfg(feature = "by_ref_proposal")]
 use crate::extension::ExternalSendersExt;
 
 use super::{
@@ -161,7 +161,7 @@ pub(crate) async fn validate_group_info<I: IdentityProvider, C: CipherSuiteProvi
         .validate(&mut join_context.public_tree)
         .await?;
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     if let Some(ext_senders) = join_context
         .group_context
         .extensions
@@ -222,7 +222,7 @@ pub(crate) fn commit_sender(
 ) -> Result<LeafIndex, MlsError> {
     match sender {
         Sender::Member(index) => Ok(LeafIndex(*index)),
-        #[cfg(feature = "external_proposal")]
+        #[cfg(feature = "by_ref_proposal")]
         Sender::External(_) => Err(MlsError::ExternalSenderCannotCommit),
         #[cfg(feature = "by_ref_proposal")]
         Sender::NewMemberProposal => Err(MlsError::ExpectedAddProposalForNewMemberProposal),

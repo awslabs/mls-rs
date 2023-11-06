@@ -205,7 +205,7 @@ impl GroupState {
             )),
             #[cfg(feature = "by_ref_proposal")]
             Sender::NewMemberProposal => Err(MlsError::InvalidSender),
-            #[cfg(feature = "external_proposal")]
+            #[cfg(feature = "by_ref_proposal")]
             Sender::External(_) => Err(MlsError::InvalidSender),
             #[cfg(feature = "external_commit")]
             Sender::NewMemberCommit => Ok(CommitSource::NewMember(
@@ -401,7 +401,7 @@ pub(crate) mod test_utils {
         P: PreSharedKeyStorage,
         CSP: CipherSuiteProvider,
     {
-        #[cfg(feature = "external_proposal")]
+        #[cfg(feature = "by_ref_proposal")]
         pub fn with_identity_provider<V>(self, validator: V) -> CommitReceiver<'a, V, F, P, CSP>
         where
             V: IdentityProvider,
@@ -453,7 +453,7 @@ pub(crate) mod test_utils {
             }
         }
 
-        #[cfg(feature = "external_proposal")]
+        #[cfg(feature = "by_ref_proposal")]
         pub fn with_extensions(self, extensions: ExtensionList) -> Self {
             Self {
                 group_context_extensions: extensions,
@@ -647,7 +647,7 @@ mod tests {
     #[cfg(feature = "all_extensions")]
     use crate::extension::RequiredCapabilitiesExt;
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     use crate::{
         extension::ExternalSendersExt,
         tree_kem::leaf_node_validator::test_utils::FailureIdentityProvider,
@@ -1901,7 +1901,7 @@ mod tests {
         P: PreSharedKeyStorage,
         CSP: CipherSuiteProvider,
     {
-        #[cfg(feature = "external_proposal")]
+        #[cfg(feature = "by_ref_proposal")]
         fn with_identity_provider<V>(self, identity_provider: V) -> CommitSender<'a, V, F, P, CSP>
         where
             V: IdentityProvider,
@@ -3066,7 +3066,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn make_external_senders_extension() -> ExtensionList {
         let identity = get_test_signing_identity(TEST_CIPHER_SUITE, b"alice")
@@ -3079,7 +3079,7 @@ mod tests {
         .into()
     }
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn receiving_invalid_external_senders_extension_fails() {
         let (alice, tree) = new_tree("alice").await;
@@ -3099,7 +3099,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::IdentityProviderError(_)));
     }
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn sending_additional_invalid_external_senders_extension_fails() {
         let (alice, tree) = new_tree("alice").await;
@@ -3115,7 +3115,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::IdentityProviderError(_)));
     }
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn sending_invalid_external_senders_extension_filters_it_out() {
         let (alice, tree) = new_tree("alice").await;
@@ -4076,12 +4076,12 @@ mod tests {
         let (alice, mut tree) = new_tree("alice").await;
         let bob = add_member(&mut tree, "bob").await;
 
-        #[cfg(feature = "external_proposal")]
+        #[cfg(feature = "by_ref_proposal")]
         let identity = get_test_signing_identity(TEST_CIPHER_SUITE, b"carol")
             .await
             .0;
 
-        #[cfg(feature = "external_proposal")]
+        #[cfg(feature = "by_ref_proposal")]
         let external_senders = ExternalSendersExt::new(vec![identity]);
 
         let proposals: &[Proposal] = &[
@@ -4101,7 +4101,7 @@ mod tests {
 
         let proposers = [
             Sender::Member(*alice),
-            #[cfg(feature = "external_proposal")]
+            #[cfg(feature = "by_ref_proposal")]
             Sender::External(0),
             #[cfg(feature = "external_commit")]
             Sender::NewMemberCommit,
@@ -4122,11 +4122,11 @@ mod tests {
                 test_cipher_suite_provider(TEST_CIPHER_SUITE),
             );
 
-            #[cfg(feature = "external_proposal")]
+            #[cfg(feature = "by_ref_proposal")]
             let extensions: ExtensionList =
                 vec![external_senders.clone().into_extension().unwrap()].into();
 
-            #[cfg(feature = "external_proposal")]
+            #[cfg(feature = "by_ref_proposal")]
             let receiver = receiver.with_extensions(extensions);
 
             let (receiver, proposals, proposer) = if by_ref {

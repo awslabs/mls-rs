@@ -11,7 +11,7 @@ use mls_rs_core::{error::IntoAnyError, extension::ExtensionList, identity::Ident
 #[cfg(feature = "all_extensions")]
 use crate::extension::RequiredCapabilitiesExt;
 
-#[cfg(feature = "external_proposal")]
+#[cfg(feature = "by_ref_proposal")]
 use crate::extension::ExternalSendersExt;
 
 pub enum ValidationContext<'a> {
@@ -146,7 +146,7 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
         Ok(())
     }
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     pub fn validate_external_senders_ext_credentials(
         &self,
         leaf_node: &LeafNode,
@@ -226,7 +226,7 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
             .map(MlsError::UnsupportedGroupExtension)
             .map_or(Ok(()), Err)?;
 
-        #[cfg(feature = "external_proposal")]
+        #[cfg(feature = "by_ref_proposal")]
         self.validate_external_senders_ext_credentials(leaf_node)?;
 
         Ok(())
@@ -648,7 +648,7 @@ pub(crate) mod test_utils {
     #[derive(Clone, Debug, Default)]
     pub struct FailureIdentityProvider;
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     impl FailureIdentityProvider {
         pub fn new() -> Self {
             Self

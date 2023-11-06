@@ -14,11 +14,11 @@ use crate::{
 
 use super::filtering_common::{filter_out_invalid_psks, ApplyProposalsOutput, ProposalApplier};
 
-#[cfg(feature = "external_proposal")]
+#[cfg(feature = "by_ref_proposal")]
 use crate::extension::ExternalSendersExt;
 
 #[cfg(any(
-    feature = "external_proposal",
+    feature = "by_ref_proposal",
     feature = "external_commit",
     feature = "psk"
 ))]
@@ -65,7 +65,7 @@ where
         filter_out_removal_of_committer(commit_sender, proposals)?;
         filter_out_invalid_psks(self.cipher_suite_provider, proposals, self.psk_storage).await?;
 
-        #[cfg(feature = "external_proposal")]
+        #[cfg(feature = "by_ref_proposal")]
         filter_out_invalid_group_extensions(proposals, self.identity_provider, commit_time).await?;
 
         filter_out_extra_group_context_extensions(proposals)?;
@@ -169,7 +169,7 @@ fn filter_out_removal_of_committer(
     Ok(())
 }
 
-#[cfg(feature = "external_proposal")]
+#[cfg(feature = "by_ref_proposal")]
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 async fn filter_out_invalid_group_extensions<C>(
     proposals: &ProposalBundle,

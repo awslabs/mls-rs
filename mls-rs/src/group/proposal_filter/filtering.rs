@@ -22,7 +22,7 @@ use crate::{
 
 use super::filtering_common::{filter_out_invalid_psks, ApplyProposalsOutput, ProposalApplier};
 
-#[cfg(feature = "external_proposal")]
+#[cfg(feature = "by_ref_proposal")]
 use crate::extension::ExternalSendersExt;
 
 use alloc::vec::Vec;
@@ -82,7 +82,7 @@ where
         )
         .await?;
 
-        #[cfg(feature = "external_proposal")]
+        #[cfg(feature = "by_ref_proposal")]
         let proposals = filter_out_invalid_group_extensions(
             strategy,
             proposals,
@@ -327,7 +327,7 @@ fn filter_out_removal_of_committer(
     Ok(proposals)
 }
 
-#[cfg(feature = "external_proposal")]
+#[cfg(feature = "by_ref_proposal")]
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 async fn filter_out_invalid_group_extensions<C>(
     strategy: FilterStrategy,
@@ -469,9 +469,9 @@ pub(crate) fn proposer_can_propose(
                 | ProposalType::RE_INIT
                 | ProposalType::GROUP_CONTEXT_EXTENSIONS
         ),
-        #[cfg(feature = "external_proposal")]
+        #[cfg(feature = "by_ref_proposal")]
         (Sender::External(_), false) => false,
-        #[cfg(feature = "external_proposal")]
+        #[cfg(feature = "by_ref_proposal")]
         (Sender::External(_), true) => matches!(
             proposal_type,
             ProposalType::ADD

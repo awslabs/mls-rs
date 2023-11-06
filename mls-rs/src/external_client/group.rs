@@ -46,17 +46,13 @@ use crate::{
     WireFormat,
 };
 
-#[cfg(all(
-    feature = "by_ref_proposal",
-    feature = "external_proposal",
-    feature = "custom_proposal"
-))]
+#[cfg(all(feature = "by_ref_proposal", feature = "custom_proposal"))]
 use crate::group::proposal::CustomProposal;
 
-#[cfg(feature = "external_proposal")]
+#[cfg(feature = "by_ref_proposal")]
 use mls_rs_core::{crypto::CipherSuiteProvider, psk::ExternalPskId};
 
-#[cfg(feature = "external_proposal")]
+#[cfg(feature = "by_ref_proposal")]
 use crate::{
     extension::ExternalSendersExt,
     group::proposal::{AddProposal, ReInitProposal, RemoveProposal},
@@ -64,7 +60,7 @@ use crate::{
     tree_kem::leaf_node_validator::{LeafNodeValidator, ValidationContext},
 };
 
-#[cfg(all(feature = "external_proposal", feature = "psk"))]
+#[cfg(all(feature = "by_ref_proposal", feature = "psk"))]
 use crate::{
     group::proposal::PreSharedKeyProposal,
     psk::{
@@ -238,7 +234,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     /// committed, the group needs to have `signing_identity` as an entry
     /// within an [ExternalSendersExt](crate::extension::built_in::ExternalSendersExt)
     /// as part of its group context extensions.
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn propose_add(
         &mut self,
@@ -278,7 +274,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     /// committed, the group needs to have `signing_identity` as an entry
     /// within an [ExternalSendersExt](crate::extension::built_in::ExternalSendersExt)
     /// as part of its group context extensions.
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn propose_remove(
         &mut self,
@@ -306,7 +302,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     /// committed, the group needs to have `signing_identity` as an entry
     /// within an [ExternalSendersExt](crate::extension::built_in::ExternalSendersExt)
     /// as part of its group context extensions.
-    #[cfg(all(feature = "external_proposal", feature = "psk"))]
+    #[cfg(all(feature = "by_ref_proposal", feature = "psk"))]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn propose_external_psk(
         &mut self,
@@ -326,7 +322,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     /// committed, the group needs to have `signing_identity` as an entry
     /// within an [ExternalSendersExt](crate::extension::built_in::ExternalSendersExt)
     /// as part of its group context extensions.
-    #[cfg(all(feature = "external_proposal", feature = "psk"))]
+    #[cfg(all(feature = "by_ref_proposal", feature = "psk"))]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn propose_resumption_psk(
         &mut self,
@@ -343,7 +339,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         self.propose(proposal, authenticated_data).await
     }
 
-    #[cfg(all(feature = "external_proposal", feature = "psk"))]
+    #[cfg(all(feature = "by_ref_proposal", feature = "psk"))]
     fn psk_proposal(&self, key_id: JustPreSharedKeyID) -> Result<Proposal, MlsError> {
         Ok(Proposal::Psk(PreSharedKeyProposal {
             psk: PreSharedKeyID {
@@ -363,7 +359,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     /// committed, the group needs to have `signing_identity` as an entry
     /// within an [ExternalSendersExt](crate::extension::built_in::ExternalSendersExt)
     /// as part of its group context extensions.
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn propose_group_context_extensions(
         &mut self,
@@ -382,7 +378,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     /// committed, the group needs to have `signing_identity` as an entry
     /// within an [ExternalSendersExt](crate::extension::built_in::ExternalSendersExt)
     /// as part of its group context extensions.
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn propose_reinit(
         &mut self,
@@ -416,7 +412,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     /// committed, the group needs to have `signing_identity` as an entry
     /// within an [ExternalSendersExt](crate::extension::built_in::ExternalSendersExt)
     /// as part of its group context extensions.
-    #[cfg(all(feature = "external_proposal", feature = "custom_proposal"))]
+    #[cfg(all(feature = "by_ref_proposal", feature = "custom_proposal"))]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn propose_custom(
         &mut self,
@@ -427,7 +423,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             .await
     }
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn propose(
         &mut self,
@@ -828,7 +824,7 @@ mod tests {
     async fn test_group_two_members(
         v: ProtocolVersion,
         cs: CipherSuite,
-        #[cfg(feature = "external_proposal")] ext_identity: Option<SigningIdentity>,
+        #[cfg(feature = "by_ref_proposal")] ext_identity: Option<SigningIdentity>,
     ) -> TestGroup {
         let mut group = test_group_with_one_commit(v, cs).await;
 
@@ -840,7 +836,7 @@ mod tests {
             .add_member(bob_key_package)
             .unwrap();
 
-        #[cfg(feature = "external_proposal")]
+        #[cfg(feature = "by_ref_proposal")]
         if let Some(ext_signer) = ext_identity {
             let mut ext_list = ExtensionList::new();
 
@@ -1055,7 +1051,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn setup_extern_proposal_test(
         extern_proposals_allowed: bool,
@@ -1073,7 +1069,7 @@ mod tests {
         (server_identity, server_key, alice)
     }
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn test_external_proposal(
         server: &mut ExternalGroup<TestExternalClientConfig>,
@@ -1119,7 +1115,7 @@ mod tests {
         assert_eq!(alice.group.state, server.state);
     }
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_group_can_propose_add() {
         let (server_identity, server_key, mut alice) = setup_extern_proposal_test(true).await;
@@ -1139,7 +1135,7 @@ mod tests {
         test_external_proposal(&mut server, &mut alice, external_proposal).await
     }
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_group_can_propose_remove() {
         let (server_identity, server_key, mut alice) = setup_extern_proposal_test(true).await;
@@ -1153,7 +1149,7 @@ mod tests {
         test_external_proposal(&mut server, &mut alice, external_proposal).await
     }
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_group_external_proposal_not_allowed() {
         let (signing_id, secret_key, alice) = setup_extern_proposal_test(false).await;
@@ -1169,7 +1165,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::ExternalProposalsDisabled));
     }
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_group_external_signing_identity_invalid() {
         let (server_identity, server_key) =

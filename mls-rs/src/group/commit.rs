@@ -768,7 +768,7 @@ mod tests {
         Client,
     };
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     use crate::extension::ExternalSendersExt;
 
     use crate::{
@@ -1270,7 +1270,7 @@ mod tests {
             .unwrap();
     }
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn server_identity_is_validated_against_new_extensions() {
         let alice = client_with_test_extension(b"alice").await;

@@ -48,7 +48,7 @@ pub enum Sender {
     /// in the current
     /// [`ExternalSendersExt`](crate::extension::ExternalSendersExt) stored in
     /// group context extensions.
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     External(u32) = 2u8,
     /// A new member proposing their own addition to the group.
     #[cfg(feature = "by_ref_proposal")]
@@ -149,11 +149,7 @@ impl MlsDecode for PublicMessage {
 
         let membership_tag = match content.sender {
             Sender::Member(_) => Some(MembershipTag::mls_decode(reader)?),
-            #[cfg(any(
-                feature = "external_proposal",
-                feature = "by_ref_proposal",
-                feature = "external_commit"
-            ))]
+            #[cfg(any(feature = "by_ref_proposal", feature = "external_commit"))]
             _ => None,
         };
 

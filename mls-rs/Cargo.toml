@@ -26,10 +26,9 @@ out_of_order = ["private_message"]
 prior_epoch = []
 by_ref_proposal = []
 all_extensions = []
-external_proposal = ["mls-rs-core/external_proposal", "mls-rs-identity-x509?/external_proposal", "by_ref_proposal"]
 psk = []
 x509 = ["mls-rs-core/x509", "dep:mls-rs-identity-x509"]
-rfc_compliant = ["external_commit", "state_update", "private_message", "all_extensions", "custom_proposal", "external_proposal", "out_of_order", "psk", "x509", "prior_epoch", "by_ref_proposal"]
+rfc_compliant = ["external_commit", "state_update", "private_message", "all_extensions", "custom_proposal", "out_of_order", "psk", "x509", "prior_epoch", "by_ref_proposal"]
 
 std = ["mls-rs-core/std", "mls-rs-codec/std", "mls-rs-identity-x509?/std", "hex/std", "futures/std", "itertools/use_std", "safer-ffi-gen?/std", "zeroize/std", "dep:debug_tree", "dep:thiserror"]
 

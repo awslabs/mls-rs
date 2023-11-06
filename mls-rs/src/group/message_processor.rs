@@ -278,7 +278,7 @@ impl TryFrom<Sender> for ProposalSender {
     fn try_from(value: Sender) -> Result<Self, Self::Error> {
         match value {
             Sender::Member(index) => Ok(Self::Member(index)),
-            #[cfg(feature = "external_proposal")]
+            #[cfg(feature = "by_ref_proposal")]
             Sender::External(index) => Ok(Self::External(index)),
             #[cfg(feature = "by_ref_proposal")]
             Sender::NewMemberProposal => Ok(Self::NewMember),
@@ -480,22 +480,11 @@ pub(crate) trait MessageProcessor: Send + Sync {
         sender: Sender,
         authenticated_data: Vec<u8>,
     ) -> Result<ApplicationMessageDescription, MlsError> {
-        #[cfg(any(
-            feature = "external_proposal",
-            feature = "by_ref_proposal",
-            feature = "external_commit"
-        ))]
+        #[cfg(any(feature = "by_ref_proposal", feature = "external_commit"))]
         let Sender::Member(sender_index) = sender
         else {
             return Err(MlsError::InvalidSender);
         };
-
-        #[cfg(all(
-            not(feature = "external_proposal"),
-            not(feature = "by_ref_proposal"),
-            not(feature = "external_commit")
-        ))]
-        let Sender::Member(sender_index) = sender;
 
         Ok(ApplicationMessageDescription {
             authenticated_data,

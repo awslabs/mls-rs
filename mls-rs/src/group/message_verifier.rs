@@ -2,7 +2,7 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-#[cfg(feature = "external_proposal")]
+#[cfg(feature = "by_ref_proposal")]
 use alloc::{vec, vec::Vec};
 
 use crate::{
@@ -14,7 +14,7 @@ use crate::{
     CipherSuiteProvider,
 };
 
-#[cfg(feature = "external_proposal")]
+#[cfg(feature = "by_ref_proposal")]
 use crate::{extension::ExternalSendersExt, identity::SigningIdentity};
 
 use super::{
@@ -45,7 +45,7 @@ pub(crate) async fn verify_plaintext_authentication<P: CipherSuiteProvider>(
     let auth_content = AuthenticatedContent::from(plaintext);
     let context = &state.context;
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     let external_signers = external_signers(context);
 
     let current_tree = &state.public_tree;
@@ -69,11 +69,7 @@ pub(crate) async fn verify_plaintext_authentication<P: CipherSuiteProvider>(
                 return Err(MlsError::CantProcessMessageFromSelf);
             }
         }
-        #[cfg(any(
-            feature = "external_proposal",
-            feature = "by_ref_proposal",
-            feature = "external_commit"
-        ))]
+        #[cfg(any(feature = "by_ref_proposal", feature = "external_commit"))]
         _ => {
             tag.is_none()
                 .then_some(())
@@ -88,7 +84,7 @@ pub(crate) async fn verify_plaintext_authentication<P: CipherSuiteProvider>(
         SignaturePublicKeysContainer::RatchetTree(current_tree),
         context,
         &auth_content,
-        #[cfg(feature = "external_proposal")]
+        #[cfg(feature = "by_ref_proposal")]
         &external_signers,
     )
     .await?;
@@ -96,7 +92,7 @@ pub(crate) async fn verify_plaintext_authentication<P: CipherSuiteProvider>(
     Ok(auth_content)
 }
 
-#[cfg(feature = "external_proposal")]
+#[cfg(feature = "by_ref_proposal")]
 fn external_signers(context: &GroupContext) -> Vec<SigningIdentity> {
     context
         .extensions
@@ -113,18 +109,14 @@ pub(crate) async fn verify_auth_content_signature<P: CipherSuiteProvider>(
     signature_keys_container: SignaturePublicKeysContainer<'_>,
     context: &GroupContext,
     auth_content: &AuthenticatedContent,
-    #[cfg(feature = "external_proposal")] external_signers: &[SigningIdentity],
+    #[cfg(feature = "by_ref_proposal")] external_signers: &[SigningIdentity],
 ) -> Result<(), MlsError> {
     let sender_public_key = signing_identity_for_sender(
         signature_keys_container,
         &auth_content.content.sender,
-        #[cfg(any(
-            feature = "external_proposal",
-            feature = "by_ref_proposal",
-            feature = "external_commit"
-        ))]
+        #[cfg(any(feature = "by_ref_proposal", feature = "external_commit"))]
         &auth_content.content.content,
-        #[cfg(feature = "external_proposal")]
+        #[cfg(feature = "by_ref_proposal")]
         external_signers,
     )?;
 
@@ -143,19 +135,15 @@ pub(crate) async fn verify_auth_content_signature<P: CipherSuiteProvider>(
 fn signing_identity_for_sender(
     signature_keys_container: SignaturePublicKeysContainer,
     sender: &Sender,
-    #[cfg(any(
-        feature = "external_proposal",
-        feature = "by_ref_proposal",
-        feature = "external_commit"
-    ))]
+    #[cfg(any(feature = "by_ref_proposal", feature = "external_commit"))]
     content: &super::framing::Content,
-    #[cfg(feature = "external_proposal")] external_signers: &[SigningIdentity],
+    #[cfg(feature = "by_ref_proposal")] external_signers: &[SigningIdentity],
 ) -> Result<SignaturePublicKey, MlsError> {
     match sender {
         Sender::Member(leaf_index) => {
             signing_identity_for_member(signature_keys_container, LeafIndex(*leaf_index))
         }
-        #[cfg(feature = "external_proposal")]
+        #[cfg(feature = "by_ref_proposal")]
         Sender::External(external_key_index) => {
             signing_identity_for_external(*external_key_index, external_signers)
         }
@@ -185,7 +173,7 @@ fn signing_identity_for_member(
     }
 }
 
-#[cfg(feature = "external_proposal")]
+#[cfg(feature = "by_ref_proposal")]
 fn signing_identity_for_external(
     index: u32,
     external_signers: &[SigningIdentity],
@@ -252,7 +240,7 @@ mod tests {
     use alloc::vec;
     use assert_matches::assert_matches;
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     use crate::{extension::ExternalSendersExt, ExtensionList};
 
     #[cfg(feature = "by_ref_proposal")]
@@ -271,17 +259,13 @@ mod tests {
     #[cfg(feature = "by_ref_proposal")]
     use alloc::boxed::Box;
 
-    #[cfg(any(
-        feature = "by_ref_proposal",
-        feature = "external_commit",
-        feature = "external_proposal"
-    ))]
+    #[cfg(any(feature = "by_ref_proposal", feature = "external_commit"))]
     use crate::group::{
         test_utils::{test_group, test_member},
         Sender,
     };
 
-    #[cfg(any(feature = "by_ref_proposal", feature = "external_proposal"))]
+    #[cfg(feature = "by_ref_proposal")]
     use crate::identity::test_utils::get_test_signing_identity;
 
     use super::{verify_auth_content_signature, verify_plaintext_authentication};
@@ -372,7 +356,7 @@ mod tests {
             super::SignaturePublicKeysContainer::RatchetTree(&env.bob.group.state.public_tree),
             env.bob.group.context(),
             &message,
-            #[cfg(feature = "external_proposal")]
+            #[cfg(feature = "by_ref_proposal")]
             &[],
         )
         .await
@@ -585,7 +569,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::ExpectedCommitForNewMemberCommit));
     }
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn valid_proposal_from_external_is_verified() {
         let (bob_key_pkg_gen, _) =
@@ -629,7 +613,7 @@ mod tests {
         .unwrap();
     }
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_proposal_must_be_from_valid_sender() {
         let (bob_key_pkg_gen, _) =

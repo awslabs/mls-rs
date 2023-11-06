@@ -2,7 +2,7 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-#[cfg(any(feature = "external_proposal", feature = "all_extensions"))]
+#[cfg(any(feature = "by_ref_proposal", feature = "all_extensions"))]
 use alloc::vec::Vec;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::extension::{ExtensionType, MlsCodecExtension};
@@ -10,7 +10,7 @@ use mls_rs_core::extension::{ExtensionType, MlsCodecExtension};
 #[cfg(feature = "all_extensions")]
 use mls_rs_core::{group::ProposalType, identity::CredentialType};
 
-#[cfg(feature = "external_proposal")]
+#[cfg(feature = "by_ref_proposal")]
 use mls_rs_core::{
     extension::ExtensionList,
     identity::{IdentityProvider, SigningIdentity},
@@ -172,7 +172,7 @@ impl MlsCodecExtension for ExternalPubExt {
 }
 
 /// Enable proposals by an [ExternalClient](crate::external_client::ExternalClient).
-#[cfg(feature = "external_proposal")]
+#[cfg(feature = "by_ref_proposal")]
 #[cfg_attr(
     all(feature = "ffi", not(test)),
     safer_ffi_gen::ffi_type(clone, opaque)
@@ -183,7 +183,7 @@ pub struct ExternalSendersExt {
     pub(crate) allowed_senders: Vec<SigningIdentity>,
 }
 
-#[cfg(feature = "external_proposal")]
+#[cfg(feature = "by_ref_proposal")]
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl ExternalSendersExt {
     pub fn new(allowed_senders: Vec<SigningIdentity>) -> Self {
@@ -211,7 +211,7 @@ impl ExternalSendersExt {
     }
 }
 
-#[cfg(feature = "external_proposal")]
+#[cfg(feature = "by_ref_proposal")]
 impl MlsCodecExtension for ExternalSendersExt {
     fn extension_type() -> ExtensionType {
         ExtensionType::EXTERNAL_SENDERS
@@ -222,7 +222,7 @@ impl MlsCodecExtension for ExternalSendersExt {
 mod tests {
     use super::*;
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     use crate::{
         client::test_utils::TEST_CIPHER_SUITE, identity::test_utils::get_test_signing_identity,
     };
@@ -286,7 +286,7 @@ mod tests {
         assert_eq!(ext, restored)
     }
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_external_senders() {
         let identity = get_test_signing_identity(TEST_CIPHER_SUITE, &[1]).await.0;

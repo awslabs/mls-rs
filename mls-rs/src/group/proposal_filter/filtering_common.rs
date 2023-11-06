@@ -25,11 +25,11 @@ use super::ProposalInfo;
 #[cfg(feature = "all_extensions")]
 use crate::extension::{MlsExtension, RequiredCapabilitiesExt};
 
-#[cfg(feature = "external_proposal")]
+#[cfg(feature = "by_ref_proposal")]
 use crate::extension::ExternalSendersExt;
 
 #[cfg(any(
-    feature = "external_proposal",
+    feature = "by_ref_proposal",
     feature = "external_commit",
     feature = "psk"
 ))]
@@ -136,7 +136,7 @@ where
                 self.apply_proposals_from_new_member(proposals, commit_time)
                     .await
             }
-            #[cfg(feature = "external_proposal")]
+            #[cfg(feature = "by_ref_proposal")]
             Sender::External(_) => Err(MlsError::ExternalSenderCannotCommit),
             #[cfg(feature = "by_ref_proposal")]
             Sender::NewMemberProposal => Err(MlsError::ExternalSenderCannotCommit),
@@ -253,7 +253,7 @@ where
             .proposal
             .has_extension(RequiredCapabilitiesExt::extension_type());
 
-        #[cfg(feature = "external_proposal")]
+        #[cfg(feature = "by_ref_proposal")]
         let must_check = must_check
             || group_context_extensions_proposal
                 .proposal
@@ -272,7 +272,7 @@ where
                 .try_for_each(|(_, leaf)| {
                     leaf_validator.validate_required_capabilities(leaf)?;
 
-                    #[cfg(feature = "external_proposal")]
+                    #[cfg(feature = "by_ref_proposal")]
                     leaf_validator.validate_external_senders_ext_credentials(leaf)?;
 
                     Ok(())

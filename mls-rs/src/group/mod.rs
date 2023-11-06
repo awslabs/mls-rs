@@ -1189,7 +1189,7 @@ where
                 SignaturePublicKeysContainer::RatchetTree(&self.state.public_tree),
                 self.context(),
                 &content,
-                #[cfg(feature = "external_proposal")]
+                #[cfg(feature = "by_ref_proposal")]
                 &[],
             )
             .await?;
@@ -1213,7 +1213,7 @@ where
                     SignaturePublicKeysContainer::List(&epoch.signature_public_keys),
                     &epoch.context,
                     &content,
-                    #[cfg(feature = "external_proposal")]
+                    #[cfg(feature = "by_ref_proposal")]
                     &[],
                 )
                 .await?;
@@ -1821,17 +1821,13 @@ mod tests {
     #[cfg(feature = "all_extensions")]
     use crate::{extension::RequiredCapabilitiesExt, key_package::test_utils::test_key_package};
 
-    #[cfg(all(feature = "external_proposal", feature = "custom_proposal"))]
+    #[cfg(all(feature = "by_ref_proposal", feature = "custom_proposal"))]
     use super::test_utils::test_group_custom_config;
 
     #[cfg(feature = "psk")]
     use crate::{client::Client, psk::PreSharedKey};
 
-    #[cfg(any(
-        feature = "by_ref_proposal",
-        feature = "external_proposal",
-        feature = "private_message"
-    ))]
+    #[cfg(any(feature = "by_ref_proposal", feature = "private_message"))]
     use crate::group::test_utils::random_bytes;
 
     #[cfg(feature = "by_ref_proposal")]
@@ -1854,7 +1850,7 @@ mod tests {
     use mls_rs_core::extension::{Extension, ExtensionType};
     use mls_rs_core::identity::{Credential, CredentialType, CustomCredential};
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     use mls_rs_core::identity::CertificateChain;
 
     #[cfg(feature = "state_update")]
@@ -1863,13 +1859,13 @@ mod tests {
     #[cfg(feature = "state_update")]
     use alloc::format;
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     use crate::{crypto::test_utils::test_cipher_suite_provider, extension::ExternalSendersExt};
 
     #[cfg(any(feature = "private_message", feature = "state_update"))]
     use super::test_utils::test_member;
 
-    #[cfg(any(feature = "all_extensions", feature = "external_proposal"))]
+    #[cfg(any(feature = "all_extensions", feature = "by_ref_proposal"))]
     use mls_rs_core::extension::MlsExtension;
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -2302,7 +2298,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     #[cfg(not(target_arch = "wasm32"))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn creating_group_with_member_not_supporting_external_sender_credential_fails() {
@@ -3348,7 +3344,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::RequiredCredentialNotFound(_)));
     }
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     #[cfg(not(target_arch = "wasm32"))]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn make_x509_external_senders_ext() -> ExternalSendersExt {
@@ -3365,7 +3361,7 @@ mod tests {
         ExternalSendersExt::new(vec![ext_sender_id])
     }
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     #[cfg(not(target_arch = "wasm32"))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn commit_leaf_not_supporting_external_sender_credential_leads_to_rejected_commit() {
@@ -3401,7 +3397,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     #[cfg(not(target_arch = "wasm32"))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn node_not_supporting_external_sender_credential_cannot_join_group() {
@@ -3438,7 +3434,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     #[cfg(not(target_arch = "wasm32"))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_senders_extension_is_rejected_if_member_does_not_support_credential_type() {
