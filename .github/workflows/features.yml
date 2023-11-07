@@ -10,9 +10,9 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v3
-    - uses: dtolnay/rust-toolchain@stable
-    - name: Install cargo-hack
-      run: cargo install cargo-hack
-    - name: Build one feature at a time
-      run: cargo hack build --each-feature --workspace --exclude fuzz
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-hack
+        run: cargo install cargo-hack
+      - name: Build one feature at a time
+        run: cargo hack build --each-feature --workspace --exclude fuzz --exclude harness_client
