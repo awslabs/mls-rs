@@ -16,29 +16,20 @@ use crate::{
     CipherSuiteProvider, ExtensionList,
 };
 
-#[cfg(feature = "external_commit")]
 use crate::tree_kem::leaf_node::LeafNode;
 
-#[cfg(feature = "all_extensions")]
 use super::ProposalInfo;
 
-#[cfg(feature = "all_extensions")]
 use crate::extension::{MlsExtension, RequiredCapabilitiesExt};
 
-#[cfg(feature = "external_proposal")]
+#[cfg(feature = "by_ref_proposal")]
 use crate::extension::ExternalSendersExt;
 
-#[cfg(any(
-    feature = "external_proposal",
-    feature = "external_commit",
-    feature = "psk"
-))]
 use mls_rs_core::error::IntoAnyError;
 
 use alloc::vec::Vec;
 use mls_rs_core::{identity::IdentityProvider, psk::PreSharedKeyStorage};
 
-#[cfg(feature = "external_commit")]
 use crate::group::{ExternalInit, ProposalType, RemoveProposal};
 
 #[cfg(all(feature = "by_ref_proposal", feature = "psk"))]
@@ -62,7 +53,6 @@ pub(crate) struct ProposalApplier<'a, C, P, CSP> {
     pub protocol_version: ProtocolVersion,
     pub cipher_suite_provider: &'a CSP,
     pub original_group_extensions: &'a ExtensionList,
-    #[cfg(feature = "external_commit")]
     pub external_leaf: Option<&'a LeafNode>,
     pub identity_provider: &'a C,
     pub psk_storage: &'a P,
@@ -74,7 +64,6 @@ pub(crate) struct ProposalApplier<'a, C, P, CSP> {
 pub(crate) struct ApplyProposalsOutput {
     pub(crate) new_tree: TreeKemPublic,
     pub(crate) indexes_of_added_kpkgs: Vec<LeafIndex>,
-    #[cfg(feature = "external_commit")]
     pub(crate) external_init_index: Option<LeafIndex>,
     #[cfg(feature = "by_ref_proposal")]
     pub(crate) applied_proposals: ProposalBundle,
@@ -92,7 +81,7 @@ where
         protocol_version: ProtocolVersion,
         cipher_suite_provider: &'a CSP,
         original_group_extensions: &'a ExtensionList,
-        #[cfg(feature = "external_commit")] external_leaf: Option<&'a LeafNode>,
+        external_leaf: Option<&'a LeafNode>,
         identity_provider: &'a C,
         psk_storage: &'a P,
         #[cfg(feature = "by_ref_proposal")] group_id: &'a [u8],
@@ -102,7 +91,6 @@ where
             protocol_version,
             cipher_suite_provider,
             original_group_extensions,
-            #[cfg(feature = "external_commit")]
             external_leaf,
             identity_provider,
             psk_storage,
@@ -131,12 +119,11 @@ where
                 )
                 .await
             }
-            #[cfg(feature = "external_commit")]
             Sender::NewMemberCommit => {
                 self.apply_proposals_from_new_member(proposals, commit_time)
                     .await
             }
-            #[cfg(feature = "external_proposal")]
+            #[cfg(feature = "by_ref_proposal")]
             Sender::External(_) => Err(MlsError::ExternalSenderCannotCommit),
             #[cfg(feature = "by_ref_proposal")]
             Sender::NewMemberProposal => Err(MlsError::ExternalSenderCannotCommit),
@@ -158,8 +145,9 @@ where
         Ok(output)
     }
 
-    #[cfg(feature = "external_commit")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    // The lint below is triggered by the `proposals` parameter which may or may not be a borrow.
+    #[allow(clippy::needless_borrow)]
     async fn apply_proposals_from_new_member(
         &self,
         #[cfg(not(feature = "by_ref_proposal"))] proposals: &ProposalBundle,
@@ -219,7 +207,6 @@ where
         Ok(output)
     }
 
-    #[cfg(feature = "all_extensions")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(super) async fn apply_proposals_with_new_capabilities(
         &self,
@@ -253,7 +240,7 @@ where
             .proposal
             .has_extension(RequiredCapabilitiesExt::extension_type());
 
-        #[cfg(feature = "external_proposal")]
+        #[cfg(feature = "by_ref_proposal")]
         let must_check = must_check
             || group_context_extensions_proposal
                 .proposal
@@ -272,7 +259,7 @@ where
                 .try_for_each(|(_, leaf)| {
                     leaf_validator.validate_required_capabilities(leaf)?;
 
-                    #[cfg(feature = "external_proposal")]
+                    #[cfg(feature = "by_ref_proposal")]
                     leaf_validator.validate_external_senders_ext_credentials(leaf)?;
 
                     Ok(())
@@ -486,14 +473,12 @@ where
     Ok(())
 }
 
-#[cfg(feature = "external_commit")]
 fn ensure_exactly_one_external_init(proposals: &ProposalBundle) -> Result<(), MlsError> {
     (proposals.by_type::<ExternalInit>().count() == 1)
         .then_some(())
         .ok_or(MlsError::ExternalCommitMustHaveExactlyOneExternalInit)
 }
 
-#[cfg(feature = "external_commit")]
 fn ensure_proposals_in_external_commit_are_allowed(
     proposals: &ProposalBundle,
 ) -> Result<(), MlsError> {
@@ -512,7 +497,6 @@ fn ensure_proposals_in_external_commit_are_allowed(
     }
 }
 
-#[cfg(feature = "external_commit")]
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 async fn ensure_at_most_one_removal_for_self<C>(
     proposals: &ProposalBundle,
@@ -535,7 +519,6 @@ where
     }
 }
 
-#[cfg(feature = "external_commit")]
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 async fn ensure_removal_is_for_self<C>(
     removal: &RemoveProposal,
@@ -556,7 +539,6 @@ where
         .ok_or(MlsError::ExternalCommitRemovesOtherIdentity)
 }
 
-#[cfg(feature = "external_commit")]
 fn ensure_no_proposal_by_ref(proposals: &ProposalBundle) -> Result<(), MlsError> {
     proposals
         .iter_proposals()
@@ -565,7 +547,6 @@ fn ensure_no_proposal_by_ref(proposals: &ProposalBundle) -> Result<(), MlsError>
         .ok_or(MlsError::OnlyMembersCanCommitProposalsByRef)
 }
 
-#[cfg(feature = "external_commit")]
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 async fn insert_external_leaf<I: IdentityProvider>(
     tree: &mut TreeKemPublic,

@@ -27,7 +27,6 @@ use mls_rs_core::group::{GroupStateStorage, ProposalType};
 use mls_rs_core::identity::CredentialType;
 use mls_rs_core::key_package::KeyPackageStorage;
 
-#[cfg(feature = "external_commit")]
 use crate::group::external_commit::ExternalCommitBuilder;
 
 #[cfg(feature = "by_ref_proposal")]
@@ -576,7 +575,6 @@ where
     ///
     // TODO: Add a comment about forward secrecy and a pointer to the future
     // book chapter on this topic
-    #[cfg(feature = "external_commit")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn commit_external(
         &self,
@@ -591,7 +589,6 @@ where
         .await
     }
 
-    #[cfg(feature = "external_commit")]
     pub fn external_commit_builder(&self) -> Result<ExternalCommitBuilder<C>, MlsError> {
         Ok(ExternalCommitBuilder::new(
             self.signer()?.clone(),
@@ -765,7 +762,6 @@ mod tests {
     };
     use assert_matches::assert_matches;
 
-    #[cfg(feature = "external_commit")]
     use crate::{
         group::{
             message_processor::ProposalMessageDescription,
@@ -776,7 +772,6 @@ mod tests {
         psk::{ExternalPskId, PreSharedKey},
     };
 
-    #[cfg(feature = "external_commit")]
     use alloc::vec;
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -818,7 +813,7 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "external_commit")]
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn new_member_add_proposal_adds_to_group() {
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
@@ -866,7 +861,7 @@ mod tests {
             .any(|member| member.signing_identity() == &bob_identity))
     }
 
-    #[cfg(feature = "external_commit")]
+    #[cfg(feature = "psk")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn join_via_external_commit(do_remove: bool, with_psk: bool) -> Result<(), MlsError> {
         // An external commit cannot be the first commit in a group as it requires
@@ -962,7 +957,7 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(feature = "external_commit")]
+    #[cfg(feature = "psk")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_external_commit() {
         // New member can join
@@ -975,7 +970,6 @@ mod tests {
         join_via_external_commit(true, true).await.unwrap();
     }
 
-    #[cfg(feature = "external_commit")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn creating_an_external_commit_requires_a_group_info_message() {
         let (alice_identity, secret_key) =
@@ -991,7 +985,6 @@ mod tests {
         assert_matches!(res, Err(MlsError::UnexpectedMessageType));
     }
 
-    #[cfg(feature = "external_commit")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_commit_with_invalid_group_info_fails() {
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;

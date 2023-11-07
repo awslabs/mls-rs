@@ -11,7 +11,6 @@ license = "Apache-2.0 OR MIT"
 [features]
 default = ["std"]
 std = ["mls-rs-core/std", "dep:thiserror"]
-external_proposal = ["mls-rs-core/external_proposal"]
 
 [dependencies]
 async-trait = "0.1.74"

@@ -483,7 +483,7 @@ async fn test_processing_message_from_self_returns_error() {
     test_on_all_params(processing_message_from_self_returns_error).await;
 }
 
-#[cfg(feature = "external_commit")]
+#[cfg(feature = "by_ref_proposal")]
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 async fn external_commits_work(
     protocol_version: ProtocolVersion,
@@ -560,7 +560,7 @@ async fn external_commits_work(
     }
 }
 
-#[cfg(feature = "external_commit")]
+#[cfg(feature = "by_ref_proposal")]
 #[maybe_async::test(not(mls_build_async), async(mls_build_async, futures_test))]
 async fn test_external_commits() {
     test_on_all_params_plaintext(external_commits_work).await
@@ -735,7 +735,7 @@ async fn reinit_works() {
         .unwrap();
 }
 
-#[cfg(feature = "external_commit")]
+#[cfg(feature = "by_ref_proposal")]
 #[maybe_async::test(not(mls_build_async), async(mls_build_async, futures_test))]
 async fn external_joiner_can_process_siblings_update() {
     let mut groups =

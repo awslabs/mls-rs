@@ -250,7 +250,6 @@ pub(crate) mod test_utils {
         identity::test_utils::{get_test_signing_identity, BasicWithCustomProvider},
     };
 
-    #[cfg(feature = "all_extensions")]
     use crate::extension::ApplicationIdExt;
 
     use super::*;
@@ -346,7 +345,6 @@ pub(crate) mod test_utils {
         get_basic_test_node_capabilities(cipher_suite, id, get_test_capabilities()).await
     }
 
-    #[cfg(feature = "all_extensions")]
     #[allow(unused)]
     pub fn get_test_extensions() -> ExtensionList {
         let mut extension_list = ExtensionList::new();
@@ -358,12 +356,6 @@ pub(crate) mod test_utils {
             .unwrap();
 
         extension_list
-    }
-
-    #[cfg(not(feature = "all_extensions"))]
-    #[allow(unused)]
-    pub fn get_test_extensions() -> ExtensionList {
-        ExtensionList::new()
     }
 
     pub fn get_test_capabilities() -> Capabilities {

@@ -21,7 +21,6 @@ impl TreeKemPrivate {
         }
     }
 
-    #[cfg(feature = "external_commit")]
     pub fn new_for_external() -> Self {
         TreeKemPrivate {
             self_index: LeafIndex(0),

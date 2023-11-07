@@ -8,10 +8,9 @@ use crate::CipherSuiteProvider;
 use crate::{signer::Signable, time::MlsTime};
 use mls_rs_core::{error::IntoAnyError, extension::ExtensionList, identity::IdentityProvider};
 
-#[cfg(feature = "all_extensions")]
 use crate::extension::RequiredCapabilitiesExt;
 
-#[cfg(feature = "external_proposal")]
+#[cfg(feature = "by_ref_proposal")]
 use crate::extension::ExternalSendersExt;
 
 pub enum ValidationContext<'a> {
@@ -115,7 +114,6 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
         self.check_if_valid(leaf_node, context).await
     }
 
-    #[cfg(feature = "all_extensions")]
     pub fn validate_required_capabilities(&self, leaf_node: &LeafNode) -> Result<(), MlsError> {
         let Some(required_capabilities) = self
             .group_context_extensions
@@ -146,7 +144,7 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
         Ok(())
     }
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     pub fn validate_external_senders_ext_credentials(
         &self,
         leaf_node: &LeafNode,
@@ -199,7 +197,6 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
             .await?;
 
         // If required capabilities are specified, verify the leaf node meets the requirements
-        #[cfg(feature = "all_extensions")]
         self.validate_required_capabilities(leaf_node)?;
 
         // If there are extensions, make sure they are referenced in the capabilities field
@@ -226,7 +223,7 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
             .map(MlsError::UnsupportedGroupExtension)
             .map_or(Ok(()), Err)?;
 
-        #[cfg(feature = "external_proposal")]
+        #[cfg(feature = "by_ref_proposal")]
         self.validate_external_senders_ext_credentials(leaf_node)?;
 
         Ok(())
@@ -235,14 +232,12 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
 
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "all_extensions")]
     use crate::extension::MlsExtension;
     use alloc::vec;
     use assert_matches::assert_matches;
     #[cfg(feature = "std")]
     use core::time::Duration;
     use mls_rs_core::crypto::CipherSuite;
-    #[cfg(feature = "all_extensions")]
     use mls_rs_core::group::ProposalType;
 
     use super::*;
@@ -509,7 +504,6 @@ mod tests {
         assert_matches!(res, Err(MlsError::InvalidSignature));
     }
 
-    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_required_extension() {
         let required_capabilities = RequiredCapabilitiesExt {
@@ -540,7 +534,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_required_proposal() {
         let required_capabilities = RequiredCapabilitiesExt {
@@ -571,7 +564,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_required_credential() {
         let required_capabilities = RequiredCapabilitiesExt {
@@ -648,7 +640,7 @@ pub(crate) mod test_utils {
     #[derive(Clone, Debug, Default)]
     pub struct FailureIdentityProvider;
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     impl FailureIdentityProvider {
         pub fn new() -> Self {
             Self

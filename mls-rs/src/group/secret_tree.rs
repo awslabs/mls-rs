@@ -126,7 +126,6 @@ pub struct SecretTree {
     leaf_count: u32,
 }
 
-#[cfg(feature = "external_commit")]
 impl SecretTree {
     pub(crate) fn empty() -> SecretTree {
         SecretTree {

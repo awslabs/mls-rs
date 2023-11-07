@@ -2,15 +2,13 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-#[cfg(any(feature = "external_proposal", feature = "all_extensions"))]
 use alloc::vec::Vec;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::extension::{ExtensionType, MlsCodecExtension};
 
-#[cfg(feature = "all_extensions")]
 use mls_rs_core::{group::ProposalType, identity::CredentialType};
 
-#[cfg(feature = "external_proposal")]
+#[cfg(feature = "by_ref_proposal")]
 use mls_rs_core::{
     extension::ExtensionList,
     identity::{IdentityProvider, SigningIdentity},
@@ -19,14 +17,12 @@ use mls_rs_core::{
 
 use crate::tree_kem::node::NodeVec;
 
-#[cfg(feature = "external_commit")]
 use mls_rs_core::crypto::HpkePublicKey;
 
 /// Application specific identifier.
 ///
 /// A custom application level identifier that can be optionally stored
 /// within the `leaf_node_extensions` of a group [Member](crate::group::Member).
-#[cfg(feature = "all_extensions")]
 #[cfg_attr(
     all(feature = "ffi", not(test)),
     safer_ffi_gen::ffi_type(clone, opaque)
@@ -37,7 +33,6 @@ pub struct ApplicationIdExt {
     pub(crate) identifier: Vec<u8>,
 }
 
-#[cfg(feature = "all_extensions")]
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl ApplicationIdExt {
     /// Create a new application level identifier extension.
@@ -51,7 +46,6 @@ impl ApplicationIdExt {
     }
 }
 
-#[cfg(feature = "all_extensions")]
 impl MlsCodecExtension for ApplicationIdExt {
     fn extension_type() -> ExtensionType {
         ExtensionType::APPLICATION_ID
@@ -89,7 +83,6 @@ impl MlsCodecExtension for RatchetTreeExt {
 /// Extension, proposal, and credential types defined by the MLS RFC and
 /// provided are considered required by default and should NOT be used
 /// within this extension.
-#[cfg(feature = "all_extensions")]
 #[cfg_attr(
     all(feature = "ffi", not(test)),
     safer_ffi_gen::ffi_type(clone, opaque)
@@ -101,7 +94,6 @@ pub struct RequiredCapabilitiesExt {
     pub credentials: Vec<CredentialType>,
 }
 
-#[cfg(feature = "all_extensions")]
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl RequiredCapabilitiesExt {
     /// Create a required capabilities extension.
@@ -133,7 +125,6 @@ impl RequiredCapabilitiesExt {
     }
 }
 
-#[cfg(feature = "all_extensions")]
 impl MlsCodecExtension for RequiredCapabilitiesExt {
     fn extension_type() -> ExtensionType {
         ExtensionType::REQUIRED_CAPABILITIES
@@ -144,7 +135,6 @@ impl MlsCodecExtension for RequiredCapabilitiesExt {
 ///
 /// This proposal type is optionally provided as part of a
 /// [Group Info](crate::group::Group::group_info_message).
-#[cfg(feature = "external_commit")]
 #[cfg_attr(
     all(feature = "ffi", not(test)),
     safer_ffi_gen::ffi_type(clone, opaque)
@@ -155,7 +145,6 @@ pub struct ExternalPubExt {
     pub(crate) external_pub: HpkePublicKey,
 }
 
-#[cfg(feature = "external_commit")]
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl ExternalPubExt {
     /// Get the public key to be used for an external commit.
@@ -164,7 +153,6 @@ impl ExternalPubExt {
     }
 }
 
-#[cfg(feature = "external_commit")]
 impl MlsCodecExtension for ExternalPubExt {
     fn extension_type() -> ExtensionType {
         ExtensionType::EXTERNAL_PUB
@@ -172,7 +160,7 @@ impl MlsCodecExtension for ExternalPubExt {
 }
 
 /// Enable proposals by an [ExternalClient](crate::external_client::ExternalClient).
-#[cfg(feature = "external_proposal")]
+#[cfg(feature = "by_ref_proposal")]
 #[cfg_attr(
     all(feature = "ffi", not(test)),
     safer_ffi_gen::ffi_type(clone, opaque)
@@ -183,7 +171,7 @@ pub struct ExternalSendersExt {
     pub(crate) allowed_senders: Vec<SigningIdentity>,
 }
 
-#[cfg(feature = "external_proposal")]
+#[cfg(feature = "by_ref_proposal")]
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl ExternalSendersExt {
     pub fn new(allowed_senders: Vec<SigningIdentity>) -> Self {
@@ -211,7 +199,7 @@ impl ExternalSendersExt {
     }
 }
 
-#[cfg(feature = "external_proposal")]
+#[cfg(feature = "by_ref_proposal")]
 impl MlsCodecExtension for ExternalSendersExt {
     fn extension_type() -> ExtensionType {
         ExtensionType::EXTERNAL_SENDERS
@@ -222,14 +210,13 @@ impl MlsCodecExtension for ExternalSendersExt {
 mod tests {
     use super::*;
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     use crate::{
         client::test_utils::TEST_CIPHER_SUITE, identity::test_utils::get_test_signing_identity,
     };
 
     use mls_rs_core::extension::MlsExtension;
 
-    #[cfg(feature = "all_extensions")]
     use mls_rs_core::identity::BasicCredential;
 
     use alloc::vec;
@@ -237,7 +224,6 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    #[cfg(feature = "all_extensions")]
     #[test]
     fn test_application_id_extension() {
         let test_id = vec![0u8; 32];
@@ -266,7 +252,6 @@ mod tests {
         assert_eq!(ext, restored)
     }
 
-    #[cfg(feature = "all_extensions")]
     #[test]
     fn test_required_capabilities() {
         let ext = RequiredCapabilitiesExt {
@@ -286,7 +271,7 @@ mod tests {
         assert_eq!(ext, restored)
     }
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_external_senders() {
         let identity = get_test_signing_identity(TEST_CIPHER_SUITE, &[1]).await.0;
@@ -303,7 +288,6 @@ mod tests {
         assert_eq!(ext, restored)
     }
 
-    #[cfg(feature = "external_commit")]
     #[test]
     fn test_external_pub() {
         let ext = ExternalPubExt {

@@ -14,15 +14,8 @@ use crate::{
 
 use super::filtering_common::{filter_out_invalid_psks, ApplyProposalsOutput, ProposalApplier};
 
-#[cfg(feature = "external_proposal")]
-use crate::extension::ExternalSendersExt;
-
-#[cfg(any(
-    feature = "external_proposal",
-    feature = "external_commit",
-    feature = "psk"
-))]
-use mls_rs_core::error::IntoAnyError;
+#[cfg(feature = "by_ref_proposal")]
+use {crate::extension::ExternalSendersExt, mls_rs_core::error::IntoAnyError};
 
 use mls_rs_core::{identity::IdentityProvider, psk::PreSharedKeyStorage};
 
@@ -37,9 +30,6 @@ use futures::{StreamExt, TryStreamExt};
 
 #[cfg(feature = "custom_proposal")]
 use crate::tree_kem::TreeKemPublic;
-
-#[cfg(feature = "external_commit")]
-use crate::group::{ExternalInit, ProposalType, RemoveProposal};
 
 #[cfg(feature = "psk")]
 use crate::group::{
@@ -65,7 +55,7 @@ where
         filter_out_removal_of_committer(commit_sender, proposals)?;
         filter_out_invalid_psks(self.cipher_suite_provider, proposals, self.psk_storage).await?;
 
-        #[cfg(feature = "external_proposal")]
+        #[cfg(feature = "by_ref_proposal")]
         filter_out_invalid_group_extensions(proposals, self.identity_provider, commit_time).await?;
 
         filter_out_extra_group_context_extensions(proposals)?;
@@ -83,17 +73,8 @@ where
     ) -> Result<ApplyProposalsOutput, MlsError> {
         match proposals.group_context_extensions_proposal().cloned() {
             Some(p) => {
-                #[cfg(feature = "all_extensions")]
-                {
-                    self.apply_proposals_with_new_capabilities(proposals, p, commit_time)
-                        .await
-                }
-
-                #[cfg(not(feature = "all_extensions"))]
-                {
-                    self.apply_tree_changes(proposals, &p.proposal, commit_time)
-                        .await
-                }
+                self.apply_proposals_with_new_capabilities(proposals, p, commit_time)
+                    .await
             }
             None => {
                 self.apply_tree_changes(proposals, self.original_group_extensions, commit_time)
@@ -125,7 +106,6 @@ where
         Ok(ApplyProposalsOutput {
             new_tree,
             indexes_of_added_kpkgs: added,
-            #[cfg(feature = "external_commit")]
             external_init_index: None,
         })
     }
@@ -169,7 +149,7 @@ fn filter_out_removal_of_committer(
     Ok(())
 }
 
-#[cfg(feature = "external_proposal")]
+#[cfg(feature = "by_ref_proposal")]
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 async fn filter_out_invalid_group_extensions<C>(
     proposals: &ProposalBundle,

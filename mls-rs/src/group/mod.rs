@@ -40,7 +40,6 @@ use crate::{CipherSuiteProvider, CryptoProvider};
 #[cfg(feature = "by_ref_proposal")]
 use crate::crypto::{HpkePublicKey, HpkeSecretKey};
 
-#[cfg(feature = "external_commit")]
 use crate::extension::ExternalPubExt;
 
 #[cfg(feature = "private_message")]
@@ -152,7 +151,6 @@ pub(crate) use state_repo_light as state_repo;
 pub(crate) mod transcript_hash;
 mod util;
 
-#[cfg(feature = "external_commit")]
 /// External commit building.
 pub mod external_commit;
 
@@ -1189,7 +1187,7 @@ where
                 SignaturePublicKeysContainer::RatchetTree(&self.state.public_tree),
                 self.context(),
                 &content,
-                #[cfg(feature = "external_proposal")]
+                #[cfg(feature = "by_ref_proposal")]
                 &[],
             )
             .await?;
@@ -1213,7 +1211,7 @@ where
                     SignaturePublicKeysContainer::List(&epoch.signature_public_keys),
                     &epoch.context,
                     &content,
-                    #[cfg(feature = "external_proposal")]
+                    #[cfg(feature = "by_ref_proposal")]
                     &[],
                 )
                 .await?;
@@ -1335,7 +1333,6 @@ where
     /// ratchet tree and therefore contains all information needed to join the group. Otherwise,
     /// the ratchet tree must be obtained separately, e.g. via
     /// (ExternalClient::export_tree)[crate::external_client::ExternalGroup::export_tree].
-    #[cfg(feature = "external_commit")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn group_info_message_allowing_ext_commit(
         &self,
@@ -1664,10 +1661,6 @@ where
         // from the previous epoch (or from the external init) to compute the epoch secret and
         // derived secrets for the new epoch
 
-        #[cfg(not(feature = "external_commit"))]
-        let key_schedule = self.key_schedule.clone();
-
-        #[cfg(feature = "external_commit")]
         let key_schedule = match provisional_state
             .applied_proposals
             .external_initializations
@@ -1803,7 +1796,7 @@ mod tests {
         client::test_utils::{test_client_with_key_pkg, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         client_builder::{test_utils::TestClientConfig, ClientBuilder},
         crypto::test_utils::TestCryptoProvider,
-        identity::test_utils::BasicWithCustomProvider,
+        identity::test_utils::{get_test_signing_identity, BasicWithCustomProvider},
         key_package::test_utils::test_key_package_message,
         mls_rules::CommitOptions,
         tree_kem::{
@@ -1818,26 +1811,20 @@ mod tests {
     #[cfg(feature = "prior_epoch")]
     use crate::group::padding::PaddingMode;
 
-    #[cfg(feature = "all_extensions")]
     use crate::{extension::RequiredCapabilitiesExt, key_package::test_utils::test_key_package};
 
-    #[cfg(all(feature = "external_proposal", feature = "custom_proposal"))]
+    #[cfg(all(feature = "by_ref_proposal", feature = "custom_proposal"))]
     use super::test_utils::test_group_custom_config;
 
     #[cfg(feature = "psk")]
     use crate::{client::Client, psk::PreSharedKey};
 
-    #[cfg(any(
-        feature = "by_ref_proposal",
-        feature = "external_proposal",
-        feature = "private_message"
-    ))]
+    #[cfg(any(feature = "by_ref_proposal", feature = "private_message"))]
     use crate::group::test_utils::random_bytes;
 
     #[cfg(feature = "by_ref_proposal")]
     use crate::{
-        extension::test_utils::TestExtension,
-        identity::test_utils::{get_test_basic_credential, get_test_signing_identity},
+        extension::test_utils::TestExtension, identity::test_utils::get_test_basic_credential,
         time::MlsTime,
     };
 
@@ -1854,7 +1841,7 @@ mod tests {
     use mls_rs_core::extension::{Extension, ExtensionType};
     use mls_rs_core::identity::{Credential, CredentialType, CustomCredential};
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     use mls_rs_core::identity::CertificateChain;
 
     #[cfg(feature = "state_update")]
@@ -1863,13 +1850,12 @@ mod tests {
     #[cfg(feature = "state_update")]
     use alloc::format;
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     use crate::{crypto::test_utils::test_cipher_suite_provider, extension::ExternalSendersExt};
 
     #[cfg(any(feature = "private_message", feature = "state_update"))]
     use super::test_utils::test_member;
 
-    #[cfg(any(feature = "all_extensions", feature = "external_proposal"))]
     use mls_rs_core::extension::MlsExtension;
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -2146,7 +2132,6 @@ mod tests {
         assert_matches!(bob_group, Err(MlsError::RatchetTreeNotFound));
     }
 
-    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_group_context_ext_proposal_create() {
         let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
@@ -2167,7 +2152,6 @@ mod tests {
         assert_matches!(proposal, Proposal::GroupContextExtensions(ext) if ext == extension_list);
     }
 
-    #[cfg(feature = "all_extensions")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn group_context_extension_proposal_test(
         ext_list: ExtensionList,
@@ -2190,7 +2174,9 @@ mod tests {
         (test_group, commit)
     }
 
-    #[cfg(feature = "all_extensions")]
+    // This test actually compiles without the by_ref_proposal feature, but it fails at runtime
+    // because the group context extensions seem to be updated only when this feature is enabled.
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_group_context_ext_proposal_commit() {
         let mut extension_list = ExtensionList::new();
@@ -2218,7 +2204,6 @@ mod tests {
         assert_eq!(test_group.group.state.context.extensions, extension_list)
     }
 
-    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_group_context_ext_proposal_invalid() {
         let mut extension_list = ExtensionList::new();
@@ -2238,7 +2223,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "all_extensions")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn make_group_with_required_capabilities(
         required_caps: RequiredCapabilitiesExt,
@@ -2250,7 +2234,6 @@ mod tests {
             .await
     }
 
-    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn creating_group_with_member_not_supporting_required_credential_type_fails() {
         let group_creation = make_group_with_required_capabilities(RequiredCapabilitiesExt {
@@ -2266,7 +2249,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn creating_group_with_member_not_supporting_required_extension_type_fails() {
         const EXTENSION_TYPE: ExtensionType = ExtensionType::new(33);
@@ -2284,7 +2266,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn creating_group_with_member_not_supporting_required_proposal_type_fails() {
         const PROPOSAL_TYPE: ProposalType = ProposalType::new(33);
@@ -2302,7 +2283,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     #[cfg(not(target_arch = "wasm32"))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn creating_group_with_member_not_supporting_external_sender_credential_fails() {
@@ -2362,7 +2343,6 @@ mod tests {
         assert!(with_padding.mls_encoded_len() > without_padding.mls_encoded_len());
     }
 
-    #[cfg(feature = "external_commit")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_commit_requires_external_pub_extension() {
         let protocol_version = TEST_PROTOCOL_VERSION;
@@ -2570,7 +2550,6 @@ mod tests {
 
         let commit_description = alice.process_pending_commit().await.unwrap();
 
-        #[cfg(feature = "external_commit")]
         assert!(!commit_description.is_external);
 
         assert_eq!(
@@ -2629,7 +2608,7 @@ mod tests {
         assert_eq!(commit_description, bob_commit_description);
     }
 
-    #[cfg(feature = "external_commit")]
+    #[cfg(feature = "state_update")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn commit_description_external_commit() {
         use crate::client::test_utils::TestClientBuilder;
@@ -2676,7 +2655,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "external_commit")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn can_join_new_group_externally() {
         use crate::client::test_utils::TestClientBuilder;
@@ -2706,7 +2684,6 @@ mod tests {
         alice_group.process_message(commit).await.unwrap();
     }
 
-    #[cfg(feature = "external_commit")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_membership_tag_from_non_member() {
         let (mut alice_group, mut bob_group) =
@@ -2983,7 +2960,6 @@ mod tests {
         assert_matches!(res, Err(MlsError::KeyMissing(0)));
     }
 
-    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn removing_requirements_allows_to_add() {
         let mut alice_group = test_group_custom(
@@ -3236,7 +3212,6 @@ mod tests {
         assert_matches!(res, Err(MlsError::UnsupportedGroupExtension(EXT_TYPE)));
     }
 
-    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn commit_leaf_not_supporting_required_extension() {
         // The new leaf of the committer doesn't support an extension required by group context
@@ -3319,7 +3294,6 @@ mod tests {
         assert_matches!(res, Err(MlsError::InUseCredentialTypeUnsupportedByNewLeaf));
     }
 
-    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn commit_leaf_not_supporting_required_credential() {
         // The new leaf of the committer doesn't support a credential required by group context
@@ -3348,7 +3322,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::RequiredCredentialNotFound(_)));
     }
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     #[cfg(not(target_arch = "wasm32"))]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn make_x509_external_senders_ext() -> ExternalSendersExt {
@@ -3365,7 +3339,7 @@ mod tests {
         ExternalSendersExt::new(vec![ext_sender_id])
     }
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     #[cfg(not(target_arch = "wasm32"))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn commit_leaf_not_supporting_external_sender_credential_leads_to_rejected_commit() {
@@ -3401,7 +3375,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     #[cfg(not(target_arch = "wasm32"))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn node_not_supporting_external_sender_credential_cannot_join_group() {
@@ -3438,7 +3412,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     #[cfg(not(target_arch = "wasm32"))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_senders_extension_is_rejected_if_member_does_not_support_credential_type() {

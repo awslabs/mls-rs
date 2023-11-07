@@ -14,7 +14,6 @@ use crate::{
 #[cfg(feature = "by_ref_proposal")]
 use crate::group::proposal_filter::FilterStrategy;
 
-#[cfg(feature = "external_commit")]
 use crate::tree_kem::leaf_node::LeafNode;
 
 #[cfg(all(feature = "std", feature = "by_ref_proposal"))]
@@ -179,7 +178,7 @@ impl GroupState {
         sender: Sender,
         #[cfg(all(feature = "by_ref_proposal", feature = "state_update"))] receiver: Option<Sender>,
         mut proposals: ProposalBundle,
-        #[cfg(feature = "external_commit")] external_leaf: Option<&LeafNode>,
+        external_leaf: Option<&LeafNode>,
         identity_provider: &C,
         cipher_suite_provider: &CSP,
         psk_storage: &P,
@@ -205,9 +204,8 @@ impl GroupState {
             )),
             #[cfg(feature = "by_ref_proposal")]
             Sender::NewMemberProposal => Err(MlsError::InvalidSender),
-            #[cfg(feature = "external_proposal")]
+            #[cfg(feature = "by_ref_proposal")]
             Sender::External(_) => Err(MlsError::InvalidSender),
-            #[cfg(feature = "external_commit")]
             Sender::NewMemberCommit => Ok(CommitSource::NewMember(
                 external_leaf
                     .map(|l| l.signing_identity.clone())
@@ -225,7 +223,6 @@ impl GroupState {
             self.context.protocol_version,
             cipher_suite_provider,
             group_extensions,
-            #[cfg(feature = "external_commit")]
             external_leaf,
             identity_provider,
             psk_storage,
@@ -277,7 +274,6 @@ impl GroupState {
             public_tree: applier_output.new_tree,
             group_context,
             applied_proposals: proposals,
-            #[cfg(feature = "external_commit")]
             external_init_index: applier_output.external_init_index,
             indexes_of_added_kpkgs: applier_output.indexes_of_added_kpkgs,
             #[cfg(all(feature = "by_ref_proposal", feature = "state_update"))]
@@ -401,7 +397,7 @@ pub(crate) mod test_utils {
         P: PreSharedKeyStorage,
         CSP: CipherSuiteProvider,
     {
-        #[cfg(feature = "external_proposal")]
+        #[cfg(feature = "by_ref_proposal")]
         pub fn with_identity_provider<V>(self, validator: V) -> CommitReceiver<'a, V, F, P, CSP>
         where
             V: IdentityProvider,
@@ -453,7 +449,7 @@ pub(crate) mod test_utils {
             }
         }
 
-        #[cfg(feature = "external_proposal")]
+        #[cfg(feature = "by_ref_proposal")]
         pub fn with_extensions(self, extensions: ExtensionList) -> Self {
             Self {
                 group_context_extensions: extensions,
@@ -543,7 +539,6 @@ pub(crate) mod test_utils {
                     #[cfg(all(feature = "by_ref_proposal", feature = "state_update"))]
                     receiver.map(|l| Sender::Member(*l)),
                     proposals,
-                    #[cfg(feature = "external_commit")]
                     external_leaf,
                     identity_provider,
                     cipher_suite_provider,
@@ -565,7 +560,7 @@ pub(crate) mod test_utils {
             identity_provider: &C,
             cipher_suite_provider: &CSP,
             public_tree: &TreeKemPublic,
-            #[cfg(feature = "external_commit")] external_leaf: Option<&LeafNode>,
+            external_leaf: Option<&LeafNode>,
             psk_storage: &P,
             user_rules: F,
         ) -> Result<ProvisionalState, MlsError>
@@ -590,7 +585,6 @@ pub(crate) mod test_utils {
                     #[cfg(all(feature = "by_ref_proposal", feature = "state_update"))]
                     Some(sender),
                     proposals,
-                    #[cfg(feature = "external_commit")]
                     external_leaf,
                     identity_provider,
                     cipher_suite_provider,
@@ -644,10 +638,9 @@ mod tests {
         },
     };
 
-    #[cfg(feature = "all_extensions")]
     use crate::extension::RequiredCapabilitiesExt;
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     use crate::{
         extension::ExternalSendersExt,
         tree_kem::leaf_node_validator::test_utils::FailureIdentityProvider,
@@ -814,7 +807,6 @@ mod tests {
         let expected_effects = ProvisionalState {
             public_tree: expected_tree,
             group_context: get_test_group_context(1, cipher_suite).await,
-            #[cfg(feature = "external_commit")]
             external_init_index: None,
             indexes_of_added_kpkgs: vec![LeafIndex(1)],
             #[cfg(feature = "state_update")]
@@ -890,7 +882,6 @@ mod tests {
             .iter()
             .for_each(|p| assert!(proposals.contains(p)));
 
-        #[cfg(feature = "external_commit")]
         assert_eq!(
             expected_state.external_init_index,
             state.external_init_index
@@ -933,7 +924,6 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
-                #[cfg(feature = "external_commit")]
                 None,
                 &AlwaysFoundPskStorage,
                 pass_through_rules(),
@@ -973,7 +963,6 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
-                #[cfg(feature = "external_commit")]
                 None,
                 &AlwaysFoundPskStorage,
                 pass_through_rules(),
@@ -1024,7 +1013,6 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
-                #[cfg(feature = "external_commit")]
                 None,
                 &AlwaysFoundPskStorage,
                 pass_through_rules(),
@@ -1059,7 +1047,6 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
-                #[cfg(feature = "external_commit")]
                 None,
                 &AlwaysFoundPskStorage,
                 pass_through_rules(),
@@ -1102,7 +1089,6 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
-                #[cfg(feature = "external_commit")]
                 None,
                 &AlwaysFoundPskStorage,
                 pass_through_rules(),
@@ -1147,7 +1133,6 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
-                #[cfg(feature = "external_commit")]
                 None,
                 &AlwaysFoundPskStorage,
                 pass_through_rules(),
@@ -1202,7 +1187,6 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
-                #[cfg(feature = "external_commit")]
                 None,
                 &AlwaysFoundPskStorage,
                 pass_through_rules(),
@@ -1256,7 +1240,6 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
-                #[cfg(feature = "external_commit")]
                 None,
                 &AlwaysFoundPskStorage,
                 pass_through_rules(),
@@ -1286,7 +1269,6 @@ mod tests {
         leaf_node
     }
 
-    #[cfg(feature = "external_commit")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_commit_must_have_new_leaf() {
         let cache = make_proposal_cache();
@@ -1317,7 +1299,6 @@ mod tests {
         assert_matches!(res, Err(MlsError::ExternalCommitMustHaveNewLeaf));
     }
 
-    #[cfg(feature = "external_commit")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn proposal_cache_rejects_proposals_by_ref_for_new_member() {
         let mut cache = make_proposal_cache();
@@ -1358,7 +1339,6 @@ mod tests {
         assert_matches!(res, Err(MlsError::OnlyMembersCanCommitProposalsByRef));
     }
 
-    #[cfg(feature = "external_commit")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn proposal_cache_rejects_multiple_external_init_proposals_in_commit() {
         let cache = make_proposal_cache();
@@ -1397,7 +1377,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "external_commit")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn new_member_commits_proposal(proposal: Proposal) -> Result<ProvisionalState, MlsError> {
         let cache = make_proposal_cache();
@@ -1429,7 +1408,6 @@ mod tests {
             .await
     }
 
-    #[cfg(feature = "external_commit")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn new_member_cannot_commit_add_proposal() {
         let res = new_member_commits_proposal(Proposal::Add(Box::new(AddProposal {
@@ -1445,7 +1423,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "external_commit")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn new_member_cannot_commit_more_than_one_remove_proposal() {
         let cache = make_proposal_cache();
@@ -1502,7 +1479,6 @@ mod tests {
         assert_matches!(res, Err(MlsError::ExternalCommitWithMoreThanOneRemove));
     }
 
-    #[cfg(feature = "external_commit")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn new_member_remove_proposal_invalid_credential() {
         let cache = make_proposal_cache();
@@ -1554,7 +1530,6 @@ mod tests {
         assert_matches!(res, Err(MlsError::ExternalCommitRemovesOtherIdentity));
     }
 
-    #[cfg(feature = "external_commit")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn new_member_remove_proposal_valid_credential() {
         let cache = make_proposal_cache();
@@ -1606,7 +1581,6 @@ mod tests {
         assert_matches!(res, Ok(_));
     }
 
-    #[cfg(feature = "external_commit")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn new_member_cannot_commit_update_proposal() {
         let res = new_member_commits_proposal(Proposal::Update(UpdateProposal {
@@ -1622,7 +1596,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "external_commit")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn new_member_cannot_commit_group_extensions_proposal() {
         let res =
@@ -1637,7 +1610,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "external_commit")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn new_member_cannot_commit_reinit_proposal() {
         let res = new_member_commits_proposal(Proposal::ReInit(ReInitProposal {
@@ -1656,7 +1628,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "external_commit")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn new_member_commit_must_contain_an_external_init_proposal() {
         let cache = make_proposal_cache();
@@ -1703,7 +1674,6 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
-                #[cfg(feature = "external_commit")]
                 None,
                 &AlwaysFoundPskStorage,
                 pass_through_rules(),
@@ -1739,7 +1709,6 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
-                #[cfg(feature = "external_commit")]
                 None,
                 &AlwaysFoundPskStorage,
                 pass_through_rules(),
@@ -1784,7 +1753,6 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
-                #[cfg(feature = "external_commit")]
                 None,
                 &AlwaysFoundPskStorage,
                 pass_through_rules(),
@@ -1822,7 +1790,6 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
-                #[cfg(feature = "external_commit")]
                 None,
                 &AlwaysFoundPskStorage,
                 pass_through_rules(),
@@ -1854,7 +1821,6 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
-                #[cfg(feature = "external_commit")]
                 None,
                 &AlwaysFoundPskStorage,
                 pass_through_rules(),
@@ -1901,7 +1867,7 @@ mod tests {
         P: PreSharedKeyStorage,
         CSP: CipherSuiteProvider,
     {
-        #[cfg(feature = "external_proposal")]
+        #[cfg(feature = "by_ref_proposal")]
         fn with_identity_provider<V>(self, identity_provider: V) -> CommitSender<'a, V, F, P, CSP>
         where
             V: IdentityProvider,
@@ -1977,7 +1943,6 @@ mod tests {
                     &self.identity_provider,
                     &self.cipher_suite_provider,
                     self.tree,
-                    #[cfg(feature = "external_commit")]
                     None,
                     &self.psk_storage,
                     &self.user_rules,
@@ -3066,7 +3031,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn make_external_senders_extension() -> ExtensionList {
         let identity = get_test_signing_identity(TEST_CIPHER_SUITE, b"alice")
@@ -3079,7 +3044,7 @@ mod tests {
         .into()
     }
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn receiving_invalid_external_senders_extension_fails() {
         let (alice, tree) = new_tree("alice").await;
@@ -3099,7 +3064,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::IdentityProviderError(_)));
     }
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn sending_additional_invalid_external_senders_extension_fails() {
         let (alice, tree) = new_tree("alice").await;
@@ -3115,7 +3080,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::IdentityProviderError(_)));
     }
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn sending_invalid_external_senders_extension_filters_it_out() {
         let (alice, tree) = new_tree("alice").await;
@@ -3274,14 +3239,12 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "external_commit")]
     fn make_external_init() -> ExternalInit {
         ExternalInit {
             kem_output: vec![33; test_cipher_suite_provider(TEST_CIPHER_SUITE).kdf_extract_size()],
         }
     }
 
-    #[cfg(feature = "external_commit")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn receiving_external_init_from_member_fails() {
         let (alice, tree) = new_tree("alice").await;
@@ -3298,7 +3261,6 @@ mod tests {
         assert_matches!(res, Err(MlsError::InvalidProposalTypeForSender));
     }
 
-    #[cfg(feature = "external_commit")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn sending_additional_external_init_from_member_fails() {
         let (alice, tree) = new_tree("alice").await;
@@ -3311,7 +3273,6 @@ mod tests {
         assert_matches!(res, Err(MlsError::InvalidProposalTypeForSender));
     }
 
-    #[cfg(feature = "external_commit")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn sending_external_init_from_member_filters_it_out() {
         let (alice, tree) = new_tree("alice").await;
@@ -3334,7 +3295,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "all_extensions")]
     fn required_capabilities_proposal(extension: u16) -> Proposal {
         let required_capabilities = RequiredCapabilitiesExt {
             extensions: vec![extension.into()],
@@ -3346,7 +3306,6 @@ mod tests {
         Proposal::GroupContextExtensions(ext.into())
     }
 
-    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn receiving_required_capabilities_not_supported_by_member_fails() {
         let (alice, tree) = new_tree("alice").await;
@@ -3366,7 +3325,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn sending_required_capabilities_not_supported_by_member_fails() {
         let (alice, tree) = new_tree("alice").await;
@@ -3382,7 +3340,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn sending_additional_required_capabilities_not_supported_by_member_filters_it_out() {
         let (alice, tree) = new_tree("alice").await;
@@ -3714,7 +3671,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn receiving_group_extension_unsupported_by_leaf_fails() {
         let (alice, tree) = new_tree("alice").await;
@@ -3736,7 +3692,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn sending_additional_group_extension_unsupported_by_leaf_fails() {
         let (alice, tree) = new_tree("alice").await;
@@ -3754,7 +3709,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "all_extensions")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn sending_group_extension_unsupported_by_leaf_filters_it_out() {
         let (alice, tree) = new_tree("alice").await;
@@ -4076,12 +4030,12 @@ mod tests {
         let (alice, mut tree) = new_tree("alice").await;
         let bob = add_member(&mut tree, "bob").await;
 
-        #[cfg(feature = "external_proposal")]
+        #[cfg(feature = "by_ref_proposal")]
         let identity = get_test_signing_identity(TEST_CIPHER_SUITE, b"carol")
             .await
             .0;
 
-        #[cfg(feature = "external_proposal")]
+        #[cfg(feature = "by_ref_proposal")]
         let external_senders = ExternalSendersExt::new(vec![identity]);
 
         let proposals: &[Proposal] = &[
@@ -4094,16 +4048,14 @@ mod tests {
                 PskNonce::random(&test_cipher_suite_provider(TEST_CIPHER_SUITE)).unwrap(),
             )),
             Proposal::ReInit(make_reinit(TEST_PROTOCOL_VERSION)),
-            #[cfg(feature = "external_commit")]
             Proposal::ExternalInit(make_external_init()),
             Proposal::GroupContextExtensions(Default::default()),
         ];
 
         let proposers = [
             Sender::Member(*alice),
-            #[cfg(feature = "external_proposal")]
+            #[cfg(feature = "by_ref_proposal")]
             Sender::External(0),
-            #[cfg(feature = "external_commit")]
             Sender::NewMemberCommit,
             Sender::NewMemberProposal,
         ];
@@ -4122,11 +4074,11 @@ mod tests {
                 test_cipher_suite_provider(TEST_CIPHER_SUITE),
             );
 
-            #[cfg(feature = "external_proposal")]
+            #[cfg(feature = "by_ref_proposal")]
             let extensions: ExtensionList =
                 vec![external_senders.clone().into_extension().unwrap()].into();
 
-            #[cfg(feature = "external_proposal")]
+            #[cfg(feature = "by_ref_proposal")]
             let receiver = receiver.with_extensions(extensions);
 
             let (receiver, proposals, proposer) = if by_ref {

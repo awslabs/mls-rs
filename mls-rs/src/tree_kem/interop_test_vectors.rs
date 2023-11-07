@@ -69,6 +69,7 @@ impl ValidationTestCase {
     }
 }
 
+#[cfg(feature = "rfc_compliant")]
 #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
 async fn validation() {
     #[cfg(mls_build_async)]
@@ -123,6 +124,7 @@ async fn validation() {
     }
 }
 
+#[cfg(feature = "rfc_compliant")]
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 async fn generate_validation_test_vector() -> Vec<ValidationTestCase> {
     let mut test_cases = vec![];

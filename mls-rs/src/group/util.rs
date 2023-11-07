@@ -22,7 +22,7 @@ use crate::{
     CipherSuiteProvider, CryptoProvider, ExtensionList,
 };
 
-#[cfg(feature = "external_proposal")]
+#[cfg(feature = "by_ref_proposal")]
 use crate::extension::ExternalSendersExt;
 
 use super::{
@@ -31,7 +31,6 @@ use super::{
     GroupContext, GroupInfo,
 };
 
-#[cfg(feature = "external_commit")]
 use super::message_processor::ProvisionalState;
 
 #[derive(Clone, Debug)]
@@ -161,7 +160,7 @@ pub(crate) async fn validate_group_info<I: IdentityProvider, C: CipherSuiteProvi
         .validate(&mut join_context.public_tree)
         .await?;
 
-    #[cfg(feature = "external_proposal")]
+    #[cfg(feature = "by_ref_proposal")]
     if let Some(ext_senders) = join_context
         .group_context
         .extensions
@@ -218,15 +217,14 @@ pub(crate) fn find_node_data(
 
 pub(crate) fn commit_sender(
     sender: &Sender,
-    #[cfg(feature = "external_commit")] provisional_state: &ProvisionalState,
+    provisional_state: &ProvisionalState,
 ) -> Result<LeafIndex, MlsError> {
     match sender {
         Sender::Member(index) => Ok(LeafIndex(*index)),
-        #[cfg(feature = "external_proposal")]
+        #[cfg(feature = "by_ref_proposal")]
         Sender::External(_) => Err(MlsError::ExternalSenderCannotCommit),
         #[cfg(feature = "by_ref_proposal")]
         Sender::NewMemberProposal => Err(MlsError::ExpectedAddProposalForNewMemberProposal),
-        #[cfg(feature = "external_commit")]
         Sender::NewMemberCommit => provisional_state
             .external_init_index
             .ok_or(MlsError::ExternalCommitMissingExternalInit),

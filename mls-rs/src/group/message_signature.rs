@@ -189,11 +189,8 @@ impl<'a> AuthenticatedContentTBS<'a> {
             wire_format: auth_content.wire_format,
             content: &auth_content.content,
             context: match auth_content.content.sender {
-                #[cfg(feature = "external_commit")]
                 Sender::Member(_) | Sender::NewMemberCommit => group_context,
-                #[cfg(not(feature = "external_commit"))]
-                Sender::Member(_) => group_context,
-                #[cfg(feature = "external_proposal")]
+                #[cfg(feature = "by_ref_proposal")]
                 Sender::External(_) => None,
                 #[cfg(feature = "by_ref_proposal")]
                 Sender::NewMemberProposal => None,

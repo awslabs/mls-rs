@@ -27,9 +27,7 @@ impl ExtensionType {
     pub const APPLICATION_ID: ExtensionType = ExtensionType(1);
     pub const RATCHET_TREE: ExtensionType = ExtensionType(2);
     pub const REQUIRED_CAPABILITIES: ExtensionType = ExtensionType(3);
-    #[cfg(feature = "external_commit")]
     pub const EXTERNAL_PUB: ExtensionType = ExtensionType(4);
-    #[cfg(feature = "external_proposal")]
     pub const EXTERNAL_SENDERS: ExtensionType = ExtensionType(5);
 
     /// Extension type from a raw value

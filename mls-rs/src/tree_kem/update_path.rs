@@ -61,11 +61,7 @@ pub(crate) async fn validate_update_path<C: IdentityProvider, CSP: CipherSuitePr
         )
         .await?;
 
-    #[cfg(feature = "external_commit")]
     let check_identity_eq = state.applied_proposals.external_initializations.is_empty();
-
-    #[cfg(not(feature = "external_commit"))]
-    let check_identity_eq = true;
 
     if check_identity_eq {
         let existing_leaf = state.public_tree.nodes.borrow_as_leaf(sender)?;
@@ -181,7 +177,6 @@ mod tests {
             applied_proposals: Default::default(),
             group_context: get_test_group_context(1, cipher_suite).await,
             indexes_of_added_kpkgs: vec![],
-            #[cfg(feature = "external_commit")]
             external_init_index: None,
             #[cfg(feature = "state_update")]
             rejected_proposals: vec![],

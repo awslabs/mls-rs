@@ -75,7 +75,6 @@ pub(crate) struct ProvisionalState {
     pub(crate) public_tree: TreeKemPublic,
     pub(crate) applied_proposals: ProposalBundle,
     pub(crate) group_context: GroupContext,
-    #[cfg(feature = "external_commit")]
     pub(crate) external_init_index: Option<LeafIndex>,
     pub(crate) indexes_of_added_kpkgs: Vec<LeafIndex>,
     #[cfg(all(feature = "state_update", feature = "by_ref_proposal"))]
@@ -93,11 +92,7 @@ pub(crate) struct ProvisionalState {
 // psk
 // reinit
 pub(crate) fn path_update_required(proposals: &ProposalBundle) -> bool {
-    #[cfg(feature = "external_commit")]
     let res = proposals.external_init_proposals().first().is_some();
-
-    #[cfg(not(feature = "external_commit"))]
-    let res = false;
 
     #[cfg(feature = "by_ref_proposal")]
     let res = res || !proposals.update_proposals().is_empty();
@@ -250,7 +245,6 @@ impl ApplicationMessageDescription {
 /// Description of a processed MLS commit message.
 pub struct CommitMessageDescription {
     /// True if this is the result of an external commit.
-    #[cfg(feature = "external_commit")]
     pub is_external: bool,
     /// The index in the group state of the member who performed this commit.
     pub committer: u32,
@@ -278,11 +272,10 @@ impl TryFrom<Sender> for ProposalSender {
     fn try_from(value: Sender) -> Result<Self, Self::Error> {
         match value {
             Sender::Member(index) => Ok(Self::Member(index)),
-            #[cfg(feature = "external_proposal")]
+            #[cfg(feature = "by_ref_proposal")]
             Sender::External(index) => Ok(Self::External(index)),
             #[cfg(feature = "by_ref_proposal")]
             Sender::NewMemberProposal => Ok(Self::NewMember),
-            #[cfg(feature = "external_commit")]
             Sender::NewMemberCommit => Err(MlsError::InvalidSender),
         }
     }
@@ -480,22 +473,9 @@ pub(crate) trait MessageProcessor: Send + Sync {
         sender: Sender,
         authenticated_data: Vec<u8>,
     ) -> Result<ApplicationMessageDescription, MlsError> {
-        #[cfg(any(
-            feature = "external_proposal",
-            feature = "by_ref_proposal",
-            feature = "external_commit"
-        ))]
-        let Sender::Member(sender_index) = sender
-        else {
+        let Sender::Member(sender_index) = sender else {
             return Err(MlsError::InvalidSender);
         };
-
-        #[cfg(all(
-            not(feature = "external_proposal"),
-            not(feature = "by_ref_proposal"),
-            not(feature = "external_commit")
-        ))]
-        let Sender::Member(sender_index) = sender;
 
         Ok(ApplicationMessageDescription {
             authenticated_data,
@@ -552,7 +532,6 @@ pub(crate) trait MessageProcessor: Send + Sync {
             .map(|(p, index)| member_from_key_package(&p.proposal.key_package, *index))
             .collect::<Vec<_>>();
 
-        #[cfg(feature = "external_commit")]
         let mut added = added;
 
         let old_tree = &self.group_state().public_tree;
@@ -591,7 +570,6 @@ pub(crate) trait MessageProcessor: Send + Sync {
         let mut updated = Vec::new();
 
         if let Some(path) = path {
-            #[cfg(feature = "external_commit")]
             if !provisional
                 .applied_proposals
                 .external_initializations
@@ -599,17 +577,6 @@ pub(crate) trait MessageProcessor: Send + Sync {
             {
                 added.push(member_from_leaf_node(&path.leaf_node, sender))
             } else {
-                let prior = old_tree
-                    .get_leaf_node(sender)
-                    .map(|n| member_from_leaf_node(n, sender))?;
-
-                let new = member_from_leaf_node(&path.leaf_node, sender);
-
-                updated.push(MemberUpdate::new(prior, new))
-            }
-
-            #[cfg(not(feature = "external_commit"))]
-            {
                 let prior = old_tree
                     .get_leaf_node(sender)
                     .map(|n| member_from_leaf_node(n, sender))?;
@@ -706,7 +673,6 @@ pub(crate) trait MessageProcessor: Send + Sync {
                 #[cfg(all(feature = "by_ref_proposal", feature = "state_update"))]
                 None,
                 proposals,
-                #[cfg(feature = "external_commit")]
                 commit.path.as_ref().map(|path| &path.leaf_node),
                 &id_provider,
                 self.cipher_suite_provider(),
@@ -717,11 +683,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
             )
             .await?;
 
-        let sender = commit_sender(
-            &auth_content.content.sender,
-            #[cfg(feature = "external_commit")]
-            &provisional_state,
-        )?;
+        let sender = commit_sender(&auth_content.content.sender, &provisional_state)?;
 
         #[cfg(feature = "state_update")]
         let mut state_update = self
@@ -744,7 +706,6 @@ pub(crate) trait MessageProcessor: Send + Sync {
             }
 
             return Ok(CommitMessageDescription {
-                #[cfg(feature = "external_commit")]
                 is_external: matches!(auth_content.content.sender, Sender::NewMemberCommit),
                 authenticated_data: auth_content.content.authenticated_data,
                 committer: *sender,
@@ -810,7 +771,6 @@ pub(crate) trait MessageProcessor: Send + Sync {
             .await?;
 
             Ok(CommitMessageDescription {
-                #[cfg(feature = "external_commit")]
                 is_external: matches!(auth_content.content.sender, Sender::NewMemberCommit),
                 authenticated_data: auth_content.content.authenticated_data,
                 committer: *sender,

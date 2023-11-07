@@ -53,7 +53,6 @@ impl ProposalType {
     pub const REMOVE: ProposalType = ProposalType(3);
     pub const PSK: ProposalType = ProposalType(4);
     pub const RE_INIT: ProposalType = ProposalType(5);
-    #[cfg(feature = "external_commit")]
     pub const EXTERNAL_INIT: ProposalType = ProposalType(6);
     pub const GROUP_CONTEXT_EXTENSIONS: ProposalType = ProposalType(7);
 }
