@@ -1,6 +1,6 @@
 [package]
 name = "mls-rs"
-version = "0.33.0"
+version = "0.34.0"
 edition = "2021"
 description = "An implementation of Messaging Layer Security (RFC 9420)"
 homepage = "https://github.com/awslabs/mls-rs"
@@ -77,7 +77,7 @@ once_cell = { version = "1.18", optional = true }
 
 [dev-dependencies]
 assert_matches = "1.5.0"
-criterion = { version = "0.3.5", features = ["async_futures", "html_reports"] }
+criterion = { version = "0.5.1", features = ["async_futures", "html_reports"] }
 futures-test = "0.3.25"
 serde_json = "^1.0"
 rand = "0.8"
