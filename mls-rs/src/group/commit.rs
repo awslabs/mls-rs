@@ -21,6 +21,9 @@ use crate::{
     ExtensionList, MlsRules,
 };
 
+#[cfg(all(not(mls_build_async), feature = "rayon"))]
+use {crate::iter::ParallelIteratorExt, rayon::prelude::*};
+
 use crate::tree_kem::leaf_node::LeafNode;
 
 #[cfg(not(feature = "private_message"))]
@@ -606,16 +609,13 @@ where
 
         // Encrypt path secrets and joiner secret to new members
         let path_secrets = path_secrets.as_ref();
-        let mut welcome_messages = Vec::new();
-        let mut encrypted_path_secrets = Vec::new();
 
-        let added_key_pkgs = added_key_pkgs
-            .into_iter()
-            .zip(provisional_state.indexes_of_added_kpkgs);
-
-        for (key_package, leaf_index) in added_key_pkgs {
-            let secret = self
-                .encrypt_group_secrets(
+        #[cfg(not(any(mls_build_async, not(feature = "rayon"))))]
+        let encrypted_path_secrets: Vec<_> = added_key_pkgs
+            .into_par_iter()
+            .zip(provisional_state.indexes_of_added_kpkgs)
+            .map(|(key_package, leaf_index)| {
+                self.encrypt_group_secrets(
                     &key_package,
                     leaf_index,
                     &key_schedule_result.joiner_secret,
@@ -624,20 +624,43 @@ where
                     psks.clone(),
                     &encrypted_group_info,
                 )
-                .await?;
+            })
+            .try_collect()?;
 
-            if commit_options.single_welcome_message {
-                encrypted_path_secrets.push(secret);
-            } else {
-                welcome_messages
-                    .push(self.make_welcome_message(vec![secret], encrypted_group_info.clone()));
+        #[cfg(any(mls_build_async, not(feature = "rayon")))]
+        let encrypted_path_secrets = {
+            let mut secrets = Vec::new();
+
+            for (key_package, leaf_index) in added_key_pkgs
+                .into_iter()
+                .zip(provisional_state.indexes_of_added_kpkgs)
+            {
+                secrets.push(
+                    self.encrypt_group_secrets(
+                        &key_package,
+                        leaf_index,
+                        &key_schedule_result.joiner_secret,
+                        path_secrets,
+                        #[cfg(feature = "psk")]
+                        psks.clone(),
+                        &encrypted_group_info,
+                    )
+                    .await?,
+                );
             }
-        }
 
-        if commit_options.single_welcome_message && !encrypted_path_secrets.is_empty() {
-            welcome_messages =
-                vec![self.make_welcome_message(encrypted_path_secrets, encrypted_group_info)];
-        }
+            secrets
+        };
+
+        let welcome_messages =
+            if commit_options.single_welcome_message && !encrypted_path_secrets.is_empty() {
+                vec![self.make_welcome_message(encrypted_path_secrets, encrypted_group_info)]
+            } else {
+                encrypted_path_secrets
+                    .into_iter()
+                    .map(|s| self.make_welcome_message(vec![s], encrypted_group_info.clone()))
+                    .collect()
+            };
 
         let commit_message = self.format_for_wire(auth_content.clone()).await?;
 
