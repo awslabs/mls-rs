@@ -29,13 +29,3 @@ default-members = [
     "mls-rs-provider-sqlite",
     "mls-rs-codec"
 ]
-
-[profile.release-mini]
-inherits = "release"
-codegen-units = 1
-lto = true
-opt-level = "z"
-strip = "debuginfo"
-debug = 0
-debug-assertions = false
-overflow-checks = false

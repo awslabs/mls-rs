@@ -49,6 +49,7 @@
 #![allow(clippy::result_large_err)]
 #![allow(clippy::nonstandard_macro_braces)]
 #![cfg_attr(not(feature = "std"), no_std)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 extern crate alloc;
 
 #[cfg(all(test, target_arch = "wasm32"))]
@@ -125,6 +126,7 @@ pub mod extension;
 /// Tools to observe groups without being a member, useful
 /// for server implementations.
 #[cfg(feature = "external_client")]
+#[cfg_attr(docsrs, doc(cfg(feature = "external_client")))]
 pub mod external_client;
 mod grease;
 /// E2EE group created by a [`Client`].
