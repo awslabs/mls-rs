@@ -2,6 +2,11 @@
 name = "mls-rs-crypto-rustcrypto"
 version = "0.6.0"
 edition = "2021"
+description = "RustCrypto based CryptoProvider for mls-rs"
+homepage = "https://github.com/awslabs/mls-rs"
+repository = "https://github.com/awslabs/mls-rs"
+keywords = ["mls", "mls-rs", "rust crypto"]
+license = "Apache-2.0 OR MIT"
 
 [features]
 x509 = ["std", "mls-rs-identity-x509", "x509-cert", "spki", "sha1", "const-oid", "mls-rs-core/x509"]
