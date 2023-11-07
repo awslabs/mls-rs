@@ -78,6 +78,7 @@ pub(crate) struct ApplyProposalsOutput {
     pub(crate) external_init_index: Option<LeafIndex>,
     #[cfg(feature = "by_ref_proposal")]
     pub(crate) applied_proposals: ProposalBundle,
+    pub(crate) new_context_extensions: Option<ExtensionList>,
 }
 
 impl<'a, C, P, CSP> ProposalApplier<'a, C, P, CSP>

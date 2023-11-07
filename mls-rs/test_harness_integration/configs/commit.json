@@ -1,0 +1,153 @@
+{
+  "scripts": {
+    "empty": [
+      {"action": "createGroup", "actor": "alice"},
+      {"action": "externalJoin", "actor": "alice", "joiner": "bob"},
+      {"action": "fullCommit", "actor": "alice", "members": ["bob"]}
+    ],
+
+    "add": [
+      {"action": "createGroup", "actor": "alice"},
+      {"action": "externalJoin", "actor": "alice", "joiner": "bob"},
+
+      {"action": "createKeyPackage", "actor": "charlie1"},
+      {"action": "createKeyPackage", "actor": "charlie2"},
+      {"action": "createKeyPackage", "actor": "charlie3"},
+      {"action": "addProposal", "actor": "alice", "keyPackage": 2},
+      {"action": "addProposal", "actor": "bob", "keyPackage": 3},
+      {
+        "action": "fullCommit",
+        "actor": "alice",
+        "byReference": [5, 6],
+        "byValue": [{"proposalType": "add", "keyPackage": 4}],
+        "members": ["bob"],
+        "joiners": ["charlie1", "charlie2", "charlie3"],
+        "force_path": true
+      },
+
+      {"action": "createKeyPackage", "actor": "charlie4"},
+      {"action": "createKeyPackage", "actor": "charlie5"},
+      {"action": "createKeyPackage", "actor": "charlie6"},
+      {"action": "addProposal", "actor": "alice", "keyPackage": 8},
+      {"action": "addProposal", "actor": "bob", "keyPackage": 9},
+      {
+        "action": "fullCommit",
+        "actor": "alice",
+        "byReference": [11, 12],
+        "byValue": [{"proposalType": "add", "keyPackage": 10}],
+        "members": ["bob", "charlie1", "charlie2"],
+        "joiners": ["charlie4", "charlie5", "charlie6"],
+        "force_path": false
+      }
+    ],
+
+    "remove": [
+      {"action": "createGroup", "actor": "alice"},
+      {"action": "externalJoin", "actor": "alice", "joiner": "bob"},
+
+      {"action": "createKeyPackage", "actor": "charlie1"},
+      {"action": "createKeyPackage", "actor": "charlie2"},
+      {"action": "createKeyPackage", "actor": "charlie3"},
+      {"action": "addProposal", "actor": "alice", "keyPackage": 2},
+      {"action": "addProposal", "actor": "alice", "keyPackage": 3},
+      {"action": "addProposal", "actor": "alice", "keyPackage": 4},
+      {"action": "fullCommit", "actor": "alice", "byReference": [5, 6, 7], "members": ["bob"], "joiners": ["charlie1", "charlie2", "charlie3"]},
+
+      {"action": "removeProposal", "actor": "alice", "removed": "charlie1"},
+      {"action": "removeProposal", "actor": "bob", "removed": "charlie2"},
+      {"action": "fullCommit", "actor": "alice", "byReference": [9, 10], "byValue": [{"proposalType": "remove", "removed": "charlie3"}], "members": ["bob"]}
+    ],
+
+    "update": [
+      {"action": "createGroup", "actor": "alice"},
+      {"action": "externalJoin", "actor": "alice", "joiner": "bob"},
+      {"action": "updateProposal", "actor": "bob"},
+      {"action": "fullCommit", "actor": "alice", "byReference": [2], "members": ["bob"]}
+    ],
+
+    "group_context_extensions": [
+      {"action": "createGroup", "actor": "alice"},
+      {"action": "externalJoin", "actor": "alice", "joiner": "bob"},
+
+      {"action": "groupContextExtensionsProposal", "actor": "alice", "extensions": [
+        {"extension_type": 3, "extension_data": "AAAA"},
+        {"extension_type": 5, "extension_data": "AA=="}
+      ]},
+      {"action": "fullCommit", "actor": "alice", "byReference": [2], "members": ["bob"]},
+
+      {"action": "groupContextExtensionsProposal", "actor": "bob", "extensions": []},
+      {"action": "fullCommit", "actor": "alice", "byReference": [4], "members": ["bob"]},
+
+      {
+        "action": "fullCommit",
+        "actor": "alice",
+        "byValue": [
+          {
+            "proposalType": "groupContextExtensions",
+            "extensions": [{"extension_type": 3, "extension_data": "AAAA"}]
+          }
+        ],
+        "members": ["bob"]
+      }
+    ],
+
+    "all_together_alice_proposes": [
+      {"action": "createGroup", "actor": "alice"},
+      {"action": "externalJoin", "actor": "alice", "joiner": "bob"},
+      {"action": "createKeyPackage", "actor": "charlie1"},
+      {"action": "createKeyPackage", "actor": "charlie2"},
+      {"action": "addProposal", "actor": "alice", "keyPackage": 2},
+      {"action": "addProposal", "actor": "alice", "keyPackage": 3},
+      {"action": "fullCommit", "actor": "alice", "byReference": [4, 5], "members": ["bob"], "joiners": ["charlie1", "charlie2"]},
+
+      {"action": "createKeyPackage", "actor": "charlie3"},
+      {"action": "addProposal", "actor": "alice", "keyPackage": 7},
+      {"action": "removeProposal", "actor": "alice", "removed": "charlie1"},
+      {"action": "groupContextExtensionsProposal", "actor": "alice", "extensions": [
+        {"extension_type": 3, "extension_data": "AAAA"},
+        {"extension_type": 5, "extension_data": "AA=="}
+      ]},
+      {"action": "createKeyPackage", "actor": "charlie4"},
+      {
+        "action": "fullCommit",
+        "actor": "alice",
+        "byReference": [8, 9, 10],
+        "byValue": [
+          {"proposalType": "add", "keyPackage": 11},
+          {"proposalType": "remove", "removed": "charlie2"}
+        ],
+        "members": ["bob"]
+      }
+    ],
+
+    "all_together_bob_proposes": [
+      {"action": "createGroup", "actor": "alice"},
+      {"action": "externalJoin", "actor": "alice", "joiner": "bob"},
+      {"action": "createKeyPackage", "actor": "charlie1"},
+      {"action": "createKeyPackage", "actor": "charlie2"},
+      {"action": "addProposal", "actor": "alice", "keyPackage": 2},
+      {"action": "addProposal", "actor": "alice", "keyPackage": 3},
+      {"action": "fullCommit", "actor": "alice", "byReference": [4, 5], "members": ["bob"], "joiners": ["charlie1", "charlie2"]},
+
+      {"action": "createKeyPackage", "actor": "charlie3"},
+      {"action": "addProposal", "actor": "bob", "keyPackage": 7},
+      {"action": "removeProposal", "actor": "bob", "removed": "charlie1"},
+      {"action": "groupContextExtensionsProposal", "actor": "bob", "extensions": [
+        {"extension_type": 3, "extension_data": "AAAA"},
+        {"extension_type": 5, "extension_data": "AA=="}
+      ]},
+      {"action": "updateProposal", "actor": "bob"},
+      {"action": "createKeyPackage", "actor": "charlie4"},
+      {
+        "action": "fullCommit",
+        "actor": "alice",
+        "byReference": [8, 9, 10, 11],
+        "byValue": [
+          {"proposalType": "add", "keyPackage": 12},
+          {"proposalType": "remove", "removed": "charlie2"}
+        ],
+        "members": ["bob"]
+      }
+    ]
+  }
+}

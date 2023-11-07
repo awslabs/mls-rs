@@ -1,0 +1,61 @@
+{
+  "scripts": {
+    "external_psk": [
+      {"action": "createGroup", "actor": "alice"},
+      {"action": "externalJoin", "actor": "alice", "joiner": "bob"},
+      {"action": "installExternalPSK", "clients": ["alice", "bob"]},
+      {"action": "installExternalPSK", "clients": ["alice", "bob"]},
+
+      {
+        "action": "fullCommit",
+        "actor": "alice",
+        "byValue": [{"proposalType": "externalPSK", "pskID": 2}, {"proposalType": "externalPSK", "pskID": 3}],
+        "members": ["bob"],
+        "force_path": true
+      }
+    ],
+
+    "resumption_psk": [
+      {"action": "createGroup", "actor": "alice"},
+      {"action": "externalJoin", "actor": "alice", "joiner": "bob"},
+      {"action": "fullCommit", "actor": "alice", "members": ["bob"]},
+      {"action": "fullCommit", "actor": "alice", "members": ["bob"]},
+
+      {
+        "action": "fullCommit",
+        "actor": "alice",
+        "byValue": [{"proposalType": "resumptionPSK", "epochID": 3}],
+        "members": ["bob"],
+        "force_path": true
+      }
+    ],
+
+    "all_together": [
+      {"action": "createGroup", "actor": "alice"},
+      {"action": "externalJoin", "actor": "alice", "joiner": "bob"},
+      {"action": "createKeyPackage", "actor": "charlie"},
+      {
+        "action": "fullCommit",
+        "actor": "alice",
+        "byValue": [{"proposalType": "add", "keyPackage": 2}],
+        "members": ["bob"],
+        "joiners": ["charlie"]
+      },
+
+      {"action": "createKeyPackage", "actor": "david"},
+      {"action": "installExternalPSK", "clients": ["alice", "bob"]},
+      {
+        "action": "fullCommit",
+        "actor": "alice",
+        "byValue": [
+        {"proposalType": "add", "keyPackage": 4},
+        {"proposalType": "remove", "removed": "charlie"},
+        {"proposalType": "externalPSK", "pskID": 5},
+        {"proposalType": "resumptionPSK", "epochID": 2},
+        {"proposalType": "groupContextExtensions", "extensions": [{"extension_type": 3, "extension_data": "AAAA"}]}
+        ],
+        "members": ["bob"]
+      }
+    ]
+  }
+}

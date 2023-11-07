@@ -1,0 +1,21 @@
+{
+  "scripts": {
+    "no_path_secret": [
+          {"action": "createGroup", "actor": "alice"},
+          {"action": "createKeyPackage", "actor": "bob"},
+          {"action": "fullCommit", "actor": "alice", "byValue": [{"proposalType": "add", "keyPackage": 1}], "joiners": ["bob"]}
+    ],
+
+    "with_path_secret": [
+          {"action": "createGroup", "actor": "alice"},
+          {"action": "createKeyPackage", "actor": "bob"},
+          {"action": "fullCommit", "actor": "alice", "byValue": [{"proposalType": "add", "keyPackage": 1}], "joiners": ["bob"], "force_path": true}
+    ],
+
+    "with_external_tree": [
+          {"action": "createGroup", "actor": "alice"},
+          {"action": "createKeyPackage", "actor": "bob"},
+          {"action": "fullCommit", "actor": "alice", "byValue": [{"proposalType": "add", "keyPackage": 1}], "joiners": ["bob"], "external_tree": true}
+    ]
+  }
+}

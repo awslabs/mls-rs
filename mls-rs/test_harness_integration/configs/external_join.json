@@ -1,0 +1,37 @@
+{
+  "scripts": {
+    "normal": [
+      {"action": "createGroup", "actor": "alice"},
+      {"action": "externalJoin", "actor": "alice", "joiner": "bob"}
+    ],
+
+    "with_psk": [
+      {"action": "createGroup", "actor": "alice"},
+      {"action": "installExternalPSK", "clients": ["alice"]},
+      {"action": "externalJoin", "actor": "alice", "joiner": "bob", "psks": [1]}
+    ],
+
+    "removing_prior": [
+      {"action": "createGroup", "actor": "alice"},
+      {"action": "externalJoin", "actor": "alice", "joiner": "bob"},
+      {"action": "externalJoin", "actor": "alice", "joiner": "bob", "removePrior": true}
+    ],
+
+    "with_external_tree": [
+      {"action": "createGroup", "actor": "alice"},
+      {"action": "externalJoin", "actor": "alice", "joiner": "bob", "externalTree": true}
+    ],
+
+    "with_more_members": [
+      {"action": "createGroup", "actor": "alice"},
+      {"action": "createKeyPackage", "actor": "bob"},
+      {"action": "createKeyPackage", "actor": "charlie"},
+      {"action": "createKeyPackage", "actor": "diana"},
+      {"action": "addProposal", "actor": "alice", "keyPackage": 1},
+      {"action": "addProposal", "actor": "alice", "keyPackage": 2},
+      {"action": "addProposal", "actor": "alice", "keyPackage": 3},
+      {"action": "fullCommit", "actor": "alice", "byReference": [4, 5, 6], "joiners": ["bob", "charlie", "diana"]},
+      {"action": "externalJoin", "actor": "diana", "joiner": "ellen", "members": ["alice", "bob", "charlie"]}
+    ]
+  }
+}

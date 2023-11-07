@@ -1,0 +1,52 @@
+{
+  "scripts": {
+    "external_psk": [
+      {"action": "createGroup", "actor": "alice"},
+      {"action": "externalJoin", "actor": "alice", "joiner": "bob"},
+      {"action": "externalJoin", "actor": "alice", "joiner": "charlie", "members": ["bob"]},
+      {"action": "installExternalPSK", "clients": ["alice", "bob", "charlie"]},
+      
+      {"action": "addExternalSigner", "actor": "alice", "signer": "ds"},
+      {"action": "fullCommit", "actor": "alice", "byReference": [4], "members": ["bob", "charlie"]},
+      
+      {"action": "externalSignerProposal", "actor": "ds", "member": "alice",
+       "description": { "proposalType": "externalPSK", "pskID": 3 } },
+      {"action": "fullCommit", "actor": "alice", "byReference": [6], "members": ["bob", "charlie"] }
+    ],
+
+    "resumption_psk": [
+      {"action": "createGroup", "actor": "alice"},
+      {"action": "externalJoin", "actor": "alice", "joiner": "bob"},
+      {"action": "externalJoin", "actor": "alice", "joiner": "charlie", "members": ["bob"]},
+
+      {"action": "addExternalSigner", "actor": "alice", "signer": "ds"},
+      {"action": "fullCommit", "actor": "alice", "byReference": [3], "members": ["bob", "charlie"]},
+      
+      {"action": "externalSignerProposal", "actor": "ds", "member": "alice",
+       "description": { "proposalType": "resumptionPSK", "epochID": 2 } },
+      {"action": "fullCommit", "actor": "alice", "byReference": [5], "members": ["bob", "charlie"] }
+    ],
+
+    "external_reinit": [
+      {"action": "createGroup", "actor": "alice"},
+      {"action": "externalJoin", "actor": "alice", "joiner": "bob"},
+      {"action": "externalJoin", "actor": "alice", "joiner": "charlie", "members": ["bob"]},
+
+      {"action": "addExternalSigner", "actor": "alice", "signer": "ds"},
+      {"action": "fullCommit", "actor": "alice", "byReference": [3], "members": ["bob", "charlie"]},
+
+      {"action": "externalSignerProposal", "actor": "ds", "member": "alice",
+       "description": {"proposalType": "reinit", "changeGroupID": true, "changeCipherSuite": true,
+       "extensions": [ {"extension_type": 3, "extension_data": "AAAA"} ]}},
+
+      {
+        "action": "reinit", 
+        "externalReinitProposal": 5,
+        "committer": "alice",
+        "welcomer": "bob", 
+        "members": ["charlie"],
+        "forcePath": true
+      }
+    ]
+  }
+}

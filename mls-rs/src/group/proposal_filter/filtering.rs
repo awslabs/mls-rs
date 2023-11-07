@@ -175,12 +175,17 @@ where
             )
             .await?;
 
+        let new_context_extensions = applied_proposals
+            .group_context_extensions_proposal()
+            .map(|gce| gce.proposal.clone());
+
         Ok(ApplyProposalsOutput {
             applied_proposals,
             new_tree,
             indexes_of_added_kpkgs: added,
             #[cfg(feature = "external_commit")]
             external_init_index: None,
+            new_context_extensions,
         })
     }
 

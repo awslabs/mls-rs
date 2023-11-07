@@ -262,12 +262,8 @@ impl GroupState {
         let mut group_context = self.context.clone();
         group_context.epoch += 1;
 
-        #[cfg(feature = "by_ref_proposal")]
-        if let Some(ext) = applier_output
-            .applied_proposals
-            .group_context_extensions_proposal()
-        {
-            group_context.extensions = ext.proposal.clone();
+        if let Some(ext) = applier_output.new_context_extensions {
+            group_context.extensions = ext;
         }
 
         #[cfg(feature = "by_ref_proposal")]

@@ -1,0 +1,40 @@
+{
+  "scripts": {
+    "base": [
+      {"action": "createGroup", "actor": "alice"},
+      {"action": "externalJoin", "actor": "alice", "joiner": "bob", "members": []},
+      {"action": "externalJoin", "actor": "alice", "joiner": "charlie", "members": ["bob"]},
+      {"action": "externalJoin", "actor": "alice", "joiner": "diana", "members": ["bob", "charlie"]},
+      {"action": "externalJoin", "actor": "alice", "joiner": "eliza", "members": ["bob", "charlie", "diana"]},
+      {"action": "branch", "actor": "alice", "members": ["bob", "charlie", "diana", "eliza"]}
+    ],
+
+    "with_extensions": [
+      {"action": "createGroup", "actor": "alice"},
+      {"action": "externalJoin", "actor": "alice", "joiner": "bob", "members": []},
+      {"action": "externalJoin", "actor": "alice", "joiner": "charlie", "members": ["bob"]},
+      {"action": "externalJoin", "actor": "alice", "joiner": "diana", "members": ["bob", "charlie"]},
+      {"action": "externalJoin", "actor": "alice", "joiner": "eliza", "members": ["bob", "charlie", "diana"]},
+      {"action": "branch", "actor": "alice", "members": ["bob", "charlie", "diana", "eliza"],
+       "extensions": [{"extension_type": 3, "extension_data": "AAAA"}, {"extension_type": 5, "extension_data": "AA=="} ]}
+    ],
+    
+    "external_tree": [
+      {"action": "createGroup", "actor": "alice"},
+      {"action": "externalJoin", "actor": "alice", "joiner": "bob", "members": []},
+      {"action": "externalJoin", "actor": "alice", "joiner": "charlie", "members": ["bob"]},
+      {"action": "externalJoin", "actor": "alice", "joiner": "diana", "members": ["bob", "charlie"]},
+      {"action": "externalJoin", "actor": "alice", "joiner": "eliza", "members": ["bob", "charlie", "diana"]},
+      {"action": "branch", "actor": "alice", "members": ["bob", "charlie", "diana", "eliza"], "externalTree": true}
+    ],
+    
+    "force_path": [
+      {"action": "createGroup", "actor": "alice"},
+      {"action": "externalJoin", "actor": "alice", "joiner": "bob", "members": []},
+      {"action": "externalJoin", "actor": "alice", "joiner": "charlie", "members": ["bob"]},
+      {"action": "externalJoin", "actor": "alice", "joiner": "diana", "members": ["bob", "charlie"]},
+      {"action": "externalJoin", "actor": "alice", "joiner": "eliza", "members": ["bob", "charlie", "diana"]},
+      {"action": "branch", "actor": "alice", "members": ["bob", "charlie", "diana", "eliza"], "forcePath": true}
+    ]
+  }
+}
