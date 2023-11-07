@@ -11,5 +11,6 @@ pub use group_state::*;
 pub use key_package::*;
 
 #[cfg(feature = "sqlite")]
+#[cfg_attr(docsrs, doc(cfg(feature = "sqlite")))]
 /// SQLite based storage providers.
 pub mod sqlite;
