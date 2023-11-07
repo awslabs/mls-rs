@@ -2176,9 +2176,6 @@ mod tests {
         (test_group, commit)
     }
 
-    // This test actually compiles without the by_ref_proposal feature, but it fails at runtime
-    // because the group context extensions seem to be updated only when this feature is enabled.
-    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_group_context_ext_proposal_commit() {
         let mut extension_list = ExtensionList::new();

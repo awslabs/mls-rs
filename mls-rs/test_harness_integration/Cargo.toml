@@ -6,7 +6,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
-mls-rs = { path = "..", default-features = false, features = ["std", "external_client", "external_commit", "state_update", "all_extensions"]}
+mls-rs = { path = "..", default-features = false, features = ["std", "external_client", "state_update"]}
 tonic = "0.7"
 prost = "0.10"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
@@ -22,7 +22,7 @@ prior_epoch = [ "mls-rs/prior_epoch" ]
 out_of_order = [ "mls-rs/out_of_order", "private_message" ]
 psk = [ "mls-rs/psk" ]
 custom_proposal = [ "mls-rs/custom_proposal" ]
-by_ref_proposal = [ "mls-rs/by_ref_proposal", "mls-rs/external_proposal" ]
+by_ref_proposal = [ "mls-rs/by_ref_proposal" ]
 default = ["tree_index", "private_message", "prior_epoch", "out_of_order", "psk", "custom_proposal", "by_ref_proposal"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
