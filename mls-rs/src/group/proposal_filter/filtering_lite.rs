@@ -103,10 +103,16 @@ where
             )
             .await?;
 
+        let new_context_extensions = proposals
+            .group_context_extensions
+            .first()
+            .map(|gce| gce.proposal.clone());
+
         Ok(ApplyProposalsOutput {
             new_tree,
             indexes_of_added_kpkgs: added,
             external_init_index: None,
+            new_context_extensions,
         })
     }
 

@@ -7,30 +7,32 @@
 //!
 //! It is based on the Mock client written by Richard Barnes.
 
+mod by_ref_proposal;
+use by_ref_proposal::ByRefProposalSender;
+
+mod branch_reinit;
+
 use mls_rs::{
     client_builder::{
         BaseInMemoryConfig, ClientBuilder, WithCryptoProvider, WithIdentityProvider, WithMlsRules,
     },
     crypto::SignatureSecretKey,
     error::MlsError,
-    extension::built_in::ExternalSendersExt,
-    external_client::{
-        self,
-        builder::{ExternalBaseConfig, ExternalClientBuilder},
-        ExternalClient,
-    },
+    external_client::ExternalClient,
     group::{Member, ReceivedMessage, Roster, StateUpdate},
     identity::{
         basic::{BasicCredential, BasicIdentityProvider},
         Credential, SigningIdentity,
     },
-    mls_rs_codec::{MlsDecode, MlsEncode},
     mls_rules::{CommitDirection, CommitOptions, CommitSource, EncryptionOptions, ProposalBundle},
     psk::ExternalPskId,
     storage_provider::in_memory::{InMemoryKeyPackageStorage, InMemoryPreSharedKeyStorage},
     CipherSuite, CipherSuiteProvider, Client, CryptoProvider, Extension, ExtensionList, Group,
-    MlsMessage, MlsRules, ProtocolVersion,
+    MlsMessage, MlsRules,
 };
+
+#[cfg(feature = "by_ref_proposal")]
+use mls_rs::external_client::builder::ExternalBaseConfig;
 
 use mls_rs_crypto_openssl::OpensslCryptoProvider;
 
@@ -72,9 +74,12 @@ const IMPLEMENTATION_NAME: &str = "Wickr MLS";
 
 const PROPOSAL_DESC_ADD: &[u8] = b"add";
 const PROPOSAL_DESC_REMOVE: &[u8] = b"remove";
+#[cfg(feature = "psk")]
 const PROPOSAL_DESC_EXTERNAL_PSK: &[u8] = b"externalPSK";
+#[cfg(feature = "psk")]
 const PROPOSAL_DESC_RESUMPTION_PSK: &[u8] = b"resumptionPSK";
 const PROPOSAL_DESC_GCE: &[u8] = b"groupContextExtensions";
+#[cfg(feature = "psk")]
 const PROPOSAL_DESC_REINIT: &[u8] = b"reinit";
 
 type TestClientConfig = WithIdentityProvider<
@@ -82,15 +87,27 @@ type TestClientConfig = WithIdentityProvider<
     WithCryptoProvider<OpensslCryptoProvider, WithMlsRules<TestMlsRules, BaseInMemoryConfig>>,
 >;
 
-type TestExternalClientConfig = external_client::builder::WithIdentityProvider<
+#[cfg(feature = "by_ref_proposal")]
+type TestExternalClientConfig = mls_rs::external_client::builder::WithIdentityProvider<
     BasicIdentityProvider,
-    external_client::builder::WithCryptoProvider<OpensslCryptoProvider, ExternalBaseConfig>,
+    mls_rs::external_client::builder::WithCryptoProvider<OpensslCryptoProvider, ExternalBaseConfig>,
 >;
 
 #[derive(Default)]
 pub struct MlsClientImpl {
+    name: String,
     clients: Mutex<Vec<ClientDetails>>,
+    #[allow(dead_code)]
     external_clients: Mutex<Vec<ExternalClientDetails>>,
+}
+
+impl MlsClientImpl {
+    pub fn new(name: String) -> Self {
+        Self {
+            name,
+            ..Default::default()
+        }
+    }
 }
 
 struct ClientDetails {
@@ -104,6 +121,7 @@ struct ClientDetails {
 }
 
 impl ClientDetails {
+    #[cfg(feature = "private_message")]
     async fn set_enc_controls(&self, enc_controls: bool) {
         self.mls_rules
             .encryption_options
@@ -111,9 +129,13 @@ impl ClientDetails {
             .unwrap()
             .encrypt_control_messages = enc_controls;
     }
+
+    #[cfg(not(feature = "private_message"))]
+    async fn set_enc_controls(&self, _: bool) {}
 }
 
 struct ExternalClientDetails {
+    #[cfg(feature = "by_ref_proposal")]
     ext_client: ExternalClient<TestExternalClientConfig>,
 }
 
@@ -168,15 +190,15 @@ impl MlsRules for TestMlsRules {
 impl MlsClient for MlsClientImpl {
     async fn name(&self, _request: Request<NameRequest>) -> Result<Response<NameResponse>, Status> {
         let response = NameResponse {
-            name: IMPLEMENTATION_NAME.to_string(),
+            name: self.name.clone(),
         };
         Ok(Response::new(response))
     }
 
     async fn supported_ciphersuites(
         &self,
-        _request: tonic::Request<SupportedCiphersuitesRequest>,
-    ) -> Result<tonic::Response<SupportedCiphersuitesResponse>, tonic::Status> {
+        _request: Request<SupportedCiphersuitesRequest>,
+    ) -> Result<Response<SupportedCiphersuitesResponse>, Status> {
         let response = SupportedCiphersuitesResponse {
             ciphersuites: CipherSuite::all().map(|cs| u16::from(cs) as u32).collect(),
         };
@@ -186,8 +208,8 @@ impl MlsClient for MlsClientImpl {
 
     async fn create_group(
         &self,
-        request: tonic::Request<CreateGroupRequest>,
-    ) -> Result<tonic::Response<CreateGroupResponse>, tonic::Status> {
+        request: Request<CreateGroupRequest>,
+    ) -> Result<Response<CreateGroupResponse>, Status> {
         let request = request.into_inner();
 
         let mut client = create_client(request.cipher_suite as u16, &request.identity).await?;
@@ -210,8 +232,8 @@ impl MlsClient for MlsClientImpl {
 
     async fn create_key_package(
         &self,
-        request: tonic::Request<CreateKeyPackageRequest>,
-    ) -> Result<tonic::Response<CreateKeyPackageResponse>, tonic::Status> {
+        request: Request<CreateKeyPackageRequest>,
+    ) -> Result<Response<CreateKeyPackageResponse>, Status> {
         let request = request.into_inner();
 
         let client = create_client(request.cipher_suite as u16, &request.identity).await?;
@@ -240,8 +262,8 @@ impl MlsClient for MlsClientImpl {
 
     async fn join_group(
         &self,
-        request: tonic::Request<JoinGroupRequest>,
-    ) -> Result<tonic::Response<JoinGroupResponse>, tonic::Status> {
+        request: Request<JoinGroupRequest>,
+    ) -> Result<Response<JoinGroupResponse>, Status> {
         let request = request.into_inner();
         let mut clients = self.clients.lock().await;
 
@@ -268,8 +290,8 @@ impl MlsClient for MlsClientImpl {
 
     async fn external_join(
         &self,
-        request: tonic::Request<ExternalJoinRequest>,
-    ) -> Result<tonic::Response<ExternalJoinResponse>, tonic::Status> {
+        request: Request<ExternalJoinRequest>,
+    ) -> Result<Response<ExternalJoinResponse>, Status> {
         let request = request.into_inner();
 
         let group_info = MlsMessage::from_bytes(&request.group_info).map_err(abort)?;
@@ -338,8 +360,8 @@ impl MlsClient for MlsClientImpl {
 
     async fn group_info(
         &self,
-        request: tonic::Request<GroupInfoRequest>,
-    ) -> Result<tonic::Response<GroupInfoResponse>, tonic::Status> {
+        request: Request<GroupInfoRequest>,
+    ) -> Result<Response<GroupInfoResponse>, Status> {
         let request = request.into_inner();
 
         let groups = self.clients.lock().await;
@@ -364,24 +386,25 @@ impl MlsClient for MlsClientImpl {
 
     async fn state_auth(
         &self,
-        _request: tonic::Request<StateAuthRequest>,
-    ) -> Result<tonic::Response<StateAuthResponse>, tonic::Status> {
+        _request: Request<StateAuthRequest>,
+    ) -> Result<Response<StateAuthResponse>, Status> {
         // TODO
         Ok(Response::new(StateAuthResponse::default()))
     }
 
     async fn export(
         &self,
-        _request: tonic::Request<ExportRequest>,
-    ) -> Result<tonic::Response<ExportResponse>, tonic::Status> {
+        _request: Request<ExportRequest>,
+    ) -> Result<Response<ExportResponse>, Status> {
         // TODO
         Ok(Response::new(ExportResponse::default()))
     }
 
+    #[cfg(feature = "private_message")]
     async fn protect(
         &self,
-        request: tonic::Request<ProtectRequest>,
-    ) -> Result<tonic::Response<ProtectResponse>, tonic::Status> {
+        request: Request<ProtectRequest>,
+    ) -> Result<Response<ProtectResponse>, Status> {
         let request = request.into_inner();
         let mut clients = self.clients.lock().await;
 
@@ -398,10 +421,18 @@ impl MlsClient for MlsClientImpl {
         Ok(Response::new(ProtectResponse { ciphertext }))
     }
 
+    #[cfg(not(feature = "private_message"))]
+    async fn protect(
+        &self,
+        _: Request<ProtectRequest>,
+    ) -> Result<Response<ProtectResponse>, Status> {
+        Err(Status::aborted("Unsupported"))
+    }
+
     async fn unprotect(
         &self,
-        request: tonic::Request<UnprotectRequest>,
-    ) -> Result<tonic::Response<UnprotectResponse>, tonic::Status> {
+        request: Request<UnprotectRequest>,
+    ) -> Result<Response<UnprotectResponse>, Status> {
         let request = request.into_inner();
         let mut clients = self.clients.lock().await;
         let ciphertext = MlsMessage::from_bytes(&request.ciphertext).map_err(abort)?;
@@ -428,8 +459,8 @@ impl MlsClient for MlsClientImpl {
 
     async fn store_psk(
         &self,
-        request: tonic::Request<StorePskRequest>,
-    ) -> Result<tonic::Response<StorePskResponse>, tonic::Status> {
+        request: Request<StorePskRequest>,
+    ) -> Result<Response<StorePskResponse>, Status> {
         let request = request.into_inner();
 
         self.clients
@@ -448,172 +479,93 @@ impl MlsClient for MlsClientImpl {
 
     async fn add_proposal(
         &self,
-        request: tonic::Request<AddProposalRequest>,
-    ) -> Result<tonic::Response<ProposalResponse>, tonic::Status> {
-        let request = request.into_inner();
-        let key_package = MlsMessage::from_bytes(&request.key_package).map_err(abort)?;
-
-        self.send_proposal(request.state_id, move |group| {
-            group.propose_add(key_package, vec![]).map_err(abort)
-        })
-        .await
+        request: Request<AddProposalRequest>,
+    ) -> Result<Response<ProposalResponse>, Status> {
+        self.propose(request).await
     }
 
     async fn update_proposal(
         &self,
-        request: tonic::Request<UpdateProposalRequest>,
-    ) -> Result<tonic::Response<ProposalResponse>, tonic::Status> {
-        let request = request.into_inner();
-
-        self.send_proposal(request.state_id, move |group| {
-            group.propose_update(vec![]).map_err(abort)
-        })
-        .await
+        request: Request<UpdateProposalRequest>,
+    ) -> Result<Response<ProposalResponse>, Status> {
+        self.propose(request).await
     }
 
     async fn remove_proposal(
         &self,
-        request: tonic::Request<RemoveProposalRequest>,
-    ) -> Result<tonic::Response<ProposalResponse>, tonic::Status> {
-        let request = request.into_inner();
-
-        self.send_proposal(request.state_id, move |group| {
-            let removed_cred = Credential::Basic(BasicCredential::new(request.removed_id));
-            let removed_index = find_member(&group.roster().members(), &removed_cred)?;
-
-            group.propose_remove(removed_index, vec![]).map_err(abort)
-        })
-        .await
+        request: Request<RemoveProposalRequest>,
+    ) -> Result<Response<ProposalResponse>, Status> {
+        self.propose(request).await
     }
 
     async fn external_psk_proposal(
         &self,
-        request: tonic::Request<ExternalPskProposalRequest>,
-    ) -> Result<tonic::Response<ProposalResponse>, tonic::Status> {
-        let request = request.into_inner();
-
-        self.send_proposal(request.state_id, move |group| {
-            let psk_id = ExternalPskId::new(request.psk_id);
-            group.propose_external_psk(psk_id, vec![]).map_err(abort)
-        })
-        .await
+        request: Request<ExternalPskProposalRequest>,
+    ) -> Result<Response<ProposalResponse>, Status> {
+        self.propose(request).await
     }
 
     async fn resumption_psk_proposal(
         &self,
-        request: tonic::Request<ResumptionPskProposalRequest>,
-    ) -> Result<tonic::Response<ProposalResponse>, tonic::Status> {
-        let request = request.into_inner();
-
-        self.send_proposal(request.state_id, move |group| {
-            let epoch_id = request.epoch_id;
-
-            group
-                .propose_resumption_psk(epoch_id, vec![])
-                .map_err(abort)
-        })
-        .await
+        request: Request<ResumptionPskProposalRequest>,
+    ) -> Result<Response<ProposalResponse>, Status> {
+        self.propose(request).await
     }
 
     async fn re_init_proposal(
         &self,
-        request: tonic::Request<ReInitProposalRequest>,
-    ) -> Result<tonic::Response<ProposalResponse>, tonic::Status> {
-        let request = request.into_inner();
-
-        self.send_proposal(request.state_id, move |group| {
-            group
-                .propose_reinit(
-                    Some(request.group_id),
-                    ProtocolVersion::MLS_10,
-                    (request.cipher_suite as u16).into(),
-                    parse_extensions(request.extensions),
-                    vec![],
-                )
-                .map_err(abort)
-        })
-        .await
+        request: Request<ReInitProposalRequest>,
+    ) -> Result<Response<ProposalResponse>, Status> {
+        self.propose(request).await
     }
 
     async fn group_context_extensions_proposal(
         &self,
-        request: tonic::Request<GroupContextExtensionsProposalRequest>,
-    ) -> Result<tonic::Response<ProposalResponse>, tonic::Status> {
-        let request = request.into_inner();
-
-        self.send_proposal(request.state_id, move |group| {
-            let ext = parse_extensions(request.extensions);
-
-            group
-                .propose_group_context_extensions(ext, vec![])
-                .map_err(abort)
-        })
-        .await
+        request: Request<GroupContextExtensionsProposalRequest>,
+    ) -> Result<Response<ProposalResponse>, Status> {
+        self.propose(request).await
     }
 
     async fn commit(
         &self,
-        request: tonic::Request<CommitRequest>,
-    ) -> Result<tonic::Response<CommitResponse>, tonic::Status> {
+        request: Request<CommitRequest>,
+    ) -> Result<Response<CommitResponse>, Status> {
         self.commit(request).await
     }
 
     async fn re_init_commit(
         &self,
-        request: tonic::Request<CommitRequest>,
-    ) -> Result<tonic::Response<CommitResponse>, tonic::Status> {
+        request: Request<CommitRequest>,
+    ) -> Result<Response<CommitResponse>, Status> {
         self.commit(request).await
     }
 
     async fn handle_commit(
         &self,
-        request: tonic::Request<HandleCommitRequest>,
-    ) -> Result<tonic::Response<HandleCommitResponse>, tonic::Status> {
+        request: Request<HandleCommitRequest>,
+    ) -> Result<Response<HandleCommitResponse>, Status> {
         Ok(self.handle_commit(request).await?.0)
     }
 
     async fn handle_re_init_commit(
         &self,
-        request: tonic::Request<HandleCommitRequest>,
-    ) -> Result<tonic::Response<HandleReInitCommitResponse>, tonic::Status> {
+        request: Request<HandleCommitRequest>,
+    ) -> Result<Response<HandleReInitCommitResponse>, Status> {
         let (commit_resp, update) = self.handle_commit(request).await?;
         self.handle_re_init_commit(commit_resp, update).await
     }
 
     async fn handle_pending_re_init_commit(
         &self,
-        request: tonic::Request<HandlePendingCommitRequest>,
-    ) -> Result<tonic::Response<HandleReInitCommitResponse>, tonic::Status> {
-        let request = request.into_inner();
-
-        let (resp, update) = {
-            let clients = &mut self.clients.lock().await;
-
-            let group = clients
-                .get_mut(request.state_id as usize)
-                .ok_or_else(|| Status::aborted("no group with such index."))?
-                .group
-                .as_mut()
-                .ok_or_else(|| Status::aborted("no group with such index."))?;
-
-            let update = group.apply_pending_commit().map_err(abort)?;
-
-            let resp = HandleCommitResponse {
-                state_id: request.state_id,
-                epoch_authenticator: group.epoch_authenticator().map_err(abort)?.to_vec(),
-            };
-
-            (resp, update)
-        };
-
-        self.handle_re_init_commit(Response::new(resp), update.state_update)
-            .await
+        request: Request<HandlePendingCommitRequest>,
+    ) -> Result<Response<HandleReInitCommitResponse>, Status> {
+        self.handle_pending_re_init_commit(request).await
     }
 
     async fn handle_pending_commit(
         &self,
-        request: tonic::Request<HandlePendingCommitRequest>,
-    ) -> Result<tonic::Response<HandleCommitResponse>, tonic::Status> {
+        request: Request<HandlePendingCommitRequest>,
+    ) -> Result<Response<HandleCommitResponse>, Status> {
         let request_ref = request.into_inner();
         let clients = &mut self.clients.lock().await;
 
@@ -636,8 +588,8 @@ impl MlsClient for MlsClientImpl {
 
     async fn re_init_welcome(
         &self,
-        request: tonic::Request<ReInitWelcomeRequest>,
-    ) -> Result<tonic::Response<CreateSubgroupResponse>, tonic::Status> {
+        request: Request<ReInitWelcomeRequest>,
+    ) -> Result<Response<CreateSubgroupResponse>, Status> {
         let request = request.into_inner();
 
         self.branch_or_reinit(
@@ -652,48 +604,15 @@ impl MlsClient for MlsClientImpl {
 
     async fn handle_re_init_welcome(
         &self,
-        request: tonic::Request<HandleReInitWelcomeRequest>,
-    ) -> Result<tonic::Response<JoinGroupResponse>, tonic::Status> {
-        let request = request.into_inner();
-        let clients = &mut self.clients.lock().await;
-
-        let client = clients
-            .get_mut(request.reinit_id as usize)
-            .ok_or_else(|| Status::aborted("no group with such index."))?;
-
-        let group = client
-            .group
-            .as_mut()
-            .ok_or_else(|| Status::aborted("no group with such index."))?;
-
-        let welcome = MlsMessage::from_bytes(&request.welcome).map_err(abort)?;
-
-        let reinit_client = group
-            .clone()
-            .get_reinit_client(
-                Some(client.signer.clone()),
-                Some(client.signing_identity.clone()),
-            )
-            .map_err(abort)?;
-
-        let (group, _info) = reinit_client
-            .join(welcome, get_tree(&request.ratchet_tree))
-            .map_err(abort)?;
-
-        let resp = JoinGroupResponse {
-            epoch_authenticator: group.epoch_authenticator().map_err(abort)?.to_vec(),
-            state_id: request.reinit_id,
-        };
-
-        client.group = Some(group);
-
-        Ok(Response::new(resp))
+        request: Request<HandleReInitWelcomeRequest>,
+    ) -> Result<Response<JoinGroupResponse>, Status> {
+        self.handle_re_init_welcome(request).await
     }
 
     async fn create_branch(
         &self,
         request: Request<CreateBranchRequest>,
-    ) -> Result<Response<CreateSubgroupResponse>, tonic::Status> {
+    ) -> Result<Response<CreateSubgroupResponse>, Status> {
         let request = request.into_inner();
 
         self.branch_or_reinit(
@@ -709,344 +628,44 @@ impl MlsClient for MlsClientImpl {
     async fn handle_branch(
         &self,
         request: Request<HandleBranchRequest>,
-    ) -> Result<Response<HandleBranchResponse>, tonic::Status> {
-        let request = request.into_inner();
-        let clients = &mut self.clients.lock().await;
-
-        // Find the key package generated earlier based on the transaction_id
-        let (id, key_package_data) = {
-            let key_package_client = clients
-                .get(request.transaction_id as usize)
-                .ok_or_else(|| Status::aborted("no group with such index."))?;
-
-            key_package_client.key_package_repo.key_packages()[0].clone()
-        };
-
-        let client = clients
-            .get_mut(request.state_id as usize)
-            .ok_or_else(|| Status::aborted("no group with such index."))?;
-
-        // Insert the previously created key package
-        client.key_package_repo.insert(id, key_package_data);
-
-        let group = client
-            .group
-            .as_mut()
-            .ok_or_else(|| Status::aborted("no group with such index."))?;
-
-        let tree = get_tree(&request.ratchet_tree);
-        let welcome = MlsMessage::from_bytes(&request.welcome).map_err(abort)?;
-
-        let (new_group, _info) = group.join_subgroup(welcome, tree).map_err(abort)?;
-
-        let resp = HandleBranchResponse {
-            state_id: request.state_id,
-            epoch_authenticator: new_group.epoch_authenticator().map_err(abort)?.to_vec(),
-        };
-
-        client.group = Some(new_group);
-
-        Ok(Response::new(resp))
+    ) -> Result<Response<HandleBranchResponse>, Status> {
+        self.handle_branch(request).await
     }
 
     async fn new_member_add_proposal(
         &self,
         request: Request<NewMemberAddProposalRequest>,
-    ) -> Result<Response<NewMemberAddProposalResponse>, tonic::Status> {
-        let request = request.into_inner();
-
-        let group_info = MlsMessage::from_bytes(&request.group_info).map_err(abort)?;
-
-        let cipher_suite = group_info
-            .cipher_suite()
-            .ok_or(Status::aborted("message not group info"))?;
-
-        let client = create_client(cipher_suite.into(), &request.identity).await?;
-
-        let proposal = client
-            .client
-            .external_add_proposal(group_info, None, vec![])
-            .map_err(abort)?
-            .to_bytes()
-            .map_err(abort)?;
-
-        let (_, key_pckg_secrets) = client.key_package_repo.key_packages()[0].clone();
-        let signature_priv = client.signer.to_vec();
-
-        let mut clients = self.clients.lock().await;
-        clients.push(client);
-
-        let resp = NewMemberAddProposalResponse {
-            transaction_id: clients.len() as u32 - 1,
-            proposal,
-            init_priv: key_pckg_secrets.init_key.to_vec(),
-            encryption_priv: key_pckg_secrets.leaf_node_key.to_vec(),
-            signature_priv,
-        };
-
-        Ok(Response::new(resp))
+    ) -> Result<Response<NewMemberAddProposalResponse>, Status> {
+        self.new_member_add_proposal(request).await
     }
 
     async fn create_external_signer(
         &self,
         request: Request<CreateExternalSignerRequest>,
-    ) -> Result<Response<CreateExternalSignerResponse>, tonic::Status> {
-        let request = request.into_inner();
-
-        let cs = OpensslCryptoProvider::new()
-            .cipher_suite_provider((request.cipher_suite as u16).into())
-            .ok_or_else(|| Status::aborted("ciphersuite not supported"))?;
-
-        let (secret_key, public_key) = cs.signature_key_generate().map_err(abort)?;
-        let credential = BasicCredential::new(request.identity).into_credential();
-        let signing_identity = SigningIdentity::new(credential, public_key);
-
-        let external_sender = signing_identity.mls_encode_to_vec().map_err(abort)?;
-
-        let mut ext_clients = self.external_clients.lock().await;
-
-        let ext_client = ExternalClientBuilder::new()
-            .crypto_provider(OpensslCryptoProvider::default())
-            .identity_provider(BasicIdentityProvider::new())
-            .signer(secret_key, signing_identity)
-            .build();
-
-        ext_clients.push(ExternalClientDetails { ext_client });
-
-        let resp = CreateExternalSignerResponse {
-            signer_id: ext_clients.len() as u32 - 1,
-            external_sender,
-        };
-
-        Ok(Response::new(resp))
+    ) -> Result<Response<CreateExternalSignerResponse>, Status> {
+        self.create_external_signer(request).await
     }
 
     async fn add_external_signer(
         &self,
         request: Request<AddExternalSignerRequest>,
-    ) -> Result<Response<ProposalResponse>, tonic::Status> {
-        let request = request.into_inner();
-
-        self.send_proposal(request.state_id, move |group| {
-            let mut extensions = group.context_extensions().clone();
-
-            let ext_sender =
-                SigningIdentity::mls_decode(&mut &*request.external_sender).map_err(abort)?;
-
-            let mut ext_senders = extensions
-                .get_as::<ExternalSendersExt>()
-                .map_err(abort)?
-                .unwrap_or(ExternalSendersExt::new(vec![]))
-                .allowed_senders()
-                .to_vec();
-
-            ext_senders.push(ext_sender);
-
-            extensions
-                .set_from(ExternalSendersExt::new(ext_senders))
-                .map_err(abort)?;
-
-            group
-                .propose_group_context_extensions(extensions, vec![])
-                .map_err(abort)
-        })
-        .await
+    ) -> Result<Response<ProposalResponse>, Status> {
+        self.propose(request).await
     }
 
     async fn external_signer_proposal(
         &self,
         request: Request<ExternalSignerProposalRequest>,
-    ) -> Result<Response<ProposalResponse>, tonic::Status> {
-        let request = request.into_inner();
-        let ext_clients = &mut self.external_clients.lock().await;
-
-        let ext_client = ext_clients
-            .get_mut(request.signer_id as usize)
-            .ok_or_else(|| Status::aborted("no group with such index."))?;
-
-        let group_info = MlsMessage::from_bytes(&request.group_info).map_err(abort)?;
-
-        let mut server = ext_client
-            .ext_client
-            .observe_group(group_info, get_tree(&request.ratchet_tree))
-            .map_err(abort)?;
-
-        let proposal = request
-            .description
-            .ok_or_else(|| Status::aborted("proposal not found"))?;
-
-        let proposal = match proposal.proposal_type.as_slice() {
-            PROPOSAL_DESC_ADD => {
-                let key_package = MlsMessage::from_bytes(&proposal.key_package).map_err(abort)?;
-
-                server.propose_add(key_package, vec![]).map_err(abort)
-            }
-            PROPOSAL_DESC_REMOVE => {
-                let cred = Credential::Basic(BasicCredential::new(proposal.removed_id.clone()));
-                let removed_index = find_member(&server.roster().members(), &cred)?;
-
-                server.propose_remove(removed_index, vec![]).map_err(abort)
-            }
-            PROPOSAL_DESC_EXTERNAL_PSK => server
-                .propose_external_psk(ExternalPskId::new(proposal.psk_id), vec![])
-                .map_err(abort),
-            PROPOSAL_DESC_RESUMPTION_PSK => server
-                .propose_resumption_psk(proposal.epoch_id, vec![])
-                .map_err(abort),
-            PROPOSAL_DESC_GCE => server
-                .propose_group_context_extensions(parse_extensions(proposal.extensions), vec![])
-                .map_err(abort),
-            PROPOSAL_DESC_REINIT => server
-                .propose_reinit(
-                    Some(proposal.group_id),
-                    ProtocolVersion::MLS_10,
-                    (proposal.ciphersuite as u16).into(),
-                    parse_extensions(proposal.extensions),
-                    vec![],
-                )
-                .map_err(abort),
-            _ => Err(Status::aborted("unsupported proposal type")),
-        }?;
-
-        let resp = ProposalResponse {
-            proposal: proposal.to_bytes().map_err(abort)?,
-        };
-
-        Ok(Response::new(resp))
+    ) -> Result<Response<ProposalResponse>, Status> {
+        self.propose(request).await
     }
 }
 
 impl MlsClientImpl {
-    async fn branch_or_reinit(
-        &self,
-        client_id: u32,
-        key_packages: &[Vec<u8>],
-        force_path: bool,
-        external_tree: bool,
-        subgroup_id: Option<Vec<u8>>,
-    ) -> Result<tonic::Response<CreateSubgroupResponse>, tonic::Status> {
-        let clients = &mut self.clients.lock().await;
-
-        let client = clients
-            .get_mut(client_id as usize)
-            .ok_or_else(|| Status::aborted("no group with such index."))?;
-
-        let group = client
-            .group
-            .as_mut()
-            .ok_or_else(|| Status::aborted("no group with such index."))?;
-
-        let new_key_pkgs = key_packages
-            .iter()
-            .map(|kp| MlsMessage::from_bytes(kp))
-            .collect::<Result<_, _>>()
-            .map_err(abort)?;
-
-        {
-            let mut mls_rules = client.mls_rules.commit_options.lock().unwrap();
-            mls_rules.path_required = force_path;
-            mls_rules.ratchet_tree_extension = !external_tree;
-        };
-
-        let (new_group, welcome) = if let Some(id) = subgroup_id {
-            group.branch(id, new_key_pkgs).map_err(abort)?
-        } else {
-            let client = group
-                .clone()
-                .get_reinit_client(
-                    Some(client.signer.clone()),
-                    Some(client.signing_identity.clone()),
-                )
-                .map_err(abort)?;
-
-            client.commit(new_key_pkgs).map_err(abort)?
-        };
-
-        let welcome = welcome
-            .first()
-            .map(|msg| msg.to_bytes())
-            .transpose()
-            .map_err(abort)?
-            .unwrap_or_default();
-
-        let ratchet_tree = if external_tree {
-            new_group.export_tree().unwrap()
-        } else {
-            vec![]
-        };
-
-        let resp = CreateSubgroupResponse {
-            epoch_authenticator: new_group.epoch_authenticator().map_err(abort)?.to_vec(),
-            state_id: client_id,
-            welcome,
-            ratchet_tree,
-        };
-
-        client.group = Some(new_group);
-
-        Ok(Response::new(resp))
-    }
-
-    async fn handle_re_init_commit(
-        &self,
-        commit_resp: tonic::Response<HandleCommitResponse>,
-        update: StateUpdate,
-    ) -> Result<tonic::Response<HandleReInitCommitResponse>, tonic::Status> {
-        let commit_resp = commit_resp.into_inner();
-        let mut clients = self.clients.lock().await;
-
-        let client = clients
-            .get_mut(commit_resp.state_id as usize)
-            .ok_or_else(|| Status::aborted("no group with such index."))?;
-
-        let group = client
-            .group
-            .as_ref()
-            .ok_or_else(|| Status::aborted("no group with such index."))?;
-
-        // Generate a signing identity for the possibly new ciphersuite after reinit
-        let cipher_suite = update
-            .pending_reinit_ciphersuite()
-            .ok_or_else(|| Status::aborted("reinit not found in commit"))?;
-
-        let provider = OpensslCryptoProvider::new()
-            .cipher_suite_provider(cipher_suite)
-            .ok_or_else(|| Status::aborted("ciphersuite not supported"))?;
-
-        let (secret_key, public_key) = provider.signature_key_generate().map_err(abort)?;
-
-        let credential = group
-            .current_member_signing_identity()
-            .map_err(abort)?
-            .credential
-            .clone();
-
-        let signing_identity = SigningIdentity::new(credential, public_key);
-
-        // Generate a key packge used to join the new group after reinit
-        let reinit_client = group
-            .clone()
-            .get_reinit_client(Some(secret_key.clone()), Some(signing_identity.clone()))
-            .map_err(abort)?;
-
-        let key_package = reinit_client.generate_key_package().map_err(abort)?;
-
-        let resp = HandleReInitCommitResponse {
-            epoch_authenticator: commit_resp.epoch_authenticator,
-            key_package: key_package.to_bytes().map_err(abort)?,
-            reinit_id: commit_resp.state_id,
-        };
-
-        client.signing_identity = signing_identity;
-        client.signer = secret_key;
-
-        Ok(Response::new(resp))
-    }
-
     async fn commit(
         &self,
-        request: tonic::Request<CommitRequest>,
-    ) -> Result<tonic::Response<CommitResponse>, tonic::Status> {
+        request: Request<CommitRequest>,
+    ) -> Result<Response<CommitResponse>, Status> {
         let request = request.into_inner();
         let mut clients = self.clients.lock().await;
 
@@ -1093,10 +712,12 @@ impl MlsClientImpl {
                         .remove_member(find_member(&roster, &cred)?)
                         .map_err(abort)?;
                 }
+                #[cfg(feature = "psk")]
                 PROPOSAL_DESC_EXTERNAL_PSK => {
                     let psk_id = ExternalPskId::new(proposal.psk_id.to_vec());
                     commit_builder = commit_builder.add_external_psk(psk_id).map_err(abort)?;
                 }
+                #[cfg(feature = "psk")]
                 PROPOSAL_DESC_RESUMPTION_PSK => {
                     commit_builder = commit_builder
                         .add_resumption_psk(proposal.epoch_id)
@@ -1141,8 +762,8 @@ impl MlsClientImpl {
 
     async fn handle_commit(
         &self,
-        request: tonic::Request<HandleCommitRequest>,
-    ) -> Result<(tonic::Response<HandleCommitResponse>, StateUpdate), tonic::Status> {
+        request: Request<HandleCommitRequest>,
+    ) -> Result<(Response<HandleCommitResponse>, StateUpdate), Status> {
         let request = request.into_inner();
         let clients = &mut self.clients.lock().await;
 
@@ -1175,28 +796,6 @@ impl MlsClientImpl {
             ReceivedMessage::Commit(update) => Ok((Response::new(resp), update.state_update)),
             _ => Err(Status::aborted("message not a commit.")),
         }
-    }
-
-    async fn send_proposal<F>(
-        &self,
-        index: u32,
-        propose: F,
-    ) -> Result<tonic::Response<ProposalResponse>, tonic::Status>
-    where
-        F: FnOnce(&mut Group<TestClientConfig>) -> Result<MlsMessage, tonic::Status>,
-    {
-        let mut clients = self.clients.lock().await;
-
-        let group = clients
-            .get_mut(index as usize)
-            .ok_or_else(|| Status::aborted("no group with such index."))?
-            .group
-            .as_mut()
-            .ok_or_else(|| Status::aborted("no group with such index."))?;
-
-        let proposal = propose(group).and_then(|p| p.to_bytes().map_err(abort))?;
-
-        Ok(Response::new(ProposalResponse { proposal }))
     }
 }
 
@@ -1264,14 +863,15 @@ struct Opts {
     #[clap(short, long, value_parser, default_value = "0.0.0.0")]
     host: IpAddr,
 
-    #[clap(short, long, value_parser, default_value = "50002")]
+    #[clap(short, long, value_parser, default_value = "50009")]
     port: u16,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opts = Opts::parse();
-    let mls_client_impl = MlsClientImpl::default();
+    let mls_client_impl =
+        MlsClientImpl::new(format!("{IMPLEMENTATION_NAME} on port {}", opts.port));
 
     println!("serving on host {} port {}", opts.host, opts.port);
 

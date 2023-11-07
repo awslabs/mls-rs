@@ -23,6 +23,7 @@ use crate::identity::SigningIdentity;
 use crate::key_package::{KeyPackage, KeyPackageRef};
 use crate::protocol_version::ProtocolVersion;
 use crate::psk::secret::PskSecret;
+use crate::psk::PreSharedKeyID;
 use crate::signer::Signable;
 use crate::tree_kem::hpke_encryption::HpkeEncryptable;
 use crate::tree_kem::kem::TreeKem;
@@ -50,8 +51,8 @@ pub use self::resumption::ReinitClient;
 
 #[cfg(feature = "psk")]
 use crate::psk::{
-    resolver::PskResolver, secret::PskSecretInput, ExternalPskId, JustPreSharedKeyID,
-    PreSharedKeyID, PskGroupId, PskNonce, ResumptionPSKUsage, ResumptionPsk,
+    resolver::PskResolver, secret::PskSecretInput, ExternalPskId, JustPreSharedKeyID, PskGroupId,
+    PskNonce, ResumptionPSKUsage, ResumptionPsk,
 };
 
 #[cfg(all(feature = "std", feature = "by_ref_proposal"))]
@@ -167,7 +168,6 @@ mod interop_test_vectors;
 struct GroupSecrets {
     joiner_secret: JoinerSecret,
     path_secret: Option<PathSecret>,
-    #[cfg(feature = "psk")]
     psks: Vec<PreSharedKeyID>,
 }
 
@@ -781,10 +781,12 @@ where
             })
             .transpose()?;
 
+        #[cfg(not(feature = "psk"))]
+        let psks = Vec::new();
+
         let group_secrets = GroupSecrets {
             joiner_secret: joiner_secret.clone(),
             path_secret,
-            #[cfg(feature = "psk")]
             psks,
         };
 
@@ -1096,7 +1098,7 @@ where
             MlsMessagePayload::Plain(self.create_plaintext(content).await?)
         };
         #[cfg(not(feature = "private_message"))]
-        let payload = MlsMessagePayload::Plain(self.create_plaintext(content)?);
+        let payload = MlsMessagePayload::Plain(self.create_plaintext(content).await?);
 
         Ok(MlsMessage::new(self.protocol_version(), payload))
     }

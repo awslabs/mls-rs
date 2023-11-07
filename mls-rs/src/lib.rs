@@ -152,12 +152,11 @@ pub use mls_rs_core::{
 /// Dependencies of [`MlsRules`].
 pub mod mls_rules {
     pub use crate::group::{
-        mls_rules::{CommitDirection, CommitOptions, CommitSource, DefaultMlsRules},
+        mls_rules::{
+            CommitDirection, CommitOptions, CommitSource, DefaultMlsRules, EncryptionOptions,
+        },
         proposal_filter::{ProposalBundle, ProposalInfo, ProposalSource},
     };
-
-    #[cfg(feature = "private_message")]
-    pub use crate::group::mls_rules::EncryptionOptions;
 }
 
 pub use crate::group::mls_rules::MlsRules;

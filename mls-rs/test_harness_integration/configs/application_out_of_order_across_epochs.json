@@ -1,0 +1,21 @@
+{
+  "scripts": {
+    "out_of_order_across_epochs": [
+      {"action": "createGroup", "actor": "alice"},
+      {"action": "externalJoin", "actor": "alice", "joiner": "bob"},
+      
+      {"action": "protect", "actor": "alice", "authenticatedData": "btw1", "plaintext": "hello world 1"},
+      {"action": "protect", "actor": "alice", "authenticatedData": "btw2", "plaintext": "hello world 2"},
+
+      {"action": "fullCommit", "actor": "alice", "members": ["bob"]},
+
+      {"action": "protect", "actor": "alice", "authenticatedData": "btw3", "plaintext": "hello world 3"},
+      {"action": "protect", "actor": "alice", "authenticatedData": "btw4", "plaintext": "hello world 4"},
+
+      {"action": "unprotect", "actor": "bob", "ciphertext": 6 },
+      {"action": "unprotect", "actor": "bob", "ciphertext": 5 },
+      {"action": "unprotect", "actor": "bob", "ciphertext": 3 },
+      {"action": "unprotect", "actor": "bob", "ciphertext": 2 }
+    ]
+  }
+}

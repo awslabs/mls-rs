@@ -1,0 +1,104 @@
+{
+  "scripts": {
+    "change_ciphersuite": [
+      {"action": "createGroup", "actor": "alice"},
+      {"action": "externalJoin", "actor": "alice", "joiner": "bob", "members": []},
+      {"action": "externalJoin", "actor": "alice", "joiner": "charlie", "members": ["bob"]},
+      {"action": "externalJoin", "actor": "alice", "joiner": "diana", "members": ["bob", "charlie"]},
+      {"action": "externalJoin", "actor": "alice", "joiner": "eliza", "members": ["bob", "charlie", "diana"]},
+      {
+        "action": "reinit", 
+        "proposer": "alice",
+        "committer": "bob",
+        "welcomer": "charlie", 
+        "members": ["diana", "eliza"],
+        "changeCiphersuite": true
+      }
+    ],
+    
+    "change_group_id": [
+      {"action": "createGroup", "actor": "alice"},
+      {"action": "externalJoin", "actor": "alice", "joiner": "bob", "members": []},
+      {"action": "externalJoin", "actor": "alice", "joiner": "charlie", "members": ["bob"]},
+      {"action": "externalJoin", "actor": "alice", "joiner": "diana", "members": ["bob", "charlie"]},
+      {"action": "externalJoin", "actor": "alice", "joiner": "eliza", "members": ["bob", "charlie", "diana"]},
+      {
+        "action": "reinit", 
+        "proposer": "alice",
+        "committer": "bob",
+        "welcomer": "charlie", 
+        "members": ["diana", "eliza"],
+        "changeGroupID": true
+      }
+    ],
+    
+    "change_extensions": [
+      {"action": "createGroup", "actor": "alice"},
+      {"action": "externalJoin", "actor": "alice", "joiner": "bob", "members": []},
+      {"action": "externalJoin", "actor": "alice", "joiner": "charlie", "members": ["bob"]},
+      {"action": "externalJoin", "actor": "alice", "joiner": "diana", "members": ["bob", "charlie"]},
+      {"action": "externalJoin", "actor": "alice", "joiner": "eliza", "members": ["bob", "charlie", "diana"]},
+      {
+        "action": "reinit", 
+        "proposer": "alice",
+        "committer": "bob",
+        "welcomer": "charlie", 
+        "members": ["diana", "eliza"],
+        "extensions": [
+          {"extension_type": 3, "extension_data": "AAAA"},
+          {"extension_type": 5, "extension_data": "AA=="}
+        ]
+      }
+    ],
+    
+    "all_same_actor": [
+      {"action": "createGroup", "actor": "alice"},
+      {"action": "externalJoin", "actor": "alice", "joiner": "bob", "members": []},
+      {"action": "externalJoin", "actor": "alice", "joiner": "charlie", "members": ["bob"]},
+      {"action": "externalJoin", "actor": "alice", "joiner": "diana", "members": ["bob", "charlie"]},
+      {"action": "externalJoin", "actor": "alice", "joiner": "eliza", "members": ["bob", "charlie", "diana"]},
+      {
+        "action": "reinit", 
+        "proposer": "alice",
+        "committer": "alice",
+        "welcomer": "alice", 
+        "members": ["bob", "charlie", "diana", "eliza"],
+        "changeGroupID": true
+      }
+    ],
+    
+    "external_tree": [
+      {"action": "createGroup", "actor": "alice"},
+      {"action": "externalJoin", "actor": "alice", "joiner": "bob", "members": []},
+      {"action": "externalJoin", "actor": "alice", "joiner": "charlie", "members": ["bob"]},
+      {"action": "externalJoin", "actor": "alice", "joiner": "diana", "members": ["bob", "charlie"]},
+      {"action": "externalJoin", "actor": "alice", "joiner": "eliza", "members": ["bob", "charlie", "diana"]},
+      {
+        "action": "reinit", 
+        "proposer": "alice",
+        "committer": "bob",
+        "welcomer": "charlie", 
+        "members": ["diana", "eliza"],
+        "changeGroupID": true,
+        "externalTree": true
+      }
+    ],
+    
+    "force_path": [
+      {"action": "createGroup", "actor": "alice"},
+      {"action": "externalJoin", "actor": "alice", "joiner": "bob", "members": []},
+      {"action": "externalJoin", "actor": "alice", "joiner": "charlie", "members": ["bob"]},
+      {"action": "externalJoin", "actor": "alice", "joiner": "diana", "members": ["bob", "charlie"]},
+      {"action": "externalJoin", "actor": "alice", "joiner": "eliza", "members": ["bob", "charlie", "diana"]},
+      {
+        "action": "reinit", 
+        "proposer": "alice",
+        "committer": "bob",
+        "welcomer": "charlie", 
+        "members": ["diana", "eliza"],
+        "changeGroupID": true,
+        "forcePath": true
+      }
+    ]
+  }
+}

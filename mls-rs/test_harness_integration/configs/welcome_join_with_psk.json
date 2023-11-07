@@ -1,0 +1,15 @@
+{
+  "scripts": {
+    "with_psk": [
+          {"action": "createGroup", "actor": "alice"},
+          {"action": "createKeyPackage", "actor": "bob"},
+          {"action": "installExternalPSK", "clients": ["alice", "bob"]},
+          {
+            "action": "fullCommit",
+            "actor": "alice",
+            "byValue": [{"proposalType": "add", "keyPackage": 1}, {"proposalType": "externalPSK", "pskID": 2}],
+            "joiners": ["bob"]
+          }
+    ]
+  }
+}
