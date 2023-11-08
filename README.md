@@ -1,13 +1,11 @@
-# mls-rs &emsp; [![Build Status]][actions] [![Latest Version]][crates.io]
-
-[![API Documentation]][docs.rs]
+# mls-rs &emsp; [![Build Status]][actions] [![Latest Version]][crates.io] [![API Documentation]][docs.rs]
 
 [build status]: https://img.shields.io/github/checks-status/awslabs/mls-rs/main
 [actions]: https://github.com/awslabs/mls-rs/actions?query=branch%3main
 [latest version]: https://img.shields.io/crates/v/mls-rs.svg
 [crates.io]: https://crates.io/crates/mls-rs
-[api documentation]: (https://docs.rs/mls-rs/badge.svg)
-[docs.rs]: (https://docs.rs/mls-rs)
+[api documentation]: https://docs.rs/mls-rs/badge.svg
+[docs.rs]: https://docs.rs/mls-rs
 
 <!-- cargo-sync-readme start -->
 
@@ -22,36 +20,34 @@ communication between a group of clients.
 
 ## MLS Protocol Features
 
-- Multi-party E2EE [group evolution](https://messaginglayersecurity.rocks/mls-protocol/draft-ietf-mls-protocol.html#name-cryptographic-state-and-evo)
+- Multi-party E2EE [group evolution](https://www.rfc-editor.org/rfc/rfc9420.html#name-cryptographic-state-and-evo)
   via a propose-then-commit mechanism.
-- Asynchronous by design with pre-computed [key packages](https://messaginglayersecurity.rocks/mls-protocol/draft-ietf-mls-protocol.html#name-key-packages),
+- Asynchronous by design with pre-computed [key packages](https://www.rfc-editor.org/rfc/rfc9420.html#name-key-packages),
   allowing members to be added to a group while offline.
 - Customizable credential system with built in support for X.509 certificates.
-- [Extension system](https://messaginglayersecurity.rocks/mls-protocol/draft-ietf-mls-protocol.html#name-extensions)
+- [Extension system](https://www.rfc-editor.org/rfc/rfc9420.html#name-extensions)
   allowing for application specific data to be negotiated via the protocol.
 - Strong forward secrecy and post compromise security.
-- Crypto agility via support for multiple [ciphersuites](https://messaginglayersecurity.rocks/mls-protocol/draft-ietf-mls-protocol.html#name-mls-ciphersuites).
+- Crypto agility via support for multiple [cipher suites](https://www.rfc-editor.org/rfc/rfc9420.html#name-cipher-suites).
 - Pre-shared key support.
 - Subgroup branching.
-- Group reinitialization (ex: protocol version upgrade).
+- Group reinitialization for breaking changes such as protocol upgrades.
 
 ## Features
 
-- Easy to use client interface that manages multiple MLS identities and groups.
-- 100% RFC conformance with support for all default credential, proposal,
+- Easy to use client interface that can manage multiple MLS identities and groups.
+- 100% RFC 9420 conformance with support for all default credential, proposal,
   and extension types.
-- Async API with async trait based extension points.
+- Support for WASM builds.
 - Configurable storage for key packages, secrets and group state
-  via provider traits along with default "in memory" implementations.
-- Support for custom user created proposal, and extension types.
+  via traits along with provided "in memory" and SQLite implementations.
+- Support for custom user proposal and extension types.
 - Ability to create user defined credentials with custom validation
   routines that can bridge to existing credential schemes.
-- OpenSSL and Rust Crypto based ciphersuite implementations.
-- Crypto agility with support for user defined ciphersuites.
-- High test coverage including security focused tests and
+- OpenSSL and Rust Crypto based cipher suite implementations.
+- Crypto agility with support for user defined cipher suite.
+- Extensive test suite including security and interop focused tests against
   pre-computed test vectors.
-- Fuzz testing suite.
-- Benchmarks for core functionality.
 
 <!-- cargo-sync-readme end -->
 
