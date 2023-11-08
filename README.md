@@ -49,6 +49,19 @@ communication between a group of clients.
 - Extensive test suite including security and interop focused tests against
   pre-computed test vectors.
 
+## Crypto Providers
+
+For cipher suite descriptions see the RFC documentation [here](https://www.rfc-editor.org/rfc/rfc9420.html#name-mls-cipher-suites)
+
+|-----Name-----|----Cipher Suites----|----X509 Support----|
+| OpenSSL | 1-7 | Stable |
+| AWS-LC | 1,2,3,5,7 | Stable |
+| Rust Crypto | 1,2,3 | ⚠️ Experimental |
+
+## Security Notice
+
+This library has been validated for conformance to the RFC 9420 specification but has not yet received a full security audit by a 3rd party.
+
 <!-- cargo-sync-readme end -->
 
 ## License
