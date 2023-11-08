@@ -53,7 +53,8 @@ communication between a group of clients.
 
 For cipher suite descriptions see the RFC documentation [here](https://www.rfc-editor.org/rfc/rfc9420.html#name-mls-cipher-suites)
 
-|-----Name-----|----Cipher Suites----|----X509 Support----|
+| Name | Cipher Suites | X509 Support |
+|------|---------------|--------------|
 | OpenSSL | 1-7 | Stable |
 | AWS-LC | 1,2,3,5,7 | Stable |
 | Rust Crypto | 1,2,3 | ⚠️ Experimental |
