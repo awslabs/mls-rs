@@ -5,7 +5,7 @@ edition = "2021"
 description = "RustCrypto based CryptoProvider for mls-rs"
 homepage = "https://github.com/awslabs/mls-rs"
 repository = "https://github.com/awslabs/mls-rs"
-keywords = ["mls", "mls-rs", "rust crypto"]
+keywords = ["mls", "mls-rs"]
 license = "Apache-2.0 OR MIT"
 
 [features]
