@@ -14,7 +14,7 @@ preallocate = []
 std = ["dep:thiserror"]
 
 [dependencies]
-mls-rs-codec-derive = { version = "*", path = "../mls-rs-codec-derive" }
+mls-rs-codec-derive = { version = "0.1.0", path = "../mls-rs-codec-derive" }
 thiserror = { version = "1.0.40", optional = true }
 
 [dev-dependencies]
