@@ -1,6 +1,6 @@
 [package]
 name = "mls-rs"
-version = "0.34.0"
+version = "0.34.1"
 edition = "2021"
 description = "An implementation of Messaging Layer Security (RFC 9420)"
 homepage = "https://github.com/awslabs/mls-rs"
@@ -96,8 +96,6 @@ mls-rs-crypto-openssl = { path = "../mls-rs-crypto-openssl", version = "0.5.0"}
 criterion = { version = "0.5.1", features = ["async_futures", "html_reports"] }
 
 # Benchmark crypto engine swaps
-[target.'cfg(awslc)'.dependencies]
-mls-rs-crypto-awslc = { path = "../mls-rs-crypto-awslc" }
 
 [target.'cfg(rustcrypto)'.dependencies]
 mls-rs-crypto-rustcrypto = { path = "../mls-rs-crypto-rustcrypto", version = "0.6.0" }
