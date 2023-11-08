@@ -49,10 +49,10 @@ fuzz_util = ["test_util", "default", "dep:once_cell", "dep:mls-rs-crypto-openssl
 
 
 [dependencies]
-mls-rs-core = { path = "../mls-rs-core", default-features = false, version = "*" }
-mls-rs-identity-x509 = { path = "../mls-rs-identity-x509", default-features = false, version = "*", optional = true }
+mls-rs-core = { path = "../mls-rs-core", default-features = false, version = "0.14.0" }
+mls-rs-identity-x509 = { path = "../mls-rs-identity-x509", default-features = false, version = "0.7.0", optional = true }
 zeroize = { version = "1", default-features = false, features = ["alloc", "zeroize_derive"] }
-mls-rs-codec = { version = "*", path = "../mls-rs-codec", default-features = false}
+mls-rs-codec = { version = "0.4.0", path = "../mls-rs-codec", default-features = false}
 thiserror = { version = "1.0.40", optional = true }
 futures = { version = "0.3.25", default-features = false, features = ["alloc"]}
 itertools = { version = "0.11.0", default-features = false, features = ["use_alloc"]}
@@ -61,13 +61,13 @@ cfg-if = "1"
 async-trait = "0.1.74"
 debug_tree = { version = "0.4.0", optional = true }
 spin = { version = "0.9.8", default-features = false, features = ["mutex", "spin_mutex", "portable_atomic"]}
-portable-atomic = { version = "*", default-features = false, features = ["critical-section"]}
+portable-atomic = { version = "1.5.1", default-features = false, features = ["critical-section"]}
 portable-atomic-util = { version = "0.1.2", default-features = false, features = ["alloc"]}
 maybe-async = { version = "0.2.7" }
 
 # Optional dependencies
-mls-rs-provider-sqlite = { path = "../mls-rs-provider-sqlite", version = "*", default-features = false, optional = true }
-mls-rs-crypto-openssl = { path = "../mls-rs-crypto-openssl", optional = true, version = "*" }
+mls-rs-provider-sqlite = { path = "../mls-rs-provider-sqlite", version = "0.7.0", default-features = false, optional = true }
+mls-rs-crypto-openssl = { path = "../mls-rs-crypto-openssl", optional = true, version = "0.5.0" }
 # TODO: https://github.com/GoogleChromeLabs/wasm-bindgen-rayon
 rayon = { version = "1", optional = true }
 arbitrary = { version = "1", features = ["derive"], optional = true }
@@ -88,11 +88,11 @@ wasm-bindgen = { version = "^0.2.79" }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wasm-bindgen-test = { version = "0.3.26", default-features = false }
-mls-rs-crypto-rustcrypto = { path = "../mls-rs-crypto-rustcrypto", features = ["browser"], version = "*" }
+mls-rs-crypto-rustcrypto = { path = "../mls-rs-crypto-rustcrypto", features = ["browser"], version = "0.6.0" }
 criterion = { version = "0.5.1", default-features = false, features = ["plotters", "cargo_bench_support", "async_futures", "html_reports"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-mls-rs-crypto-openssl = { path = "../mls-rs-crypto-openssl", version = "*"}
+mls-rs-crypto-openssl = { path = "../mls-rs-crypto-openssl", version = "0.5.0"}
 criterion = { version = "0.5.1", features = ["async_futures", "html_reports"] }
 
 # Benchmark crypto engine swaps
@@ -100,7 +100,7 @@ criterion = { version = "0.5.1", features = ["async_futures", "html_reports"] }
 mls-rs-crypto-awslc = { path = "../mls-rs-crypto-awslc" }
 
 [target.'cfg(rustcrypto)'.dependencies]
-mls-rs-crypto-rustcrypto = { path = "../mls-rs-crypto-rustcrypto" }
+mls-rs-crypto-rustcrypto = { path = "../mls-rs-crypto-rustcrypto", version = "0.6.0" }
 
 
 [[example]]

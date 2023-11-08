@@ -14,10 +14,10 @@ default = ["x509"]
 
 [dependencies]
 openssl = { version = "^0.10.40" }
-mls-rs-core = { path = "../mls-rs-core", version = "*" }
-mls-rs-identity-x509 = { path = "../mls-rs-identity-x509", optional = true, version = "*" }
-mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", version = "*" }
-mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", version = "*" }
+mls-rs-core = { path = "../mls-rs-core", version = "0.14.0" }
+mls-rs-identity-x509 = { path = "../mls-rs-identity-x509", optional = true, version = "0.7.0" }
+mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", version = "0.4.0" }
+mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", version = "0.6.0" }
 thiserror = "1.0.40"
 enum-iterator = "1.1.2"
 zeroize = { version = "1", features = ["zeroize_derive"] }
@@ -28,7 +28,7 @@ hex = { version = "^0.4.3", features = ["serde"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "^1.0" }
 assert_matches = "1.5.0"
-mls-rs-core = { path = "../mls-rs-core", version = "*", features = ["test_suite"] }
+mls-rs-core = { path = "../mls-rs-core", version = "0.14.0", features = ["test_suite"] }
 
 [target.'cfg(mls_build_async)'.dependencies]
 async-trait = "0.1.74"
