@@ -1,6 +1,6 @@
 [package]
 name = "mls-rs-identity-x509"
-version = "0.6.0"
+version = "0.7.0"
 edition = "2021"
 description = "X509 Identity utilities for mls-rs"
 homepage = "https://github.com/awslabs/mls-rs"

@@ -10,22 +10,26 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v3
-    - uses: dtolnay/rust-toolchain@stable
-    - name: Rust Fmt
-      run: cargo fmt --all -- --check
-    - name: Clippy Full RFC Compliance
-      run: cargo clippy --all-targets --all-features --workspace -- -D warnings
-    - name: Clippy Bare Bones
-      run: cargo clippy --all-targets --no-default-features --features std,test_util --workspace -- -D warnings
-    - name: Test Full RFC Compliance
-      run: cargo test --all-features --verbose --workspace
-    - name: Test Bare Bones
-      run: cargo test --no-default-features --features std,test_util  --verbose --workspace
-    - name: Test Async Full RFC
-      run: RUSTFLAGS='--cfg mls_build_async' cargo test --lib --test '*' --verbose --features test_util -p mls-rs
-    - name: Test Async Bare Bones 
-      run: RUSTFLAGS='--cfg mls_build_async' cargo test --no-default-features --lib --test '*' --features std,test_util --verbose -p mls-rs
-    - name: Examples
-      working-directory: mls-rs
-      run: cargo run --example basic_usage
+      - uses: actions/checkout@v3
+      - uses: arduino/setup-protoc@v2
+        with:
+          version: "25.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Rust Fmt
+        run: cargo fmt --all -- --check
+      - name: Clippy Full RFC Compliance
+        run: cargo clippy --all-targets --all-features --workspace -- -D warnings
+      - name: Clippy Bare Bones
+        run: cargo clippy --all-targets --no-default-features --features std,test_util --workspace -- -D warnings
+      - name: Test Full RFC Compliance
+        run: cargo test --all-features --verbose --workspace
+      - name: Test Bare Bones
+        run: cargo test --no-default-features --features std,test_util  --verbose --workspace
+      - name: Test Async Full RFC
+        run: RUSTFLAGS='--cfg mls_build_async' cargo test --lib --test '*' --verbose --features test_util -p mls-rs
+      - name: Test Async Bare Bones
+        run: RUSTFLAGS='--cfg mls_build_async' cargo test --no-default-features --lib --test '*' --features std,test_util --verbose -p mls-rs
+      - name: Examples
+        working-directory: mls-rs
+        run: cargo run --example basic_usage
