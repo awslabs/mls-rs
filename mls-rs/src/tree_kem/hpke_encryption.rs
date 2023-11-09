@@ -130,6 +130,7 @@ pub(crate) mod test_utils {
             Ok(Self(bytes))
         }
 
+        #[cfg_attr(coverage_nightly, coverage(off))]
         fn get_bytes(&self) -> Result<Vec<u8>, MlsError> {
             Ok(self.0.clone())
         }

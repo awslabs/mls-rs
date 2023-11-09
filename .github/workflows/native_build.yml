@@ -33,3 +33,18 @@ jobs:
       - name: Examples
         working-directory: mls-rs
         run: cargo run --example basic_usage
+  CodeCoverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@nightly
+      - name: Setup code coverage
+        run: cargo install cargo-llvm-cov
+      - name: Run code coverage
+        run: cargo llvm-cov --lcov --features "test_util" --output-path lcov.info
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: lcov.info
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

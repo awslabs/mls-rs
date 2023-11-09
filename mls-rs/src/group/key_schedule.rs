@@ -481,7 +481,8 @@ pub(crate) mod test_utils {
             InitSecret(Zeroizing::new(init_secret))
         }
 
-        #[cfg(feature = "rfc_compliant")]
+        #[cfg(all(feature = "rfc_compliant", test))]
+        #[cfg_attr(coverage_nightly, coverage(off))]
         pub fn random<P: CipherSuiteProvider>(cipher_suite: &P) -> Result<Self, MlsError> {
             cipher_suite
                 .random_bytes_vec(cipher_suite.kdf_extract_size())
@@ -708,6 +709,7 @@ mod tests {
     }
 
     #[cfg(all(not(mls_build_async), feature = "rfc_compliant"))]
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn generate_test_vector() -> Vec<TestCase> {
         let mut test_cases = vec![];
 
@@ -799,6 +801,7 @@ mod tests {
 
     #[cfg(all(not(mls_build_async), feature = "rfc_compliant"))]
     impl KeyScheduleEpoch {
+        #[cfg_attr(coverage_nightly, coverage(off))]
         fn new<P: CipherSuiteProvider>(
             key_schedule_res: KeyScheduleDerivationResult,
             psk_secret: PskSecret,

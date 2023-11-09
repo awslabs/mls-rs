@@ -152,30 +152,41 @@ mod tests {
     }
 
     impl TestScenario {
+        #[cfg_attr(coverage_nightly, coverage(off))]
         fn make_psk_list<CS: CipherSuiteProvider>(cs: &CS, n: usize) -> Vec<PskInfo> {
-            iter::repeat_with(|| PskInfo {
-                id: make_external_psk_id(cs).to_vec(),
-                psk: cs.random_bytes_vec(cs.kdf_extract_size()).unwrap(),
-                nonce: make_nonce(cs.cipher_suite()).0,
-            })
+            iter::repeat_with(
+                #[cfg_attr(coverage_nightly, coverage(off))]
+                || PskInfo {
+                    id: make_external_psk_id(cs).to_vec(),
+                    psk: cs.random_bytes_vec(cs.kdf_extract_size()).unwrap(),
+                    nonce: make_nonce(cs.cipher_suite()).0,
+                },
+            )
             .take(n)
             .collect::<Vec<_>>()
         }
 
         #[cfg(not(mls_build_async))]
+        #[cfg_attr(coverage_nightly, coverage(off))]
         fn generate() -> Vec<TestScenario> {
             CipherSuite::all()
-                .flat_map(|cs| (1..=10).map(move |n| (cs, n)))
-                .map(|(cs, n)| {
-                    let provider = test_cipher_suite_provider(cs);
-                    let psks = Self::make_psk_list(&provider, n);
-                    let psk_secret = Self::compute_psk_secret(&provider, psks.clone());
-                    TestScenario {
-                        cipher_suite: cs.into(),
-                        psks: psks.to_vec(),
-                        psk_secret: psk_secret.to_vec(),
-                    }
-                })
+                .flat_map(
+                    #[cfg_attr(coverage_nightly, coverage(off))]
+                    |cs| (1..=10).map(move |n| (cs, n)),
+                )
+                .map(
+                    #[cfg_attr(coverage_nightly, coverage(off))]
+                    |(cs, n)| {
+                        let provider = test_cipher_suite_provider(cs);
+                        let psks = Self::make_psk_list(&provider, n);
+                        let psk_secret = Self::compute_psk_secret(&provider, psks.clone());
+                        TestScenario {
+                            cipher_suite: cs.into(),
+                            psks: psks.to_vec(),
+                            psk_secret: psk_secret.to_vec(),
+                        }
+                    },
+                )
                 .collect()
         }
 

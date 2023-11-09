@@ -894,6 +894,7 @@ mod tests {
     }
 
     #[cfg(not(mls_build_async))]
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn generate_test_vector() -> Vec<TestCase> {
         CipherSuite::all()
             .map(|cipher_suite| {
@@ -1023,6 +1024,7 @@ mod interop_tests {
     }
 
     #[cfg(not(mls_build_async))]
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn generate_test_vector() -> Vec<InteropTestCase> {
         let mut test_cases = vec![];
 

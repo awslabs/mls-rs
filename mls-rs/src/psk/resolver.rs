@@ -31,19 +31,6 @@ where
     pub psk_store: &'a PS,
 }
 
-impl<GS: GroupStateStorage, K: KeyPackageStorage, PS: PreSharedKeyStorage> Clone
-    for PskResolver<'_, GS, K, PS>
-{
-    fn clone(&self) -> Self {
-        Self {
-            group_context: self.group_context,
-            current_epoch: self.current_epoch,
-            prior_epochs: self.prior_epochs,
-            psk_store: self.psk_store,
-        }
-    }
-}
-
 impl<GS: GroupStateStorage, K: KeyPackageStorage, PS: PreSharedKeyStorage>
     PskResolver<'_, GS, K, PS>
 {

@@ -790,6 +790,7 @@ pub(crate) mod test_utils {
         }
 
         #[cfg(feature = "rfc_compliant")]
+        #[cfg_attr(coverage_nightly, coverage(off))]
         pub fn remove_member(&mut self, member: u32) {
             self.tree
                 .nodes

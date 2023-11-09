@@ -35,7 +35,7 @@ pub(crate) mod test_utils {
 
     use crate::crypto::test_utils::test_cipher_suite_provider;
 
-    use super::basic::{BasicCredential, BasicIdentityProvider, BasicIdentityProviderError};
+    use super::basic::{BasicCredential, BasicIdentityProvider};
 
     #[derive(Debug)]
     #[cfg_attr(feature = "std", derive(thiserror::Error))]
@@ -44,12 +44,6 @@ pub(crate) mod test_utils {
         error("expected basic or custom credential type 42 found: {0:?}")
     )]
     pub struct BasicWithCustomProviderError(CredentialType);
-
-    impl From<BasicIdentityProviderError> for BasicWithCustomProviderError {
-        fn from(value: BasicIdentityProviderError) -> Self {
-            BasicWithCustomProviderError(value.credential_type())
-        }
-    }
 
     impl IntoAnyError for BasicWithCustomProviderError {
         #[cfg(feature = "std")]

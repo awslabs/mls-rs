@@ -39,6 +39,7 @@ struct TreeModsTestCase {
 
 impl TreeModsTestCase {
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    #[cfg_attr(coverage_nightly, coverage(off))]
     async fn new(tree_before: TreeKemPublic, proposal: Proposal, proposal_sender: u32) -> Self {
         let tree_after = apply_proposal(proposal.clone(), proposal_sender, &tree_before).await;
 
@@ -52,6 +53,7 @@ impl TreeModsTestCase {
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 async fn generate_tree_mods_tests() -> Vec<TreeModsTestCase> {
     let mut test_vector = vec![];
     let cs = test_cipher_suite_provider(TEST_CIPHER_SUITE);
@@ -139,17 +141,20 @@ async fn apply_proposal(
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 async fn generate_add() -> Proposal {
     let key_package = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "Roger").await;
     Proposal::Add(Box::new(AddProposal { key_package }))
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn generate_remove(i: u32) -> Proposal {
     let to_remove = LeafIndex(i);
     Proposal::Remove(RemoveProposal { to_remove })
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 async fn generate_update(i: u32, tree: &TreeWithSigners) -> Proposal {
     let signer = tree.signers[i as usize].as_ref().unwrap();
     let mut leaf_node = tree.tree.get_leaf_node(LeafIndex(i)).unwrap().clone();

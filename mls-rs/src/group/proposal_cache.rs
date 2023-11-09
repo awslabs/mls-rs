@@ -3820,6 +3820,7 @@ mod tests {
                 Ok(proposals)
             }
 
+            #[cfg_attr(coverage_nightly, coverage(off))]
             fn commit_options(
                 &self,
                 _: &Roster,
@@ -3829,6 +3830,7 @@ mod tests {
                 Ok(Default::default())
             }
 
+            #[cfg_attr(coverage_nightly, coverage(off))]
             fn encryption_options(
                 &self,
                 _: &Roster,
@@ -3869,6 +3871,7 @@ mod tests {
             Err(MlsError::InvalidSignature)
         }
 
+        #[cfg_attr(coverage_nightly, coverage(off))]
         fn commit_options(
             &self,
             _: &Roster,
@@ -3878,6 +3881,7 @@ mod tests {
             Ok(Default::default())
         }
 
+        #[cfg_attr(coverage_nightly, coverage(off))]
         fn encryption_options(
             &self,
             _: &Roster,
@@ -3913,6 +3917,7 @@ mod tests {
             Ok(proposals)
         }
 
+        #[cfg_attr(coverage_nightly, coverage(off))]
         fn commit_options(
             &self,
             _: &Roster,
@@ -3922,6 +3927,7 @@ mod tests {
             Ok(Default::default())
         }
 
+        #[cfg_attr(coverage_nightly, coverage(off))]
         fn encryption_options(
             &self,
             _: &Roster,

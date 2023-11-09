@@ -20,12 +20,6 @@ use mls_rs_core::{
 /// credential is passed to a [`BasicIdentityProvider`].
 pub struct BasicIdentityProviderError(CredentialType);
 
-impl From<CredentialType> for BasicIdentityProviderError {
-    fn from(value: CredentialType) -> Self {
-        BasicIdentityProviderError(value)
-    }
-}
-
 impl IntoAnyError for BasicIdentityProviderError {
     #[cfg(feature = "std")]
     fn into_dyn_error(self) -> Result<Box<dyn std::error::Error + Send + Sync>, Self> {

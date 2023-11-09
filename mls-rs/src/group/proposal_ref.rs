@@ -79,6 +79,7 @@ mod test {
 
     use crate::extension::RequiredCapabilitiesExt;
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn get_test_extension_list() -> ExtensionList {
         let test_extension = RequiredCapabilitiesExt {
             extensions: vec![42.into()],
@@ -102,6 +103,7 @@ mod test {
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    #[cfg_attr(coverage_nightly, coverage(off))]
     async fn generate_proposal_test_cases() -> Vec<TestCase> {
         let mut test_cases = Vec::new();
 

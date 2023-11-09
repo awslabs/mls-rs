@@ -92,23 +92,27 @@ mod tests {
         result: Vec<u8>,
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn generate_reuse_guard_test_cases() -> Vec<TestCase> {
         let provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         [16, 32]
             .into_iter()
-            .map(|len| {
-                let nonce = provider.random_bytes_vec(len).unwrap();
-                let guard = ReuseGuard::random(&provider).unwrap();
+            .map(
+                #[cfg_attr(coverage_nightly, coverage(off))]
+                |len| {
+                    let nonce = provider.random_bytes_vec(len).unwrap();
+                    let guard = ReuseGuard::random(&provider).unwrap();
 
-                let result = guard.apply(&nonce);
+                    let result = guard.apply(&nonce);
 
-                TestCase {
-                    nonce,
-                    guard: guard.into(),
-                    result,
-                }
-            })
+                    TestCase {
+                        nonce,
+                        guard: guard.into(),
+                        result,
+                    }
+                },
+            )
             .collect()
     }
 
