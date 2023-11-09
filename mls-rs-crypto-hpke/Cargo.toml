@@ -10,7 +10,7 @@ categories = ["no-std", "cryptography"]
 license = "Apache-2.0 OR MIT"
 
 [features]
-default = ["std", "test_utils"]
+default = ["std"]
 std = ["mls-rs-core/std", "mls-rs-crypto-traits/std", "dep:thiserror", "zeroize/std"]
 test_utils = ["mls-rs-core/test_suite"]
 
