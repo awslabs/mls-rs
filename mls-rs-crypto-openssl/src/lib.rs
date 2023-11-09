@@ -356,5 +356,14 @@ where
 fn mls_core_tests() {
     // Uncomment this to generate the tests instead.
     // mls_rs_core::crypto::test_suite::generate_tests(&OpensslCryptoProvider::new());
-    mls_rs_core::crypto::test_suite::verify_tests(&OpensslCryptoProvider::new());
+    let provider = OpensslCryptoProvider::new();
+
+    mls_rs_core::crypto::test_suite::verify_tests(&provider);
+
+    for cs in OpensslCryptoProvider::all_supported_cipher_suites() {
+        let mut hpke = provider.cipher_suite_provider(cs).unwrap().hpke;
+
+        mls_rs_core::crypto::test_suite::verify_hpke_context_tests(&hpke, cs);
+        mls_rs_core::crypto::test_suite::verify_hpke_encap_tests(&mut hpke, cs);
+    }
 }

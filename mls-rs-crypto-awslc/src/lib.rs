@@ -348,10 +348,15 @@ fn check_non_null_const<T>(r: *const T) -> Result<*const T, AwsLcCryptoError> {
     Ok(r)
 }
 
-#[cfg(all(not(mls_build_async), test))]
-mod tests {
-    #[test]
-    fn cipher_suite_standard_conformance() {
-        mls_rs_core::crypto::test_suite::verify_tests(&crate::AwsLcCryptoProvider)
+#[cfg(not(mls_build_async))]
+#[test]
+fn mls_core_tests() {
+    mls_rs_core::crypto::test_suite::verify_tests(&AwsLcCryptoProvider);
+
+    for cs in AwsLcCryptoProvider.supported_cipher_suites() {
+        let mut hpke = AwsLcCryptoProvider.cipher_suite_provider(cs).unwrap().hpke;
+
+        mls_rs_core::crypto::test_suite::verify_hpke_context_tests(&hpke, cs);
+        mls_rs_core::crypto::test_suite::verify_hpke_encap_tests(&mut hpke, cs);
     }
 }

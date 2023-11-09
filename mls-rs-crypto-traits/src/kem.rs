@@ -36,8 +36,8 @@ pub trait KemType {
 
 /// Struct to represent the output of the kem [encap](KemType::encap) function
 pub struct KemResult {
-    shared_secret: Vec<u8>,
-    enc: Vec<u8>,
+    pub shared_secret: Vec<u8>,
+    pub enc: Vec<u8>,
 }
 
 impl KemResult {

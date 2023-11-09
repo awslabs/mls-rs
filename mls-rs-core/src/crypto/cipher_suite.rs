@@ -81,3 +81,17 @@ impl CipherSuite {
         (1..=7).map(CipherSuite)
     }
 }
+
+/// Modes of HPKE operation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum HpkeModeId {
+    /// Base mode of HPKE for key exchange and AEAD cipher
+    Base = 0x00,
+    /// Base mode with a user provided PSK
+    Psk = 0x01,
+    /// Authenticated variant that authenticates possession of a KEM private key.
+    Auth = 0x02,
+    /// Authenticated variant that authenticates possession of a PSK as well as a KEM private key.
+    AuthPsk = 0x03,
+}

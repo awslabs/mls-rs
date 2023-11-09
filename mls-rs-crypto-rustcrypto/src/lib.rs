@@ -367,6 +367,14 @@ where
 
 #[cfg(not(mls_build_async))]
 #[test]
-fn mls_core_crypto_tests() {
-    mls_rs_core::crypto::test_suite::verify_tests(&RustCryptoProvider::new());
+fn mls_core_tests() {
+    let provider = RustCryptoProvider::new();
+    mls_rs_core::crypto::test_suite::verify_tests(&provider);
+
+    for cs in RustCryptoProvider::all_supported_cipher_suites() {
+        let mut hpke = provider.cipher_suite_provider(cs).unwrap().hpke;
+
+        mls_rs_core::crypto::test_suite::verify_hpke_context_tests(&hpke, cs);
+        mls_rs_core::crypto::test_suite::verify_hpke_encap_tests(&mut hpke, cs);
+    }
 }

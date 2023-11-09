@@ -10,8 +10,9 @@ categories = ["no-std", "cryptography"]
 license = "Apache-2.0 OR MIT"
 
 [features]
-default = ["std"]
+default = ["std", "test_utils"]
 std = ["mls-rs-core/std", "mls-rs-crypto-traits/std", "dep:thiserror", "zeroize/std"]
+test_utils = ["mls-rs-core/test_suite"]
 
 [dependencies]
 mls-rs-core = { path = "../mls-rs-core", default-features = false, version = "0.14.0" }
