@@ -1,4 +1,4 @@
-# mls-rs &emsp; [![Build Status]][actions] [![Latest Version]][crates.io] [![API Documentation]][docs.rs]
+# mls-rs &emsp; [![Build Status]][actions] [![Latest Version]][crates.io] [![API Documentation]][docs.rs] [![codecov](https://codecov.io/gh/awslabs/mls-rs/graph/badge.svg?token=6655ESMTZT)](https://codecov.io/gh/awslabs/mls-rs)
 
 [build status]: https://img.shields.io/github/checks-status/awslabs/mls-rs/main
 [actions]: https://github.com/awslabs/mls-rs/actions?query=branch%3Amain++
