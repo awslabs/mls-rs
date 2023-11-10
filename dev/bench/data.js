@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1699481552583,
+  "lastUpdate": 1699645538450,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -1295,6 +1295,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 282417,
             "range": "± 12994",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "tomleavy@amazon.com",
+            "name": "Tom Leavy",
+            "username": "tomleavy"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "fc10a763b8897c9004977331783fda8baa904548",
+          "message": "Ignore test code in coverage reports, integrate with codecov (#21)\n\n* Ignore test code in coverage reports, integrate with codecov\r\n\r\n* Add codecov to readme",
+          "timestamp": "2023-11-10T14:39:26-05:00",
+          "tree_id": "6e78542f10cd85f5678f499ce98fee82f5d82266",
+          "url": "https://github.com/awslabs/mls-rs/commit/fc10a763b8897c9004977331783fda8baa904548"
+        },
+        "date": 1699645537709,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 825286,
+            "range": "± 20703",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 825885,
+            "range": "± 28917",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 937370,
+            "range": "± 18971",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1966847,
+            "range": "± 72221",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 12669556,
+            "range": "± 175688",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1623040,
+            "range": "± 75276",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1778501,
+            "range": "± 39326",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 2032405,
+            "range": "± 18706",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 1139002,
+            "range": "± 21048",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 1232718,
+            "range": "± 28973",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 1351420,
+            "range": "± 12859",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 44095,
+            "range": "± 1603",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 146064,
+            "range": "± 1937",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 267057,
+            "range": "± 12278",
             "unit": "ns/iter"
           }
         ]
