@@ -7,7 +7,7 @@ jobs:
   BuildAndTest:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v3
@@ -16,6 +16,10 @@ jobs:
           version: "25.x"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: dtolnay/rust-toolchain@stable
+      - run: echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
+        if: runner.os == 'Windows'
+      - run: vcpkg install openssl:x64-windows-static-md
+        if: runner.os == 'Windows'
       - name: Rust Fmt
         run: cargo fmt --all -- --check
       - name: Clippy Full RFC Compliance
