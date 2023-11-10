@@ -12,8 +12,6 @@ use zeroize::Zeroizing;
 
 use crate::kdf::HpkeKdf;
 
-#[cfg(test)]
-use alloc::vec;
 use alloc::vec::Vec;
 
 #[derive(Debug)]
@@ -44,7 +42,7 @@ pub struct DhKem<DH: DhType, KDF: KdfType> {
     kdf: HpkeKdf<KDF>,
     kem_id: u16,
     n_secret: usize,
-    #[cfg(test)]
+    #[cfg(feature = "test_utils")]
     test_key_data: Vec<u8>,
 }
 
@@ -58,8 +56,8 @@ impl<DH: DhType, KDF: KdfType> DhKem<DH, KDF> {
             kdf,
             kem_id,
             n_secret,
-            #[cfg(test)]
-            test_key_data: vec![],
+            #[cfg(feature = "test_utils")]
+            test_key_data: alloc::vec![],
         }
     }
 }
@@ -85,7 +83,7 @@ impl<DH: DhType, KDF: KdfType> KemType for DhKem<DH, KDF> {
     }
 
     fn generate(&self) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
-        #[cfg(test)]
+        #[cfg(feature = "test_utils")]
         if !self.test_key_data.is_empty() {
             return self.derive(&self.test_key_data);
         }
@@ -186,7 +184,7 @@ impl<DH: DhType, KDF: KdfType> DhKem<DH, KDF> {
         Ok((sk, pk))
     }
 
-    #[cfg(test)]
+    #[cfg(feature = "test_utils")]
     pub fn set_test_data(&mut self, test_data: Vec<u8>) {
         self.test_key_data = test_data
     }

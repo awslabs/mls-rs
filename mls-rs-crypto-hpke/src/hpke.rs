@@ -7,7 +7,9 @@ use core::fmt::Debug;
 use crate::alloc::borrow::ToOwned;
 
 use mls_rs_core::{
-    crypto::{HpkeCiphertext, HpkeContextR, HpkeContextS, HpkePublicKey, HpkeSecretKey},
+    crypto::{
+        HpkeCiphertext, HpkeContextR, HpkeContextS, HpkeModeId, HpkePublicKey, HpkeSecretKey,
+    },
     error::{AnyError, IntoAnyError},
 };
 
@@ -65,23 +67,9 @@ impl IntoAnyError for HpkeError {
 
 #[derive(Clone)]
 pub struct Hpke<KEM: KemType, KDF: KdfType, AEAD: AeadType> {
-    kem: KEM,
-    kdf: HpkeKdf<KDF>,
-    aead: Option<AEAD>,
-}
-
-/// Modes of HPKE operation. Currently only `Base` is supported.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[repr(u8)]
-pub enum ModeId {
-    /// Base mode of HPKE for key exchange and AEAD cipher
-    Base = 0x00,
-    /// Base mode with a user provided PSK
-    Psk = 0x01,
-    /// Authenticated variant that authenticates possession of a KEM private key.
-    Auth = 0x02,
-    /// Authenticated variant that authenticates possession of a PSK as well as a KEM private key.
-    AuthPsk = 0x03,
+    pub(crate) kem: KEM,
+    pub(crate) kdf: HpkeKdf<KDF>,
+    pub(crate) aead: Option<AEAD>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
@@ -231,7 +219,7 @@ where
 
     fn key_schedule(
         &self,
-        mode: ModeId,
+        mode: HpkeModeId,
         shared_secret: &[u8],
         info: &[u8],
         psk: Option<Psk>,
@@ -312,11 +300,11 @@ where
     }
 
     #[inline(always)]
-    fn base_mode(&self, psk: &Option<Psk>) -> ModeId {
+    fn base_mode(&self, psk: &Option<Psk>) -> HpkeModeId {
         if psk.is_some() {
-            ModeId::Psk
+            HpkeModeId::Psk
         } else {
-            ModeId::Base
+            HpkeModeId::Base
         }
     }
 }

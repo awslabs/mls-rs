@@ -22,6 +22,10 @@ const SERIALIZED_TEST_SUITES: &[u8] = include_bytes!(concat!(
     "/test_data/crypto_provider.json"
 ));
 
+pub use hpke_rfc_conformance::{
+    verify_hpke_context_tests, verify_hpke_encap_tests, EncapOutput, TestHpke,
+};
+
 pub const DATA_SIZES: [usize; 5] = [0, 1, 16, 123, 2000];
 
 #[derive(serde::Serialize, serde::Deserialize, Default)]
@@ -468,5 +472,179 @@ async fn verify_mac_tests<C: CipherSuiteProvider>(cs: &C, test_cases: Vec<MacTes
     for case in test_cases {
         let computed = cs.mac(&case.key, &case.data).await.unwrap();
         assert_eq!(computed, case.tag);
+    }
+}
+
+mod hpke_rfc_conformance {
+    use alloc::vec::Vec;
+
+    use crate::crypto::{CipherSuite, HpkeContextR, HpkeContextS, HpkeModeId};
+
+    #[derive(serde::Deserialize, Debug, Clone)]
+    pub struct TestCaseAlgo {
+        pub kem_id: u16,
+        pub kdf_id: u16,
+        pub aead_id: u16,
+        pub mode: u8,
+    }
+
+    impl TestCaseAlgo {
+        fn cipher_suite(&self) -> Option<CipherSuite> {
+            if ![HpkeModeId::Base as u8, HpkeModeId::Psk as u8].contains(&self.mode) {
+                return None;
+            }
+
+            match (self.kem_id, self.kdf_id, self.aead_id) {
+                (0x0010, 0x0001, 0x0001) => Some(CipherSuite::P256_AES128),
+                (0x0011, 0x0002, 0x0002) => Some(CipherSuite::P384_AES256),
+                (0x0012, 0x0003, 0x0002) => Some(CipherSuite::P521_AES256),
+                (0x0020, 0x0001, 0x0001) => Some(CipherSuite::CURVE25519_AES128),
+                (0x0020, 0x0001, 0x0003) => Some(CipherSuite::CURVE25519_CHACHA),
+                (0x0021, 0x0003, 0x0002) => Some(CipherSuite::CURVE448_AES256),
+                (0x0021, 0x0003, 0x0003) => Some(CipherSuite::CURVE448_CHACHA),
+                _ => None,
+            }
+        }
+    }
+
+    #[derive(serde::Deserialize, Debug)]
+    struct TestCase {
+        #[serde(flatten)]
+        algo: TestCaseAlgo,
+        #[serde(with = "hex::serde", rename(deserialize = "pkRm"))]
+        pk_rm: Vec<u8>,
+        #[serde(with = "hex::serde", rename(deserialize = "skRm"))]
+        sk_rm: Vec<u8>,
+        #[serde(with = "hex::serde", rename(deserialize = "ikmE"))]
+        ikm_e: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        shared_secret: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        enc: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        exporter_secret: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        base_nonce: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        key: Vec<u8>,
+        encryptions: Vec<EncryptionTestCase>,
+        exports: Vec<ExportTestCase>,
+    }
+
+    #[derive(serde::Deserialize, Debug)]
+    struct EncryptionTestCase {
+        #[serde(with = "hex::serde", rename = "pt")]
+        plaintext: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        aad: Vec<u8>,
+        #[serde(with = "hex::serde", rename = "ct")]
+        ciphertext: Vec<u8>,
+    }
+
+    #[derive(serde::Deserialize, Debug)]
+    struct ExportTestCase {
+        #[serde(with = "hex::serde")]
+        exporter_context: Vec<u8>,
+        #[serde(rename = "L")]
+        length: usize,
+        #[serde(with = "hex::serde")]
+        exported_value: Vec<u8>,
+    }
+
+    #[cfg(any(target_arch = "wasm32", not(feature = "std")))]
+    fn get_test_cases() -> Vec<TestCase> {
+        let bytes = include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/test_data/test_hpke.json"
+        ));
+
+        serde_json::from_slice(bytes).unwrap()
+    }
+
+    #[cfg(all(not(target_arch = "wasm32"), feature = "std"))]
+    fn get_test_cases() -> Vec<TestCase> {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/test_data/test_hpke.json");
+
+        serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
+    }
+
+    pub struct EncapOutput {
+        pub enc: Vec<u8>,
+        pub shared_secret: Vec<u8>,
+    }
+
+    impl EncapOutput {
+        pub fn new(enc: Vec<u8>, shared_secret: Vec<u8>) -> Self {
+            Self { enc, shared_secret }
+        }
+    }
+
+    pub trait TestHpke {
+        type ContextS: HpkeContextS;
+        type ContextR: HpkeContextR;
+
+        fn hpke_context(
+            &self,
+            key: Vec<u8>,
+            base_nonce: Vec<u8>,
+            exporter_secret: Vec<u8>,
+        ) -> (Self::ContextS, Self::ContextR);
+
+        fn encap(&mut self, ikm_e: Vec<u8>, pk_rm: Vec<u8>) -> EncapOutput;
+        fn decap(&mut self, enc: Vec<u8>, sk_rm: Vec<u8>, pk_rm: Vec<u8>) -> Vec<u8>;
+    }
+
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn verify_hpke_context_tests<C: TestHpke>(hpke: &C, cipher_suite: CipherSuite) {
+        for test_case in get_test_cases()
+            .into_iter()
+            .filter(|tc| matches!(tc.algo.cipher_suite(), Some(c) if c == cipher_suite))
+        {
+            let (mut context_s, mut context_r) = hpke.hpke_context(
+                test_case.key,
+                test_case.base_nonce,
+                test_case.exporter_secret,
+            );
+
+            for enc_test_case in test_case.encryptions {
+                // Encrypt
+                let ct = context_s
+                    .seal(Some(&enc_test_case.aad), &enc_test_case.plaintext)
+                    .await
+                    .unwrap();
+
+                assert_eq!(ct, enc_test_case.ciphertext);
+
+                // Decrypt
+                let pt = context_r.open(Some(&enc_test_case.aad), &ct).await.unwrap();
+
+                assert_eq!(pt, enc_test_case.plaintext);
+            }
+
+            for test in test_case.exports {
+                let exported_s = context_s.export(&test.exporter_context, test.length).await;
+                assert_eq!(exported_s.unwrap(), test.exported_value);
+
+                let exported_r = context_r.export(&test.exporter_context, test.length).await;
+                assert_eq!(exported_r.unwrap(), test.exported_value);
+            }
+        }
+    }
+
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn verify_hpke_encap_tests<C: TestHpke>(hpke: &mut C, cipher_suite: CipherSuite) {
+        for test_case in get_test_cases()
+            .into_iter()
+            .filter(|tc| matches!(tc.algo.cipher_suite(), Some(c) if c == cipher_suite))
+        {
+            let out = hpke.encap(test_case.ikm_e, test_case.pk_rm.clone());
+
+            assert_eq!(&out.enc, &test_case.enc);
+            assert_eq!(&out.shared_secret, &test_case.shared_secret);
+
+            let shared_secret = hpke.decap(test_case.enc, test_case.sk_rm, test_case.pk_rm);
+
+            assert_eq!(shared_secret, test_case.shared_secret);
+        }
     }
 }
