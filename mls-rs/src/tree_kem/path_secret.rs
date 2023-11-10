@@ -145,21 +145,25 @@ mod tests {
 
     impl TestCase {
         #[cfg(not(mls_build_async))]
+        #[cfg_attr(coverage_nightly, coverage(off))]
         fn generate() -> Vec<TestCase> {
             CipherSuite::all()
-                .map(|cipher_suite| {
-                    let cs_provider = test_cipher_suite_provider(cipher_suite);
-                    let mut generator = PathSecretGenerator::new(&cs_provider);
+                .map(
+                    #[cfg_attr(coverage_nightly, coverage(off))]
+                    |cipher_suite| {
+                        let cs_provider = test_cipher_suite_provider(cipher_suite);
+                        let mut generator = PathSecretGenerator::new(&cs_provider);
 
-                    let generations = (0..10)
-                        .map(|_| hex::encode(&*generator.next_secret().unwrap()))
-                        .collect();
+                        let generations = (0..10)
+                            .map(|_| hex::encode(&*generator.next_secret().unwrap()))
+                            .collect();
 
-                    TestCase {
-                        cipher_suite: cipher_suite.into(),
-                        generations,
-                    }
-                })
+                        TestCase {
+                            cipher_suite: cipher_suite.into(),
+                            generations,
+                        }
+                    },
+                )
                 .collect()
         }
 

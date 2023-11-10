@@ -682,10 +682,12 @@ pub(crate) mod test_utils {
             Err(TestFailureError)
         }
 
+        #[cfg_attr(coverage_nightly, coverage(off))]
         async fn identity(&self, signing_id: &SigningIdentity) -> Result<Vec<u8>, Self::Error> {
             Ok(signing_id.credential.mls_encode_to_vec().unwrap())
         }
 
+        #[cfg_attr(coverage_nightly, coverage(off))]
         async fn valid_successor(
             &self,
             _predecessor: &SigningIdentity,
@@ -694,10 +696,12 @@ pub(crate) mod test_utils {
             Err(TestFailureError)
         }
 
+        #[cfg_attr(coverage_nightly, coverage(off))]
         fn supported_types(&self) -> Vec<crate::identity::CredentialType> {
             vec![BasicCredential::credential_type()]
         }
 
+        #[cfg_attr(coverage_nightly, coverage(off))]
         async fn identity_warnings(
             &self,
             _update: &RosterUpdate,

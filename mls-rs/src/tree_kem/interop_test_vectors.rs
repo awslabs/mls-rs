@@ -36,12 +36,14 @@ struct ValidationTestCase {
 struct TreeHash(#[serde(with = "hex::serde")] pub Vec<u8>);
 
 impl From<crate::tree_kem::tree_hash::TreeHash> for TreeHash {
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn from(value: crate::tree_kem::tree_hash::TreeHash) -> Self {
         TreeHash(value.to_vec())
     }
 }
 
 impl ValidationTestCase {
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn new<P: CipherSuiteProvider>(tree: TreeKemPublic, group_id: &[u8], cs: &P) -> Self {
         let tree_size = tree.total_leaf_count() * 2 - 1;
 
@@ -51,7 +53,10 @@ impl ValidationTestCase {
         );
 
         let resolutions = (0..tree_size)
-            .map(|i| tree.nodes.get_resolution_index(i).unwrap())
+            .map(
+                #[cfg_attr(coverage_nightly, coverage(off))]
+                |i| tree.nodes.get_resolution_index(i).unwrap(),
+            )
             .collect();
 
         Self {
@@ -71,6 +76,7 @@ impl ValidationTestCase {
 
 #[cfg(feature = "rfc_compliant")]
 #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+#[cfg_attr(coverage_nightly, coverage(off))]
 async fn validation() {
     #[cfg(mls_build_async)]
     let test_cases: Vec<ValidationTestCase> = load_test_case_json!(
@@ -126,6 +132,7 @@ async fn validation() {
 
 #[cfg(feature = "rfc_compliant")]
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 async fn generate_validation_test_vector() -> Vec<ValidationTestCase> {
     let mut test_cases = vec![];
 
@@ -156,7 +163,10 @@ async fn generate_validation_test_vector() -> Vec<ValidationTestCase> {
 
         // Internal blanks, with skipping : 8 leaves, 0 commits removing 1, 2, 3
         let mut tree = TreeWithSigners::make_full_tree(8, &cs).await;
-        [1, 2, 3].into_iter().for_each(|i| tree.remove_member(i));
+        [1, 2, 3].into_iter().for_each(
+            #[cfg_attr(coverage_nightly, coverage(off))]
+            |i| tree.remove_member(i),
+        );
         tree.update_committer_path(0, &cs).await;
         trees.push(tree);
 
@@ -182,9 +192,10 @@ async fn generate_validation_test_vector() -> Vec<ValidationTestCase> {
         trees.push(tree);
 
         // Generate tests
-        trees.into_iter().for_each(|tree| {
-            test_cases.push(ValidationTestCase::new(tree.tree, &tree.group_id, &cs))
-        });
+        trees.into_iter().for_each(
+            #[cfg_attr(coverage_nightly, coverage(off))]
+            |tree| test_cases.push(ValidationTestCase::new(tree.tree, &tree.group_id, &cs)),
+        );
     }
 
     test_cases

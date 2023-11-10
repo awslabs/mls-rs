@@ -193,6 +193,7 @@ mod tests {
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    #[cfg_attr(coverage_nightly, coverage(off))]
     async fn generate_test_cases() -> Vec<TestCase> {
         let mut test_cases = Vec::new();
 

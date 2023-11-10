@@ -51,6 +51,7 @@ mod tests {
         output: usize,
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn generate_message_padding_test_vector() -> Vec<TestCase> {
         let mut test_cases = vec![];
         for x in 1..1024 {

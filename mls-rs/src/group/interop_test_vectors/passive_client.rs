@@ -78,6 +78,7 @@ pub struct TestMlsMessage(#[serde(with = "hex::serde")] pub Vec<u8>);
 pub struct TestRatchetTree(#[serde(with = "hex::serde")] pub Vec<u8>);
 
 impl TestEpoch {
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn new(
         proposals: Vec<MlsMessage>,
         commit: &MlsMessage,
@@ -209,6 +210,7 @@ async fn interop_passive_client() {
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 async fn invite_passive_client<P: CipherSuiteProvider>(
     groups: &mut [Group<impl MlsConfig>],
     with_psk: bool,
@@ -267,6 +269,7 @@ async fn invite_passive_client<P: CipherSuiteProvider>(
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub async fn generate_passive_client_proposal_tests() {
     let mut test_cases: Vec<TestCase> = vec![];
 
@@ -431,6 +434,7 @@ pub async fn generate_passive_client_proposal_tests() {
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 async fn commit_by_value<F, C: MlsConfig>(
     group: &mut Group<C>,
     proposal_adder: F,
@@ -450,6 +454,7 @@ where
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 async fn create_key_package(cs: CipherSuite) -> MlsMessage {
     let client =
         generate_basic_client(cs, VERSION, 0xbeef, None, false, &TestCryptoProvider::new()).await;
@@ -458,6 +463,7 @@ async fn create_key_package(cs: CipherSuite) -> MlsMessage {
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub async fn generate_passive_client_welcome_tests() {
     let mut test_cases: Vec<TestCase> = vec![];
 
@@ -502,6 +508,7 @@ pub async fn generate_passive_client_welcome_tests() {
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub async fn generate_passive_client_random_tests() {
     let mut test_cases: Vec<TestCase> = vec![];
 
@@ -571,6 +578,7 @@ pub async fn generate_passive_client_random_tests() {
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub async fn add_random_members<C: MlsConfig>(
     committer: usize,
     groups: &mut Vec<Group<C>>,
@@ -631,6 +639,7 @@ pub async fn add_random_members<C: MlsConfig>(
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub async fn remove_members<C: MlsConfig>(
     removed_members: Vec<usize>,
     committer: usize,

@@ -27,12 +27,14 @@ use crate::group::{mls_rules::EncryptionOptions, padding::PaddingMode};
 
 use alloc::{vec, vec::Vec};
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn get_test_basic_credential(identity: Vec<u8>) -> Credential {
     BasicCredential::new(identity).into_credential()
 }
 
 pub const TEST_EXT_PSK_ID: &[u8] = b"external psk";
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn make_test_ext_psk() -> Vec<u8> {
     b"secret psk key".to_vec()
 }
@@ -48,6 +50,7 @@ pub fn is_edwards(cs: u16) -> bool {
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub async fn generate_basic_client<C: CryptoProvider + Clone>(
     cipher_suite: CipherSuite,
     protocol_version: ProtocolVersion,
@@ -88,6 +91,7 @@ pub async fn generate_basic_client<C: CryptoProvider + Clone>(
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub async fn get_test_groups<C: CryptoProvider + Clone>(
     version: ProtocolVersion,
     cipher_suite: CipherSuite,
@@ -149,6 +153,7 @@ pub async fn get_test_groups<C: CryptoProvider + Clone>(
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub async fn all_process_message<C: MlsConfig>(
     groups: &mut [Group<C>],
     message: &MlsMessage,

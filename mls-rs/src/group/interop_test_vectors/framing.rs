@@ -68,6 +68,7 @@ struct FramingTestCase {
 
 impl FramingTestCase {
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    #[cfg_attr(coverage_nightly, coverage(off))]
     async fn random<P: CipherSuiteProvider>(cs: &P) -> Self {
         let mut context = InteropGroupContext::random(cs);
         context.cipher_suite = cs.cipher_suite().into();
@@ -103,6 +104,7 @@ pub struct InteropGroupContext {
 }
 
 impl InteropGroupContext {
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn random<P: CipherSuiteProvider>(cs: &P) -> Self {
         Self {
             cipher_suite: cs.cipher_suite().into(),
@@ -115,6 +117,7 @@ impl InteropGroupContext {
 }
 
 impl From<InteropGroupContext> for GroupContext {
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn from(ctx: InteropGroupContext) -> Self {
         Self {
             cipher_suite: ctx.cipher_suite.into(),
@@ -278,6 +281,7 @@ async fn framing_commit() {
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 async fn generate_framing_test_vector() -> Vec<FramingTestCase> {
     let mut test_vector = vec![];
 

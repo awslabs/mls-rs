@@ -399,12 +399,14 @@ pub(crate) struct GroupWithoutKeySchedule {
 impl Deref for GroupWithoutKeySchedule {
     type Target = Group<TestClientConfig>;
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
 }
 
 impl DerefMut for GroupWithoutKeySchedule {
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
@@ -435,6 +437,7 @@ impl MessageProcessor for GroupWithoutKeySchedule {
         self.inner.group_state()
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn group_state_mut(&mut self) -> &mut GroupState {
         self.inner.group_state_mut()
     }
@@ -459,6 +462,7 @@ impl MessageProcessor for GroupWithoutKeySchedule {
         self.inner.can_continue_processing(provisional_state)
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn min_epoch_available(&self) -> Option<u64> {
         self.inner.min_epoch_available()
     }
@@ -475,6 +479,7 @@ impl MessageProcessor for GroupWithoutKeySchedule {
     }
 
     #[cfg(feature = "private_message")]
+    #[cfg_attr(coverage_nightly, coverage(off))]
     async fn process_ciphertext(
         &mut self,
         cipher_text: PrivateMessage,
@@ -482,6 +487,7 @@ impl MessageProcessor for GroupWithoutKeySchedule {
         self.inner.process_ciphertext(cipher_text).await
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     async fn verify_plaintext_authentication(
         &self,
         message: PublicMessage,
@@ -501,6 +507,7 @@ impl MessageProcessor for GroupWithoutKeySchedule {
         Ok(())
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn self_index(&self) -> Option<LeafIndex> {
         <Group<TestClientConfig> as MessageProcessor>::self_index(&self.inner)
     }

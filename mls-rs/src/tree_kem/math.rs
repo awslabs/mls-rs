@@ -214,6 +214,7 @@ mod tests {
         assert_eq!(bfs.collect::<Vec<_>>(), expected);
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn generate_tree_math_test_cases() -> Vec<TestCase> {
         let mut test_cases = Vec::new();
 

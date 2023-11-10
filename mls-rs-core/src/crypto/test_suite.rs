@@ -40,6 +40,7 @@ struct TestSuite {
 }
 
 #[cfg(all(not(mls_build_async), not(target_arch = "wasm32"), feature = "std"))]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn generate_tests<C: CryptoProvider>(crypto: &C) {
     for cs in crypto.supported_cipher_suites() {
         crypto.cipher_suite_provider(cs).unwrap();
@@ -60,6 +61,7 @@ pub fn generate_tests<C: CryptoProvider>(crypto: &C) {
 }
 
 #[cfg(all(not(mls_build_async), not(target_arch = "wasm32"), feature = "std"))]
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn create_or_load_tests<C: CryptoProvider>(crypto: &C) -> Vec<TestSuite> {
     if std::path::Path::new(PATH).exists() {
         serde_json::from_slice(&std::fs::read(PATH).unwrap()).unwrap()
@@ -138,6 +140,7 @@ async fn verify_signature_tests<C: CipherSuiteProvider>(
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 async fn generate_signature_tests<C: CipherSuiteProvider>(cs: &C) -> Vec<SignatureTestCase> {
     let mut tests = Vec::new();
 
@@ -310,6 +313,7 @@ async fn test_open_ciphertext<C: CipherSuiteProvider>(
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 async fn generate_hpke_tests<C: CipherSuiteProvider>(cs: &C) -> HpkeTestCases {
     let ikm = cs.random_bytes_vec(cs.kdf_extract_size()).unwrap();
     let (secret, public) = cs.kem_derive(&ikm).await.unwrap();
@@ -417,6 +421,7 @@ async fn verify_hkdf_tests<C: CipherSuiteProvider>(cs: &C, test_cases: Vec<HkdfT
 }
 
 #[cfg(all(not(mls_build_async), not(target_arch = "wasm32"), feature = "std"))]
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn generate_hkdf_tests<C: CipherSuiteProvider>(cs: &C) -> Vec<HkdfTestCase> {
     let iter = DATA_SIZES.iter().copied();
 

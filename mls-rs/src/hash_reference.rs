@@ -93,6 +93,7 @@ mod tests {
     }
 
     #[cfg(not(mls_build_async))]
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn generate_test_vector() -> Vec<InteropTestCase> {
         CipherSuite::all()
             .map(|cipher_suite| {

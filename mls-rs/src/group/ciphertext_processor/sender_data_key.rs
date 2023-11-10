@@ -134,6 +134,7 @@ pub(crate) mod test_utils {
 
     impl InteropSenderData {
         #[cfg(not(mls_build_async))]
+        #[cfg_attr(coverage_nightly, coverage(off))]
         pub(crate) fn new<P: CipherSuiteProvider>(cs: &P) -> Self {
             let secret = cs.random_bytes_vec(cs.kdf_extract_size()).unwrap().into();
             let ciphertext = cs.random_bytes_vec(77).unwrap();
@@ -238,10 +239,11 @@ mod tests {
     }
 
     #[cfg(not(mls_build_async))]
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn generate_test_vector() -> Vec<TestCase> {
-        let test_cases = CipherSuite::all()
-            .map(test_cipher_suite_provider)
-            .map(|provider| {
+        let test_cases = CipherSuite::all().map(test_cipher_suite_provider).map(
+            #[cfg_attr(coverage_nightly, coverage(off))]
+            |provider| {
                 let ext_size = provider.kdf_extract_size();
                 let secret = random_bytes(ext_size).into();
                 let ciphertext_sizes = [ext_size - 5, ext_size, ext_size + 5];
@@ -257,28 +259,32 @@ mod tests {
                     epoch: 42,
                 };
 
-                ciphertext_sizes.into_iter().map(move |ciphertext_size| {
-                    let ciphertext_bytes = random_bytes(ciphertext_size);
+                ciphertext_sizes.into_iter().map(
+                    #[cfg_attr(coverage_nightly, coverage(off))]
+                    move |ciphertext_size| {
+                        let ciphertext_bytes = random_bytes(ciphertext_size);
 
-                    let sender_data_key =
-                        SenderDataKey::new(&secret, &ciphertext_bytes, &provider).unwrap();
+                        let sender_data_key =
+                            SenderDataKey::new(&secret, &ciphertext_bytes, &provider).unwrap();
 
-                    let expected_ciphertext = sender_data_key
-                        .seal(&sender_data.clone().into(), &sender_data_aad.clone().into())
-                        .unwrap();
+                        let expected_ciphertext = sender_data_key
+                            .seal(&sender_data.clone().into(), &sender_data_aad.clone().into())
+                            .unwrap();
 
-                    TestCase {
-                        cipher_suite: provider.cipher_suite().into(),
-                        secret: secret.to_vec(),
-                        ciphertext_bytes,
-                        expected_key: sender_data_key.key.to_vec(),
-                        expected_nonce: sender_data_key.nonce.to_vec(),
-                        sender_data: sender_data.clone(),
-                        sender_data_aad: sender_data_aad.clone(),
-                        expected_ciphertext,
-                    }
-                })
-            });
+                        TestCase {
+                            cipher_suite: provider.cipher_suite().into(),
+                            secret: secret.to_vec(),
+                            ciphertext_bytes,
+                            expected_key: sender_data_key.key.to_vec(),
+                            expected_nonce: sender_data_key.nonce.to_vec(),
+                            sender_data: sender_data.clone(),
+                            sender_data_aad: sender_data_aad.clone(),
+                            expected_ciphertext,
+                        }
+                    },
+                )
+            },
+        );
 
         test_cases.flatten().collect()
     }

@@ -125,6 +125,7 @@ pub(crate) mod test_utils {
         psk::ExternalPskId,
     };
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub(crate) fn make_external_psk_id<P: CipherSuiteProvider>(
         cipher_suite_provider: &P,
     ) -> ExternalPskId {

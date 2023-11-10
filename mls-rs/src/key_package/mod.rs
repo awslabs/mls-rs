@@ -74,14 +74,6 @@ impl KeyPackage {
         self.version
     }
 
-    pub fn cipher_suite(&self) -> CipherSuite {
-        self.cipher_suite
-    }
-
-    pub fn extensions(&self) -> &ExtensionList {
-        &self.extensions
-    }
-
     pub fn signing_identity(&self) -> &SigningIdentity {
         &self.leaf_node.signing_identity
     }
@@ -290,6 +282,7 @@ mod tests {
 
     impl TestCase {
         #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+        #[cfg_attr(coverage_nightly, coverage(off))]
         async fn generate() -> Vec<TestCase> {
             let mut test_cases = Vec::new();
 
