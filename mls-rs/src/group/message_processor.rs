@@ -38,9 +38,6 @@ use crate::group::proposal_cache::resolve_for_commit;
 #[cfg(any(feature = "state_update", feature = "by_ref_proposal"))]
 use super::proposal::Proposal;
 
-#[cfg(all(feature = "state_update", feature = "by_ref_proposal"))]
-use itertools::Itertools;
-
 #[cfg(all(feature = "state_update", feature = "custom_proposal"))]
 use super::proposal_filter::ProposalInfo;
 
@@ -78,7 +75,7 @@ pub(crate) struct ProvisionalState {
     pub(crate) external_init_index: Option<LeafIndex>,
     pub(crate) indexes_of_added_kpkgs: Vec<LeafIndex>,
     #[cfg(all(feature = "state_update", feature = "by_ref_proposal"))]
-    pub(crate) rejected_proposals: Vec<(ProposalRef, Proposal)>,
+    pub(crate) rejected_proposals: Vec<ProposalInfo<Proposal>>,
 }
 
 //By default, the path field of a Commit MUST be populated. The path field MAY be omitted if
@@ -115,7 +112,8 @@ pub struct StateUpdate {
     pub(crate) epoch: u64,
     #[cfg(feature = "custom_proposal")]
     pub(crate) custom_proposals: Vec<ProposalInfo<CustomProposal>>,
-    pub(crate) unused_proposals: Vec<Proposal>,
+    #[cfg(feature = "by_ref_proposal")]
+    pub(crate) unused_proposals: Vec<ProposalInfo<Proposal>>,
 }
 
 #[cfg(not(feature = "state_update"))]
@@ -168,7 +166,8 @@ impl StateUpdate {
     }
 
     /// Proposals that were received in the prior epoch but not committed to.
-    pub fn unused_proposals(&self) -> &[Proposal] {
+    #[cfg(feature = "by_ref_proposal")]
+    pub fn unused_proposals(&self) -> &[ProposalInfo<Proposal>] {
         &self.unused_proposals
     }
 
@@ -622,13 +621,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
             #[cfg(feature = "custom_proposal")]
             custom_proposals: provisional.applied_proposals.custom_proposals.clone(),
             #[cfg(feature = "by_ref_proposal")]
-            unused_proposals: provisional
-                .rejected_proposals
-                .iter()
-                .map(|(_, p)| p.clone())
-                .collect_vec(),
-            #[cfg(not(feature = "by_ref_proposal"))]
-            unused_proposals: Default::default(),
+            unused_proposals: provisional.rejected_proposals.clone(),
         };
 
         Ok(update)
@@ -674,8 +667,6 @@ pub(crate) trait MessageProcessor: Send + Sync {
         let mut provisional_state = group_state
             .apply_resolved(
                 auth_content.content.sender,
-                #[cfg(all(feature = "by_ref_proposal", feature = "state_update"))]
-                None,
                 proposals,
                 commit.path.as_ref().map(|path| &path.leaf_node),
                 &id_provider,
