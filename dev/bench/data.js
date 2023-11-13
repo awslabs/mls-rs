@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1699903319316,
+  "lastUpdate": 1699907071527,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -1835,6 +1835,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 171603,
             "range": "± 234500",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "tomleavy@amazon.com",
+            "name": "Tom Leavy",
+            "username": "tomleavy"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b309ee8d5b02c5e7db65975b2ef255c1dc9bdd3a",
+          "message": "Take fuzz targets out of the main workspace (#32)\n\n* Take fuzz targets out of the main workspace\r\n\r\n* Add clippy + rust fmt",
+          "timestamp": "2023-11-13T15:20:00-05:00",
+          "tree_id": "e1acf9368dba307704abc899be6f2586eae2fe2d",
+          "url": "https://github.com/awslabs/mls-rs/commit/b309ee8d5b02c5e7db65975b2ef255c1dc9bdd3a"
+        },
+        "date": 1699907070781,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 512311,
+            "range": "± 7037",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 518267,
+            "range": "± 8834",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 573492,
+            "range": "± 27799",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1183526,
+            "range": "± 30356",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 6951021,
+            "range": "± 43452",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1121254,
+            "range": "± 65485",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1238281,
+            "range": "± 57902",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1391992,
+            "range": "± 120545",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 725899,
+            "range": "± 10728",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 777010,
+            "range": "± 3087",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 835195,
+            "range": "± 5510",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 27436,
+            "range": "± 351",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 88586,
+            "range": "± 780",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 171316,
+            "range": "± 1838",
             "unit": "ns/iter"
           }
         ]
