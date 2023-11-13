@@ -187,6 +187,7 @@ pub use group::{
 /// Error types.
 pub mod error {
     pub use crate::client::MlsError;
+    pub use mls_rs_core::error::{AnyError, IntoAnyError};
     pub use mls_rs_core::extension::ExtensionError;
 }
 

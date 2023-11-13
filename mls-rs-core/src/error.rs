@@ -6,6 +6,7 @@ use core::fmt::{self, Display};
 
 #[cfg(feature = "std")]
 #[derive(Debug)]
+/// Generic error used to wrap errors produced by providers.
 pub struct AnyError(Box<dyn std::error::Error + Send + Sync>);
 
 #[cfg(not(feature = "std"))]
@@ -33,6 +34,7 @@ impl Display for AnyError {
     }
 }
 
+/// Trait to convert a provider specific error into [`AnyError`]
 pub trait IntoAnyError: core::fmt::Debug + Sized {
     #[cfg(feature = "std")]
     fn into_any_error(self) -> AnyError {
