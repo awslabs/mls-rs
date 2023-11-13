@@ -111,7 +111,7 @@ required-features = ["x509"]
 
 [[example]]
 name = "large_group"
-required-features = ["test_util"]
+required-features = []
 
 [[example]]
 name = "basic_server_usage"

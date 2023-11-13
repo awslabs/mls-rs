@@ -207,121 +207,68 @@ macro_rules! delegate_mls_rules {
 delegate_mls_rules!(Box<T>);
 delegate_mls_rules!(&T);
 
-pub use pass_through::DefaultMlsRules;
+#[derive(Clone, Debug, Default)]
+#[non_exhaustive]
+/// Default MLS rules with pass-through proposal filter and customizable options.
+pub struct DefaultMlsRules {
+    pub commit_options: CommitOptions,
+    pub encryption_options: EncryptionOptions,
+}
 
-#[cfg(not(any(test, feature = "test_util")))]
-mod pass_through {
-    use super::*;
-
-    #[derive(Clone, Debug, Default)]
-    #[non_exhaustive]
-    /// Default commit rules that allow all proposals, do not enforce path and do
+impl DefaultMlsRules {
+    /// Create new MLS rules with default settings: do not enforce path and do
     /// put the ratchet tree in the extension.
-    pub struct DefaultMlsRules;
+    pub fn new() -> Self {
+        Default::default()
+    }
 
-    impl DefaultMlsRules {
-        pub fn new() -> Self {
-            Self
+    /// Set commit options.
+    pub fn with_commit_options(self, commit_options: CommitOptions) -> Self {
+        Self {
+            commit_options,
+            encryption_options: self.encryption_options,
         }
     }
 
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    #[cfg_attr(mls_build_async, maybe_async::must_be_async)]
-    impl MlsRules for DefaultMlsRules {
-        type Error = Infallible;
-
-        async fn filter_proposals(
-            &self,
-            _direction: CommitDirection,
-            _source: CommitSource,
-            _current_roster: &Roster,
-            _extension_list: &ExtensionList,
-            proposals: ProposalBundle,
-        ) -> Result<ProposalBundle, Self::Error> {
-            Ok(proposals)
-        }
-
-        fn commit_options(
-            &self,
-            _: &Roster,
-            _: &ExtensionList,
-            _: &ProposalBundle,
-        ) -> Result<CommitOptions, Self::Error> {
-            Ok(Default::default())
-        }
-
-        fn encryption_options(
-            &self,
-            _: &Roster,
-            _: &ExtensionList,
-        ) -> Result<EncryptionOptions, Self::Error> {
-            Ok(Default::default())
+    /// Set encryption options.
+    pub fn with_encryption_options(self, encryption_options: EncryptionOptions) -> Self {
+        Self {
+            commit_options: self.commit_options,
+            encryption_options,
         }
     }
 }
 
-#[cfg(any(test, feature = "test_util"))]
-mod pass_through {
-    use super::*;
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
+impl MlsRules for DefaultMlsRules {
+    type Error = Infallible;
 
-    #[derive(Clone, Debug, Default)]
-    #[non_exhaustive]
-    pub struct DefaultMlsRules {
-        pub commit_options: CommitOptions,
-        pub encryption_options: EncryptionOptions,
+    async fn filter_proposals(
+        &self,
+        _direction: CommitDirection,
+        _source: CommitSource,
+        _current_roster: &Roster,
+        _extension_list: &ExtensionList,
+        proposals: ProposalBundle,
+    ) -> Result<ProposalBundle, Self::Error> {
+        Ok(proposals)
     }
 
-    impl DefaultMlsRules {
-        pub fn new() -> Self {
-            Default::default()
-        }
-
-        pub fn with_commit_options(self, commit_options: CommitOptions) -> Self {
-            Self {
-                commit_options,
-                encryption_options: self.encryption_options,
-            }
-        }
-
-        pub fn with_encryption_options(self, encryption_options: EncryptionOptions) -> Self {
-            Self {
-                commit_options: self.commit_options,
-                encryption_options,
-            }
-        }
+    fn commit_options(
+        &self,
+        _: &Roster,
+        _: &ExtensionList,
+        _: &ProposalBundle,
+    ) -> Result<CommitOptions, Self::Error> {
+        Ok(self.commit_options)
     }
 
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    #[cfg_attr(mls_build_async, maybe_async::must_be_async)]
-    impl MlsRules for DefaultMlsRules {
-        type Error = Infallible;
-
-        async fn filter_proposals(
-            &self,
-            _direction: CommitDirection,
-            _source: CommitSource,
-            _current_roster: &Roster,
-            _extension_list: &ExtensionList,
-            proposals: ProposalBundle,
-        ) -> Result<ProposalBundle, Self::Error> {
-            Ok(proposals)
-        }
-
-        fn commit_options(
-            &self,
-            _: &Roster,
-            _: &ExtensionList,
-            _: &ProposalBundle,
-        ) -> Result<CommitOptions, Self::Error> {
-            Ok(self.commit_options)
-        }
-
-        fn encryption_options(
-            &self,
-            _: &Roster,
-            _: &ExtensionList,
-        ) -> Result<EncryptionOptions, Self::Error> {
-            Ok(self.encryption_options)
-        }
+    fn encryption_options(
+        &self,
+        _: &Roster,
+        _: &ExtensionList,
+    ) -> Result<EncryptionOptions, Self::Error> {
+        Ok(self.encryption_options)
     }
 }
