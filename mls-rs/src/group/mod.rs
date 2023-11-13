@@ -1795,7 +1795,9 @@ pub(crate) mod test_utils;
 #[cfg(test)]
 mod tests {
     use crate::{
-        client::test_utils::{test_client_with_key_pkg, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
+        client::test_utils::{
+            test_client_with_key_pkg, TestClientBuilder, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION,
+        },
         client_builder::{test_utils::TestClientConfig, ClientBuilder},
         crypto::test_utils::TestCryptoProvider,
         identity::test_utils::{get_test_signing_identity, BasicWithCustomProvider},
@@ -3757,5 +3759,172 @@ mod tests {
         bob.join_group(None, commit.welcome_messages.remove(0))
             .await
             .unwrap();
+    }
+
+    #[cfg(feature = "by_ref_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn invalid_update_does_not_prevent_other_updates() {
+        const EXTENSION_TYPE: ExtensionType = ExtensionType::new(33);
+
+        let group_extensions = ExtensionList::from(vec![RequiredCapabilitiesExt {
+            extensions: vec![EXTENSION_TYPE],
+            ..Default::default()
+        }
+        .into_extension()
+        .unwrap()]);
+
+        // Alice creates a group requiring support for an extension
+        let mut alice = TestClientBuilder::new_for_test()
+            .with_random_signing_identity("alice", TEST_CIPHER_SUITE)
+            .await
+            .extension_type(EXTENSION_TYPE)
+            .build()
+            .create_group(group_extensions.clone())
+            .await
+            .unwrap();
+
+        let (bob_signing_identity, bob_secret_key) =
+            get_test_signing_identity(TEST_CIPHER_SUITE, b"bob").await;
+
+        let bob_client = TestClientBuilder::new_for_test()
+            .signing_identity(
+                bob_signing_identity.clone(),
+                bob_secret_key.clone(),
+                TEST_CIPHER_SUITE,
+            )
+            .extension_type(EXTENSION_TYPE)
+            .build();
+
+        let carol_client = TestClientBuilder::new_for_test()
+            .with_random_signing_identity("carol", TEST_CIPHER_SUITE)
+            .await
+            .extension_type(EXTENSION_TYPE)
+            .build();
+
+        let dave_client = TestClientBuilder::new_for_test()
+            .with_random_signing_identity("dave", TEST_CIPHER_SUITE)
+            .await
+            .extension_type(EXTENSION_TYPE)
+            .build();
+
+        // Alice adds Bob, Carol and Dave to the group. They all support the mandatory extension.
+        let commit = alice
+            .commit_builder()
+            .add_member(bob_client.generate_key_package_message().await.unwrap())
+            .unwrap()
+            .add_member(carol_client.generate_key_package_message().await.unwrap())
+            .unwrap()
+            .add_member(dave_client.generate_key_package_message().await.unwrap())
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+
+        alice.apply_pending_commit().await.unwrap();
+
+        let mut bob = bob_client
+            .join_group(None, commit.welcome_messages[0].clone())
+            .await
+            .unwrap()
+            .0;
+
+        bob.write_to_storage().await.unwrap();
+
+        // Bob reloads his group data, but with parameters that will cause his generated leaves to
+        // not support the mandatory extension.
+        let mut bob = TestClientBuilder::new_for_test()
+            .signing_identity(bob_signing_identity, bob_secret_key, TEST_CIPHER_SUITE)
+            .key_package_repo(bob.config.key_package_repo())
+            .group_state_storage(bob.config.group_state_storage())
+            .build()
+            .load_group(alice.group_id())
+            .await
+            .unwrap();
+
+        let mut carol = carol_client
+            .join_group(None, commit.welcome_messages[0].clone())
+            .await
+            .unwrap()
+            .0;
+
+        let mut dave = dave_client
+            .join_group(None, commit.welcome_messages[0].clone())
+            .await
+            .unwrap()
+            .0;
+
+        // Bob's updated leaf does not support the mandatory extension.
+        let bob_update = bob.propose_update(Vec::new()).await.unwrap();
+        let carol_update = carol.propose_update(Vec::new()).await.unwrap();
+        let dave_update = dave.propose_update(Vec::new()).await.unwrap();
+
+        // Alice receives the update proposals to be committed.
+        alice.process_incoming_message(bob_update).await.unwrap();
+        alice.process_incoming_message(carol_update).await.unwrap();
+        alice.process_incoming_message(dave_update).await.unwrap();
+
+        // Alice commits the update proposals.
+        alice.commit(Vec::new()).await.unwrap();
+        let commit_desc = alice.apply_pending_commit().await.unwrap();
+
+        let find_update_for = |id: &str| {
+            commit_desc
+                .state_update
+                .roster_update
+                .updated()
+                .iter()
+                .filter_map(|u| u.before_update().signing_identity().credential.as_basic())
+                .find(|c| c.identifier() == id.as_bytes())
+                .is_some()
+        };
+
+        // Check that all updates preserve identities.
+        let identities_are_preserved = commit_desc
+            .state_update
+            .roster_update
+            .updated()
+            .iter()
+            .filter_map(|u| {
+                let before = u
+                    .before_update()
+                    .signing_identity()
+                    .credential
+                    .as_basic()?
+                    .identifier();
+                let after = u
+                    .after_update()
+                    .signing_identity()
+                    .credential
+                    .as_basic()?
+                    .identifier();
+                Some((before, after))
+            })
+            .all(|(before, after)| before == after);
+
+        assert!(identities_are_preserved);
+
+        // Carol's and Dave's updates should be part of the commit.
+        assert!(find_update_for("carol"));
+        assert!(find_update_for("dave"));
+
+        // Bob's update should be rejected.
+        assert!(!find_update_for("bob"));
+
+        // Check that all members are still in the group.
+        let all_members_are_in = alice
+            .roster()
+            .members_iter()
+            .zip(["alice", "bob", "carol", "dave"])
+            .all(|(member, id)| {
+                member
+                    .signing_identity()
+                    .credential
+                    .as_basic()
+                    .unwrap()
+                    .identifier()
+                    == id.as_bytes()
+            });
+
+        assert!(all_members_are_in);
     }
 }
