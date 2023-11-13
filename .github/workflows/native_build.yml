@@ -20,7 +20,7 @@ jobs:
         if: runner.os == 'Windows'
       - run: vcpkg install openssl:x64-windows-static-md
         if: runner.os == 'Windows'
-      - run: echo "OPENSSL_DIR=C:/vcpkg/packages/openssl_x64-windows-static-md" >> "$GITHUB_ENV"
+      - run: echo "OPENSSL_DIR=C:/vcpkg/packages/openssl_x64-windows-static-md" | Out-File -FilePath $env:GITHUB_ENV -Append
         if: runner.os == 'Windows'
       - name: Rust Fmt
         run: cargo fmt --all -- --check
