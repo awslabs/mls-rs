@@ -6,7 +6,6 @@ members = [
     "mls-rs-core",
     "mls-rs-ffi",
     "mls-rs-identity-x509",
-    "mls-rs/fuzz",
     "mls-rs/test_harness_integration",
     "mls-rs-crypto-openssl",
     "mls-rs-crypto-rustcrypto",

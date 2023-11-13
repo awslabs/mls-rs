@@ -9,16 +9,22 @@ jobs:
   fuzz:
     runs-on: ubuntu-latest
     steps:
-        - uses: actions/checkout@v3
-        - uses: dtolnay/rust-toolchain@nightly
-        - name: Install cargo-fuzz
-          run: cargo install cargo-fuzz
-        - name: Run Fuzz Targets
-          working-directory: mls-rs
-          run: |
-            cargo +nightly fuzz run application_data -- -runs=$RUNS -timeout=$TIME
-            cargo +nightly fuzz run cipher_text -- -runs=$RUNS -timeout=$TIME
-            cargo +nightly fuzz run deserialize -- -runs=$RUNS -timeout=$TIME
-            cargo +nightly fuzz run export_secret -- -runs=$RUNS -timeout=$TIME
-            cargo +nightly fuzz run mls_message -- -runs=$RUNS -timeout=$TIME
-            cargo +nightly fuzz run process_bytes -- -runs=$RUNS -timeout=$TIME
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@nightly
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
+      - name: Rust Fmt on fuzz targets
+        working-directory: mls-rs/fuzz
+        run: cargo fmt --all -- --check
+      - name: Clippy on fuzz targets
+        working-directory: mls-rs/fuzz
+        run: cargo clippy --all-targets --all-features --workspace -- -D warnings
+      - name: Run Fuzz Targets
+        working-directory: mls-rs
+        run: |
+          cargo +nightly fuzz run application_data -- -runs=$RUNS -timeout=$TIME
+          cargo +nightly fuzz run cipher_text -- -runs=$RUNS -timeout=$TIME
+          cargo +nightly fuzz run deserialize -- -runs=$RUNS -timeout=$TIME
+          cargo +nightly fuzz run export_secret -- -runs=$RUNS -timeout=$TIME
+          cargo +nightly fuzz run mls_message -- -runs=$RUNS -timeout=$TIME
+          cargo +nightly fuzz run process_bytes -- -runs=$RUNS -timeout=$TIME
