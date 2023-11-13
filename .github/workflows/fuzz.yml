@@ -11,6 +11,8 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: clippy, rustfmt
       - name: Install cargo-fuzz
         run: cargo install cargo-fuzz
       - name: Rust Fmt on fuzz targets
