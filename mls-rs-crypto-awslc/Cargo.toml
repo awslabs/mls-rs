@@ -22,6 +22,9 @@ maybe-async = "0.2.7"
 [target.'cfg(all(target_arch = "aarch64", macos))'.dependencies]
 aws-lc-sys = { version = "0.11.0", features = ["bindgen"] }
 
+[target.'cfg(windows)'.dependencies]
+aws-lc-sys = { version = "0.11.0", features = ["bindgen"] }
+
 [dev-dependencies]
 assert_matches = "1.5.0"
 mls-rs-core = { path = "../mls-rs-core", version = "0.14.0", features = ["test_suite"] }
