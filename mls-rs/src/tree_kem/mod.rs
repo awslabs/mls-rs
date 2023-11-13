@@ -449,6 +449,7 @@ impl TreeKemPublic {
         } else {
             for i in bad_indices.into_iter().rev() {
                 proposal_bundle.remove::<UpdateProposal>(i);
+                proposal_bundle.update_senders.remove(i);
             }
         }
 
