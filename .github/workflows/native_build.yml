@@ -19,7 +19,7 @@ jobs:
       - name: Rust Fmt
         run: cargo fmt --all -- --check
       - name: Clippy Full RFC Compliance
-        run: cargo clippy --all-targets --all-features --workspace -- -D warnings
+        run: cargo clippy --all-targets --all-features --workspace --exclude fuzz -- -D warnings
       - name: Clippy Bare Bones
         run: cargo clippy --all-targets --no-default-features --features std,test_util --workspace -- -D warnings
       - name: Test Full RFC Compliance
