@@ -210,10 +210,10 @@ where
             .try_collect()
             .await?;
 
-        bad_indices
-            .into_iter()
-            .rev()
-            .for_each(|i| proposals.remove::<UpdateProposal>(i));
+        bad_indices.into_iter().rev().for_each(|i| {
+            proposals.remove::<UpdateProposal>(i);
+            proposals.update_senders.remove(i);
+        });
 
         let bad_indices: Vec<_> = wrap_iter(proposals.add_proposals())
             .enumerate()
@@ -488,6 +488,7 @@ pub(crate) fn filter_out_invalid_proposers(
 
         if !apply_strategy(strategy, p.is_by_reference(), res)? {
             proposals.remove::<UpdateProposal>(i);
+            proposals.update_senders.remove(i);
         }
     }
 
