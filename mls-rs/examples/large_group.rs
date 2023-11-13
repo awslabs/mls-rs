@@ -9,6 +9,7 @@ use mls_rs::{
         basic::{BasicCredential, BasicIdentityProvider},
         SigningIdentity,
     },
+    mls_rules::{CommitOptions, DefaultMlsRules},
     CipherSuite, CipherSuiteProvider, Client, CryptoProvider, Group,
 };
 
@@ -147,6 +148,10 @@ fn make_client<P: CryptoProvider + Clone>(
     Ok(Client::builder()
         .identity_provider(BasicIdentityProvider)
         .crypto_provider(crypto_provider)
+        .mls_rules(
+            DefaultMlsRules::new()
+                .with_commit_options(CommitOptions::new().with_path_required(true)),
+        )
         .signing_identity(signing_identity, secret, CIPHERSUITE)
         .build())
 }
