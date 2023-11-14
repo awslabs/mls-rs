@@ -1,10 +1,10 @@
 [package]
 name = "mls-rs-crypto-webcrypto"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 
 [dependencies]
-mls-rs-core = { path = "../mls-rs-core", default-features = false, features = ["std"], version = "0.14.0" }
+mls-rs-core = { path = "../mls-rs-core", default-features = false, features = ["std"], version = "0.15.0" }
 mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", default-features = false, features = ["std"], version = "0.5.0" }
 mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", default-features = false, features = ["std"], version = "0.6.0" }
 thiserror = "1.0.40"

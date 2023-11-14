@@ -631,8 +631,7 @@ pub(crate) mod test_utils {
     use mls_rs_core::{
         error::IntoAnyError,
         extension::ExtensionList,
-        group::RosterUpdate,
-        identity::{BasicCredential, IdentityProvider, IdentityWarning},
+        identity::{BasicCredential, IdentityProvider},
     };
 
     use crate::{identity::SigningIdentity, time::MlsTime};
@@ -699,14 +698,6 @@ pub(crate) mod test_utils {
         #[cfg_attr(coverage_nightly, coverage(off))]
         fn supported_types(&self) -> Vec<crate::identity::CredentialType> {
             vec![BasicCredential::credential_type()]
-        }
-
-        #[cfg_attr(coverage_nightly, coverage(off))]
-        async fn identity_warnings(
-            &self,
-            _update: &RosterUpdate,
-        ) -> Result<Vec<IdentityWarning>, Self::Error> {
-            Ok(vec![])
         }
     }
 }

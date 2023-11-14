@@ -173,13 +173,14 @@ mod tests {
         .unwrap();
 
         ProvisionalState {
+            old_tree: tree.clone(),
             public_tree: tree,
             applied_proposals: Default::default(),
             group_context: get_test_group_context(1, cipher_suite).await,
             indexes_of_added_kpkgs: vec![],
             external_init_index: None,
-            #[cfg(feature = "state_update")]
             rejected_proposals: vec![],
+            committer_index: LeafIndex::new(0),
         }
     }
 

@@ -29,7 +29,7 @@ use crate::group::ExternalInit;
 
 use core::iter::empty;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 /// A collection of proposals.
 pub struct ProposalBundle {
     pub(crate) additions: Vec<ProposalInfo<AddProposal>>,

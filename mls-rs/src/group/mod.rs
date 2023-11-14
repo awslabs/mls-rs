@@ -1656,7 +1656,7 @@ where
         interim_transcript_hash: InterimTranscriptHash,
         confirmation_tag: &ConfirmationTag,
         provisional_state: ProvisionalState,
-    ) -> Result<(), MlsError> {
+    ) -> Result<StateUpdate, MlsError> {
         let commit_secret = if let Some(secrets) = secrets {
             self.private_tree = secrets.0;
             secrets.1
@@ -1735,10 +1735,10 @@ where
         self.state_repo.insert(past_epoch).await?;
 
         self.epoch_secrets = key_schedule_result.epoch_secrets;
-        self.state.context = provisional_state.group_context;
+        self.state.context = provisional_state.group_context.clone();
         self.state.interim_transcript_hash = interim_transcript_hash;
         self.key_schedule = key_schedule_result.key_schedule;
-        self.state.public_tree = provisional_state.public_tree;
+        self.state.public_tree = provisional_state.public_tree.clone();
         self.state.confirmation_tag = new_confirmation_tag;
 
         // Clear the proposals list
@@ -1753,7 +1753,7 @@ where
 
         self.pending_commit = None;
 
-        Ok(())
+        Ok(provisional_state.into())
     }
 
     fn mls_rules(&self) -> Self::MlsRules {
@@ -1853,16 +1853,14 @@ mod tests {
     #[cfg(feature = "by_ref_proposal")]
     use mls_rs_core::identity::CertificateChain;
 
-    #[cfg(feature = "state_update")]
     use itertools::Itertools;
 
-    #[cfg(feature = "state_update")]
     use alloc::format;
 
     #[cfg(feature = "by_ref_proposal")]
     use crate::{crypto::test_utils::test_cipher_suite_provider, extension::ExternalSendersExt};
 
-    #[cfg(any(feature = "private_message", feature = "state_update"))]
+    #[cfg(feature = "private_message")]
     use super::test_utils::test_member;
 
     use mls_rs_core::extension::MlsExtension;
@@ -2198,15 +2196,8 @@ mod tests {
         let (mut test_group, _) =
             group_context_extension_proposal_test(extension_list.clone()).await;
 
-        #[cfg(feature = "state_update")]
-        {
-            let update = test_group.group.apply_pending_commit().await.unwrap();
-            assert!(update.state_update.active);
-        }
-
-        #[cfg(not(feature = "state_update"))]
-        test_group.group.apply_pending_commit().await.unwrap();
-
+        let commit_description = test_group.group.apply_pending_commit().await.unwrap();
+        assert!(!commit_description.is_final);
         assert_eq!(test_group.group.state.context.extensions, extension_list)
     }
 
@@ -2488,7 +2479,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::UnencryptedApplicationMessage));
     }
 
-    #[cfg(feature = "state_update")]
+    #[cfg(all(feature = "by_ref_proposal", feature = "psk"))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_state_update() {
         let protocol_version = TEST_PROTOCOL_VERSION;
@@ -2507,9 +2498,11 @@ mod tests {
 
         // Create many proposals, make Alice commit them
 
-        let update_message = bob.group.propose_update(vec![]).await.unwrap();
-
-        alice.process_message(update_message).await.unwrap();
+        #[cfg(feature = "by_ref_proposal")]
+        {
+            let update_message = bob.group.propose_update(vec![]).await.unwrap();
+            alice.process_message(update_message).await.unwrap();
+        }
 
         let external_psk_ids: Vec<ExternalPskId> = (0..5)
             .map(|i| {
@@ -2569,7 +2562,6 @@ mod tests {
 
         assert_eq!(
             state_update_alice
-                .roster_update
                 .added()
                 .iter()
                 .map(|m| m.index)
@@ -2578,7 +2570,7 @@ mod tests {
         );
 
         assert_eq!(
-            state_update_alice.roster_update.removed(),
+            state_update_alice.removed(),
             vec![2, 5, 6]
                 .into_iter()
                 .map(|i| member_from_leaf_node(&leaves[i as usize - 2], LeafIndex(i)))
@@ -2587,7 +2579,6 @@ mod tests {
 
         assert_eq!(
             state_update_alice
-                .roster_update
                 .updated()
                 .iter()
                 .map(|update| update.new.clone())
@@ -2597,7 +2588,7 @@ mod tests {
         );
 
         assert_eq!(
-            state_update_alice.added_psks,
+            state_update_alice.added_psks(),
             (0..5)
                 .map(|i| ExternalPskId::new(vec![i]))
                 .collect::<Vec<_>>()
@@ -2615,7 +2606,6 @@ mod tests {
         assert_eq!(commit_description, bob_commit_description);
     }
 
-    #[cfg(feature = "state_update")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn commit_description_external_commit() {
         use crate::client::test_utils::TestClientBuilder;
@@ -2652,7 +2642,7 @@ mod tests {
         assert_eq!(commit_description.committer, 1);
 
         assert_eq!(
-            commit_description.state_update.roster_update.added(),
+            commit_description.state_update.added(),
             &bob_group.roster().members()[1..2]
         );
 
@@ -3025,19 +3015,14 @@ mod tests {
             .unwrap()
             .state_update;
 
-        #[cfg(feature = "state_update")]
         assert_eq!(
             state_update
-                .roster_update
                 .added()
                 .iter()
                 .map(|m| m.index)
                 .collect::<Vec<_>>(),
             vec![1]
         );
-
-        #[cfg(not(feature = "state_update"))]
-        assert!(state_update == StateUpdate {});
 
         assert_eq!(alice_group.group.roster().members_iter().count(), 2);
     }
@@ -3709,12 +3694,8 @@ mod tests {
 
         let res = bob.group.process_incoming_message(commit).await.unwrap();
 
-        #[cfg(feature = "state_update")]
-        assert_matches!(res, ReceivedMessage::Commit(CommitMessageDescription { state_update: StateUpdate { custom_proposals, .. }, .. })
-            if custom_proposals.len() == 1 && custom_proposals[0].proposal == custom_proposal);
-
-        #[cfg(not(feature = "state_update"))]
-        assert_matches!(res, ReceivedMessage::Commit(_));
+        assert_matches!(res, ReceivedMessage::Commit(CommitMessageDescription { state_update, .. })
+            if state_update.custom_proposals().into_iter().map(|p| p.proposal).collect_vec() == vec![custom_proposal]);
     }
 
     #[cfg(feature = "custom_proposal")]
@@ -3738,12 +3719,8 @@ mod tests {
         let commit = bob.group.commit(vec![]).await.unwrap().commit_message;
         let res = alice.group.process_incoming_message(commit).await.unwrap();
 
-        #[cfg(feature = "state_update")]
-        assert_matches!(res, ReceivedMessage::Commit(CommitMessageDescription { state_update: StateUpdate { custom_proposals, .. }, .. })
-            if custom_proposals.len() == 1 && custom_proposals[0].proposal == custom_proposal);
-
-        #[cfg(not(feature = "state_update"))]
-        assert_matches!(res, ReceivedMessage::Commit(_));
+        assert_matches!(res, ReceivedMessage::Commit(CommitMessageDescription { state_update, .. })
+            if state_update.custom_proposals().into_iter().map(|p| p.proposal).collect_vec() == vec![custom_proposal]);
     }
 
     #[cfg(feature = "psk")]
@@ -3890,7 +3867,6 @@ mod tests {
         let find_update_for = |id: &str| {
             commit_desc
                 .state_update
-                .roster_update
                 .updated()
                 .iter()
                 .filter_map(|u| u.prior.signing_identity.credential.as_basic())
@@ -3900,7 +3876,6 @@ mod tests {
         // Check that all updates preserve identities.
         let identities_are_preserved = commit_desc
             .state_update
-            .roster_update
             .updated()
             .iter()
             .filter_map(|u| {

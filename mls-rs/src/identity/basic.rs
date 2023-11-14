@@ -6,12 +6,7 @@ use crate::{identity::CredentialType, identity::SigningIdentity, time::MlsTime};
 use alloc::vec;
 use alloc::vec::Vec;
 pub use mls_rs_core::identity::BasicCredential;
-use mls_rs_core::{
-    error::IntoAnyError,
-    extension::ExtensionList,
-    group::RosterUpdate,
-    identity::{IdentityProvider, IdentityWarning},
-};
+use mls_rs_core::{error::IntoAnyError, extension::ExtensionList, identity::IdentityProvider};
 
 #[derive(Debug)]
 #[cfg_attr(feature = "std", derive(thiserror::Error))]
@@ -95,12 +90,5 @@ impl IdentityProvider for BasicIdentityProvider {
 
     fn supported_types(&self) -> Vec<CredentialType> {
         vec![BasicCredential::credential_type()]
-    }
-
-    async fn identity_warnings(
-        &self,
-        _update: &RosterUpdate,
-    ) -> Result<Vec<IdentityWarning>, Self::Error> {
-        Ok(vec![])
     }
 }

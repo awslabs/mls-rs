@@ -10,9 +10,9 @@ use mls_rs_core::{
     identity::{CertificateChain, SigningIdentity},
 };
 use mls_rs_identity_x509::{
-    CertificateRequestParameters, DerCertificate, DerCertificateRequest, NoOpWarningProvider,
-    SubjectAltName, SubjectComponent, SubjectIdentityExtractor, X509CredentialValidator,
-    X509IdentityProvider, X509RequestWriter,
+    CertificateRequestParameters, DerCertificate, DerCertificateRequest, SubjectAltName,
+    SubjectComponent, SubjectIdentityExtractor, X509CredentialValidator, X509IdentityProvider,
+    X509RequestWriter,
 };
 use openssl::{
     bn::BigNumContext,
@@ -527,10 +527,7 @@ pub fn signing_identity_from_certificate(certificate: &[u8]) -> Result<SigningId
 /// Returns a X509 identity provider from a root CA certificate in DER or PEM format
 pub fn identity_provider_from_certificate(
     certificate: &[u8],
-) -> Result<
-    X509IdentityProvider<SubjectIdentityExtractor<X509Reader>, X509Validator, NoOpWarningProvider>,
-    X509Error,
-> {
+) -> Result<X509IdentityProvider<SubjectIdentityExtractor<X509Reader>, X509Validator>, X509Error> {
     let certificate = if looks_like_der(certificate) {
         X509::from_der(certificate)
     } else {
@@ -541,7 +538,6 @@ pub fn identity_provider_from_certificate(
     Ok(X509IdentityProvider::new(
         SubjectIdentityExtractor::new(0, X509Reader::new()),
         X509Validator::new(vec![certificate.into()])?,
-        NoOpWarningProvider::new(),
     ))
 }
 

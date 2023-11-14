@@ -940,12 +940,7 @@ mod tests {
         } else {
             // Bob was removed so his epoch must stay the same
             assert_eq!(bob_group.group.current_epoch(), bob_current_epoch);
-
-            #[cfg(feature = "state_update")]
-            assert_matches!(message, ReceivedMessage::Commit(desc) if !desc.state_update.active);
-
-            #[cfg(not(feature = "state_update"))]
-            assert_matches!(message, ReceivedMessage::Commit(_));
+            assert_matches!(message, ReceivedMessage::Commit(desc) if desc.is_final);
         }
 
         // Comparing epoch authenticators is sufficient to check that members are in sync.

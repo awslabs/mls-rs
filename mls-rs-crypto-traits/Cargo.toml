@@ -1,6 +1,6 @@
 [package]
 name = "mls-rs-crypto-traits"
-version = "0.6.1"
+version = "0.6.2"
 edition = "2021"
 description = "Crypto traits required to create a CryptoProvider for mls-rs"
 homepage = "https://github.com/awslabs/mls-rs"
@@ -14,7 +14,7 @@ std = ["mls-rs-core/std"]
 default = ["std"]
 
 [dependencies]
-mls-rs-core = { path = "../mls-rs-core", version = "0.14.0", default-features = false }
+mls-rs-core = { path = "../mls-rs-core", version = "0.15.0", default-features = false }
 mockall = { version = "^0.11", optional = true }
 maybe-async = "0.2.7"
 

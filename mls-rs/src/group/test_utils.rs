@@ -505,10 +505,10 @@ impl MessageProcessor for GroupWithoutKeySchedule {
         _interim_transcript_hash: InterimTranscriptHash,
         _confirmation_tag: &ConfirmationTag,
         provisional_public_state: ProvisionalState,
-    ) -> Result<(), MlsError> {
-        self.provisional_public_state = Some(provisional_public_state);
+    ) -> Result<StateUpdate, MlsError> {
+        self.provisional_public_state = Some(provisional_public_state.clone());
         self.secrets = secrets;
-        Ok(())
+        Ok(provisional_public_state.into())
     }
 
     #[cfg_attr(coverage_nightly, coverage(off))]

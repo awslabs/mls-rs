@@ -640,27 +640,20 @@ async fn reinit_works() {
 
     // Both process Bob's commit
 
-    #[cfg(feature = "state_update")]
-    {
-        let state_update = bob_group.apply_pending_commit().await.unwrap().state_update;
-        assert!(!state_update.is_active() && state_update.is_pending_reinit());
-    }
+    let commit_description = bob_group.apply_pending_commit().await.unwrap();
 
-    #[cfg(not(feature = "state_update"))]
-    bob_group.apply_pending_commit().await.unwrap();
+    assert!(
+        commit_description.is_final && commit_description.state_update.pending_reinit().is_some()
+    );
 
     let message = alice_group.process_incoming_message(commit).await.unwrap();
 
-    #[cfg(feature = "state_update")]
     if let ReceivedMessage::Commit(commit_description) = message {
         assert!(
-            !commit_description.state_update.is_active()
-                && commit_description.state_update.is_pending_reinit()
+            commit_description.is_final
+                && commit_description.state_update.pending_reinit().is_some()
         );
     }
-
-    #[cfg(not(feature = "state_update"))]
-    assert_matches!(message, ReceivedMessage::Commit(_));
 
     // They can't create new epochs anymore
     let res = alice_group.commit(Vec::new()).await;

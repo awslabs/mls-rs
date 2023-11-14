@@ -24,7 +24,7 @@ use crate::{
         snapshot::RawGroupState,
         state::GroupState,
         transcript_hash::InterimTranscriptHash,
-        validate_group_info, Roster,
+        validate_group_info, Roster, StateUpdate,
     },
     identity::SigningIdentity,
     protocol_version::ProtocolVersion,
@@ -606,15 +606,15 @@ where
         interim_transcript_hash: InterimTranscriptHash,
         confirmation_tag: &ConfirmationTag,
         provisional_public_state: ProvisionalState,
-    ) -> Result<(), MlsError> {
-        self.state.context = provisional_public_state.group_context;
+    ) -> Result<StateUpdate, MlsError> {
+        self.state.context = provisional_public_state.group_context.clone();
         #[cfg(feature = "by_ref_proposal")]
         self.state.proposals.clear();
         self.state.interim_transcript_hash = interim_transcript_hash;
-        self.state.public_tree = provisional_public_state.public_tree;
+        self.state.public_tree = provisional_public_state.public_tree.clone();
         self.state.confirmation_tag = confirmation_tag.clone();
 
-        Ok(())
+        Ok(provisional_public_state.into())
     }
 
     fn identity_provider(&self) -> Self::IdentityProvider {
@@ -898,15 +898,11 @@ mod tests {
             .await
             .unwrap();
 
-        #[cfg(feature = "state_update")]
         assert_matches!(
             commit_result,
             ExternalReceivedMessage::Commit(commit_description)
                 if commit_description.state_update.roster_update.added().iter().any(|added| added.index == 1)
         );
-
-        #[cfg(not(feature = "state_update"))]
-        assert_matches!(commit_result, ExternalReceivedMessage::Commit(_));
 
         assert_eq!(alice.group.state, server.state);
     }
@@ -922,11 +918,8 @@ mod tests {
             _ => panic!("Expected processed commit"),
         };
 
-        #[cfg(feature = "state_update")]
-        assert_eq!(update.roster_update.added().len(), 1);
-
+        assert_eq!(update.added().len(), 1);
         assert_eq!(server.state.public_tree.get_leaf_nodes().len(), 2);
-
         assert_eq!(alice.group.state, server.state);
     }
 

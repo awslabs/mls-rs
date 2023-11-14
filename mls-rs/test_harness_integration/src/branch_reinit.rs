@@ -220,7 +220,8 @@ pub(crate) mod inner {
 
             // Generate a signing identity for the possibly new ciphersuite after reinit
             let cipher_suite = update
-                .pending_reinit_ciphersuite()
+                .pending_reinit()
+                .map(|ri| ri.new_cipher_suite())
                 .ok_or_else(|| Status::aborted("reinit not found in commit"))?;
 
             let provider = OpensslCryptoProvider::new()

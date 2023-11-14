@@ -26,12 +26,10 @@ use crate::{
 use crate::extension::ExternalSendersExt;
 
 use super::{
-    confirmation_tag::ConfirmationTag, framing::Sender, message_signature::AuthenticatedContent,
+    confirmation_tag::ConfirmationTag, message_signature::AuthenticatedContent,
     transcript_hash::InterimTranscriptHash, ConfirmedTranscriptHash, EncryptedGroupSecrets,
     GroupContext, GroupInfo,
 };
-
-use super::message_processor::ProvisionalState;
 
 #[derive(Clone, Debug)]
 #[non_exhaustive]
@@ -212,22 +210,6 @@ pub(crate) fn find_node_data(
             let tree_extension = extension.ok_or(MlsError::RatchetTreeNotFound)?;
             Ok(tree_extension.tree_data)
         }
-    }
-}
-
-pub(crate) fn commit_sender(
-    sender: &Sender,
-    provisional_state: &ProvisionalState,
-) -> Result<LeafIndex, MlsError> {
-    match sender {
-        Sender::Member(index) => Ok(LeafIndex(*index)),
-        #[cfg(feature = "by_ref_proposal")]
-        Sender::External(_) => Err(MlsError::ExternalSenderCannotCommit),
-        #[cfg(feature = "by_ref_proposal")]
-        Sender::NewMemberProposal => Err(MlsError::ExpectedAddProposalForNewMemberProposal),
-        Sender::NewMemberCommit => provisional_state
-            .external_init_index
-            .ok_or(MlsError::ExternalCommitMissingExternalInit),
     }
 }
 
