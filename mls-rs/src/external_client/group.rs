@@ -56,8 +56,6 @@ use mls_rs_core::{crypto::CipherSuiteProvider, psk::ExternalPskId};
 use crate::{
     extension::ExternalSendersExt,
     group::proposal::{AddProposal, ReInitProposal, RemoveProposal},
-    key_package::validate_key_package_properties,
-    tree_kem::leaf_node_validator::{LeafNodeValidator, ValidationContext},
 };
 
 #[cfg(all(feature = "by_ref_proposal", feature = "psk"))]
@@ -244,20 +242,6 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         let key_package = key_package
             .into_key_package()
             .ok_or(MlsError::UnexpectedMessageType)?;
-
-        // Check that this proposal has a valid lifetime and signature. Required capabilities are
-        // not checked as they may be changed in another proposal in the same commit.
-        let id_provider = self.config.identity_provider();
-        let cs = &self.cipher_suite_provider;
-
-        let validator =
-            LeafNodeValidator::new(cs, &id_provider, Some(&self.state.context.extensions));
-
-        validator
-            .check_if_valid(&key_package.leaf_node, ValidationContext::Add(None))
-            .await?;
-
-        validate_key_package_properties(&key_package, self.protocol_version(), cs).await?;
 
         self.propose(
             Proposal::Add(alloc::boxed::Box::new(AddProposal { key_package })),
