@@ -1,6 +1,6 @@
 [package]
 name = "mls-rs-crypto-traits"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 description = "Crypto traits required to create a CryptoProvider for mls-rs"
 homepage = "https://github.com/awslabs/mls-rs"
