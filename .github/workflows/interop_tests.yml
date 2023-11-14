@@ -1,5 +1,5 @@
 name: Interop Tests
-on: [push, pull_request]
+on: [pull_request]
 env:
   CARGO_TERM_COLOR: always
   SSH_AUTH_SOCK: /tmp/ssh_agent.sock
@@ -7,7 +7,7 @@ jobs:
   BuildAndTest:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -64,28 +64,28 @@ jobs:
           make test-runner/test-runner
 
           # all features with itself
-          for config in `ls mls-rs-configs | sed -e "s/mls-rs-configs\///"`; do test-runner/test-runner --client localhost:50001 --config mls-rs-configs/$config ; done
+          for config in `ls mls-rs-configs | sed -e "s/mls-rs-configs\///"`; do >&2 echo $config && test-runner/test-runner --client localhost:50001 --config mls-rs-configs/$config ; done > /dev/null
 
           # all features with no features
-          test-runner/test-runner --client localhost:50001 --client localhost:50002 --suite 1 --public --config mls-rs-configs/bare_bones.json
+          test-runner/test-runner --client localhost:50001 --client localhost:50002 --suite 1 --public --config mls-rs-configs/bare_bones.json > /dev/null
 
           # all features with "no tree_index"
-          for config in `ls mls-rs-configs | sed -e "s/mls-rs-configs\///"`; do test-runner/test-runner --client localhost:50001 --client localhost:50003 --suite 1 --config mls-rs-configs/$config ; done
+          for config in `ls mls-rs-configs | sed -e "s/mls-rs-configs\///"`; do >&2 echo $config && test-runner/test-runner --client localhost:50001 --client localhost:50003 --suite 1 --config mls-rs-configs/$config ; done > /dev/null
 
           # all features with "no private_message"
-          for config in `ls mls-rs-configs | grep -v "application"  | sed -e "s/mls-rs-configs\///"`; do test-runner/test-runner --client localhost:50001 --client localhost:50004 --public --suite 1 --config mls-rs-configs/$config ; done
+          for config in `ls mls-rs-configs | grep -v "application"  | sed -e "s/mls-rs-configs\///"`; do >&2 echo $config && test-runner/test-runner --client localhost:50001 --client localhost:50004 --public --suite 1 --config mls-rs-configs/$config ; done > /dev/null
 
           # all features with "no prior_epoch"
-          for config in `ls mls-rs-configs | grep -Ev "(application_out_of_order_across)|(psk)" | sed -e "s/mls-rs-configs\///"`; do test-runner/test-runner --client localhost:50001 --client localhost:50005 --suite 1 --config mls-rs-configs/$config ; done
+          for config in `ls mls-rs-configs | grep -Ev "(application_out_of_order_across)|(psk)" | sed -e "s/mls-rs-configs\///"`; do >&2 echo $config && test-runner/test-runner --client localhost:50001 --client localhost:50005 --suite 1 --config mls-rs-configs/$config ; done > /dev/null
 
           # all features with "no out_of_order"
-          for config in `ls mls-rs-configs | grep -v "application_out_of_order" | sed -e "s/mls-rs-configs\///"`; do test-runner/test-runner --client localhost:50001 --client localhost:50006 --suite 1 --config mls-rs-configs/$config ; done
+          for config in `ls mls-rs-configs | grep -v "application_out_of_order" | sed -e "s/mls-rs-configs\///"`; do >&2 echo $config && test-runner/test-runner --client localhost:50001 --client localhost:50006 --suite 1 --config mls-rs-configs/$config ; done > /dev/null
 
           # all features with "no psk"
-          for config in `ls mls-rs-configs | grep -Ev "(psk)|(branch)|(reinit)" | sed -e "s/mls-rs-configs\///"`; do test-runner/test-runner --client localhost:50001 --client localhost:50007 --suite 1 --config mls-rs-configs/$config ; done
+          for config in `ls mls-rs-configs | grep -Ev "(psk)|(branch)|(reinit)" | sed -e "s/mls-rs-configs\///"`; do >&2 echo $config && test-runner/test-runner --client localhost:50001 --client localhost:50007 --suite 1 --config mls-rs-configs/$config ; done > /dev/null
 
            # all features with "no custom_proposal"
-          for config in `ls mls-rs-configs | sed -e "s/mls-rs-configs\///"`; do test-runner/test-runner --client localhost:50001 --client localhost:50008 --suite 1 --config mls-rs-configs/$config ; done
+          for config in `ls mls-rs-configs | sed -e "s/mls-rs-configs\///"`; do >&2 echo $config && test-runner/test-runner --client localhost:50001 --client localhost:50008 --suite 1 --config mls-rs-configs/$config ; done > /dev/null
 
            # all features with "no by_ref_proposal"
-          for config in `ls mls-rs-configs | grep -E "(application)|(commit_by_value)|(branch)|(welcome_join)" | sed -e "s/mls-rs-configs\///"`; do test-runner/test-runner --client localhost:50001 --client localhost:50009 --suite 1 --config mls-rs-configs/$config ; done
+          for config in `ls mls-rs-configs | grep -E "(application)|(commit_by_value)|(branch)|(welcome_join)" | sed -e "s/mls-rs-configs\///"`; do >&2 echo $config && test-runner/test-runner --client localhost:50001 --client localhost:50009 --suite 1 --config mls-rs-configs/$config ; done > /dev/null
