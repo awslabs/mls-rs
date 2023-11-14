@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 mls-rs-core = { path = "../mls-rs-core", default-features = false, features = ["std"], version = "0.14.0" }
-mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", default-features = false, features = ["std"], version = "0.4.0" }
+mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", default-features = false, features = ["std"], version = "0.5.0" }
 mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", default-features = false, features = ["std"], version = "0.6.0" }
 thiserror = "1.0.40"
 zeroize = { version = "1", features = ["zeroize_derive"] }
