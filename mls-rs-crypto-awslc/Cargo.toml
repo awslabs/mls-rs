@@ -1,6 +1,6 @@
 [package]
 name = "mls-rs-crypto-awslc"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 description = "AWS-LC based CryptoProvider for mls-rs"
 homepage = "https://github.com/awslabs/mls-rs"
@@ -10,7 +10,7 @@ license = "Apache-2.0 OR MIT"
 
 [dependencies]
 aws-lc-rs = "1.4"
-aws-lc-sys = { version = "0.11.0", features = ["bindgen"] }
+aws-lc-sys = { version = "0.11.0" }
 mls-rs-core = { path = "../mls-rs-core", version = "0.14.0" }
 mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", version = "0.4.0" }
 mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", version = "0.6.0" }
@@ -18,6 +18,12 @@ mls-rs-identity-x509 = { path = "../mls-rs-identity-x509", version = "0.7.0" }
 thiserror = "1.0.40"
 zeroize = { version = "1", features = ["zeroize_derive"] }
 maybe-async = "0.2.7"
+
+[target.'cfg(all(target_arch = "aarch64", macos))'.dependencies]
+aws-lc-sys = { version = "0.11.0", features = ["bindgen"] }
+
+[target.'cfg(windows)'.dependencies]
+aws-lc-sys = { version = "0.11.0", features = ["bindgen"] }
 
 [dev-dependencies]
 assert_matches = "1.5.0"
