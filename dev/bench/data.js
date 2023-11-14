@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1700004062804,
+  "lastUpdate": 1700004198093,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -2591,6 +2591,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 174841,
             "range": "± 2310",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "103590845+mulmarta@users.noreply.github.com",
+            "name": "mulmarta",
+            "username": "mulmarta"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "74dea2270582ad82009baff3c4f8bc3c7502d086",
+          "message": "Add a WebCrypto CryptoProvider that works with Chrome (#24)\n\n* Add a WebCrypto CryptoProvider that works with Chrome\r\n\r\n* Fixup\r\n\r\n* Fixup\r\n\r\n* Remove ?Send from non-wasm build\r\n\r\n---------\r\n\r\nCo-authored-by: Marta Mularczyk <mulmarta@amazon.com>",
+          "timestamp": "2023-11-14T18:17:11-05:00",
+          "tree_id": "2891d38beb9a1c325bf267eab9472f7627598fba",
+          "url": "https://github.com/awslabs/mls-rs/commit/74dea2270582ad82009baff3c4f8bc3c7502d086"
+        },
+        "date": 1700004197121,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 801271,
+            "range": "± 88804",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 804679,
+            "range": "± 42962",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 902759,
+            "range": "± 52530",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1873335,
+            "range": "± 51447",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 11493671,
+            "range": "± 529833",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1629278,
+            "range": "± 131973",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1747209,
+            "range": "± 98944",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1915375,
+            "range": "± 97940",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 1078649,
+            "range": "± 73969",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 1176544,
+            "range": "± 81787",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 1267715,
+            "range": "± 104895",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 41788,
+            "range": "± 3555",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 139664,
+            "range": "± 8858",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 266003,
+            "range": "± 15151",
             "unit": "ns/iter"
           }
         ]
