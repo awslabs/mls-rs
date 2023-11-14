@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1699907071527,
+  "lastUpdate": 1699921289893,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -1943,6 +1943,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 171316,
             "range": "± 1838",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "tomleavy@amazon.com",
+            "name": "Tom Leavy",
+            "username": "tomleavy"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "fe0b2904e777dfbbf14dd5097bc0d3f8000abc06",
+          "message": "[crypto-awslc] Don't use bindgen feature by default (#33)\n\n* [crypto-awslc] Don't use bindgen feature by default\r\n\r\n* Support for aws-lc on windows\r\n\r\n* Bump version",
+          "timestamp": "2023-11-13T19:17:04-05:00",
+          "tree_id": "afc6265c314954b5ef968e8d9ce0065dec57e0d5",
+          "url": "https://github.com/awslabs/mls-rs/commit/fe0b2904e777dfbbf14dd5097bc0d3f8000abc06"
+        },
+        "date": 1699921289306,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 509133,
+            "range": "± 6751",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 518794,
+            "range": "± 12180",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 573851,
+            "range": "± 21305",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1148149,
+            "range": "± 48272",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 6887571,
+            "range": "± 22234",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1127296,
+            "range": "± 51191",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1242606,
+            "range": "± 49299",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1370978,
+            "range": "± 54923",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 722868,
+            "range": "± 56138",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 774315,
+            "range": "± 42525",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 835121,
+            "range": "± 7280",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 27140,
+            "range": "± 177",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 88827,
+            "range": "± 1348",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 171176,
+            "range": "± 6149",
             "unit": "ns/iter"
           }
         ]
