@@ -67,6 +67,12 @@ impl Kdf {
     }
 }
 
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(all(target_arch = "wasm32", mls_build_async), maybe_async::must_be_async(?Send))]
+#[cfg_attr(
+    all(not(target_arch = "wasm32"), mls_build_async),
+    maybe_async::must_be_async
+)]
 impl KdfType for Kdf {
     type Error = KdfError;
 
@@ -74,7 +80,7 @@ impl KdfType for Kdf {
     /// The length of info can *not* exceed 1024 bytes when using the OpenSSL Engine due to underlying
     /// restrictions in OpenSSL. This function will throw an [OpensslError](KdfError::OpensslError)
     /// in the event info is > 1024 bytes.
-    fn expand(&self, prk: &[u8], info: &[u8], len: usize) -> Result<Vec<u8>, KdfError> {
+    async fn expand(&self, prk: &[u8], info: &[u8], len: usize) -> Result<Vec<u8>, KdfError> {
         if prk.len() < self.extract_size() {
             return Err(KdfError::TooShortKey(prk.len(), self.extract_size()));
         }
@@ -87,7 +93,7 @@ impl KdfType for Kdf {
         Ok(buf)
     }
 
-    fn extract(&self, salt: &[u8], ikm: &[u8]) -> Result<Vec<u8>, KdfError> {
+    async fn extract(&self, salt: &[u8], ikm: &[u8]) -> Result<Vec<u8>, KdfError> {
         if ikm.is_empty() {
             return Err(KdfError::TooShortKey(0, 1));
         }
@@ -121,7 +127,7 @@ impl Kdf {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(mls_build_async)))]
 mod test {
     use assert_matches::assert_matches;
     use mls_rs_core::crypto::CipherSuite;

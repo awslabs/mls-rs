@@ -12,6 +12,12 @@ pub const AEAD_ID_EXPORT_ONLY: u16 = 0xFFFF;
 pub const AES_TAG_LEN: usize = 16;
 
 /// A trait that provides the required AEAD functions
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(all(target_arch = "wasm32", mls_build_async), maybe_async::must_be_async(?Send))]
+#[cfg_attr(
+    all(not(target_arch = "wasm32"), mls_build_async),
+    maybe_async::must_be_async
+)]
 #[cfg_attr(feature = "mock", automock(type Error = crate::mock::TestError;))]
 pub trait AeadType: Send + Sync {
     type Error: IntoAnyError;
@@ -19,7 +25,7 @@ pub trait AeadType: Send + Sync {
     fn aead_id(&self) -> u16;
 
     #[allow(clippy::needless_lifetimes)]
-    fn seal<'a>(
+    async fn seal<'a>(
         &self,
         key: &[u8],
         data: &[u8],
@@ -28,7 +34,7 @@ pub trait AeadType: Send + Sync {
     ) -> Result<Vec<u8>, Self::Error>;
 
     #[allow(clippy::needless_lifetimes)]
-    fn open<'a>(
+    async fn open<'a>(
         &self,
         key: &[u8],
         ciphertext: &[u8],

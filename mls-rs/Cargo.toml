@@ -78,6 +78,7 @@ once_cell = { version = "1.18", optional = true }
 
 [dev-dependencies]
 assert_matches = "1.5.0"
+criterion = { version = "0.5.1", features = ["async_futures", "html_reports"], default-features = false }
 futures-test = "0.3.25"
 serde_json = "^1.0"
 rand = "0.8"
@@ -86,10 +87,12 @@ hex = { version = "^0.4.3", default-features = false, features = ["serde", "allo
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { version = "^0.2.79" }
+getrandom = { version = "0.2", features = ["js", "custom"], default-features = false }
+rand_core = { version = "0.6", default-features = false, features = ["alloc"] }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wasm-bindgen-test = { version = "0.3.26", default-features = false }
-mls-rs-crypto-rustcrypto = { path = "../mls-rs-crypto-rustcrypto", features = ["browser"], version = "0.6.0" }
+mls-rs-crypto-webcrypto = { path = "../mls-rs-crypto-webcrypto", version = "0.1.0" }
 criterion = { version = "0.5.1", default-features = false, features = ["plotters", "cargo_bench_support", "async_futures", "html_reports"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]

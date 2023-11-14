@@ -140,7 +140,11 @@ impl From<Unspecified> for AwsLcCryptoError {
 impl IntoAnyError for AwsLcCryptoError {}
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
+#[cfg_attr(all(target_arch = "wasm32", mls_build_async), maybe_async::must_be_async(?Send))]
+#[cfg_attr(
+    all(not(target_arch = "wasm32"), mls_build_async),
+    maybe_async::must_be_async
+)]
 impl CipherSuiteProvider for AwsLcCipherSuite {
     type Error = AwsLcCryptoError;
 
@@ -167,7 +171,7 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
         aad: Option<&[u8]>,
         nonce: &[u8],
     ) -> Result<Vec<u8>, Self::Error> {
-        self.aead.seal(key, data, aad, nonce)
+        self.aead.seal(key, data, aad, nonce).await
     }
 
     async fn aead_open(
@@ -177,7 +181,10 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
         aad: Option<&[u8]>,
         nonce: &[u8],
     ) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
-        self.aead.open(key, ciphertext, aad, nonce).map(Into::into)
+        self.aead
+            .open(key, ciphertext, aad, nonce)
+            .await
+            .map(Into::into)
     }
 
     fn aead_key_size(&self) -> usize {
@@ -193,7 +200,7 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
         salt: &[u8],
         ikm: &[u8],
     ) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
-        self.kdf.extract(salt, ikm).map(Into::into)
+        self.kdf.extract(salt, ikm).await.map(Into::into)
     }
 
     async fn kdf_expand(
@@ -202,7 +209,7 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
         info: &[u8],
         len: usize,
     ) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
-        self.kdf.expand(prk, info, len).map(Into::into)
+        self.kdf.expand(prk, info, len).await.map(Into::into)
     }
 
     fn kdf_extract_size(&self) -> usize {
@@ -243,6 +250,7 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
     ) -> Result<(Vec<u8>, Self::HpkeContextS), Self::Error> {
         self.hpke
             .setup_sender(remote_key, info, None)
+            .await
             .map_err(Into::into)
     }
 
@@ -256,15 +264,16 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
     ) -> Result<Self::HpkeContextR, Self::Error> {
         self.hpke
             .setup_receiver(kem_output, local_secret, local_public, info, None)
+            .await
             .map_err(Into::into)
     }
 
     async fn kem_derive(&self, ikm: &[u8]) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
-        self.hpke.derive(ikm).map_err(Into::into)
+        self.hpke.derive(ikm).await.map_err(Into::into)
     }
 
     async fn kem_generate(&self) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
-        self.hpke.generate().map_err(Into::into)
+        self.hpke.generate().await.map_err(Into::into)
     }
 
     fn kem_public_key_validate(&self, key: &HpkePublicKey) -> Result<(), Self::Error> {
@@ -351,7 +360,7 @@ fn check_non_null_const<T>(r: *const T) -> Result<*const T, AwsLcCryptoError> {
 #[cfg(not(mls_build_async))]
 #[test]
 fn mls_core_tests() {
-    mls_rs_core::crypto::test_suite::verify_tests(&AwsLcCryptoProvider);
+    mls_rs_core::crypto::test_suite::verify_tests(&AwsLcCryptoProvider, true);
 
     for cs in AwsLcCryptoProvider.supported_cipher_suites() {
         let mut hpke = AwsLcCryptoProvider.cipher_suite_provider(cs).unwrap().hpke;

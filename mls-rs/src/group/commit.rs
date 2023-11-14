@@ -1007,7 +1007,7 @@ mod tests {
     async fn test_commit_builder_reinit() {
         let mut group = test_commit_builder_group().await;
         let test_group_id = "foo".as_bytes().to_vec();
-        let test_cipher_suite = CipherSuite::CURVE25519_CHACHA;
+        let test_cipher_suite = TEST_CIPHER_SUITE;
         let test_protocol_version = TEST_PROTOCOL_VERSION;
         let mut test_ext = ExtensionList::default();
 

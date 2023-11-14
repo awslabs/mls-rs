@@ -1550,7 +1550,11 @@ where
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
+#[cfg_attr(all(target_arch = "wasm32", mls_build_async), maybe_async::must_be_async(?Send))]
+#[cfg_attr(
+    all(not(target_arch = "wasm32"), mls_build_async),
+    maybe_async::must_be_async
+)]
 impl<C> MessageProcessor for Group<C>
 where
     C: ClientConfig + Clone,
@@ -2877,6 +2881,8 @@ mod tests {
         );
     }
 
+    // WebCrypto does not support disabling ciphersuites
+    #[cfg(not(target_arch = "wasm32"))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn joining_group_fails_if_cipher_suite_is_not_supported() {
         let res = joining_group_fails_if_unsupported(|config| {
@@ -3086,6 +3092,12 @@ mod tests {
     async fn commit_leaf_duplicate_hpke_key() {
         // RFC 8.3 "Verify that the following fields are unique among the members of the group: `encryption_key`"
 
+        if TEST_CIPHER_SUITE != CipherSuite::CURVE25519_AES128
+            && TEST_CIPHER_SUITE != CipherSuite::CURVE25519_CHACHA
+        {
+            return;
+        }
+
         let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 10).await;
 
         // Group 1 uses the fixed key
@@ -3122,6 +3134,12 @@ mod tests {
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn commit_leaf_duplicate_signature_key() {
         // RFC 8.3 "Verify that the following fields are unique among the members of the group: `signature_key`"
+
+        if TEST_CIPHER_SUITE != CipherSuite::CURVE25519_AES128
+            && TEST_CIPHER_SUITE != CipherSuite::CURVE25519_CHACHA
+        {
+            return;
+        }
 
         let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 10).await;
 

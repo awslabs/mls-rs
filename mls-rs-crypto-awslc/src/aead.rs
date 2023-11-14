@@ -26,6 +26,12 @@ impl AwsLcAead {
     }
 }
 
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(all(target_arch = "wasm32", mls_build_async), maybe_async::must_be_async(?Send))]
+#[cfg_attr(
+    all(not(target_arch = "wasm32"), mls_build_async),
+    maybe_async::must_be_async
+)]
 impl mls_rs_crypto_traits::AeadType for AwsLcAead {
     type Error = AwsLcCryptoError;
 
@@ -33,11 +39,12 @@ impl mls_rs_crypto_traits::AeadType for AwsLcAead {
         self.0 as u16
     }
 
-    fn seal(
+    #[allow(clippy::needless_lifetimes)]
+    async fn seal<'a>(
         &self,
         key: &[u8],
         data: &[u8],
-        aad: Option<&[u8]>,
+        aad: Option<&'a [u8]>,
         nonce: &[u8],
     ) -> Result<Vec<u8>, Self::Error> {
         let mut in_out_buffer = data.to_vec();
@@ -54,11 +61,12 @@ impl mls_rs_crypto_traits::AeadType for AwsLcAead {
         Ok(in_out_buffer)
     }
 
-    fn open(
+    #[allow(clippy::needless_lifetimes)]
+    async fn open<'a>(
         &self,
         key: &[u8],
         ciphertext: &[u8],
-        aad: Option<&[u8]>,
+        aad: Option<&'a [u8]>,
         nonce: &[u8],
     ) -> Result<Vec<u8>, Self::Error> {
         let mut in_out_buffer = ciphertext.to_vec();

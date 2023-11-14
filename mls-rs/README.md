@@ -58,6 +58,7 @@ For cipher suite descriptions see the RFC documentation [here](https://www.rfc-e
 | OpenSSL     | 1-7           | Stable          |
 | AWS-LC      | 1,2,3,5,7     | Stable          |
 | Rust Crypto | 1,2,3         | ⚠️ Experimental |
+| Web Crypto  | ⚠️ Experimental 2,5,7 | Unsupported |
 
 ## Security Notice
 

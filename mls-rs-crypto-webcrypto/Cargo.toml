@@ -1,0 +1,29 @@
+[package]
+name = "mls-rs-crypto-webcrypto"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+mls-rs-core = { path = "../mls-rs-core", default-features = false, features = ["std"], version = "0.14.0" }
+mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", default-features = false, features = ["std"], version = "0.5.0" }
+mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", default-features = false, features = ["std"], version = "0.6.0" }
+thiserror = "1.0.40"
+zeroize = { version = "1", features = ["zeroize_derive"] }
+maybe-async = "0.2.7"
+async-trait = "0.1.74"
+js-sys = "0.3.64"
+wasm-bindgen = "0.2.87"
+wasm-bindgen-futures = "0.4.37"
+serde-wasm-bindgen = "0.6"
+serde = { version = "1.0", features = ["derive"] }
+der = { version = "0.7.8", features = ["alloc", "derive", "oid"] }
+web-sys = { version = "0.3.64", features = ["Window", "CryptoKey", "CryptoKeyPair", "SubtleCrypto", "Crypto", "HkdfParams", "HmacImportParams", "AesGcmParams", "EcKeyImportParams", "EcKeyGenParams", "EcdsaParams", "EcdhKeyDeriveParams"] }
+const-oid = { version = "0.9", features = ["db"] }
+
+[dev-dependencies]
+mls-rs-core = { path = "../mls-rs-core", version = "*", features = ["test_suite"] }
+wasm-bindgen-test = { version = "0.3.26", default-features = false }
+futures-test = "0.3.25"
+serde_json = "^1.0"
+hex = { version = "^0.4.3", features = ["serde"] }
+

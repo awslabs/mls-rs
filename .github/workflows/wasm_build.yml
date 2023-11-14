@@ -26,7 +26,7 @@ jobs:
     - name: WASM mls-rs-identity-x509
       working-directory: mls-rs-identity-x509
       run: wasm-pack test --headless --chrome --release
-    - name: WASM mls-rs-crypto-hpke
-      working-directory: mls-rs-crypto-hpke
+    - name: WASM mls-rs-crypto-webcrypto
+      working-directory: mls-rs-crypto-webcrypto
       run: wasm-pack test --headless --chrome --release
 

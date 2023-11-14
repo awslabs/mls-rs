@@ -22,20 +22,24 @@ impl<K: KdfType> HpkeKdf<K> {
     }
 
     /* draft-irtf-cfrg-hpke-09 section 4 Cryptographic Dependencies */
-    pub fn labeled_extract(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn labeled_extract(
         &self,
         salt: &[u8],
         label: &[u8],
         ikm: &[u8],
     ) -> Result<Vec<u8>, <K as KdfType>::Error> {
-        self.kdf.extract(
-            salt,
-            &[b"HPKE-v1" as &[u8], &self.suite_id, label, ikm].concat(),
-        )
+        self.kdf
+            .extract(
+                salt,
+                &[b"HPKE-v1" as &[u8], &self.suite_id, label, ikm].concat(),
+            )
+            .await
     }
 
     /* draft-irtf-cfrg-hpke-09 section 4 Cryptographic Dependencies */
-    pub fn labeled_expand(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn labeled_expand(
         &self,
         key: &[u8],
         label: &[u8],
@@ -51,17 +55,20 @@ impl<K: KdfType> HpkeKdf<K> {
         ]
         .concat();
 
-        self.kdf.expand(key, &labeled_info, len)
+        self.kdf.expand(key, &labeled_info, len).await
     }
 
     /* draft-irtf-cfrg-hpke-09 section 4.1 DH-Based KEM */
-    pub fn labeled_extract_then_expand(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn labeled_extract_then_expand(
         &self,
         ikm: &[u8],
         ctx: &[u8],
         len: usize,
     ) -> Result<Vec<u8>, <K as KdfType>::Error> {
-        let eae_prk = self.labeled_extract(&[], b"eae_prk", ikm)?;
+        let eae_prk = self.labeled_extract(&[], b"eae_prk", ikm).await?;
+
         self.labeled_expand(&eae_prk, b"shared_secret", ctx, len)
+            .await
     }
 }
