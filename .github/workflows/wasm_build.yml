@@ -19,7 +19,7 @@ jobs:
       run: wasm-pack test --headless --chrome --release --features browser
     - name: WASM mls-rs
       working-directory: mls-rs
-      run: wasm-pack test --headless --chrome --release --test '*' --features test_util
+      run: wasm-pack test --headless --chrome --release --lib --test '*' --features test_util
     - name: WASM mls-rs-core
       working-directory: mls-rs-core
       run: wasm-pack test --headless --chrome --release
