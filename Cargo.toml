@@ -10,6 +10,7 @@ members = [
     "mls-rs-crypto-openssl",
     "mls-rs-crypto-rustcrypto",
     "mls-rs-crypto-awslc",
+    "mls-rs-crypto-webcrypto",
     "mls-rs-crypto-hpke",
     "mls-rs-provider-sqlite",
     "mls-rs-codec",
@@ -25,6 +26,7 @@ default-members = [
     "mls-rs-crypto-openssl",
     "mls-rs-crypto-rustcrypto",
     "mls-rs-crypto-awslc",
+    "mls-rs-crypto-webcrypto",
     "mls-rs-provider-sqlite",
     "mls-rs-codec"
 ]

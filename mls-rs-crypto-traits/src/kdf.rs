@@ -9,15 +9,21 @@ use alloc::vec::Vec;
 use mls_rs_core::{crypto::CipherSuite, error::IntoAnyError};
 
 /// A trait that provides the required KDF functions
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(all(target_arch = "wasm32", mls_build_async), maybe_async::must_be_async(?Send))]
+#[cfg_attr(
+    all(not(target_arch = "wasm32"), mls_build_async),
+    maybe_async::must_be_async
+)]
 #[cfg_attr(feature = "mock", automock(type Error = crate::mock::TestError;))]
 pub trait KdfType: Send + Sync {
-    type Error: IntoAnyError;
+    type Error: IntoAnyError + Send + Sync;
 
     /// KDF Id, as specified in RFC 9180, Section 5.1 and Table 3.
     fn kdf_id(&self) -> u16;
 
-    fn expand(&self, prk: &[u8], info: &[u8], len: usize) -> Result<Vec<u8>, Self::Error>;
-    fn extract(&self, salt: &[u8], ikm: &[u8]) -> Result<Vec<u8>, Self::Error>;
+    async fn expand(&self, prk: &[u8], info: &[u8], len: usize) -> Result<Vec<u8>, Self::Error>;
+    async fn extract(&self, salt: &[u8], ikm: &[u8]) -> Result<Vec<u8>, Self::Error>;
     fn extract_size(&self) -> usize;
 }
 

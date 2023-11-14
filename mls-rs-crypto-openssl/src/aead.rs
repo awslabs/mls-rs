@@ -62,14 +62,17 @@ impl Aead {
     }
 }
 
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(mls_build_async, maybe_async::must_be_async(?Send))]
 impl AeadType for Aead {
     type Error = AeadError;
 
-    fn seal(
+    #[allow(clippy::needless_lifetimes)]
+    async fn seal<'a>(
         &self,
         key: &[u8],
         data: &[u8],
-        aad: Option<&[u8]>,
+        aad: Option<&'a [u8]>,
         nonce: &[u8],
     ) -> Result<Vec<u8>, AeadError> {
         (!data.is_empty())
@@ -85,11 +88,12 @@ impl AeadType for Aead {
         Ok([&ciphertext, &tag as &[u8]].concat())
     }
 
-    fn open(
+    #[allow(clippy::needless_lifetimes)]
+    async fn open<'a>(
         &self,
         key: &[u8],
         ciphertext: &[u8],
-        aad: Option<&[u8]>,
+        aad: Option<&'a [u8]>,
         nonce: &[u8],
     ) -> Result<Vec<u8>, AeadError> {
         (ciphertext.len() > AES_TAG_LEN)
@@ -116,7 +120,7 @@ impl AeadType for Aead {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(not(mls_build_async), test))]
 mod test {
     use mls_rs_core::crypto::CipherSuite;
     use mls_rs_crypto_traits::{AeadType, AES_TAG_LEN};

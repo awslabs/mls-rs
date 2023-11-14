@@ -126,6 +126,7 @@ pub(crate) mod test_utils {
     };
 
     #[cfg_attr(coverage_nightly, coverage(off))]
+    #[cfg(not(mls_build_async))]
     pub(crate) fn make_external_psk_id<P: CipherSuiteProvider>(
         cipher_suite_provider: &P,
     ) -> ExternalPskId {

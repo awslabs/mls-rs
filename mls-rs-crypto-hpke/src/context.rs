@@ -36,23 +36,29 @@ impl<KDF: KdfType, AEAD: AeadType> Context<KDF, AEAD> {
 }
 
 impl<KDF: KdfType, AEAD: AeadType> Context<KDF, AEAD> {
-    fn seal(&mut self, aad: Option<&[u8]>, data: &[u8]) -> Result<Vec<u8>, HpkeError> {
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn seal(&mut self, aad: Option<&[u8]>, data: &[u8]) -> Result<Vec<u8>, HpkeError> {
         self.encryption_context
             .as_mut()
             .ok_or(HpkeError::ExportOnlyMode)?
             .seal(aad, data)
+            .await
     }
 
-    fn open(&mut self, aad: Option<&[u8]>, ciphertext: &[u8]) -> Result<Vec<u8>, HpkeError> {
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn open(&mut self, aad: Option<&[u8]>, ciphertext: &[u8]) -> Result<Vec<u8>, HpkeError> {
         self.encryption_context
             .as_mut()
             .ok_or(HpkeError::ExportOnlyMode)?
             .open(aad, ciphertext)
+            .await
     }
 
-    fn export(&self, exporter_context: &[u8], len: usize) -> Result<Vec<u8>, HpkeError> {
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn export(&self, exporter_context: &[u8], len: usize) -> Result<Vec<u8>, HpkeError> {
         self.kdf
             .labeled_expand(&self.exporter_secret, b"sec", exporter_context, len)
+            .await
             .map_err(|e| HpkeError::KdfError(e.into_any_error()))
     }
 }
@@ -61,12 +67,12 @@ impl<KDF: KdfType, AEAD: AeadType> Context<KDF, AEAD> {
 pub struct ContextS<KDF: KdfType, AEAD: AeadType>(pub(super) Context<KDF, AEAD>);
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
+#[cfg_attr(mls_build_async, maybe_async::must_be_async(?Send))]
 impl<KDF: KdfType, AEAD: AeadType> HpkeContextS for ContextS<KDF, AEAD> {
     type Error = HpkeError;
 
     async fn export(&self, exporter_context: &[u8], len: usize) -> Result<Vec<u8>, Self::Error> {
-        self.0.export(exporter_context, len)
+        self.0.export(exporter_context, len).await
     }
 
     /// # Errors
@@ -75,7 +81,7 @@ impl<KDF: KdfType, AEAD: AeadType> HpkeContextS for ContextS<KDF, AEAD> {
     /// in the event that the sequence number overflows. The sequence number is a u64 and starts
     /// at 0.
     async fn seal(&mut self, aad: Option<&[u8]>, data: &[u8]) -> Result<Vec<u8>, Self::Error> {
-        self.0.seal(aad, data)
+        self.0.seal(aad, data).await
     }
 }
 
@@ -83,12 +89,12 @@ impl<KDF: KdfType, AEAD: AeadType> HpkeContextS for ContextS<KDF, AEAD> {
 pub struct ContextR<KDF: KdfType, AEAD: AeadType>(pub(super) Context<KDF, AEAD>);
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
+#[cfg_attr(mls_build_async, maybe_async::must_be_async(?Send))]
 impl<KDF: KdfType, AEAD: AeadType> HpkeContextR for ContextR<KDF, AEAD> {
     type Error = HpkeError;
 
     async fn export(&self, exporter_context: &[u8], len: usize) -> Result<Vec<u8>, Self::Error> {
-        self.0.export(exporter_context, len)
+        self.0.export(exporter_context, len).await
     }
 
     /// # Errors
@@ -104,7 +110,7 @@ impl<KDF: KdfType, AEAD: AeadType> HpkeContextR for ContextR<KDF, AEAD> {
         aad: Option<&[u8]>,
         ciphertext: &[u8],
     ) -> Result<Vec<u8>, Self::Error> {
-        self.0.open(aad, ciphertext)
+        self.0.open(aad, ciphertext).await
     }
 }
 
@@ -164,10 +170,12 @@ impl<AEAD: AeadType> EncryptionContext<AEAD> {
         Ok(())
     }
 
-    pub fn seal(&mut self, aad: Option<&[u8]>, pt: &[u8]) -> Result<Vec<u8>, HpkeError> {
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn seal(&mut self, aad: Option<&[u8]>, pt: &[u8]) -> Result<Vec<u8>, HpkeError> {
         let ct = self
             .aead
             .seal(&self.aead_key, pt, aad, &self.compute_nonce())
+            .await
             .map_err(|e| HpkeError::AeadError(e.into_any_error()))?;
 
         self.increment_seq()?;
@@ -175,10 +183,12 @@ impl<AEAD: AeadType> EncryptionContext<AEAD> {
         Ok(ct)
     }
 
-    pub fn open(&mut self, aad: Option<&[u8]>, ct: &[u8]) -> Result<Vec<u8>, HpkeError> {
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn open(&mut self, aad: Option<&[u8]>, ct: &[u8]) -> Result<Vec<u8>, HpkeError> {
         let pt = self
             .aead
             .open(&self.aead_key, ct, aad, &self.compute_nonce())
+            .await
             .map_err(|e| HpkeError::AeadError(e.into_any_error()))?;
 
         self.increment_seq()?;

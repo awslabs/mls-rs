@@ -57,10 +57,16 @@ impl Ecdh {
     }
 }
 
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(all(target_arch = "wasm32", mls_build_async), maybe_async::must_be_async(?Send))]
+#[cfg_attr(
+    all(not(target_arch = "wasm32"), mls_build_async),
+    maybe_async::must_be_async
+)]
 impl DhType for Ecdh {
     type Error = EcdhKemError;
 
-    fn dh(
+    async fn dh(
         &self,
         secret_key: &HpkeSecretKey,
         public_key: &HpkePublicKey,
@@ -71,11 +77,11 @@ impl DhType for Ecdh {
         )?)
     }
 
-    fn to_public(&self, secret_key: &HpkeSecretKey) -> Result<HpkePublicKey, Self::Error> {
+    async fn to_public(&self, secret_key: &HpkeSecretKey) -> Result<HpkePublicKey, Self::Error> {
         Ok(private_key_bytes_to_public(secret_key, self.0)?.into())
     }
 
-    fn generate(&self) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
+    async fn generate(&self) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
         let key_pair = generate_keypair(self.0)?;
         Ok((key_pair.secret.into(), key_pair.public.into()))
     }
@@ -99,7 +105,7 @@ impl Ecdh {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(mls_build_async)))]
 mod test {
     use mls_rs_core::crypto::{CipherSuite, HpkePublicKey, HpkeSecretKey};
     use mls_rs_crypto_traits::DhType;

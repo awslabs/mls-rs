@@ -176,7 +176,7 @@ where
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
+#[cfg_attr(mls_build_async, maybe_async::must_be_async(?Send))]
 impl<KEM, KDF, AEAD> CipherSuiteProvider for OpensslCipherSuite<KEM, KDF, AEAD>
 where
     KEM: KemType + Clone + Send + Sync,
@@ -205,6 +205,7 @@ where
     ) -> Result<Vec<u8>, Self::Error> {
         self.aead
             .seal(key, data, aad, nonce)
+            .await
             .map_err(|e| OpensslCryptoError::AeadError(e.into_any_error()))
     }
 
@@ -217,6 +218,7 @@ where
     ) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
         self.aead
             .open(key, cipher_text, aad, nonce)
+            .await
             .map_err(|e| OpensslCryptoError::AeadError(e.into_any_error()))
             .map(Zeroizing::new)
     }
@@ -237,6 +239,7 @@ where
     ) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
         self.kdf
             .expand(prk, info, len)
+            .await
             .map_err(|e| OpensslCryptoError::KdfError(e.into_any_error()))
             .map(Zeroizing::new)
     }
@@ -248,6 +251,7 @@ where
     ) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
         self.kdf
             .extract(salt, ikm)
+            .await
             .map_err(|e| OpensslCryptoError::KdfError(e.into_any_error()))
             .map(Zeroizing::new)
     }
@@ -289,7 +293,8 @@ where
     ) -> Result<Self::HpkeContextR, Self::Error> {
         Ok(self
             .hpke
-            .setup_receiver(enc, local_secret, local_public, info, None)?)
+            .setup_receiver(enc, local_secret, local_public, info, None)
+            .await?)
     }
 
     async fn hpke_setup_s(
@@ -297,15 +302,15 @@ where
         remote_key: &HpkePublicKey,
         info: &[u8],
     ) -> Result<(Vec<u8>, Self::HpkeContextS), Self::Error> {
-        Ok(self.hpke.setup_sender(remote_key, info, None)?)
+        Ok(self.hpke.setup_sender(remote_key, info, None).await?)
     }
 
     async fn kem_derive(&self, ikm: &[u8]) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
-        Ok(self.hpke.derive(ikm)?)
+        Ok(self.hpke.derive(ikm).await?)
     }
 
     async fn kem_generate(&self) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
-        Ok(self.hpke.generate()?)
+        Ok(self.hpke.generate().await?)
     }
 
     fn kem_public_key_validate(&self, key: &HpkePublicKey) -> Result<(), Self::Error> {
@@ -358,7 +363,7 @@ fn mls_core_tests() {
     // mls_rs_core::crypto::test_suite::generate_tests(&OpensslCryptoProvider::new());
     let provider = OpensslCryptoProvider::new();
 
-    mls_rs_core::crypto::test_suite::verify_tests(&provider);
+    mls_rs_core::crypto::test_suite::verify_tests(&provider, true);
 
     for cs in OpensslCryptoProvider::all_supported_cipher_suites() {
         let mut hpke = provider.cipher_suite_provider(cs).unwrap().hpke;

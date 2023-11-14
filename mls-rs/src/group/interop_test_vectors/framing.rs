@@ -148,11 +148,16 @@ async fn framing_proposal() {
             continue;
         };
 
-        let mut to_check = vec![
+        let to_check = vec![
             test_case.proposal_priv.clone(),
             test_case.proposal_pub.clone(),
         ];
 
+        // Wasm uses incompatible signature secret key format
+        #[cfg(not(target_arch = "wasm32"))]
+        let mut to_check = to_check;
+
+        #[cfg(not(target_arch = "wasm32"))]
         for enable_encryption in [true, false] {
             let proposal = Proposal::mls_decode(&mut &*test_case.proposal).unwrap();
 
@@ -180,6 +185,8 @@ async fn framing_proposal() {
 
 // The test vector can be found here:
 // https://github.com/mlswg/mls-implementations/blob/main/test-vectors/message-protection.json
+// Wasm uses incompatible signature secret key format
+#[cfg(not(target_arch = "wasm32"))]
 #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
 async fn framing_application() {
     #[cfg(not(mls_build_async))]
@@ -231,39 +238,47 @@ async fn framing_commit() {
 
         let commit = Commit::mls_decode(&mut &*test_case.commit).unwrap();
 
-        let mut signature_priv = test_case.signature_priv.clone();
+        let to_check = vec![test_case.commit_priv.clone(), test_case.commit_pub.clone()];
 
-        if is_edwards(test_case.context.cipher_suite) {
-            signature_priv.extend(test_case.signature_pub.iter());
-        }
+        // Wasm uses incompatible signature secret key format
+        #[cfg(not(target_arch = "wasm32"))]
+        let to_check = {
+            let mut to_check = to_check;
 
-        let mut auth_content = AuthenticatedContent::new_signed(
-            &cs,
-            &test_case.context.clone().into(),
-            Sender::Member(1),
-            Content::Commit(alloc::boxed::Box::new(commit.clone())),
-            &signature_priv.into(),
-            WireFormat::PublicMessage,
-            vec![],
-        )
-        .await
-        .unwrap();
+            let mut signature_priv = test_case.signature_priv.clone();
 
-        auth_content.auth.confirmation_tag = Some(ConfirmationTag::empty(&cs).await);
+            if is_edwards(test_case.context.cipher_suite) {
+                signature_priv.extend(test_case.signature_pub.iter());
+            }
 
-        let mut to_check = vec![test_case.commit_priv.clone(), test_case.commit_pub.clone()];
+            let mut auth_content = AuthenticatedContent::new_signed(
+                &cs,
+                &test_case.context.clone().into(),
+                Sender::Member(1),
+                Content::Commit(alloc::boxed::Box::new(commit.clone())),
+                &signature_priv.into(),
+                WireFormat::PublicMessage,
+                vec![],
+            )
+            .await
+            .unwrap();
 
-        for enable_encryption in [true, false] {
-            let built = make_group(&test_case, true, enable_encryption, &cs)
-                .await
-                .format_for_wire(auth_content.clone())
-                .await
-                .unwrap()
-                .mls_encode_to_vec()
-                .unwrap();
+            auth_content.auth.confirmation_tag = Some(ConfirmationTag::empty(&cs).await);
 
-            to_check.push(built);
-        }
+            for enable_encryption in [true, false] {
+                let built = make_group(&test_case, true, enable_encryption, &cs)
+                    .await
+                    .format_for_wire(auth_content.clone())
+                    .await
+                    .unwrap()
+                    .mls_encode_to_vec()
+                    .unwrap();
+
+                to_check.push(built);
+            }
+
+            to_check
+        };
 
         for message in to_check {
             match process_message(&test_case, &message, &cs).await {

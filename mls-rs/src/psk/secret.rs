@@ -107,15 +107,15 @@ mod tests {
     use crate::{
         crypto::test_utils::try_test_cipher_suite_provider,
         psk::ExternalPskId,
-        psk::{
-            test_utils::{make_external_psk_id, make_nonce},
-            JustPreSharedKeyID, PreSharedKeyID, PskNonce,
-        },
+        psk::{test_utils::make_nonce, JustPreSharedKeyID, PreSharedKeyID, PskNonce},
         CipherSuiteProvider,
     };
 
     #[cfg(not(mls_build_async))]
-    use crate::{crypto::test_utils::test_cipher_suite_provider, CipherSuite};
+    use crate::{
+        crypto::test_utils::test_cipher_suite_provider, psk::test_utils::make_external_psk_id,
+        CipherSuite,
+    };
 
     use super::{PskSecret, PskSecretInput};
 
@@ -153,6 +153,7 @@ mod tests {
 
     impl TestScenario {
         #[cfg_attr(coverage_nightly, coverage(off))]
+        #[cfg(not(mls_build_async))]
         fn make_psk_list<CS: CipherSuiteProvider>(cs: &CS, n: usize) -> Vec<PskInfo> {
             iter::repeat_with(
                 #[cfg_attr(coverage_nightly, coverage(off))]

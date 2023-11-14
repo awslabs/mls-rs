@@ -6,10 +6,11 @@ use alloc::boxed::Box;
 use alloc::vec;
 use alloc::vec::Vec;
 use mls_rs_codec::{MlsDecode, MlsEncode};
+use mls_rs_core::crypto::CipherSuite;
 
 use crate::{
     client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
-    crypto::test_utils::test_cipher_suite_provider,
+    crypto::test_utils::{test_cipher_suite_provider, try_test_cipher_suite_provider},
     group::{
         proposal::{AddProposal, Proposal, ProposalOrRef, RemoveProposal, UpdateProposal},
         proposal_cache::test_utils::CommitReceiver,
@@ -94,6 +95,12 @@ async fn generate_tree_mods_tests() -> Vec<TreeModsTestCase> {
 #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
 async fn tree_modifications_interop() {
     // The test vector can be found here https://github.com/mlswg/mls-implementations/blob/main/test-vectors/tree-operations.json
+
+    // All test vectors use cipher suite 1
+    if try_test_cipher_suite_provider(*CipherSuite::CURVE25519_AES128).is_none() {
+        return;
+    }
+
     #[cfg(not(mls_build_async))]
     let test_cases: Vec<TreeModsTestCase> =
         load_test_case_json!(tree_modifications_interop, generate_tree_mods_tests());
@@ -129,7 +136,7 @@ async fn apply_proposal(
     sender: u32,
     tree_before: &TreeKemPublic,
 ) -> TreeKemPublic {
-    let cs = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+    let cs = test_cipher_suite_provider(CipherSuite::CURVE25519_AES128);
     let p_ref = ProposalRef::new_fake(b"fake ref".to_vec());
 
     CommitReceiver::new(tree_before, Sender::Member(0), LeafIndex(1), cs)

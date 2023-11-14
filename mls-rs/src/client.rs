@@ -713,7 +713,7 @@ pub(crate) mod test_utils {
     pub use crate::client_builder::test_utils::{TestClientBuilder, TestClientConfig};
 
     pub const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::MLS_10;
-    pub const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::CURVE25519_AES128;
+    pub const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::P256_AES128;
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn test_client_with_key_pkg(

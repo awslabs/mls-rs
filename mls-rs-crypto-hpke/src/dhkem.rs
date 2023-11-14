@@ -62,6 +62,8 @@ impl<DH: DhType, KDF: KdfType> DhKem<DH, KDF> {
     }
 }
 
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(mls_build_async, maybe_async::must_be_async(?Send))]
 impl<DH: DhType, KDF: KdfType> KemType for DhKem<DH, KDF> {
     type Error = DhKemError;
 
@@ -69,36 +71,39 @@ impl<DH: DhType, KDF: KdfType> KemType for DhKem<DH, KDF> {
         self.kem_id
     }
 
-    fn derive(&self, ikm: &[u8]) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
+    async fn derive(&self, ikm: &[u8]) -> Result<(HpkeSecretKey, HpkePublicKey), DhKemError> {
         let dkp_prk = self
             .kdf
             .labeled_extract(&[], b"dkp_prk", ikm)
+            .await
             .map_err(|e| DhKemError::KdfError(e.into_any_error()))?;
 
         if let Some(bitmask) = self.dh.bitmask_for_rejection_sampling() {
-            self.derive_with_rejection_sampling(&dkp_prk, bitmask)
+            self.derive_with_rejection_sampling(&dkp_prk, bitmask).await
         } else {
-            self.derive_without_rejection_sampling(&dkp_prk)
+            self.derive_without_rejection_sampling(&dkp_prk).await
         }
     }
 
-    fn generate(&self) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
+    async fn generate(&self) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
         #[cfg(feature = "test_utils")]
         if !self.test_key_data.is_empty() {
-            return self.derive(&self.test_key_data);
+            return self.derive(&self.test_key_data).await;
         }
 
         self.dh
             .generate()
+            .await
             .map_err(|e| DhKemError::DhError(e.into_any_error()))
     }
 
-    fn encap(&self, remote_pk: &HpkePublicKey) -> Result<KemResult, Self::Error> {
-        let (ephemeral_sk, ephemeral_pk) = self.generate()?;
+    async fn encap(&self, remote_pk: &HpkePublicKey) -> Result<KemResult, Self::Error> {
+        let (ephemeral_sk, ephemeral_pk) = self.generate().await?;
 
         let ecdh_ss = self
             .dh
             .dh(&ephemeral_sk, remote_pk)
+            .await
             .map(Zeroizing::new)
             .map_err(|e| DhKemError::DhError(e.into_any_error()))?;
 
@@ -107,12 +112,13 @@ impl<DH: DhType, KDF: KdfType> KemType for DhKem<DH, KDF> {
         let shared_secret = self
             .kdf
             .labeled_extract_then_expand(&ecdh_ss, &kem_context, self.n_secret)
+            .await
             .map_err(|e| DhKemError::KdfError(e.into_any_error()))?;
 
         Ok(KemResult::new(shared_secret, ephemeral_pk.into()))
     }
 
-    fn decap(
+    async fn decap(
         &self,
         enc: &[u8],
         secret_key: &HpkeSecretKey,
@@ -123,6 +129,7 @@ impl<DH: DhType, KDF: KdfType> KemType for DhKem<DH, KDF> {
         let ecdh_ss = self
             .dh
             .dh(secret_key, &remote_pk)
+            .await
             .map(Zeroizing::new)
             .map_err(|e| DhKemError::DhError(e.into_any_error()))?;
 
@@ -130,6 +137,7 @@ impl<DH: DhType, KDF: KdfType> KemType for DhKem<DH, KDF> {
 
         self.kdf
             .labeled_extract_then_expand(&ecdh_ss, &kem_context, self.n_secret)
+            .await
             .map_err(|e| DhKemError::KdfError(e.into_any_error()))
     }
 
@@ -141,7 +149,8 @@ impl<DH: DhType, KDF: KdfType> KemType for DhKem<DH, KDF> {
 }
 
 impl<DH: DhType, KDF: KdfType> DhKem<DH, KDF> {
-    fn derive_with_rejection_sampling(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn derive_with_rejection_sampling(
         &self,
         dkp_prk: &[u8],
         bitmask: u8,
@@ -151,13 +160,19 @@ impl<DH: DhType, KDF: KdfType> DhKem<DH, KDF> {
             let mut secret_key = self
                 .kdf
                 .labeled_expand(dkp_prk, b"candidate", &[i], self.dh.secret_key_size())
+                .await
                 .map_err(|e| DhKemError::KdfError(e.into_any_error()))?;
 
             secret_key[0] &= bitmask;
             let secret_key = secret_key.into();
 
             // Compute the public key and if it succeeds, return the key pair
-            if let Ok(pair) = self.dh.to_public(&secret_key).map(|pk| (secret_key, pk)) {
+            if let Ok(pair) = self
+                .dh
+                .to_public(&secret_key)
+                .await
+                .map(|pk| (secret_key, pk))
+            {
                 return Ok(pair);
             }
         }
@@ -166,19 +181,22 @@ impl<DH: DhType, KDF: KdfType> DhKem<DH, KDF> {
         Err(DhKemError::KeyDerivationError)
     }
 
-    fn derive_without_rejection_sampling(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn derive_without_rejection_sampling(
         &self,
         dkp_prk: &[u8],
     ) -> Result<(HpkeSecretKey, HpkePublicKey), DhKemError> {
         let sk = self
             .kdf
             .labeled_expand(dkp_prk, b"sk", &[], self.dh.secret_key_size())
+            .await
             .map_err(|e| DhKemError::KdfError(e.into_any_error()))?
             .into();
 
         let pk = self
             .dh
             .to_public(&sk)
+            .await
             .map_err(|e| DhKemError::DhError(e.into_any_error()))?;
 
         Ok((sk, pk))

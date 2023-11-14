@@ -143,69 +143,42 @@ pub(crate) mod test_utils {
         identity::basic::BasicIdentityProvider,
         identity::test_utils::get_test_signing_identity,
         tree_kem::{leaf_node::test_utils::get_test_capabilities, Lifetime},
-        CipherSuiteProvider, MlsMessage,
+        MlsMessage,
     };
 
     #[cfg(mls_build_async)]
     use futures::FutureExt;
+    use mls_rs_core::crypto::SignatureSecretKey;
 
-    #[cfg(mls_build_async)]
-    pub(crate) async fn test_key_package_custom<F, CSP>(
-        cipher_suite_provider: &CSP,
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub(crate) async fn test_key_package(
         protocol_version: ProtocolVersion,
+        cipher_suite: CipherSuite,
         id: &str,
-        custom: F,
-    ) -> KeyPackage
-    where
-        CSP: CipherSuiteProvider,
-        F: FnOnce(
-            KeyPackageGenerator<'_, BasicIdentityProvider, CSP>,
-        ) -> futures::future::BoxFuture<'_, KeyPackageGeneration>,
-    {
-        let (signing_identity, secret_key) =
-            get_test_signing_identity(cipher_suite_provider.cipher_suite(), id.as_bytes()).await;
-
-        let generator = KeyPackageGenerator {
-            protocol_version,
-            cipher_suite_provider,
-            signing_identity: &signing_identity,
-            signing_key: &secret_key,
-            identity_provider: &BasicIdentityProvider,
-        };
-
-        custom(generator).await.key_package
-    }
-
-    #[cfg(not(mls_build_async))]
-    pub(crate) fn test_key_package_custom<F, CSP>(
-        cipher_suite_provider: &CSP,
-        protocol_version: ProtocolVersion,
-        id: &str,
-        custom: F,
-    ) -> KeyPackage
-    where
-        CSP: CipherSuiteProvider,
-        F: FnOnce(KeyPackageGenerator<'_, BasicIdentityProvider, CSP>) -> KeyPackageGeneration,
-    {
-        let (signing_identity, secret_key) =
-            get_test_signing_identity(cipher_suite_provider.cipher_suite(), id.as_bytes());
-
-        let generator = KeyPackageGenerator {
-            protocol_version,
-            cipher_suite_provider,
-            signing_identity: &signing_identity,
-            signing_key: &secret_key,
-            identity_provider: &BasicIdentityProvider,
-        };
-
-        custom(generator).key_package
+    ) -> KeyPackage {
+        test_key_package_with_signer(protocol_version, cipher_suite, id)
+            .await
+            .0
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub(crate) async fn default_key_package<CSP: CipherSuiteProvider>(
-        generator: KeyPackageGenerator<'_, BasicIdentityProvider, CSP>,
-    ) -> KeyPackageGeneration {
-        generator
+    pub(crate) async fn test_key_package_with_signer(
+        protocol_version: ProtocolVersion,
+        cipher_suite: CipherSuite,
+        id: &str,
+    ) -> (KeyPackage, SignatureSecretKey) {
+        let (signing_identity, secret_key) =
+            get_test_signing_identity(cipher_suite, id.as_bytes()).await;
+
+        let generator = KeyPackageGenerator {
+            protocol_version,
+            cipher_suite_provider: &test_cipher_suite_provider(cipher_suite),
+            signing_identity: &signing_identity,
+            signing_key: &secret_key,
+            identity_provider: &BasicIdentityProvider,
+        };
+
+        let key_package = generator
             .generate(
                 Lifetime::years(1).unwrap(),
                 get_test_capabilities(),
@@ -214,35 +187,9 @@ pub(crate) mod test_utils {
             )
             .await
             .unwrap()
-    }
+            .key_package;
 
-    #[cfg(mls_build_async)]
-    pub(crate) async fn test_key_package(
-        protocol_version: ProtocolVersion,
-        cipher_suite: CipherSuite,
-        id: &str,
-    ) -> KeyPackage {
-        test_key_package_custom(
-            &test_cipher_suite_provider(cipher_suite),
-            protocol_version,
-            id,
-            |generator| async move { default_key_package(generator).await }.boxed(),
-        )
-        .await
-    }
-
-    #[cfg(not(mls_build_async))]
-    pub(crate) fn test_key_package(
-        protocol_version: ProtocolVersion,
-        cipher_suite: CipherSuite,
-        id: &str,
-    ) -> KeyPackage {
-        test_key_package_custom(
-            &test_cipher_suite_provider(cipher_suite),
-            protocol_version,
-            id,
-            default_key_package,
-        )
+        (key_package, secret_key)
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -343,10 +290,12 @@ mod tests {
     async fn key_package_ref_fails_invalid_cipher_suite() {
         let key_package = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "test").await;
 
-        let res = key_package
-            .to_reference(&test_cipher_suite_provider(CipherSuite::P256_AES128))
-            .await;
+        for another_cipher_suite in CipherSuite::all().filter(|cs| cs != &TEST_CIPHER_SUITE) {
+            if let Some(cs) = try_test_cipher_suite_provider(*another_cipher_suite) {
+                let res = key_package.to_reference(&cs).await;
 
-        assert_matches!(res, Err(MlsError::CipherSuiteMismatch))
+                assert_matches!(res, Err(MlsError::CipherSuiteMismatch));
+            }
+        }
     }
 }

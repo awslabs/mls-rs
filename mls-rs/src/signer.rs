@@ -27,7 +27,11 @@ impl SignContent {
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
+#[cfg_attr(all(target_arch = "wasm32", mls_build_async), maybe_async::must_be_async(?Send))]
+#[cfg_attr(
+    all(not(target_arch = "wasm32"), mls_build_async),
+    maybe_async::must_be_async
+)]
 pub(crate) trait Signable<'a> {
     const SIGN_LABEL: &'static str;
 
@@ -174,9 +178,6 @@ mod tests {
     use alloc::vec;
     use assert_matches::assert_matches;
 
-    #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen_test::wasm_bindgen_test as test;
-
     #[derive(Debug, serde::Serialize, serde::Deserialize)]
     struct TestCase {
         cipher_suite: u16,
@@ -248,27 +249,32 @@ mod tests {
                 continue;
             };
 
-            let signature_key = SignatureSecretKey::from(one_case.signer);
             let public_key = SignaturePublicKey::from(one_case.public);
 
-            // Test signature generation
-            let mut test_signable = TestSignable {
-                content: one_case.content.clone(),
-                signature: Vec::new(),
-            };
+            // Wasm uses incompatible signature secret key format
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                // Test signature generation
+                let mut test_signable = TestSignable {
+                    content: one_case.content.clone(),
+                    signature: Vec::new(),
+                };
 
-            test_signable
-                .sign(&cipher_suite_provider, &signature_key, &one_case.context)
-                .await
-                .unwrap();
+                let signature_key = SignatureSecretKey::from(one_case.signer);
 
-            test_signable
-                .verify(&cipher_suite_provider, &public_key, &one_case.context)
-                .await
-                .unwrap();
+                test_signable
+                    .sign(&cipher_suite_provider, &signature_key, &one_case.context)
+                    .await
+                    .unwrap();
+
+                test_signable
+                    .verify(&cipher_suite_provider, &public_key, &one_case.context)
+                    .await
+                    .unwrap();
+            }
 
             // Test verifying an existing signature
-            test_signable = TestSignable {
+            let test_signable = TestSignable {
                 content: one_case.content,
                 signature: one_case.signature,
             };

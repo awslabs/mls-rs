@@ -602,7 +602,7 @@ mod tests {
     use super::{
         proposal_ref::test_utils::auth_content_from_proposal, test_utils::make_proposal_cache,
     };
-    use crate::key_package::KeyPackageGeneration;
+    use crate::key_package::test_utils::test_key_package_with_signer;
     use crate::tree_kem::leaf_node::test_utils::{
         get_basic_test_node_capabilities, get_test_capabilities,
     };
@@ -618,10 +618,7 @@ mod tests {
         },
         identity::basic::BasicIdentityProvider,
         identity::test_utils::{get_test_signing_identity, BasicWithCustomProvider},
-        key_package::{
-            test_utils::{test_key_package, test_key_package_custom},
-            KeyPackageGenerator,
-        },
+        key_package::{test_utils::test_key_package, KeyPackageGenerator},
         psk::AlwaysFoundPskStorage,
         tree_kem::{
             leaf_node::{
@@ -1959,29 +1956,19 @@ mod tests {
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub(crate) async fn modify_key_package<CSP: CipherSuiteProvider>(
-        provider: &CSP,
-        gen: KeyPackageGenerator<'_, BasicIdentityProvider, CSP>,
-        key: crypto::HpkePublicKey,
-    ) -> KeyPackageGeneration {
-        let mut key_package_gen = gen
-            .generate(
-                Lifetime::years(1).unwrap(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-            )
-            .await
-            .unwrap();
+    async fn key_package_with_public_key(key: crypto::HpkePublicKey) -> KeyPackage {
+        let cs = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
-        key_package_gen.key_package.leaf_node.public_key = key;
+        let (mut key_package, signer) =
+            test_key_package_with_signer(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "test").await;
 
-        key_package_gen
-            .key_package
+        key_package.leaf_node.public_key = key;
+
+        key_package
             .leaf_node
             .sign(
-                provider,
-                gen.signing_key,
+                &cs,
+                &signer,
                 &LeafNodeSigningContext {
                     group_id: None,
                     leaf_index: None,
@@ -1990,38 +1977,9 @@ mod tests {
             .await
             .unwrap();
 
-        key_package_gen
-            .key_package
-            .sign(provider, gen.signing_key, &())
-            .await
-            .unwrap();
+        key_package.sign(&cs, &signer, &()).await.unwrap();
 
-        key_package_gen
-    }
-
-    #[cfg(mls_build_async)]
-    async fn key_package_with_public_key(key: crypto::HpkePublicKey) -> KeyPackage {
-        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
-
-        test_key_package_custom(
-            &cipher_suite_provider.clone(),
-            TEST_PROTOCOL_VERSION,
-            "test",
-            |gen| async move { modify_key_package(&cipher_suite_provider, gen, key).await }.boxed(),
-        )
-        .await
-    }
-
-    #[cfg(not(mls_build_async))]
-    fn key_package_with_public_key(key: crypto::HpkePublicKey) -> KeyPackage {
-        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
-
-        test_key_package_custom(
-            &cipher_suite_provider,
-            TEST_PROTOCOL_VERSION,
-            "test",
-            |gen| modify_key_package(&cipher_suite_provider, gen, key),
-        )
+        key_package
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]

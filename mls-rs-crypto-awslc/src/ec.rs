@@ -32,10 +32,12 @@ impl Ecdh {
     }
 }
 
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(mls_build_async, maybe_async::must_be_async(?Send))]
 impl mls_rs_crypto_traits::DhType for Ecdh {
     type Error = AwsLcCryptoError;
 
-    fn dh(
+    async fn dh(
         &self,
         secret_key: &HpkeSecretKey,
         public_key: &HpkePublicKey,
@@ -47,7 +49,7 @@ impl mls_rs_crypto_traits::DhType for Ecdh {
         }
     }
 
-    fn generate(&self) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
+    async fn generate(&self) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
         let (secret, public) = if self.0 == Curve::X25519 {
             x25519_generate()
         } else {
@@ -57,7 +59,7 @@ impl mls_rs_crypto_traits::DhType for Ecdh {
         Ok((secret.into(), public.into()))
     }
 
-    fn to_public(&self, secret_key: &HpkeSecretKey) -> Result<HpkePublicKey, Self::Error> {
+    async fn to_public(&self, secret_key: &HpkeSecretKey) -> Result<HpkePublicKey, Self::Error> {
         let public = if self.0 == Curve::X25519 {
             x25519_public_key(secret_key)
         } else {
