@@ -9,6 +9,7 @@ keywords = ["crypto", "cryptography", "security", "mls", "e2ee"]
 categories = ["no-std", "cryptography"]
 license = "Apache-2.0 OR MIT"
 rust-version = "1.68.2"
+exclude = ["test_data"]
 
 [package.metadata.docs.rs]
 features = ["external_client", "sqlite"]

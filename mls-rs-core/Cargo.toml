@@ -7,6 +7,7 @@ homepage = "https://github.com/awslabs/mls-rs"
 repository = "https://github.com/awslabs/mls-rs"
 keywords = ["mls", "mls-rs"]
 license = "Apache-2.0 OR MIT"
+exclude = ["test_data"]
 
 
 [features]
