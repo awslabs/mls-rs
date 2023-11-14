@@ -176,7 +176,11 @@ where
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-#[cfg_attr(mls_build_async, maybe_async::must_be_async(?Send))]
+#[cfg_attr(all(target_arch = "wasm32", mls_build_async), maybe_async::must_be_async(?Send))]
+#[cfg_attr(
+    all(not(target_arch = "wasm32"), mls_build_async),
+    maybe_async::must_be_async
+)]
 impl<KEM, KDF, AEAD> CipherSuiteProvider for OpensslCipherSuite<KEM, KDF, AEAD>
 where
     KEM: KemType + Clone + Send + Sync,

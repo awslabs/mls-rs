@@ -67,7 +67,11 @@ impl<KDF: KdfType, AEAD: AeadType> Context<KDF, AEAD> {
 pub struct ContextS<KDF: KdfType, AEAD: AeadType>(pub(super) Context<KDF, AEAD>);
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-#[cfg_attr(mls_build_async, maybe_async::must_be_async(?Send))]
+#[cfg_attr(all(target_arch = "wasm32", mls_build_async), maybe_async::must_be_async(?Send))]
+#[cfg_attr(
+    all(not(target_arch = "wasm32"), mls_build_async),
+    maybe_async::must_be_async
+)]
 impl<KDF: KdfType, AEAD: AeadType> HpkeContextS for ContextS<KDF, AEAD> {
     type Error = HpkeError;
 
@@ -89,7 +93,11 @@ impl<KDF: KdfType, AEAD: AeadType> HpkeContextS for ContextS<KDF, AEAD> {
 pub struct ContextR<KDF: KdfType, AEAD: AeadType>(pub(super) Context<KDF, AEAD>);
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-#[cfg_attr(mls_build_async, maybe_async::must_be_async(?Send))]
+#[cfg_attr(all(target_arch = "wasm32", mls_build_async), maybe_async::must_be_async(?Send))]
+#[cfg_attr(
+    all(not(target_arch = "wasm32"), mls_build_async),
+    maybe_async::must_be_async
+)]
 impl<KDF: KdfType, AEAD: AeadType> HpkeContextR for ContextR<KDF, AEAD> {
     type Error = HpkeError;
 
