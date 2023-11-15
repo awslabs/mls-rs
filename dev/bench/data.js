@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1700015521144,
+  "lastUpdate": 1700073173045,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -2807,6 +2807,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 172315,
             "range": "± 6006",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "94983192+stefunctional@users.noreply.github.com",
+            "name": "Stephane Raux",
+            "username": "stefunctional"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ff00bc48a0459fba3ebf6833fab6a50fd89e69d5",
+          "message": "Conditionally compile getters for public fields (#38)\n\n* Conditionally compile getters for public fields\r\n\r\nThey only exist for FFI purposes.\r\n\r\nResolves #28\r\n\r\n* Make fields of MemberUpdate public\r\n\r\n* Fix CI",
+          "timestamp": "2023-11-15T13:28:27-05:00",
+          "tree_id": "dfeca71bf01659977326255e7a06e714473ab214",
+          "url": "https://github.com/awslabs/mls-rs/commit/ff00bc48a0459fba3ebf6833fab6a50fd89e69d5"
+        },
+        "date": 1700073172440,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 511497,
+            "range": "± 6007",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 517892,
+            "range": "± 9211",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 571518,
+            "range": "± 26816",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1182740,
+            "range": "± 26857",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7178731,
+            "range": "± 37177",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1103537,
+            "range": "± 41163",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1202695,
+            "range": "± 45012",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1327089,
+            "range": "± 46994",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 723456,
+            "range": "± 80411",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 776674,
+            "range": "± 3933",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 834572,
+            "range": "± 12884",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 27932,
+            "range": "± 281",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 91571,
+            "range": "± 1790",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 177383,
+            "range": "± 4334",
             "unit": "ns/iter"
           }
         ]
