@@ -33,26 +33,31 @@ pub struct Capabilities {
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl Capabilities {
     /// Supported protocol versions
+    #[cfg(feature = "ffi")]
     pub fn protocol_versions(&self) -> &[ProtocolVersion] {
         &self.protocol_versions
     }
 
     /// Supported ciphersuites
+    #[cfg(feature = "ffi")]
     pub fn cipher_suites(&self) -> &[CipherSuite] {
         &self.cipher_suites
     }
 
     /// Supported extensions
+    #[cfg(feature = "ffi")]
     pub fn extensions(&self) -> &[ExtensionType] {
         &self.extensions
     }
 
     /// Supported proposals
+    #[cfg(feature = "ffi")]
     pub fn proposals(&self) -> &[ProposalType] {
         &self.proposals
     }
 
     /// Supported credentials
+    #[cfg(feature = "ffi")]
     pub fn credentials(&self) -> &[CredentialType] {
         &self.credentials
     }
@@ -127,12 +132,17 @@ impl Member {
 
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
+#[cfg_attr(
+    all(feature = "ffi", not(test)),
+    safer_ffi_gen::ffi_type(clone, opaque)
+)]
 /// Update of a member due to a commit.
 pub struct MemberUpdate {
-    pub(crate) prior: Member,
-    pub(crate) new: Member,
+    pub prior: Member,
+    pub new: Member,
 }
 
+#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl MemberUpdate {
     /// Create a new member update.
     pub fn new(prior: Member, new: Member) -> MemberUpdate {
@@ -145,11 +155,13 @@ impl MemberUpdate {
     }
 
     /// Member state before the update.
+    #[cfg(feature = "ffi")]
     pub fn before_update(&self) -> &Member {
         &self.prior
     }
 
     /// Member state after the update.
+    #[cfg(feature = "ffi")]
     pub fn after_update(&self) -> &Member {
         &self.new
     }

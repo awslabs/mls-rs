@@ -262,9 +262,9 @@ async fn test_update_proposals(
 
         assert!(commit_output.welcome_messages.is_empty());
 
-        let commit = commit_output.commit_message();
+        let commit = commit_output.commit_message;
 
-        all_process_message(&mut groups, commit, committer_index, true).await;
+        all_process_message(&mut groups, &commit, committer_index, true).await;
 
         groups
             .iter()
@@ -313,9 +313,9 @@ async fn test_remove_proposals(
 
         assert!(commit_output.welcome_messages.is_empty());
 
-        let commit = commit_output.commit_message();
+        let commit = commit_output.commit_message;
         let committer_index = groups[committer].current_member_index() as usize;
-        all_process_message(&mut groups, commit, committer_index, true).await;
+        all_process_message(&mut groups, &commit, committer_index, true).await;
 
         // Check that remove was effective
         for (i, group) in groups.iter().enumerate() {
