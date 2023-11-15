@@ -2588,7 +2588,7 @@ mod tests {
                 .roster_update
                 .updated()
                 .iter()
-                .map(|update| update.after_update().clone())
+                .map(|update| update.new.clone())
                 .collect_vec()
                 .as_slice(),
             &alice.group.roster().members()[0..2]
@@ -3891,7 +3891,7 @@ mod tests {
                 .roster_update
                 .updated()
                 .iter()
-                .filter_map(|u| u.before_update().signing_identity().credential.as_basic())
+                .filter_map(|u| u.prior.signing_identity().credential.as_basic())
                 .any(|c| c.identifier() == id.as_bytes())
         };
 
@@ -3903,17 +3903,12 @@ mod tests {
             .iter()
             .filter_map(|u| {
                 let before = u
-                    .before_update()
+                    .prior
                     .signing_identity()
                     .credential
                     .as_basic()?
                     .identifier();
-                let after = u
-                    .after_update()
-                    .signing_identity()
-                    .credential
-                    .as_basic()?
-                    .identifier();
+                let after = u.new.signing_identity().credential.as_basic()?.identifier();
                 Some((before, after))
             })
             .all(|(before, after)| before == after);

@@ -132,12 +132,17 @@ impl Member {
 
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
+#[cfg_attr(
+    all(feature = "ffi", not(test)),
+    safer_ffi_gen::ffi_type(clone, opaque)
+)]
 /// Update of a member due to a commit.
 pub struct MemberUpdate {
-    pub(crate) prior: Member,
-    pub(crate) new: Member,
+    pub prior: Member,
+    pub new: Member,
 }
 
+#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl MemberUpdate {
     /// Create a new member update.
     pub fn new(prior: Member, new: Member) -> MemberUpdate {
@@ -150,11 +155,13 @@ impl MemberUpdate {
     }
 
     /// Member state before the update.
+    #[cfg(feature = "ffi")]
     pub fn before_update(&self) -> &Member {
         &self.prior
     }
 
     /// Member state after the update.
+    #[cfg(feature = "ffi")]
     pub fn after_update(&self) -> &Member {
         &self.new
     }
