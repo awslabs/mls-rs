@@ -94,11 +94,13 @@ pub struct CommitOutput {
 #[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen)]
 impl CommitOutput {
     /// Commit message to send to other group members.
+    #[cfg(feature = "ffi")]
     pub fn commit_message(&self) -> &MlsMessage {
         &self.commit_message
     }
 
     /// Welcome message to send to new group members.
+    #[cfg(feature = "ffi")]
     pub fn welcome_messages(&self) -> &[MlsMessage] {
         &self.welcome_messages
     }
@@ -106,6 +108,7 @@ impl CommitOutput {
     /// Ratchet tree that can be sent out of band if
     /// `ratchet_tree_extension` is not used according to
     /// [`MlsRules::encryption_options`].
+    #[cfg(feature = "ffi")]
     pub fn ratchet_tree(&self) -> Option<&[u8]> {
         self.ratchet_tree.as_deref()
     }
@@ -1239,7 +1242,7 @@ mod tests {
 
         let commit = group.commit(vec![]).await.unwrap();
 
-        assert!(commit.ratchet_tree().is_none());
+        assert!(commit.ratchet_tree.is_none());
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]

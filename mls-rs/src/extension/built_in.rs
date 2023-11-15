@@ -110,16 +110,19 @@ impl RequiredCapabilitiesExt {
     }
 
     /// Required custom extension types.
+    #[cfg(feature = "ffi")]
     pub fn extensions(&self) -> &[ExtensionType] {
         &self.extensions
     }
 
     /// Required custom proposal types.
+    #[cfg(feature = "ffi")]
     pub fn proposals(&self) -> &[ProposalType] {
         &self.proposals
     }
 
     /// Required custom credential types.
+    #[cfg(feature = "ffi")]
     pub fn credentials(&self) -> &[CredentialType] {
         &self.credentials
     }

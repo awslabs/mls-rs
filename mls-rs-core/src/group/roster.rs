@@ -33,26 +33,31 @@ pub struct Capabilities {
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl Capabilities {
     /// Supported protocol versions
+    #[cfg(feature = "ffi")]
     pub fn protocol_versions(&self) -> &[ProtocolVersion] {
         &self.protocol_versions
     }
 
     /// Supported ciphersuites
+    #[cfg(feature = "ffi")]
     pub fn cipher_suites(&self) -> &[CipherSuite] {
         &self.cipher_suites
     }
 
     /// Supported extensions
+    #[cfg(feature = "ffi")]
     pub fn extensions(&self) -> &[ExtensionType] {
         &self.extensions
     }
 
     /// Supported proposals
+    #[cfg(feature = "ffi")]
     pub fn proposals(&self) -> &[ProposalType] {
         &self.proposals
     }
 
     /// Supported credentials
+    #[cfg(feature = "ffi")]
     pub fn credentials(&self) -> &[CredentialType] {
         &self.credentials
     }
