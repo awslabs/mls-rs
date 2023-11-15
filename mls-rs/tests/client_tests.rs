@@ -10,6 +10,7 @@ use mls_rs::group::proposal::Proposal;
 use mls_rs::group::ReceivedMessage;
 use mls_rs::identity::SigningIdentity;
 use mls_rs::ExtensionList;
+use mls_rs::MlsMessage;
 use mls_rs::ProtocolVersion;
 use mls_rs::{CipherSuite, Group};
 use mls_rs::{Client, CryptoProvider};
@@ -776,4 +777,49 @@ async fn external_joiner_can_process_siblings_update() {
     let c = groups[1].commit(Vec::new()).await.unwrap().commit_message;
     all_process_message(&mut groups, &c, 2, true).await;
     group.process_incoming_message(c).await.unwrap();
+}
+
+#[maybe_async::test(not(mls_build_async), async(mls_build_async, futures_test))]
+async fn weird_tree_scenario() {
+    let mut groups =
+        get_test_groups(ProtocolVersion::MLS_10, CipherSuite::P256_AES128, 17, false).await;
+
+    let to_remove = [0u32, 2, 5, 7, 8, 9, 15];
+
+    let mut builder = groups[14].commit_builder();
+
+    for idx in to_remove.iter() {
+        builder = builder.remove_member(*idx).unwrap();
+    }
+
+    let commit = builder.build().await.unwrap();
+
+    for idx in to_remove.into_iter().rev() {
+        groups.remove(idx as usize);
+    }
+
+    all_process_message(&mut groups, &commit.commit_message, 14, true).await;
+
+    let mut builder = groups.last_mut().unwrap().commit_builder();
+
+    for idx in 0..7 {
+        builder = builder
+            .add_member(fake_key_package(5555555 + idx).await)
+            .unwrap()
+    }
+
+    let commit = builder.remove_member(1).unwrap().build().await.unwrap();
+
+    let idx = groups.last().unwrap().current_member_index() as usize;
+
+    all_process_message(&mut groups, &commit.commit_message, idx, true).await;
+}
+
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+async fn fake_key_package(id: usize) -> MlsMessage {
+    generate_client(CipherSuite::P256_AES128, ProtocolVersion::MLS_10, id, false)
+        .await
+        .generate_key_package_message()
+        .await
+        .unwrap()
 }

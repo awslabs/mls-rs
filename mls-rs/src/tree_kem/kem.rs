@@ -10,13 +10,11 @@ use crate::iter::wrap_iter;
 use crate::tree_kem::math as tree_math;
 use alloc::vec;
 use alloc::vec::Vec;
+use itertools::Itertools;
 use mls_rs_codec::MlsEncode;
 
 #[cfg(all(not(mls_build_async), feature = "rayon"))]
 use {crate::iter::ParallelIteratorExt, rayon::prelude::*};
-
-#[cfg(not(any(mls_build_async, feature = "rayon")))]
-use itertools::Itertools;
 
 #[cfg(mls_build_async)]
 use futures::{StreamExt, TryStreamExt};
@@ -392,31 +390,15 @@ impl<'a> TreeKem<'a> {
         resolved: NodeIndex,
         excluding: &[LeafIndex],
     ) -> Result<usize, MlsError> {
-        let pos = self
-            .tree_kem_public
-            .nodes
-            .find_in_resolution(lca, Some(resolved))
+        let reso = self.tree_kem_public.nodes.get_resolution_index(lca)?;
+
+        let (ct_pos, _) = reso
+            .iter()
+            .filter(|idx| **idx % 2 == 1 || !excluding.contains(&LeafIndex(**idx / 2)))
+            .find_position(|idx| idx == &&resolved)
             .ok_or(MlsError::UpdateErrorNoSecretKey)?;
 
-        if pos == 0 {
-            return Ok(0);
-        }
-
-        let lca_subtree_start = tree_math::subtree(lca).0;
-
-        let (mut n_excluded, mut l_excluded) = (0, 0);
-
-        while n_excluded < excluding.len() && excluding[n_excluded] < lca_subtree_start {
-            n_excluded += 1;
-        }
-
-        while (n_excluded + l_excluded) < excluding.len()
-            && 2 * *excluding[n_excluded + l_excluded] < resolved
-        {
-            l_excluded += 1;
-        }
-
-        Ok(pos - l_excluded)
+        Ok(ct_pos)
     }
 }
 
