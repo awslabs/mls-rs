@@ -422,8 +422,6 @@ where
             .state
             .apply_resolved(
                 sender,
-                #[cfg(all(feature = "by_ref_proposal", feature = "state_update"))]
-                Some(sender),
                 proposals,
                 external_leaf,
                 &self.config.identity_provider(),

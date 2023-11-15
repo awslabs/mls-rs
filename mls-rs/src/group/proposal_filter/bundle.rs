@@ -516,8 +516,18 @@ impl<T> ProposalInfo<T> {
         &self.proposal
     }
 
+    /// The source of the proposal.
     pub fn source(&self) -> &ProposalSource {
         &self.source
+    }
+
+    /// The [`ProposalRef`] of this proposal if its source is [`ProposalSource::ByReference`]
+    #[cfg(feature = "by_ref_proposal")]
+    pub fn proposal_ref(&self) -> Option<&ProposalRef> {
+        match self.source {
+            ProposalSource::ByReference(ref reference) => Some(reference),
+            _ => None,
+        }
     }
 }
 
