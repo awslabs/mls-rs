@@ -798,7 +798,7 @@ async fn weird_tree_scenario() {
         groups.remove(idx as usize);
     }
 
-    all_process_message(&mut groups, commit.commit_message(), 14, true).await;
+    all_process_message(&mut groups, &commit.commit_message, 14, true).await;
 
     let mut builder = groups.last_mut().unwrap().commit_builder();
 
@@ -812,7 +812,7 @@ async fn weird_tree_scenario() {
 
     let idx = groups.last().unwrap().current_member_index() as usize;
 
-    all_process_message(&mut groups, commit.commit_message(), idx, true).await;
+    all_process_message(&mut groups, &commit.commit_message, idx, true).await;
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
