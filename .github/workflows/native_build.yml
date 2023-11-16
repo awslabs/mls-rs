@@ -24,6 +24,10 @@ jobs:
         if: runner.os == 'Windows'
       - run: echo "OPENSSL_DIR=C:/vcpkg/packages/openssl_x64-windows-static-md" | Out-File -FilePath $env:GITHUB_ENV -Append
         if: runner.os == 'Windows'
+      - run: curl -o C:/cacert.pem https://curl.se/ca/cacert.pem
+        if: runner.os == 'Windows'
+      - run: echo "SSL_CERT_FILE=C:/cacert.pem" | Out-File -FilePath $env:GITHUB_ENV -Append
+        if: runner.os == 'Windows'
       - name: Rust Fmt
         run: cargo fmt --all -- --check
       - name: Clippy Full RFC Compliance
