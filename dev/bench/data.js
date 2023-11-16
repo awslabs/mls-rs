@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1700146985822,
+  "lastUpdate": 1700158365848,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -3767,6 +3767,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 174114,
             "range": "± 1861",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "94983192+stefunctional@users.noreply.github.com",
+            "name": "Stephane Raux",
+            "username": "stefunctional"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1967303af524ff5d6a9d72b0ce18486e931b42d8",
+          "message": "Fix test_group_encrypt_plaintext_padding (#44)\n\nThe test started failing when the test cipher suite was changed to one\r\nthat generates signatures of variable length.\r\n\r\nResolves #43",
+          "timestamp": "2023-11-16T13:08:03-05:00",
+          "tree_id": "47e09571ae09b9a6d0730243c7e4f813094c3055",
+          "url": "https://github.com/awslabs/mls-rs/commit/1967303af524ff5d6a9d72b0ce18486e931b42d8"
+        },
+        "date": 1700158364638,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 513066,
+            "range": "± 10069",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 517740,
+            "range": "± 7691",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 572889,
+            "range": "± 14122",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1182112,
+            "range": "± 47790",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 6913372,
+            "range": "± 19526",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1111890,
+            "range": "± 57805",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1242864,
+            "range": "± 69193",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1326633,
+            "range": "± 56573",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 729308,
+            "range": "± 9818",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 777744,
+            "range": "± 9226",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 837062,
+            "range": "± 18551",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 26913,
+            "range": "± 15057",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 88773,
+            "range": "± 1406",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 173063,
+            "range": "± 8957",
             "unit": "ns/iter"
           }
         ]
