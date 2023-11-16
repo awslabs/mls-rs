@@ -442,8 +442,7 @@ pub enum ProposalSource {
     Local,
 }
 
-#[derive(Clone, Debug)]
-#[cfg_attr(feature = "custom_proposal", derive(PartialEq))]
+#[derive(Clone, Debug, PartialEq)]
 /// Proposal description used as input to a
 /// [`MlsRules`](crate::MlsRules).
 pub struct ProposalInfo<T> {
