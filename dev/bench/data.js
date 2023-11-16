@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1700120141379,
+  "lastUpdate": 1700120437497,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -3447,6 +3447,112 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 172240,
             "range": "± 1696",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mulmarta@amazon.com",
+            "name": "Marta Mularczyk"
+          },
+          "committer": {
+            "email": "mulmarta@amazon.com",
+            "name": "Marta Mularczyk"
+          },
+          "distinct": true,
+          "id": "697e8c6c9d2c3cec8551cff4afb28433dc208bdf",
+          "message": "Test CI changes",
+          "timestamp": "2023-11-16T08:36:06+01:00",
+          "tree_id": "5b8a14b3068d9ede0b9fe10f8d0a2c7f37ce3cbb",
+          "url": "https://github.com/awslabs/mls-rs/commit/697e8c6c9d2c3cec8551cff4afb28433dc208bdf"
+        },
+        "date": 1700120436962,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 510289,
+            "range": "± 20358",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 519159,
+            "range": "± 6328",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 573515,
+            "range": "± 21533",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1174808,
+            "range": "± 43449",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 6874521,
+            "range": "± 37188",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1136058,
+            "range": "± 50902",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1253367,
+            "range": "± 83419",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1380170,
+            "range": "± 67976",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 725141,
+            "range": "± 30131",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 776216,
+            "range": "± 23955",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 839480,
+            "range": "± 6926",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 27373,
+            "range": "± 368",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 89421,
+            "range": "± 1528",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 174268,
+            "range": "± 3617",
             "unit": "ns/iter"
           }
         ]
