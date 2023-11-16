@@ -2311,11 +2311,12 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "private_message")]
+    #[cfg(all(not(target_arch = "wasm32"), feature = "private_message"))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_group_encrypt_plaintext_padding() {
         let protocol_version = TEST_PROTOCOL_VERSION;
-        let cipher_suite = TEST_CIPHER_SUITE;
+        // This test requires a cipher suite whose signatures are not variable in length.
+        let cipher_suite = CipherSuite::CURVE25519_AES128;
 
         let mut test_group = test_group_custom_config(protocol_version, cipher_suite, |b| {
             b.mls_rules(
