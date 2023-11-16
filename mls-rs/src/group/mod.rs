@@ -209,7 +209,7 @@ pub(crate) struct Welcome {
 pub struct NewMemberInfo {
     /// Group info extensions found within the Welcome message used to join
     /// the group.
-    pub(crate) group_info_extensions: ExtensionList,
+    pub group_info_extensions: ExtensionList,
 }
 
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
@@ -226,6 +226,7 @@ impl NewMemberInfo {
 
     /// Group info extensions found within the Welcome message used to join
     /// the group.
+    #[cfg(feature = "ffi")]
     pub fn group_info_extensions(&self) -> &ExtensionList {
         &self.group_info_extensions
     }
@@ -2571,7 +2572,7 @@ mod tests {
                 .roster_update
                 .added()
                 .iter()
-                .map(|m| m.index())
+                .map(|m| m.index)
                 .collect::<Vec<_>>(),
             vec![2, 5, 6, 10, 11]
         );
@@ -3030,7 +3031,7 @@ mod tests {
                 .roster_update
                 .added()
                 .iter()
-                .map(|m| m.index())
+                .map(|m| m.index)
                 .collect::<Vec<_>>(),
             vec![1]
         );
@@ -3277,7 +3278,7 @@ mod tests {
                     .credential
                     .as_basic()
                     .unwrap()
-                    .identifier()
+                    .identifier
                     .to_vec(),
             ));
 
@@ -3608,12 +3609,12 @@ mod tests {
         let new_member = groups[1].group.roster().member_with_index(0).unwrap();
 
         assert_eq!(
-            new_member.signing_identity().credential,
+            new_member.signing_identity.credential,
             get_test_basic_credential(b"member".to_vec())
         );
 
         assert_eq!(
-            new_member.signing_identity().signature_key,
+            new_member.signing_identity.signature_key,
             identity.signature_key
         );
 
@@ -3625,12 +3626,12 @@ mod tests {
         let new_member = groups[0].group.roster().member_with_index(0).unwrap();
 
         assert_eq!(
-            new_member.signing_identity().credential,
+            new_member.signing_identity.credential,
             get_test_basic_credential(b"member".to_vec())
         );
 
         assert_eq!(
-            new_member.signing_identity().signature_key,
+            new_member.signing_identity.signature_key,
             identity.signature_key
         );
     }
@@ -3892,8 +3893,8 @@ mod tests {
                 .roster_update
                 .updated()
                 .iter()
-                .filter_map(|u| u.prior.signing_identity().credential.as_basic())
-                .any(|c| c.identifier() == id.as_bytes())
+                .filter_map(|u| u.prior.signing_identity.credential.as_basic())
+                .any(|c| c.identifier == id.as_bytes())
         };
 
         // Check that all updates preserve identities.
@@ -3903,13 +3904,8 @@ mod tests {
             .updated()
             .iter()
             .filter_map(|u| {
-                let before = u
-                    .prior
-                    .signing_identity()
-                    .credential
-                    .as_basic()?
-                    .identifier();
-                let after = u.new.signing_identity().credential.as_basic()?.identifier();
+                let before = &u.prior.signing_identity.credential.as_basic()?.identifier;
+                let after = &u.new.signing_identity.credential.as_basic()?.identifier;
                 Some((before, after))
             })
             .all(|(before, after)| before == after);
@@ -3930,11 +3926,11 @@ mod tests {
             .zip(["alice", "bob", "carol", "dave"])
             .all(|(member, id)| {
                 member
-                    .signing_identity()
+                    .signing_identity
                     .credential
                     .as_basic()
                     .unwrap()
-                    .identifier()
+                    .identifier
                     == id.as_bytes()
             });
 

@@ -443,12 +443,16 @@ pub enum ProposalSource {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 /// Proposal description used as input to a
 /// [`MlsRules`](crate::MlsRules).
 pub struct ProposalInfo<T> {
-    pub(crate) proposal: T,
-    pub(crate) sender: Sender,
-    pub(crate) source: ProposalSource,
+    /// The underlying proposal value.
+    pub proposal: T,
+    /// The sender of this proposal.
+    pub sender: Sender,
+    /// The source of the proposal.
+    pub source: ProposalSource,
 }
 
 impl ProposalInfo<Proposal> {
@@ -503,21 +507,6 @@ impl<T> ProposalInfo<T> {
     #[inline(always)]
     pub fn is_by_reference(&self) -> bool {
         !self.is_by_value()
-    }
-
-    /// The sender of this proposal.
-    pub fn sender(&self) -> Sender {
-        self.sender
-    }
-
-    /// The underlying proposal value.
-    pub fn proposal(&self) -> &T {
-        &self.proposal
-    }
-
-    /// The source of the proposal.
-    pub fn source(&self) -> &ProposalSource {
-        &self.source
     }
 
     /// The [`ProposalRef`] of this proposal if its source is [`ProposalSource::ByReference`]

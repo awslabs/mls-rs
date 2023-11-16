@@ -88,12 +88,12 @@ pub(crate) mod test_utils {
                     .credential
                     .as_custom()
                     .map(|c| {
-                        if c.credential_type() == CredentialType::from(Self::CUSTOM_CREDENTIAL_TYPE)
+                        if c.credential_type == CredentialType::from(Self::CUSTOM_CREDENTIAL_TYPE)
                             || self.allow_any_custom
                         {
-                            Ok(c.data().to_vec())
+                            Ok(c.data.to_vec())
                         } else {
-                            Err(BasicWithCustomProviderError(c.credential_type()))
+                            Err(BasicWithCustomProviderError(c.credential_type))
                         }
                     })
                     .transpose()?

@@ -157,7 +157,7 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
             return Ok(());
         };
 
-        ext.allowed_senders().iter().try_for_each(|sender| {
+        ext.allowed_senders.iter().try_for_each(|sender| {
             let cred_type = sender.credential.credential_type();
             leaf_node
                 .capabilities
@@ -204,11 +204,9 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
             if !leaf_node
                 .capabilities
                 .extensions
-                .contains(&one_ext.extension_type())
+                .contains(&one_ext.extension_type)
             {
-                return Err(MlsError::ExtensionNotInCapabilities(
-                    one_ext.extension_type(),
-                ));
+                return Err(MlsError::ExtensionNotInCapabilities(one_ext.extension_type));
             }
         }
 
@@ -216,7 +214,7 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
         self.group_context_extensions
             .into_iter()
             .flat_map(|exts| &**exts)
-            .map(|ext| ext.extension_type())
+            .map(|ext| ext.extension_type)
             .find(|ext_type| {
                 !ext_type.is_default() && !leaf_node.capabilities.extensions.contains(ext_type)
             })

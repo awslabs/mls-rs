@@ -858,7 +858,7 @@ mod tests {
             .group
             .roster()
             .members_iter()
-            .any(|member| member.signing_identity() == &bob_identity))
+            .any(|member| member.signing_identity == bob_identity))
     }
 
     #[cfg(feature = "psk")]

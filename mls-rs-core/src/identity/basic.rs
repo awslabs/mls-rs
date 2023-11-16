@@ -26,8 +26,9 @@ use super::{Credential, CredentialType, MlsCredential};
 /// properly validated. It is not recommended to use [`BasicCredential`]
 /// in production applications.
 pub struct BasicCredential {
+    /// Underlying identifier as raw bytes.
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
-    identifier: Vec<u8>,
+    pub identifier: Vec<u8>,
 }
 
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
@@ -38,6 +39,7 @@ impl BasicCredential {
     }
 
     /// Underlying identifier as raw bytes.
+    #[cfg(feature = "ffi")]
     pub fn identifier(&self) -> &[u8] {
         &self.identifier
     }

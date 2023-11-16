@@ -29,8 +29,9 @@ use mls_rs_core::crypto::HpkePublicKey;
 )]
 #[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 pub struct ApplicationIdExt {
+    /// Application level identifier presented by this extension.
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
-    pub(crate) identifier: Vec<u8>,
+    pub identifier: Vec<u8>,
 }
 
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
@@ -41,6 +42,7 @@ impl ApplicationIdExt {
     }
 
     /// Get the application level identifier presented by this extension.
+    #[cfg(feature = "ffi")]
     pub fn identifier(&self) -> &[u8] {
         &self.identifier
     }
@@ -144,13 +146,15 @@ impl MlsCodecExtension for RequiredCapabilitiesExt {
 )]
 #[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 pub struct ExternalPubExt {
+    /// Public key to be used for an external commit.
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
-    pub(crate) external_pub: HpkePublicKey,
+    pub external_pub: HpkePublicKey,
 }
 
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl ExternalPubExt {
     /// Get the public key to be used for an external commit.
+    #[cfg(feature = "ffi")]
     pub fn external_pub(&self) -> &HpkePublicKey {
         &self.external_pub
     }
@@ -171,7 +175,7 @@ impl MlsCodecExtension for ExternalPubExt {
 #[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[non_exhaustive]
 pub struct ExternalSendersExt {
-    pub(crate) allowed_senders: Vec<SigningIdentity>,
+    pub allowed_senders: Vec<SigningIdentity>,
 }
 
 #[cfg(feature = "by_ref_proposal")]
@@ -181,6 +185,7 @@ impl ExternalSendersExt {
         Self { allowed_senders }
     }
 
+    #[cfg(feature = "ffi")]
     pub fn allowed_senders(&self) -> &[SigningIdentity] {
         &self.allowed_senders
     }
@@ -236,7 +241,7 @@ mod tests {
 
         let as_extension = test_extension.into_extension().unwrap();
 
-        assert_eq!(as_extension.extension_type(), ExtensionType::APPLICATION_ID);
+        assert_eq!(as_extension.extension_type, ExtensionType::APPLICATION_ID);
 
         let restored = ApplicationIdExt::from_extension(&as_extension).unwrap();
         assert_eq!(restored.identifier, test_id);
@@ -249,7 +254,7 @@ mod tests {
         };
 
         let as_extension = ext.clone().into_extension().unwrap();
-        assert_eq!(as_extension.extension_type(), ExtensionType::RATCHET_TREE);
+        assert_eq!(as_extension.extension_type, ExtensionType::RATCHET_TREE);
 
         let restored = RatchetTreeExt::from_extension(&as_extension).unwrap();
         assert_eq!(ext, restored)
@@ -266,7 +271,7 @@ mod tests {
         let as_extension = ext.clone().into_extension().unwrap();
 
         assert_eq!(
-            as_extension.extension_type(),
+            as_extension.extension_type,
             ExtensionType::REQUIRED_CAPABILITIES
         );
 
@@ -282,10 +287,7 @@ mod tests {
 
         let as_extension = ext.clone().into_extension().unwrap();
 
-        assert_eq!(
-            as_extension.extension_type(),
-            ExtensionType::EXTERNAL_SENDERS
-        );
+        assert_eq!(as_extension.extension_type, ExtensionType::EXTERNAL_SENDERS);
 
         let restored = ExternalSendersExt::from_extension(&as_extension).unwrap();
         assert_eq!(ext, restored)
@@ -298,7 +300,7 @@ mod tests {
         };
 
         let as_extension = ext.clone().into_extension().unwrap();
-        assert_eq!(as_extension.extension_type(), ExtensionType::EXTERNAL_PUB);
+        assert_eq!(as_extension.extension_type, ExtensionType::EXTERNAL_PUB);
 
         let restored = ExternalPubExt::from_extension(&as_extension).unwrap();
         assert_eq!(ext, restored)

@@ -68,9 +68,11 @@ impl Deref for CredentialType {
 /// [`IdentityProvider`](crate::identity::IdentityProvider) must be created that can
 /// authenticate the credential.
 pub struct CustomCredential {
-    pub(crate) credential_type: CredentialType,
+    /// Unique credential type to identify this custom credential.
+    pub credential_type: CredentialType,
+    /// Opaque data representing this custom credential.
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
-    pub(crate) data: Vec<u8>,
+    pub data: Vec<u8>,
 }
 
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
@@ -89,11 +91,13 @@ impl CustomCredential {
     }
 
     /// Unique credential type to identify this custom credential.
+    #[cfg(feature = "ffi")]
     pub fn credential_type(&self) -> CredentialType {
         self.credential_type
     }
 
     /// Opaque data representing this custom credential.
+    #[cfg(feature = "ffi")]
     pub fn data(&self) -> &[u8] {
         &self.data
     }

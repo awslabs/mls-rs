@@ -1179,12 +1179,12 @@ mod tests {
         let new_member = groups[0].group.roster().member_with_index(0).unwrap();
 
         assert_eq!(
-            new_member.signing_identity().credential,
+            new_member.signing_identity.credential,
             get_test_basic_credential(b"member".to_vec())
         );
 
         assert_eq!(
-            new_member.signing_identity().signature_key,
+            new_member.signing_identity.signature_key,
             identity.signature_key
         );
 
@@ -1197,12 +1197,12 @@ mod tests {
         let new_member = groups[1].group.roster().member_with_index(0).unwrap();
 
         assert_eq!(
-            new_member.signing_identity().credential,
+            new_member.signing_identity.credential,
             get_test_basic_credential(b"member".to_vec())
         );
 
         assert_eq!(
-            new_member.signing_identity().signature_key,
+            new_member.signing_identity.signature_key,
             identity.signature_key
         );
     }
