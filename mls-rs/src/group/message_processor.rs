@@ -75,7 +75,7 @@ pub(crate) struct ProvisionalState {
     pub(crate) external_init_index: Option<LeafIndex>,
     pub(crate) indexes_of_added_kpkgs: Vec<LeafIndex>,
     #[cfg(all(feature = "state_update", feature = "by_ref_proposal"))]
-    pub(crate) rejected_proposals: Vec<ProposalInfo<Proposal>>,
+    pub(crate) rejected_proposals: Vec<crate::mls_rules::ProposalInfo<Proposal>>,
 }
 
 //By default, the path field of a Commit MUST be populated. The path field MAY be omitted if
@@ -113,7 +113,7 @@ pub struct StateUpdate {
     #[cfg(feature = "custom_proposal")]
     pub(crate) custom_proposals: Vec<ProposalInfo<CustomProposal>>,
     #[cfg(feature = "by_ref_proposal")]
-    pub(crate) unused_proposals: Vec<ProposalInfo<Proposal>>,
+    pub(crate) unused_proposals: Vec<crate::mls_rules::ProposalInfo<Proposal>>,
 }
 
 #[cfg(not(feature = "state_update"))]
@@ -167,7 +167,7 @@ impl StateUpdate {
 
     /// Proposals that were received in the prior epoch but not committed to.
     #[cfg(feature = "by_ref_proposal")]
-    pub fn unused_proposals(&self) -> &[ProposalInfo<Proposal>] {
+    pub fn unused_proposals(&self) -> &[crate::mls_rules::ProposalInfo<Proposal>] {
         &self.unused_proposals
     }
 
