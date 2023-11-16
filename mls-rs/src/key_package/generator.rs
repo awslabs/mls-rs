@@ -69,7 +69,7 @@ impl KeyPackageGeneration {
 
     pub fn key_package_message(&self) -> MlsMessage {
         MlsMessage::new(
-            self.key_package.version(),
+            self.key_package.version,
             MlsMessagePayload::KeyPackage(self.key_package.clone()),
         )
     }

@@ -319,7 +319,7 @@ impl MlsMessage {
     }
 
     #[inline(always)]
-    pub(crate) fn into_key_package(self) -> Option<KeyPackage> {
+    pub fn into_key_package(self) -> Option<KeyPackage> {
         match self.payload {
             MlsMessagePayload::KeyPackage(kp) => Some(kp),
             _ => None,
