@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1700120585049,
+  "lastUpdate": 1700146985822,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -3659,6 +3659,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 171819,
             "range": "± 3627",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "103590845+mulmarta@users.noreply.github.com",
+            "name": "mulmarta",
+            "username": "mulmarta"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "68905203fd48fe9282652bd4289975fabb428787",
+          "message": "Improve interop tests CI (#41)\n\n* Improve interop tests CI\r\n\r\n* Build before running in the background\r\n\r\n* Build all flows in the foreground. Fix import bug in one feature combination\r\n\r\n* Fixup\r\n\r\n* Import fixup\r\n\r\n---------\r\n\r\nCo-authored-by: Marta Mularczyk <mulmarta@amazon.com>",
+          "timestamp": "2023-11-16T09:58:35-05:00",
+          "tree_id": "43fff3043ffc76a80ca0e5a8b6fd6bf8e2799e8d",
+          "url": "https://github.com/awslabs/mls-rs/commit/68905203fd48fe9282652bd4289975fabb428787"
+        },
+        "date": 1700146985167,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 511163,
+            "range": "± 4927",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 514840,
+            "range": "± 2508",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 570275,
+            "range": "± 23853",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1177584,
+            "range": "± 19486",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7178433,
+            "range": "± 61132",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1098254,
+            "range": "± 49804",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1194677,
+            "range": "± 46072",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1357301,
+            "range": "± 47639",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 724797,
+            "range": "± 9176",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 778024,
+            "range": "± 20939",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 837378,
+            "range": "± 7522",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 27435,
+            "range": "± 859",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 90203,
+            "range": "± 1718",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 174114,
+            "range": "± 1861",
             "unit": "ns/iter"
           }
         ]
