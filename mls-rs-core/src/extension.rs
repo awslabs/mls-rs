@@ -91,9 +91,11 @@ impl IntoAnyError for ExtensionError {
 /// Extensions are used as customization points in various parts of the
 /// MLS protocol and are inserted into an [ExtensionList](self::ExtensionList).
 pub struct Extension {
-    pub(crate) extension_type: ExtensionType,
+    /// Extension type of this extension
+    pub extension_type: ExtensionType,
+    /// Data held within this extension
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
-    pub(crate) extension_data: Vec<u8>,
+    pub extension_data: Vec<u8>,
 }
 
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
@@ -107,11 +109,13 @@ impl Extension {
     }
 
     /// Extension type of this extension
+    #[cfg(feature = "ffi")]
     pub fn extension_type(&self) -> ExtensionType {
         self.extension_type
     }
 
     /// Data held within this extension
+    #[cfg(feature = "ffi")]
     pub fn extension_data(&self) -> &[u8] {
         &self.extension_data
     }

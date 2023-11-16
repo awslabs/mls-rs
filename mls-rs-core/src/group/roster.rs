@@ -83,11 +83,19 @@ impl Default for Capabilities {
     safer_ffi_gen::ffi_type(clone, opaque)
 )]
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Member {
-    index: u32,
-    signing_identity: SigningIdentity,
-    capabilities: Capabilities,
-    extensions: ExtensionList,
+    /// The index of this member within a group.
+    ///
+    /// This value is consistent for all clients and will not change as the
+    /// group evolves.
+    pub index: u32,
+    /// Current identity public key and credential of this member.
+    pub signing_identity: SigningIdentity,
+    /// Current client [Capabilities] of this member.
+    pub capabilities: Capabilities,
+    /// Current leaf node extensions in use by this member.
+    pub extensions: ExtensionList,
 }
 
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
@@ -110,21 +118,25 @@ impl Member {
     ///
     /// This value is consistent for all clients and will not change as the
     /// group evolves.
+    #[cfg(feature = "ffi")]
     pub fn index(&self) -> u32 {
         self.index
     }
 
     /// Current identity public key and credential of this member.
+    #[cfg(feature = "ffi")]
     pub fn signing_identity(&self) -> &SigningIdentity {
         &self.signing_identity
     }
 
     /// Current client [Capabilities] of this member.
+    #[cfg(feature = "ffi")]
     pub fn capabilities(&self) -> &Capabilities {
         &self.capabilities
     }
 
     /// Current leaf node extensions in use by this member.
+    #[cfg(feature = "ffi")]
     pub fn extensions(&self) -> &ExtensionList {
         &self.extensions
     }

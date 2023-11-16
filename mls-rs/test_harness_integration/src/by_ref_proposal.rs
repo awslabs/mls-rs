@@ -227,7 +227,7 @@ pub(crate) mod inner {
                     .get_as::<ExternalSendersExt>()
                     .map_err(abort)?
                     .unwrap_or(ExternalSendersExt::new(vec![]))
-                    .allowed_senders()
+                    .allowed_senders
                     .to_vec();
 
                 ext_senders.push(ext_sender);

@@ -229,7 +229,7 @@ where
                 #[cfg(feature = "by_ref_proposal")]
                 strategy,
                 proposals,
-                group_context_extensions_proposal.proposal(),
+                &group_context_extensions_proposal.proposal,
                 commit_time,
             )
             .await?;
@@ -251,7 +251,7 @@ where
             let leaf_validator = LeafNodeValidator::new(
                 self.cipher_suite_provider,
                 self.identity_provider,
-                Some(group_context_extensions_proposal.proposal()),
+                Some(&group_context_extensions_proposal.proposal),
             );
 
             output
@@ -272,7 +272,7 @@ where
         let new_extensions_supported = group_context_extensions_proposal
             .proposal
             .iter()
-            .map(|extension| extension.extension_type())
+            .map(|extension| extension.extension_type)
             .filter(|&ext_type| !ext_type.is_default())
             .find(|ext_type| {
                 !output

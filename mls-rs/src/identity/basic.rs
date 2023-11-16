@@ -82,7 +82,7 @@ impl IdentityProvider for BasicIdentityProvider {
     }
 
     async fn identity(&self, signing_identity: &SigningIdentity) -> Result<Vec<u8>, Self::Error> {
-        resolve_basic_identity(signing_identity).map(|b| b.identifier().to_vec())
+        resolve_basic_identity(signing_identity).map(|b| b.identifier.to_vec())
     }
 
     async fn valid_successor(

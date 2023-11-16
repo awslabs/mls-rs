@@ -322,7 +322,7 @@ where
         let res = match ext {
             Ok(None) => Ok(()),
             Ok(Some(extension)) => extension
-                .verify_all(identity_provider, commit_time, p.proposal())
+                .verify_all(identity_provider, commit_time, &p.proposal)
                 .await
                 .map_err(|e| MlsError::IdentityProviderError(e.into_any_error())),
             Err(e) => Err(MlsError::from(e)),

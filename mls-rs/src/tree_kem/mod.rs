@@ -486,7 +486,7 @@ impl TreeKemPublic {
         let updated_leaves = proposal_bundle
             .remove_proposals()
             .iter()
-            .map(|p| p.proposal().to_remove)
+            .map(|p| p.proposal.to_remove)
             .chain(updated_indices)
             .chain(added.iter().copied())
             .collect_vec();
@@ -542,7 +542,7 @@ impl TreeKemPublic {
         let updated_leaves = proposal_bundle
             .remove_proposals()
             .iter()
-            .map(|p| p.proposal().to_remove)
+            .map(|p| p.proposal.to_remove)
             .chain(added.iter().copied())
             .collect_vec();
 
