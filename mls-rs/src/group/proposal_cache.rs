@@ -295,7 +295,7 @@ fn has_ref(proposals: &ProposalBundle, reference: &ProposalRef) -> bool {
 fn rejected_proposals(
     all_proposals: ProposalBundle,
     accepted_proposals: &ProposalBundle,
-) -> Vec<ProposalInfo<Proposal>> {
+) -> Vec<crate::mls_rules::ProposalInfo<Proposal>> {
     all_proposals
         .into_proposals()
         .filter(|p| {
