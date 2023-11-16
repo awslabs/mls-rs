@@ -92,6 +92,7 @@ jobs:
         run: |
           cd mls-rs/test_harness_integration
           cargo run -- --port 50001 &
+          cargo build --no-default-features --features tree_index,private_message,prior_epoch,out_of_order,custom_proposal,by_ref_proposal
           cargo run --no-default-features --features tree_index,private_message,prior_epoch,out_of_order,custom_proposal,by_ref_proposal -- --port 50002 &
           cd ../../interop/interop
           for config in `ls mls-rs-configs | grep -Ev "(psk)|(branch)|(reinit)" | sed -e "s/mls-rs-configs\///"`; do >&2 echo $config && test-runner/test-runner --client localhost:50001 --client localhost:50002 --suite 1 --config mls-rs-configs/$config ; done > /dev/null
