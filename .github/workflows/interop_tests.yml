@@ -14,32 +14,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           path: mls
-      - name: Start test MLS client
-        working-directory: mls-rs/test_harness_integration
-        run: |
-          cargo run -- --port 50001 &
-          cargo run --no-default-features -- --port 50002 &
-
-          # no tree_index
-          cargo run --no-default-features --features private_message,prior_epoch,out_of_order,psk,custom_proposal,by_ref_proposal -- --port 50003 &
-
-          # no private_message
-          cargo run --no-default-features --features tree_index,prior_epoch,out_of_order,psk,custom_proposal,by_ref_proposal -- --port 50004 &
-
-          # no prior_epoch
-          cargo run --no-default-features --features tree_index,private_message,out_of_order,psk,custom_proposal,by_ref_proposal -- --port 50005 &
-
-          # no out_of_order
-          cargo run --no-default-features --features tree_index,private_message,prior_epoch,psk,custom_proposal,by_ref_proposal -- --port 50006 &
-
-          # no psk
-          cargo run --no-default-features --features tree_index,private_message,prior_epoch,out_of_order,custom_proposal,by_ref_proposal -- --port 50007 &
-
-          # no custom_proposal
-          cargo run --no-default-features --features tree_index,private_message,prior_epoch,out_of_order,psk,by_ref_proposal -- --port 50008 &
-
-          # no by_ref_proposal
-          cargo run --no-default-features --features tree_index,private_message,prior_epoch,out_of_order,psk,custom_proposal -- --port 50009 &
       - name: Clone test runner
         uses: actions/checkout@v4
         with:
@@ -50,7 +24,7 @@ jobs:
         with:
           version: "25.x"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Run tests
+      - name: Build test runner
         working-directory: interop/interop
         run: |
           cp -r ../../mls-rs/test_harness_integration/configs mls-rs-configs
@@ -62,30 +36,83 @@ jobs:
           export PATH=$PATH:$GOROOT:$GOPATH:$GOBIN
           GOFLAGS=-mod=mod go generate ./...
           make test-runner/test-runner
-
-          # all features with itself
+      - name: Test interop; full feature set with itself
+        run: |
+          cd mls-rs/test_harness_integration
+          cargo run -- --port 50001 &
+          cd ../../interop/interop
           for config in `ls mls-rs-configs | sed -e "s/mls-rs-configs\///"`; do >&2 echo $config && test-runner/test-runner --client localhost:50001 --config mls-rs-configs/$config ; done > /dev/null
-
-          # all features with no features
+          kill %1
+      - name: Test interop; full feature with "bare bones"
+        run: |
+          cd mls-rs/test_harness_integration
+          cargo run -- --port 50001 &
+          cargo run --no-default-features -- --port 50002 &
+          cd ../../interop/interop
           test-runner/test-runner --client localhost:50001 --client localhost:50002 --suite 1 --public --config mls-rs-configs/bare_bones.json > /dev/null
-
-          # all features with "no tree_index"
-          for config in `ls mls-rs-configs | sed -e "s/mls-rs-configs\///"`; do >&2 echo $config && test-runner/test-runner --client localhost:50001 --client localhost:50003 --suite 1 --config mls-rs-configs/$config ; done > /dev/null
-
-          # all features with "no private_message"
-          for config in `ls mls-rs-configs | grep -v "application"  | sed -e "s/mls-rs-configs\///"`; do >&2 echo $config && test-runner/test-runner --client localhost:50001 --client localhost:50004 --public --suite 1 --config mls-rs-configs/$config ; done > /dev/null
-
-          # all features with "no prior_epoch"
-          for config in `ls mls-rs-configs | grep -Ev "(application_out_of_order_across)|(psk)" | sed -e "s/mls-rs-configs\///"`; do >&2 echo $config && test-runner/test-runner --client localhost:50001 --client localhost:50005 --suite 1 --config mls-rs-configs/$config ; done > /dev/null
-
-          # all features with "no out_of_order"
-          for config in `ls mls-rs-configs | grep -v "application_out_of_order" | sed -e "s/mls-rs-configs\///"`; do >&2 echo $config && test-runner/test-runner --client localhost:50001 --client localhost:50006 --suite 1 --config mls-rs-configs/$config ; done > /dev/null
-
-          # all features with "no psk"
-          for config in `ls mls-rs-configs | grep -Ev "(psk)|(branch)|(reinit)" | sed -e "s/mls-rs-configs\///"`; do >&2 echo $config && test-runner/test-runner --client localhost:50001 --client localhost:50007 --suite 1 --config mls-rs-configs/$config ; done > /dev/null
-
-           # all features with "no custom_proposal"
-          for config in `ls mls-rs-configs | sed -e "s/mls-rs-configs\///"`; do >&2 echo $config && test-runner/test-runner --client localhost:50001 --client localhost:50008 --suite 1 --config mls-rs-configs/$config ; done > /dev/null
-
-           # all features with "no by_ref_proposal"
-          for config in `ls mls-rs-configs | grep -E "(application)|(commit_by_value)|(branch)|(welcome_join)" | sed -e "s/mls-rs-configs\///"`; do >&2 echo $config && test-runner/test-runner --client localhost:50001 --client localhost:50009 --suite 1 --config mls-rs-configs/$config ; done > /dev/null
+          kill %1
+          kill %2
+      - name: Test interop; full feature with "no tree_index"
+        run: |
+          cd mls-rs/test_harness_integration
+          cargo run -- --port 50001 &
+          cargo run --no-default-features --features private_message,prior_epoch,out_of_order,psk,custom_proposal,by_ref_proposal -- --port 50002 &
+          cd ../../interop/interop
+          for config in `ls mls-rs-configs | sed -e "s/mls-rs-configs\///"`; do >&2 echo $config && test-runner/test-runner --client localhost:50001 --client localhost:50002 --suite 1 --config mls-rs-configs/$config ; done > /dev/null
+          kill %1
+          kill %2
+      - name: Test interop; full feature with "no private_message"
+        run: |
+          cd mls-rs/test_harness_integration
+          cargo run -- --port 50001 &
+          cargo run --no-default-features --features tree_index,prior_epoch,out_of_order,psk,custom_proposal,by_ref_proposal -- --port 50002 &
+          cd ../../interop/interop
+          for config in `ls mls-rs-configs | grep -v "application"  | sed -e "s/mls-rs-configs\///"`; do >&2 echo $config && test-runner/test-runner --client localhost:50001 --client localhost:50002 --public --suite 1 --config mls-rs-configs/$config ; done > /dev/null
+          kill %1
+          kill %2
+      - name: Test interop; full feature with "no prior_epoch"
+        run: |
+          cd mls-rs/test_harness_integration
+          cargo run -- --port 50001 &
+          cargo run --no-default-features --features tree_index,private_message,out_of_order,psk,custom_proposal,by_ref_proposal -- --port 50002 &
+          cd ../../interop/interop
+          for config in `ls mls-rs-configs | grep -Ev "(application_out_of_order_across)|(psk)" | sed -e "s/mls-rs-configs\///"`; do >&2 echo $config && test-runner/test-runner --client localhost:50001 --client localhost:50002 --suite 1 --config mls-rs-configs/$config ; done > /dev/null
+          kill %1
+          kill %2
+      - name: Test interop; full feature with "no out_of_order"
+        run: |
+          cd mls-rs/test_harness_integration
+          cargo run -- --port 50001 &
+          cargo run --no-default-features --features tree_index,private_message,prior_epoch,psk,custom_proposal,by_ref_proposal -- --port 50002 &
+          cd ../../interop/interop
+           for config in `ls mls-rs-configs | grep -v "application_out_of_order" | sed -e "s/mls-rs-configs\///"`; do >&2 echo $config && test-runner/test-runner --client localhost:50001 --client localhost:50002 --suite 1 --config mls-rs-configs/$config ; done > /dev/null
+          kill %1
+          kill %2
+      - name: Test interop; full feature with "no psk"
+        run: |
+          cd mls-rs/test_harness_integration
+          cargo run -- --port 50001 &
+          cargo run --no-default-features --features tree_index,private_message,prior_epoch,out_of_order,custom_proposal,by_ref_proposal -- --port 50002 &
+          cd ../../interop/interop
+          for config in `ls mls-rs-configs | grep -Ev "(psk)|(branch)|(reinit)" | sed -e "s/mls-rs-configs\///"`; do >&2 echo $config && test-runner/test-runner --client localhost:50001 --client localhost:50002 --suite 1 --config mls-rs-configs/$config ; done > /dev/null
+          kill %1
+          kill %2
+      - name: Test interop; full feature with "no custom_proposal"
+        run: |
+          cd mls-rs/test_harness_integration
+          cargo run -- --port 50001 &
+          cargo run --no-default-features --features tree_index,private_message,prior_epoch,out_of_order,psk,by_ref_proposal -- --port 50002 &
+          cd ../../interop/interop
+          for config in `ls mls-rs-configs | sed -e "s/mls-rs-configs\///"`; do >&2 echo $config && test-runner/test-runner --client localhost:50001 --client localhost:50002 --suite 1 --config mls-rs-configs/$config ; done > /dev/null
+          kill %1
+          kill %2
+      - name: Test interop; full feature with "no by_ref_proposal"
+        run: |
+          cd mls-rs/test_harness_integration
+          cargo run -- --port 50001 &
+          cargo run --no-default-features --features tree_index,private_message,prior_epoch,out_of_order,psk,custom_proposal -- --port 50002 &
+          cd ../../interop/interop
+          for config in `ls mls-rs-configs | grep -E "(application)|(commit_by_value)|(branch)|(welcome_join)" | sed -e "s/mls-rs-configs\///"`; do >&2 echo $config && test-runner/test-runner --client localhost:50001 --client localhost:50002 --suite 1 --config mls-rs-configs/$config ; done > /dev/null
+          kill %1
+          kill %2
+     
