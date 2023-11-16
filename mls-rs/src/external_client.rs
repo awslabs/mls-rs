@@ -6,7 +6,7 @@ use crate::{
     cipher_suite::CipherSuite,
     client::MlsError,
     group::framing::MlsMessage,
-    key_package::validate_key_package_properties,
+    key_package::{validate_key_package_properties, KeyPackage},
     protocol_version::ProtocolVersion,
     time::MlsTime,
     tree_kem::leaf_node_validator::{LeafNodeValidator, ValidationContext},
@@ -106,7 +106,7 @@ where
         package: MlsMessage,
         protocol: ProtocolVersion,
         cipher_suite: CipherSuite,
-    ) -> Result<KeyPackageValidationOutput, MlsError> {
+    ) -> Result<KeyPackage, MlsError> {
         let key_package = package
             .into_key_package()
             .ok_or(MlsError::UnexpectedMessageType)?;
@@ -128,15 +128,8 @@ where
 
         validate_key_package_properties(&key_package, protocol, &cs).await?;
 
-        Ok(KeyPackageValidationOutput {
-            expiration_timestamp: key_package.expiration()?,
-        })
+        Ok(key_package)
     }
-}
-
-#[derive(Debug)]
-pub struct KeyPackageValidationOutput {
-    pub expiration_timestamp: u64,
 }
 
 #[cfg(test)]

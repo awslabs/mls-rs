@@ -27,14 +27,18 @@ pub(crate) use generator::*;
 #[non_exhaustive]
 #[derive(Clone, Debug, MlsSize, MlsEncode, MlsDecode, PartialEq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(
+    all(feature = "ffi", not(test)),
+    safer_ffi_gen::ffi_type(clone, opaque)
+)]
 pub struct KeyPackage {
-    pub(crate) version: ProtocolVersion,
-    pub(crate) cipher_suite: CipherSuite,
-    pub(crate) hpke_init_key: HpkePublicKey,
+    pub version: ProtocolVersion,
+    pub cipher_suite: CipherSuite,
+    pub hpke_init_key: HpkePublicKey,
     pub(crate) leaf_node: LeafNode,
-    pub(crate) extensions: ExtensionList,
+    pub extensions: ExtensionList,
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
-    pub(crate) signature: Vec<u8>,
+    pub signature: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, MlsSize, MlsEncode, MlsDecode)]
@@ -69,15 +73,23 @@ struct KeyPackageData<'a> {
     pub extensions: &'a ExtensionList,
 }
 
+#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl KeyPackage {
+    #[cfg(feature = "ffi")]
     pub fn version(&self) -> ProtocolVersion {
         self.version
+    }
+
+    #[cfg(feature = "ffi")]
+    pub fn cipher_suite(&self) -> CipherSuite {
+        self.cipher_suite
     }
 
     pub fn signing_identity(&self) -> &SigningIdentity {
         &self.leaf_node.signing_identity
     }
 
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn to_reference<CP: CipherSuiteProvider>(
         &self,

@@ -173,15 +173,16 @@ pub mod mls_rules {
     };
 }
 
-pub use crate::group::mls_rules::MlsRules;
-
 pub use mls_rs_core::extension::{Extension, ExtensionList};
 
-pub use crate::client::Client;
-
-pub use group::{
-    framing::{MlsMessage, WireFormat},
-    Group,
+pub use crate::{
+    client::Client,
+    group::{
+        framing::{MlsMessage, WireFormat},
+        mls_rules::MlsRules,
+        Group,
+    },
+    key_package::{KeyPackage, KeyPackageRef},
 };
 
 /// Error types.
