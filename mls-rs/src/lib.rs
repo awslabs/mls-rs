@@ -171,6 +171,9 @@ pub mod mls_rules {
         },
         proposal_filter::{ProposalBundle, ProposalInfo, ProposalSource},
     };
+
+    #[cfg(feature = "by_ref_proposal")]
+    pub use crate::group::proposal_ref::ProposalRef;
 }
 
 pub use mls_rs_core::extension::{Extension, ExtensionList};
