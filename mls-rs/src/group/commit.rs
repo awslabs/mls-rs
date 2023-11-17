@@ -146,7 +146,7 @@ where
     }
 
     /// Set group info extensions that will be inserted into the resulting
-    /// [welcome message](CommitOutput::welcome_message) for new members.
+    /// [welcome messages](CommitOutput::welcome_messages) for new members.
     ///
     /// Group info extensions that are transmitted as part of a welcome message
     /// are encrypted along with other private values.
