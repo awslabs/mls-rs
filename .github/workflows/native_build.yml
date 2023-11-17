@@ -39,9 +39,13 @@ jobs:
       - name: Test Bare Bones
         run: cargo test --no-default-features --features std,test_util  --verbose --workspace
       - name: Test Async Full RFC
-        run: RUSTFLAGS='--cfg mls_build_async' cargo test --lib --test '*' --verbose --features test_util -p mls-rs
+        run: cargo test --lib --test '*' --verbose --features test_util -p mls-rs
+        env:
+          RUSTFLAGS: '--cfg mls_build_async'
       - name: Test Async Bare Bones
-        run: RUSTFLAGS='--cfg mls_build_async' cargo test --no-default-features --lib --test '*' --features std,test_util --verbose -p mls-rs
+        run: cargo test --no-default-features --lib --test '*' --features std,test_util --verbose -p mls-rs
+        env:
+          RUSTFLAGS: '--cfg mls_build_async'
       - name: Examples
         working-directory: mls-rs
         run: cargo run --example basic_usage
