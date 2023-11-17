@@ -94,10 +94,6 @@ pub(crate) fn path_update_required(proposals: &ProposalBundle) -> bool {
 #[derive(Clone, Debug, PartialEq)]
 pub struct StateUpdate(ProvisionalState);
 
-#[cfg(not(feature = "state_update"))]
-#[non_exhaustive]
-#[derive(Clone, Debug, PartialEq)]
-pub struct StateUpdate {}
 impl From<ProvisionalState> for StateUpdate {
     fn from(value: ProvisionalState) -> Self {
         StateUpdate(value)
@@ -225,9 +221,8 @@ impl StateUpdate {
     }
 
     /// Proposals that were received in the prior epoch but not committed to.
-    pub fn unused_proposals(&self) -> &[crate::mls_rules::ProposalInfo<Proposal>] {
+    pub fn unused_proposals(&self) -> Vec<crate::mls_rules::ProposalInfo<Proposal>> {
         self.0.rejected_proposals.clone()
-    }
     }
 }
 

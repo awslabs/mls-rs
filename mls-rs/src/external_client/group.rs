@@ -901,7 +901,7 @@ mod tests {
         assert_matches!(
             commit_result,
             ExternalReceivedMessage::Commit(commit_description)
-                if commit_description.state_update.roster_update.added().iter().any(|added| added.index == 1)
+                if commit_description.state_update.added().into_iter().any(|added| added.index == 1)
         );
 
         assert_eq!(alice.group.state, server.state);

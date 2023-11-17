@@ -12,7 +12,7 @@ use crate::{
 };
 
 #[cfg(feature = "by_ref_proposal")]
-use crate::group::proposal_filter::{FilterStrategy, ProposalInfo};
+use crate::group::proposal_filter::FilterStrategy;
 
 use crate::tree_kem::leaf_node::LeafNode;
 
