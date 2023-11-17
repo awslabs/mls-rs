@@ -57,6 +57,9 @@ service MLSClient {
   rpc CreateExternalSigner(CreateExternalSignerRequest) returns (CreateExternalSignerResponse) {}
   rpc AddExternalSigner(AddExternalSignerRequest) returns (ProposalResponse) {}
   rpc ExternalSignerProposal(ExternalSignerProposalRequest) returns (ProposalResponse) {}
+
+  // Cleanup
+  rpc Free(FreeRequest) returns (FreeResponse) {}
 }
 
 // rpc Name
@@ -251,9 +254,9 @@ message ProposalDescription {
   bytes removed_id = 3; // Required if proposal_type is "remove"
   bytes psk_id = 4; // Required if proposal_type is "externalPSK"
   uint64 epoch_id = 5; // Required if proposal_type is "resumptionPSK"
-  repeated Extension extensions = 6; // Required if proposal_type is "groupContextExtensions"
+  repeated Extension extensions = 6; // Required if proposal_type is "groupContextExtensions" or "reinit"
   bytes group_id = 7; // Required if proposal_type is "reinit"
-  uint32 ciphersuite = 8; // Required if proposal_type is "reinit"
+  uint32 cipher_suite = 8; // Required if proposal_type is "reinit"
 }
 
 // rpc Commit
@@ -400,3 +403,10 @@ message ExternalSignerProposalRequest{
   bytes ratchet_tree = 4;
   ProposalDescription description = 5;
 }
+
+// rpc Free
+message FreeRequest {
+  uint32 state_id = 1;
+}
+
+message FreeResponse {}

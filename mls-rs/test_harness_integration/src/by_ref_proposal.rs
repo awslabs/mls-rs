@@ -47,7 +47,7 @@ pub(crate) mod inner {
             let mut clients = self.clients.lock().await;
 
             let group = clients
-                .get_mut(index as usize)
+                .get_mut(&index)
                 .ok_or_else(|| Status::aborted("no group with such index."))?
                 .group
                 .as_mut()
@@ -254,7 +254,7 @@ pub(crate) mod inner {
             let ext_clients = &mut self.external_clients.lock().await;
 
             let ext_client = ext_clients
-                .get_mut(request.signer_id as usize)
+                .get_mut(&request.signer_id)
                 .ok_or_else(|| Status::aborted("no group with such index."))?;
 
             let group_info = MlsMessage::from_bytes(&request.group_info).map_err(abort)?;
@@ -297,7 +297,7 @@ pub(crate) mod inner {
                     .propose_reinit(
                         Some(proposal.group_id),
                         ProtocolVersion::MLS_10,
-                        (proposal.ciphersuite as u16).into(),
+                        (proposal.cipher_suite as u16).into(),
                         parse_extensions(proposal.extensions),
                         vec![],
                     )
@@ -379,11 +379,10 @@ pub(crate) mod external_proposal {
             let (_, key_pckg_secrets) = client.key_package_repo.key_packages()[0].clone();
             let signature_priv = client.signer.to_vec();
 
-            let mut clients = self.clients.lock().await;
-            clients.push(client);
+            let transaction_id = self.insert_client(client).await;
 
             let resp = NewMemberAddProposalResponse {
-                transaction_id: clients.len() as u32 - 1,
+                transaction_id,
                 proposal,
                 init_priv: key_pckg_secrets.init_key.to_vec(),
                 encryption_priv: key_pckg_secrets.leaf_node_key.to_vec(),
@@ -417,10 +416,12 @@ pub(crate) mod external_proposal {
                 .signer(secret_key, signing_identity)
                 .build();
 
-            ext_clients.push(ExternalClientDetails { ext_client });
+            let signer_id = *ext_clients.keys().max().unwrap_or(&0);
+
+            ext_clients.insert(signer_id, ExternalClientDetails { ext_client });
 
             let resp = CreateExternalSignerResponse {
-                signer_id: ext_clients.len() as u32 - 1,
+                signer_id,
                 external_sender,
             };
 

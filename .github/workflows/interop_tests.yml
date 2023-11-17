@@ -18,7 +18,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: mlswg/mls-implementations
-          ref: 3d338d341b1b02c5a2a1a631c60985ce844d2def
+          ref: 7066309c555bfc11fbc74f8288a8563c927637b2
           path: interop
       - uses: arduino/setup-protoc@v2
         with:

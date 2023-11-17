@@ -28,7 +28,7 @@ pub(crate) mod inner {
                 let clients = &mut self.clients.lock().await;
 
                 let group = clients
-                    .get_mut(request.state_id as usize)
+                    .get_mut(&request.state_id)
                     .ok_or_else(|| Status::aborted("no group with such index."))?
                     .group
                     .as_mut()
@@ -56,7 +56,7 @@ pub(crate) mod inner {
             let clients = &mut self.clients.lock().await;
 
             let client = clients
-                .get_mut(request.reinit_id as usize)
+                .get_mut(&request.reinit_id)
                 .ok_or_else(|| Status::aborted("no group with such index."))?;
 
             let group = client
@@ -98,14 +98,14 @@ pub(crate) mod inner {
             // Find the key package generated earlier based on the transaction_id
             let (id, key_package_data) = {
                 let key_package_client = clients
-                    .get(request.transaction_id as usize)
+                    .get(&request.transaction_id)
                     .ok_or_else(|| Status::aborted("no group with such index."))?;
 
                 key_package_client.key_package_repo.key_packages()[0].clone()
             };
 
             let client = clients
-                .get_mut(request.state_id as usize)
+                .get_mut(&request.state_id)
                 .ok_or_else(|| Status::aborted("no group with such index."))?;
 
             // Insert the previously created key package
@@ -142,7 +142,7 @@ pub(crate) mod inner {
             let clients = &mut self.clients.lock().await;
 
             let client = clients
-                .get_mut(client_id as usize)
+                .get_mut(&client_id)
                 .ok_or_else(|| Status::aborted("no group with such index."))?;
 
             let group = client
@@ -210,7 +210,7 @@ pub(crate) mod inner {
             let mut clients = self.clients.lock().await;
 
             let client = clients
-                .get_mut(commit_resp.state_id as usize)
+                .get_mut(&commit_resp.state_id)
                 .ok_or_else(|| Status::aborted("no group with such index."))?;
 
             let group = client
