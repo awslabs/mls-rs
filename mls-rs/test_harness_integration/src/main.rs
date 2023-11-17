@@ -37,7 +37,7 @@ use mls_rs::external_client::builder::ExternalBaseConfig;
 use mls_rs_crypto_openssl::OpensslCryptoProvider;
 
 use clap::Parser;
-use std::{convert::Infallible, net::IpAddr, sync::Arc};
+use std::{collections::HashMap, convert::Infallible, net::IpAddr, sync::Arc};
 use tokio::sync::Mutex;
 use tonic::{transport::Server, Request, Response, Status};
 
@@ -48,8 +48,8 @@ use mls_client::{
     CreateBranchRequest, CreateExternalSignerRequest, CreateExternalSignerResponse,
     CreateGroupRequest, CreateGroupResponse, CreateKeyPackageRequest, CreateKeyPackageResponse,
     CreateSubgroupResponse, ExportRequest, ExportResponse, ExternalJoinRequest,
-    ExternalJoinResponse, ExternalPskProposalRequest, ExternalSignerProposalRequest,
-    GroupContextExtensionsProposalRequest, GroupInfoRequest, GroupInfoResponse,
+    ExternalJoinResponse, ExternalPskProposalRequest, ExternalSignerProposalRequest, FreeRequest,
+    FreeResponse, GroupContextExtensionsProposalRequest, GroupInfoRequest, GroupInfoResponse,
     HandleBranchRequest, HandleBranchResponse, HandleCommitRequest, HandleCommitResponse,
     HandlePendingCommitRequest, HandleReInitCommitResponse, HandleReInitWelcomeRequest,
     JoinGroupRequest, JoinGroupResponse, NameRequest, NameResponse, NewMemberAddProposalRequest,
@@ -96,9 +96,9 @@ type TestExternalClientConfig = mls_rs::external_client::builder::WithIdentityPr
 #[derive(Default)]
 pub struct MlsClientImpl {
     name: String,
-    clients: Mutex<Vec<ClientDetails>>,
+    clients: Mutex<HashMap<u32, ClientDetails>>,
     #[allow(dead_code)]
-    external_clients: Mutex<Vec<ExternalClientDetails>>,
+    external_clients: Mutex<HashMap<u32, ExternalClientDetails>>,
 }
 
 impl MlsClientImpl {
@@ -222,12 +222,9 @@ impl MlsClient for MlsClientImpl {
         client.group = Some(group);
         client.set_enc_controls(request.encrypt_handshake).await;
 
-        let mut clients = self.clients.lock().await;
-        clients.push(client);
+        let state_id = self.insert_client(client).await;
 
-        Ok(Response::new(CreateGroupResponse {
-            state_id: clients.len() as u32 - 1,
-        }))
+        Ok(Response::new(CreateGroupResponse { state_id }))
     }
 
     async fn create_key_package(
@@ -246,11 +243,10 @@ impl MlsClient for MlsClientImpl {
         let (_, key_pckg_secrets) = client.key_package_repo.key_packages()[0].clone();
         let signature_priv = client.signer.to_vec();
 
-        let mut clients = self.clients.lock().await;
-        clients.push(client);
+        let transaction_id = self.insert_client(client).await;
 
         let resp = CreateKeyPackageResponse {
-            transaction_id: clients.len() as u32 - 1,
+            transaction_id,
             key_package: key_package.to_bytes().map_err(abort)?,
             init_priv: key_pckg_secrets.init_key.to_vec(),
             encryption_priv: key_pckg_secrets.leaf_node_key.to_vec(),
@@ -270,7 +266,7 @@ impl MlsClient for MlsClientImpl {
         let welcome_msg = MlsMessage::from_bytes(&request.welcome).map_err(abort)?;
 
         let client = clients
-            .get_mut(request.transaction_id as usize)
+            .get_mut(&request.transaction_id)
             .ok_or_else(|| Status::aborted("no client with such index"))?;
 
         let (group, _) = client
@@ -346,11 +342,10 @@ impl MlsClient for MlsClientImpl {
         let epoch_authenticator = group.epoch_authenticator().map_err(abort)?.to_vec();
 
         client.group = Some(group);
-        let mut clients = self.clients.lock().await;
-        clients.push(client);
+        let state_id = self.insert_client(client).await;
 
         let resp = ExternalJoinResponse {
-            state_id: clients.len() as u32 - 1,
+            state_id,
             commit: commit.to_bytes().unwrap(),
             epoch_authenticator,
         };
@@ -367,7 +362,7 @@ impl MlsClient for MlsClientImpl {
         let groups = self.clients.lock().await;
 
         let group = groups
-            .get(request.state_id as usize)
+            .get(&request.state_id)
             .ok_or_else(|| Status::aborted("no group with such index."))?
             .group
             .as_ref()
@@ -409,7 +404,7 @@ impl MlsClient for MlsClientImpl {
         let mut clients = self.clients.lock().await;
 
         let ciphertext = clients
-            .get_mut(request.state_id as usize)
+            .get_mut(&request.state_id)
             .ok_or_else(|| Status::aborted("no group with such index."))?
             .group
             .as_mut()
@@ -438,7 +433,7 @@ impl MlsClient for MlsClientImpl {
         let ciphertext = MlsMessage::from_bytes(&request.ciphertext).map_err(abort)?;
 
         let message = clients
-            .get_mut(request.state_id as usize)
+            .get_mut(&request.state_id)
             .ok_or_else(|| Status::aborted("no group with such index."))?
             .group
             .as_mut()
@@ -466,7 +461,7 @@ impl MlsClient for MlsClientImpl {
         self.clients
             .lock()
             .await
-            .get_mut(request.state_or_transaction_id as usize)
+            .get_mut(&request.state_or_transaction_id)
             .ok_or_else(|| Status::aborted("no group with such index."))?
             .psk_store
             .insert(
@@ -570,7 +565,7 @@ impl MlsClient for MlsClientImpl {
         let clients = &mut self.clients.lock().await;
 
         let group = clients
-            .get_mut(request_ref.state_id as usize)
+            .get_mut(&request_ref.state_id)
             .ok_or_else(|| Status::aborted("no group with such index."))?
             .group
             .as_mut()
@@ -659,9 +654,26 @@ impl MlsClient for MlsClientImpl {
     ) -> Result<Response<ProposalResponse>, Status> {
         self.propose(request).await
     }
+
+    async fn free(&self, request: Request<FreeRequest>) -> Result<Response<FreeResponse>, Status> {
+        self.clients
+            .lock()
+            .await
+            .remove(&request.into_inner().state_id);
+
+        Ok(Response::new(FreeResponse {}))
+    }
 }
 
 impl MlsClientImpl {
+    async fn insert_client(&self, client: ClientDetails) -> u32 {
+        let mut clients = self.clients.lock().await;
+        let state_id = clients.keys().max().unwrap_or(&0) + 1;
+        clients.insert(state_id, client);
+
+        state_id
+    }
+
     async fn commit(
         &self,
         request: Request<CommitRequest>,
@@ -670,7 +682,7 @@ impl MlsClientImpl {
         let mut clients = self.clients.lock().await;
 
         let client = clients
-            .get_mut(request.state_id as usize)
+            .get_mut(&request.state_id)
             .ok_or_else(|| Status::aborted("no group with such index."))?;
 
         let group = client
@@ -768,7 +780,7 @@ impl MlsClientImpl {
         let clients = &mut self.clients.lock().await;
 
         let group = clients
-            .get_mut(request.state_id as usize)
+            .get_mut(&request.state_id)
             .ok_or_else(|| Status::aborted("no group with such index."))?
             .group
             .as_mut()
