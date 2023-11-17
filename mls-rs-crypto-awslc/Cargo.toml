@@ -9,8 +9,8 @@ keywords = ["mls", "mls-rs", "aws-lc"]
 license = "Apache-2.0 OR MIT"
 
 [dependencies]
-aws-lc-rs = "1.4"
-aws-lc-sys = { version = "0.11.0" }
+aws-lc-rs = "1.5.1"
+aws-lc-sys = { version = "0.12.0" }
 mls-rs-core = { path = "../mls-rs-core", version = "0.14.0" }
 mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", version = "0.5.0" }
 mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", version = "0.6.1" }
@@ -20,10 +20,10 @@ zeroize = { version = "1", features = ["zeroize_derive"] }
 maybe-async = "0.2.7"
 
 [target.'cfg(all(target_arch = "aarch64", macos))'.dependencies]
-aws-lc-sys = { version = "0.11.0", features = ["bindgen"] }
+aws-lc-sys = { version = "0.12.0", features = ["bindgen"] }
 
 [target.'cfg(windows)'.dependencies]
-aws-lc-sys = { version = "0.11.0", features = ["bindgen"] }
+aws-lc-sys = { version = "0.12.0", features = ["bindgen"] }
 
 [dev-dependencies]
 assert_matches = "1.5.0"
