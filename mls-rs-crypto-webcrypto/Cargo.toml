@@ -2,6 +2,11 @@
 name = "mls-rs-crypto-webcrypto"
 version = "0.1.0"
 edition = "2021"
+description = "SubtleCrypto based CryptoProvider for supporting mls-rs in a browser"
+homepage = "https://github.com/awslabs/mls-rs"
+repository = "https://github.com/awslabs/mls-rs"
+keywords = ["mls", "mls-rs"]
+license = "Apache-2.0 OR MIT"
 
 [dependencies]
 mls-rs-core = { path = "../mls-rs-core", default-features = false, features = ["std"], version = "0.15.0" }
