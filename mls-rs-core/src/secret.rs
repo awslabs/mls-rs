@@ -11,6 +11,7 @@ use zeroize::Zeroizing;
     safer_ffi_gen::ffi_type(clone, opaque)
 )]
 #[derive(Clone, Debug, Eq, PartialEq)]
+/// Wrapper struct that represents a zeroize-on-drop `Vec<u8>`
 pub struct Secret(Zeroizing<Vec<u8>>);
 
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]

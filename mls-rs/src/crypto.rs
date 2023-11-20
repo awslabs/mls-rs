@@ -9,6 +9,8 @@ pub use mls_rs_core::crypto::{
     SignatureSecretKey,
 };
 
+pub use mls_rs_core::secret::Secret;
+
 #[cfg(test)]
 pub(crate) mod test_utils {
     use cfg_if::cfg_if;
