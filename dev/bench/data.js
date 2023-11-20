@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1700247901909,
+  "lastUpdate": 1700498629821,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -4307,6 +4307,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 172014,
             "range": "± 231763",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "94983192+stefunctional@users.noreply.github.com",
+            "name": "Stephane Raux",
+            "username": "stefunctional"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d6f9a1d5fb41d5203cda9880fb5363569c0d1411",
+          "message": "Run CI on Windows (#48)\n\n* Add Windows CI\r\n\r\n* Set openssl path\r\n\r\n* attempt another ci env strategy\r\n\r\n* another attempt at env var\r\n\r\n* Install nasm (required to build aws-lc)\r\n\r\n* Install default certificates for Windows CI\r\n\r\n* Install sqlite for Windows CI\r\n\r\nSome jobs disable features, leading to not using a bundled version of\r\nsqlite and expecting to find it installed on the system.\r\n\r\n* Update aws-lc crates\r\n\r\nIt seems that it was causing multiple-definition errors when linking\r\nbecause of multiple versions of the sys crate linked together.\r\n\r\n* Use github action syntax to set env var for job step\r\n\r\nThe previous syntax doesn't work on Windows (\"Power\"shell...)\r\n\r\n* Do not set bindgen feature of aws-lc-sys as this crate already does so for platforms where it's needed\r\n\r\n---------\r\n\r\nCo-authored-by: Tom Leavy <tomleavy@amazon.com>",
+          "timestamp": "2023-11-20T11:39:20-05:00",
+          "tree_id": "1fc1aa83413aa3279aa5f53aa4441861d226981d",
+          "url": "https://github.com/awslabs/mls-rs/commit/d6f9a1d5fb41d5203cda9880fb5363569c0d1411"
+        },
+        "date": 1700498629214,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 511175,
+            "range": "± 8337",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 518047,
+            "range": "± 25924",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 570986,
+            "range": "± 21067",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1177282,
+            "range": "± 20340",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7261545,
+            "range": "± 25960",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1108350,
+            "range": "± 55243",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1205650,
+            "range": "± 57488",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1354006,
+            "range": "± 47083",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 722255,
+            "range": "± 9918",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 774075,
+            "range": "± 1883",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 834585,
+            "range": "± 4654",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 26840,
+            "range": "± 453",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 88048,
+            "range": "± 1179",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 170293,
+            "range": "± 1607",
             "unit": "ns/iter"
           }
         ]
