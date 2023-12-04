@@ -44,9 +44,7 @@ use super::proposal_filter::ProposalInfo;
 #[cfg(feature = "state_update")]
 use mls_rs_core::{
     crypto::CipherSuite,
-    error::IntoAnyError,
     group::{MemberUpdate, RosterUpdate},
-    identity::IdentityWarning,
 };
 
 #[cfg(all(feature = "state_update", feature = "psk"))]
@@ -104,7 +102,6 @@ pub(crate) fn path_update_required(proposals: &ProposalBundle) -> bool {
 #[derive(Clone, Debug, PartialEq)]
 pub struct StateUpdate {
     pub(crate) roster_update: RosterUpdate,
-    pub(crate) identity_warnings: Vec<IdentityWarning>,
     #[cfg(feature = "psk")]
     pub(crate) added_psks: Vec<ExternalPskId>,
     pub(crate) pending_reinit: Option<CipherSuite>,
@@ -126,13 +123,6 @@ impl StateUpdate {
     /// Changes to the roster as a result of proposals.
     pub fn roster_update(&self) -> &RosterUpdate {
         &self.roster_update
-    }
-
-    /// Warnings about roster changes produced by the
-    /// [`IdentityProvider`](crate::IdentityProvider)
-    /// currently in use by the group.
-    pub fn identity_warnings(&self) -> &[IdentityWarning] {
-        &self.identity_warnings
     }
 
     #[cfg(feature = "psk")]
@@ -600,15 +590,8 @@ pub(crate) trait MessageProcessor: Send + Sync {
 
         let roster_update = RosterUpdate::new(added, removed, updated);
 
-        let identity_warnings = self
-            .identity_provider()
-            .identity_warnings(&roster_update)
-            .await
-            .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?;
-
         let update = StateUpdate {
             roster_update,
-            identity_warnings,
             #[cfg(feature = "psk")]
             added_psks: psks,
             pending_reinit: provisional

@@ -12,7 +12,7 @@ pub mod x509 {
 }
 
 pub use mls_rs_core::identity::{
-    Credential, CredentialType, CustomCredential, IdentityWarning, MlsCredential, SigningIdentity,
+    Credential, CredentialType, CustomCredential, MlsCredential, SigningIdentity,
 };
 
 pub use mls_rs_core::group::RosterUpdate;
@@ -26,10 +26,7 @@ pub(crate) mod test_utils {
         crypto::{CipherSuite, CipherSuiteProvider, SignatureSecretKey},
         error::IntoAnyError,
         extension::ExtensionList,
-        group::RosterUpdate,
-        identity::{
-            Credential, CredentialType, IdentityProvider, IdentityWarning, SigningIdentity,
-        },
+        identity::{Credential, CredentialType, IdentityProvider, SigningIdentity},
         time::MlsTime,
     };
 
@@ -154,13 +151,6 @@ pub(crate) mod test_utils {
 
         fn supported_types(&self) -> Vec<CredentialType> {
             self.supported_cred_types.clone()
-        }
-
-        async fn identity_warnings(
-            &self,
-            _update: &RosterUpdate,
-        ) -> Result<Vec<IdentityWarning>, Self::Error> {
-            Ok(vec![])
         }
     }
 

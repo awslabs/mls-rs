@@ -9,16 +9,10 @@ mod openssl_sqlite {
         x509::{X509Reader, X509Validator},
         OpensslCryptoProvider,
     };
-    use mls_rs_identity_x509::{
-        NoOpWarningProvider, SubjectIdentityExtractor, X509IdentityProvider,
-    };
+    use mls_rs_identity_x509::{SubjectIdentityExtractor, X509IdentityProvider};
 
     pub type OpensslSqlMlsConfig = WithIdentityProvider<
-        X509IdentityProvider<
-            SubjectIdentityExtractor<X509Reader>,
-            X509Validator,
-            NoOpWarningProvider,
-        >,
+        X509IdentityProvider<SubjectIdentityExtractor<X509Reader>, X509Validator>,
         WithCryptoProvider<OpensslCryptoProvider, BaseConfig>,
     >;
 
