@@ -166,6 +166,7 @@ where
             external_leaf,
             self.original_tree,
             self.identity_provider,
+            self.original_group_extensions,
         )
         .await?;
 
@@ -201,6 +202,7 @@ where
                 &mut output.new_tree,
                 external_leaf.clone(),
                 self.identity_provider,
+                self.original_group_extensions,
             )
             .await?,
         );
@@ -504,6 +506,7 @@ async fn ensure_at_most_one_removal_for_self<C>(
     external_leaf: &LeafNode,
     tree: &TreeKemPublic,
     identity_provider: &C,
+    extensions: &ExtensionList,
 ) -> Result<(), MlsError>
 where
     C: IdentityProvider,
@@ -512,8 +515,14 @@ where
 
     match (removals.next(), removals.next()) {
         (Some(removal), None) => {
-            ensure_removal_is_for_self(&removal.proposal, external_leaf, tree, identity_provider)
-                .await
+            ensure_removal_is_for_self(
+                &removal.proposal,
+                external_leaf,
+                tree,
+                identity_provider,
+                extensions,
+            )
+            .await
         }
         (Some(_), Some(_)) => Err(MlsError::ExternalCommitWithMoreThanOneRemove),
         (None, _) => Ok(()),
@@ -526,6 +535,7 @@ async fn ensure_removal_is_for_self<C>(
     external_leaf: &LeafNode,
     tree: &TreeKemPublic,
     identity_provider: &C,
+    extensions: &ExtensionList,
 ) -> Result<(), MlsError>
 where
     C: IdentityProvider,
@@ -533,7 +543,11 @@ where
     let existing_signing_id = &tree.get_leaf_node(removal.to_remove)?.signing_identity;
 
     identity_provider
-        .valid_successor(existing_signing_id, &external_leaf.signing_identity)
+        .valid_successor(
+            existing_signing_id,
+            &external_leaf.signing_identity,
+            extensions,
+        )
         .await
         .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?
         .then_some(())
@@ -553,6 +567,8 @@ async fn insert_external_leaf<I: IdentityProvider>(
     tree: &mut TreeKemPublic,
     leaf_node: LeafNode,
     identity_provider: &I,
+    extensions: &ExtensionList,
 ) -> Result<LeafIndex, MlsError> {
-    tree.add_leaf(leaf_node, identity_provider, None).await
+    tree.add_leaf(leaf_node, identity_provider, extensions, None)
+        .await
 }

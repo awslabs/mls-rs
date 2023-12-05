@@ -98,6 +98,7 @@ where
         let added = new_tree
             .batch_edit_lite(
                 proposals,
+                group_extensions_in_use,
                 self.identity_provider,
                 self.cipher_suite_provider,
             )

@@ -530,7 +530,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     ) -> Result<Member, MlsError> {
         let identity = self
             .identity_provider()
-            .identity(identity_id)
+            .identity(identity_id, self.context_extensions())
             .await
             .map_err(|error| MlsError::IdentityProviderError(error.into_any_error()))?;
 
@@ -541,7 +541,11 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
 
         #[cfg(not(feature = "tree_index"))]
         let index = tree
-            .get_leaf_node_with_identity(&identity, &self.identity_provider())
+            .get_leaf_node_with_identity(
+                &identity,
+                &self.identity_provider(),
+                self.context_extensions(),
+            )
             .await?;
 
         let index = index.ok_or(MlsError::MemberNotFound)?;

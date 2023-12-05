@@ -71,6 +71,7 @@ pub(crate) async fn validate_update_path<C: IdentityProvider, CSP: CipherSuitePr
             .valid_successor(
                 &original_leaf_node.signing_identity,
                 &path.leaf_node.signing_identity,
+                group_context_extensions,
             )
             .await
             .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?

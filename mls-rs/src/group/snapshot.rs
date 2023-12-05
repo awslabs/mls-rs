@@ -110,7 +110,7 @@ impl RawGroupState {
         let mut public_tree = self.public_tree;
 
         public_tree
-            .initialize_index_if_necessary(identity_provider)
+            .initialize_index_if_necessary(identity_provider, &context.extensions)
             .await?;
 
         Ok(GroupState {

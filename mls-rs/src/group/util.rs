@@ -43,22 +43,6 @@ pub(crate) struct JoinContext {
     pub signer_index: LeafIndex,
 }
 
-#[cfg(not(feature = "tree_index"))]
-#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-pub(crate) async fn process_group_info<C>(
-    msg_protocol_version: ProtocolVersion,
-    group_info: GroupInfo,
-    tree_data: Option<&[u8]>,
-    cs: &C,
-) -> Result<JoinContext, MlsError>
-where
-    C: CipherSuiteProvider,
-{
-    let public_tree = find_tree(tree_data, group_info.extensions.get_as()?).await?;
-    process_group_info_with_tree(msg_protocol_version, group_info, public_tree, cs).await
-}
-
-#[cfg(feature = "tree_index")]
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 pub(crate) async fn process_group_info<C, I>(
     msg_protocol_version: ProtocolVersion,
@@ -71,27 +55,21 @@ where
     C: CipherSuiteProvider,
     I: IdentityProvider,
 {
-    let public_tree = find_tree(tree_data, group_info.extensions.get_as()?, id_provider).await?;
-    process_group_info_with_tree(msg_protocol_version, group_info, public_tree, cs).await
-}
+    let tree_data = match group_info.extensions.get_as::<RatchetTreeExt>()? {
+        Some(ext) => ext.tree_data,
+        None => NodeVec::mls_decode(&mut tree_data.ok_or(MlsError::RatchetTreeNotFound)?)?,
+    };
 
-#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-async fn process_group_info_with_tree<C>(
-    msg_protocol_version: ProtocolVersion,
-    group_info: GroupInfo,
-    public_tree: TreeKemPublic,
-    cipher_suite_provider: &C,
-) -> Result<JoinContext, MlsError>
-where
-    C: CipherSuiteProvider,
-{
+    let context_ext = &group_info.group_context.extensions;
+    let public_tree = TreeKemPublic::import_node_data(tree_data, id_provider, context_ext).await?;
+
     let group_protocol_version = group_info.group_context.protocol_version;
 
     if msg_protocol_version != group_protocol_version {
         return Err(MlsError::ProtocolVersionMismatch);
     }
 
-    let cipher_suite = cipher_suite_provider.cipher_suite();
+    let cipher_suite = cs.cipher_suite();
 
     if group_info.group_context.cipher_suite != cipher_suite {
         return Err(MlsError::CipherSuiteMismatch);
@@ -100,11 +78,7 @@ where
     let sender_key_package = public_tree.get_leaf_node(group_info.signer)?;
 
     group_info
-        .verify(
-            cipher_suite_provider,
-            &sender_key_package.signing_identity.signature_key,
-            &(),
-        )
+        .verify(cs, &sender_key_package.signing_identity.signature_key, &())
         .await?;
 
     let confirmation_tag = group_info.confirmation_tag;
@@ -141,7 +115,6 @@ pub(crate) async fn validate_group_info<I: IdentityProvider, C: CipherSuiteProvi
         msg_protocol_version,
         group_info,
         tree_data,
-        #[cfg(feature = "tree_index")]
         identity_provider,
         cipher_suite_provider,
     )
@@ -178,41 +151,6 @@ pub(crate) async fn validate_group_info<I: IdentityProvider, C: CipherSuiteProvi
     }
 
     Ok(join_context)
-}
-
-#[cfg(feature = "tree_index")]
-#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-pub(crate) async fn find_tree<C>(
-    tree_data: Option<&[u8]>,
-    extension: Option<RatchetTreeExt>,
-    identity_provider: &C,
-) -> Result<TreeKemPublic, MlsError>
-where
-    C: IdentityProvider,
-{
-    TreeKemPublic::import_node_data(find_node_data(tree_data, extension)?, identity_provider).await
-}
-
-#[cfg(not(feature = "tree_index"))]
-#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-pub(crate) async fn find_tree(
-    tree_data: Option<&[u8]>,
-    extension: Option<RatchetTreeExt>,
-) -> Result<TreeKemPublic, MlsError> {
-    TreeKemPublic::import_node_data(find_node_data(tree_data, extension)?).await
-}
-
-pub(crate) fn find_node_data(
-    tree_data: Option<&[u8]>,
-    extension: Option<RatchetTreeExt>,
-) -> Result<NodeVec, MlsError> {
-    match tree_data {
-        Some(tree_data) => Ok(NodeVec::mls_decode(&mut &*tree_data)?),
-        None => {
-            let tree_extension = extension.ok_or(MlsError::RatchetTreeNotFound)?;
-            Ok(tree_extension.tree_data)
-        }
-    }
 }
 
 pub(crate) fn commit_sender(

@@ -1356,7 +1356,7 @@ mod tests {
         ) -> bool {
             if let Some(extensions) = extensions {
                 if let Some(ext) = extensions.get_as::<TestExtension>().unwrap() {
-                    self.identity(identity).await.unwrap()[0] == ext.foo
+                    self.identity(identity, extensions).await.unwrap()[0] == ext.foo
                 } else {
                     true
                 }
@@ -1397,9 +1397,10 @@ mod tests {
         async fn identity(
             &self,
             signing_identity: &SigningIdentity,
+            extensions: &ExtensionList,
         ) -> Result<Vec<u8>, Self::Error> {
             self.0
-                .identity(signing_identity)
+                .identity(signing_identity, extensions)
                 .await
                 .map_err(|_| IdentityProviderWithExtensionError {})
         }
@@ -1408,6 +1409,7 @@ mod tests {
             &self,
             _predecessor: &SigningIdentity,
             _successor: &SigningIdentity,
+            _extensions: &ExtensionList,
         ) -> Result<bool, Self::Error> {
             Ok(true)
         }

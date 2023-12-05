@@ -95,8 +95,8 @@ async fn validation() {
 
         let mut tree = TreeKemPublic::import_node_data(
             NodeVec::mls_decode(&mut &*test_case.tree).unwrap(),
-            #[cfg(feature = "tree_index")]
             &BasicIdentityProvider,
+            &Default::default(),
         )
         .await
         .unwrap();

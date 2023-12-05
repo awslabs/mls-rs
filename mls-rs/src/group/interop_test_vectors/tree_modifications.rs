@@ -18,14 +18,12 @@ use crate::{
         test_utils::TEST_GROUP,
         LeafIndex, Sender, TreeKemPublic,
     },
+    identity::basic::BasicIdentityProvider,
     key_package::test_utils::test_key_package,
     tree_kem::{
         leaf_node::test_utils::default_properties, node::NodeVec, test_utils::TreeWithSigners,
     },
 };
-
-#[cfg(feature = "tree_index")]
-use crate::identity::basic::BasicIdentityProvider;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Default, Clone)]
 struct TreeModsTestCase {
@@ -112,13 +110,10 @@ async fn tree_modifications_interop() {
     for test_case in test_cases.into_iter() {
         let nodes = NodeVec::mls_decode(&mut &*test_case.tree_before).unwrap();
 
-        let tree_before = TreeKemPublic::import_node_data(
-            nodes,
-            #[cfg(feature = "tree_index")]
-            &BasicIdentityProvider,
-        )
-        .await
-        .unwrap();
+        let tree_before =
+            TreeKemPublic::import_node_data(nodes, &BasicIdentityProvider, &Default::default())
+                .await
+                .unwrap();
 
         let proposal = Proposal::mls_decode(&mut &*test_case.proposal).unwrap();
 

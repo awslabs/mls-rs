@@ -347,11 +347,9 @@ mod tests {
     use crate::{
         cipher_suite::CipherSuite,
         crypto::test_utils::{test_cipher_suite_provider, try_test_cipher_suite_provider},
+        identity::basic::BasicIdentityProvider,
         tree_kem::{node::NodeVec, parent_hash::test_utils::get_test_tree_fig_12},
     };
-
-    #[cfg(feature = "tree_index")]
-    use crate::identity::basic::BasicIdentityProvider;
 
     use super::*;
 
@@ -408,8 +406,8 @@ mod tests {
 
             let mut tree = TreeKemPublic::import_node_data(
                 NodeVec::mls_decode(&mut &*one_case.tree_data).unwrap(),
-                #[cfg(feature = "tree_index")]
                 &BasicIdentityProvider,
+                &Default::default(),
             )
             .await
             .unwrap();

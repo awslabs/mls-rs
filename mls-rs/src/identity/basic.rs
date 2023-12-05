@@ -81,7 +81,11 @@ impl IdentityProvider for BasicIdentityProvider {
         resolve_basic_identity(signing_identity).map(|_| ())
     }
 
-    async fn identity(&self, signing_identity: &SigningIdentity) -> Result<Vec<u8>, Self::Error> {
+    async fn identity(
+        &self,
+        signing_identity: &SigningIdentity,
+        _extensions: &ExtensionList,
+    ) -> Result<Vec<u8>, Self::Error> {
         resolve_basic_identity(signing_identity).map(|b| b.identifier.to_vec())
     }
 
@@ -89,6 +93,7 @@ impl IdentityProvider for BasicIdentityProvider {
         &self,
         predecessor: &SigningIdentity,
         successor: &SigningIdentity,
+        _extensions: &ExtensionList,
     ) -> Result<bool, Self::Error> {
         Ok(resolve_basic_identity(predecessor)? == resolve_basic_identity(successor)?)
     }

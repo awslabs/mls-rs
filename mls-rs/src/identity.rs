@@ -83,24 +83,28 @@ pub(crate) mod test_utils {
             &self,
             signing_id: &SigningIdentity,
         ) -> Result<Vec<u8>, BasicWithCustomProviderError> {
-            self.basic.identity(signing_id).await.or_else(|_| {
-                signing_id
-                    .credential
-                    .as_custom()
-                    .map(|c| {
-                        if c.credential_type == CredentialType::from(Self::CUSTOM_CREDENTIAL_TYPE)
-                            || self.allow_any_custom
-                        {
-                            Ok(c.data.to_vec())
-                        } else {
-                            Err(BasicWithCustomProviderError(c.credential_type))
-                        }
-                    })
-                    .transpose()?
-                    .ok_or_else(|| {
-                        BasicWithCustomProviderError(signing_id.credential.credential_type())
-                    })
-            })
+            self.basic
+                .identity(signing_id, &Default::default())
+                .await
+                .or_else(|_| {
+                    signing_id
+                        .credential
+                        .as_custom()
+                        .map(|c| {
+                            if c.credential_type
+                                == CredentialType::from(Self::CUSTOM_CREDENTIAL_TYPE)
+                                || self.allow_any_custom
+                            {
+                                Ok(c.data.to_vec())
+                            } else {
+                                Err(BasicWithCustomProviderError(c.credential_type))
+                            }
+                        })
+                        .transpose()?
+                        .ok_or_else(|| {
+                            BasicWithCustomProviderError(signing_id.credential.credential_type())
+                        })
+                })
         }
     }
 
@@ -137,7 +141,11 @@ pub(crate) mod test_utils {
             Ok(())
         }
 
-        async fn identity(&self, signing_id: &SigningIdentity) -> Result<Vec<u8>, Self::Error> {
+        async fn identity(
+            &self,
+            signing_id: &SigningIdentity,
+            _extensions: &ExtensionList,
+        ) -> Result<Vec<u8>, Self::Error> {
             self.resolve_custom_identity(signing_id).await
         }
 
@@ -145,6 +153,7 @@ pub(crate) mod test_utils {
             &self,
             predecessor: &SigningIdentity,
             successor: &SigningIdentity,
+            _extensions: &ExtensionList,
         ) -> Result<bool, Self::Error> {
             let predecessor = self.resolve_custom_identity(predecessor).await?;
             let successor = self.resolve_custom_identity(successor).await?;

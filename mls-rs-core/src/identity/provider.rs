@@ -71,7 +71,11 @@ pub trait IdentityProvider: Send + Sync {
     ///
     /// The MLS protocol requires that each member of a group has a unique
     /// set of identifiers according to the application.
-    async fn identity(&self, signing_identity: &SigningIdentity) -> Result<Vec<u8>, Self::Error>;
+    async fn identity(
+        &self,
+        signing_identity: &SigningIdentity,
+        extensions: &ExtensionList,
+    ) -> Result<Vec<u8>, Self::Error>;
 
     /// Determines if `successor` can remove `predecessor` as part of an external commit.
     ///
@@ -83,6 +87,7 @@ pub trait IdentityProvider: Send + Sync {
         &self,
         predecessor: &SigningIdentity,
         successor: &SigningIdentity,
+        extensions: &ExtensionList,
     ) -> Result<bool, Self::Error>;
 
     /// Credential types that are supported by this provider.

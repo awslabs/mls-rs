@@ -141,6 +141,7 @@ where
         let added = new_tree
             .batch_edit(
                 &mut applied_proposals,
+                group_extensions_in_use,
                 self.identity_provider,
                 self.cipher_suite_provider,
                 strategy.is_ignore(),
@@ -195,7 +196,11 @@ where
 
                     let valid_successor = self
                         .identity_provider
-                        .valid_successor(&old_leaf.signing_identity, &leaf.signing_identity)
+                        .valid_successor(
+                            &old_leaf.signing_identity,
+                            &leaf.signing_identity,
+                            group_extensions_in_use,
+                        )
                         .await
                         .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))
                         .and_then(|valid| valid.then_some(()).ok_or(MlsError::InvalidSuccessor));
