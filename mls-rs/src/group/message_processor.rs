@@ -885,6 +885,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
             .apply_update_path(
                 sender,
                 update_path,
+                &provisional_state.group_context.extensions,
                 self.identity_provider(),
                 self.cipher_suite_provider(),
             )

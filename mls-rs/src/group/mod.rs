@@ -305,8 +305,13 @@ where
             .check_if_valid(&leaf_node, ValidationContext::Add(None))
             .await?;
 
-        let (mut public_tree, private_tree) =
-            TreeKemPublic::derive(leaf_node, leaf_node_secret, &config.identity_provider()).await?;
+        let (mut public_tree, private_tree) = TreeKemPublic::derive(
+            leaf_node,
+            leaf_node_secret,
+            &config.identity_provider(),
+            &group_context_extensions,
+        )
+        .await?;
 
         let tree_hash = public_tree.tree_hash(&cipher_suite_provider).await?;
 
@@ -1320,7 +1325,11 @@ where
 
         #[cfg(not(feature = "tree_index"))]
         let index = tree
-            .get_leaf_node_with_identity(identity, &self.identity_provider())
+            .get_leaf_node_with_identity(
+                identity,
+                &self.identity_provider(),
+                &self.state.context.extensions,
+            )
             .await?;
 
         let index = index.ok_or(MlsError::MemberNotFound)?;
@@ -1615,6 +1624,7 @@ where
             .apply_update_path(
                 sender,
                 update_path,
+                &provisional_state.group_context.extensions,
                 self.identity_provider(),
                 self.cipher_suite_provider(),
             )

@@ -63,9 +63,10 @@ pub(super) async fn index_insert<I: IdentityProvider>(
     new_leaf: &LeafNode,
     new_leaf_idx: LeafIndex,
     id_provider: &I,
+    extensions: &ExtensionList,
 ) -> Result<(), MlsError> {
     let new_id = id_provider
-        .identity(&new_leaf.signing_identity)
+        .identity(&new_leaf.signing_identity, extensions)
         .await
         .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?;
 
@@ -79,9 +80,10 @@ pub(super) async fn index_insert<I: IdentityProvider>(
     new_leaf: &LeafNode,
     new_leaf_idx: LeafIndex,
     id_provider: &I,
+    extensions: &ExtensionList,
 ) -> Result<(), MlsError> {
     let new_id = id_provider
-        .identity(&new_leaf.signing_identity)
+        .identity(&new_leaf.signing_identity, extensions)
         .await
         .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?;
 
@@ -95,7 +97,7 @@ pub(super) async fn index_insert<I: IdentityProvider>(
             .ok_or(MlsError::DuplicateLeafData(*i))?;
 
         let id = id_provider
-            .identity(&leaf.signing_identity)
+            .identity(&leaf.signing_identity, extensions)
             .await
             .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?;
 

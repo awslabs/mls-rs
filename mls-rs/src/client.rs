@@ -649,7 +649,6 @@ where
             protocol_version,
             group_info,
             tree_data,
-            #[cfg(feature = "tree_index")]
             &self.config.identity_provider(),
             &cipher_suite_provider,
         )

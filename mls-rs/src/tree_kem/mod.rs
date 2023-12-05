@@ -8,6 +8,7 @@ use alloc::vec::Vec;
 use core::fmt::Display;
 use itertools::Itertools;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
+use mls_rs_core::extension::ExtensionList;
 
 use mls_rs_core::{error::IntoAnyError, identity::IdentityProvider};
 
@@ -84,20 +85,12 @@ impl TreeKemPublic {
         Default::default()
     }
 
-    #[cfg(not(feature = "tree_index"))]
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub(crate) async fn import_node_data(nodes: NodeVec) -> Result<TreeKemPublic, MlsError> {
-        Ok(TreeKemPublic {
-            nodes,
-            ..Default::default()
-        })
-    }
-
-    #[cfg(feature = "tree_index")]
+    #[cfg_attr(not(feature = "tree_index"), allow(unused))]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn import_node_data<IP>(
         nodes: NodeVec,
         identity_provider: &IP,
+        extensions: &ExtensionList,
     ) -> Result<TreeKemPublic, MlsError>
     where
         IP: IdentityProvider,
@@ -107,7 +100,8 @@ impl TreeKemPublic {
             ..Default::default()
         };
 
-        tree.initialize_index_if_necessary(identity_provider)
+        #[cfg(feature = "tree_index")]
+        tree.initialize_index_if_necessary(identity_provider, extensions)
             .await?;
 
         Ok(tree)
@@ -118,12 +112,20 @@ impl TreeKemPublic {
     pub(crate) async fn initialize_index_if_necessary<IP: IdentityProvider>(
         &mut self,
         identity_provider: &IP,
+        extensions: &ExtensionList,
     ) -> Result<(), MlsError> {
         if !self.index.is_initialized() {
             self.index = TreeIndex::new();
 
             for (leaf_index, leaf) in self.nodes.non_empty_leaves() {
-                index_insert(&mut self.index, leaf, leaf_index, identity_provider).await?;
+                index_insert(
+                    &mut self.index,
+                    leaf,
+                    leaf_index,
+                    identity_provider,
+                    extensions,
+                )
+                .await?;
             }
         }
 
@@ -141,10 +143,11 @@ impl TreeKemPublic {
         &self,
         identity: &[u8],
         id_provider: &I,
+        extensions: &ExtensionList,
     ) -> Result<Option<LeafIndex>, MlsError> {
         for (i, leaf) in self.nodes.non_empty_leaves() {
             let leaf_id = id_provider
-                .identity(&leaf.signing_identity)
+                .identity(&leaf.signing_identity, extensions)
                 .await
                 .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?;
 
@@ -165,11 +168,12 @@ impl TreeKemPublic {
         leaf_node: LeafNode,
         secret_key: HpkeSecretKey,
         identity_provider: &I,
+        extensions: &ExtensionList,
     ) -> Result<(TreeKemPublic, TreeKemPrivate), MlsError> {
         let mut public_tree = TreeKemPublic::new();
 
         public_tree
-            .add_leaf(leaf_node, identity_provider, None)
+            .add_leaf(leaf_node, identity_provider, extensions, None)
             .await?;
 
         let private_tree = TreeKemPrivate::new_self_leaf(LeafIndex(0), secret_key);
@@ -225,7 +229,9 @@ impl TreeKemPublic {
         let mut added = vec![];
 
         for leaf in leaf_nodes.into_iter() {
-            start = self.add_leaf(leaf, id_provider, Some(start)).await?;
+            start = self
+                .add_leaf(leaf, id_provider, &Default::default(), Some(start))
+                .await?;
             added.push(start);
         }
 
@@ -261,6 +267,7 @@ impl TreeKemPublic {
         &mut self,
         sender: LeafIndex,
         update_path: &ValidatedUpdatePath,
+        extensions: &ExtensionList,
         identity_provider: IP,
         cipher_suite_provider: &CP,
     ) -> Result<(), MlsError>
@@ -276,7 +283,7 @@ impl TreeKemPublic {
 
         #[cfg(feature = "tree_index")]
         let original_identity = identity_provider
-            .identity(&original_leaf_node.signing_identity)
+            .identity(&original_leaf_node.signing_identity, extensions)
             .await
             .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?;
 
@@ -302,6 +309,7 @@ impl TreeKemPublic {
             &update_path.leaf_node,
             sender,
             &identity_provider,
+            extensions,
         )
         .await?;
 
@@ -329,6 +337,7 @@ impl TreeKemPublic {
     pub async fn batch_edit<I, CP>(
         &mut self,
         proposal_bundle: &mut ProposalBundle,
+        extensions: &ExtensionList,
         id_provider: &I,
         cipher_suite_provider: &CP,
         filter: bool,
@@ -350,7 +359,9 @@ impl TreeKemPublic {
             #[cfg(feature = "tree_index")]
             if let Ok(old_leaf) = &res {
                 // If this fails, it's not because the proposal is bad.
-                let identity = identity(&old_leaf.signing_identity, id_provider).await?;
+                let identity =
+                    identity(&old_leaf.signing_identity, id_provider, extensions).await?;
+
                 self.index.remove(old_leaf, &identity);
             }
 
@@ -371,7 +382,9 @@ impl TreeKemPublic {
             match self.nodes.blank_leaf_node(index) {
                 Ok(old_leaf) => {
                     #[cfg(feature = "tree_index")]
-                    let old_id = identity(&old_leaf.signing_identity, id_provider).await?;
+                    let old_id =
+                        identity(&old_leaf.signing_identity, id_provider, extensions).await?;
+
                     #[cfg(feature = "tree_index")]
                     self.index.remove(&old_leaf, &old_id);
 
@@ -396,9 +409,11 @@ impl TreeKemPublic {
         // all updates.
         for (index, old_leaf, new_leaf, i) in partial_updates.into_iter() {
             #[cfg(feature = "tree_index")]
-            let res = index_insert(&mut self.index, &new_leaf, index, id_provider).await;
+            let res =
+                index_insert(&mut self.index, &new_leaf, index, id_provider, extensions).await;
+
             #[cfg(not(feature = "tree_index"))]
-            let res = index_insert(&self.nodes, &new_leaf, index, id_provider).await;
+            let res = index_insert(&self.nodes, &new_leaf, index, id_provider, extensions).await;
 
             let err = res.is_err();
 
@@ -412,9 +427,12 @@ impl TreeKemPublic {
                 updated_indices.push(index);
             } else {
                 #[cfg(feature = "tree_index")]
-                let res = index_insert(&mut self.index, &old_leaf, index, id_provider).await;
+                let res =
+                    index_insert(&mut self.index, &old_leaf, index, id_provider, extensions).await;
+
                 #[cfg(not(feature = "tree_index"))]
-                let res = index_insert(&self.nodes, &old_leaf, index, id_provider).await;
+                let res =
+                    index_insert(&self.nodes, &old_leaf, index, id_provider, extensions).await;
 
                 if res.is_ok() {
                     self.nodes.insert_leaf(index, old_leaf);
@@ -465,7 +483,9 @@ impl TreeKemPublic {
                 .leaf_node
                 .clone();
 
-            let res = self.add_leaf(leaf, id_provider, Some(start)).await;
+            let res = self
+                .add_leaf(leaf, id_provider, extensions, Some(start))
+                .await;
 
             if let Ok(index) = res {
                 start = index;
@@ -502,6 +522,7 @@ impl TreeKemPublic {
     pub async fn batch_edit_lite<I, CP>(
         &mut self,
         proposal_bundle: &ProposalBundle,
+        extensions: &ExtensionList,
         id_provider: &I,
         cipher_suite_provider: &CP,
     ) -> Result<Vec<LeafIndex>, MlsError>
@@ -517,7 +538,10 @@ impl TreeKemPublic {
             {
                 // If this fails, it's not because the proposal is bad.
                 let old_leaf = self.nodes.blank_leaf_node(index)?;
-                let identity = identity(&old_leaf.signing_identity, id_provider).await?;
+
+                let identity =
+                    identity(&old_leaf.signing_identity, id_provider, extensions).await?;
+
                 self.index.remove(&old_leaf, &identity);
             }
 
@@ -533,7 +557,9 @@ impl TreeKemPublic {
 
         for p in &proposal_bundle.additions {
             let leaf = p.proposal.key_package.leaf_node.clone();
-            start = self.add_leaf(leaf, id_provider, Some(start)).await?;
+            start = self
+                .add_leaf(leaf, id_provider, extensions, Some(start))
+                .await?;
             added.push(start);
         }
 
@@ -557,15 +583,16 @@ impl TreeKemPublic {
         &mut self,
         leaf: LeafNode,
         id_provider: &I,
+        extensions: &ExtensionList,
         start: Option<LeafIndex>,
     ) -> Result<LeafIndex, MlsError> {
         let index = self.nodes.next_empty_leaf(start.unwrap_or(LeafIndex(0)));
 
         #[cfg(feature = "tree_index")]
-        index_insert(&mut self.index, &leaf, index, id_provider).await?;
+        index_insert(&mut self.index, &leaf, index, id_provider, extensions).await?;
 
         #[cfg(not(feature = "tree_index"))]
-        index_insert(&self.nodes, &leaf, index, id_provider).await?;
+        index_insert(&self.nodes, &leaf, index, id_provider, extensions).await?;
 
         self.nodes.insert_leaf(index, leaf);
         self.update_unmerged(index)?;
@@ -579,9 +606,10 @@ impl TreeKemPublic {
 async fn identity<I: IdentityProvider>(
     signing_id: &SigningIdentity,
     provider: &I,
+    extensions: &ExtensionList,
 ) -> Result<Vec<u8>, MlsError> {
     provider
-        .identity(signing_id)
+        .identity(signing_id, extensions)
         .await
         .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))
 }
@@ -617,8 +645,14 @@ impl TreeKemPublic {
         bundle.add(p, Sender::Member(leaf_index), ProposalSource::ByValue);
         bundle.update_senders = vec![LeafIndex(leaf_index)];
 
-        self.batch_edit(&mut bundle, identity_provider, cipher_suite_provider, true)
-            .await?;
+        self.batch_edit(
+            &mut bundle,
+            &Default::default(),
+            identity_provider,
+            cipher_suite_provider,
+            true,
+        )
+        .await?;
 
         Ok(())
     }
@@ -648,12 +682,23 @@ impl TreeKemPublic {
         }
 
         #[cfg(feature = "by_ref_proposal")]
-        self.batch_edit(&mut bundle, identity_provider, cipher_suite_provider, true)
-            .await?;
+        self.batch_edit(
+            &mut bundle,
+            &Default::default(),
+            identity_provider,
+            cipher_suite_provider,
+            true,
+        )
+        .await?;
 
         #[cfg(not(feature = "by_ref_proposal"))]
-        self.batch_edit_lite(&bundle, identity_provider, cipher_suite_provider)
-            .await?;
+        self.batch_edit_lite(
+            &bundle,
+            &Default::default(),
+            identity_provider,
+            cipher_suite_provider,
+        )
+        .await?;
 
         bundle
             .removals
@@ -715,6 +760,7 @@ pub(crate) mod test_utils {
             creator_leaf.clone(),
             creator_hpke_secret.clone(),
             &BasicIdentityProvider,
+            &Default::default(),
         )
         .await
         .unwrap();
@@ -964,13 +1010,10 @@ mod tests {
 
         let exported = test_tree.public.export_node_data();
 
-        let imported = TreeKemPublic::import_node_data(
-            exported,
-            #[cfg(feature = "tree_index")]
-            &BasicIdentityProvider,
-        )
-        .await
-        .unwrap();
+        let imported =
+            TreeKemPublic::import_node_data(exported, &BasicIdentityProvider, &Default::default())
+                .await
+                .unwrap();
 
         assert_eq!(test_tree.public.nodes, imported.nodes);
 
@@ -1412,6 +1455,7 @@ mod tests {
 
         tree.batch_edit(
             &mut bundle,
+            &Default::default(),
             &BasicIdentityProvider,
             &cipher_suite_provider,
             true,

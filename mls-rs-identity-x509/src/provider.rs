@@ -214,6 +214,7 @@ where
     async fn identity(
         &self,
         signing_id: &mls_rs_core::identity::SigningIdentity,
+        _extensions: &ExtensionList,
     ) -> Result<Vec<u8>, Self::Error> {
         self.identity(signing_id)
     }
@@ -222,6 +223,7 @@ where
         &self,
         predecessor: &mls_rs_core::identity::SigningIdentity,
         successor: &mls_rs_core::identity::SigningIdentity,
+        _extensions: &ExtensionList,
     ) -> Result<bool, Self::Error> {
         self.valid_successor(predecessor, successor)
     }

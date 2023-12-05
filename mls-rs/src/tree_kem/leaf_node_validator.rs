@@ -683,7 +683,11 @@ pub(crate) mod test_utils {
         }
 
         #[cfg_attr(coverage_nightly, coverage(off))]
-        async fn identity(&self, signing_id: &SigningIdentity) -> Result<Vec<u8>, Self::Error> {
+        async fn identity(
+            &self,
+            signing_id: &SigningIdentity,
+            _extensions: &ExtensionList,
+        ) -> Result<Vec<u8>, Self::Error> {
             Ok(signing_id.credential.mls_encode_to_vec().unwrap())
         }
 
@@ -692,6 +696,7 @@ pub(crate) mod test_utils {
             &self,
             _predecessor: &SigningIdentity,
             _successor: &SigningIdentity,
+            _extensions: &ExtensionList,
         ) -> Result<bool, Self::Error> {
             Err(TestFailureError)
         }
