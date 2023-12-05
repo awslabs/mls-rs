@@ -6,7 +6,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
-mls-rs = { version = "0.35.0", path = "..", default-features = false, features = ["std", "external_client", "state_update"]}
+mls-rs = { version = "0.36.0", path = "..", default-features = false, features = ["std", "external_client", "state_update"]}
 tonic = "0.7"
 prost = "0.10"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
@@ -26,10 +26,10 @@ by_ref_proposal = [ "mls-rs/by_ref_proposal" ]
 default = ["tree_index", "private_message", "prior_epoch", "out_of_order", "psk", "custom_proposal", "by_ref_proposal"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-mls-rs-crypto-rustcrypto = { path = "../../mls-rs-crypto-rustcrypto", features = ["browser"], version = "0.7.0" }
+mls-rs-crypto-rustcrypto = { path = "../../mls-rs-crypto-rustcrypto", features = ["browser"], version = "0.8.0" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-mls-rs-crypto-openssl = { path = "../../mls-rs-crypto-openssl", version = "0.6.0"}
+mls-rs-crypto-openssl = { path = "../../mls-rs-crypto-openssl", version = "0.7.0"}
 
 [build-dependencies]
 tonic-build = "0.7"

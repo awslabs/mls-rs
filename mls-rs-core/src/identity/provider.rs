@@ -2,37 +2,12 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use crate::{error::IntoAnyError, extension::ExtensionList, group::RosterUpdate, time::MlsTime};
+use crate::{error::IntoAnyError, extension::ExtensionList, time::MlsTime};
 #[cfg(mls_build_async)]
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
 use super::{CredentialType, SigningIdentity};
-
-#[derive(Debug, Clone, PartialEq)]
-#[non_exhaustive]
-/// Customizable identity warning returned by an [`IdentityProvider`].
-pub struct IdentityWarning {
-    member_index: u32,
-    code: u64,
-}
-
-impl IdentityWarning {
-    /// Create a new identity warning.
-    pub fn new(member_index: u32, code: u64) -> IdentityWarning {
-        IdentityWarning { member_index, code }
-    }
-
-    /// Index in the group roster associated with this warning.
-    pub fn member_index(&self) -> u32 {
-        self.member_index
-    }
-
-    /// Code to indicate the reason for the warning.
-    pub fn code(&self) -> u64 {
-        self.code
-    }
-}
 
 /// Identity system that can be used to validate a
 /// [`SigningIdentity`](mls-rs-core::identity::SigningIdentity)
@@ -92,16 +67,4 @@ pub trait IdentityProvider: Send + Sync {
 
     /// Credential types that are supported by this provider.
     fn supported_types(&self) -> Vec<CredentialType>;
-
-    /// Throw warnings based on changes to a group roster.
-    ///
-    /// For example, if a credential consists of only a public key an
-    /// application may want to issue a warning the key has changed to
-    /// existing members rather than say the new credential is invalid.
-    async fn identity_warnings(
-        &self,
-        update: &RosterUpdate,
-    ) -> Result<Vec<IdentityWarning>, Self::Error>
-    where
-        Self: Sized;
 }

@@ -770,8 +770,7 @@ mod tests {
 
     use mls_rs_core::{
         error::IntoAnyError,
-        group::RosterUpdate,
-        identity::{CredentialType, IdentityProvider, IdentityWarning},
+        identity::{CredentialType, IdentityProvider},
         time::MlsTime,
     };
 
@@ -1416,13 +1415,6 @@ mod tests {
 
         fn supported_types(&self) -> Vec<CredentialType> {
             self.0.supported_types()
-        }
-
-        async fn identity_warnings(
-            &self,
-            _update: &RosterUpdate,
-        ) -> Result<Vec<IdentityWarning>, Self::Error> {
-            Ok(vec![])
         }
     }
 
