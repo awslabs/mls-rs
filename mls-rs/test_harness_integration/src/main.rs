@@ -872,7 +872,7 @@ fn find_member(roster: &[Member], cred: &Credential) -> Result<u32, Status> {
 
 #[derive(Parser)]
 struct Opts {
-    #[clap(short, long, value_parser, default_value = "0.0.0.0")]
+    #[clap(long, value_parser, default_value = "0.0.0.0")]
     host: IpAddr,
 
     #[clap(short, long, value_parser, default_value = "50009")]

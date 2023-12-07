@@ -7,10 +7,10 @@ publish = false
 
 [dependencies]
 mls-rs = { version = "0.36.0", path = "..", default-features = false, features = ["std", "external_client", "state_update"]}
-tonic = "0.7"
-prost = "0.10"
+tonic = "0.10.2"
+prost = "0.12.1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
-clap = { version = "3", features = ["derive"] }
+clap = { version = "4", features = ["derive"] }
 thiserror = "1"
 futures = "0.3.25"
 hex = "0.4"
@@ -32,4 +32,4 @@ mls-rs-crypto-rustcrypto = { path = "../../mls-rs-crypto-rustcrypto", features =
 mls-rs-crypto-openssl = { path = "../../mls-rs-crypto-openssl", version = "0.7.0"}
 
 [build-dependencies]
-tonic-build = "0.7"
+tonic-build = "0.10.2"
