@@ -522,7 +522,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     /// [tree hash](https://www.rfc-editor.org/rfc/rfc9420.html#name-tree-hashes)
     /// for the current epoch that the group is in.
     #[inline(always)]
-    pub fn tree_hash(&self) -> &Vec<u8> {
+    pub fn tree_hash(&self) -> &[u8] {
         &self.group_state().context.tree_hash
     }
 
