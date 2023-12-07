@@ -518,6 +518,14 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         &self.group_state().context.confirmed_transcript_hash
     }
 
+    /// Get the
+    /// [tree hash](https://www.rfc-editor.org/rfc/rfc9420.html#name-tree-hashes)
+    /// for the current epoch that the group is in.
+    #[inline(always)]
+    pub fn tree_hash(&self) -> &[u8] {
+        &self.group_state().context.tree_hash
+    }
+
     /// Find a member based on their identity.
     ///
     /// Identities are matched based on the
