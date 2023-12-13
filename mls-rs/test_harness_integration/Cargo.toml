@@ -12,7 +12,6 @@ prost = "0.12.1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 clap = { version = "4", features = ["derive"] }
 thiserror = "1"
-futures = "0.3.25"
 hex = "0.4"
 
 [features]

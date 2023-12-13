@@ -20,7 +20,6 @@ pub mod psk;
 pub mod secret;
 pub mod time;
 
-pub use enum_iterator;
 pub use mls_rs_codec;
 
 #[cfg(feature = "arbitrary")]
