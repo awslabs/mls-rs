@@ -21,6 +21,7 @@ pub mod iter;
 mod map;
 mod option;
 mod stdint;
+mod string;
 mod tuple;
 mod varint;
 mod vec;
@@ -31,6 +32,7 @@ pub use mls_rs_codec_derive::*;
 
 #[derive(Debug)]
 #[cfg_attr(feature = "std", derive(thiserror::Error))]
+#[non_exhaustive]
 pub enum Error {
     #[cfg_attr(feature = "std", error("Integer out of range for VarInt"))]
     VarIntOutOfRange,
@@ -44,6 +46,8 @@ pub enum Error {
     OptionOutOfRange(u8),
     #[cfg_attr(feature = "std", error("Unsupported enum discriminant"))]
     UnsupportedEnumDiscriminant,
+    #[cfg_attr(feature = "std", error("Expected UTF-8 string"))]
+    Utf8,
     #[cfg_attr(feature = "std", error("mls codec error: {0}"))]
     Custom(u8),
 }

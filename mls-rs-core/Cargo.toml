@@ -1,6 +1,6 @@
 [package]
 name = "mls-rs-core"
-version = "0.16.0"
+version = "0.17.0"
 edition = "2021"
 description = "Core components and traits for mls-rs"
 homepage = "https://github.com/awslabs/mls-rs"
@@ -21,7 +21,7 @@ x509 = []
 test_suite = ["dep:serde", "dep:serde_json", "dep:hex", "dep:itertools"]
 
 [dependencies]
-mls-rs-codec = { version = "0.4.0", path = "../mls-rs-codec", default-features = false}
+mls-rs-codec = { version = "0.5.0", path = "../mls-rs-codec", default-features = false}
 zeroize = { version = "1", default-features = false, features = ["alloc", "zeroize_derive"] }
 arbitrary = { version = "1", features = ["derive"], optional = true }
 base64 = { version = "0.21.0", default-features = false, features = ["alloc"]}
