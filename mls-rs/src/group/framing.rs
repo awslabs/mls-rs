@@ -311,7 +311,7 @@ impl MlsMessage {
     }
 
     #[inline(always)]
-    pub(crate) fn into_group_info(self) -> Option<GroupInfo> {
+    pub fn into_group_info(self) -> Option<GroupInfo> {
         match self.payload {
             MlsMessagePayload::GroupInfo(info) => Some(info),
             _ => None,

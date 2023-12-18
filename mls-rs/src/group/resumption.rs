@@ -54,7 +54,7 @@ where
             group_id: &sub_group_id,
             cipher_suite: self.cipher_suite(),
             version: self.protocol_version(),
-            extensions: self.context_extensions(),
+            extensions: &self.group_state().context.extensions,
         };
 
         resumption_create_group(
@@ -81,7 +81,7 @@ where
             group_id: &[],
             cipher_suite: self.cipher_suite(),
             version: self.protocol_version(),
-            extensions: self.context_extensions(),
+            extensions: &self.group_state().context.extensions,
         };
 
         resumption_join_group(
@@ -291,7 +291,7 @@ async fn resumption_join_group<C: ClientConfig + Clone>(
         Err(MlsError::CipherSuiteMismatch)
     } else if verify_group_id && group.group_id() != expected_new_group_params.group_id {
         Err(MlsError::GroupIdMismatch)
-    } else if group.context_extensions() != expected_new_group_params.extensions {
+    } else if &group.group_state().context.extensions != expected_new_group_params.extensions {
         Err(MlsError::ReInitExtensionsMismatch)
     } else {
         Ok((group, new_member_info))

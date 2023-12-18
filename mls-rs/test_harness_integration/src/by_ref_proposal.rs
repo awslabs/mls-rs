@@ -218,7 +218,7 @@ pub(crate) mod inner {
             let request = request.into_inner();
 
             self.send_proposal(request.state_id, move |group| {
-                let mut extensions = group.context_extensions().clone();
+                let mut extensions = group.context().extensions().clone();
 
                 let ext_sender =
                     SigningIdentity::mls_decode(&mut &*request.external_sender).map_err(abort)?;
