@@ -24,7 +24,7 @@ use crate::{
         snapshot::RawGroupState,
         state::GroupState,
         transcript_hash::InterimTranscriptHash,
-        validate_group_info, Roster,
+        validate_group_info, GroupContext, Roster,
     },
     identity::SigningIdentity,
     protocol_version::ProtocolVersion,
@@ -316,7 +316,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         let key_id = ResumptionPsk {
             psk_epoch,
             usage: ResumptionPSKUsage::Application,
-            psk_group_id: PskGroupId(self.group_id().to_vec()),
+            psk_group_id: PskGroupId(self.group_context().group_id().to_vec()),
         };
 
         let proposal = self.psk_proposal(JustPreSharedKeyID::Resumption(key_id))?;
@@ -456,7 +456,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         };
 
         Ok(MlsMessage::new(
-            self.protocol_version(),
+            self.group_context().version(),
             MlsMessagePayload::Plain(plaintext),
         ))
     }
@@ -466,28 +466,10 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         &self.state
     }
 
-    /// Get the unique identifier of this group.
+    /// Get the current group context summarizing various information about the group.
     #[inline(always)]
-    pub fn group_id(&self) -> &[u8] {
-        &self.group_state().context.group_id
-    }
-
-    /// Get the current epoch number of the group's state.
-    #[inline(always)]
-    pub fn current_epoch(&self) -> u64 {
-        self.group_state().context.epoch
-    }
-
-    /// Get the current protocol version in use by the group.
-    #[inline(always)]
-    pub fn protocol_version(&self) -> ProtocolVersion {
-        self.group_state().context.protocol_version
-    }
-
-    /// Get the current ciphersuite in use by the group.
-    #[inline(always)]
-    pub fn cipher_suite(&self) -> CipherSuite {
-        self.group_state().context.cipher_suite
+    pub fn group_context(&self) -> &GroupContext {
+        &self.group_state().context
     }
 
     /// Export the current ratchet tree used within the group.
@@ -503,11 +485,6 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     #[inline(always)]
     pub fn roster(&self) -> Roster {
         self.group_state().public_tree.roster()
-    }
-
-    #[inline(always)]
-    pub fn context_extensions(&self) -> &ExtensionList {
-        &self.group_state().context.extensions
     }
 
     /// Get the
@@ -538,7 +515,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     ) -> Result<Member, MlsError> {
         let identity = self
             .identity_provider()
-            .identity(identity_id, self.context_extensions())
+            .identity(identity_id, self.group_context().extensions())
             .await
             .map_err(|error| MlsError::IdentityProviderError(error.into_any_error()))?;
 
@@ -552,7 +529,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             .get_leaf_node_with_identity(
                 &identity,
                 &self.identity_provider(),
-                self.context_extensions(),
+                self.group_context().extensions(),
             )
             .await?;
 

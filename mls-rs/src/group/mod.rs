@@ -102,13 +102,11 @@ pub(crate) use group_info::GroupInfo;
 use self::framing::MlsMessage;
 pub use self::framing::Sender;
 pub use commit::*;
-
+pub use context::GroupContext;
 pub use roster::*;
 
 pub(crate) use transcript_hash::ConfirmedTranscriptHash;
 pub(crate) use util::*;
-
-pub(crate) use context::*;
 
 #[cfg(all(feature = "by_ref_proposal", feature = "external_client"))]
 pub use self::message_processor::CachedProposal;
@@ -1406,13 +1404,10 @@ where
         ))
     }
 
+    /// Get the current group context summarizing various information about the group.
     #[inline(always)]
-    pub(crate) fn context(&self) -> &GroupContext {
-        &self.state.context
-    }
-
-    pub fn context_extensions(&self) -> &ExtensionList {
-        &self.state.context.extensions
+    pub fn context(&self) -> &GroupContext {
+        &self.group_state().context
     }
 
     /// Get the
@@ -1503,7 +1498,7 @@ where
     pub(crate) fn encryption_options(&self) -> Result<EncryptionOptions, MlsError> {
         self.config
             .mls_rules()
-            .encryption_options(&self.roster(), self.context_extensions())
+            .encryption_options(&self.roster(), self.group_context().extensions())
             .map_err(|e| MlsError::MlsRulesError(e.into_any_error()))
     }
 

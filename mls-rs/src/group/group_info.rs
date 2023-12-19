@@ -10,13 +10,28 @@ use super::*;
 
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub(crate) struct GroupInfo {
-    pub group_context: GroupContext,
-    pub extensions: ExtensionList,
-    pub confirmation_tag: ConfirmationTag,
-    pub signer: LeafIndex,
+#[cfg_attr(
+    all(feature = "ffi", not(test)),
+    safer_ffi_gen::ffi_type(clone, opaque)
+)]
+pub struct GroupInfo {
+    pub(crate) group_context: GroupContext,
+    pub(crate) extensions: ExtensionList,
+    pub(crate) confirmation_tag: ConfirmationTag,
+    pub(crate) signer: LeafIndex,
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
-    pub signature: Vec<u8>,
+    pub(crate) signature: Vec<u8>,
+}
+
+#[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen)]
+impl GroupInfo {
+    pub fn group_context(&self) -> &GroupContext {
+        &self.group_context
+    }
+
+    pub fn extensions(&self) -> &ExtensionList {
+        &self.extensions
+    }
 }
 
 #[derive(MlsEncode, MlsSize)]
