@@ -40,13 +40,15 @@ use crate::group::{
     PreSharedKeyProposal, {JustPreSharedKeyID, PreSharedKeyID},
 };
 
+use super::ExportedTree;
+
 /// A builder that aids with the construction of an external commit.
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::ffi_type(opaque))]
 pub struct ExternalCommitBuilder<C: ClientConfig> {
     signer: SignatureSecretKey,
     signing_identity: SigningIdentity,
     config: C,
-    tree_data: Option<Vec<u8>>,
+    tree_data: Option<ExportedTree>,
     to_remove: Option<u32>,
     #[cfg(feature = "psk")]
     external_psks: Vec<ExternalPskId>,
@@ -82,7 +84,7 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
     #[must_use]
     /// Use external tree data if the GroupInfo message does not contain a
     /// [`RatchetTreeExt`](crate::extension::built_in::RatchetTreeExt)
-    pub fn with_tree_data(self, tree_data: Vec<u8>) -> Self {
+    pub fn with_tree_data(self, tree_data: ExportedTree) -> Self {
         Self {
             tree_data: Some(tree_data),
             ..self
@@ -165,7 +167,7 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
         let join_context = validate_group_info(
             protocol_version,
             group_info,
-            self.tree_data.as_deref(),
+            self.tree_data,
             &self.config.identity_provider(),
             &cipher_suite,
         )

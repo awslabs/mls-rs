@@ -17,7 +17,7 @@ use rand::{seq::IteratorRandom, Rng, SeedableRng};
 use crate::{
     client_builder::{ClientBuilder, MlsConfig},
     crypto::test_utils::TestCryptoProvider,
-    group::{ClientConfig, CommitBuilder},
+    group::{ClientConfig, CommitBuilder, ExportedTree},
     identity::basic::BasicIdentityProvider,
     key_package::KeyPackageGeneration,
     mls_rules::CommitOptions,
@@ -183,7 +183,10 @@ async fn interop_passive_client() {
         client.config.key_package_repo().insert(id, pkg);
 
         let welcome = MlsMessage::from_bytes(&test_case.welcome).unwrap();
-        let tree = test_case.ratchet_tree.as_ref().map(|t| t.0.as_slice());
+
+        let tree = test_case
+            .ratchet_tree
+            .map(|t| ExportedTree::from_bytes(&t.0).unwrap());
 
         let (mut group, _info) = client.join_group(tree, welcome).await.unwrap();
 
@@ -497,7 +500,7 @@ pub async fn generate_passive_client_welcome_tests() {
                 let mut test_case = invite_passive_client(&mut groups, with_psk, &cs).await;
 
                 if !with_tree_in_extension {
-                    let tree = groups[0].export_tree().unwrap();
+                    let tree = groups[0].export_tree().to_bytes().unwrap();
                     test_case.ratchet_tree = Some(TestRatchetTree(tree));
                 }
 
@@ -622,14 +625,13 @@ pub async fn add_random_members<C: MlsConfig>(
         tc.epochs.push(epoch)
     };
 
-    let tree_data = groups[committer].export_tree().unwrap();
+    let tree_data = groups[committer].export_tree();
 
     for client in &clients {
-        let tree_data = tree_data.clone();
         let commit = commit_output.welcome_messages[0].clone();
 
         let group = client
-            .join_group(Some(&tree_data.clone()), commit)
+            .join_group(Some(tree_data.clone()), commit)
             .await
             .unwrap()
             .0;

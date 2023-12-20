@@ -14,7 +14,7 @@ use crate::group::{
     process_group_info,
     proposal::{AddProposal, Proposal},
 };
-use crate::group::{Group, NewMemberInfo};
+use crate::group::{ExportedTree, Group, NewMemberInfo};
 use crate::identity::SigningIdentity;
 use crate::key_package::{KeyPackageGeneration, KeyPackageGenerator};
 use crate::protocol_version::ProtocolVersion;
@@ -531,7 +531,7 @@ where
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn join_group(
         &self,
-        tree_data: Option<&[u8]>,
+        tree_data: Option<ExportedTree>,
         welcome_message: MlsMessage,
     ) -> Result<(Group<C>, NewMemberInfo), MlsError> {
         Group::join(
@@ -624,7 +624,7 @@ where
     pub async fn external_add_proposal(
         &self,
         group_info: MlsMessage,
-        tree_data: Option<&[u8]>,
+        tree_data: Option<crate::group::ExportedTree>,
         authenticated_data: Vec<u8>,
     ) -> Result<MlsMessage, MlsError> {
         let protocol_version = group_info.version;
@@ -831,7 +831,7 @@ mod tests {
                     .group_info_message_allowing_ext_commit(true)
                     .await
                     .unwrap(),
-                Some(&alice_group.group.export_tree().unwrap()),
+                Some(alice_group.group.export_tree()),
                 vec![],
             )
             .await
@@ -903,7 +903,7 @@ mod tests {
         let mut builder = new_client
             .external_commit_builder()
             .unwrap()
-            .with_tree_data(alice_group.group.export_tree().unwrap());
+            .with_tree_data(alice_group.group.export_tree());
 
         if do_remove {
             builder = builder.with_removal(1);
@@ -1009,7 +1009,7 @@ mod tests {
         let (_, external_commit) = carol
             .external_commit_builder()
             .unwrap()
-            .with_tree_data(bob_group.group.export_tree().unwrap())
+            .with_tree_data(bob_group.group.export_tree())
             .build(group_info_msg)
             .await
             .unwrap();

@@ -19,7 +19,7 @@ use mls_rs::{
     crypto::SignatureSecretKey,
     error::MlsError,
     external_client::ExternalClient,
-    group::{Member, ReceivedMessage, Roster, StateUpdate},
+    group::{ExportedTree, Member, ReceivedMessage, Roster, StateUpdate},
     identity::{
         basic::{BasicCredential, BasicIdentityProvider},
         Credential, SigningIdentity,
@@ -271,7 +271,7 @@ impl MlsClient for MlsClientImpl {
 
         let (group, _) = client
             .client
-            .join_group(get_tree(&request.ratchet_tree), welcome_msg)
+            .join_group(get_tree(&request.ratchet_tree)?, welcome_msg)
             .map_err(abort)?;
 
         let epoch_authenticator = group.epoch_authenticator().map_err(abort)?.to_vec();
@@ -291,7 +291,7 @@ impl MlsClient for MlsClientImpl {
         let request = request.into_inner();
 
         let group_info = MlsMessage::from_bytes(&request.group_info).map_err(abort)?;
-        let tree = get_tree(&request.ratchet_tree);
+        let tree = get_tree(&request.ratchet_tree)?;
 
         let cipher_suite = group_info
             .cipher_suite()
@@ -315,7 +315,7 @@ impl MlsClient for MlsClientImpl {
                 .build();
 
             let server = server
-                .observe_group(group_info.clone(), tree)
+                .observe_group(group_info.clone(), tree.clone())
                 .map_err(abort)?;
 
             let idx = find_member(
@@ -330,7 +330,7 @@ impl MlsClient for MlsClientImpl {
         let mut builder = client.client.external_commit_builder().map_err(abort)?;
 
         if let Some(tree) = tree {
-            builder = builder.with_tree_data(tree.to_vec());
+            builder = builder.with_tree_data(tree.clone());
         }
 
         if let Some(removed_index) = removed_index {
@@ -375,7 +375,7 @@ impl MlsClient for MlsClientImpl {
 
         Ok(Response::new(GroupInfoResponse {
             group_info,
-            ratchet_tree: group.export_tree().map_err(abort)?,
+            ratchet_tree: group.export_tree().to_bytes().map_err(abort)?,
         }))
     }
 
@@ -750,7 +750,7 @@ impl MlsClientImpl {
         group_clone.apply_pending_commit().unwrap();
 
         let ratchet_tree = if request.external_tree {
-            group_clone.export_tree().unwrap()
+            group_clone.export_tree().to_bytes().unwrap()
         } else {
             vec![]
         };
@@ -846,11 +846,11 @@ async fn create_client(cipher_suite: u16, identity: &[u8]) -> Result<ClientDetai
     })
 }
 
-fn get_tree(tree: &[u8]) -> Option<&[u8]> {
+fn get_tree(tree: &[u8]) -> Result<Option<ExportedTree>, tonic::Status> {
     if tree.is_empty() {
-        None
+        Ok(None)
     } else {
-        Some(tree)
+        Some(ExportedTree::from_bytes(tree).map_err(abort)).transpose()
     }
 }
 

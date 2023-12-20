@@ -1,8 +1,8 @@
 #[cfg(feature = "psk")]
 pub(crate) mod inner {
     use mls_rs::{
-        group::StateUpdate, identity::SigningIdentity, CipherSuiteProvider, CryptoProvider,
-        MlsMessage,
+        group::StateUpdate, identity::SigningIdentity, mls_rs_codec::MlsEncode,
+        CipherSuiteProvider, CryptoProvider, MlsMessage,
     };
     use mls_rs_crypto_openssl::OpensslCryptoProvider;
     use tonic::{Request, Response, Status};
@@ -75,7 +75,7 @@ pub(crate) mod inner {
                 .map_err(abort)?;
 
             let (group, _info) = reinit_client
-                .join(welcome, get_tree(&request.ratchet_tree))
+                .join(welcome, get_tree(&request.ratchet_tree)?)
                 .map_err(abort)?;
 
             let resp = JoinGroupResponse {
@@ -116,7 +116,8 @@ pub(crate) mod inner {
                 .as_mut()
                 .ok_or_else(|| Status::aborted("no group with such index."))?;
 
-            let tree = get_tree(&request.ratchet_tree);
+            let tree = get_tree(&request.ratchet_tree)?;
+
             let welcome = MlsMessage::from_bytes(&request.welcome).map_err(abort)?;
 
             let (new_group, _info) = group.join_subgroup(welcome, tree).map_err(abort)?;
@@ -184,7 +185,7 @@ pub(crate) mod inner {
                 .unwrap_or_default();
 
             let ratchet_tree = if external_tree {
-                new_group.export_tree().unwrap()
+                new_group.export_tree().mls_encode_to_vec().unwrap()
             } else {
                 vec![]
             };

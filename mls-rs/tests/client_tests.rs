@@ -183,10 +183,11 @@ async fn test_create(
     // Upon server confirmation, alice applies the commit to her own state
     alice_group.apply_pending_commit().await.unwrap();
 
-    let tree = alice_group.export_tree().unwrap();
-
     // Bob receives the welcome message and joins the group
-    let (bob_group, _) = bob.join_group(Some(&tree), welcome).await.unwrap();
+    let (bob_group, _) = bob
+        .join_group(Some(alice_group.export_tree()), welcome)
+        .await
+        .unwrap();
 
     assert!(Group::equal_group_state(&alice_group, &bob_group));
 }
@@ -515,7 +516,7 @@ async fn external_commits_work(
         let (new_group, commit) = client
             .external_commit_builder()
             .unwrap()
-            .with_tree_data(existing_group.export_tree().unwrap())
+            .with_tree_data(existing_group.export_tree())
             .build(group_info)
             .await
             .unwrap();
@@ -614,9 +615,11 @@ async fn reinit_works() {
         .remove(0);
 
     alice_group.apply_pending_commit().await.unwrap();
-    let tree = alice_group.export_tree().unwrap();
 
-    let (mut bob_group, _) = bob1.join_group(Some(&tree), welcome).await.unwrap();
+    let (mut bob_group, _) = bob1
+        .join_group(Some(alice_group.export_tree()), welcome)
+        .await
+        .unwrap();
 
     // Alice proposes reinit
     let reinit_proposal_message = alice_group
@@ -699,8 +702,11 @@ async fn reinit_works() {
     // Bob produces key package, alice commits, bob joins
     let kp = bob2.generate_key_package().await.unwrap();
     let (mut alice_group, mut welcome) = alice2.commit(vec![kp]).await.unwrap();
-    let tree = alice_group.export_tree().unwrap();
-    let (mut bob_group, _) = bob2.join(welcome.remove(0), Some(&tree)).await.unwrap();
+
+    let (mut bob_group, _) = bob2
+        .join(welcome.remove(0), Some(alice_group.export_tree()))
+        .await
+        .unwrap();
 
     assert!(bob_group.cipher_suite() == suite2);
 
@@ -724,10 +730,11 @@ async fn reinit_works() {
         .await
         .unwrap();
 
-    let tree = alice_group.export_tree().unwrap();
-
     carol
-        .join_group(Some(&tree), commit_output.welcome_messages.remove(0))
+        .join_group(
+            Some(alice_group.export_tree()),
+            commit_output.welcome_messages.remove(0),
+        )
         .await
         .unwrap();
 }

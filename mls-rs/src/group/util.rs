@@ -2,7 +2,6 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use mls_rs_codec::MlsDecode;
 use mls_rs_core::{
     error::IntoAnyError, identity::IdentityProvider, key_package::KeyPackageStorage,
 };
@@ -14,11 +13,7 @@ use crate::{
     key_package::KeyPackageGeneration,
     protocol_version::ProtocolVersion,
     signer::Signable,
-    tree_kem::{
-        node::{LeafIndex, NodeVec},
-        tree_validator::TreeValidator,
-        TreeKemPublic,
-    },
+    tree_kem::{node::LeafIndex, tree_validator::TreeValidator, TreeKemPublic},
     CipherSuiteProvider, CryptoProvider, ExtensionList,
 };
 
@@ -28,7 +23,7 @@ use crate::extension::ExternalSendersExt;
 use super::{
     confirmation_tag::ConfirmationTag, framing::Sender, message_signature::AuthenticatedContent,
     transcript_hash::InterimTranscriptHash, ConfirmedTranscriptHash, EncryptedGroupSecrets,
-    GroupContext, GroupInfo,
+    ExportedTree, GroupContext, GroupInfo,
 };
 
 use super::message_processor::ProvisionalState;
@@ -47,7 +42,7 @@ pub(crate) struct JoinContext {
 pub(crate) async fn process_group_info<C, I>(
     msg_protocol_version: ProtocolVersion,
     group_info: GroupInfo,
-    tree_data: Option<&[u8]>,
+    tree_data: Option<ExportedTree>,
     id_provider: &I,
     cs: &C,
 ) -> Result<JoinContext, MlsError>
@@ -57,11 +52,13 @@ where
 {
     let tree_data = match group_info.extensions.get_as::<RatchetTreeExt>()? {
         Some(ext) => ext.tree_data,
-        None => NodeVec::mls_decode(&mut tree_data.ok_or(MlsError::RatchetTreeNotFound)?)?,
+        None => tree_data.ok_or(MlsError::RatchetTreeNotFound)?,
     };
 
     let context_ext = &group_info.group_context.extensions;
-    let public_tree = TreeKemPublic::import_node_data(tree_data, id_provider, context_ext).await?;
+
+    let public_tree =
+        TreeKemPublic::import_node_data(tree_data.into(), id_provider, context_ext).await?;
 
     let group_protocol_version = group_info.group_context.protocol_version;
 
@@ -107,7 +104,7 @@ where
 pub(crate) async fn validate_group_info<I: IdentityProvider, C: CipherSuiteProvider>(
     msg_protocol_version: ProtocolVersion,
     group_info: GroupInfo,
-    tree_data: Option<&[u8]>,
+    tree_data: Option<ExportedTree>,
     identity_provider: &I,
     cipher_suite_provider: &C,
 ) -> Result<JoinContext, MlsError> {

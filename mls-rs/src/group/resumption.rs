@@ -14,8 +14,8 @@ use mls_rs_core::{
 use crate::{client::MlsError, Client, Group, MlsMessage};
 
 use super::{
-    proposal::ReInitProposal, ClientConfig, JustPreSharedKeyID, MessageProcessor, NewMemberInfo,
-    PreSharedKeyID, PskGroupId, PskSecretInput, ResumptionPSKUsage, ResumptionPsk,
+    proposal::ReInitProposal, ClientConfig, ExportedTree, JustPreSharedKeyID, MessageProcessor,
+    NewMemberInfo, PreSharedKeyID, PskGroupId, PskSecretInput, ResumptionPSKUsage, ResumptionPsk,
 };
 
 struct ResumptionGroupParameters<'a> {
@@ -75,7 +75,7 @@ where
     pub async fn join_subgroup(
         &self,
         welcome: MlsMessage,
-        tree_data: Option<&[u8]>,
+        tree_data: Option<ExportedTree>,
     ) -> Result<(Group<C>, NewMemberInfo), MlsError> {
         let expected_new_group_prams = ResumptionGroupParameters {
             group_id: &[],
@@ -205,7 +205,7 @@ impl<C: ClientConfig + Clone> ReinitClient<C> {
     pub async fn join(
         self,
         welcome: MlsMessage,
-        tree_data: Option<&[u8]>,
+        tree_data: Option<ExportedTree>,
     ) -> Result<(Group<C>, NewMemberInfo), MlsError> {
         let reinit = self.reinit;
 
@@ -275,7 +275,7 @@ async fn resumption_join_group<C: ClientConfig + Clone>(
     config: C,
     signer: SignatureSecretKey,
     welcome: MlsMessage,
-    tree_data: Option<&[u8]>,
+    tree_data: Option<ExportedTree>,
     expected_new_group_params: ResumptionGroupParameters<'_>,
     verify_group_id: bool,
     psk_input: PskSecretInput,
