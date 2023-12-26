@@ -1434,8 +1434,8 @@ where
     ///
     /// This function is used to provide the current group tree to new members
     /// when the `ratchet_tree_extension` is not used according to [`MlsRules::commit_options`].
-    pub fn export_tree(&self) -> ExportedTree {
-        ExportedTree::new(self.current_epoch_tree().export_node_data())
+    pub fn export_tree(&self) -> ExportedTree<'_> {
+        ExportedTree::new_borrowed(&self.current_epoch_tree().nodes)
     }
 
     /// Current version of the MLS protocol in use by this group.
@@ -2641,7 +2641,7 @@ mod tests {
         let (bob_group, commit) = bob
             .external_commit_builder()
             .unwrap()
-            .with_tree_data(alice_group.group.export_tree())
+            .with_tree_data(alice_group.group.export_tree().into_owned())
             .build(
                 alice_group
                     .group
@@ -2687,7 +2687,7 @@ mod tests {
         let (_, commit) = bob
             .external_commit_builder()
             .unwrap()
-            .with_tree_data(alice_group.group.export_tree())
+            .with_tree_data(alice_group.group.export_tree().into_owned())
             .build(
                 alice_group
                     .group

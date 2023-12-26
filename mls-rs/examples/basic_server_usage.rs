@@ -42,7 +42,7 @@ impl BasicServer {
     fn create_group(group_info: &[u8], tree: &[u8]) -> Result<Self, MlsError> {
         let server = make_server();
         let group_info = MlsMessage::from_bytes(group_info)?;
-        let tree = ExportedTree::from_bytes(tree).unwrap();
+        let tree = ExportedTree::from_bytes(tree)?;
 
         let group = server.observe_group(group_info, Some(tree))?;
 
@@ -157,7 +157,7 @@ fn main() -> Result<(), MlsError> {
 
     // Server starts observing Alice's group
     let group_info = alice_group.group_info_message(true)?.to_bytes()?;
-    let tree = alice_group.export_tree().to_bytes().unwrap();
+    let tree = alice_group.export_tree()?;
 
     let mut server = BasicServer::create_group(&group_info, &tree)?;
 

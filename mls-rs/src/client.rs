@@ -531,7 +531,7 @@ where
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn join_group(
         &self,
-        tree_data: Option<ExportedTree>,
+        tree_data: Option<ExportedTree<'_>>,
         welcome_message: MlsMessage,
     ) -> Result<(Group<C>, NewMemberInfo), MlsError> {
         Group::join(
@@ -624,7 +624,7 @@ where
     pub async fn external_add_proposal(
         &self,
         group_info: MlsMessage,
-        tree_data: Option<crate::group::ExportedTree>,
+        tree_data: Option<crate::group::ExportedTree<'_>>,
         authenticated_data: Vec<u8>,
     ) -> Result<MlsMessage, MlsError> {
         let protocol_version = group_info.version;
@@ -903,7 +903,7 @@ mod tests {
         let mut builder = new_client
             .external_commit_builder()
             .unwrap()
-            .with_tree_data(alice_group.group.export_tree());
+            .with_tree_data(alice_group.group.export_tree().into_owned());
 
         if do_remove {
             builder = builder.with_removal(1);
@@ -1009,7 +1009,7 @@ mod tests {
         let (_, external_commit) = carol
             .external_commit_builder()
             .unwrap()
-            .with_tree_data(bob_group.group.export_tree())
+            .with_tree_data(bob_group.group.export_tree().into_owned())
             .build(group_info_msg)
             .await
             .unwrap();

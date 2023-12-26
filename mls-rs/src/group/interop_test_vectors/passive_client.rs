@@ -625,7 +625,7 @@ pub async fn add_random_members<C: MlsConfig>(
         tc.epochs.push(epoch)
     };
 
-    let tree_data = groups[committer].export_tree();
+    let tree_data = groups[committer].export_tree().into_owned();
 
     for client in &clients {
         let commit = commit_output.welcome_messages[0].clone();

@@ -476,7 +476,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     pub fn export_tree(&self) -> Result<Vec<u8>, MlsError> {
         self.group_state()
             .public_tree
-            .export_node_data()
+            .nodes
             .mls_encode_to_vec()
             .map_err(Into::into)
     }

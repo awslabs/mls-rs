@@ -136,7 +136,7 @@ pub async fn get_test_groups<C: CryptoProvider + Clone>(
 
     creator_group.apply_pending_commit().await.unwrap();
 
-    let tree_data = creator_group.export_tree();
+    let tree_data = creator_group.export_tree().into_owned();
 
     let mut groups = vec![creator_group];
 

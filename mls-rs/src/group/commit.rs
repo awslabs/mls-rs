@@ -89,7 +89,7 @@ pub struct CommitOutput {
     /// Ratchet tree that can be sent out of band if
     /// `ratchet_tree_extension` is not used according to
     /// [`MlsRules::encryption_options`].
-    pub ratchet_tree: Option<ExportedTree>,
+    pub ratchet_tree: Option<ExportedTree<'static>>,
 }
 
 #[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen)]
@@ -110,7 +110,7 @@ impl CommitOutput {
     /// `ratchet_tree_extension` is not used according to
     /// [`MlsRules::encryption_options`].
     #[cfg(feature = "ffi")]
-    pub fn ratchet_tree(&self) -> Option<&ExportedTree> {
+    pub fn ratchet_tree(&self) -> Option<&ExportedTree<'static>> {
         self.ratchet_tree.as_ref()
     }
 }
@@ -560,7 +560,7 @@ where
 
         if commit_options.ratchet_tree_extension {
             let ratchet_tree_ext = RatchetTreeExt {
-                tree_data: ExportedTree::new(provisional_state.public_tree.export_node_data()),
+                tree_data: ExportedTree::new(provisional_state.public_tree.nodes.clone()),
             };
 
             extensions.set_from(ratchet_tree_ext)?;
@@ -675,7 +675,7 @@ where
         self.pending_commit = Some(pending_commit);
 
         let ratchet_tree = (!commit_options.ratchet_tree_extension)
-            .then(|| ExportedTree::new(provisional_state.public_tree.export_node_data()));
+            .then_some(ExportedTree::new(provisional_state.public_tree.nodes));
 
         if let Some(signer) = new_signer {
             self.signer = signer;

@@ -159,10 +159,6 @@ impl TreeKemPublic {
         Ok(None)
     }
 
-    pub(crate) fn export_node_data(&self) -> NodeVec {
-        self.nodes.clone()
-    }
-
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn derive<I: IdentityProvider>(
         leaf_node: LeafNode,
@@ -1008,12 +1004,13 @@ mod tests {
             .await
             .unwrap();
 
-        let exported = test_tree.public.export_node_data();
-
-        let imported =
-            TreeKemPublic::import_node_data(exported, &BasicIdentityProvider, &Default::default())
-                .await
-                .unwrap();
+        let imported = TreeKemPublic::import_node_data(
+            test_tree.public.nodes.clone(),
+            &BasicIdentityProvider,
+            &Default::default(),
+        )
+        .await
+        .unwrap();
 
         assert_eq!(test_tree.public.nodes, imported.nodes);
 

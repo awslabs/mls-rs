@@ -48,7 +48,7 @@ pub struct ExternalCommitBuilder<C: ClientConfig> {
     signer: SignatureSecretKey,
     signing_identity: SigningIdentity,
     config: C,
-    tree_data: Option<ExportedTree>,
+    tree_data: Option<ExportedTree<'static>>,
     to_remove: Option<u32>,
     #[cfg(feature = "psk")]
     external_psks: Vec<ExternalPskId>,
@@ -84,7 +84,7 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
     #[must_use]
     /// Use external tree data if the GroupInfo message does not contain a
     /// [`RatchetTreeExt`](crate::extension::built_in::RatchetTreeExt)
-    pub fn with_tree_data(self, tree_data: ExportedTree) -> Self {
+    pub fn with_tree_data(self, tree_data: ExportedTree<'static>) -> Self {
         Self {
             tree_data: Some(tree_data),
             ..self

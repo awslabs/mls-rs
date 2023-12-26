@@ -373,7 +373,7 @@ mod tests {
 
                 test_cases.push(TestCase {
                     cipher_suite: cipher_suite.into(),
-                    tree_data: tree.export_node_data().mls_encode_to_vec().unwrap(),
+                    tree_data: tree.nodes.mls_encode_to_vec().unwrap(),
                     tree_hash: tree
                         .tree_hash(&test_cipher_suite_provider(cipher_suite))
                         .await

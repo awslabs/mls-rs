@@ -64,14 +64,14 @@ impl MlsCodecExtension for ApplicationIdExt {
 )]
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 pub struct RatchetTreeExt {
-    pub tree_data: ExportedTree,
+    pub tree_data: ExportedTree<'static>,
 }
 
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl RatchetTreeExt {
     /// Required custom extension types.
     #[cfg(feature = "ffi")]
-    pub fn tree_data(&self) -> &ExportedTree {
+    pub fn tree_data(&self) -> &ExportedTree<'static> {
         &self.tree_data
     }
 }
