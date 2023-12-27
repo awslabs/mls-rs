@@ -77,7 +77,7 @@ where
     pub async fn observe_group(
         &self,
         group_info: MlsMessage,
-        tree_data: Option<ExportedTree>,
+        tree_data: Option<ExportedTree<'_>>,
     ) -> Result<ExternalGroup<C>, MlsError> {
         ExternalGroup::join(
             self.config.clone(),

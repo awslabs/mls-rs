@@ -24,10 +24,6 @@ impl<'a> ExportedTree<'a> {
         Self(Cow::Borrowed(node_data))
     }
 
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, MlsError> {
-        Self::mls_decode(&mut &*bytes).map_err(Into::into)
-    }
-
     pub fn to_bytes(&self) -> Result<Vec<u8>, MlsError> {
         self.mls_encode_to_vec().map_err(Into::into)
     }
@@ -38,6 +34,13 @@ impl<'a> ExportedTree<'a> {
 
     pub fn into_owned(self) -> ExportedTree<'static> {
         ExportedTree(Cow::Owned(self.0.into_owned()))
+    }
+}
+
+#[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen)]
+impl ExportedTree<'static> {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, MlsError> {
+        Self::mls_decode(&mut &*bytes).map_err(Into::into)
     }
 }
 

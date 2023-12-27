@@ -42,7 +42,7 @@ pub(crate) struct JoinContext {
 pub(crate) async fn process_group_info<C, I>(
     msg_protocol_version: ProtocolVersion,
     group_info: GroupInfo,
-    tree_data: Option<ExportedTree>,
+    tree_data: Option<ExportedTree<'_>>,
     id_provider: &I,
     cs: &C,
 ) -> Result<JoinContext, MlsError>
@@ -104,7 +104,7 @@ where
 pub(crate) async fn validate_group_info<I: IdentityProvider, C: CipherSuiteProvider>(
     msg_protocol_version: ProtocolVersion,
     group_info: GroupInfo,
-    tree_data: Option<ExportedTree>,
+    tree_data: Option<ExportedTree<'_>>,
     identity_provider: &I,
     cipher_suite_provider: &C,
 ) -> Result<JoinContext, MlsError> {

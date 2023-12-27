@@ -516,7 +516,7 @@ async fn external_commits_work(
         let (new_group, commit) = client
             .external_commit_builder()
             .unwrap()
-            .with_tree_data(existing_group.export_tree())
+            .with_tree_data(existing_group.export_tree().into_owned())
             .build(group_info)
             .await
             .unwrap();

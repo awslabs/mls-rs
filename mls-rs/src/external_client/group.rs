@@ -103,7 +103,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         config: C,
         signing_data: Option<(SignatureSecretKey, SigningIdentity)>,
         group_info: MlsMessage,
-        tree_data: Option<ExportedTree>,
+        tree_data: Option<ExportedTree<'_>>,
     ) -> Result<Self, MlsError> {
         let protocol_version = group_info.version;
 

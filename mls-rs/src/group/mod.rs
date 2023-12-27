@@ -383,7 +383,7 @@ where
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn join(
         welcome: MlsMessage,
-        tree_data: Option<ExportedTree>,
+        tree_data: Option<ExportedTree<'_>>,
         config: C,
         signer: SignatureSecretKey,
     ) -> Result<(Self, NewMemberInfo), MlsError> {
@@ -401,7 +401,7 @@ where
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn from_welcome_message(
         welcome: MlsMessage,
-        tree_data: Option<ExportedTree>,
+        tree_data: Option<ExportedTree<'_>>,
         config: C,
         signer: SignatureSecretKey,
         #[cfg(feature = "psk")] additional_psk: Option<PskSecretInput>,
