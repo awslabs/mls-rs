@@ -135,7 +135,6 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
     /// same way as by [`ExternalGroup`](`crate::external_client::ExternalGroup`).
     /// The proposal MUST be an MlsPlaintext, else the [`Self::build`] function will fail.
     pub fn with_received_custom_proposal(mut self, proposal: MlsMessage) -> Self {
-
         self.received_custom_proposals.push(proposal);
         self
     }
