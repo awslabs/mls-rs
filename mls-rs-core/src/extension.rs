@@ -30,6 +30,16 @@ impl ExtensionType {
     pub const EXTERNAL_PUB: ExtensionType = ExtensionType(4);
     pub const EXTERNAL_SENDERS: ExtensionType = ExtensionType(5);
 
+    /// Default extension types defined
+    /// in [RFC 9420](https://www.rfc-editor.org/rfc/rfc9420.html#name-leaf-node-contents)
+    pub const DEFAULT: &'static [ExtensionType] = &[
+        ExtensionType::APPLICATION_ID,
+        ExtensionType::RATCHET_TREE,
+        ExtensionType::REQUIRED_CAPABILITIES,
+        ExtensionType::EXTERNAL_PUB,
+        ExtensionType::EXTERNAL_SENDERS,
+    ];
+
     /// Extension type from a raw value
     pub const fn new(raw_value: u16) -> Self {
         ExtensionType(raw_value)

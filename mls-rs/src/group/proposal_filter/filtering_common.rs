@@ -482,17 +482,20 @@ fn ensure_exactly_one_external_init(proposals: &ProposalBundle) -> Result<(), Ml
         .ok_or(MlsError::ExternalCommitMustHaveExactlyOneExternalInit)
 }
 
+/// Non-default proposal types are by default allowed. Custom MlsRules may disallow
+/// specific custom proposals in external commits
 fn ensure_proposals_in_external_commit_are_allowed(
     proposals: &ProposalBundle,
 ) -> Result<(), MlsError> {
-    let unsupported_type = proposals.proposal_types().find(|ty| {
-        ![
-            ProposalType::EXTERNAL_INIT,
-            ProposalType::REMOVE,
-            ProposalType::PSK,
-        ]
-        .contains(ty)
-    });
+    let supported_default_types = [
+        ProposalType::EXTERNAL_INIT,
+        ProposalType::REMOVE,
+        ProposalType::PSK,
+    ];
+
+    let unsupported_type = proposals
+        .proposal_types()
+        .find(|ty| !supported_default_types.contains(ty) && ProposalType::DEFAULT.contains(ty));
 
     match unsupported_type {
         Some(kind) => Err(MlsError::InvalidProposalTypeInExternalCommit(kind)),
@@ -554,10 +557,12 @@ where
         .ok_or(MlsError::ExternalCommitRemovesOtherIdentity)
 }
 
+/// Non-default by-ref proposal types are by default allowed. Custom MlsRules may disallow
+/// specific custom by-ref proposals.
 fn ensure_no_proposal_by_ref(proposals: &ProposalBundle) -> Result<(), MlsError> {
     proposals
         .iter_proposals()
-        .all(|p| p.is_by_value())
+        .all(|p| !ProposalType::DEFAULT.contains(&p.proposal.proposal_type()) || p.is_by_value())
         .then_some(())
         .ok_or(MlsError::OnlyMembersCanCommitProposalsByRef)
 }

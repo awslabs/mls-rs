@@ -623,6 +623,9 @@ mod tests {
         tree_kem::leaf_node_validator::test_utils::FailureIdentityProvider,
     };
 
+    #[cfg(feature = "psk")]
+    use crate::psk::PskNonce;
+
     use assert_matches::assert_matches;
     use core::convert::Infallible;
     use itertools::Itertools;
@@ -1222,7 +1225,7 @@ mod tests {
 
         let proposal = Proposal::Psk(make_external_psk(
             b"ted",
-            PskNonce::random(&test_cipher_suite_provider(TEST_CIPHER_SUITE)).unwrap(),
+            crate::psk::PskNonce::random(&test_cipher_suite_provider(TEST_CIPHER_SUITE)).unwrap(),
         ));
 
         let res = cache
@@ -1753,11 +1756,11 @@ mod tests {
         let cache = make_proposal_cache();
 
         let psk = Proposal::Psk(PreSharedKeyProposal {
-            psk: PreSharedKeyID {
-                key_id: JustPreSharedKeyID::External(ExternalPskId::new(vec![])),
-                psk_nonce: PskNonce::random(&test_cipher_suite_provider(TEST_CIPHER_SUITE))
-                    .unwrap(),
-            },
+            psk: PreSharedKeyID::new(
+                JustPreSharedKeyID::External(ExternalPskId::new(vec![])),
+                &test_cipher_suite_provider(TEST_CIPHER_SUITE),
+            )
+            .unwrap(),
         });
 
         let add = Proposal::Add(Box::new(AddProposal {

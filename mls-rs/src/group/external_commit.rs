@@ -20,18 +20,24 @@ use crate::{
 #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
 use crate::group::secret_tree::SecretTree;
 
+#[cfg(feature = "custom_proposal")]
+use crate::group::{
+    framing::MlsMessagePayload,
+    message_processor::{EventOrContent, MessageProcessor},
+    message_signature::AuthenticatedContent,
+    message_verifier::verify_plaintext_authentication,
+    CustomProposal,
+};
+
 use alloc::vec;
 use alloc::vec::Vec;
 
 #[cfg(feature = "psk")]
-use mls_rs_core::{
-    error::IntoAnyError,
-    psk::{ExternalPskId, PreSharedKey},
-};
+use mls_rs_core::psk::{ExternalPskId, PreSharedKey};
 
 #[cfg(feature = "psk")]
 use crate::group::{
-    PreSharedKeyProposal, {JustPreSharedKeyID, PreSharedKeyID, PskNonce},
+    PreSharedKeyProposal, {JustPreSharedKeyID, PreSharedKeyID},
 };
 
 /// A builder that aids with the construction of an external commit.
@@ -45,6 +51,10 @@ pub struct ExternalCommitBuilder<C: ClientConfig> {
     #[cfg(feature = "psk")]
     external_psks: Vec<ExternalPskId>,
     authenticated_data: Vec<u8>,
+    #[cfg(feature = "custom_proposal")]
+    custom_proposals: Vec<Proposal>,
+    #[cfg(feature = "custom_proposal")]
+    received_custom_proposals: Vec<MlsMessage>,
 }
 
 impl<C: ClientConfig> ExternalCommitBuilder<C> {
@@ -62,6 +72,10 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
             config,
             #[cfg(feature = "psk")]
             external_psks: Vec::new(),
+            #[cfg(feature = "custom_proposal")]
+            custom_proposals: Vec::new(),
+            #[cfg(feature = "custom_proposal")]
+            received_custom_proposals: Vec::new(),
         }
     }
 
@@ -102,6 +116,29 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
         self
     }
 
+    #[cfg(feature = "custom_proposal")]
+    #[must_use]
+    /// Insert a [`CustomProposal`] into the current commit that is being built.
+    pub fn with_custom_proposal(mut self, proposal: CustomProposal) -> Self {
+        self.custom_proposals.push(Proposal::Custom(proposal));
+        self
+    }
+
+    #[cfg(all(feature = "custom_proposal", feature = "by_ref_proposal"))]
+    #[must_use]
+    /// Insert a [`CustomProposal`] received from a current group member into the current
+    /// commit that is being built.
+    ///
+    /// # Warning
+    ///
+    /// The authenticity of the proposal is NOT fully verified. It is only verified the
+    /// same way as by [`ExternalGroup`](`crate::external_client::ExternalGroup`).
+    /// The proposal MUST be an MlsPlaintext, else the [`Self::build`] function will fail.
+    pub fn with_received_custom_proposal(mut self, proposal: MlsMessage) -> Self {
+        self.received_custom_proposals.push(proposal);
+        self
+    }
+
     /// Build the external commit using a GroupInfo message provided by an existing group member.
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn build(self, group_info: MlsMessage) -> Result<(Group<C>, MlsMessage), MlsError> {
@@ -115,7 +152,7 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
             .into_group_info()
             .ok_or(MlsError::UnexpectedMessageType)?;
 
-        let cipher_suite_provider = cipher_suite_provider(
+        let cipher_suite = cipher_suite_provider(
             self.config.crypto_provider(),
             group_info.group_context.cipher_suite,
         )?;
@@ -130,12 +167,12 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
             group_info,
             self.tree_data.as_deref(),
             &self.config.identity_provider(),
-            &cipher_suite_provider,
+            &cipher_suite,
         )
         .await?;
 
         let (leaf_node, _) = LeafNode::generate(
-            &cipher_suite_provider,
+            &cipher_suite,
             self.config.leaf_properties(),
             self.signing_identity,
             &self.signer,
@@ -144,8 +181,7 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
         .await?;
 
         let (init_secret, kem_output) =
-            InitSecret::encode_for_external(&cipher_suite_provider, &external_pub_ext.external_pub)
-                .await?;
+            InitSecret::encode_for_external(&cipher_suite, &external_pub_ext.external_pub).await?;
 
         let epoch_secrets = EpochSecrets {
             #[cfg(feature = "psk")]
@@ -157,7 +193,7 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
 
         let (mut group, _) = Group::join_with(
             self.config,
-            cipher_suite_provider.clone(),
+            cipher_suite.clone(),
             join_context,
             KeySchedule::new(init_secret),
             epoch_secrets,
@@ -171,33 +207,45 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
         let psk_ids = self
             .external_psks
             .into_iter()
-            .map(|psk_id| {
-                Ok(PreSharedKeyID {
-                    key_id: JustPreSharedKeyID::External(psk_id),
-                    psk_nonce: PskNonce::random(&cipher_suite_provider)
-                        .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?,
-                })
-            })
+            .map(|psk_id| PreSharedKeyID::new(JustPreSharedKeyID::External(psk_id), &cipher_suite))
             .collect::<Result<Vec<_>, MlsError>>()?;
 
-        let external_init = Proposal::ExternalInit(ExternalInit { kem_output });
+        let mut proposals = vec![Proposal::ExternalInit(ExternalInit { kem_output })];
 
         #[cfg(feature = "psk")]
-        let proposals = psk_ids
-            .into_iter()
-            .map(|psk| Proposal::Psk(PreSharedKeyProposal { psk }))
-            .chain([external_init]);
+        proposals.extend(
+            psk_ids
+                .into_iter()
+                .map(|psk| Proposal::Psk(PreSharedKeyProposal { psk })),
+        );
 
-        #[cfg(not(feature = "psk"))]
-        let proposals = [external_init].into_iter();
+        #[cfg(feature = "custom_proposal")]
+        {
+            let mut custom_proposals = self.custom_proposals;
+            proposals.append(&mut custom_proposals);
+        }
 
-        let proposals = proposals
-            .chain(self.to_remove.map(|r| {
-                Proposal::Remove(RemoveProposal {
-                    to_remove: LeafIndex(r),
-                })
-            }))
-            .collect::<Vec<_>>();
+        #[cfg(all(feature = "custom_proposal", feature = "by_ref_proposal"))]
+        for message in self.received_custom_proposals {
+            let MlsMessagePayload::Plain(plaintext) = message.payload else {
+                return Err(MlsError::UnexpectedMessageType);
+            };
+
+            let auth_content = AuthenticatedContent::from(plaintext.clone());
+
+            verify_plaintext_authentication(&cipher_suite, plaintext, None, None, &group.state)
+                .await?;
+
+            group
+                .process_event_or_content(EventOrContent::Content(auth_content), true, None)
+                .await?;
+        }
+
+        if let Some(r) = self.to_remove {
+            proposals.push(Proposal::Remove(RemoveProposal {
+                to_remove: LeafIndex(r),
+            }));
+        }
 
         let commit_output = group
             .commit_internal(

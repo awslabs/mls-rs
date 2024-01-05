@@ -52,7 +52,7 @@ pub use self::resumption::ReinitClient;
 #[cfg(feature = "psk")]
 use crate::psk::{
     resolver::PskResolver, secret::PskSecretInput, ExternalPskId, JustPreSharedKeyID, PskGroupId,
-    PskNonce, ResumptionPSKUsage, ResumptionPsk,
+    ResumptionPSKUsage, ResumptionPsk,
 };
 
 #[cfg(all(feature = "std", feature = "by_ref_proposal"))]
@@ -969,11 +969,7 @@ where
     #[cfg(feature = "psk")]
     fn psk_proposal(&self, key_id: JustPreSharedKeyID) -> Result<Proposal, MlsError> {
         Ok(Proposal::Psk(PreSharedKeyProposal {
-            psk: PreSharedKeyID {
-                key_id,
-                psk_nonce: PskNonce::random(&self.cipher_suite_provider)
-                    .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?,
-            },
+            psk: PreSharedKeyID::new(key_id, &self.cipher_suite_provider)?,
         }))
     }
 
@@ -1806,11 +1802,19 @@ pub(crate) mod test_utils;
 mod tests {
     use crate::{
         client::test_utils::{
-            test_client_with_key_pkg, TestClientBuilder, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION,
+            test_client_with_key_pkg, TestClientBuilder, TEST_CIPHER_SUITE,
+            TEST_CUSTOM_PROPOSAL_TYPE, TEST_PROTOCOL_VERSION,
         },
-        client_builder::{test_utils::TestClientConfig, ClientBuilder},
+        client_builder::{test_utils::TestClientConfig, ClientBuilder, MlsConfig},
         crypto::test_utils::TestCryptoProvider,
-        identity::test_utils::{get_test_signing_identity, BasicWithCustomProvider},
+        group::{
+            mls_rules::{CommitDirection, CommitSource},
+            proposal_filter::ProposalBundle,
+        },
+        identity::{
+            basic::BasicIdentityProvider,
+            test_utils::{get_test_signing_identity, BasicWithCustomProvider},
+        },
         key_package::test_utils::test_key_package_message,
         mls_rules::CommitOptions,
         tree_kem::{
@@ -1819,7 +1823,7 @@ mod tests {
         },
     };
 
-    #[cfg(feature = "private_message")]
+    #[cfg(any(feature = "private_message", feature = "custom_proposal"))]
     use crate::group::mls_rules::DefaultMlsRules;
 
     #[cfg(feature = "prior_epoch")]
@@ -3680,7 +3684,7 @@ mod tests {
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn custom_proposal_setup() -> (TestGroup, TestGroup) {
         let mut alice = test_group_custom_config(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, |b| {
-            b.custom_proposal_type(ProposalType::new(42))
+            b.custom_proposal_type(TEST_CUSTOM_PROPOSAL_TYPE)
         })
         .await;
 
@@ -3688,7 +3692,7 @@ mod tests {
             .join_with_custom_config("bob", true, |c| {
                 c.0.settings
                     .custom_proposal_types
-                    .push(ProposalType::new(42))
+                    .push(TEST_CUSTOM_PROPOSAL_TYPE)
             })
             .await
             .unwrap();
@@ -3701,7 +3705,7 @@ mod tests {
     async fn custom_proposal_by_value() {
         let (mut alice, mut bob) = custom_proposal_setup().await;
 
-        let custom_proposal = CustomProposal::new(ProposalType::new(42), vec![0, 1, 2]);
+        let custom_proposal = CustomProposal::new(TEST_CUSTOM_PROPOSAL_TYPE, vec![0, 1, 2]);
 
         let commit = alice
             .group
@@ -3727,7 +3731,7 @@ mod tests {
     async fn custom_proposal_by_reference() {
         let (mut alice, mut bob) = custom_proposal_setup().await;
 
-        let custom_proposal = CustomProposal::new(ProposalType::new(42), vec![0, 1, 2]);
+        let custom_proposal = CustomProposal::new(TEST_CUSTOM_PROPOSAL_TYPE, vec![0, 1, 2]);
 
         let proposal = alice
             .group
@@ -3940,5 +3944,212 @@ mod tests {
             });
 
         assert!(all_members_are_in);
+    }
+
+    #[cfg(feature = "custom_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn custom_proposal_may_enforce_path() {
+        test_custom_proposal_mls_rules(true).await;
+    }
+
+    #[cfg(feature = "custom_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn custom_proposal_need_not_enforce_path() {
+        test_custom_proposal_mls_rules(false).await;
+    }
+
+    #[cfg(feature = "custom_proposal")]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn test_custom_proposal_mls_rules(path_required_for_custom: bool) {
+        let mls_rules = CustomMlsRules {
+            path_required_for_custom,
+            external_joiner_can_send_custom: true,
+        };
+
+        let mut alice = client_with_custom_rules(b"alice", mls_rules.clone())
+            .await
+            .create_group(Default::default())
+            .await
+            .unwrap();
+
+        let alice_pub_before = alice.current_user_leaf_node().unwrap().public_key.clone();
+
+        let kp = client_with_custom_rules(b"bob", mls_rules)
+            .await
+            .generate_key_package_message()
+            .await
+            .unwrap();
+
+        alice
+            .commit_builder()
+            .custom_proposal(CustomProposal::new(TEST_CUSTOM_PROPOSAL_TYPE, vec![]))
+            .add_member(kp)
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+
+        alice.apply_pending_commit().await.unwrap();
+
+        let alice_pub_after = &alice.current_user_leaf_node().unwrap().public_key;
+
+        if path_required_for_custom {
+            assert_ne!(alice_pub_after, &alice_pub_before);
+        } else {
+            assert_eq!(alice_pub_after, &alice_pub_before);
+        }
+    }
+
+    #[cfg(feature = "custom_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn custom_proposal_by_value_in_external_join_may_be_allowed() {
+        test_custom_proposal_by_value_in_external_join(true).await
+    }
+
+    #[cfg(feature = "custom_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn custom_proposal_by_value_in_external_join_may_not_be_allowed() {
+        test_custom_proposal_by_value_in_external_join(false).await
+    }
+
+    #[cfg(feature = "custom_proposal")]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn test_custom_proposal_by_value_in_external_join(external_joiner_can_send_custom: bool) {
+        let mls_rules = CustomMlsRules {
+            path_required_for_custom: true,
+            external_joiner_can_send_custom,
+        };
+
+        let mut alice = client_with_custom_rules(b"alice", mls_rules.clone())
+            .await
+            .create_group(Default::default())
+            .await
+            .unwrap();
+
+        let group_info = alice
+            .group_info_message_allowing_ext_commit(true)
+            .await
+            .unwrap();
+
+        let commit = client_with_custom_rules(b"bob", mls_rules)
+            .await
+            .external_commit_builder()
+            .unwrap()
+            .with_custom_proposal(CustomProposal::new(TEST_CUSTOM_PROPOSAL_TYPE, vec![]))
+            .build(group_info)
+            .await;
+
+        if external_joiner_can_send_custom {
+            let commit = commit.unwrap().1;
+            alice.process_incoming_message(commit).await.unwrap();
+        } else {
+            assert_matches!(commit.map(|_| ()), Err(MlsError::MlsRulesError(_)));
+        }
+    }
+
+    #[cfg(feature = "custom_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn custom_proposal_by_ref_in_external_join() {
+        let mls_rules = CustomMlsRules {
+            path_required_for_custom: true,
+            external_joiner_can_send_custom: true,
+        };
+
+        let mut alice = client_with_custom_rules(b"alice", mls_rules.clone())
+            .await
+            .create_group(Default::default())
+            .await
+            .unwrap();
+
+        let by_ref = CustomProposal::new(TEST_CUSTOM_PROPOSAL_TYPE, vec![]);
+        let by_ref = alice.propose_custom(by_ref, vec![]).await.unwrap();
+
+        let group_info = alice
+            .group_info_message_allowing_ext_commit(true)
+            .await
+            .unwrap();
+
+        let (_, commit) = client_with_custom_rules(b"bob", mls_rules)
+            .await
+            .external_commit_builder()
+            .unwrap()
+            .with_received_custom_proposal(by_ref)
+            .build(group_info)
+            .await
+            .unwrap();
+
+        alice.process_incoming_message(commit).await.unwrap();
+    }
+
+    #[cfg(feature = "custom_proposal")]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn client_with_custom_rules(
+        name: &[u8],
+        mls_rules: CustomMlsRules,
+    ) -> Client<impl MlsConfig> {
+        let (signing_identity, signer) = get_test_signing_identity(TEST_CIPHER_SUITE, name).await;
+
+        ClientBuilder::new()
+            .crypto_provider(TestCryptoProvider::new())
+            .identity_provider(BasicWithCustomProvider::new(BasicIdentityProvider::new()))
+            .signing_identity(signing_identity, signer, TEST_CIPHER_SUITE)
+            .custom_proposal_type(TEST_CUSTOM_PROPOSAL_TYPE)
+            .mls_rules(mls_rules)
+            .build()
+    }
+
+    #[derive(Debug, Clone)]
+    struct CustomMlsRules {
+        path_required_for_custom: bool,
+        external_joiner_can_send_custom: bool,
+    }
+
+    #[cfg(feature = "custom_proposal")]
+    impl ProposalBundle {
+        fn has_test_custom_proposal(&self) -> bool {
+            self.custom_proposal_types()
+                .any(|t| t == TEST_CUSTOM_PROPOSAL_TYPE)
+        }
+    }
+
+    #[cfg(feature = "custom_proposal")]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    #[cfg_attr(mls_build_async, maybe_async::must_be_async)]
+    impl crate::MlsRules for CustomMlsRules {
+        type Error = MlsError;
+
+        fn commit_options(
+            &self,
+            _: &Roster,
+            _: &ExtensionList,
+            proposals: &ProposalBundle,
+        ) -> Result<CommitOptions, MlsError> {
+            Ok(CommitOptions::default().with_path_required(
+                !proposals.has_test_custom_proposal() || self.path_required_for_custom,
+            ))
+        }
+
+        fn encryption_options(
+            &self,
+            _: &Roster,
+            _: &ExtensionList,
+        ) -> Result<crate::mls_rules::EncryptionOptions, MlsError> {
+            Ok(Default::default())
+        }
+
+        async fn filter_proposals(
+            &self,
+            _: CommitDirection,
+            sender: CommitSource,
+            _: &Roster,
+            _: &ExtensionList,
+            proposals: ProposalBundle,
+        ) -> Result<ProposalBundle, MlsError> {
+            let is_external = matches!(sender, CommitSource::NewMember(_));
+            let has_custom = proposals.has_test_custom_proposal();
+            let allowed = !has_custom || !is_external || self.external_joiner_can_send_custom;
+
+            allowed.then_some(proposals).ok_or(MlsError::InvalidSender)
+        }
     }
 }
