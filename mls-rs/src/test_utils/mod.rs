@@ -136,13 +136,13 @@ pub async fn get_test_groups<C: CryptoProvider + Clone>(
 
     creator_group.apply_pending_commit().await.unwrap();
 
-    let tree_data = creator_group.export_tree().unwrap();
+    let tree_data = creator_group.export_tree().into_owned();
 
     let mut groups = vec![creator_group];
 
     for client in &receiver_clients {
         let (test_client, _info) = client
-            .join_group(Some(&tree_data), welcome[0].clone())
+            .join_group(Some(tree_data.clone()), welcome[0].clone())
             .await
             .unwrap();
 

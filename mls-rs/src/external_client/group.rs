@@ -24,7 +24,7 @@ use crate::{
         snapshot::RawGroupState,
         state::GroupState,
         transcript_hash::InterimTranscriptHash,
-        validate_group_info, GroupContext, Roster,
+        validate_group_info, ExportedTree, GroupContext, Roster,
     },
     identity::SigningIdentity,
     protocol_version::ProtocolVersion,
@@ -103,7 +103,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         config: C,
         signing_data: Option<(SignatureSecretKey, SigningIdentity)>,
         group_info: MlsMessage,
-        tree_data: Option<&[u8]>,
+        tree_data: Option<ExportedTree<'_>>,
     ) -> Result<Self, MlsError> {
         let protocol_version = group_info.version;
 
@@ -476,7 +476,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     pub fn export_tree(&self) -> Result<Vec<u8>, MlsError> {
         self.group_state()
             .public_tree
-            .export_node_data()
+            .nodes
             .mls_encode_to_vec()
             .map_err(Into::into)
     }

@@ -43,7 +43,8 @@ use super::{
     message_signature::AuthenticatedContent,
     mls_rules::CommitDirection,
     proposal::{Proposal, ProposalOrRef},
-    ConfirmedTranscriptHash, EncryptedGroupSecrets, Group, GroupContext, GroupInfo, Welcome,
+    ConfirmedTranscriptHash, EncryptedGroupSecrets, ExportedTree, Group, GroupContext, GroupInfo,
+    Welcome,
 };
 
 #[cfg(not(feature = "by_ref_proposal"))]
@@ -88,7 +89,7 @@ pub struct CommitOutput {
     /// Ratchet tree that can be sent out of band if
     /// `ratchet_tree_extension` is not used according to
     /// [`MlsRules::encryption_options`].
-    pub ratchet_tree: Option<Vec<u8>>,
+    pub ratchet_tree: Option<ExportedTree<'static>>,
 }
 
 #[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen)]
@@ -109,8 +110,8 @@ impl CommitOutput {
     /// `ratchet_tree_extension` is not used according to
     /// [`MlsRules::encryption_options`].
     #[cfg(feature = "ffi")]
-    pub fn ratchet_tree(&self) -> Option<&[u8]> {
-        self.ratchet_tree.as_deref()
+    pub fn ratchet_tree(&self) -> Option<&ExportedTree<'static>> {
+        self.ratchet_tree.as_ref()
     }
 }
 
@@ -559,7 +560,7 @@ where
 
         if commit_options.ratchet_tree_extension {
             let ratchet_tree_ext = RatchetTreeExt {
-                tree_data: provisional_state.public_tree.export_node_data(),
+                tree_data: ExportedTree::new(provisional_state.public_tree.nodes.clone()),
             };
 
             extensions.set_from(ratchet_tree_ext)?;
@@ -674,13 +675,7 @@ where
         self.pending_commit = Some(pending_commit);
 
         let ratchet_tree = (!commit_options.ratchet_tree_extension)
-            .then(|| {
-                provisional_state
-                    .public_tree
-                    .export_node_data()
-                    .mls_encode_to_vec()
-            })
-            .transpose()?;
+            .then_some(ExportedTree::new(provisional_state.public_tree.nodes));
 
         if let Some(signer) = new_signer {
             self.signer = signer;
@@ -1222,7 +1217,7 @@ mod tests {
 
         group.apply_pending_commit().await.unwrap();
 
-        let new_tree = group.export_tree().unwrap();
+        let new_tree = group.export_tree();
 
         assert_eq!(new_tree, commit.ratchet_tree.unwrap())
     }

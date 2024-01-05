@@ -77,7 +77,7 @@ impl RawGroupState {
         #[cfg(not(feature = "tree_index"))]
         let public_tree = {
             let mut tree = TreeKemPublic::new();
-            tree.nodes = state.public_tree.export_node_data();
+            tree.nodes = state.public_tree.nodes.clone();
             tree
         };
 

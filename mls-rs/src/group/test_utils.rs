@@ -100,7 +100,7 @@ impl TestGroup {
         // Group from new member's perspective
         let (new_group, _) = Group::join(
             welcome_messages.pop().unwrap(),
-            ratchet_tree.as_deref(),
+            ratchet_tree,
             new_client.config.clone(),
             new_client.signer.clone().unwrap(),
         )

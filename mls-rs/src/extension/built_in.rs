@@ -15,7 +15,7 @@ use mls_rs_core::{
     time::MlsTime,
 };
 
-use crate::tree_kem::node::NodeVec;
+use crate::group::ExportedTree;
 
 use mls_rs_core::crypto::HpkePublicKey;
 
@@ -64,7 +64,16 @@ impl MlsCodecExtension for ApplicationIdExt {
 )]
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 pub struct RatchetTreeExt {
-    pub(crate) tree_data: NodeVec,
+    pub tree_data: ExportedTree<'static>,
+}
+
+#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
+impl RatchetTreeExt {
+    /// Required custom extension types.
+    #[cfg(feature = "ffi")]
+    pub fn tree_data(&self) -> &ExportedTree<'static> {
+        &self.tree_data
+    }
 }
 
 impl MlsCodecExtension for RatchetTreeExt {
@@ -218,6 +227,7 @@ impl MlsCodecExtension for ExternalSendersExt {
 mod tests {
     use super::*;
 
+    use crate::tree_kem::node::NodeVec;
     #[cfg(feature = "by_ref_proposal")]
     use crate::{
         client::test_utils::TEST_CIPHER_SUITE, identity::test_utils::get_test_signing_identity,
@@ -250,7 +260,7 @@ mod tests {
     #[test]
     fn test_ratchet_tree() {
         let ext = RatchetTreeExt {
-            tree_data: NodeVec::from(vec![None, None]),
+            tree_data: ExportedTree::new(NodeVec::from(vec![None, None])),
         };
 
         let as_extension = ext.clone().into_extension().unwrap();

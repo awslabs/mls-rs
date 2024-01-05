@@ -5,7 +5,7 @@
 use crate::{
     cipher_suite::CipherSuite,
     client::MlsError,
-    group::framing::MlsMessage,
+    group::{framing::MlsMessage, ExportedTree},
     key_package::{validate_key_package_properties, KeyPackage},
     protocol_version::ProtocolVersion,
     time::MlsTime,
@@ -77,7 +77,7 @@ where
     pub async fn observe_group(
         &self,
         group_info: MlsMessage,
-        tree_data: Option<&[u8]>,
+        tree_data: Option<ExportedTree<'_>>,
     ) -> Result<ExternalGroup<C>, MlsError> {
         ExternalGroup::join(
             self.config.clone(),

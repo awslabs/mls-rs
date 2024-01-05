@@ -61,7 +61,7 @@ impl ValidationTestCase {
 
         Self {
             cipher_suite: cs.cipher_suite().into(),
-            tree: tree.export_node_data().mls_encode_to_vec().unwrap(),
+            tree: tree.nodes.mls_encode_to_vec().unwrap(),
             tree_hashes: tree
                 .tree_hashes
                 .current

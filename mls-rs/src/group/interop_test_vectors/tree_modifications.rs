@@ -119,7 +119,7 @@ async fn tree_modifications_interop() {
 
         let tree_after = apply_proposal(proposal, test_case.proposal_sender, &tree_before).await;
 
-        let tree_after = tree_after.export_node_data().mls_encode_to_vec().unwrap();
+        let tree_after = tree_after.nodes.mls_encode_to_vec().unwrap();
 
         assert_eq!(tree_after, test_case.tree_after);
     }

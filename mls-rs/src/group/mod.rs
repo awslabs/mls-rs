@@ -162,6 +162,10 @@ pub use secret_tree::MessageKeyData as MessageKey;
 #[cfg(all(test, feature = "rfc_compliant"))]
 mod interop_test_vectors;
 
+mod exported_tree;
+
+pub use exported_tree::ExportedTree;
+
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 struct GroupSecrets {
     joiner_secret: JoinerSecret,
@@ -379,7 +383,7 @@ where
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn join(
         welcome: MlsMessage,
-        tree_data: Option<&[u8]>,
+        tree_data: Option<ExportedTree<'_>>,
         config: C,
         signer: SignatureSecretKey,
     ) -> Result<(Self, NewMemberInfo), MlsError> {
@@ -397,7 +401,7 @@ where
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn from_welcome_message(
         welcome: MlsMessage,
-        tree_data: Option<&[u8]>,
+        tree_data: Option<ExportedTree<'_>>,
         config: C,
         signer: SignatureSecretKey,
         #[cfg(feature = "psk")] additional_psk: Option<PskSecretInput>,
@@ -1377,7 +1381,7 @@ where
     ) -> Result<MlsMessage, MlsError> {
         if with_tree_in_extension {
             initial_extensions.set_from(RatchetTreeExt {
-                tree_data: self.state.public_tree.nodes.clone(),
+                tree_data: ExportedTree::new(self.state.public_tree.nodes.clone()),
             })?;
         }
 
@@ -1430,11 +1434,8 @@ where
     ///
     /// This function is used to provide the current group tree to new members
     /// when the `ratchet_tree_extension` is not used according to [`MlsRules::commit_options`].
-    pub fn export_tree(&self) -> Result<Vec<u8>, MlsError> {
-        self.current_epoch_tree()
-            .export_node_data()
-            .mls_encode_to_vec()
-            .map_err(Into::into)
+    pub fn export_tree(&self) -> ExportedTree<'_> {
+        ExportedTree::new_borrowed(&self.current_epoch_tree().nodes)
     }
 
     /// Current version of the MLS protocol in use by this group.
@@ -2640,7 +2641,7 @@ mod tests {
         let (bob_group, commit) = bob
             .external_commit_builder()
             .unwrap()
-            .with_tree_data(alice_group.group.export_tree().unwrap())
+            .with_tree_data(alice_group.group.export_tree().into_owned())
             .build(
                 alice_group
                     .group
@@ -2686,7 +2687,7 @@ mod tests {
         let (_, commit) = bob
             .external_commit_builder()
             .unwrap()
-            .with_tree_data(alice_group.group.export_tree().unwrap())
+            .with_tree_data(alice_group.group.export_tree().into_owned())
             .build(
                 alice_group
                     .group
@@ -2851,7 +2852,7 @@ mod tests {
         // Carol can't join
         let res = carol
             .group
-            .join_subgroup(welcome, Some(&alice_sub_group.export_tree().unwrap()))
+            .join_subgroup(welcome, Some(alice_sub_group.export_tree()))
             .await
             .map(|_| ());
 

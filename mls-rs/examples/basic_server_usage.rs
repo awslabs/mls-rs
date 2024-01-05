@@ -9,7 +9,7 @@ use mls_rs::{
         builder::MlsConfig as ExternalMlsConfig, ExternalClient, ExternalReceivedMessage,
         ExternalSnapshot,
     },
-    group::{CachedProposal, ReceivedMessage},
+    group::{CachedProposal, ExportedTree, ReceivedMessage},
     identity::{
         basic::{BasicCredential, BasicIdentityProvider},
         SigningIdentity,
@@ -39,9 +39,10 @@ struct BasicServer {
 
 impl BasicServer {
     // Client uploads group data after creating the group
-    fn create_group(group_info: &[u8], tree: &[u8]) -> Result<Self, MlsError> {
+    fn create_group(group_info: &[u8], tree: ExportedTree) -> Result<Self, MlsError> {
         let server = make_server();
         let group_info = MlsMessage::from_bytes(group_info)?;
+
         let group = server.observe_group(group_info, Some(tree))?;
 
         Ok(Self {
@@ -155,9 +156,9 @@ fn main() -> Result<(), MlsError> {
 
     // Server starts observing Alice's group
     let group_info = alice_group.group_info_message(true)?.to_bytes()?;
-    let tree = alice_group.export_tree()?;
+    let tree = alice_group.export_tree();
 
-    let mut server = BasicServer::create_group(&group_info, &tree)?;
+    let mut server = BasicServer::create_group(&group_info, tree)?;
 
     // Bob uploads a proposal
     let proposal = bob_group

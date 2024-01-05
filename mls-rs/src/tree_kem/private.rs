@@ -213,7 +213,7 @@ mod tests {
         let (public_tree, mut charlie_private, alice_private, path_secret) =
             update_secrets_setup(cipher_suite).await;
 
-        let existing_private = charlie_private.secret_keys.get(0).cloned().unwrap();
+        let existing_private = charlie_private.secret_keys.first().cloned().unwrap();
 
         // Add the secrets for Charlie to his private key
         charlie_private
@@ -295,6 +295,6 @@ mod tests {
         assert!(private_key.secret_keys.iter().skip(1).all(|n| n.is_none()));
 
         // The secret key for our leaf should have been updated accordingly
-        assert_eq!(private_key.secret_keys.get(0).unwrap(), &Some(new_secret));
+        assert_eq!(private_key.secret_keys.first().unwrap(), &Some(new_secret));
     }
 }
