@@ -26,9 +26,10 @@ where
 
 impl<'a, T> MlsDecode for Cow<'a, T>
 where
-    T: MlsDecode + ToOwned<Owned = T>,
+    T: ToOwned,
+    <T as ToOwned>::Owned: MlsDecode,
 {
     fn mls_decode(reader: &mut &[u8]) -> Result<Self, Error> {
-        T::mls_decode(reader).map(Cow::Owned)
+        MlsDecode::mls_decode(reader).map(Cow::Owned)
     }
 }
