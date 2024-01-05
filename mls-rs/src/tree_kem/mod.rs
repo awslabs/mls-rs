@@ -1266,12 +1266,8 @@ mod tests {
         let original_leaf_count = tree.occupied_leaf_count();
 
         // Remove two leaves from the tree
-        let expected_result: Vec<(LeafIndex, LeafNode)> = indexes
-            .clone()
-            .into_iter()
-            .zip(key_packages)
-            .map(|(index, ln)| (index, ln))
-            .collect();
+        let expected_result: Vec<(LeafIndex, LeafNode)> =
+            indexes.clone().into_iter().zip(key_packages).collect();
 
         let res = tree
             .remove_leaves(

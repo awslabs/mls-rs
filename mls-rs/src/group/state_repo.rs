@@ -325,7 +325,10 @@ mod tests {
         assert_eq!(test_repo.pending_commit.updates.len(), 1);
         assert!(test_repo.pending_commit.inserts.is_empty());
 
-        assert_eq!(test_repo.pending_commit.updates.get(0).unwrap(), &to_update);
+        assert_eq!(
+            test_repo.pending_commit.updates.first().unwrap(),
+            &to_update
+        );
 
         // Make sure you can access an epoch pending update
         let psk_id = ResumptionPsk {
