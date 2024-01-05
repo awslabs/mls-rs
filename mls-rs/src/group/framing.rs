@@ -622,7 +622,7 @@ mod tests {
             }),
         };
 
-        let computed_ref = test_message.proposal_reference(&cs).unwrap();
+        let computed_ref = test_message.proposal_reference(&cs).await.unwrap();
         assert_eq!(computed_ref, expected_ref.to_vec());
     }
 }

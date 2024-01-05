@@ -24,14 +24,7 @@ impl ProposalRef {
         cipher_suite_provider: &CS,
         content: &AuthenticatedContent,
     ) -> Result<Self, MlsError> {
-        Ok(ProposalRef(
-            HashReference::compute(
-                &content.mls_encode_to_vec()?,
-                b"MLS 1.0 Proposal Reference",
-                cipher_suite_provider,
-            )
-            .await?,
-        ))
+        Self::from_bytes(cipher_suite_provider, &content.mls_encode_to_vec()?).await
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
