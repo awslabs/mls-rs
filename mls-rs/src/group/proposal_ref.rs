@@ -33,6 +33,17 @@ impl ProposalRef {
             .await?,
         ))
     }
+
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub(crate) async fn from_bytes<CS: CipherSuiteProvider>(
+        cipher_suite_provider: &CS,
+        bytes: &[u8],
+    ) -> Result<Self, MlsError> {
+        Ok(ProposalRef(
+            HashReference::compute(bytes, b"MLS 1.0 Proposal Reference", cipher_suite_provider)
+                .await?,
+        ))
+    }
 }
 
 #[cfg(test)]
