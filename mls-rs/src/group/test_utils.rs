@@ -83,6 +83,7 @@ impl TestGroup {
             mut welcome_messages,
             ratchet_tree,
             commit_message,
+            ..
         } = self
             .group
             .commit_builder()

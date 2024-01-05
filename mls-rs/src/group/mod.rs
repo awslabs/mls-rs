@@ -1351,12 +1351,9 @@ where
         let mut extensions = ExtensionList::new();
 
         extensions.set_from({
-            let (_external_secret, external_pub) = self
-                .key_schedule
-                .get_external_key_pair(&self.cipher_suite_provider)
-                .await?;
-
-            ExternalPubExt { external_pub }
+            self.key_schedule
+                .get_external_key_pair_ext(&self.cipher_suite_provider)
+                .await?
         })?;
 
         self.group_info_message_internal(extensions, with_tree_in_extension)
@@ -2392,6 +2389,32 @@ mod tests {
         .map(|_| {});
 
         assert_matches!(res, Err(MlsError::MissingExternalPubExtension));
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn external_commit_via_commit_options_round_trip() {
+        let mut group = test_group_custom(
+            TEST_PROTOCOL_VERSION,
+            TEST_CIPHER_SUITE,
+            vec![],
+            None,
+            CommitOptions::default()
+                .with_allow_external_commit(true)
+                .into(),
+        )
+        .await;
+
+        let commit_output = group.group.commit(vec![]).unwrap();
+
+        let (test_client, _) =
+            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
+
+        test_client
+            .external_commit_builder()
+            .unwrap()
+            .build(commit_output.external_commit_group_info.unwrap())
+            .await
+            .unwrap();
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]

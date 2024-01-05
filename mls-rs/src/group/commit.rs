@@ -90,6 +90,10 @@ pub struct CommitOutput {
     /// `ratchet_tree_extension` is not used according to
     /// [`MlsRules::encryption_options`].
     pub ratchet_tree: Option<ExportedTree<'static>>,
+    /// A group info that can be provided to new members in order to enable external commit
+    /// functionality. This value is set if [`MlsRules::commit_options`] returns
+    /// `allow_external_commit` set to true.
+    pub external_commit_group_info: Option<MlsMessage>,
 }
 
 #[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen)]
@@ -382,7 +386,7 @@ where
         proposals: Vec<Proposal>,
         external_leaf: Option<&LeafNode>,
         authenticated_data: Vec<u8>,
-        group_info_extensions: ExtensionList,
+        mut welcome_group_info_extensions: ExtensionList,
         new_signer: Option<SignatureSecretKey>,
         new_signing_identity: Option<SigningIdentity>,
     ) -> Result<CommitOutput, MlsError> {
@@ -555,20 +559,6 @@ where
 
         provisional_group_context.confirmed_transcript_hash = confirmed_transcript_hash;
 
-        // Add the ratchet tree extension if necessary
-        let mut extensions = ExtensionList::new();
-
-        if commit_options.ratchet_tree_extension {
-            let ratchet_tree_ext = RatchetTreeExt {
-                tree_data: ExportedTree::new(provisional_state.public_tree.nodes.clone()),
-            };
-
-            extensions.set_from(ratchet_tree_ext)?;
-        }
-
-        // Add in any user provided extensions
-        extensions.append(group_info_extensions);
-
         let key_schedule_result = KeySchedule::from_key_schedule(
             &self.key_schedule,
             &commit_secret,
@@ -589,11 +579,55 @@ where
 
         auth_content.auth.confirmation_tag = Some(confirmation_tag.clone());
 
-        let group_info = self
+        let ratchet_tree_ext = commit_options
+            .ratchet_tree_extension
+            .then(|| RatchetTreeExt {
+                tree_data: ExportedTree::new(provisional_state.public_tree.nodes.clone()),
+            });
+
+        // Generate external commit group info if required by commit_options
+        let external_commit_group_info = match commit_options.allow_external_commit {
+            true => {
+                let mut extensions = ExtensionList::new();
+
+                extensions.set_from({
+                    self.key_schedule
+                        .get_external_key_pair_ext(&self.cipher_suite_provider)
+                        .await?
+                })?;
+
+                if let Some(ref ratchet_tree_ext) = ratchet_tree_ext {
+                    extensions.set_from(ratchet_tree_ext.clone())?;
+                }
+
+                let info = self
+                    .make_group_info(
+                        &provisional_group_context,
+                        extensions,
+                        &confirmation_tag,
+                        new_signer_ref,
+                    )
+                    .await?;
+
+                let msg =
+                    MlsMessage::new(self.protocol_version(), MlsMessagePayload::GroupInfo(info));
+
+                Some(msg)
+            }
+            false => None,
+        };
+
+        // Build the group info that will be placed into the welcome messages.
+        // Add the ratchet tree extension if necessary
+        if let Some(ratchet_tree_ext) = ratchet_tree_ext {
+            welcome_group_info_extensions.set_from(ratchet_tree_ext)?;
+        }
+
+        let welcome_group_info = self
             .make_group_info(
-                provisional_group_context,
-                extensions,
-                confirmation_tag,
+                &provisional_group_context,
+                welcome_group_info_extensions,
+                &confirmation_tag,
                 new_signer_ref,
             )
             .await?;
@@ -607,7 +641,9 @@ where
         )
         .await?;
 
-        let encrypted_group_info = welcome_secret.encrypt(&group_info).await?;
+        let encrypted_group_info = welcome_secret
+            .encrypt(&welcome_group_info.mls_encode_to_vec()?)
+            .await?;
 
         // Encrypt path secrets and joiner secret to new members
         let path_secrets = path_secrets.as_ref();
@@ -675,7 +711,7 @@ where
         self.pending_commit = Some(pending_commit);
 
         let ratchet_tree = (!commit_options.ratchet_tree_extension)
-            .then_some(ExportedTree::new(provisional_state.public_tree.nodes));
+            .then(|| ExportedTree::new(provisional_state.public_tree.nodes));
 
         if let Some(signer) = new_signer {
             self.signer = signer;
@@ -685,6 +721,7 @@ where
             commit_message,
             welcome_messages,
             ratchet_tree,
+            external_commit_group_info,
         })
     }
 
@@ -693,15 +730,15 @@ where
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn make_group_info(
         &self,
-        group_context: GroupContext,
+        group_context: &GroupContext,
         extensions: ExtensionList,
-        confirmation_tag: ConfirmationTag,
+        confirmation_tag: &ConfirmationTag,
         signer: &SignatureSecretKey,
-    ) -> Result<Vec<u8>, MlsError> {
+    ) -> Result<GroupInfo, MlsError> {
         let mut group_info = GroupInfo {
-            group_context,
+            group_context: group_context.clone(),
             extensions,
-            confirmation_tag, // The confirmation_tag from the MlsPlaintext object
+            confirmation_tag: confirmation_tag.clone(), // The confirmation_tag from the MlsPlaintext object
             signer: LeafIndex(self.current_member_index()),
             signature: vec![],
         };
@@ -713,7 +750,7 @@ where
             .sign(&self.cipher_suite_provider, signer, &())
             .await?;
 
-        group_info.mls_encode_to_vec().map_err(Into::into)
+        Ok(group_info)
     }
 
     fn make_welcome_message(
@@ -765,6 +802,7 @@ mod tests {
 
     use mls_rs_core::{
         error::IntoAnyError,
+        extension::ExtensionType,
         identity::{CredentialType, IdentityProvider},
         time::MlsTime,
     };
@@ -1237,6 +1275,79 @@ mod tests {
         let commit = group.commit(vec![]).await.unwrap();
 
         assert!(commit.ratchet_tree.is_none());
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn commit_includes_external_commit_group_info_if_requested() {
+        let mut group = test_group_custom(
+            TEST_PROTOCOL_VERSION,
+            TEST_CIPHER_SUITE,
+            Default::default(),
+            None,
+            Some(
+                CommitOptions::new()
+                    .with_allow_external_commit(true)
+                    .with_ratchet_tree_extension(false),
+            ),
+        )
+        .await
+        .group;
+
+        let commit = group.commit(vec![]).await.unwrap();
+
+        let info = commit
+            .external_commit_group_info
+            .unwrap()
+            .into_group_info()
+            .unwrap();
+
+        assert!(!info.extensions.has_extension(ExtensionType::RATCHET_TREE));
+        assert!(info.extensions.has_extension(ExtensionType::EXTERNAL_PUB));
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn commit_includes_external_commit_and_tree_if_requested() {
+        let mut group = test_group_custom(
+            TEST_PROTOCOL_VERSION,
+            TEST_CIPHER_SUITE,
+            Default::default(),
+            None,
+            Some(
+                CommitOptions::new()
+                    .with_allow_external_commit(true)
+                    .with_ratchet_tree_extension(true),
+            ),
+        )
+        .await
+        .group;
+
+        let commit = group.commit(vec![]).await.unwrap();
+
+        let info = commit
+            .external_commit_group_info
+            .unwrap()
+            .into_group_info()
+            .unwrap();
+
+        assert!(info.extensions.has_extension(ExtensionType::RATCHET_TREE));
+        assert!(info.extensions.has_extension(ExtensionType::EXTERNAL_PUB));
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn commit_does_not_include_external_commit_group_info_if_not_requested() {
+        let mut group = test_group_custom(
+            TEST_PROTOCOL_VERSION,
+            TEST_CIPHER_SUITE,
+            Default::default(),
+            None,
+            Some(CommitOptions::new().with_allow_external_commit(false)),
+        )
+        .await
+        .group;
+
+        let commit = group.commit(vec![]).await.unwrap();
+
+        assert!(commit.external_commit_group_info.is_none());
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
