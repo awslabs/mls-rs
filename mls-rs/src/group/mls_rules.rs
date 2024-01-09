@@ -37,6 +37,7 @@ pub struct CommitOptions {
     pub path_required: bool,
     pub ratchet_tree_extension: bool,
     pub single_welcome_message: bool,
+    pub allow_external_commit: bool,
 }
 
 impl Default for CommitOptions {
@@ -45,6 +46,7 @@ impl Default for CommitOptions {
             path_required: false,
             ratchet_tree_extension: true,
             single_welcome_message: true,
+            allow_external_commit: false,
         }
     }
 }
@@ -71,6 +73,13 @@ impl CommitOptions {
     pub fn with_single_welcome_message(self, single_welcome_message: bool) -> Self {
         Self {
             single_welcome_message,
+            ..self
+        }
+    }
+
+    pub fn with_allow_external_commit(self, allow_external_commit: bool) -> Self {
+        Self {
+            allow_external_commit,
             ..self
         }
     }

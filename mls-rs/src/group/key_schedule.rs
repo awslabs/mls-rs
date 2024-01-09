@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use crate::client::MlsError;
+use crate::extension::ExternalPubExt;
 use crate::group::{GroupContext, MembershipTag};
 use crate::psk::secret::PskSecret;
 #[cfg(feature = "psk")]
@@ -238,6 +239,16 @@ impl KeySchedule {
             .kem_derive(&self.external_secret)
             .await
             .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
+    }
+
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn get_external_key_pair_ext<P: CipherSuiteProvider>(
+        &self,
+        cipher_suite: &P,
+    ) -> Result<ExternalPubExt, MlsError> {
+        let (_external_secret, external_pub) = self.get_external_key_pair(cipher_suite).await?;
+
+        Ok(ExternalPubExt { external_pub })
     }
 }
 
