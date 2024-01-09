@@ -2404,7 +2404,7 @@ mod tests {
         )
         .await;
 
-        let commit_output = group.group.commit(vec![]).unwrap();
+        let commit_output = group.group.commit(vec![]).await.unwrap();
 
         let (test_client, _) =
             test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
