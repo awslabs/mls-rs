@@ -24,14 +24,8 @@ impl ProposalRef {
         cipher_suite_provider: &CS,
         content: &AuthenticatedContent,
     ) -> Result<Self, MlsError> {
-        Self::from_bytes(cipher_suite_provider, &content.mls_encode_to_vec()?).await
-    }
+        let bytes = &content.mls_encode_to_vec()?;
 
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub(crate) async fn from_bytes<CS: CipherSuiteProvider>(
-        cipher_suite_provider: &CS,
-        bytes: &[u8],
-    ) -> Result<Self, MlsError> {
         Ok(ProposalRef(
             HashReference::compute(bytes, b"MLS 1.0 Proposal Reference", cipher_suite_provider)
                 .await?,

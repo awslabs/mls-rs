@@ -424,17 +424,17 @@ impl MlsMessage {
     /// [`StateUpdate::unused_proposals`](super::StateUpdate::unused_proposals).
     #[cfg(feature = "by_ref_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn proposal_reference<C: CipherSuiteProvider>(
-        &self,
+    pub async fn into_proposal_reference<C: CipherSuiteProvider>(
+        self,
         cipher_suite: &C,
-    ) -> Result<Vec<u8>, MlsError> {
-        matches!(&self.payload, MlsMessagePayload::Plain(ptx) if ptx.content.content_type() == ContentType::Proposal)
-            .then_some(())
-            .ok_or(MlsError::UnexpectedMessageType)?;
+    ) -> Result<Option<Vec<u8>>, MlsError> {
+        let MlsMessagePayload::Plain(public_message) = self.payload else {
+            return Ok(None);
+        };
 
-        ProposalRef::from_bytes(cipher_suite, &self.payload.mls_encode_to_vec()?)
+        ProposalRef::from_content(cipher_suite, &public_message.into())
             .await
-            .map(|r| r.to_vec())
+            .map(|r| Some(r.to_vec()))
     }
 }
 
@@ -618,11 +618,16 @@ mod tests {
             payload: MlsMessagePayload::Plain(PublicMessage {
                 content: test_auth.content,
                 auth: test_auth.auth,
-                membership_tag: None,
+                membership_tag: Some(cs.mac(&[1, 2, 3], &[1, 2, 3]).await.unwrap().into()),
             }),
         };
 
-        let computed_ref = test_message.proposal_reference(&cs).await.unwrap();
+        let computed_ref = test_message
+            .into_proposal_reference(&cs)
+            .await
+            .unwrap()
+            .unwrap();
+
         assert_eq!(computed_ref, expected_ref.to_vec());
     }
 }
