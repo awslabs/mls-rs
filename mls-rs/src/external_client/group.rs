@@ -24,7 +24,7 @@ use crate::{
         snapshot::RawGroupState,
         state::GroupState,
         transcript_hash::InterimTranscriptHash,
-        validate_group_info, ExportedTree, GroupContext, Roster,
+        validate_group_info, ContentType, ExportedTree, GroupContext, Roster,
     },
     identity::SigningIdentity,
     protocol_version::ProtocolVersion,
@@ -81,7 +81,7 @@ pub enum ExternalReceivedMessage {
     /// Received proposal and its unique identifier.
     Proposal(ProposalMessageDescription),
     /// Encrypted message that can not be processed.
-    Ciphertext,
+    Ciphertext(ContentType),
 }
 
 /// A handle to an observed group that can track plaintext control messages
@@ -584,9 +584,11 @@ where
     #[cfg(feature = "private_message")]
     async fn process_ciphertext(
         &mut self,
-        _cipher_text: PrivateMessage,
+        cipher_text: PrivateMessage,
     ) -> Result<EventOrContent<Self::OutputType>, MlsError> {
-        Ok(EventOrContent::Event(ExternalReceivedMessage::Ciphertext))
+        Ok(EventOrContent::Event(ExternalReceivedMessage::Ciphertext(
+            cipher_text.content_type,
+        )))
     }
 
     async fn update_key_schedule(
