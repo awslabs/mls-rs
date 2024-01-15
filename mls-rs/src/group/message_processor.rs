@@ -324,6 +324,10 @@ impl ProposalMessageDescription {
             sender,
         }
     }
+
+    pub fn proposal_ref(&self) -> Vec<u8> {
+        self.proposal_ref.to_vec()
+    }
 }
 
 #[cfg(not(feature = "by_ref_proposal"))]

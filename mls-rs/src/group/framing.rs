@@ -419,6 +419,23 @@ impl MlsMessage {
 
         kp.to_reference(cipher_suite).await.map(Some)
     }
+
+    /// If this is a plaintext proposal, return the proposal reference that can be matched e.g. with
+    /// [`StateUpdate::unused_proposals`](super::StateUpdate::unused_proposals).
+    #[cfg(feature = "by_ref_proposal")]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn into_proposal_reference<C: CipherSuiteProvider>(
+        self,
+        cipher_suite: &C,
+    ) -> Result<Option<Vec<u8>>, MlsError> {
+        let MlsMessagePayload::Plain(public_message) = self.payload else {
+            return Ok(None);
+        };
+
+        ProposalRef::from_content(cipher_suite, &public_message.into())
+            .await
+            .map(|r| Some(r.to_vec()))
+    }
 }
 
 #[cfg(feature = "custom_proposal")]
@@ -545,7 +562,14 @@ pub(crate) mod test_utils {
 mod tests {
     use assert_matches::assert_matches;
 
-    use crate::group::framing::test_utils::get_test_ciphertext_content;
+    use crate::{
+        client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
+        crypto::test_utils::test_cipher_suite_provider,
+        group::{
+            framing::test_utils::get_test_ciphertext_content,
+            proposal_ref::test_utils::auth_content_from_proposal,
+        },
+    };
 
     use super::*;
 
@@ -574,5 +598,36 @@ mod tests {
             PrivateMessageContent::mls_decode(&mut &*encoded, (&ciphertext_content.content).into());
 
         assert_matches!(decoded, Err(mls_rs_codec::Error::Custom(_)));
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn proposal_ref() {
+        let cs = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+
+        let test_auth = auth_content_from_proposal(
+            Proposal::Remove(RemoveProposal {
+                to_remove: LeafIndex(0),
+            }),
+            Sender::External(0),
+        );
+
+        let expected_ref = ProposalRef::from_content(&cs, &test_auth).await.unwrap();
+
+        let test_message = MlsMessage {
+            version: TEST_PROTOCOL_VERSION,
+            payload: MlsMessagePayload::Plain(PublicMessage {
+                content: test_auth.content,
+                auth: test_auth.auth,
+                membership_tag: Some(cs.mac(&[1, 2, 3], &[1, 2, 3]).await.unwrap().into()),
+            }),
+        };
+
+        let computed_ref = test_message
+            .into_proposal_reference(&cs)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(computed_ref, expected_ref.to_vec());
     }
 }

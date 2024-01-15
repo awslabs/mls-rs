@@ -24,13 +24,11 @@ impl ProposalRef {
         cipher_suite_provider: &CS,
         content: &AuthenticatedContent,
     ) -> Result<Self, MlsError> {
+        let bytes = &content.mls_encode_to_vec()?;
+
         Ok(ProposalRef(
-            HashReference::compute(
-                &content.mls_encode_to_vec()?,
-                b"MLS 1.0 Proposal Reference",
-                cipher_suite_provider,
-            )
-            .await?,
+            HashReference::compute(bytes, b"MLS 1.0 Proposal Reference", cipher_suite_provider)
+                .await?,
         ))
     }
 }
