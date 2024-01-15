@@ -1090,6 +1090,12 @@ where
             .await
     }
 
+    /// Delete all sent and received proposals cached for commit.
+    #[cfg(feature = "by_ref_proposal")]
+    pub fn clear_proposal_cache(&mut self) {
+        self.state.proposals.clear()
+    }
+
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn format_for_wire(
         &mut self,
