@@ -100,7 +100,7 @@ use self::state_repo::GroupStateRepository;
 pub(crate) use group_info::GroupInfo;
 
 use self::framing::MlsMessage;
-pub use self::framing::Sender;
+pub use self::framing::{ContentType, Sender};
 pub use commit::*;
 pub use context::GroupContext;
 pub use roster::*;
