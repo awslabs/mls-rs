@@ -19,7 +19,6 @@ mls-rs-identity-x509 = { path = "../mls-rs-identity-x509", optional = true, vers
 mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", version = "0.8.0" }
 mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", version = "0.9.0" }
 thiserror = "1.0.40"
-enum-iterator = "1.1.2"
 zeroize = { version = "1", features = ["zeroize_derive"] }
 maybe-async = "0.2.7"
 
