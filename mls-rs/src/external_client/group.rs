@@ -461,6 +461,12 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         ))
     }
 
+    /// Delete all sent and received proposals cached for commit.
+    #[cfg(feature = "by_ref_proposal")]
+    pub fn clear_proposal_cache(&mut self) {
+        self.state.proposals.clear()
+    }
+
     #[inline(always)]
     pub(crate) fn group_state(&self) -> &GroupState {
         &self.state
