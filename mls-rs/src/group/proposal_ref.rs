@@ -5,6 +5,10 @@
 use super::*;
 use crate::hash_reference::HashReference;
 
+#[cfg_attr(
+    all(feature = "ffi", not(test)),
+    safer_ffi_gen::ffi_type(clone, opaque)
+)]
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// Unique identifier for a proposal message.
@@ -18,6 +22,7 @@ impl Deref for ProposalRef {
     }
 }
 
+#[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen)]
 impl ProposalRef {
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn from_content<CS: CipherSuiteProvider>(
@@ -30,6 +35,10 @@ impl ProposalRef {
             HashReference::compute(bytes, b"MLS 1.0 Proposal Reference", cipher_suite_provider)
                 .await?,
         ))
+    }
+
+    pub fn as_slice(&self) -> &[u8] {
+        &self.0
     }
 }
 

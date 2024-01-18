@@ -434,6 +434,10 @@ impl ProposalBundle {
     }
 }
 
+#[cfg_attr(
+    all(feature = "ffi", not(test)),
+    safer_ffi_gen::ffi_type(clone, opaque)
+)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum ProposalSource {
     ByValue,
@@ -442,6 +446,7 @@ pub enum ProposalSource {
     Local,
 }
 
+#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::ffi_type(opaque))]
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 /// Proposal description used as input to a
@@ -455,6 +460,9 @@ pub struct ProposalInfo<T> {
     pub source: ProposalSource,
 }
 
+safer_ffi_gen::specialize!(ProposalInfoFfi = crate::group::proposal_filter::ProposalInfo<Proposal>);
+
+#[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen)]
 impl ProposalInfo<Proposal> {
     /// Create a new ProposalInfo.
     ///
@@ -464,6 +472,7 @@ impl ProposalInfo<Proposal> {
     ///
     /// This function is useful when implementing custom
     /// [`MlsRules`](crate::MlsRules).
+    #[safer_ffi_gen::safer_ffi_gen_ignore]
     pub fn new(proposal: Proposal, sender: Sender, can_transmit: bool) -> ProposalInfo<Proposal> {
         let source = if can_transmit {
             ProposalSource::ByValue
@@ -476,6 +485,18 @@ impl ProposalInfo<Proposal> {
             sender,
             source,
         }
+    }
+
+    // TODO: Proposal has a lot of cases that we don't have FFI support for yet.
+
+    #[cfg(feature = "ffi")]
+    pub fn sender(&self) -> &Sender {
+        &self.sender
+    }
+
+    #[cfg(feature = "ffi")]
+    pub fn source(&self) -> &ProposalSource {
+        &self.source
     }
 }
 

@@ -35,10 +35,10 @@ use super::proposal_ref::ProposalRef;
 #[cfg(not(feature = "by_ref_proposal"))]
 use crate::group::proposal_cache::resolve_for_commit;
 
-#[cfg(any(feature = "state_update", feature = "by_ref_proposal"))]
+#[cfg(feature = "by_ref_proposal")]
 use super::proposal::Proposal;
 
-#[cfg(all(feature = "state_update", feature = "custom_proposal"))]
+#[cfg(feature = "custom_proposal")]
 use super::proposal_filter::ProposalInfo;
 
 #[cfg(feature = "state_update")]
@@ -72,7 +72,7 @@ pub(crate) struct ProvisionalState {
     pub(crate) group_context: GroupContext,
     pub(crate) external_init_index: Option<LeafIndex>,
     pub(crate) indexes_of_added_kpkgs: Vec<LeafIndex>,
-    #[cfg(all(feature = "state_update", feature = "by_ref_proposal"))]
+    #[cfg(feature = "by_ref_proposal")]
     pub(crate) rejected_proposals: Vec<crate::mls_rules::ProposalInfo<Proposal>>,
 }
 
