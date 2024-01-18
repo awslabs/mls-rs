@@ -4,7 +4,7 @@
 
 use alloc::collections::VecDeque;
 
-#[cfg(not(target_os = "none"))]
+#[cfg(target_has_atomic = "ptr")]
 use alloc::sync::Arc;
 
 #[cfg(mls_build_async)]
@@ -12,7 +12,7 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use mls_rs_codec::{MlsDecode, MlsEncode};
 use mls_rs_core::group::{EpochRecord, GroupState, GroupStateStorage};
-#[cfg(target_os = "none")]
+#[cfg(not(target_has_atomic = "ptr"))]
 use portable_atomic_util::Arc;
 
 use crate::{client::MlsError, storage_provider::group_state::EpochData};
