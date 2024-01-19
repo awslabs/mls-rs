@@ -194,7 +194,7 @@ impl GroupState {
         let roster = self.public_tree.roster();
         let group_extensions = &self.context.extensions;
 
-        #[cfg(all(feature = "by_ref_proposal", feature = "state_update"))]
+        #[cfg(feature = "by_ref_proposal")]
         let all_proposals = proposals.clone();
 
         let origin = match sender {
@@ -248,7 +248,7 @@ impl GroupState {
             .apply_proposals(&sender, &proposals, commit_time)
             .await?;
 
-        #[cfg(all(feature = "by_ref_proposal", feature = "state_update"))]
+        #[cfg(feature = "by_ref_proposal")]
         let rejected_proposals =
             rejected_proposals(all_proposals, &applier_output.applied_proposals);
 
@@ -268,7 +268,7 @@ impl GroupState {
             applied_proposals: proposals,
             external_init_index: applier_output.external_init_index,
             indexes_of_added_kpkgs: applier_output.indexes_of_added_kpkgs,
-            #[cfg(all(feature = "by_ref_proposal", feature = "state_update"))]
+            #[cfg(feature = "by_ref_proposal")]
             rejected_proposals,
         })
     }
@@ -284,14 +284,14 @@ impl Extend<(ProposalRef, CachedProposal)> for ProposalCache {
     }
 }
 
-#[cfg(all(feature = "by_ref_proposal", feature = "state_update"))]
+#[cfg(feature = "by_ref_proposal")]
 fn has_ref(proposals: &ProposalBundle, reference: &ProposalRef) -> bool {
     proposals
         .iter_proposals()
         .any(|p| matches!(&p.source, ProposalSource::ByReference(r) if r == reference))
 }
 
-#[cfg(all(feature = "by_ref_proposal", feature = "state_update"))]
+#[cfg(feature = "by_ref_proposal")]
 fn rejected_proposals(
     all_proposals: ProposalBundle,
     accepted_proposals: &ProposalBundle,

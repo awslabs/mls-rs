@@ -94,6 +94,9 @@ pub struct CommitOutput {
     /// functionality. This value is set if [`MlsRules::commit_options`] returns
     /// `allow_external_commit` set to true.
     pub external_commit_group_info: Option<MlsMessage>,
+    /// Proposals that were received in the prior epoch but not included in the following commit.
+    #[cfg(feature = "by_ref_proposal")]
+    pub unused_proposals: Vec<crate::mls_rules::ProposalInfo<Proposal>>,
 }
 
 #[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen)]
@@ -116,6 +119,20 @@ impl CommitOutput {
     #[cfg(feature = "ffi")]
     pub fn ratchet_tree(&self) -> Option<&ExportedTree<'static>> {
         self.ratchet_tree.as_ref()
+    }
+
+    /// A group info that can be provided to new members in order to enable external commit
+    /// functionality. This value is set if [`MlsRules::commit_options`] returns
+    /// `allow_external_commit` set to true.
+    #[cfg(feature = "ffi")]
+    pub fn external_commit_group_info(&self) -> Option<&MlsMessage> {
+        self.external_commit_group_info.as_ref()
+    }
+
+    /// Proposals that were received in the prior epoch but not included in the following commit.
+    #[cfg(all(feature = "ffi", feature = "by_ref_proposal"))]
+    pub fn unused_proposals(&self) -> &[crate::mls_rules::ProposalInfo<Proposal>] {
+        &self.unused_proposals
     }
 }
 
@@ -722,6 +739,8 @@ where
             welcome_messages,
             ratchet_tree,
             external_commit_group_info,
+            #[cfg(feature = "by_ref_proposal")]
+            unused_proposals: provisional_state.rejected_proposals,
         })
     }
 

@@ -434,6 +434,10 @@ impl ProposalBundle {
     }
 }
 
+#[cfg_attr(
+    all(feature = "ffi", not(test)),
+    safer_ffi_gen::ffi_type(clone, opaque)
+)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum ProposalSource {
     ByValue,
@@ -442,6 +446,7 @@ pub enum ProposalSource {
     Local,
 }
 
+#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::ffi_type(opaque))]
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 /// Proposal description used as input to a
@@ -455,7 +460,8 @@ pub struct ProposalInfo<T> {
     pub source: ProposalSource,
 }
 
-impl ProposalInfo<Proposal> {
+#[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen)]
+impl<T> ProposalInfo<T> {
     /// Create a new ProposalInfo.
     ///
     /// The resulting value will be either transmitted with a commit or
@@ -464,7 +470,8 @@ impl ProposalInfo<Proposal> {
     ///
     /// This function is useful when implementing custom
     /// [`MlsRules`](crate::MlsRules).
-    pub fn new(proposal: Proposal, sender: Sender, can_transmit: bool) -> ProposalInfo<Proposal> {
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
+    pub fn new(proposal: T, sender: Sender, can_transmit: bool) -> Self {
         let source = if can_transmit {
             ProposalSource::ByValue
         } else {
@@ -477,9 +484,18 @@ impl ProposalInfo<Proposal> {
             source,
         }
     }
-}
 
-impl<T> ProposalInfo<T> {
+    #[cfg(all(feature = "ffi", not(test)))]
+    pub fn sender(&self) -> &Sender {
+        &self.sender
+    }
+
+    #[cfg(all(feature = "ffi", not(test)))]
+    pub fn source(&self) -> &ProposalSource {
+        &self.source
+    }
+
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     pub fn map<U, F>(self, f: F) -> ProposalInfo<U>
     where
         F: FnOnce(T) -> U,
@@ -491,6 +507,7 @@ impl<T> ProposalInfo<T> {
         }
     }
 
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     pub fn as_ref(&self) -> ProposalInfo<&T> {
         ProposalInfo {
             proposal: &self.proposal,
@@ -518,6 +535,9 @@ impl<T> ProposalInfo<T> {
         }
     }
 }
+
+#[cfg(all(feature = "ffi", not(test)))]
+safer_ffi_gen::specialize!(ProposalInfoFfi = ProposalInfo<Proposal>);
 
 pub trait Proposable: Sized {
     const TYPE: ProposalType;
