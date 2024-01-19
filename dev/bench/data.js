@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1705490840322,
+  "lastUpdate": 1705674690307,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -6251,6 +6251,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 161450,
             "range": "± 7417",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "tomleavy@amazon.com",
+            "name": "Tom Leavy",
+            "username": "tomleavy"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "405119f200ecc27917d18648d6cac5188cedc073",
+          "message": "Add unused proposals to `CommitOutput` (#67)\n\n* Add unused proposals to CommitOutput\r\n\r\n* Fix ProposalInfo specialization\r\n\r\n- The specialization macro needs to be invoked after the impl block, so\r\n  that macros generated for this block are available at the\r\n  specialization point.\r\n- Macro qualification is not supported in the crate where the macro is\r\n  defined.\r\n\r\n---------\r\n\r\nCo-authored-by: Stephane Raux <sraux@amazon.com>",
+          "timestamp": "2024-01-19T15:27:09+01:00",
+          "tree_id": "1ea1e31236416e4048ab41261649c9e6fe75a7ab",
+          "url": "https://github.com/awslabs/mls-rs/commit/405119f200ecc27917d18648d6cac5188cedc073"
+        },
+        "date": 1705674689142,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 510719,
+            "range": "± 14715",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 516938,
+            "range": "± 13048",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 570812,
+            "range": "± 4416",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1179161,
+            "range": "± 18179",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7361736,
+            "range": "± 21287",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1086778,
+            "range": "± 54734",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1183812,
+            "range": "± 40537",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1314834,
+            "range": "± 42673",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 726815,
+            "range": "± 70339",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 775948,
+            "range": "± 24497",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 836832,
+            "range": "± 4326",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 25484,
+            "range": "± 336",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 83402,
+            "range": "± 28842",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 162002,
+            "range": "± 1426",
             "unit": "ns/iter"
           }
         ]
