@@ -2,10 +2,10 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-#[cfg(not(target_os = "none"))]
+#[cfg(target_has_atomic = "ptr")]
 use alloc::sync::Arc;
 
-#[cfg(target_os = "none")]
+#[cfg(not(target_has_atomic = "ptr"))]
 use portable_atomic_util::Arc;
 
 use core::convert::Infallible;
