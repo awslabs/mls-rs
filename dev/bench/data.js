@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1705674690307,
+  "lastUpdate": 1705680467628,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -6359,6 +6359,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 162002,
             "range": "± 1426",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "94983192+stefunctional@users.noreply.github.com",
+            "name": "Stephane Raux",
+            "username": "stefunctional"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "bd74f0ccab420c724a7ef25222adcc52a6ac2916",
+          "message": "Use atomic in core when available (#66)\n\nThis is the\r\n[recommended](https://doc.rust-lang.org/alloc/sync/index.html) way to\r\ncheck for atomic support in core.",
+          "timestamp": "2024-01-19T11:03:29-05:00",
+          "tree_id": "004c3d9717f3de3ee252e35a5be4fc8fd31d9d69",
+          "url": "https://github.com/awslabs/mls-rs/commit/bd74f0ccab420c724a7ef25222adcc52a6ac2916"
+        },
+        "date": 1705680466652,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 511225,
+            "range": "± 5787",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 517882,
+            "range": "± 5988",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 571982,
+            "range": "± 16921",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1166719,
+            "range": "± 22104",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 6973560,
+            "range": "± 23429",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1097009,
+            "range": "± 49910",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1197994,
+            "range": "± 36047",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1353495,
+            "range": "± 36194",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 723409,
+            "range": "± 9058",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 772092,
+            "range": "± 4833",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 833497,
+            "range": "± 5762",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 25465,
+            "range": "± 284",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 83940,
+            "range": "± 1587",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 161793,
+            "range": "± 7549",
             "unit": "ns/iter"
           }
         ]
