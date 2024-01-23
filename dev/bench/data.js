@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1705681512725,
+  "lastUpdate": 1706040954568,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -6575,6 +6575,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 160602,
             "range": "± 1563",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "94983192+stefunctional@users.noreply.github.com",
+            "name": "Stephane Raux",
+            "username": "stefunctional"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d9d9e2eafd5b4a17ac86b1ca4a449595512cc652",
+          "message": "Fix conditional compilation of proposal references (#68)\n\n* Fix conditional compilation of proposal references\r\n\r\nSome uses were incorrectly guarded by the `external_client` feature.\r\n\r\n* Do not exclude fuzz target when running cargo-hack\r\n\r\nThe fuzz target is not a member of the workspace, which triggers a\r\nwarning.\r\n\r\n* Make ProposalMessageDescription non_exhaustive",
+          "timestamp": "2024-01-23T15:11:36-05:00",
+          "tree_id": "10e758ae744c3fd2ff63685ea2452056ca1c17c2",
+          "url": "https://github.com/awslabs/mls-rs/commit/d9d9e2eafd5b4a17ac86b1ca4a449595512cc652"
+        },
+        "date": 1706040953957,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 510088,
+            "range": "± 17984",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 519960,
+            "range": "± 17703",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 582993,
+            "range": "± 23704",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1181116,
+            "range": "± 47434",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 6858551,
+            "range": "± 61504",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1136405,
+            "range": "± 67696",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1209701,
+            "range": "± 43433",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1327692,
+            "range": "± 47191",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 721977,
+            "range": "± 10914",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 774360,
+            "range": "± 5464",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 835714,
+            "range": "± 7957",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 25510,
+            "range": "± 9024",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 84150,
+            "range": "± 3497",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 164190,
+            "range": "± 8290",
             "unit": "ns/iter"
           }
         ]
