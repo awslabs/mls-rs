@@ -62,7 +62,7 @@ use super::proposal::CustomProposal;
 #[cfg(feature = "private_message")]
 use crate::group::framing::PrivateMessage;
 
-#[cfg(all(feature = "by_ref_proposal", feature = "external_client"))]
+#[cfg(feature = "by_ref_proposal")]
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 
 #[derive(Debug)]
@@ -284,11 +284,11 @@ pub struct ProposalMessageDescription {
     pub proposal: Proposal,
     /// Plaintext authenticated data in the received MLS packet.
     pub authenticated_data: Vec<u8>,
-    #[cfg(all(feature = "by_ref_proposal", feature = "external_client"))]
+    #[cfg(feature = "by_ref_proposal")]
     pub(crate) proposal_ref: ProposalRef,
 }
 
-#[cfg(all(feature = "by_ref_proposal", feature = "external_client"))]
+#[cfg(feature = "by_ref_proposal")]
 #[derive(MlsSize, MlsEncode, MlsDecode)]
 pub struct CachedProposal {
     pub(crate) proposal: Proposal,
@@ -296,7 +296,7 @@ pub struct CachedProposal {
     pub(crate) sender: Sender,
 }
 
-#[cfg(all(feature = "by_ref_proposal", feature = "external_client"))]
+#[cfg(feature = "by_ref_proposal")]
 impl CachedProposal {
     /// Deserialize the proposal
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, MlsError> {
@@ -309,7 +309,7 @@ impl CachedProposal {
     }
 }
 
-#[cfg(all(feature = "by_ref_proposal", feature = "external_client"))]
+#[cfg(feature = "by_ref_proposal")]
 impl ProposalMessageDescription {
     pub fn cached_proposal(self) -> CachedProposal {
         let sender = match self.sender {
@@ -495,7 +495,6 @@ pub(crate) trait MessageProcessor: Send + Sync {
         let group_state = self.group_state_mut();
 
         if cache_proposal {
-            #[cfg(all(feature = "by_ref_proposal", feature = "external_client"))]
             let proposal_ref = proposal_ref.clone();
 
             group_state.proposals.insert(
@@ -509,7 +508,6 @@ pub(crate) trait MessageProcessor: Send + Sync {
             authenticated_data: auth_content.content.authenticated_data.clone(),
             proposal: proposal.clone(),
             sender: auth_content.content.sender.try_into()?,
-            #[cfg(all(feature = "by_ref_proposal", feature = "external_client"))]
             proposal_ref,
         })
     }
