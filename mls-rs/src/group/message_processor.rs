@@ -276,6 +276,7 @@ impl TryFrom<Sender> for ProposalSender {
     safer_ffi_gen::ffi_type(clone, opaque)
 )]
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 /// Description of a processed MLS proposal message.
 pub struct ProposalMessageDescription {
     /// Sender of the proposal.
@@ -284,8 +285,8 @@ pub struct ProposalMessageDescription {
     pub proposal: Proposal,
     /// Plaintext authenticated data in the received MLS packet.
     pub authenticated_data: Vec<u8>,
-    #[cfg(feature = "by_ref_proposal")]
-    pub(crate) proposal_ref: ProposalRef,
+    /// Proposal reference.
+    pub proposal_ref: ProposalRef,
 }
 
 #[cfg(feature = "by_ref_proposal")]
