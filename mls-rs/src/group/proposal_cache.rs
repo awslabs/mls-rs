@@ -4172,4 +4172,31 @@ mod tests {
             leaf_node: update_leaf_node(name, leaf_index).await,
         }
     }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn when_receiving_commit_unused_proposals_are_proposals_in_cache_but_not_in_commit() {
+        let (alice, tree) = new_tree("alice").await;
+
+        let proposal = Proposal::GroupContextExtensions(Default::default());
+        let proposal_ref = make_proposal_ref(&proposal, alice).await;
+
+        let state = CommitReceiver::new(
+            &tree,
+            alice,
+            alice,
+            test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .cache(proposal_ref.clone(), proposal, alice)
+        .receive([Proposal::Add(Box::new(AddProposal {
+            key_package: test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await,
+        }))])
+        .await
+        .unwrap();
+
+        let [p] = &state.rejected_proposals[..] else {
+            panic!("Expected single rejected proposal");
+        };
+
+        assert_eq!(p.proposal_ref(), Some(&proposal_ref));
+    }
 }
