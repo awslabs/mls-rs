@@ -249,7 +249,7 @@ impl GroupState {
             .await?;
 
         #[cfg(feature = "by_ref_proposal")]
-        let rejected_proposals = rejected_proposals(
+        let unused_proposals = unused_proposals(
             match direction {
                 CommitDirection::Send => all_proposals,
                 CommitDirection::Receive => self.proposals.proposals.iter().collect(),
@@ -274,7 +274,7 @@ impl GroupState {
             external_init_index: applier_output.external_init_index,
             indexes_of_added_kpkgs: applier_output.indexes_of_added_kpkgs,
             #[cfg(feature = "by_ref_proposal")]
-            rejected_proposals,
+            unused_proposals,
         })
     }
 }
@@ -297,7 +297,7 @@ fn has_ref(proposals: &ProposalBundle, reference: &ProposalRef) -> bool {
 }
 
 #[cfg(feature = "by_ref_proposal")]
-fn rejected_proposals(
+fn unused_proposals(
     all_proposals: ProposalBundle,
     accepted_proposals: &ProposalBundle,
 ) -> Vec<crate::mls_rules::ProposalInfo<Proposal>> {
@@ -802,7 +802,7 @@ mod tests {
             external_init_index: None,
             indexes_of_added_kpkgs: vec![LeafIndex(1)],
             #[cfg(feature = "state_update")]
-            rejected_proposals: vec![],
+            unused_proposals: vec![],
             applied_proposals: bundle,
         };
 
@@ -903,7 +903,7 @@ mod tests {
         assert_eq!(expected_state.public_tree, state.public_tree);
 
         #[cfg(feature = "state_update")]
-        assert_eq!(expected_state.rejected_proposals, state.rejected_proposals);
+        assert_eq!(expected_state.unused_proposals, state.unused_proposals);
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -2036,10 +2036,7 @@ mod tests {
         assert_eq!(processed_proposals.0, Vec::new());
 
         #[cfg(feature = "state_update")]
-        assert_eq!(
-            processed_proposals.1.rejected_proposals,
-            vec![proposal_info]
-        );
+        assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -2086,10 +2083,7 @@ mod tests {
         assert_eq!(processed_proposals.0, Vec::new());
 
         #[cfg(feature = "state_update")]
-        assert_eq!(
-            processed_proposals.1.rejected_proposals,
-            vec![proposal_info]
-        );
+        assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -2136,13 +2130,8 @@ mod tests {
 
         assert_eq!(processed_proposals.0, Vec::new());
 
-        // Alice didn't propose the update. Bob did. That's why it is not returned in the list of
-        // rejected proposals.
         #[cfg(feature = "state_update")]
-        assert_eq!(
-            processed_proposals.1.rejected_proposals,
-            vec![proposal_info]
-        );
+        assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -2201,10 +2190,7 @@ mod tests {
         assert_eq!(processed_proposals.0, Vec::new());
 
         #[cfg(feature = "state_update")]
-        assert_eq!(
-            processed_proposals.1.rejected_proposals,
-            vec![proposal_info]
-        );
+        assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
     }
 
     #[cfg(feature = "psk")]
@@ -2286,10 +2272,7 @@ mod tests {
         assert_eq!(processed_proposals.0, Vec::new());
 
         #[cfg(feature = "state_update")]
-        assert_eq!(
-            processed_proposals.1.rejected_proposals,
-            vec![proposal_info]
-        );
+        assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
     }
 
     #[cfg(feature = "psk")]
@@ -2358,10 +2341,7 @@ mod tests {
         assert_eq!(processed_proposals.0, Vec::new());
 
         #[cfg(feature = "state_update")]
-        assert_eq!(
-            processed_proposals.1.rejected_proposals,
-            vec![proposal_info]
-        );
+        assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
     }
 
     #[cfg(feature = "psk")]
@@ -2460,10 +2440,7 @@ mod tests {
         assert_eq!(processed_proposals.0, Vec::new());
 
         #[cfg(feature = "state_update")]
-        assert_eq!(
-            processed_proposals.1.rejected_proposals,
-            vec![proposal_info]
-        );
+        assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -2517,10 +2494,7 @@ mod tests {
         assert_eq!(processed_proposals.0, Vec::new());
 
         #[cfg(feature = "state_update")]
-        assert_eq!(
-            processed_proposals.1.rejected_proposals,
-            vec![proposal_info]
-        );
+        assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -2571,10 +2545,7 @@ mod tests {
         assert_eq!(processed_proposals.0, Vec::new());
 
         #[cfg(feature = "state_update")]
-        assert_eq!(
-            processed_proposals.1.rejected_proposals,
-            vec![proposal_info]
-        );
+        assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -2628,7 +2599,7 @@ mod tests {
         assert_eq!(processed_proposals.0, vec![remove_ref.into()]);
 
         #[cfg(feature = "state_update")]
-        assert_eq!(processed_proposals.1.rejected_proposals, vec![update_info]);
+        assert_eq!(processed_proposals.1.unused_proposals, vec![update_info]);
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -2699,7 +2670,7 @@ mod tests {
 
         #[cfg(feature = "state_update")]
         assert_matches!(
-            &*processed_proposals.1.rejected_proposals,
+            &*processed_proposals.1.unused_proposals,
             [rejected_add_info] if committed_add_ref != rejected_add_info.proposal_ref().unwrap() && add_refs.contains(rejected_add_info.proposal_ref().unwrap())
         );
     }
@@ -2745,7 +2716,7 @@ mod tests {
         // Bob proposed the update, so it is not listed as rejected when Alice commits it because
         // she didn't propose it.
         #[cfg(feature = "state_update")]
-        assert_eq!(processed_proposals.1.rejected_proposals, vec![update_info]);
+        assert_eq!(processed_proposals.1.unused_proposals, vec![update_info]);
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -2836,10 +2807,7 @@ mod tests {
         assert_eq!(processed_proposals.0, Vec::new());
 
         #[cfg(feature = "state_update")]
-        assert_eq!(
-            processed_proposals.1.rejected_proposals,
-            vec![proposal_info]
-        );
+        assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
     }
 
     #[cfg(feature = "psk")]
@@ -2917,18 +2885,15 @@ mod tests {
 
         assert!(proposal_info.contains(&committed_info));
 
-        // The list of rejected proposals may be empty if Bob's proposal was the one that got
-        // rejected.
         #[cfg(feature = "state_update")]
-        match &*processed_proposals.1.rejected_proposals {
+        match &*processed_proposals.1.unused_proposals {
             [r] => {
                 assert_ne!(*r, committed_info);
                 assert!(proposal_info.contains(r));
             }
-            [] => {}
             _ => panic!(
-                "Expected zero or one proposal reference in {:?}",
-                processed_proposals.1.rejected_proposals
+                "Expected one proposal reference in {:?}",
+                processed_proposals.1.unused_proposals
             ),
         }
     }
@@ -3053,7 +3018,7 @@ mod tests {
 
         #[cfg(feature = "state_update")]
         assert_matches!(
-            &*processed_proposals.1.rejected_proposals,
+            &*processed_proposals.1.unused_proposals,
             [rejected_gce_info] if committed_gce_info != *rejected_gce_info && gce_info.contains(rejected_gce_info)
         );
     }
@@ -3131,10 +3096,7 @@ mod tests {
         assert_eq!(processed_proposals.0, Vec::new());
 
         #[cfg(feature = "state_update")]
-        assert_eq!(
-            processed_proposals.1.rejected_proposals,
-            vec![proposal_info]
-        );
+        assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -3194,7 +3156,7 @@ mod tests {
         assert_eq!(processed_proposals.0, vec![add_ref.into()]);
 
         #[cfg(feature = "state_update")]
-        assert_eq!(processed_proposals.1.rejected_proposals, vec![reinit_info]);
+        assert_eq!(processed_proposals.1.unused_proposals, vec![reinit_info]);
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -3259,15 +3221,14 @@ mod tests {
 
         #[cfg(feature = "state_update")]
         {
-            let (rejected_ref, rejected_proposal) = match &*processed_proposals.1.rejected_proposals
-            {
+            let (rejected_ref, unused_proposal) = match &*processed_proposals.1.unused_proposals {
                 [r] => (r.proposal_ref().unwrap().clone(), r.proposal.clone()),
                 p => panic!("Expected single proposal but found {p:?}"),
             };
 
             assert_ne!(rejected_ref, *processed_ref);
             assert!(rejected_ref == reinit_ref || rejected_ref == other_reinit_ref);
-            assert!(rejected_proposal == reinit || rejected_proposal == other_reinit);
+            assert!(unused_proposal == reinit || unused_proposal == other_reinit);
         }
     }
 
@@ -3326,7 +3287,7 @@ mod tests {
 
         #[cfg(feature = "state_update")]
         assert_eq!(
-            processed_proposals.1.rejected_proposals,
+            processed_proposals.1.unused_proposals,
             vec![external_init_info]
         );
     }
@@ -3397,10 +3358,7 @@ mod tests {
         assert_eq!(processed_proposals.0, Vec::new());
 
         #[cfg(feature = "state_update")]
-        assert_eq!(
-            processed_proposals.1.rejected_proposals,
-            vec![proposal_info]
-        );
+        assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -3646,7 +3604,7 @@ mod tests {
         assert_eq!(processed_proposals.0, Vec::new());
 
         #[cfg(feature = "state_update")]
-        assert_eq!(processed_proposals.1.rejected_proposals, vec![add_info]);
+        assert_eq!(processed_proposals.1.unused_proposals, vec![add_info]);
     }
 
     #[cfg(feature = "custom_proposal")]
@@ -3692,7 +3650,7 @@ mod tests {
         assert_eq!(processed_proposals.0, Vec::new());
 
         #[cfg(feature = "state_update")]
-        assert_eq!(processed_proposals.1.rejected_proposals, vec![custom_info]);
+        assert_eq!(processed_proposals.1.unused_proposals, vec![custom_info]);
     }
 
     #[cfg(feature = "custom_proposal")]
@@ -3776,10 +3734,7 @@ mod tests {
         assert_eq!(processed_proposals.0, Vec::new());
 
         #[cfg(feature = "state_update")]
-        assert_eq!(
-            processed_proposals.1.rejected_proposals,
-            vec![proposal_info]
-        );
+        assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
     }
 
     #[cfg(feature = "psk")]
@@ -3851,10 +3806,7 @@ mod tests {
         assert_eq!(processed_proposals.0, Vec::new());
 
         #[cfg(feature = "state_update")]
-        assert_eq!(
-            processed_proposals.1.rejected_proposals,
-            vec![proposal_info]
-        );
+        assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -4199,10 +4151,10 @@ mod tests {
         .await
         .unwrap();
 
-        let [p] = &state.rejected_proposals[..] else {
+        let [p] = &state.unused_proposals[..] else {
             panic!(
-                "Expected single rejected proposal but got {:?}",
-                state.rejected_proposals
+                "Expected single unused proposal but got {:?}",
+                state.unused_proposals
             );
         };
 

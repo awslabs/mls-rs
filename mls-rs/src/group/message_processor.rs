@@ -73,7 +73,7 @@ pub(crate) struct ProvisionalState {
     pub(crate) external_init_index: Option<LeafIndex>,
     pub(crate) indexes_of_added_kpkgs: Vec<LeafIndex>,
     #[cfg(feature = "by_ref_proposal")]
-    pub(crate) rejected_proposals: Vec<crate::mls_rules::ProposalInfo<Proposal>>,
+    pub(crate) unused_proposals: Vec<crate::mls_rules::ProposalInfo<Proposal>>,
 }
 
 //By default, the path field of a Commit MUST be populated. The path field MAY be omitted if
@@ -607,7 +607,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
             #[cfg(feature = "custom_proposal")]
             custom_proposals: provisional.applied_proposals.custom_proposals.clone(),
             #[cfg(feature = "by_ref_proposal")]
-            unused_proposals: provisional.rejected_proposals.clone(),
+            unused_proposals: provisional.unused_proposals.clone(),
         };
 
         Ok(update)
