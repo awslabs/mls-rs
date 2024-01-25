@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1706040954568,
+  "lastUpdate": 1706207372601,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -6683,6 +6683,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 164190,
             "range": "± 8290",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "94983192+stefunctional@users.noreply.github.com",
+            "name": "Stephane Raux",
+            "username": "stefunctional"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3c57e91bbf7db544fece950d1ca569a7788efda4",
+          "message": "Fix unused proposals when receiving commit (#69)\n\n* Test that rejected proposals are proposals in cache and not in commit when receiving commit\r\n\r\nThe test currently fails and the implementation will be fixed in the\r\nnext commit.\r\n\r\n* Fix unused proposals when receiving commit\r\n\r\nUnused proposals were previously made of the proposals in the received\r\ncommit that would cause the commit to be invalid and thus were excluded.\r\nBut given that invalid proposals when receiving a commit cause the\r\nentire commit to be rejected, it means that unused proposals were always\r\nempty when receiving a commit.\r\n\r\nUnused proposals are now made of the proposals in the receiver's cache\r\nthat are not in the received commit.\r\n\r\n* Rename rejected_proposals to unused_proposals\r\n\r\nThe previous term was confusing in the context of receiving a commit.\r\n\r\nThis also removes outdated comments in tests from back when only unused\r\nproposals from the committer were returned.",
+          "timestamp": "2024-01-25T13:25:16-05:00",
+          "tree_id": "6db4cf3f33368ecc094407ba620ece406de6d32d",
+          "url": "https://github.com/awslabs/mls-rs/commit/3c57e91bbf7db544fece950d1ca569a7788efda4"
+        },
+        "date": 1706207371814,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 511735,
+            "range": "± 20186",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 516910,
+            "range": "± 16302",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 575759,
+            "range": "± 24200",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1148212,
+            "range": "± 27129",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7102048,
+            "range": "± 113744",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1160131,
+            "range": "± 69294",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1251505,
+            "range": "± 55358",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1369250,
+            "range": "± 58302",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 722914,
+            "range": "± 85078",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 772187,
+            "range": "± 27425",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 831955,
+            "range": "± 4368",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 25261,
+            "range": "± 309",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 83358,
+            "range": "± 812",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 161136,
+            "range": "± 7926",
             "unit": "ns/iter"
           }
         ]
