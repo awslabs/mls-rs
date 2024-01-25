@@ -740,7 +740,7 @@ where
             ratchet_tree,
             external_commit_group_info,
             #[cfg(feature = "by_ref_proposal")]
-            unused_proposals: provisional_state.rejected_proposals,
+            unused_proposals: provisional_state.unused_proposals,
         })
     }
 

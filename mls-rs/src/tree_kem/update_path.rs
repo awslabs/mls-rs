@@ -180,7 +180,7 @@ mod tests {
             indexes_of_added_kpkgs: vec![],
             external_init_index: None,
             #[cfg(feature = "state_update")]
-            rejected_proposals: vec![],
+            unused_proposals: vec![],
         }
     }
 

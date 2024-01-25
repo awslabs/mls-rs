@@ -17,7 +17,7 @@ use crate::{
 };
 
 #[cfg(feature = "by_ref_proposal")]
-use crate::group::{LeafIndex, ProposalRef, UpdateProposal};
+use crate::group::{proposal_cache::CachedProposal, LeafIndex, ProposalRef, UpdateProposal};
 
 #[cfg(feature = "psk")]
 use crate::group::PreSharedKeyProposal;
@@ -431,6 +431,47 @@ impl ProposalBundle {
                     .then_some(ProposalType::GROUP_CONTEXT_EXTENSIONS),
             )
             .chain(self.custom_proposal_types());
+    }
+}
+
+impl FromIterator<(Proposal, Sender, ProposalSource)> for ProposalBundle {
+    fn from_iter<I>(iter: I) -> Self
+    where
+        I: IntoIterator<Item = (Proposal, Sender, ProposalSource)>,
+    {
+        let mut bundle = ProposalBundle::default();
+        for (proposal, sender, source) in iter {
+            bundle.add(proposal, sender, source);
+        }
+        bundle
+    }
+}
+
+#[cfg(feature = "by_ref_proposal")]
+impl<'a> FromIterator<(&'a ProposalRef, &'a CachedProposal)> for ProposalBundle {
+    fn from_iter<I>(iter: I) -> Self
+    where
+        I: IntoIterator<Item = (&'a ProposalRef, &'a CachedProposal)>,
+    {
+        iter.into_iter()
+            .map(|(r, p)| {
+                (
+                    p.proposal.clone(),
+                    p.sender,
+                    ProposalSource::ByReference(r.clone()),
+                )
+            })
+            .collect()
+    }
+}
+
+#[cfg(feature = "by_ref_proposal")]
+impl<'a> FromIterator<&'a (ProposalRef, CachedProposal)> for ProposalBundle {
+    fn from_iter<I>(iter: I) -> Self
+    where
+        I: IntoIterator<Item = &'a (ProposalRef, CachedProposal)>,
+    {
+        iter.into_iter().map(|pair| (&pair.0, &pair.1)).collect()
     }
 }
 
