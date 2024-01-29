@@ -1989,11 +1989,12 @@ mod tests {
 
         assert_eq!(update.leaf_node.ungreased_extensions(), extension_list);
         assert_eq!(
-            update.leaf_node.ungreased_capabilities(),
+            update.leaf_node.ungreased_capabilities().sorted(),
             Capabilities {
                 extensions: vec![42.into()],
                 ..get_test_capabilities()
             }
+            .sorted()
         );
     }
 

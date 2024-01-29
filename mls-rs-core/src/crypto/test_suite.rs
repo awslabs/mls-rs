@@ -41,6 +41,8 @@ struct TestSuite {
     hkdf_tests: Vec<HkdfTestCase>,
     #[serde(default)]
     mac_tests: Vec<MacTestCase>,
+    #[serde(default)]
+    hash_tests: Vec<HashTestCase>,
 }
 
 #[cfg(all(not(mls_build_async), not(target_arch = "wasm32"), feature = "std"))]
@@ -91,11 +93,13 @@ pub async fn verify_tests<C: CryptoProvider>(crypto: &C, signature_secret_key_co
         serde_json::from_slice(&std::fs::read(PATH).unwrap()).unwrap();
 
     for test_suite in test_suites {
-        let cs = test_suite.cipher_suite.into();
+        let test_cs = test_suite.cipher_suite.into();
 
-        let Some(cs) = crypto.cipher_suite_provider(cs) else {
+        let Some(cs) = crypto.cipher_suite_provider(test_cs) else {
             continue;
         };
+
+        assert_eq!(cs.cipher_suite(), test_cs);
 
         verify_hkdf_tests(&cs, test_suite.hkdf_tests).await;
         verify_aead_tests(&cs, test_suite.aead_tests).await;
@@ -108,6 +112,8 @@ pub async fn verify_tests<C: CryptoProvider>(crypto: &C, signature_secret_key_co
             signature_secret_key_compatible,
         )
         .await;
+
+        verify_hash_tests(&cs, test_suite.hash_tests).await;
     }
 }
 
@@ -487,6 +493,22 @@ async fn verify_mac_tests<C: CipherSuiteProvider>(cs: &C, test_cases: Vec<MacTes
     for case in test_cases {
         let computed = cs.mac(&case.key, &case.data).await.unwrap();
         assert_eq!(computed, case.tag);
+    }
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+struct HashTestCase {
+    #[serde(with = "hex::serde")]
+    input: Vec<u8>,
+    #[serde(with = "hex::serde")]
+    output: Vec<u8>,
+}
+
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+async fn verify_hash_tests<C: CipherSuiteProvider>(cs: &C, test_cases: Vec<HashTestCase>) {
+    for case in test_cases {
+        let computed = cs.hash(&case.input).await.unwrap();
+        assert_eq!(computed, case.output);
     }
 }
 

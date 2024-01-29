@@ -61,6 +61,17 @@ impl Capabilities {
     pub fn credentials(&self) -> &[CredentialType] {
         &self.credentials
     }
+
+    /// Canonical form
+    pub fn sorted(mut self) -> Self {
+        self.protocol_versions.sort();
+        self.cipher_suites.sort();
+        self.extensions.sort();
+        self.proposals.sort();
+        self.credentials.sort();
+
+        self
+    }
 }
 
 impl Default for Capabilities {

@@ -35,17 +35,44 @@ use mls_rs_crypto_traits::{AeadType, KdfType, KemId};
 use thiserror::Error;
 use zeroize::Zeroizing;
 
-#[derive(Clone, Default, Debug)]
-pub struct AwsLcCryptoProvider;
+#[derive(Clone, Debug)]
+pub struct AwsLcCryptoProvider {
+    pub enabled_cipher_suites: Vec<CipherSuite>,
+}
 
 impl AwsLcCryptoProvider {
     pub fn new() -> Self {
-        Self
+        Self {
+            enabled_cipher_suites: Self::all_supported_cipher_suites(),
+        }
+    }
+
+    pub fn with_enabled_cipher_suites(enabled_cipher_suites: Vec<CipherSuite>) -> Self {
+        Self {
+            enabled_cipher_suites,
+        }
+    }
+
+    pub fn all_supported_cipher_suites() -> Vec<CipherSuite> {
+        vec![
+            CipherSuite::CURVE25519_AES128,
+            CipherSuite::CURVE25519_CHACHA,
+            CipherSuite::P256_AES128,
+            CipherSuite::P384_AES256,
+            CipherSuite::P521_AES256,
+        ]
+    }
+}
+
+impl Default for AwsLcCryptoProvider {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
 #[derive(Clone)]
 pub struct AwsLcCipherSuite {
+    cipher_suite: CipherSuite,
     signing: AwsLcEcdsa,
     aead: AwsLcAead,
     kdf: AwsLcHkdf,
@@ -71,6 +98,7 @@ impl AwsLcCipherSuite {
         };
 
         Some(Self {
+            cipher_suite,
             hpke: Hpke::new(dh_kem, kdf.clone(), Some(aead.clone())),
             aead,
             kdf,
@@ -111,7 +139,10 @@ impl CryptoProvider for AwsLcCryptoProvider {
         &self,
         cipher_suite: mls_rs_core::crypto::CipherSuite,
     ) -> Option<Self::CipherSuiteProvider> {
-        AwsLcCipherSuite::new(cipher_suite)
+        self.enabled_cipher_suites
+            .contains(&cipher_suite)
+            .then(|| AwsLcCipherSuite::new(cipher_suite))
+            .flatten()
     }
 }
 
@@ -152,11 +183,13 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
     type HpkeContextR = ContextR<AwsLcHkdf, AwsLcAead>;
 
     fn cipher_suite(&self) -> mls_rs_core::crypto::CipherSuite {
-        CipherSuite::P521_AES256
+        self.cipher_suite
     }
 
     async fn hash(&self, data: &[u8]) -> Result<Vec<u8>, Self::Error> {
-        Ok(digest::digest(&digest::SHA512, data).as_ref().to_vec())
+        Ok(digest::digest(self.mac_algo.digest_algorithm(), data)
+            .as_ref()
+            .to_vec())
     }
 
     async fn mac(&self, key: &[u8], data: &[u8]) -> Result<Vec<u8>, Self::Error> {
@@ -360,10 +393,13 @@ fn check_non_null_const<T>(r: *const T) -> Result<*const T, AwsLcCryptoError> {
 #[cfg(not(mls_build_async))]
 #[test]
 fn mls_core_tests() {
-    mls_rs_core::crypto::test_suite::verify_tests(&AwsLcCryptoProvider, true);
+    mls_rs_core::crypto::test_suite::verify_tests(&AwsLcCryptoProvider::new(), true);
 
-    for cs in AwsLcCryptoProvider.supported_cipher_suites() {
-        let mut hpke = AwsLcCryptoProvider.cipher_suite_provider(cs).unwrap().hpke;
+    for cs in AwsLcCryptoProvider::new().supported_cipher_suites() {
+        let mut hpke = AwsLcCryptoProvider::new()
+            .cipher_suite_provider(cs)
+            .unwrap()
+            .hpke;
 
         mls_rs_core::crypto::test_suite::verify_hpke_context_tests(&hpke, cs);
         mls_rs_core::crypto::test_suite::verify_hpke_encap_tests(&mut hpke, cs);
