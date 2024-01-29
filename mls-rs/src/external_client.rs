@@ -3,14 +3,8 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use crate::{
-    cipher_suite::CipherSuite,
     client::MlsError,
     group::{framing::MlsMessage, ExportedTree},
-    key_package::{validate_key_package_properties, KeyPackage},
-    protocol_version::ProtocolVersion,
-    time::MlsTime,
-    tree_kem::leaf_node_validator::{LeafNodeValidator, ValidationContext},
-    CryptoProvider,
 };
 
 pub mod builder;
@@ -97,38 +91,6 @@ where
         snapshot: ExternalSnapshot,
     ) -> Result<ExternalGroup<C>, MlsError> {
         ExternalGroup::from_snapshot(self.config.clone(), snapshot).await
-    }
-
-    /// Utility function to validate key packages
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn validate_key_package(
-        &self,
-        package: MlsMessage,
-        protocol: ProtocolVersion,
-        cipher_suite: CipherSuite,
-    ) -> Result<KeyPackage, MlsError> {
-        let key_package = package
-            .into_key_package()
-            .ok_or(MlsError::UnexpectedMessageType)?;
-
-        let cs = self
-            .config
-            .crypto_provider()
-            .cipher_suite_provider(cipher_suite)
-            .ok_or_else(|| MlsError::UnsupportedCipherSuite(cipher_suite))?;
-
-        let id_provider = self.config.identity_provider();
-
-        let validator = LeafNodeValidator::new(&cs, &id_provider, None);
-        let context = ValidationContext::Add(Some(MlsTime::now()));
-
-        validator
-            .check_if_valid(&key_package.leaf_node, context)
-            .await?;
-
-        validate_key_package_properties(&key_package, protocol, &cs).await?;
-
-        Ok(key_package)
     }
 }
 

@@ -24,13 +24,13 @@ use crate::{
         snapshot::RawGroupState,
         state::GroupState,
         transcript_hash::InterimTranscriptHash,
-        validate_group_info, ContentType, ExportedTree, GroupContext, Roster,
+        validate_group_info, ContentType, ExportedTree, GroupContext, GroupInfo, Roster, Welcome,
     },
     identity::SigningIdentity,
     protocol_version::ProtocolVersion,
     psk::AlwaysFoundPskStorage,
     tree_kem::{node::LeafIndex, path_secret::PathSecret, TreeKemPrivate},
-    CryptoProvider, MlsMessage,
+    CryptoProvider, KeyPackage, MlsMessage,
 };
 
 #[cfg(feature = "by_ref_proposal")]
@@ -82,6 +82,12 @@ pub enum ExternalReceivedMessage {
     Proposal(ProposalMessageDescription),
     /// Encrypted message that can not be processed.
     Ciphertext(ContentType),
+    /// Validated GroupInfo object
+    GroupInfo(GroupInfo),
+    /// Validated welcome message
+    Welcome,
+    /// Validated key package
+    KeyPackage(KeyPackage),
 }
 
 /// A handle to an observed group that can track plaintext control messages
@@ -726,6 +732,24 @@ impl From<ProposalMessageDescription> for ExternalReceivedMessage {
     }
 }
 
+impl From<GroupInfo> for ExternalReceivedMessage {
+    fn from(value: GroupInfo) -> Self {
+        ExternalReceivedMessage::GroupInfo(value)
+    }
+}
+
+impl From<Welcome> for ExternalReceivedMessage {
+    fn from(_: Welcome) -> Self {
+        ExternalReceivedMessage::Welcome
+    }
+}
+
+impl From<KeyPackage> for ExternalReceivedMessage {
+    fn from(value: KeyPackage) -> Self {
+        ExternalReceivedMessage::KeyPackage(value)
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod test_utils {
     use crate::{
@@ -1269,5 +1293,58 @@ mod tests {
                 .unwrap();
 
         assert_eq!(server.group_state(), server_restored.group_state());
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn external_group_can_validate_info() {
+        let alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut server = make_external_group(&alice).await;
+
+        let info = alice
+            .group
+            .group_info_message_allowing_ext_commit(false)
+            .await
+            .unwrap();
+
+        let update = server.process_incoming_message(info.clone()).unwrap();
+        let info = info.into_group_info().unwrap();
+
+        assert_matches!(update, ExternalReceivedMessage::GroupInfo(update_info) if update_info == info);
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn external_group_can_validate_key_package() {
+        let alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut server = make_external_group(&alice).await;
+
+        let kp = test_key_package_message(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "john").await;
+
+        let update = server.process_incoming_message(kp.clone()).unwrap();
+        let kp = kp.into_key_package().unwrap();
+
+        assert_matches!(update, ExternalReceivedMessage::KeyPackage(update_kp) if update_kp == kp);
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn external_group_can_validate_welcome() {
+        let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut server = make_external_group(&alice).await;
+
+        let [welcome] = alice
+            .group
+            .commit_builder()
+            .add_member(
+                test_key_package_message(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "john").await,
+            )
+            .unwrap()
+            .build()
+            .unwrap()
+            .welcome_messages
+            .try_into()
+            .unwrap();
+
+        let update = server.process_incoming_message(welcome).unwrap();
+
+        assert_matches!(update, ExternalReceivedMessage::Welcome);
     }
 }
