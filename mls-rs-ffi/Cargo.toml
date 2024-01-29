@@ -1,6 +1,6 @@
 [package]
 name = "mls-rs-ffi"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
 description = "Helper crate to generate FFI definitions for mls-rs"
 homepage = "https://github.com/awslabs/mls-rs"
@@ -19,7 +19,7 @@ std = ["mls-rs/std", "safer-ffi-gen/std"]
 x509 = ["mls-rs-identity-x509"]
 
 [dependencies]
-mls-rs = { path = "../mls-rs", version = "0.37.0", features = ["ffi"] }
+mls-rs = { path = "../mls-rs", version = "0.38.0", features = ["ffi"] }
 mls-rs-crypto-openssl = { path = "../mls-rs-crypto-openssl", version = "0.8.0", optional = true }
 mls-rs-identity-x509 = { path = "../mls-rs-identity-x509", version = "0.10.0", optional = true }
 mls-rs-provider-sqlite = { path = "../mls-rs-provider-sqlite", version = "0.10.0", default-features = false, optional = true }
