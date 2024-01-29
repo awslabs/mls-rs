@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1706541542168,
+  "lastUpdate": 1706546171317,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -6899,6 +6899,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 165349,
             "range": "± 23736",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "94983192+stefunctional@users.noreply.github.com",
+            "name": "Stephane Raux",
+            "username": "stefunctional"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "bed6f60d97ab052a3558b27bbee6d40e4728f388",
+          "message": "Update aws-lc-sys (#71)\n\naws-lc-rs released a minor update bringing in a major update of a sys\r\ncrate, causing 2 sys crates to be linked together (since we depend\r\ndirectly on this sys crate too), leading to duplicate symbol errors.",
+          "timestamp": "2024-01-29T11:31:37-05:00",
+          "tree_id": "90ae0c3afa936d342a021ab3b8c2c3d6af59c34e",
+          "url": "https://github.com/awslabs/mls-rs/commit/bed6f60d97ab052a3558b27bbee6d40e4728f388"
+        },
+        "date": 1706546170733,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 502921,
+            "range": "± 8575",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 512077,
+            "range": "± 2516",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 564054,
+            "range": "± 16223",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1173007,
+            "range": "± 33021",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7225921,
+            "range": "± 53195",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1134417,
+            "range": "± 44379",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1230502,
+            "range": "± 55674",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1348526,
+            "range": "± 51242",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 714051,
+            "range": "± 20922",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 766909,
+            "range": "± 4679",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 829278,
+            "range": "± 11745",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 25612,
+            "range": "± 705",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 83902,
+            "range": "± 1576",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 163017,
+            "range": "± 3288",
             "unit": "ns/iter"
           }
         ]
