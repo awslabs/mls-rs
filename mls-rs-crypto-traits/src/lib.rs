@@ -15,7 +15,7 @@ pub use aead::{AeadId, AeadType, AEAD_ID_EXPORT_ONLY, AES_TAG_LEN};
 pub use dh::DhType;
 pub use ec::Curve;
 pub use kdf::{KdfId, KdfType};
-pub use kem::{KemId, KemResult, KemType};
+pub use kem::{KemId, KemResult, KemType, MmKemOutput};
 
 #[cfg(feature = "mock")]
 pub mod mock;

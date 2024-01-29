@@ -25,7 +25,7 @@ use crate::protocol_version::ProtocolVersion;
 use crate::psk::secret::PskSecret;
 use crate::psk::PreSharedKeyID;
 use crate::signer::Signable;
-use crate::tree_kem::hpke_encryption::HpkeEncryptable;
+use crate::tree_kem::hpke_encryption::HpkeInfo;
 use crate::tree_kem::kem::TreeKem;
 use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::path_secret::PathSecret;
@@ -159,7 +159,7 @@ pub(crate) mod secret_tree;
 #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
 pub use secret_tree::MessageKeyData as MessageKey;
 
-#[cfg(all(test, feature = "rfc_compliant"))]
+#[cfg(all(test, feature = "rfc_compliant", not(feature = "mmpke")))]
 mod interop_test_vectors;
 
 mod exported_tree;
@@ -173,16 +173,8 @@ struct GroupSecrets {
     psks: Vec<PreSharedKeyID>,
 }
 
-impl HpkeEncryptable for GroupSecrets {
+impl HpkeInfo for GroupSecrets {
     const ENCRYPT_LABEL: &'static str = "Welcome";
-
-    fn from_bytes(bytes: Vec<u8>) -> Result<Self, MlsError> {
-        Self::mls_decode(&mut bytes.as_slice()).map_err(Into::into)
-    }
-
-    fn get_bytes(&self) -> Result<Vec<u8>, MlsError> {
-        self.mls_encode_to_vec().map_err(Into::into)
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
@@ -432,14 +424,18 @@ where
         // cipher suite and the HPKE private key corresponding to the GroupSecrets. If a
         // PreSharedKeyID is part of the GroupSecrets and the client is not in possession of
         // the corresponding PSK, return an error
-        let group_secrets = GroupSecrets::decrypt(
-            &cipher_suite_provider,
-            &key_package_generation.init_secret_key,
-            &key_package_generation.key_package.hpke_init_key,
-            &welcome.encrypted_group_info,
-            &encrypted_group_secrets.encrypted_group_secrets,
-        )
-        .await?;
+        let group_secrets = cipher_suite_provider
+            .hpke_open(
+                &encrypted_group_secrets.encrypted_group_secrets,
+                &key_package_generation.init_secret_key,
+                &key_package_generation.key_package.hpke_init_key,
+                &GroupSecrets::hpke_info(&welcome.encrypted_group_info)?,
+                None,
+            )
+            .await
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
+
+        let group_secrets = GroupSecrets::mls_decode(&mut &*group_secrets)?;
 
         #[cfg(feature = "psk")]
         let psk_secret = if let Some(psk) = additional_psk {
@@ -798,13 +794,15 @@ where
             psks,
         };
 
-        let encrypted_group_secrets = group_secrets
-            .encrypt(
-                &self.cipher_suite_provider,
-                &key_package.hpke_init_key,
-                encrypted_group_info,
-            )
-            .await?;
+        let info = GroupSecrets::hpke_info(encrypted_group_info)?;
+        let init_key = &key_package.hpke_init_key;
+        let pt = group_secrets.mls_encode_to_vec()?;
+
+        let encrypted_group_secrets = self
+            .cipher_suite_provider
+            .hpke_seal(init_key, &info, None, &pt)
+            .await
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
         Ok(EncryptedGroupSecrets {
             new_member: key_package
@@ -1988,6 +1986,7 @@ mod tests {
         );
 
         assert_eq!(update.leaf_node.ungreased_extensions(), extension_list);
+
         assert_eq!(
             update.leaf_node.ungreased_capabilities(),
             Capabilities {
@@ -4181,5 +4180,35 @@ mod tests {
 
             allowed.then_some(proposals).ok_or(MlsError::InvalidSender)
         }
+    }
+
+    #[cfg(feature = "mmpke")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn mmpke() {
+        let mut group = get_test_groups_with_features(16, Default::default(), Default::default())
+            .await
+            .remove(0);
+
+        let commit = group.commit(vec![]).unwrap().commit_message;
+        let commit = commit.into_plaintext().unwrap().content.content;
+
+        let Content::Commit(commit) = commit else {
+            panic!("expected commit")
+        };
+
+        let path = commit.path.unwrap().nodes;
+
+        let mut ciphertexts = path
+            .into_iter()
+            .map(|n| n.encrypted_path_secret.into_iter())
+            .flatten();
+
+        let first_ct = ciphertexts.next().unwrap();
+        assert!(!first_ct.ciphertext.is_empty());
+        assert!(!first_ct.kem_output.is_empty());
+
+        // All remining ciphertexts don't have the kem_output component as they should be using
+        // be using the first kem_output
+        assert!(ciphertexts.all(|ct| !ct.ciphertext.is_empty() && ct.kem_output.is_empty()));
     }
 }

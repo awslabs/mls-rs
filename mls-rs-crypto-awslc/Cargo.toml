@@ -8,12 +8,17 @@ repository = "https://github.com/awslabs/mls-rs"
 keywords = ["mls", "mls-rs", "aws-lc"]
 license = "Apache-2.0 OR MIT"
 
+[features]
+default = ["rayon"]
+rayon = ["mls-rs-crypto-hpke/rayon"]
+mmpke = ["mls-rs-crypto-hpke/mmpke"]
+
 [dependencies]
 aws-lc-rs = "1.5.1"
 aws-lc-sys = { version = "0.12.0" }
-mls-rs-core = { path = "../mls-rs-core", version = "0.17.0" }
-mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", version = "0.8.0" }
-mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", version = "0.9.0" }
+mls-rs-core = { path = "../mls-rs-core", version = "0.17.0", default-features = false }
+mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", version = "0.8.0", default-features = false, features = ["std"] }
+mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", version = "0.9.0", default-features = false }
 mls-rs-identity-x509 = { path = "../mls-rs-identity-x509", version = "0.10.0" }
 thiserror = "1.0.40"
 zeroize = { version = "1", features = ["zeroize_derive"] }

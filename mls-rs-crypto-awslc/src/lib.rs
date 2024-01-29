@@ -319,6 +319,33 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
     ) -> Result<(), Self::Error> {
         self.signing.verify(public_key, signature, data)
     }
+
+    #[cfg(feature = "mmpke")]
+    async fn mm_hpke_seal(
+        &self,
+        info: &[u8],
+        aad: Option<&[u8]>,
+        pt: &[&[u8]],
+        remote_keys: &[Vec<&HpkePublicKey>],
+    ) -> Result<Vec<Vec<HpkeCiphertext>>, Self::Error> {
+        Ok(self.hpke.mm_hpke_seal(info, aad, pt, remote_keys).await?)
+    }
+
+    #[cfg(feature = "mmpke")]
+    async fn mm_hpke_open(
+        &self,
+        ct: &[&[HpkeCiphertext]],
+        self_index: (usize, usize),
+        local_secret: &HpkeSecretKey,
+        local_public: &HpkePublicKey,
+        info: &[u8],
+        aad: Option<&[u8]>,
+    ) -> Result<Option<Vec<u8>>, Self::Error> {
+        Ok(self
+            .hpke
+            .mm_hpke_open(ct, self_index, local_secret, local_public, info, aad)
+            .await?)
+    }
 }
 
 pub fn sha256(data: &[u8]) -> [u8; 32] {

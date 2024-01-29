@@ -12,7 +12,7 @@ use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
 use zeroize::Zeroizing;
 
-use super::hpke_encryption::HpkeEncryptable;
+use super::hpke_encryption::HpkeInfo;
 
 #[derive(Debug, Clone, Eq, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 pub struct PathSecret(#[mls_codec(with = "mls_rs_codec::byte_vec")] Zeroizing<Vec<u8>>);
@@ -53,16 +53,8 @@ impl PathSecret {
     }
 }
 
-impl HpkeEncryptable for PathSecret {
+impl HpkeInfo for PathSecret {
     const ENCRYPT_LABEL: &'static str = "UpdatePathNode";
-
-    fn from_bytes(bytes: Vec<u8>) -> Result<Self, MlsError> {
-        Ok(Self(Zeroizing::new(bytes)))
-    }
-
-    fn get_bytes(&self) -> Result<Vec<u8>, MlsError> {
-        Ok(self.to_vec())
-    }
 }
 
 impl PathSecret {

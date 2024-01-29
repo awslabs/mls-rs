@@ -6,7 +6,7 @@ use criterion::{BatchSize, BenchmarkId, Criterion};
 use mls_rs::{test_utils::benchmarks::load_group_states, CipherSuite};
 
 fn bench(c: &mut Criterion) {
-    let cipher_suite = CipherSuite::CURVE25519_AES128;
+    let cipher_suite = CipherSuite::P384_AES256;
     let group_states = load_group_states(cipher_suite);
     let mut bench_group = c.benchmark_group("group_receive_commit");
 

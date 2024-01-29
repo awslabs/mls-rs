@@ -9,21 +9,25 @@ keywords = ["mls", "mls-rs", "openssl"]
 license = "Apache-2.0 OR MIT"
 
 [features]
+default = ["x509", "rayon"]
 x509 = ["mls-rs-identity-x509"]
-default = ["x509"]
+rayon = ["mls-rs-crypto-hpke/rayon"]
+
+# This feature is NOT compliant with RFC 9420.
+mmpke = ["mls-rs-crypto-hpke/mmpke"]
 
 [dependencies]
 openssl = { version = "0.10.40" }
-mls-rs-core = { path = "../mls-rs-core", version = "0.17.0" }
+mls-rs-core = { path = "../mls-rs-core", version = "0.17.0", default-features = false }
 mls-rs-identity-x509 = { path = "../mls-rs-identity-x509", optional = true, version = "0.10.0" }
-mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", version = "0.8.0" }
+mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", default-features = false, features = ["std"], version = "0.8.0" }
 mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", version = "0.9.0" }
 thiserror = "1.0.40"
 zeroize = { version = "1", features = ["zeroize_derive"] }
 maybe-async = "0.2.7"
+hex = { version = "^0.4.3", features = ["serde"] }
 
 [dev-dependencies]
-hex = { version = "^0.4.3", features = ["serde"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "^1.0" }
 assert_matches = "1.5.0"

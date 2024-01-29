@@ -38,6 +38,38 @@ pub trait KemType: Send + Sync {
         secret_key: &HpkeSecretKey,
         local_public: &HpkePublicKey,
     ) -> Result<Vec<u8>, Self::Error>;
+
+    async fn mm_encap<'a>(
+        &self,
+        remote_keys: &'a [Vec<&'a HpkePublicKey>],
+    ) -> Result<MmKemOutput, Self::Error> {
+        let mut kem_results = Vec::new();
+
+        for rk in remote_keys {
+            kem_results.push(Vec::new());
+
+            for rk in rk {
+                if let Some(kem_results) = kem_results.last_mut() {
+                    kem_results.push(self.encap(rk).await?);
+                }
+            }
+        }
+
+        Ok(MmKemOutput {
+            header: Vec::new(),
+            kem_results,
+        })
+    }
+
+    async fn mm_decap(
+        &self,
+        _header: &[u8],
+        enc: &[u8],
+        secret_key: &HpkeSecretKey,
+        local_public: &HpkePublicKey,
+    ) -> Result<Vec<u8>, Self::Error> {
+        self.decap(enc, secret_key, local_public).await
+    }
 }
 
 /// Struct to represent the output of the kem [encap](KemType::encap) function
@@ -59,6 +91,12 @@ impl KemResult {
     pub fn enc(&self) -> &[u8] {
         &self.enc
     }
+}
+
+pub struct MmKemOutput {
+    pub header: Vec<u8>,
+    // Kyber : use modified KemResult with option<shared_secret> where none indicates we dont have to encrypt
+    pub kem_results: Vec<Vec<KemResult>>,
 }
 
 /// Kem identifiers for HPKE

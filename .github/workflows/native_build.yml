@@ -31,21 +31,21 @@ jobs:
       - name: Rust Fmt
         run: cargo fmt --all -- --check
       - name: Clippy Full RFC Compliance
-        run: cargo clippy --all-targets --all-features --workspace -- -D warnings
+        run: cargo clippy --all-targets --features external_client,grease --workspace -- -D warnings
       - name: Clippy Bare Bones
         run: cargo clippy --all-targets --no-default-features --features std,test_util --workspace -- -D warnings
       - name: Test Full RFC Compliance
-        run: cargo test --all-features --verbose --workspace
+        run: cargo test --features external_client,grease --verbose --workspace
       - name: Test Bare Bones
         run: cargo test --no-default-features --features std,test_util  --verbose --workspace
       - name: Test Async Full RFC
         run: cargo test --lib --test '*' --verbose --features test_util -p mls-rs
         env:
-          RUSTFLAGS: '--cfg mls_build_async'
+          RUSTFLAGS: "--cfg mls_build_async"
       - name: Test Async Bare Bones
         run: cargo test --no-default-features --lib --test '*' --features std,test_util --verbose -p mls-rs
         env:
-          RUSTFLAGS: '--cfg mls_build_async'
+          RUSTFLAGS: "--cfg mls_build_async"
       - name: Examples
         working-directory: mls-rs
         run: cargo run --example basic_usage

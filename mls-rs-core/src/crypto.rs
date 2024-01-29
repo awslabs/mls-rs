@@ -10,10 +10,13 @@ use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use zeroize::{ZeroizeOnDrop, Zeroizing};
 
 mod cipher_suite;
-pub use self::cipher_suite::*;
+mod mm_hpke;
 
 #[cfg(feature = "test_suite")]
 pub mod test_suite;
+
+pub use self::cipher_suite::*;
+use self::mm_hpke::{mm_hpke_open, mm_hpke_seal};
 
 #[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -242,8 +245,8 @@ pub trait CryptoProvider: Send + Sync {
     all(not(target_arch = "wasm32"), mls_build_async),
     maybe_async::must_be_async
 )]
-pub trait CipherSuiteProvider: Send + Sync {
-    type Error: IntoAnyError;
+pub trait CipherSuiteProvider: Send + Sync + Sized {
+    type Error: IntoAnyError + Send + Sync;
 
     type HpkeContextS: HpkeContextS + Send + Sync;
     type HpkeContextR: HpkeContextR + Send + Sync;
@@ -380,7 +383,6 @@ pub trait CipherSuiteProvider: Send + Sync {
         kem_output: &[u8],
         local_secret: &HpkeSecretKey,
         local_public: &HpkePublicKey,
-
         info: &[u8],
     ) -> Result<Self::HpkeContextR, Self::Error>;
 
@@ -436,4 +438,26 @@ pub trait CipherSuiteProvider: Send + Sync {
         signature: &[u8],
         data: &[u8],
     ) -> Result<(), Self::Error>;
+
+    async fn mm_hpke_seal(
+        &self,
+        info: &[u8],
+        aad: Option<&[u8]>,
+        pt: &[&[u8]],
+        remote_keys: &[Vec<&HpkePublicKey>],
+    ) -> Result<Vec<Vec<HpkeCiphertext>>, Self::Error> {
+        mm_hpke_seal(self, info, aad, pt, remote_keys).await
+    }
+
+    async fn mm_hpke_open(
+        &self,
+        ct: &[&[HpkeCiphertext]],
+        self_index: (usize, usize),
+        local_secret: &HpkeSecretKey,
+        local_public: &HpkePublicKey,
+        info: &[u8],
+        aad: Option<&[u8]>,
+    ) -> Result<Option<Vec<u8>>, Self::Error> {
+        mm_hpke_open(self, ct, self_index, local_secret, local_public, info, aad).await
+    }
 }

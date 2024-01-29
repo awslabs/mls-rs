@@ -4,11 +4,6 @@
 
 use alloc::vec::Vec;
 use mls_rs_codec::{MlsEncode, MlsSize};
-use mls_rs_core::{
-    crypto::{CipherSuiteProvider, HpkeCiphertext, HpkePublicKey, HpkeSecretKey},
-    error::IntoAnyError,
-};
-use zeroize::Zeroizing;
 
 use crate::client::MlsError;
 
@@ -29,53 +24,12 @@ impl<'a> EncryptContext<'a> {
     }
 }
 
-#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-#[cfg_attr(all(target_arch = "wasm32", mls_build_async), maybe_async::must_be_async(?Send))]
-#[cfg_attr(
-    all(not(target_arch = "wasm32"), mls_build_async),
-    maybe_async::must_be_async
-)]
-
-pub(crate) trait HpkeEncryptable: Sized {
+pub(crate) trait HpkeInfo {
     const ENCRYPT_LABEL: &'static str;
 
-    async fn encrypt<P: CipherSuiteProvider>(
-        &self,
-        cipher_suite_provider: &P,
-        public_key: &HpkePublicKey,
-        context: &[u8],
-    ) -> Result<HpkeCiphertext, MlsError> {
-        let context = EncryptContext::new(Self::ENCRYPT_LABEL, context)
-            .mls_encode_to_vec()
-            .map(Zeroizing::new)?;
-
-        let content = self.get_bytes().map(Zeroizing::new)?;
-
-        cipher_suite_provider
-            .hpke_seal(public_key, &context, None, &content)
-            .await
-            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
+    fn hpke_info(context: &[u8]) -> Result<Vec<u8>, MlsError> {
+        Ok(EncryptContext::new(Self::ENCRYPT_LABEL, context).mls_encode_to_vec()?)
     }
-
-    async fn decrypt<P: CipherSuiteProvider>(
-        cipher_suite_provider: &P,
-        secret_key: &HpkeSecretKey,
-        public_key: &HpkePublicKey,
-        context: &[u8],
-        ciphertext: &HpkeCiphertext,
-    ) -> Result<Self, MlsError> {
-        let context = EncryptContext::new(Self::ENCRYPT_LABEL, context).mls_encode_to_vec()?;
-
-        let plaintext = cipher_suite_provider
-            .hpke_open(ciphertext, secret_key, public_key, &context, None)
-            .await
-            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
-
-        Self::from_bytes(plaintext.to_vec())
-    }
-
-    fn from_bytes(bytes: Vec<u8>) -> Result<Self, MlsError>;
-    fn get_bytes(&self) -> Result<Vec<u8>, MlsError>;
 }
 
 #[cfg(test)]
@@ -84,9 +38,9 @@ pub(crate) mod test_utils {
     use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
     use mls_rs_core::crypto::{CipherSuiteProvider, HpkeCiphertext};
 
-    use crate::{client::MlsError, crypto::test_utils::try_test_cipher_suite_provider};
+    use crate::crypto::test_utils::try_test_cipher_suite_provider;
 
-    use super::HpkeEncryptable;
+    use super::HpkeInfo;
 
     #[derive(Debug, serde::Serialize, serde::Deserialize)]
     pub struct HpkeInteropTestCase {
@@ -125,19 +79,10 @@ pub(crate) mod test_utils {
     }
 
     #[derive(Clone, Debug, MlsSize, MlsEncode, MlsDecode)]
-    struct TestEncryptable(#[mls_codec(with = "mls_rs_codec::byte_vec")] Vec<u8>);
+    struct TestInfo;
 
-    impl HpkeEncryptable for TestEncryptable {
+    impl HpkeInfo for TestInfo {
         const ENCRYPT_LABEL: &'static str = "EncryptWithLabel";
-
-        fn from_bytes(bytes: Vec<u8>) -> Result<Self, MlsError> {
-            Ok(Self(bytes))
-        }
-
-        #[cfg_attr(coverage_nightly, coverage(off))]
-        fn get_bytes(&self) -> Result<Vec<u8>, MlsError> {
-            Ok(self.0.clone())
-        }
     }
 
     impl HpkeInteropTestCase {
@@ -151,12 +96,14 @@ pub(crate) mod test_utils {
                 ciphertext: self.ciphertext.clone(),
             };
 
-            let computed_plaintext =
-                TestEncryptable::decrypt(cs, &secret, &public, &self.context, &ciphertext)
-                    .await
-                    .unwrap();
+            let info = TestInfo::hpke_info(&self.context).unwrap();
 
-            assert_eq!(&computed_plaintext.0, &self.plaintext)
+            let computed_plaintext = cs
+                .hpke_open(&ciphertext, &secret, &public, &info, None)
+                .await
+                .unwrap();
+
+            assert_eq!(&computed_plaintext, &self.plaintext)
         }
     }
 }

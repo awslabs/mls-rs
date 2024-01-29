@@ -6,15 +6,13 @@ use crate::client::MlsError;
 use crate::crypto::{CipherSuiteProvider, SignatureSecretKey};
 use crate::group::GroupContext;
 use crate::identity::SigningIdentity;
-use crate::iter::wrap_iter;
-use crate::tree_kem::math as tree_math;
+use crate::tree_kem::{hpke_encryption::HpkeInfo, math as tree_math};
+
 use alloc::vec;
 use alloc::vec::Vec;
 use itertools::Itertools;
 use mls_rs_codec::MlsEncode;
-
-#[cfg(all(not(mls_build_async), feature = "rayon"))]
-use {crate::iter::ParallelIteratorExt, rayon::prelude::*};
+use mls_rs_core::{crypto::HpkePublicKey, error::IntoAnyError};
 
 #[cfg(mls_build_async)]
 use futures::{StreamExt, TryStreamExt};
@@ -22,7 +20,6 @@ use futures::{StreamExt, TryStreamExt};
 #[cfg(feature = "std")]
 use std::collections::HashSet;
 
-use super::hpke_encryption::HpkeEncryptable;
 use super::leaf_node::ConfigProperties;
 use super::node::NodeTypeResolver;
 use super::{
@@ -170,7 +167,6 @@ impl<'a> TreeKem<'a> {
         })
     }
 
-    #[cfg(any(mls_build_async, not(feature = "rayon")))]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn encrypt_path_secrets<P: CipherSuiteProvider>(
         &self,
@@ -187,56 +183,66 @@ impl<'a> TreeKem<'a> {
         #[cfg(not(feature = "std"))]
         let excluding = excluding.collect::<Vec<NodeIndex>>();
 
-        let mut node_updates = Vec::new();
+        let filtered_path = path
+            .iter()
+            .copied()
+            .zip(path_secrets.iter())
+            .filter_map(|((dp, cp), s)| s.as_ref().map(|s| (dp, cp, s)))
+            .collect_vec();
 
-        for ((_, copath_index), path_secret) in path.into_iter().zip(path_secrets.iter()) {
-            if let Some(path_secret) = path_secret {
-                node_updates.push(
-                    self.encrypt_copath_node_resolution(
-                        cipher_suite,
-                        path_secret,
-                        copath_index,
-                        context_bytes,
-                        &excluding,
-                    )
-                    .await?,
-                );
-            }
+        let mut pt = Vec::new();
+        let mut recipients = Vec::new();
+
+        for (_, cp, s) in &filtered_path {
+            pt.push(s.as_ref());
+            recipients.push(self.filtered_recipients(*cp, &excluding)?);
         }
 
-        Ok(node_updates)
-    }
+        let info = PathSecret::hpke_info(context_bytes)?;
 
-    #[cfg(all(not(mls_build_async), feature = "rayon"))]
-    fn encrypt_path_secrets<P: CipherSuiteProvider>(
-        &self,
-        path: Vec<(u32, u32)>,
-        path_secrets: &[Option<PathSecret>],
-        context_bytes: &[u8],
-        cipher_suite: &P,
-        excluding: &[LeafIndex],
-    ) -> Result<Vec<UpdatePathNode>, MlsError> {
-        let excluding = excluding.iter().copied().map(NodeIndex::from);
+        let ct = cipher_suite
+            .mm_hpke_seal(&info, None, &pt, &recipients)
+            .await
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
-        #[cfg(feature = "std")]
-        let excluding = excluding.collect::<HashSet<NodeIndex>>();
-        #[cfg(not(feature = "std"))]
-        let excluding = excluding.collect::<Vec<NodeIndex>>();
+        (ct.len() == filtered_path.len())
+            .then_some(())
+            .ok_or(MlsError::WrongPathLen)?;
 
-        path.into_par_iter()
-            .zip(path_secrets.par_iter())
-            .filter_map(|((_, copath_index), path_secret)| {
-                path_secret.as_ref().map(|path_secret| {
-                    self.encrypt_copath_node_resolution(
-                        cipher_suite,
-                        path_secret,
-                        copath_index,
-                        context_bytes,
-                        &excluding,
-                    )
+        filtered_path
+            .iter()
+            .zip(ct)
+            .map(|((dp, _, _), ct)| {
+                Ok(UpdatePathNode {
+                    public_key: self.node_public_key(*dp)?.clone(),
+                    encrypted_path_secret: ct,
                 })
             })
             .collect()
+    }
+
+    fn filtered_recipients(
+        &self,
+        node_index: NodeIndex,
+        #[cfg(feature = "std")] excluding: &HashSet<NodeIndex>,
+        #[cfg(not(feature = "std"))] excluding: &[NodeIndex],
+    ) -> Result<Vec<&HpkePublicKey>, MlsError> {
+        self.tree_kem_public
+            .nodes
+            .get_resolution_index(node_index)?
+            .into_iter()
+            .filter(|idx| !excluding.contains(idx))
+            .map(|idx| self.node_public_key(idx))
+            .collect()
+    }
+
+    fn node_public_key(&self, node_index: NodeIndex) -> Result<&HpkePublicKey, MlsError> {
+        Ok(self
+            .tree_kem_public
+            .nodes
+            .borrow_node(node_index)?
+            .as_non_empty()?
+            .public_key())
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -246,7 +252,7 @@ impl<'a> TreeKem<'a> {
         update_path: &ValidatedUpdatePath,
         added_leaves: &[LeafIndex],
         context_bytes: &[u8],
-        cipher_suite_provider: &CP,
+        cipher_suite: &CP,
     ) -> Result<PathSecret, MlsError>
     where
         CP: CipherSuiteProvider,
@@ -261,33 +267,41 @@ impl<'a> TreeKem<'a> {
         let resolved_pos = self.find_resolved_pos(&path, lca_index)?;
         let ct_pos = self.find_ciphertext_pos(path[lca_index], path[resolved_pos], added_leaves)?;
 
-        let lca_node = update_path.nodes[lca_index]
-            .as_ref()
-            .ok_or(MlsError::LcaNotFoundInDirectPath)?;
-
-        let ct = lca_node
-            .encrypted_path_secret
-            .get(ct_pos)
-            .ok_or(MlsError::LcaNotFoundInDirectPath)?;
+        let info = PathSecret::hpke_info(context_bytes)?;
 
         let secret = self.private_key.secret_keys[resolved_pos]
             .as_ref()
             .ok_or(MlsError::UpdateErrorNoSecretKey)?;
 
-        let public = self
-            .tree_kem_public
-            .nodes
-            .borrow_node(path[resolved_pos])?
-            .as_ref()
-            .ok_or(MlsError::UpdateErrorNoSecretKey)?
-            .public_key();
+        let public = self.node_public_key(path[resolved_pos])?;
 
-        let lca_path_secret =
-            PathSecret::decrypt(cipher_suite_provider, secret, public, context_bytes, ct).await?;
+        let ct = update_path
+            .nodes
+            .iter()
+            .filter_map(|node| {
+                node.as_ref()
+                    .map(|node| node.encrypted_path_secret.as_slice())
+            })
+            .collect_vec();
+
+        let count_blanks = update_path
+            .nodes
+            .iter()
+            .take(lca_index)
+            .filter(|n| n.is_none())
+            .count();
+
+        let self_ct_index = (lca_index - count_blanks, ct_pos);
+
+        let lca_path_secret = cipher_suite
+            .mm_hpke_open(&ct, self_ct_index, secret, public, &info, None)
+            .await
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?
+            .ok_or(MlsError::WrongPathLen)?
+            .into();
 
         // Derive the rest of the secrets for the tree and assign to the proper nodes
-        let mut node_secret_gen =
-            PathSecretGenerator::starting_with(cipher_suite_provider, lca_path_secret);
+        let mut node_secret_gen = PathSecretGenerator::starting_with(cipher_suite, lca_path_secret);
 
         // Update secrets based on the decrypted path secret in the update
         self.private_key.secret_keys.resize(path.len() + 1, None);
@@ -298,8 +312,7 @@ impl<'a> TreeKem<'a> {
 
                 // Verify the private key we calculated properly matches the public key we inserted into the tree. This guarantees
                 // that we will be able to decrypt later.
-                let (hpke_private, hpke_public) =
-                    secret.to_hpke_key_pair(cipher_suite_provider).await?;
+                let (hpke_private, hpke_public) = secret.to_hpke_key_pair(cipher_suite).await?;
 
                 if hpke_public != update.public_key {
                     return Err(MlsError::PubKeyMismatch);
@@ -312,56 +325,6 @@ impl<'a> TreeKem<'a> {
         }
 
         node_secret_gen.next_secret().await
-    }
-
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn encrypt_copath_node_resolution<P: CipherSuiteProvider>(
-        &self,
-        cipher_suite_provider: &P,
-        path_secret: &PathSecret,
-        copath_index: NodeIndex,
-        context: &[u8],
-        #[cfg(feature = "std")] excluding: &HashSet<NodeIndex>,
-        #[cfg(not(feature = "std"))] excluding: &[NodeIndex],
-    ) -> Result<UpdatePathNode, MlsError> {
-        let reso = self
-            .tree_kem_public
-            .nodes
-            .get_resolution_index(copath_index)?;
-
-        let make_ctxt = |idx| async move {
-            let node = self
-                .tree_kem_public
-                .nodes
-                .borrow_node(idx)?
-                .as_non_empty()?;
-
-            path_secret
-                .encrypt(cipher_suite_provider, node.public_key(), context)
-                .await
-        };
-
-        let ctxts = wrap_iter(reso).filter(|&idx| async move { !excluding.contains(&idx) });
-
-        #[cfg(not(mls_build_async))]
-        let ctxts = ctxts.map(make_ctxt);
-
-        #[cfg(mls_build_async)]
-        let ctxts = ctxts.then(make_ctxt);
-
-        let ctxts = ctxts.try_collect().await?;
-
-        let path_index = tree_math::parent(copath_index);
-
-        Ok(UpdatePathNode {
-            public_key: self
-                .tree_kem_public
-                .nodes
-                .borrow_as_parent(path_index)?
-                .public_key
-                .clone(),
-            encrypted_path_secret: ctxts,
-        })
     }
 
     #[inline]

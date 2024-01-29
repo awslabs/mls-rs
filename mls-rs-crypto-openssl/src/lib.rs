@@ -358,21 +358,99 @@ where
     ) -> Result<SignaturePublicKey, Self::Error> {
         Ok(self.ec_signer.signature_key_derive_public(secret_key)?)
     }
+
+    #[cfg(feature = "mmpke")]
+    async fn mm_hpke_seal(
+        &self,
+        info: &[u8],
+        aad: Option<&[u8]>,
+        pt: &[&[u8]],
+        remote_keys: &[Vec<&HpkePublicKey>],
+    ) -> Result<Vec<Vec<HpkeCiphertext>>, Self::Error> {
+        Ok(self.hpke.mm_hpke_seal(info, aad, pt, remote_keys).await?)
+    }
+
+    #[cfg(feature = "mmpke")]
+    async fn mm_hpke_open(
+        &self,
+        ct: &[&[HpkeCiphertext]],
+        self_index: (usize, usize),
+        local_secret: &HpkeSecretKey,
+        local_public: &HpkePublicKey,
+        info: &[u8],
+        aad: Option<&[u8]>,
+    ) -> Result<Option<Vec<u8>>, Self::Error> {
+        Ok(self
+            .hpke
+            .mm_hpke_open(ct, self_index, local_secret, local_public, info, aad)
+            .await?)
+    }
 }
 
-#[cfg(not(mls_build_async))]
-#[test]
-fn mls_core_tests() {
-    // Uncomment this to generate the tests instead.
-    // mls_rs_core::crypto::test_suite::generate_tests(&OpensslCryptoProvider::new());
-    let provider = OpensslCryptoProvider::new();
+#[cfg(all(not(mls_build_async), test))]
+mod tests {
+    use mls_rs_core::crypto::{CipherSuiteProvider, CryptoProvider};
 
-    mls_rs_core::crypto::test_suite::verify_tests(&provider, true);
+    use crate::OpensslCryptoProvider;
 
-    for cs in OpensslCryptoProvider::all_supported_cipher_suites() {
-        let mut hpke = provider.cipher_suite_provider(cs).unwrap().hpke;
+    #[test]
+    fn mls_core_tests() {
+        // Uncomment this to generate the tests instead.
+        // mls_rs_core::crypto::test_suite::generate_tests(&OpensslCryptoProvider::new());
+        let provider = OpensslCryptoProvider::new();
 
-        mls_rs_core::crypto::test_suite::verify_hpke_context_tests(&hpke, cs);
-        mls_rs_core::crypto::test_suite::verify_hpke_encap_tests(&mut hpke, cs);
+        mls_rs_core::crypto::test_suite::verify_tests(&provider, true);
+
+        for cs in OpensslCryptoProvider::all_supported_cipher_suites() {
+            let mut hpke = provider.cipher_suite_provider(cs).unwrap().hpke;
+
+            mls_rs_core::crypto::test_suite::verify_hpke_context_tests(&hpke, cs);
+            mls_rs_core::crypto::test_suite::verify_hpke_encap_tests(&mut hpke, cs);
+        }
+    }
+
+    #[test]
+    fn mm_hpke() {
+        let provider = OpensslCryptoProvider::new();
+
+        for cs in OpensslCryptoProvider::all_supported_cipher_suites() {
+            let cs = provider.cipher_suite_provider(cs).unwrap();
+
+            let (sk1, pk1) = cs.kem_generate().unwrap();
+            let (sk2, pk2) = cs.kem_generate().unwrap();
+            let (sk3, pk3) = cs.kem_generate().unwrap();
+
+            let ct = cs
+                .mm_hpke_seal(
+                    &[],
+                    None,
+                    &[b"pt1", b"pt2"],
+                    &[vec![&pk1, &pk2], vec![&pk3]],
+                )
+                .unwrap();
+
+            let ct = ct.iter().map(|ct| ct.as_slice()).collect::<Vec<_>>();
+
+            let pt = cs
+                .mm_hpke_open(&ct, (0, 0), &sk1, &pk1, &[], None)
+                .unwrap()
+                .unwrap();
+
+            assert_eq!(pt, b"pt1".to_vec());
+
+            let pt = cs
+                .mm_hpke_open(&ct, (0, 1), &sk2, &pk2, &[], None)
+                .unwrap()
+                .unwrap();
+
+            assert_eq!(pt, b"pt1".to_vec());
+
+            let pt = cs
+                .mm_hpke_open(&ct, (1, 0), &sk3, &pk3, &[], None)
+                .unwrap()
+                .unwrap();
+
+            assert_eq!(pt, b"pt2".to_vec());
+        }
     }
 }

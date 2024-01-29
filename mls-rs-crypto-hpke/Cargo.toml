@@ -10,9 +10,11 @@ categories = ["no-std", "cryptography"]
 license = "Apache-2.0 OR MIT"
 
 [features]
-default = ["std"]
+default = ["std", "rayon"]
 std = ["mls-rs-core/std", "mls-rs-crypto-traits/std", "dep:thiserror", "zeroize/std"]
 test_utils = ["mls-rs-core/test_suite"]
+rayon = ["std", "dep:rayon", "mls-rs-core/rayon"]
+mmpke = []
 
 [dependencies]
 mls-rs-core = { path = "../mls-rs-core", default-features = false, version = "0.17.0" }
@@ -21,6 +23,8 @@ thiserror = { version = "1.0.40", optional = true }
 zeroize = { version = "1", default-features = false, features = ["alloc", "zeroize_derive"] }
 cfg-if = "^1"
 maybe-async = "0.2.7"
+# TODO: https://github.com/GoogleChromeLabs/wasm-bindgen-rayon
+rayon = { version = "1", optional = true }
 
 [dev-dependencies]
 serde = { version = "1.0", features = ["derive"] }

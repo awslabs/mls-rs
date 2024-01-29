@@ -18,7 +18,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 [features]
 default = ["std", "rayon", "rfc_compliant", "tree_index", "fast_serialize"]
 arbitrary = ["std", "dep:arbitrary", "mls-rs-core/arbitrary"]
-rayon = ["std", "dep:rayon"]
+rayon = ["std", "dep:rayon", "mls-rs-crypto-openssl?/rayon", "mls-rs-core/rayon"]
 external_client = ["std"]
 grease = ["std"]
 fast_serialize = ["mls-rs-core/fast_serialize"]
@@ -37,6 +37,8 @@ rfc_compliant = ["state_update", "private_message", "custom_proposal", "out_of_o
 std = ["mls-rs-core/std", "mls-rs-codec/std", "mls-rs-identity-x509?/std", "hex/std", "futures/std", "itertools/use_std", "safer-ffi-gen?/std", "zeroize/std", "dep:debug_tree", "dep:thiserror"]
 
 ffi = ["dep:safer-ffi", "dep:safer-ffi-gen", "mls-rs-core/ffi"]
+
+mmpke = ["mls-rs-crypto-openssl?/mmpke"]
 
 # SQLite support
 sqlite = ["std", "mls-rs-provider-sqlite/sqlite"]

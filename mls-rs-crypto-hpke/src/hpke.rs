@@ -11,9 +11,15 @@ use mls_rs_core::{
         HpkeCiphertext, HpkeContextR, HpkeContextS, HpkeModeId, HpkePublicKey, HpkeSecretKey,
     },
     error::{AnyError, IntoAnyError},
+    mls_rs_codec::{MlsDecode, MlsEncode},
 };
 
-use mls_rs_crypto_traits::{AeadType, KdfType, KemType, AEAD_ID_EXPORT_ONLY};
+use mls_rs_crypto_traits::{AeadType, KdfType, KemResult, KemType, AEAD_ID_EXPORT_ONLY};
+
+#[cfg(all(not(mls_build_async), feature = "rayon"))]
+use rayon::iter::{
+    IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
+};
 
 use zeroize::Zeroizing;
 
@@ -56,6 +62,8 @@ pub enum HpkeError {
     /// Max sequence number exceeded, currently allowed up to MAX u64
     #[cfg_attr(feature = "std", error("Sequence number overflow"))]
     SequenceNumberOverflow,
+    #[cfg_attr(feature = "std", error(transparent))]
+    MlsCodecError(AnyError),
 }
 
 impl IntoAnyError for HpkeError {
@@ -323,5 +331,142 @@ where
         } else {
             HpkeModeId::Base
         }
+    }
+
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn mm_hpke_seal(
+        &self,
+        info: &[u8],
+        aad: Option<&[u8]>,
+        pt: &[&[u8]],
+        remote_keys: &[Vec<&HpkePublicKey>],
+    ) -> Result<Vec<Vec<HpkeCiphertext>>, HpkeError> {
+        let kem_results = self
+            .kem
+            .mm_encap(remote_keys)
+            .await
+            .map_err(|e| HpkeError::KemError(e.into_any_error()))?;
+
+        let mode = self.base_mode(&None);
+
+        let mut out = self
+            .mm_seal(kem_results.kem_results, info, aad, pt, mode)
+            .await?;
+
+        if let Some(out) = out.first_mut().and_then(|out| out.first_mut()) {
+            out.kem_output = (&out.kem_output, kem_results.header)
+                .mls_encode_to_vec()
+                .map_err(|e| HpkeError::MlsCodecError(e.into_any_error()))?;
+        }
+
+        Ok(out)
+    }
+
+    #[cfg(all(not(mls_build_async), feature = "rayon"))]
+    pub fn mm_seal(
+        &self,
+        kem_results: Vec<Vec<KemResult>>,
+        info: &[u8],
+        aad: Option<&[u8]>,
+        pt: &[&[u8]],
+        mode: HpkeModeId,
+    ) -> Result<Vec<Vec<HpkeCiphertext>>, HpkeError> {
+        kem_results
+            .into_par_iter()
+            .zip(pt.par_iter())
+            .map(|(kem_res, pt)| {
+                kem_res
+                    .into_par_iter()
+                    .map(|kem_res| {
+                        let ct = self
+                            .key_schedule(mode, kem_res.shared_secret(), info, None)
+                            .map(ContextS)?
+                            .seal(aad, pt)?;
+
+                        Ok(HpkeCiphertext {
+                            kem_output: kem_res.enc,
+                            ciphertext: ct,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, HpkeError>>()
+            })
+            .collect()
+    }
+
+    #[cfg(not(all(not(mls_build_async), feature = "rayon")))]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn mm_seal(
+        &self,
+        kem_results: Vec<Vec<KemResult>>,
+        info: &[u8],
+        aad: Option<&[u8]>,
+        pt: &[&[u8]],
+        mode: HpkeModeId,
+    ) -> Result<Vec<Vec<HpkeCiphertext>>, HpkeError> {
+        let mut out = Vec::new();
+
+        for (kem_res, pt) in kem_results.into_iter().zip(pt.iter()) {
+            out.push(Vec::new());
+
+            for kem_res in kem_res {
+                if let Some(out) = out.last_mut() {
+                    let ct = self
+                        .key_schedule(mode, kem_res.shared_secret(), info, None)
+                        .await
+                        .map(ContextS)?
+                        .seal(aad, pt)
+                        .await?;
+
+                    out.push(HpkeCiphertext {
+                        kem_output: kem_res.enc,
+                        ciphertext: ct,
+                    });
+                }
+            }
+        }
+
+        Ok(out)
+    }
+
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn mm_hpke_open(
+        &self,
+        ct: &[&[HpkeCiphertext]],
+        self_index: (usize, usize),
+        local_secret: &HpkeSecretKey,
+        local_public: &HpkePublicKey,
+        info: &[u8],
+        aad: Option<&[u8]>,
+    ) -> Result<Option<Vec<u8>>, HpkeError> {
+        let Some(mut first_ct) = ct.first().and_then(|ct| ct.first()).cloned() else {
+            return Ok(None);
+        };
+
+        let (first_enc, header) = <(Vec<u8>, Vec<u8>)>::mls_decode(&mut &*first_ct.kem_output)
+            .map_err(|e| HpkeError::MlsCodecError(e.into_any_error()))?;
+
+        first_ct.kem_output = first_enc;
+
+        let ct = match self_index {
+            (0, 0) => Some(&first_ct),
+            (i, j) => ct.get(i).and_then(|ct| ct.get(j)),
+        };
+
+        let Some(ct) = ct else { return Ok(None) };
+
+        let shared_secret = self
+            .kem
+            .mm_decap(&header, &ct.kem_output, local_secret, local_public)
+            .await
+            .map_err(|e| HpkeError::KemError(e.into_any_error()))?;
+
+        let pt = self
+            .key_schedule(self.base_mode(&None), &shared_secret, info, None)
+            .await
+            .map(ContextR)?
+            .open(aad, &ct.ciphertext)
+            .await?;
+
+        Ok(Some(pt))
     }
 }

@@ -14,6 +14,12 @@ use crate::kdf::HpkeKdf;
 
 use alloc::vec::Vec;
 
+#[cfg(all(feature = "mmpke", feature = "rayon"))]
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+
+#[cfg(feature = "mmpke")]
+use mls_rs_crypto_traits::MmKemOutput;
+
 #[derive(Debug)]
 #[cfg_attr(feature = "std", derive(thiserror::Error))]
 pub enum DhKemError {
@@ -103,21 +109,7 @@ impl<DH: DhType, KDF: KdfType> KemType for DhKem<DH, KDF> {
 
     async fn encap(&self, remote_pk: &HpkePublicKey) -> Result<KemResult, Self::Error> {
         let (ephemeral_sk, ephemeral_pk) = self.generate().await?;
-
-        let ecdh_ss = self
-            .dh
-            .dh(&ephemeral_sk, remote_pk)
-            .await
-            .map(Zeroizing::new)
-            .map_err(|e| DhKemError::DhError(e.into_any_error()))?;
-
-        let kem_context = [ephemeral_pk.as_ref(), remote_pk.as_ref()].concat();
-
-        let shared_secret = self
-            .kdf
-            .labeled_extract_then_expand(&ecdh_ss, &kem_context, self.n_secret)
-            .await
-            .map_err(|e| DhKemError::KdfError(e.into_any_error()))?;
+        let shared_secret = self.encap(remote_pk, &ephemeral_sk, &ephemeral_pk).await?;
 
         Ok(KemResult::new(shared_secret, ephemeral_pk.into()))
     }
@@ -150,9 +142,97 @@ impl<DH: DhType, KDF: KdfType> KemType for DhKem<DH, KDF> {
             .public_key_validate(key)
             .map_err(|e| DhKemError::DhError(e.into_any_error()))
     }
+
+    #[cfg(all(not(mls_build_async), feature = "rayon", feature = "mmpke"))]
+    async fn mm_encap(
+        &self,
+        remote_keys: &[Vec<&HpkePublicKey>],
+    ) -> Result<MmKemOutput, DhKemError> {
+        let (ephemeral_sk, ephemeral_pk) = self.generate().await?;
+
+        let kem_results = remote_keys
+            .par_iter()
+            .map(|rk| {
+                rk.par_iter()
+                    .map(|rk| {
+                        Ok(KemResult::new(
+                            self.encap(rk, &ephemeral_sk, &ephemeral_pk)?,
+                            Vec::new(),
+                        ))
+                    })
+                    .collect::<Result<_, _>>()
+            })
+            .collect::<Result<_, _>>()?;
+
+        Ok(MmKemOutput {
+            header: ephemeral_pk.into(),
+            kem_results,
+        })
+    }
+
+    #[cfg(all(any(mls_build_async, not(feature = "rayon")), feature = "mmpke"))]
+    async fn mm_encap<'a>(
+        &self,
+        remote_keys: &'a [Vec<&'a HpkePublicKey>],
+    ) -> Result<MmKemOutput, DhKemError> {
+        let (ephemeral_sk, ephemeral_pk) = self.generate().await?;
+
+        let mut kem_results = Vec::new();
+
+        for rk in remote_keys {
+            kem_results.push(Vec::new());
+
+            for rk in rk {
+                if let Some(kem_results) = kem_results.last_mut() {
+                    kem_results.push(KemResult::new(
+                        self.encap(rk, &ephemeral_sk, &ephemeral_pk).await?,
+                        Vec::new(),
+                    ));
+                }
+            }
+        }
+
+        Ok(MmKemOutput {
+            header: ephemeral_pk.into(),
+            kem_results,
+        })
+    }
+
+    #[cfg(feature = "mmpke")]
+    async fn mm_decap(
+        &self,
+        header: &[u8],
+        _enc: &[u8],
+        secret_key: &HpkeSecretKey,
+        local_public: &HpkePublicKey,
+    ) -> Result<Vec<u8>, Self::Error> {
+        self.decap(header, secret_key, local_public).await
+    }
 }
 
 impl<DH: DhType, KDF: KdfType> DhKem<DH, KDF> {
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn encap(
+        &self,
+        remote_pk: &HpkePublicKey,
+        ephemeral_sk: &HpkeSecretKey,
+        ephemeral_pk: &HpkePublicKey,
+    ) -> Result<Vec<u8>, DhKemError> {
+        let ecdh_ss = self
+            .dh
+            .dh(ephemeral_sk, remote_pk)
+            .await
+            .map(Zeroizing::new)
+            .map_err(|e| DhKemError::DhError(e.into_any_error()))?;
+
+        let kem_context = [ephemeral_pk.as_ref(), remote_pk.as_ref()].concat();
+
+        self.kdf
+            .labeled_extract_then_expand(&ecdh_ss, &kem_context, self.n_secret)
+            .await
+            .map_err(|e| DhKemError::KdfError(e.into_any_error()))
+    }
+
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn derive_with_rejection_sampling(
         &self,

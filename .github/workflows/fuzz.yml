@@ -20,7 +20,7 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Clippy on fuzz targets
         working-directory: mls-rs/fuzz
-        run: cargo clippy --all-targets --all-features --workspace -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
       - name: Run Fuzz Targets
         working-directory: mls-rs
         run: |
