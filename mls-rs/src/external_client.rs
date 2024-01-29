@@ -3,14 +3,9 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use crate::{
-    cipher_suite::CipherSuite,
     client::MlsError,
-    group::{framing::MlsMessage, ExportedTree},
-    key_package::{validate_key_package_properties, KeyPackage},
-    protocol_version::ProtocolVersion,
-    time::MlsTime,
-    tree_kem::leaf_node_validator::{LeafNodeValidator, ValidationContext},
-    CryptoProvider,
+    group::{framing::MlsMessage, message_processor::validate_key_package, ExportedTree},
+    KeyPackage,
 };
 
 pub mod builder;
@@ -18,7 +13,10 @@ mod config;
 mod group;
 
 pub(crate) use config::ExternalClientConfig;
-use mls_rs_core::{crypto::SignatureSecretKey, identity::SigningIdentity};
+use mls_rs_core::{
+    crypto::{CryptoProvider, SignatureSecretKey},
+    identity::SigningIdentity,
+};
 
 use builder::{ExternalBaseConfig, ExternalClientBuilder};
 
@@ -99,34 +97,26 @@ where
         ExternalGroup::from_snapshot(self.config.clone(), snapshot).await
     }
 
-    /// Utility function to validate key packages
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn validate_key_package(
         &self,
-        package: MlsMessage,
-        protocol: ProtocolVersion,
-        cipher_suite: CipherSuite,
+        key_package: MlsMessage,
     ) -> Result<KeyPackage, MlsError> {
-        let key_package = package
+        let version = key_package.version;
+
+        let key_package = key_package
             .into_key_package()
             .ok_or(MlsError::UnexpectedMessageType)?;
 
         let cs = self
             .config
             .crypto_provider()
-            .cipher_suite_provider(cipher_suite)
-            .ok_or_else(|| MlsError::UnsupportedCipherSuite(cipher_suite))?;
+            .cipher_suite_provider(key_package.cipher_suite)
+            .ok_or(MlsError::UnsupportedCipherSuite(key_package.cipher_suite))?;
 
-        let id_provider = self.config.identity_provider();
+        let id = self.config.identity_provider();
 
-        let validator = LeafNodeValidator::new(&cs, &id_provider, None);
-        let context = ValidationContext::Add(Some(MlsTime::now()));
-
-        validator
-            .check_if_valid(&key_package.leaf_node, context)
-            .await?;
-
-        validate_key_package_properties(&key_package, protocol, &cs).await?;
+        validate_key_package(&key_package, version, &cs, &id).await?;
 
         Ok(key_package)
     }
@@ -134,5 +124,19 @@ where
 
 #[cfg(test)]
 pub(crate) mod tests_utils {
+    use crate::{
+        client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
+        key_package::test_utils::test_key_package_message,
+    };
+
     pub use super::builder::test_utils::*;
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn external_client_can_validate_key_package() {
+        let kp = test_key_package_message(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "john").await;
+        let server = TestExternalClientBuilder::new_for_test().build();
+        let validated_kp = server.validate_key_package(kp.clone()).await.unwrap();
+
+        assert_eq!(kp.into_key_package().unwrap(), validated_kp);
+    }
 }

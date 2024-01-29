@@ -25,12 +25,20 @@ pub struct GroupInfo {
 
 #[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen)]
 impl GroupInfo {
+    /// Group context.
     pub fn group_context(&self) -> &GroupContext {
         &self.group_context
     }
 
+    /// Group info extensions (not to be confused with group context extensions),
+    /// e.g. the ratchet tree.
     pub fn extensions(&self) -> &ExtensionList {
         &self.extensions
+    }
+
+    /// Leaf index of the sender who generated and signed this group info.
+    pub fn sender(&self) -> u32 {
+        *self.signer
     }
 }
 

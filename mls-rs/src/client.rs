@@ -331,6 +331,10 @@ pub enum MlsError {
     UpdatingNonExistingMember,
     #[cfg_attr(feature = "std", error("Failed generating next path secret"))]
     FailedGeneratingPathSecret,
+    #[cfg_attr(feature = "std", error("Invalid group info"))]
+    InvalidGroupInfo,
+    #[cfg_attr(feature = "std", error("Invalid welcome message"))]
+    InvalidWelcomeMessage,
 }
 
 impl IntoAnyError for MlsError {

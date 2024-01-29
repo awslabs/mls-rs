@@ -10,24 +10,31 @@ use super::{
     },
     message_signature::AuthenticatedContent,
     mls_rules::{CommitDirection, MlsRules},
+    process_group_info,
     proposal_filter::ProposalBundle,
     state::GroupState,
     transcript_hash::InterimTranscriptHash,
-    transcript_hashes, GroupContext,
+    transcript_hashes, ExportedTree, GroupContext, GroupInfo, Welcome,
 };
 use crate::{
     client::MlsError,
+    extension::RatchetTreeExt,
+    key_package::validate_key_package_properties,
     time::MlsTime,
     tree_kem::{
-        node::LeafIndex, path_secret::PathSecret, validate_update_path, TreeKemPrivate,
-        TreeKemPublic, ValidatedUpdatePath,
+        leaf_node_validator::{LeafNodeValidator, ValidationContext},
+        node::LeafIndex,
+        path_secret::PathSecret,
+        validate_update_path, TreeKemPrivate, TreeKemPublic, ValidatedUpdatePath,
     },
-    CipherSuiteProvider,
+    CipherSuiteProvider, KeyPackage,
 };
 #[cfg(mls_build_async)]
 use alloc::boxed::Box;
 use alloc::vec::Vec;
-use mls_rs_core::{identity::IdentityProvider, psk::PreSharedKeyStorage};
+use mls_rs_core::{
+    identity::IdentityProvider, protocol_version::ProtocolVersion, psk::PreSharedKeyStorage,
+};
 
 #[cfg(feature = "by_ref_proposal")]
 use super::proposal_ref::ProposalRef;
@@ -181,6 +188,12 @@ pub enum ReceivedMessage {
     Commit(CommitMessageDescription),
     /// A proposal was received.
     Proposal(ProposalMessageDescription),
+    /// Validated GroupInfo object
+    GroupInfo(GroupInfo),
+    /// Validated welcome message
+    Welcome,
+    /// Validated key package
+    KeyPackage(KeyPackage),
 }
 
 impl TryFrom<ApplicationMessageDescription> for ReceivedMessage {
@@ -200,6 +213,24 @@ impl From<CommitMessageDescription> for ReceivedMessage {
 impl From<ProposalMessageDescription> for ReceivedMessage {
     fn from(value: ProposalMessageDescription) -> Self {
         ReceivedMessage::Proposal(value)
+    }
+}
+
+impl From<GroupInfo> for ReceivedMessage {
+    fn from(value: GroupInfo) -> Self {
+        ReceivedMessage::GroupInfo(value)
+    }
+}
+
+impl From<Welcome> for ReceivedMessage {
+    fn from(_: Welcome) -> Self {
+        ReceivedMessage::Welcome
+    }
+}
+
+impl From<KeyPackage> for ReceivedMessage {
+    fn from(value: KeyPackage) -> Self {
+        ReceivedMessage::KeyPackage(value)
     }
 }
 
@@ -360,6 +391,9 @@ pub(crate) trait MessageProcessor: Send + Sync {
     type OutputType: TryFrom<ApplicationMessageDescription, Error = MlsError>
         + From<CommitMessageDescription>
         + From<ProposalMessageDescription>
+        + From<GroupInfo>
+        + From<Welcome>
+        + From<KeyPackage>
         + Send;
 
     type MlsRules: MlsRules;
@@ -410,7 +444,23 @@ pub(crate) trait MessageProcessor: Send + Sync {
             }
             #[cfg(feature = "private_message")]
             MlsMessagePayload::Cipher(cipher_text) => self.process_ciphertext(cipher_text).await,
-            _ => Err(MlsError::UnexpectedMessageType),
+            MlsMessagePayload::GroupInfo(group_info) => {
+                self.validate_group_info(group_info.clone(), message.version)
+                    .await?;
+
+                Ok(EventOrContent::Event(group_info.into()))
+            }
+            MlsMessagePayload::Welcome(welcome) => {
+                self.validate_welcome(&welcome, message.version)?;
+
+                Ok(EventOrContent::Event(welcome.into()))
+            }
+            MlsMessagePayload::KeyPackage(key_package) => {
+                self.validate_key_package(&key_package, message.version)
+                    .await?;
+
+                Ok(EventOrContent::Event(key_package.into()))
+            }
         }
     }
 
@@ -849,6 +899,62 @@ pub(crate) trait MessageProcessor: Send + Sync {
         Ok(())
     }
 
+    async fn validate_group_info(
+        &self,
+        group_info: GroupInfo,
+        version: ProtocolVersion,
+    ) -> Result<(), MlsError> {
+        let state = self.group_state();
+
+        let self_tree = ExportedTree::new_borrowed(&state.public_tree.nodes);
+
+        if let Some(tree) = group_info.extensions.get_as::<RatchetTreeExt>()? {
+            (tree.tree_data == self_tree)
+                .then_some(())
+                .ok_or(MlsError::InvalidGroupInfo)?;
+        }
+
+        (group_info.group_context == state.context
+            && group_info.confirmation_tag == state.confirmation_tag)
+            .then_some(())
+            .ok_or(MlsError::InvalidGroupInfo)?;
+
+        process_group_info(
+            version,
+            group_info,
+            Some(self_tree),
+            &self.identity_provider(),
+            self.cipher_suite_provider(),
+        )
+        .await?;
+
+        Ok(())
+    }
+
+    fn validate_welcome(
+        &self,
+        welcome: &Welcome,
+        version: ProtocolVersion,
+    ) -> Result<(), MlsError> {
+        let state = self.group_state();
+
+        (welcome.cipher_suite == state.context.cipher_suite
+            && version == state.context.protocol_version)
+            .then_some(())
+            .ok_or(MlsError::InvalidWelcomeMessage)
+    }
+
+    async fn validate_key_package(
+        &self,
+        key_package: &KeyPackage,
+        version: ProtocolVersion,
+    ) -> Result<(), MlsError> {
+        let cs = self.cipher_suite_provider();
+        let id = self.identity_provider();
+
+        validate_key_package(key_package, version, cs, &id).await
+    }
+
     #[cfg(feature = "private_message")]
     async fn process_ciphertext(
         &mut self,
@@ -886,4 +992,30 @@ pub(crate) trait MessageProcessor: Send + Sync {
         confirmation_tag: &ConfirmationTag,
         provisional_public_state: ProvisionalState,
     ) -> Result<(), MlsError>;
+}
+
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+pub(crate) async fn validate_key_package<C: CipherSuiteProvider, I: IdentityProvider>(
+    key_package: &KeyPackage,
+    version: ProtocolVersion,
+    cs: &C,
+    id: &I,
+) -> Result<(), MlsError> {
+    let validator = LeafNodeValidator::new(cs, id, None);
+
+    #[cfg(feature = "std")]
+    let context = Some(MlsTime::now());
+
+    #[cfg(not(feature = "std"))]
+    let context = None;
+
+    let context = ValidationContext::Add(context);
+
+    validator
+        .check_if_valid(&key_package.leaf_node, context)
+        .await?;
+
+    validate_key_package_properties(key_package, version, cs).await?;
+
+    Ok(())
 }
