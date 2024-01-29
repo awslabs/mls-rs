@@ -952,23 +952,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
         let cs = self.cipher_suite_provider();
         let id = self.identity_provider();
 
-        let validator = LeafNodeValidator::new(cs, &id, None);
-
-        #[cfg(feature = "std")]
-        let context = Some(MlsTime::now());
-
-        #[cfg(not(feature = "std"))]
-        let context = None;
-
-        let context = ValidationContext::Add(context);
-
-        validator
-            .check_if_valid(&key_package.leaf_node, context)
-            .await?;
-
-        validate_key_package_properties(key_package, version, cs).await?;
-
-        Ok(())
+        validate_key_package(key_package, version, cs, &id).await
     }
 
     #[cfg(feature = "private_message")]
@@ -1008,4 +992,30 @@ pub(crate) trait MessageProcessor: Send + Sync {
         confirmation_tag: &ConfirmationTag,
         provisional_public_state: ProvisionalState,
     ) -> Result<(), MlsError>;
+}
+
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+pub(crate) async fn validate_key_package<C: CipherSuiteProvider, I: IdentityProvider>(
+    key_package: &KeyPackage,
+    version: ProtocolVersion,
+    cs: &C,
+    id: &I,
+) -> Result<(), MlsError> {
+    let validator = LeafNodeValidator::new(cs, id, None);
+
+    #[cfg(feature = "std")]
+    let context = Some(MlsTime::now());
+
+    #[cfg(not(feature = "std"))]
+    let context = None;
+
+    let context = ValidationContext::Add(context);
+
+    validator
+        .check_if_valid(&key_package.leaf_node, context)
+        .await?;
+
+    validate_key_package_properties(key_package, version, cs).await?;
+
+    Ok(())
 }

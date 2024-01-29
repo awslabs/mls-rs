@@ -4,7 +4,8 @@
 
 use crate::{
     client::MlsError,
-    group::{framing::MlsMessage, ExportedTree},
+    group::{framing::MlsMessage, message_processor::validate_key_package, ExportedTree},
+    KeyPackage,
 };
 
 pub mod builder;
@@ -12,7 +13,10 @@ mod config;
 mod group;
 
 pub(crate) use config::ExternalClientConfig;
-use mls_rs_core::{crypto::SignatureSecretKey, identity::SigningIdentity};
+use mls_rs_core::{
+    crypto::{CryptoProvider, SignatureSecretKey},
+    identity::SigningIdentity,
+};
 
 use builder::{ExternalBaseConfig, ExternalClientBuilder};
 
@@ -92,9 +96,47 @@ where
     ) -> Result<ExternalGroup<C>, MlsError> {
         ExternalGroup::from_snapshot(self.config.clone(), snapshot).await
     }
+
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn validate_key_package(
+        &self,
+        key_package: MlsMessage,
+    ) -> Result<KeyPackage, MlsError> {
+        let version = key_package.version;
+
+        let key_package = key_package
+            .into_key_package()
+            .ok_or(MlsError::UnexpectedMessageType)?;
+
+        let cs = self
+            .config
+            .crypto_provider()
+            .cipher_suite_provider(key_package.cipher_suite)
+            .ok_or(MlsError::UnsupportedCipherSuite(key_package.cipher_suite))?;
+
+        let id = self.config.identity_provider();
+
+        validate_key_package(&key_package, version, &cs, &id).await?;
+
+        Ok(key_package)
+    }
 }
 
 #[cfg(test)]
 pub(crate) mod tests_utils {
+    use crate::{
+        client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
+        key_package::test_utils::test_key_package_message,
+    };
+
     pub use super::builder::test_utils::*;
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn external_client_can_validate_key_package() {
+        let kp = test_key_package_message(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "john").await;
+        let server = TestExternalClientBuilder::new_for_test().build();
+        let validated_kp = server.validate_key_package(kp.clone()).await.unwrap();
+
+        assert_eq!(kp.into_key_package().unwrap(), validated_kp);
+    }
 }
