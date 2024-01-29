@@ -22,7 +22,7 @@ thiserror = { version = "1.0.40", optional = true }
 async-trait = "0.1.74"
 
 [dev-dependencies]
-mockall = "0.11"
+mockall = "0.12"
 assert_matches = "1"
 rand = "0.8"
 
