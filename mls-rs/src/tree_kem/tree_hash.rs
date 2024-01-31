@@ -176,10 +176,11 @@ impl TreeKemPublic {
         let bfs_iter = BfsIterTopDown::new(num_leaves).skip(1);
 
         for n in bfs_iter {
-            let Some((p, _)) = (n as u32).parent_sibling(&(num_leaves as u32)) else {
+            let Some(ps) = (n as u32).parent_sibling(&(num_leaves as u32)) else {
                 break;
             };
 
+            let p = ps.parent;
             filtered_sets[n] = filtered_sets[p as usize].clone();
 
             if self.different_unmerged(*filtered_sets[p as usize].last().unwrap(), p)? {
@@ -270,16 +271,10 @@ async fn tree_hash<P: CipherSuiteProvider>(
 
         hashes[2 * **l as usize] = TreeHash(hash_for_leaf(*l, leaf, cipher_suite_provider).await?);
 
-        if 2 * **l != num_leaves.root() {
-            let Some((p, _)) = (2 * **l).parent_sibling(&num_leaves) else {
-                break;
-            };
-
-            node_queue.push_back(p);
+        if let Some(ps) = (2 * **l).parent_sibling(&num_leaves) {
+            node_queue.push_back(ps.parent);
         }
     }
-
-    let root = num_leaves.root();
 
     while let Some(n) = node_queue.pop_front() {
         let hash = TreeHash(
@@ -295,10 +290,8 @@ async fn tree_hash<P: CipherSuiteProvider>(
 
         hashes[n as usize] = hash;
 
-        if n != root {
-            if let Some((p, _)) = n.parent_sibling(&num_leaves) {
-                node_queue.push_back(p);
-            }
+        if let Some(ps) = n.parent_sibling(&num_leaves) {
+            node_queue.push_back(ps.parent);
         }
     }
 

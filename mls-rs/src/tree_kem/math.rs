@@ -13,9 +13,11 @@ pub trait TreeIndex: Sized + Send + Sync + Eq + Clone + Debug {
     fn left_unchecked(&self) -> Self;
     fn right_unchecked(&self) -> Self;
 
-    fn parent_sibling(&self, leaf_count: &Self) -> Option<(Self, Self)>;
+    fn parent_sibling(&self, leaf_count: &Self) -> Option<ParentSibling<Self>>;
     fn is_leaf(&self) -> bool;
     fn is_in_tree(&self, root: &Self) -> bool;
+
+    fn zero() -> Self;
 
     fn left(&self) -> Option<Self> {
         (!self.is_leaf()).then(|| self.left_unchecked())
@@ -35,9 +37,9 @@ pub trait TreeIndex: Sized + Send + Sync + Eq + Clone + Debug {
         let mut path = Vec::new();
         let mut parent = self.clone();
 
-        while let Some((p, s)) = parent.parent_sibling(leaf_count) {
-            path.push(CopathNode::new(p.clone(), s.clone()));
-            parent = p;
+        while let Some(ps) = parent.parent_sibling(leaf_count) {
+            path.push(CopathNode::new(ps.parent.clone(), ps.sibling));
+            parent = ps.parent;
         }
 
         path
@@ -53,6 +55,18 @@ pub struct CopathNode<T: Clone + PartialEq + Eq + core::fmt::Debug> {
 impl<T: Clone + PartialEq + Eq + core::fmt::Debug> CopathNode<T> {
     pub fn new(path: T, copath: T) -> CopathNode<T> {
         CopathNode { path, copath }
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, core::fmt::Debug)]
+pub struct ParentSibling<T: Clone + PartialEq + Eq + core::fmt::Debug> {
+    pub parent: T,
+    pub sibling: T,
+}
+
+impl<T: Clone + PartialEq + Eq + core::fmt::Debug> ParentSibling<T> {
+    pub fn new(parent: T, sibling: T) -> ParentSibling<T> {
+        ParentSibling { parent, sibling }
     }
 }
 
@@ -73,7 +87,7 @@ macro_rules! impl_tree_stdint {
                 *self ^ (0x03 << (level(*self) - 1))
             }
 
-            fn parent_sibling(&self, leaf_count: &Self) -> Option<(Self, Self)> {
+            fn parent_sibling(&self, leaf_count: &Self) -> Option<ParentSibling<Self>> {
                 if self == &leaf_count.root() {
                     return None;
                 }
@@ -87,7 +101,7 @@ macro_rules! impl_tree_stdint {
                     p.left_unchecked()
                 };
 
-                Some((p, s))
+                Some(ParentSibling::new(p, s))
             }
 
             fn is_leaf(&self) -> bool {
@@ -96,6 +110,10 @@ macro_rules! impl_tree_stdint {
 
             fn is_in_tree(&self, root: &Self) -> bool {
                 *self <= 2 * root
+            }
+
+            fn zero() -> Self {
+                0
             }
         }
 
@@ -111,7 +129,6 @@ impl_tree_stdint!(u32);
 mod test_utils {
     use super::*;
     impl_tree_stdint!(u64);
-    //impl_tree_stdint!(u16);
 }
 
 pub fn leaf_lca_level(x: u32, y: u32) -> u32 {
@@ -220,7 +237,11 @@ mod tests {
             let right = (0..n_nodes).map(|x| x.right()).collect::<Vec<_>>();
 
             let (parent, sibling) = (0..n_nodes)
-                .map(|x| x.parent_sibling(&n_leaves).unzip())
+                .map(|x| {
+                    x.parent_sibling(&n_leaves)
+                        .map(|ps| (ps.parent, ps.sibling))
+                        .unzip()
+                })
                 .unzip();
 
             test_cases.push(TestCase {
@@ -253,7 +274,10 @@ mod tests {
                 assert_eq!(x.left(), case.left[x as usize]);
                 assert_eq!(x.right(), case.right[x as usize]);
 
-                let (p, s) = x.parent_sibling(&case.n_leaves).unzip();
+                let (p, s) = x
+                    .parent_sibling(&case.n_leaves)
+                    .map(|ps| (ps.parent, ps.sibling))
+                    .unzip();
 
                 assert_eq!(p, case.parent[x as usize]);
                 assert_eq!(s, case.sibling[x as usize]);

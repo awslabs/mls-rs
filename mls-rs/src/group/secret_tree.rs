@@ -110,10 +110,10 @@ pub struct SecretTree<T: MlsCodec> {
 }
 
 impl<T: TreeIndex + MlsCodec> SecretTree<T> {
-    pub(crate) fn empty(zero_leaf_count: T) -> SecretTree<T> {
+    pub(crate) fn empty() -> SecretTree<T> {
         SecretTree {
             known_secrets: Default::default(),
-            leaf_count: zero_leaf_count,
+            leaf_count: T::zero(),
         }
     }
 }

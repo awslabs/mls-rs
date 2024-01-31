@@ -128,27 +128,22 @@ fn validate_unmerged(tree: &TreeKemPublic) -> Result<(), MlsError> {
     // such that for each i=1..k, either L is in the unmerged leaves of P[i], or P[i] is blank. We will
     // then check that L is unmerged at each P[1], ..., P[k] and no other node.
     let leaf_count = tree.total_leaf_count();
-    let root = leaf_count.root();
 
     for (index, _) in tree.nodes.non_empty_leaves() {
         let mut n = NodeIndex::from(index);
 
-        while n != root {
-            let Some((parent, _)) = n.parent_sibling(&leaf_count) else {
-                break;
-            };
-
-            if tree.nodes.is_blank(parent)? {
-                n = parent;
+        while let Some(ps) = n.parent_sibling(&leaf_count) {
+            if tree.nodes.is_blank(ps.parent)? {
+                n = ps.parent;
                 continue;
             }
 
-            let parent_node = tree.nodes.borrow_as_parent(parent)?;
+            let parent_node = tree.nodes.borrow_as_parent(ps.parent)?;
 
             if parent_node.unmerged_leaves.contains(&index) {
-                unmerged_sets[parent as usize].retain(|i| i != &index);
+                unmerged_sets[ps.parent as usize].retain(|i| i != &index);
 
-                n = parent;
+                n = ps.parent;
             } else {
                 break;
             }

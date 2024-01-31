@@ -355,9 +355,10 @@ impl<'a> TreeKem<'a> {
 
         let ctxts = ctxts.try_collect().await?;
 
-        let (path_index, _) = copath_index
+        let path_index = copath_index
             .parent_sibling(&self.tree_kem_public.total_leaf_count())
-            .ok_or(MlsError::ExpectedNode)?;
+            .ok_or(MlsError::ExpectedNode)?
+            .parent;
 
         Ok(UpdatePathNode {
             public_key: self

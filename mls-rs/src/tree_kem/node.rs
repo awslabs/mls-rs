@@ -221,14 +221,6 @@ impl NodeVec {
         self.iter().step_by(2).map(|n| n.as_leaf().ok())
     }
 
-    /*pub fn direct_path(&self, index: LeafIndex) -> Vec<NodeIndex> {
-        NodeIndex::from(index)
-            .direct_copath(&self.total_leaf_count())
-            .into_iter()
-            .map(|n| n.path)
-            .collect()
-    }*/
-
     pub fn direct_copath(&self, index: LeafIndex) -> Vec<CopathNode<NodeIndex>> {
         NodeIndex::from(index).direct_copath(&self.total_leaf_count())
     }
