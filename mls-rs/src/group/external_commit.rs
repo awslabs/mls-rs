@@ -190,7 +190,7 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
             resumption_secret: PreSharedKey::new(vec![]),
             sender_data_secret: SenderDataSecret::from(vec![]),
             #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
-            secret_tree: SecretTree::empty(),
+            secret_tree: SecretTree::empty(0),
         };
 
         let (mut group, _) = Group::join_with(

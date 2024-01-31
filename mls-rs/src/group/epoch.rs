@@ -4,6 +4,8 @@
 
 #[cfg(feature = "psk")]
 use crate::psk::PreSharedKey;
+#[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
+use crate::tree_kem::node::NodeIndex;
 #[cfg(feature = "prior_epoch")]
 use crate::{crypto::SignaturePublicKey, group::GroupContext, tree_kem::node::LeafIndex};
 use alloc::vec::Vec;
@@ -66,7 +68,7 @@ pub(crate) struct EpochSecrets {
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     pub(crate) sender_data_secret: SenderDataSecret,
     #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
-    pub(crate) secret_tree: SecretTree,
+    pub(crate) secret_tree: SecretTree<NodeIndex>,
 }
 
 #[derive(Clone, Debug, PartialEq, MlsEncode, MlsDecode, MlsSize)]

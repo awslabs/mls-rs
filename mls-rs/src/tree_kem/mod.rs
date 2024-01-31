@@ -286,11 +286,11 @@ impl TreeKemPublic {
         *existing_leaf = update_path.leaf_node.clone();
 
         // Update the rest of the nodes on the direct path
-        let path = self.nodes.direct_path(sender)?;
+        let path = self.nodes.direct_copath(sender);
 
-        for (node, dp) in update_path.nodes.iter().zip(path) {
+        for (node, pn) in update_path.nodes.iter().zip(path) {
             node.as_ref()
-                .map(|n| self.update_node(n.public_key.clone(), dp))
+                .map(|n| self.update_node(n.public_key.clone(), pn.path))
                 .transpose()?;
         }
 
@@ -319,8 +319,8 @@ impl TreeKemPublic {
 
     fn update_unmerged(&mut self, index: LeafIndex) -> Result<(), MlsError> {
         // For a given leaf index, find parent nodes and add the leaf to the unmerged leaf
-        self.nodes.direct_path(index)?.into_iter().for_each(|i| {
-            if let Ok(p) = self.nodes.borrow_as_parent_mut(i) {
+        self.nodes.direct_copath(index).into_iter().for_each(|i| {
+            if let Ok(p) = self.nodes.borrow_as_parent_mut(i.path) {
                 p.unmerged_leaves.push(index)
             }
         });
@@ -856,13 +856,13 @@ pub(crate) mod test_utils {
         ) {
             let committer = LeafIndex(committer);
 
-            let path = self.tree.nodes.direct_path(committer).unwrap();
+            let path = self.tree.nodes.direct_copath(committer);
             let filtered = self.tree.nodes.filtered(committer).unwrap();
 
-            for (i, f) in path.into_iter().zip(filtered) {
+            for (n, f) in path.into_iter().zip(filtered) {
                 if !f {
                     self.tree
-                        .update_node(cs.kem_generate().await.unwrap().1, i)
+                        .update_node(cs.kem_generate().await.unwrap().1, n.path)
                         .unwrap();
                 }
             }
@@ -1171,15 +1171,11 @@ mod tests {
             .unwrap();
 
         // Add in parent nodes so we can detect them clearing after update
-        tree.nodes
-            .direct_path(LeafIndex(0))
-            .unwrap()
-            .iter()
-            .for_each(|&i| {
-                tree.nodes
-                    .borrow_or_fill_node_as_parent(i, &b"pub_key".to_vec().into())
-                    .unwrap();
-            });
+        tree.nodes.direct_copath(LeafIndex(0)).iter().for_each(|n| {
+            tree.nodes
+                .borrow_or_fill_node_as_parent(n.path, &b"pub_key".to_vec().into())
+                .unwrap();
+        });
 
         let original_size = tree.occupied_leaf_count();
         let original_leaf_index = LeafIndex(1);
@@ -1209,13 +1205,9 @@ mod tests {
         );
 
         // Verify that the direct path has been cleared
-        tree.nodes
-            .direct_path(LeafIndex(0))
-            .unwrap()
-            .iter()
-            .for_each(|&i| {
-                assert!(tree.nodes[i as usize].is_none());
-            });
+        tree.nodes.direct_copath(LeafIndex(0)).iter().for_each(|n| {
+            assert!(tree.nodes[n.path as usize].is_none());
+        });
     }
 
     #[cfg(feature = "by_ref_proposal")]

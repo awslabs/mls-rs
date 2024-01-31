@@ -16,6 +16,7 @@ use alloc::vec::Vec;
 use itertools::Itertools;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
+use tree_math::TreeIndex;
 
 use core::ops::Deref;
 
@@ -68,7 +69,7 @@ impl TreeKemPublic {
         P: CipherSuiteProvider,
     {
         self.initialize_hashes(cipher_suite_provider).await?;
-        let root = tree_math::root(self.total_leaf_count());
+        let root = self.total_leaf_count().root();
         Ok(self.tree_hashes.current[root as usize].to_vec())
     }
 
@@ -164,7 +165,7 @@ impl TreeKemPublic {
         cipher_suite: &P,
     ) -> Result<Vec<TreeHash>, MlsError> {
         let num_leaves = self.nodes.total_leaf_count() as usize;
-        let root = tree_math::root(num_leaves as u32);
+        let root = (num_leaves as u32).root();
 
         // The value `filtered_sets[n]` is a list of all ancestors `a` of `n` s.t. we have to compute
         // the tree hash of `n` with the unmerged leaves of `a` filtered out.
@@ -175,7 +176,10 @@ impl TreeKemPublic {
         let bfs_iter = BfsIterTopDown::new(num_leaves).skip(1);
 
         for n in bfs_iter {
-            let p = tree_math::parent(n as u32);
+            let Some((p, _)) = (n as u32).parent_sibling(&(num_leaves as u32)) else {
+                break;
+            };
+
             filtered_sets[n] = filtered_sets[p as usize].clone();
 
             if self.different_unmerged(*filtered_sets[p as usize].last().unwrap(), p)? {
@@ -266,12 +270,16 @@ async fn tree_hash<P: CipherSuiteProvider>(
 
         hashes[2 * **l as usize] = TreeHash(hash_for_leaf(*l, leaf, cipher_suite_provider).await?);
 
-        if 2 * **l != tree_math::root(num_leaves) {
-            node_queue.push_back(tree_math::parent(2 * **l));
+        if 2 * **l != num_leaves.root() {
+            let Some((p, _)) = (2 * **l).parent_sibling(&num_leaves) else {
+                break;
+            };
+
+            node_queue.push_back(p);
         }
     }
 
-    let root = tree_math::root(num_leaves);
+    let root = num_leaves.root();
 
     while let Some(n) = node_queue.pop_front() {
         let hash = TreeHash(
@@ -279,8 +287,8 @@ async fn tree_hash<P: CipherSuiteProvider>(
                 nodes.borrow_as_parent(n).ok(),
                 cipher_suite_provider,
                 filtered_leaves,
-                &hashes[tree_math::left_unchecked(n) as usize],
-                &hashes[tree_math::right_unchecked(n) as usize],
+                &hashes[n.left_unchecked() as usize],
+                &hashes[n.right_unchecked() as usize],
             )
             .await?,
         );
@@ -288,7 +296,9 @@ async fn tree_hash<P: CipherSuiteProvider>(
         hashes[n as usize] = hash;
 
         if n != root {
-            node_queue.push_back(tree_math::parent(n));
+            if let Some((p, _)) = n.parent_sibling(&num_leaves) {
+                node_queue.push_back(p);
+            }
         }
     }
 

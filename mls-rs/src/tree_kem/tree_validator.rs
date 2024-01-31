@@ -7,6 +7,7 @@ use std::collections::HashSet;
 
 #[cfg(not(feature = "std"))]
 use alloc::{vec, vec::Vec};
+use tree_math::TreeIndex;
 
 use super::node::{Node, NodeIndex};
 use crate::client::MlsError;
@@ -126,13 +127,16 @@ fn validate_unmerged(tree: &TreeKemPublic) -> Result<(), MlsError> {
     // For each leaf L, we search for the longest prefix P[1], P[2], ..., P[k] of the direct path of L
     // such that for each i=1..k, either L is in the unmerged leaves of P[i], or P[i] is blank. We will
     // then check that L is unmerged at each P[1], ..., P[k] and no other node.
-    let root = tree_math::root(tree.total_leaf_count());
+    let leaf_count = tree.total_leaf_count();
+    let root = leaf_count.root();
 
     for (index, _) in tree.nodes.non_empty_leaves() {
         let mut n = NodeIndex::from(index);
 
         while n != root {
-            let parent = tree_math::parent(n);
+            let Some((parent, _)) = n.parent_sibling(&leaf_count) else {
+                break;
+            };
 
             if tree.nodes.is_blank(parent)? {
                 n = parent;

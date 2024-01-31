@@ -102,11 +102,13 @@ async fn tree_kem() {
             let mut tree_private = TreeKemPrivate::new(LeafIndex(leaf.index));
 
             // Set and validate HPKE keys on direct path
-            let path = tree.nodes.direct_path(tree_private.self_index).unwrap();
+            let path = tree.nodes.direct_copath(tree_private.self_index);
 
             tree_private.secret_keys = Vec::new();
 
             for dp in path {
+                let dp = dp.path;
+
                 let secret = leaf
                     .path_secrets
                     .iter()

@@ -50,11 +50,11 @@ impl TreeKemPrivate {
         let mut node_secret_gen =
             PathSecretGenerator::starting_with(cipher_suite_provider, path_secret);
 
-        let path = public_tree.nodes.direct_path(self.self_index)?;
+        let path = public_tree.nodes.direct_copath(self.self_index);
         let filtered = &public_tree.nodes.filtered(self.self_index)?;
         self.secret_keys.resize(path.len() + 1, None);
 
-        for (i, (dp, f)) in path.iter().zip(filtered).enumerate().skip(lca_index) {
+        for (i, (n, f)) in path.iter().zip(filtered).enumerate().skip(lca_index) {
             if *f {
                 continue;
             }
@@ -63,7 +63,7 @@ impl TreeKemPrivate {
 
             let expected_pub_key = public_tree
                 .nodes
-                .borrow_node(*dp)?
+                .borrow_node(n.path)?
                 .as_ref()
                 .map(|n| n.public_key())
                 .ok_or(MlsError::PubKeyMismatch)?;
@@ -113,6 +113,7 @@ mod tests {
             leaf_node::test_utils::{
                 default_properties, get_basic_test_node, get_basic_test_node_sig_key,
             },
+            math::TreeIndex,
             node::LeafIndex,
         },
     };
@@ -249,7 +250,7 @@ mod tests {
         // Sabotage the public tree
         public_tree
             .nodes
-            .borrow_as_parent_mut(tree_math::root(public_tree.total_leaf_count()))
+            .borrow_as_parent_mut(public_tree.total_leaf_count().root())
             .unwrap()
             .public_key = random_bytes(32).into();
 
@@ -273,7 +274,7 @@ mod tests {
 
         let mut private_key = TreeKemPrivate::new_self_leaf(self_index, secret.clone());
 
-        private_key.secret_keys = (0..tree_math::direct_path(0, leaf_count).unwrap().len() + 1)
+        private_key.secret_keys = (0..0.direct_copath(&leaf_count).len() + 1)
             .map(|_| Some(secret.clone()))
             .collect();
 

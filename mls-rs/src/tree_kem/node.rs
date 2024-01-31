@@ -12,6 +12,7 @@ use alloc::vec::Vec;
 use core::hash::Hash;
 use core::ops::{Deref, DerefMut};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
+use tree_math::{CopathNode, TreeIndex};
 
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 pub(crate) struct Parent {
@@ -49,12 +50,6 @@ impl From<&LeafIndex> for NodeIndex {
 impl From<LeafIndex> for NodeIndex {
     fn from(leaf_index: LeafIndex) -> Self {
         leaf_index.0 * 2
-    }
-}
-
-impl LeafIndex {
-    pub(crate) fn direct_path(&self, leaf_count: u32) -> Result<Vec<NodeIndex>, MlsError> {
-        tree_math::direct_path(NodeIndex::from(self), leaf_count)
     }
 }
 
@@ -226,29 +221,27 @@ impl NodeVec {
         self.iter().step_by(2).map(|n| n.as_leaf().ok())
     }
 
-    #[inline]
-    pub fn direct_path(&self, index: LeafIndex) -> Result<Vec<NodeIndex>, MlsError> {
-        // Direct path from leaf to root
-        index.direct_path(self.total_leaf_count())
-    }
+    /*pub fn direct_path(&self, index: LeafIndex) -> Vec<NodeIndex> {
+        NodeIndex::from(index)
+            .direct_copath(&self.total_leaf_count())
+            .into_iter()
+            .map(|n| n.path)
+            .collect()
+    }*/
 
-    pub fn direct_path_copath(
-        &self,
-        index: LeafIndex,
-    ) -> Result<Vec<(NodeIndex, NodeIndex)>, MlsError> {
-        tree_math::path_copath(NodeIndex::from(index), self.total_leaf_count())
+    pub fn direct_copath(&self, index: LeafIndex) -> Vec<CopathNode<NodeIndex>> {
+        NodeIndex::from(index).direct_copath(&self.total_leaf_count())
     }
 
     // Section 8.4
     // The filtered direct path of a node is obtained from the node's direct path by removing
     // all nodes whose child on the nodes's copath has an empty resolution
     pub fn filtered(&self, index: LeafIndex) -> Result<Vec<bool>, MlsError> {
-        Ok(
-            tree_math::copath(NodeIndex::from(index), self.total_leaf_count())?
-                .into_iter()
-                .map(|cp| self.is_resolution_empty(cp))
-                .collect(),
-        )
+        Ok(NodeIndex::from(index)
+            .direct_copath(&self.total_leaf_count())
+            .into_iter()
+            .map(|cp| self.is_resolution_empty(cp.copath))
+            .collect())
     }
 
     #[inline]
@@ -272,8 +265,8 @@ impl NodeVec {
     }
 
     pub fn blank_direct_path(&mut self, leaf: LeafIndex) -> Result<(), MlsError> {
-        for i in self.direct_path(leaf)? {
-            if let Some(n) = self.get_mut(i as usize) {
+        for i in self.direct_copath(leaf) {
+            if let Some(n) = self.get_mut(i.path as usize) {
                 *n = None
             }
         }
@@ -351,9 +344,9 @@ impl NodeVec {
                 if let Node::Parent(p) = node {
                     resolution.extend(p.unmerged_leaves.iter().map(NodeIndex::from));
                 }
-            } else if index & 1 == 1 {
-                indexes.push(tree_math::right_unchecked(index));
-                indexes.push(tree_math::left_unchecked(index));
+            } else if !index.is_leaf() {
+                indexes.push(index.right_unchecked());
+                indexes.push(index.left_unchecked());
             }
         }
 
@@ -379,9 +372,9 @@ impl NodeVec {
                 if let Node::Parent(p) = node {
                     indexes.extend(p.unmerged_leaves.iter().map(NodeIndex::from));
                 }
-            } else if index & 1 == 1 {
-                indexes.push(tree_math::right_unchecked(index));
-                indexes.push(tree_math::left_unchecked(index));
+            } else if !index.is_leaf() {
+                indexes.push(index.right_unchecked());
+                indexes.push(index.left_unchecked());
             }
         }
 
@@ -490,8 +483,8 @@ mod tests {
     async fn test_direct_path() {
         let test_vec = get_test_node_vec().await;
         // Tree math is already tested in that module, just ensure equality
-        let expected = tree_math::direct_path(0, 4).unwrap();
-        let actual = test_vec.direct_path(LeafIndex(0)).unwrap();
+        let expected = 0.direct_copath(&4);
+        let actual = test_vec.direct_copath(LeafIndex(0));
         assert_eq!(actual, expected);
     }
 

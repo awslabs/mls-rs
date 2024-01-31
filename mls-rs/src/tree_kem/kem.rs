@@ -12,6 +12,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use itertools::Itertools;
 use mls_rs_codec::MlsEncode;
+use tree_math::{CopathNode, TreeIndex};
 
 #[cfg(all(not(mls_build_async), feature = "rayon"))]
 use {crate::iter::ParallelIteratorExt, rayon::prelude::*};
@@ -72,7 +73,7 @@ impl<'a> TreeKem<'a> {
         P: CipherSuiteProvider + Send + Sync,
     {
         let self_index = self.private_key.self_index;
-        let path = self.tree_kem_public.nodes.direct_path_copath(self_index)?;
+        let path = self.tree_kem_public.nodes.direct_copath(self_index);
         let filtered = self.tree_kem_public.nodes.filtered(self_index)?;
 
         self.private_key.secret_keys.resize(path.len() + 1, None);
@@ -80,7 +81,7 @@ impl<'a> TreeKem<'a> {
         let mut secret_generator = PathSecretGenerator::new(cipher_suite_provider);
         let mut path_secrets = vec![];
 
-        for (i, ((dp, _), f)) in path.iter().zip(&filtered).enumerate() {
+        for (i, (node, f)) in path.iter().zip(&filtered).enumerate() {
             if !f {
                 let secret = secret_generator.next_secret().await?;
 
@@ -88,7 +89,7 @@ impl<'a> TreeKem<'a> {
                     secret.to_hpke_key_pair(cipher_suite_provider).await?;
 
                 self.private_key.secret_keys[i + 1] = Some(secret_key);
-                self.tree_kem_public.update_node(public_key, *dp)?;
+                self.tree_kem_public.update_node(public_key, node.path)?;
                 path_secrets.push(Some(secret));
             } else {
                 self.private_key.secret_keys[i + 1] = None;
@@ -174,7 +175,7 @@ impl<'a> TreeKem<'a> {
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn encrypt_path_secrets<P: CipherSuiteProvider>(
         &self,
-        path: Vec<(u32, u32)>,
+        path: Vec<CopathNode<NodeIndex>>,
         path_secrets: &[Option<PathSecret>],
         context_bytes: &[u8],
         cipher_suite: &P,
@@ -189,13 +190,13 @@ impl<'a> TreeKem<'a> {
 
         let mut node_updates = Vec::new();
 
-        for ((_, copath_index), path_secret) in path.into_iter().zip(path_secrets.iter()) {
+        for (index, path_secret) in path.into_iter().zip(path_secrets.iter()) {
             if let Some(path_secret) = path_secret {
                 node_updates.push(
                     self.encrypt_copath_node_resolution(
                         cipher_suite,
                         path_secret,
-                        copath_index,
+                        index.copath,
                         context_bytes,
                         &excluding,
                     )
@@ -210,7 +211,7 @@ impl<'a> TreeKem<'a> {
     #[cfg(all(not(mls_build_async), feature = "rayon"))]
     fn encrypt_path_secrets<P: CipherSuiteProvider>(
         &self,
-        path: Vec<(u32, u32)>,
+        path: Vec<CopathNode<NodeIndex>>,
         path_secrets: &[Option<PathSecret>],
         context_bytes: &[u8],
         cipher_suite: &P,
@@ -225,12 +226,12 @@ impl<'a> TreeKem<'a> {
 
         path.into_par_iter()
             .zip(path_secrets.par_iter())
-            .filter_map(|((_, copath_index), path_secret)| {
+            .filter_map(|(node, path_secret)| {
                 path_secret.as_ref().map(|path_secret| {
                     self.encrypt_copath_node_resolution(
                         cipher_suite,
                         path_secret,
-                        copath_index,
+                        node.copath,
                         context_bytes,
                         &excluding,
                     )
@@ -256,10 +257,13 @@ impl<'a> TreeKem<'a> {
         let lca_index =
             tree_math::leaf_lca_level(self_index.into(), sender_index.into()) as usize - 2;
 
-        let mut path = self.tree_kem_public.nodes.direct_path(self_index)?;
-        path.insert(0, self_index.into());
+        let mut path = self.tree_kem_public.nodes.direct_copath(self_index);
+        let leaf = CopathNode::new(self_index.into(), 0);
+        path.insert(0, leaf);
         let resolved_pos = self.find_resolved_pos(&path, lca_index)?;
-        let ct_pos = self.find_ciphertext_pos(path[lca_index], path[resolved_pos], added_leaves)?;
+
+        let ct_pos =
+            self.find_ciphertext_pos(path[lca_index].path, path[resolved_pos].path, added_leaves)?;
 
         let lca_node = update_path.nodes[lca_index]
             .as_ref()
@@ -277,7 +281,7 @@ impl<'a> TreeKem<'a> {
         let public = self
             .tree_kem_public
             .nodes
-            .borrow_node(path[resolved_pos])?
+            .borrow_node(path[resolved_pos].path)?
             .as_ref()
             .ok_or(MlsError::UpdateErrorNoSecretKey)?
             .public_key();
@@ -351,7 +355,9 @@ impl<'a> TreeKem<'a> {
 
         let ctxts = ctxts.try_collect().await?;
 
-        let path_index = tree_math::parent(copath_index);
+        let (path_index, _) = copath_index
+            .parent_sibling(&self.tree_kem_public.total_leaf_count())
+            .ok_or(MlsError::ExpectedNode)?;
 
         Ok(UpdatePathNode {
             public_key: self
@@ -367,10 +373,10 @@ impl<'a> TreeKem<'a> {
     #[inline]
     fn find_resolved_pos(
         &self,
-        path: &[NodeIndex],
+        path: &[CopathNode<NodeIndex>],
         mut lca_index: usize,
     ) -> Result<usize, MlsError> {
-        while self.tree_kem_public.nodes.is_blank(path[lca_index])? {
+        while self.tree_kem_public.nodes.is_blank(path[lca_index].path)? {
             lca_index -= 1;
         }
 
@@ -425,6 +431,7 @@ mod tests {
     use alloc::{format, vec, vec::Vec};
     use mls_rs_codec::MlsEncode;
     use mls_rs_core::crypto::CipherSuiteProvider;
+    use tree_math::TreeIndex;
 
     // Verify that the tree is in the correct state after generating an update path
     fn verify_tree_update_path(
@@ -435,12 +442,13 @@ mod tests {
         extensions: Option<ExtensionList>,
     ) {
         // Make sure the update path is based on the direct path of the sender
-        let direct_path = tree.nodes.direct_path(index).unwrap();
-        for (i, &dpi) in direct_path.iter().enumerate() {
+        let direct_path = tree.nodes.direct_copath(index);
+
+        for (i, n) in direct_path.iter().enumerate() {
             assert_eq!(
                 *tree
                     .nodes
-                    .borrow_node(dpi)
+                    .borrow_node(n.path)
                     .unwrap()
                     .as_ref()
                     .unwrap()
@@ -466,7 +474,7 @@ mod tests {
         }
 
         // Verify that we have a public keys up to the root
-        let root = tree_math::root(tree.total_leaf_count());
+        let root = tree.total_leaf_count().root();
         assert!(tree.nodes.borrow_node(root).unwrap().is_some());
     }
 
@@ -484,17 +492,16 @@ mod tests {
         // Make sure we have private values along the direct path, and the public keys match
         let path_iter = public_tree
             .nodes
-            .direct_path(index)
-            .unwrap()
+            .direct_copath(index)
             .into_iter()
             .enumerate();
 
-        for (i, dp) in path_iter {
+        for (i, n) in path_iter {
             let secret_key = private_tree.secret_keys[i + 1].as_ref().unwrap();
 
             let public_key = public_tree
                 .nodes
-                .borrow_node(dp)
+                .borrow_node(n.path)
                 .unwrap()
                 .as_ref()
                 .unwrap()
