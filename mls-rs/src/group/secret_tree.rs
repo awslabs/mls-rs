@@ -2,19 +2,18 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use crate::client::MlsError;
-use crate::tree_kem::math as tree_math;
-use crate::CipherSuiteProvider;
 use alloc::vec::Vec;
-use core::hash::Hash;
 use core::{
     fmt::Debug,
     ops::{Deref, DerefMut},
 };
+
+use zeroize::Zeroizing;
+
+use crate::{client::MlsError, tree_kem::math::TreeIndex, CipherSuiteProvider};
+
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
-use tree_math::TreeIndex;
-use zeroize::Zeroizing;
 
 #[cfg(feature = "std")]
 use std::collections::HashMap;
@@ -25,13 +24,6 @@ use alloc::collections::BTreeMap;
 use super::key_schedule::kdf_expand_with_label;
 
 pub(crate) const MAX_RATCHET_BACK_HISTORY: u32 = 1024;
-
-pub trait MlsCodec:
-    Clone + Debug + PartialEq + Eq + Default + MlsEncode + MlsDecode + MlsSize + Hash + Ord
-{
-}
-
-impl MlsCodec for u32 {}
 
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[repr(u8)]
@@ -86,14 +78,14 @@ impl From<Zeroizing<Vec<u8>>> for TreeSecret {
 }
 
 #[derive(Clone, Debug, PartialEq, MlsEncode, MlsDecode, MlsSize, Default)]
-struct TreeSecretsVec<T: MlsCodec> {
+struct TreeSecretsVec<T: TreeIndex> {
     #[cfg(feature = "std")]
     inner: HashMap<T, SecretTreeNode>,
     #[cfg(not(feature = "std"))]
     inner: BTreeMap<T, SecretTreeNode>,
 }
 
-impl<T: MlsCodec> TreeSecretsVec<T> {
+impl<T: TreeIndex> TreeSecretsVec<T> {
     fn set_node(&mut self, index: T, value: SecretTreeNode) {
         self.inner.insert(index, value);
     }
@@ -104,12 +96,12 @@ impl<T: MlsCodec> TreeSecretsVec<T> {
 }
 
 #[derive(Clone, Debug, PartialEq, MlsEncode, MlsDecode, MlsSize)]
-pub struct SecretTree<T: MlsCodec> {
+pub struct SecretTree<T: TreeIndex> {
     known_secrets: TreeSecretsVec<T>,
     leaf_count: T,
 }
 
-impl<T: TreeIndex + MlsCodec> SecretTree<T> {
+impl<T: TreeIndex + TreeIndex> SecretTree<T> {
     pub(crate) fn empty() -> SecretTree<T> {
         SecretTree {
             known_secrets: Default::default(),
@@ -159,7 +151,7 @@ impl SecretRatchets {
     }
 }
 
-impl<T: TreeIndex + MlsCodec> SecretTree<T> {
+impl<T: TreeIndex> SecretTree<T> {
     pub fn new(leaf_count: T, encryption_secret: Zeroizing<Vec<u8>>) -> SecretTree<T> {
         let mut known_secrets = TreeSecretsVec::default();
 
@@ -512,14 +504,9 @@ pub(crate) mod test_utils {
 
     use crate::{crypto::test_utils::try_test_cipher_suite_provider, tree_kem::math::TreeIndex};
 
-    use super::{KeyType, MlsCodec, SecretKeyRatchet, SecretTree};
+    use super::{KeyType, SecretKeyRatchet, SecretTree};
 
-    impl MlsCodec for u64 {}
-
-    pub(crate) fn get_test_tree<T: MlsCodec + TreeIndex>(
-        secret: Vec<u8>,
-        leaf_count: T,
-    ) -> SecretTree<T> {
+    pub(crate) fn get_test_tree<T: TreeIndex>(secret: Vec<u8>, leaf_count: T) -> SecretTree<T> {
         SecretTree::new(leaf_count, Zeroizing::new(secret))
     }
 
@@ -614,7 +601,7 @@ mod tests {
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn test_secret_tree_custom<T: MlsCodec + TreeIndex>(
+    async fn test_secret_tree_custom<T: TreeIndex>(
         leaf_count: T,
         leaves_to_check: Vec<T>,
         all_deleted: bool,

@@ -3,11 +3,14 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use alloc::vec::Vec;
-use core::fmt::Debug;
+use core::{fmt::Debug, hash::Hash};
+use mls_rs_codec::{MlsDecode, MlsEncode};
 
 use super::node::LeafIndex;
 
-pub trait TreeIndex: Sized + Send + Sync + Eq + Clone + Debug {
+pub trait TreeIndex:
+    Sized + Send + Sync + Eq + Clone + Debug + Default + MlsEncode + MlsDecode + Hash + Ord
+{
     fn root(&self) -> Self;
 
     fn left_unchecked(&self) -> Self;
@@ -46,8 +49,8 @@ pub trait TreeIndex: Sized + Send + Sync + Eq + Clone + Debug {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, core::fmt::Debug)]
-pub struct CopathNode<T: Clone + PartialEq + Eq + core::fmt::Debug> {
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct CopathNode<T> {
     pub path: T,
     pub copath: T,
 }
@@ -58,8 +61,8 @@ impl<T: Clone + PartialEq + Eq + core::fmt::Debug> CopathNode<T> {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, core::fmt::Debug)]
-pub struct ParentSibling<T: Clone + PartialEq + Eq + core::fmt::Debug> {
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct ParentSibling<T> {
     pub parent: T,
     pub sibling: T,
 }
@@ -77,14 +80,14 @@ macro_rules! impl_tree_stdint {
                 *self - 1
             }
 
-            /// Panicks if `x` is even.
+            /// Panicks if `x` is even in debug, overflows in release.
             fn left_unchecked(&self) -> Self {
-                *self ^ (0x01 << (level(*self) - 1))
+                *self ^ (0x01 << (self.trailing_ones() - 1))
             }
 
-            /// Panicks if `x` is even.
+            /// Panicks if `x` is even in debug, overflows in release.
             fn right_unchecked(&self) -> Self {
-                *self ^ (0x03 << (level(*self) - 1))
+                *self ^ (0x03 << (self.trailing_ones() - 1))
             }
 
             fn parent_sibling(&self, leaf_count: &Self) -> Option<ParentSibling<Self>> {
@@ -92,7 +95,7 @@ macro_rules! impl_tree_stdint {
                     return None;
                 }
 
-                let lvl = level(*self);
+                let lvl = self.trailing_ones();
                 let p = (self & !(1 << (lvl + 1))) | (1 << lvl);
 
                 let s = if *self < p {
@@ -116,20 +119,13 @@ macro_rules! impl_tree_stdint {
                 0
             }
         }
-
-        fn level(x: $t) -> u32 {
-            x.trailing_ones()
-        }
     };
 }
 
 impl_tree_stdint!(u32);
 
 #[cfg(test)]
-mod test_utils {
-    use super::*;
-    impl_tree_stdint!(u64);
-}
+impl_tree_stdint!(u64);
 
 pub fn leaf_lca_level(x: u32, y: u32) -> u32 {
     let mut xn = x;
@@ -146,7 +142,7 @@ pub fn leaf_lca_level(x: u32, y: u32) -> u32 {
 }
 
 pub fn subtree(x: u32) -> (LeafIndex, LeafIndex) {
-    let breadth = 1 << level(x);
+    let breadth = 1 << x.trailing_ones();
     (
         LeafIndex((x + 1 - breadth) >> 1),
         LeafIndex(((x + breadth) >> 1) + 1),
