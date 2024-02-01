@@ -9,7 +9,7 @@ use mls_rs_codec::{MlsDecode, MlsEncode};
 use super::node::LeafIndex;
 
 pub trait TreeIndex:
-    Send + Sync + Eq + Clone + Debug + Default + MlsEncode + MlsDecode + Hash
+    Send + Sync + Eq + Clone + Debug + Default + MlsEncode + MlsDecode + Hash + Ord
 {
     fn root(&self) -> Self;
 
