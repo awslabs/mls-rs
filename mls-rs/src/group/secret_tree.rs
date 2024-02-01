@@ -101,7 +101,7 @@ pub struct SecretTree<T: TreeIndex> {
     leaf_count: T,
 }
 
-impl<T: TreeIndex + TreeIndex> SecretTree<T> {
+impl<T: TreeIndex> SecretTree<T> {
     pub(crate) fn empty() -> SecretTree<T> {
         SecretTree {
             known_secrets: Default::default(),
