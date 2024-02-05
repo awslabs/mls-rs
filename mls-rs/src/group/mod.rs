@@ -1276,7 +1276,7 @@ where
         if let Some(pending) = &self.pending_commit {
             let message_hash = CommitHash::compute(&self.cipher_suite_provider, &message).await?;
 
-            if &message_hash == &pending.commit_message_hash {
+            if message_hash == pending.commit_message_hash {
                 let message_description = self.apply_pending_commit().await?;
 
                 return Ok(ReceivedMessage::Commit(message_description));
