@@ -18,6 +18,9 @@ use mls_rs_core::error::IntoAnyError;
 #[cfg(feature = "std")]
 use std::collections::HashMap;
 
+#[cfg(not(feature = "std"))]
+use alloc::collections::BTreeMap;
+
 use super::key_schedule::kdf_expand_with_label;
 
 pub(crate) const MAX_RATCHET_BACK_HISTORY: u32 = 1024;
@@ -96,17 +99,22 @@ impl<T: TreeIndex> TreeSecretsVec<T> {
 #[cfg(not(feature = "std"))]
 impl<T: TreeIndex> TreeSecretsVec<T> {
     fn set_node(&mut self, index: T, value: SecretTreeNode) {
-        if let Some(i) = self.find_node(index) {
-            self.inner[i] = value
+        if let Some(i) = self.find_node(&index) {
+            self.inner[i] = (index, value)
         }
     }
 
     fn take_node(&mut self, index: &T) -> Option<SecretTreeNode> {
-        self.find_node(index).map(|i| self.inner.remove(i))
+        self.find_node(index).map(|i| self.inner.remove(i).1)
     }
 
-    fn find_node(&self, index: T) -> Option<usize> {
-        self.inner.iter().find_position(|i| i == index)
+    fn find_node(&self, index: &T) -> Option<usize> {
+        use itertools::Itertools;
+
+        self.inner
+            .iter()
+            .find_position(|(i, _)| i == index)
+            .map(|(i, _)| i)
     }
 }
 
