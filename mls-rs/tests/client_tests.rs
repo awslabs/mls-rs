@@ -450,6 +450,7 @@ async fn test_group_application_messages() {
     test_on_all_params(test_application_messages).await
 }
 
+#[cfg(feature = "private_message")]
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 async fn processing_message_from_self_returns_error(
     protocol_version: ProtocolVersion,
@@ -461,20 +462,20 @@ async fn processing_message_from_self_returns_error(
         get_test_groups(protocol_version, cipher_suite, 1, encrypt_controls).await;
     let creator_group = &mut creator_group[0];
 
-    let commit = creator_group
-        .commit(Vec::new())
+    let msg = creator_group
+        .encrypt_application_message(b"hello self", vec![])
         .await
-        .unwrap()
-        .commit_message;
+        .unwrap();
 
     let error = creator_group
-        .process_incoming_message(commit)
+        .process_incoming_message(msg)
         .await
         .unwrap_err();
 
     assert_matches!(error, MlsError::CantProcessMessageFromSelf);
 }
 
+#[cfg(feature = "private_message")]
 #[maybe_async::test(not(mls_build_async), async(mls_build_async, futures_test))]
 async fn test_processing_message_from_self_returns_error() {
     test_on_all_params(processing_message_from_self_returns_error).await;
