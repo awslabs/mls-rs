@@ -101,6 +101,8 @@ impl<T: TreeIndex> TreeSecretsVec<T> {
     fn set_node(&mut self, index: T, value: SecretTreeNode) {
         if let Some(i) = self.find_node(&index) {
             self.inner[i] = (index, value)
+        } else {
+            self.inner.push((index, value))
         }
     }
 
