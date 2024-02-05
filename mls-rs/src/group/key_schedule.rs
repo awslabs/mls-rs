@@ -26,6 +26,7 @@ use super::epoch::{EpochSecrets, SenderDataSecret};
 use super::message_signature::AuthenticatedContent;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, MlsEncode, MlsDecode, MlsSize)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct KeySchedule {
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     exporter_secret: Zeroizing<Vec<u8>>,
@@ -344,6 +345,7 @@ impl<'a, P: CipherSuiteProvider> SecretsProducer<'a, P> {
 const EXPORTER_CONTEXT: &[u8] = b"MLS 1.0 external init secret";
 
 #[derive(Clone, Debug, Eq, PartialEq, MlsEncode, MlsDecode, MlsSize, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct InitSecret(#[mls_codec(with = "mls_rs_codec::byte_vec")] Zeroizing<Vec<u8>>);
 
 impl InitSecret {

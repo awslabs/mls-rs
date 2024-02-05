@@ -17,6 +17,7 @@ use mls_rs_core::protocol_version::ProtocolVersion;
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct FramedContentAuthData {
     pub signature: MessageSignature,
     pub confirmation_tag: Option<ConfirmationTag>,
@@ -63,6 +64,7 @@ impl FramedContentAuthData {
 }
 
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AuthenticatedContent {
     pub(crate) wire_format: WireFormat,
     pub(crate) content: FramedContent,
@@ -233,6 +235,7 @@ impl<'a> Signable<'a> for AuthenticatedContent {
 
 #[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MessageSignature(#[mls_codec(with = "mls_rs_codec::byte_vec")] Vec<u8>);
 
 impl MessageSignature {

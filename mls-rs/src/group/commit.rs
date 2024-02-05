@@ -58,12 +58,14 @@ use super::proposal::CustomProposal;
 
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(mls_rs_core::arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub(crate) struct Commit {
     pub proposals: Vec<ProposalOrRef>,
     pub path: Option<UpdatePath>,
 }
 
 #[derive(Clone, PartialEq, Debug, MlsEncode, MlsDecode, MlsSize)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub(super) struct CommitGeneration {
     pub content: AuthenticatedContent,
     pub pending_private_tree: TreeKemPrivate,

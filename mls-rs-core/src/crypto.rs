@@ -17,6 +17,7 @@ pub mod test_suite;
 
 #[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 /// Ciphertext produced by [`CipherSuiteProvider::hpke_seal`]
 pub struct HpkeCiphertext {
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
@@ -33,6 +34,7 @@ pub struct HpkeCiphertext {
     all(feature = "ffi", not(test)),
     safer_ffi_gen::ffi_type(clone, opaque)
 )]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HpkePublicKey(#[mls_codec(with = "mls_rs_codec::byte_vec")] Vec<u8>);
 
 impl From<Vec<u8>> for HpkePublicKey {
@@ -68,6 +70,7 @@ impl AsRef<[u8]> for HpkePublicKey {
     all(feature = "ffi", not(test)),
     safer_ffi_gen::ffi_type(clone, opaque)
 )]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HpkeSecretKey(#[mls_codec(with = "mls_rs_codec::byte_vec")] Vec<u8>);
 
 impl From<Vec<u8>> for HpkeSecretKey {
@@ -138,6 +141,7 @@ pub trait HpkeContextR {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::ffi_type(opaque))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SignaturePublicKey(#[mls_codec(with = "mls_rs_codec::byte_vec")] Vec<u8>);
 
 #[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen)]
@@ -181,6 +185,7 @@ impl From<Vec<u8>> for SignaturePublicKey {
     ::safer_ffi_gen::ffi_type(clone, opaque)
 )]
 #[derive(Clone, Debug, PartialEq, Eq, ZeroizeOnDrop, MlsSize, MlsEncode, MlsDecode)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SignatureSecretKey {
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     bytes: Vec<u8>,

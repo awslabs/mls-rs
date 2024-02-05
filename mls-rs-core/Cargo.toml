@@ -19,6 +19,7 @@ rfc_compliant = ["x509"]
 ffi = ["dep:safer-ffi", "dep:safer-ffi-gen"]
 x509 = []
 test_suite = ["dep:serde", "dep:serde_json", "dep:hex", "dep:itertools"]
+serde = ["dep:serde"]
 
 [dependencies]
 mls-rs-codec = { version = "0.5.0", path = "../mls-rs-codec", default-features = false}

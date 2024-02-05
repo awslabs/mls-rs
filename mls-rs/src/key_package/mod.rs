@@ -31,6 +31,7 @@ pub(crate) use generator::*;
     all(feature = "ffi", not(test)),
     safer_ffi_gen::ffi_type(clone, opaque)
 )]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct KeyPackage {
     pub version: ProtocolVersion,
     pub cipher_suite: CipherSuite,

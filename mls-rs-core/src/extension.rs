@@ -19,6 +19,7 @@ pub use list::*;
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::ffi_type)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(transparent)]
 pub struct ExtensionType(u16);
 
@@ -95,6 +96,7 @@ impl IntoAnyError for ExtensionError {
     all(feature = "ffi", not(test)),
     safer_ffi_gen::ffi_type(clone, opaque)
 )]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 /// An MLS protocol [extension](https://messaginglayersecurity.rocks/mls-protocol/draft-ietf-mls-protocol.html#name-extensions).
 ///

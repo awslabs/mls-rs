@@ -8,6 +8,7 @@ use mls_rs_core::error::IntoAnyError;
 
 #[derive(Debug, Clone, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ConfirmedTranscriptHash(#[mls_codec(with = "mls_rs_codec::byte_vec")] Vec<u8>);
 
 impl Deref for ConfirmedTranscriptHash {
@@ -59,6 +60,7 @@ impl ConfirmedTranscriptHash {
 }
 
 #[derive(Debug, Clone, PartialEq, MlsSize, MlsEncode, MlsDecode)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub(crate) struct InterimTranscriptHash(#[mls_codec(with = "mls_rs_codec::byte_vec")] Vec<u8>);
 
 impl Deref for InterimTranscriptHash {

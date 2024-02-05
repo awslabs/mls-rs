@@ -42,6 +42,7 @@ impl From<&Content> for ContentType {
 )]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(u8)]
 #[non_exhaustive]
 /// Description of a [`MlsMessage`] sender
@@ -75,6 +76,7 @@ impl From<u32> for Sender {
 
 #[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode, ZeroizeOnDrop)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ApplicationData(#[mls_codec(with = "mls_rs_codec::byte_vec")] Vec<u8>);
 
 impl From<Vec<u8>> for ApplicationData {
@@ -100,6 +102,7 @@ impl ApplicationData {
 
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(u8)]
 pub(crate) enum Content {
     #[cfg(feature = "private_message")]
@@ -482,6 +485,7 @@ impl From<PublicMessage> for MlsMessagePayload {
 #[derive(
     Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, MlsSize, MlsEncode, MlsDecode,
 )]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(u16)]
 #[non_exhaustive]
 /// Content description of an [`MlsMessage`]
@@ -495,6 +499,7 @@ pub enum WireFormat {
 
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub(crate) struct FramedContent {
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     pub group_id: Vec<u8>,

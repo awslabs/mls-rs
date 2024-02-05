@@ -19,6 +19,7 @@ use crate::{group::message_processor::ProvisionalState, time::MlsTime};
 
 #[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct UpdatePathNode {
     pub public_key: HpkePublicKey,
     pub encrypted_path_secret: Vec<HpkeCiphertext>,
@@ -26,6 +27,7 @@ pub struct UpdatePathNode {
 
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct UpdatePath {
     pub leaf_node: LeafNode,
     pub nodes: Vec<UpdatePathNode>,

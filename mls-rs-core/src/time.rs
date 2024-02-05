@@ -9,6 +9,7 @@ use wasm_bindgen::prelude::*;
 
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::ffi_type)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(transparent)]
 pub struct MlsTime {
     seconds: u64,

@@ -15,6 +15,7 @@ use zeroize::Zeroizing;
 use super::hpke_encryption::HpkeEncryptable;
 
 #[derive(Debug, Clone, Eq, PartialEq, MlsSize, MlsEncode, MlsDecode)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PathSecret(#[mls_codec(with = "mls_rs_codec::byte_vec")] Zeroizing<Vec<u8>>);
 
 impl Deref for PathSecret {

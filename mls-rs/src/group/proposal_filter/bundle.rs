@@ -30,6 +30,7 @@ use crate::group::ExternalInit;
 use core::iter::empty;
 
 #[derive(Clone, Debug, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 /// A collection of proposals.
 pub struct ProposalBundle {
     pub(crate) additions: Vec<ProposalInfo<AddProposal>>,
@@ -479,6 +480,7 @@ impl<'a> FromIterator<&'a (ProposalRef, CachedProposal)> for ProposalBundle {
     all(feature = "ffi", not(test)),
     safer_ffi_gen::ffi_type(clone, opaque)
 )]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, PartialEq)]
 pub enum ProposalSource {
     ByValue,
@@ -489,6 +491,7 @@ pub enum ProposalSource {
 
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::ffi_type(opaque))]
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 /// Proposal description used as input to a
 /// [`MlsRules`](crate::MlsRules).

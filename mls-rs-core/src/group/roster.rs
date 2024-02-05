@@ -21,6 +21,7 @@ use super::ProposalType;
     all(feature = "ffi", not(test)),
     safer_ffi_gen::ffi_type(clone, opaque)
 )]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 ///  Capabilities of a MLS client
 pub struct Capabilities {
     pub protocol_versions: Vec<ProtocolVersion>,

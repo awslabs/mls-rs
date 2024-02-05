@@ -36,6 +36,7 @@ use alloc::vec::Vec;
 use super::{cipher_suite_provider, epoch::EpochSecrets, state_repo::GroupStateRepository};
 
 #[derive(Debug, PartialEq, Clone, MlsEncode, MlsDecode, MlsSize)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub(crate) struct Snapshot {
     version: u16,
     state: RawGroupState,
@@ -57,6 +58,7 @@ impl Snapshot {
 }
 
 #[derive(Debug, MlsEncode, MlsDecode, MlsSize, PartialEq, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub(crate) struct RawGroupState {
     pub(crate) context: GroupContext,
     #[cfg(all(feature = "std", feature = "by_ref_proposal"))]
