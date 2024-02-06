@@ -1273,6 +1273,16 @@ where
         &mut self,
         message: MlsMessage,
     ) -> Result<ReceivedMessage, MlsError> {
+        if let Some(pending) = &self.pending_commit {
+            let message_hash = CommitHash::compute(&self.cipher_suite_provider, &message).await?;
+
+            if message_hash == pending.commit_message_hash {
+                let message_description = self.apply_pending_commit().await?;
+
+                return Ok(ReceivedMessage::Commit(message_description));
+            }
+        }
+
         MessageProcessor::process_incoming_message(
             self,
             message,
@@ -4182,5 +4192,25 @@ mod tests {
 
             allowed.then_some(proposals).ok_or(MlsError::InvalidSender)
         }
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn group_can_receive_commit_from_self() {
+        let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
+            .await
+            .group;
+
+        let commit = group.commit(vec![]).await.unwrap();
+
+        let update = group
+            .process_incoming_message(commit.commit_message)
+            .await
+            .unwrap();
+
+        let ReceivedMessage::Commit(update) = update else {
+            panic!("expected commit message")
+        };
+
+        assert_eq!(update.committer, *group.private_tree.self_index);
     }
 }

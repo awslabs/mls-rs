@@ -5,7 +5,10 @@
 use alloc::vec;
 use alloc::vec::Vec;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
-use mls_rs_core::{crypto::SignatureSecretKey, error::IntoAnyError};
+use mls_rs_core::{
+    crypto::{CipherSuiteProvider, SignatureSecretKey},
+    error::IntoAnyError,
+};
 
 use crate::{
     cipher_suite::CipherSuite,
@@ -65,6 +68,23 @@ pub(super) struct CommitGeneration {
     pub content: AuthenticatedContent,
     pub pending_private_tree: TreeKemPrivate,
     pub pending_commit_secret: PathSecret,
+    pub commit_message_hash: CommitHash,
+}
+
+#[derive(Clone, PartialEq, Debug, MlsEncode, MlsDecode, MlsSize)]
+pub(crate) struct CommitHash(Vec<u8>);
+
+impl CommitHash {
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub(crate) async fn compute<CS: CipherSuiteProvider>(
+        cs: &CS,
+        commit: &MlsMessage,
+    ) -> Result<Self, MlsError> {
+        cs.hash(&commit.mls_encode_to_vec()?)
+            .await
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
+            .map(Self)
+    }
 }
 
 #[cfg_attr(
@@ -723,6 +743,8 @@ where
             content: auth_content,
             pending_private_tree: provisional_private_tree,
             pending_commit_secret: commit_secret,
+            commit_message_hash: CommitHash::compute(&self.cipher_suite_provider, &commit_message)
+                .await?,
         };
 
         self.pending_commit = Some(pending_commit);
