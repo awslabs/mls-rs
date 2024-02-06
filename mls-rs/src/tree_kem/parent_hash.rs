@@ -11,6 +11,7 @@ use alloc::vec::Vec;
 use core::ops::Deref;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
+use tree_math::TreeIndex;
 
 use super::leaf_node::LeafNodeSource;
 
@@ -103,18 +104,18 @@ impl TreeKemPublic {
     ) -> Result<ParentHash, MlsError> {
         let mut hash = ParentHash::empty();
 
-        for (dp, cp) in self.nodes.direct_path_copath(index)?.into_iter().rev() {
-            if self.nodes.is_resolution_empty(cp) {
+        for node in self.nodes.direct_copath(index).into_iter().rev() {
+            if self.nodes.is_resolution_empty(node.copath) {
                 continue;
             }
 
-            let parent = self.nodes.borrow_as_parent_mut(dp)?;
+            let parent = self.nodes.borrow_as_parent_mut(node.path)?;
 
             let calculated = ParentHash::new(
                 cipher_suite_provider,
                 &parent.public_key,
                 &hash,
-                &self.tree_hashes.current[cp as usize],
+                &self.tree_hashes.current[node.copath as usize],
             )
             .await?;
 
@@ -178,29 +179,24 @@ impl TreeKemPublic {
         let mut nodes_to_validate = nodes_to_validate.collect::<BTreeSet<_>>();
 
         let num_leaves = self.total_leaf_count();
-        let root = tree_math::root(num_leaves);
 
         // For each leaf l, validate all non-blank nodes on the chain from l up the tree.
         for (leaf_index, _) in self.nodes.non_empty_leaves() {
             let mut n = NodeIndex::from(leaf_index);
 
-            while n != root {
+            while let Some(mut ps) = n.parent_sibling(&num_leaves) {
                 // Find the first non-blank ancestor p of n and p's co-path child s.
-                let mut p = tree_math::parent(n);
-                let mut s = tree_math::sibling(n);
-
-                while self.nodes.is_blank(p)? {
+                while self.nodes.is_blank(ps.parent)? {
                     // If we reached the root, we're done with this chain.
-                    if p == root {
+                    let Some(ps_parent) = ps.parent.parent_sibling(&num_leaves) else {
                         return Ok(());
-                    }
+                    };
 
-                    s = tree_math::sibling(p);
-                    p = tree_math::parent(p);
+                    ps = ps_parent;
                 }
 
                 // Check is n's parent_hash field matches the parent hash of p with co-path child s.
-                let p_parent = self.nodes.borrow_as_parent(p)?;
+                let p_parent = self.nodes.borrow_as_parent(ps.parent)?;
 
                 let n_node = self
                     .nodes
@@ -212,15 +208,18 @@ impl TreeKemPublic {
                     cipher_suite_provider,
                     &p_parent.public_key,
                     &p_parent.parent_hash,
-                    &original_hashes[s as usize],
+                    &original_hashes[ps.sibling as usize],
                 )
                 .await?;
 
                 if n_node.get_parent_hash() == Some(calculated) {
                     // Check that "n is in the resolution of c, and the intersection of p's unmerged_leaves with the subtree
                     // under c is equal to the resolution of c with n removed".
-                    let c = tree_math::sibling(s);
+                    let Some(cp) = ps.sibling.parent_sibling(&num_leaves) else {
+                        return Err(MlsError::ParentHashMismatch);
+                    };
 
+                    let c = cp.sibling;
                     let c_resolution = self.nodes.get_resolution_index(c)?.into_iter();
 
                     #[cfg(feature = "std")]
@@ -229,7 +228,7 @@ impl TreeKemPublic {
                     let mut c_resolution = c_resolution.collect::<BTreeSet<_>>();
 
                     let p_unmerged_in_c_subtree = self
-                        .unmerged_in_subtree(p, c)?
+                        .unmerged_in_subtree(ps.parent, c)?
                         .iter()
                         .copied()
                         .map(|x| *x * 2);
@@ -241,10 +240,10 @@ impl TreeKemPublic {
 
                     if c_resolution.remove(&n)
                         && c_resolution == p_unmerged_in_c_subtree
-                        && nodes_to_validate.remove(&p)
+                        && nodes_to_validate.remove(&ps.parent)
                     {
                         // If n's parent_hash field matches and p has not been validated yet, mark p as validated and continue.
-                        n = p;
+                        n = ps.parent;
                     } else {
                         // If p is validated for the second time, the check fails ("all non-blank parent nodes are covered by exactly one such chain").
                         return Err(MlsError::ParentHashMismatch);

@@ -2,21 +2,23 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use crate::client::MlsError;
-use crate::tree_kem::math as tree_math;
-use crate::tree_kem::node::{LeafIndex, NodeIndex};
-use crate::CipherSuiteProvider;
-use alloc::vec;
 use alloc::vec::Vec;
-use core::ops::{Deref, DerefMut};
-use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
-use mls_rs_core::error::IntoAnyError;
+use core::{
+    fmt::Debug,
+    ops::{Deref, DerefMut},
+};
+
 use zeroize::Zeroizing;
 
-#[cfg(all(feature = "std", feature = "out_of_order"))]
+use crate::{client::MlsError, tree_kem::math::TreeIndex, CipherSuiteProvider};
+
+use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
+use mls_rs_core::error::IntoAnyError;
+
+#[cfg(feature = "std")]
 use std::collections::HashMap;
 
-#[cfg(all(not(feature = "std"), feature = "out_of_order"))]
+#[cfg(not(feature = "std"))]
 use alloc::collections::BTreeMap;
 
 use super::key_schedule::kdf_expand_with_label;
@@ -31,14 +33,6 @@ enum SecretTreeNode {
 }
 
 impl SecretTreeNode {
-    fn into_ratchet(self) -> Option<SecretRatchets> {
-        if let SecretTreeNode::Ratchet(ratchets) = self {
-            Some(ratchets)
-        } else {
-            None
-        }
-    }
-
     fn into_secret(self) -> Option<TreeSecret> {
         if let SecretTreeNode::Secret(secret) = self {
             Some(secret)
@@ -83,54 +77,60 @@ impl From<Zeroizing<Vec<u8>>> for TreeSecret {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, MlsEncode, MlsDecode, MlsSize, Default)]
+struct TreeSecretsVec<T: TreeIndex> {
+    #[cfg(feature = "std")]
+    inner: HashMap<T, SecretTreeNode>,
+    #[cfg(not(feature = "std"))]
+    inner: Vec<(T, SecretTreeNode)>,
+}
+
+#[cfg(feature = "std")]
+impl<T: TreeIndex> TreeSecretsVec<T> {
+    fn set_node(&mut self, index: T, value: SecretTreeNode) {
+        self.inner.insert(index, value);
+    }
+
+    fn take_node(&mut self, index: &T) -> Option<SecretTreeNode> {
+        self.inner.remove(index)
+    }
+}
+
+#[cfg(not(feature = "std"))]
+impl<T: TreeIndex> TreeSecretsVec<T> {
+    fn set_node(&mut self, index: T, value: SecretTreeNode) {
+        if let Some(i) = self.find_node(&index) {
+            self.inner[i] = (index, value)
+        } else {
+            self.inner.push((index, value))
+        }
+    }
+
+    fn take_node(&mut self, index: &T) -> Option<SecretTreeNode> {
+        self.find_node(index).map(|i| self.inner.remove(i).1)
+    }
+
+    fn find_node(&self, index: &T) -> Option<usize> {
+        use itertools::Itertools;
+
+        self.inner
+            .iter()
+            .find_position(|(i, _)| i == index)
+            .map(|(i, _)| i)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, MlsEncode, MlsDecode, MlsSize)]
-struct TreeSecretsVec(Vec<Option<SecretTreeNode>>);
-
-impl Deref for TreeSecretsVec {
-    type Target = Vec<Option<SecretTreeNode>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
+pub struct SecretTree<T: TreeIndex> {
+    known_secrets: TreeSecretsVec<T>,
+    leaf_count: T,
 }
 
-impl DerefMut for TreeSecretsVec {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-impl TreeSecretsVec {
-    fn replace_node(
-        &mut self,
-        index: NodeIndex,
-        value: Option<SecretTreeNode>,
-    ) -> Result<(), MlsError> {
-        self.get_mut(index as usize)
-            .ok_or(MlsError::InvalidNodeIndex(index))
-            .map(|n| *n = value)
-    }
-
-    fn get_secret(&self, index: NodeIndex) -> Option<SecretTreeNode> {
-        self.get(index as usize).and_then(|n| n.clone())
-    }
-
-    fn total_leaf_count(&self) -> u32 {
-        ((self.len() / 2 + 1) as u32).next_power_of_two()
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, MlsEncode, MlsDecode, MlsSize)]
-pub struct SecretTree {
-    known_secrets: TreeSecretsVec,
-    leaf_count: u32,
-}
-
-impl SecretTree {
-    pub(crate) fn empty() -> SecretTree {
+impl<T: TreeIndex> SecretTree<T> {
+    pub(crate) fn empty() -> SecretTree<T> {
         SecretTree {
-            known_secrets: TreeSecretsVec(vec![]),
-            leaf_count: 0,
+            known_secrets: Default::default(),
+            leaf_count: T::zero(),
         }
     }
 }
@@ -176,12 +176,12 @@ impl SecretRatchets {
     }
 }
 
-impl SecretTree {
-    pub fn new(leaf_count: u32, encryption_secret: Zeroizing<Vec<u8>>) -> SecretTree {
-        let mut known_secrets = TreeSecretsVec(vec![None; (leaf_count * 2 - 1) as usize]);
+impl<T: TreeIndex> SecretTree<T> {
+    pub fn new(leaf_count: T, encryption_secret: Zeroizing<Vec<u8>>) -> SecretTree<T> {
+        let mut known_secrets = TreeSecretsVec::default();
 
-        known_secrets[tree_math::root(leaf_count) as usize] =
-            Some(SecretTreeNode::Secret(TreeSecret::from(encryption_secret)));
+        let root_secret = SecretTreeNode::Secret(TreeSecret::from(encryption_secret));
+        known_secrets.set_node(leaf_count.root(), root_secret);
 
         Self {
             known_secrets,
@@ -193,11 +193,13 @@ impl SecretTree {
     async fn consume_node<P: CipherSuiteProvider>(
         &mut self,
         cipher_suite_provider: &P,
-        index: NodeIndex,
+        index: &T,
     ) -> Result<(), MlsError> {
-        if let Some(secret) = self.read_node(index)?.and_then(|n| n.into_secret()) {
-            let left_index = tree_math::left(index)?;
-            let right_index = tree_math::right(index)?;
+        let node = self.known_secrets.take_node(index);
+
+        if let Some(secret) = node.and_then(|n| n.into_secret()) {
+            let left_index = index.left().ok_or(MlsError::LeafNodeNoChildren)?;
+            let right_index = index.right().ok_or(MlsError::LeafNodeNoChildren)?;
 
             let left_secret =
                 kdf_expand_with_label(cipher_suite_provider, &secret, b"tree", b"left", None)
@@ -207,61 +209,45 @@ impl SecretTree {
                 kdf_expand_with_label(cipher_suite_provider, &secret, b"tree", b"right", None)
                     .await?;
 
-            self.write_node(left_index, Some(SecretTreeNode::Secret(left_secret.into())))?;
+            self.known_secrets
+                .set_node(left_index, SecretTreeNode::Secret(left_secret.into()));
 
-            self.write_node(
-                right_index,
-                Some(SecretTreeNode::Secret(right_secret.into())),
-            )?;
-
-            self.write_node(index, None)
-        } else {
-            Ok(()) // If the node is empty we can just skip it
+            self.known_secrets
+                .set_node(right_index, SecretTreeNode::Secret(right_secret.into()));
         }
+
+        Ok(())
     }
 
-    fn read_node(&self, index: NodeIndex) -> Result<Option<SecretTreeNode>, MlsError> {
-        Ok(self.known_secrets.get_secret(index))
-    }
-
-    fn write_node(
-        &mut self,
-        index: NodeIndex,
-        value: Option<SecretTreeNode>,
-    ) -> Result<(), MlsError> {
-        self.known_secrets.replace_node(index, value)
-    }
-
-    // Start at the root node and work your way down consuming any intermediates needed
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn leaf_secret_ratchets<P: CipherSuiteProvider>(
+    async fn take_leaf_ratchet<P: CipherSuiteProvider>(
         &mut self,
         cipher_suite: &P,
-        leaf_index: LeafIndex,
+        leaf_index: &T,
     ) -> Result<SecretRatchets, MlsError> {
-        if let Some(ratchet) = self
-            .read_node(leaf_index.into())?
-            .and_then(|n| n.into_ratchet())
-        {
-            return Ok(ratchet);
-        }
+        let node_index = leaf_index;
 
-        let path = leaf_index.direct_path(self.known_secrets.total_leaf_count())?;
+        let node = match self.known_secrets.take_node(node_index) {
+            Some(node) => node,
+            None => {
+                // Start at the root node and work your way down consuming any intermediates needed
+                for i in node_index.direct_copath(&self.leaf_count).into_iter().rev() {
+                    self.consume_node(cipher_suite, &i.path).await?;
+                }
 
-        for i in path.into_iter().rev() {
-            self.consume_node(cipher_suite, i).await?;
-        }
+                self.known_secrets
+                    .take_node(node_index)
+                    .ok_or(MlsError::InvalidLeafConsumption)?
+            }
+        };
 
-        let secret = self
-            .read_node(leaf_index.into())?
-            .and_then(|n| n.into_secret())
-            .ok_or(MlsError::InvalidLeafConsumption)?;
-
-        self.write_node(leaf_index.into(), None)?;
-
-        Ok(SecretRatchets {
-            application: SecretKeyRatchet::new(cipher_suite, &secret, KeyType::Application).await?,
-            handshake: SecretKeyRatchet::new(cipher_suite, &secret, KeyType::Handshake).await?,
+        Ok(match node {
+            SecretTreeNode::Ratchet(ratchet) => ratchet,
+            SecretTreeNode::Secret(secret) => SecretRatchets {
+                application: SecretKeyRatchet::new(cipher_suite, &secret, KeyType::Application)
+                    .await?,
+                handshake: SecretKeyRatchet::new(cipher_suite, &secret, KeyType::Handshake).await?,
+            },
         })
     }
 
@@ -269,12 +255,14 @@ impl SecretTree {
     pub async fn next_message_key<P: CipherSuiteProvider>(
         &mut self,
         cipher_suite: &P,
-        leaf_index: LeafIndex,
+        leaf_index: T,
         key_type: KeyType,
     ) -> Result<MessageKeyData, MlsError> {
-        let mut ratchet = self.leaf_secret_ratchets(cipher_suite, leaf_index).await?;
+        let mut ratchet = self.take_leaf_ratchet(cipher_suite, &leaf_index).await?;
         let res = ratchet.next_message_key(cipher_suite, key_type).await?;
-        self.write_node(leaf_index.into(), Some(SecretTreeNode::Ratchet(ratchet)))?;
+
+        self.known_secrets
+            .set_node(leaf_index, SecretTreeNode::Ratchet(ratchet));
 
         Ok(res)
     }
@@ -283,17 +271,18 @@ impl SecretTree {
     pub async fn message_key_generation<P: CipherSuiteProvider>(
         &mut self,
         cipher_suite: &P,
-        leaf_index: LeafIndex,
+        leaf_index: T,
         key_type: KeyType,
         generation: u32,
     ) -> Result<MessageKeyData, MlsError> {
-        let mut ratchet = self.leaf_secret_ratchets(cipher_suite, leaf_index).await?;
+        let mut ratchet = self.take_leaf_ratchet(cipher_suite, &leaf_index).await?;
 
         let res = ratchet
             .message_key_generation(cipher_suite, generation, key_type)
             .await?;
 
-        self.write_node(leaf_index.into(), Some(SecretTreeNode::Ratchet(ratchet)))?;
+        self.known_secrets
+            .set_node(leaf_index, SecretTreeNode::Ratchet(ratchet));
 
         Ok(res)
     }
@@ -538,22 +527,22 @@ pub(crate) mod test_utils {
     use mls_rs_core::crypto::CipherSuiteProvider;
     use zeroize::Zeroizing;
 
-    use crate::{crypto::test_utils::try_test_cipher_suite_provider, tree_kem};
+    use crate::{crypto::test_utils::try_test_cipher_suite_provider, tree_kem::math::TreeIndex};
 
     use super::{KeyType, SecretKeyRatchet, SecretTree};
 
-    pub(crate) fn get_test_tree(secret: Vec<u8>, leaf_count: u32) -> SecretTree {
+    pub(crate) fn get_test_tree<T: TreeIndex>(secret: Vec<u8>, leaf_count: T) -> SecretTree<T> {
         SecretTree::new(leaf_count, Zeroizing::new(secret))
     }
 
-    impl SecretTree {
+    impl SecretTree<u32> {
         pub(crate) fn get_root_secret(&self) -> Vec<u8> {
-            self.read_node(tree_kem::math::root(self.leaf_count))
-                .unwrap()
+            self.known_secrets
+                .clone()
+                .take_node(&self.leaf_count.root())
                 .unwrap()
                 .into_secret()
                 .unwrap()
-                .0
                 .to_vec()
         }
     }
@@ -609,12 +598,15 @@ pub(crate) mod test_utils {
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
+
     use crate::{
         cipher_suite::CipherSuite,
         client::test_utils::TEST_CIPHER_SUITE,
         crypto::test_utils::{
             test_cipher_suite_provider, try_test_cipher_suite_provider, TestCryptoProvider,
         },
+        tree_kem::node::NodeIndex,
     };
 
     #[cfg(not(mls_build_async))]
@@ -629,18 +621,27 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_secret_tree() {
+        test_secret_tree_custom(16u32, (0..16).map(|i| 2 * i).collect(), true).await;
+        test_secret_tree_custom(1u64 << 62, (1..62).map(|i| 1u64 << i).collect(), false).await;
+    }
+
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn test_secret_tree_custom<T: TreeIndex>(
+        leaf_count: T,
+        leaves_to_check: Vec<T>,
+        all_deleted: bool,
+    ) {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let cs_provider = test_cipher_suite_provider(cipher_suite);
 
             let test_secret = vec![0u8; cs_provider.kdf_extract_size()];
-
-            let mut test_tree = get_test_tree(test_secret.clone(), 16);
+            let mut test_tree = get_test_tree(test_secret, leaf_count.clone());
 
             let mut secrets = Vec::<SecretRatchets>::new();
 
-            for i in 0..16 {
+            for i in &leaves_to_check {
                 let secret = test_tree
-                    .leaf_secret_ratchets(&test_cipher_suite_provider(cipher_suite), LeafIndex(i))
+                    .take_leaf_ratchet(&test_cipher_suite_provider(cipher_suite), i)
                     .await
                     .unwrap();
 
@@ -648,12 +649,7 @@ mod tests {
             }
 
             // Verify the tree is now completely empty
-            let full = test_tree
-                .known_secrets
-                .iter()
-                .filter(|n| n.is_some())
-                .count();
-            assert_eq!(full, 0);
+            assert!(!all_deleted || test_tree.known_secrets.inner.is_empty());
 
             // Verify that all the secrets are unique
             let count = secrets.len();
@@ -844,7 +840,7 @@ mod tests {
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn get_ratchet_data(
-        secret_tree: &mut SecretTree,
+        secret_tree: &mut SecretTree<NodeIndex>,
         cipher_suite: CipherSuite,
     ) -> Vec<Ratchet> {
         let provider = test_cipher_suite_provider(cipher_suite);
@@ -852,7 +848,7 @@ mod tests {
 
         for index in 0..16 {
             let mut ratchets = secret_tree
-                .leaf_secret_ratchets(&provider, LeafIndex(index))
+                .take_leaf_ratchet(&provider, &(index * 2))
                 .await
                 .unwrap();
 
@@ -943,7 +939,7 @@ mod interop_tests {
 
     use crate::{
         crypto::test_utils::try_test_cipher_suite_provider,
-        group::{ciphertext_processor::InteropSenderData, secret_tree::KeyType, LeafIndex},
+        group::{ciphertext_processor::InteropSenderData, secret_tree::KeyType},
     };
 
     use super::SecretTree;
@@ -970,7 +966,7 @@ mod interop_tests {
                     let key = tree
                         .message_key_generation(
                             &cs,
-                            LeafIndex(index as u32),
+                            (index as u32) * 2,
                             KeyType::Application,
                             leaf.generation,
                         )
@@ -983,7 +979,7 @@ mod interop_tests {
                     let key = tree
                         .message_key_generation(
                             &cs,
-                            LeafIndex(index as u32),
+                            (index as u32) * 2,
                             KeyType::Handshake,
                             leaf.generation,
                         )
@@ -1045,7 +1041,7 @@ mod interop_tests {
                     .map(|leaf| {
                         gens.into_iter()
                             .map(|gen| {
-                                let index = LeafIndex(leaf);
+                                let index = leaf * 2u32;
 
                                 let handshake_key = tree
                                     .message_key_generation(&cs, index, KeyType::Handshake, gen)

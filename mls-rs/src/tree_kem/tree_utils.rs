@@ -8,10 +8,8 @@ use core::borrow::BorrowMut;
 
 use debug_tree::TreeBuilder;
 
-use super::node::NodeIndex;
-use super::tree_math::{left_unchecked, right_unchecked};
-use super::{math::root, node::NodeVec};
-use crate::client::MlsError;
+use super::node::{NodeIndex, NodeVec};
+use crate::{client::MlsError, tree_kem::math::TreeIndex};
 
 pub(crate) fn build_tree(
     tree: &mut TreeBuilder,
@@ -30,7 +28,7 @@ pub(crate) fn build_tree(
     // Parent Leaf
     let mut parent_tag = format!("{blank_tag}Parent ({idx})");
 
-    if root(nodes.total_leaf_count()) == idx {
+    if nodes.total_leaf_count().root() == idx {
         parent_tag = format!("{blank_tag}Root ({idx})");
     }
 
@@ -56,8 +54,8 @@ pub(crate) fn build_tree(
     let mut branch = tree.add_branch(&parent_tag);
 
     //This cannot panic, as we already checked that idx is not a leaf
-    build_tree(tree, nodes, left_unchecked(idx))?;
-    build_tree(tree, nodes, right_unchecked(idx))?;
+    build_tree(tree, nodes, idx.left_unchecked())?;
+    build_tree(tree, nodes, idx.right_unchecked())?;
 
     branch.release();
 
@@ -67,7 +65,7 @@ pub(crate) fn build_tree(
 pub(crate) fn build_ascii_tree(nodes: &NodeVec) -> String {
     let leaves_count: u32 = nodes.total_leaf_count();
     let mut tree = TreeBuilder::new();
-    build_tree(tree.borrow_mut(), nodes, root(leaves_count)).unwrap();
+    build_tree(tree.borrow_mut(), nodes, leaves_count.root()).unwrap();
     tree.string()
 }
 

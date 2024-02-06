@@ -719,14 +719,14 @@ where
         let path = provisional_state
             .public_tree
             .nodes
-            .direct_path(self_index)?;
+            .direct_copath(self_index);
 
         provisional_private_tree
             .secret_keys
             .resize(path.len() + 1, None);
 
         for (i, n) in path.iter().enumerate() {
-            if provisional_state.public_tree.nodes.is_blank(*n)? {
+            if provisional_state.public_tree.nodes.is_blank(n.path)? {
                 provisional_private_tree.secret_keys[i + 1] = None;
             }
         }
@@ -1512,7 +1512,7 @@ where
     pub fn next_encryption_key(&mut self) -> Result<MessageKey, MlsError> {
         self.epoch_secrets.secret_tree.next_message_key(
             &self.cipher_suite_provider,
-            self.private_tree.self_index,
+            crate::tree_kem::node::NodeIndex::from(self.private_tree.self_index),
             KeyType::Application,
         )
     }
@@ -1525,7 +1525,7 @@ where
     ) -> Result<MessageKey, MlsError> {
         self.epoch_secrets.secret_tree.message_key_generation(
             &self.cipher_suite_provider,
-            LeafIndex(sender),
+            crate::tree_kem::node::NodeIndex::from(sender),
             KeyType::Application,
             generation,
         )

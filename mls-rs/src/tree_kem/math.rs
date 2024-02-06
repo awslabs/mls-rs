@@ -3,122 +3,129 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use alloc::vec::Vec;
-
-use crate::client::MlsError;
+use core::{fmt::Debug, hash::Hash};
+use mls_rs_codec::{MlsDecode, MlsEncode};
 
 use super::node::LeafIndex;
 
-pub fn level(x: u32) -> u32 {
-    x.trailing_ones()
-}
+pub trait TreeIndex:
+    Send + Sync + Eq + Clone + Debug + Default + MlsEncode + MlsDecode + Hash + Ord
+{
+    fn root(&self) -> Self;
 
-pub fn root(n: u32) -> u32 {
-    n - 1
-}
+    fn left_unchecked(&self) -> Self;
+    fn right_unchecked(&self) -> Self;
 
-#[cfg(any(feature = "secret_tree_access", feature = "private_message", test))]
-pub fn left(x: u32) -> Result<u32, MlsError> {
-    if x & 1 == 0 {
-        Err(MlsError::LeafNodeNoChildren)
-    } else {
-        Ok(left_unchecked(x))
+    fn parent_sibling(&self, leaf_count: &Self) -> Option<ParentSibling<Self>>;
+    fn is_leaf(&self) -> bool;
+    fn is_in_tree(&self, root: &Self) -> bool;
+
+    fn zero() -> Self;
+
+    fn left(&self) -> Option<Self> {
+        (!self.is_leaf()).then(|| self.left_unchecked())
+    }
+
+    fn right(&self) -> Option<Self> {
+        (!self.is_leaf()).then(|| self.right_unchecked())
+    }
+
+    fn direct_copath(&self, leaf_count: &Self) -> Vec<CopathNode<Self>> {
+        let root = leaf_count.root();
+
+        if !self.is_in_tree(&root) {
+            return Vec::new();
+        }
+
+        let mut path = Vec::new();
+        let mut parent = self.clone();
+
+        while let Some(ps) = parent.parent_sibling(leaf_count) {
+            path.push(CopathNode::new(ps.parent.clone(), ps.sibling));
+            parent = ps.parent;
+        }
+
+        path
     }
 }
 
-/// Panicks if `x` is even.
-pub fn left_unchecked(x: u32) -> u32 {
-    x ^ (0x01 << (level(x) - 1))
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct CopathNode<T> {
+    pub path: T,
+    pub copath: T,
 }
 
-#[cfg(any(feature = "secret_tree_access", feature = "private_message", test))]
-pub fn right(x: u32) -> Result<u32, MlsError> {
-    if x & 1 == 0 {
-        Err(MlsError::LeafNodeNoChildren)
-    } else {
-        Ok(right_unchecked(x))
+impl<T: Clone + PartialEq + Eq + core::fmt::Debug> CopathNode<T> {
+    pub fn new(path: T, copath: T) -> CopathNode<T> {
+        CopathNode { path, copath }
     }
 }
 
-/// Panicks if `x` is even.
-pub fn right_unchecked(x: u32) -> u32 {
-    x ^ (0x03 << (level(x) - 1))
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct ParentSibling<T> {
+    pub parent: T,
+    pub sibling: T,
 }
 
-pub fn parent(x: u32) -> u32 {
-    let lvl = level(x);
-    (x & !(1 << (lvl + 1))) | (1 << lvl)
-}
-
-pub fn sibling(x: u32) -> u32 {
-    let p = parent(x);
-
-    if x < p {
-        right_unchecked(p)
-    } else {
-        left_unchecked(p)
+impl<T: Clone + PartialEq + Eq + core::fmt::Debug> ParentSibling<T> {
+    pub fn new(parent: T, sibling: T) -> ParentSibling<T> {
+        ParentSibling { parent, sibling }
     }
 }
 
-pub fn direct_path(x: u32, n: u32) -> Result<Vec<u32>, MlsError> {
-    if x > 2 * n - 1 {
-        return Err(MlsError::InvalidTreeIndex);
-    }
+macro_rules! impl_tree_stdint {
+    ($t:ty) => {
+        impl TreeIndex for $t {
+            fn root(&self) -> $t {
+                *self - 1
+            }
 
-    let mut d = Vec::new();
-    let mut m = 1 << (level(x) + 1);
+            /// Panicks if `x` is even in debug, overflows in release.
+            fn left_unchecked(&self) -> Self {
+                *self ^ (0x01 << (self.trailing_ones() - 1))
+            }
 
-    while m <= n {
-        d.push((x & !m) | (m - 1));
-        m <<= 1;
-    }
+            /// Panicks if `x` is even in debug, overflows in release.
+            fn right_unchecked(&self) -> Self {
+                *self ^ (0x03 << (self.trailing_ones() - 1))
+            }
 
-    Ok(d)
+            fn parent_sibling(&self, leaf_count: &Self) -> Option<ParentSibling<Self>> {
+                if self == &leaf_count.root() {
+                    return None;
+                }
+
+                let lvl = self.trailing_ones();
+                let p = (self & !(1 << (lvl + 1))) | (1 << lvl);
+
+                let s = if *self < p {
+                    p.right_unchecked()
+                } else {
+                    p.left_unchecked()
+                };
+
+                Some(ParentSibling::new(p, s))
+            }
+
+            fn is_leaf(&self) -> bool {
+                self & 1 == 0
+            }
+
+            fn is_in_tree(&self, root: &Self) -> bool {
+                *self <= 2 * root
+            }
+
+            fn zero() -> Self {
+                0
+            }
+        }
+    };
 }
 
-pub fn copath(mut x: u32, n: u32) -> Result<Vec<u32>, MlsError> {
-    if x > 2 * n - 1 {
-        return Err(MlsError::InvalidTreeIndex);
-    }
+impl_tree_stdint!(u32);
 
-    let mut d = Vec::new();
-
-    while x != root(n) {
-        let p = parent(x);
-
-        d.push(if x < p {
-            right_unchecked(p)
-        } else {
-            left_unchecked(p)
-        });
-
-        x = p;
-    }
-
-    Ok(d)
-}
-
-pub fn path_copath(mut x: u32, n: u32) -> Result<Vec<(u32, u32)>, MlsError> {
-    if x > 2 * n - 1 {
-        return Err(MlsError::InvalidTreeIndex);
-    }
-
-    let mut d = Vec::new();
-
-    while x != root(n) {
-        let p = parent(x);
-
-        let s = if x < p {
-            right_unchecked(p)
-        } else {
-            left_unchecked(p)
-        };
-
-        d.push((p, s));
-        x = p;
-    }
-
-    Ok(d)
-}
+#[cfg(test)]
+impl_tree_stdint!(u64);
 
 pub fn leaf_lca_level(x: u32, y: u32) -> u32 {
     let mut xn = x;
@@ -135,7 +142,7 @@ pub fn leaf_lca_level(x: u32, y: u32) -> u32 {
 }
 
 pub fn subtree(x: u32) -> (LeafIndex, LeafIndex) {
-    let breadth = 1 << level(x);
+    let breadth = 1 << x.trailing_ones();
     (
         LeafIndex((x + 1 - breadth) >> 1),
         LeafIndex(((x + breadth) >> 1) + 1),
@@ -183,6 +190,7 @@ impl Iterator for BfsIterTopDown {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use itertools::Itertools;
     use serde::{Deserialize, Serialize};
 
     #[cfg(target_arch = "wasm32")]
@@ -221,21 +229,21 @@ mod tests {
         for log_n_leaves in 0..8 {
             let n_leaves = 1 << log_n_leaves;
             let n_nodes = node_width(n_leaves);
-            let left = (0..n_nodes).map(|x| left(x).ok()).collect::<Vec<_>>();
-            let right = (0..n_nodes).map(|x| right(x).ok()).collect::<Vec<_>>();
+            let left = (0..n_nodes).map(|x| x.left()).collect::<Vec<_>>();
+            let right = (0..n_nodes).map(|x| x.right()).collect::<Vec<_>>();
 
-            let parent = (0..n_nodes)
-                .map(|x| (x != root(n_leaves)).then_some(parent(x)))
-                .collect::<Vec<_>>();
-
-            let sibling = (0..n_nodes)
-                .map(|x| (x != root(n_leaves)).then_some(sibling(x)))
-                .collect::<Vec<_>>();
+            let (parent, sibling) = (0..n_nodes)
+                .map(|x| {
+                    x.parent_sibling(&n_leaves)
+                        .map(|ps| (ps.parent, ps.sibling))
+                        .unzip()
+                })
+                .unzip();
 
             test_cases.push(TestCase {
                 n_leaves,
                 n_nodes,
-                root: root(n_leaves),
+                root: n_leaves.root(),
                 left,
                 right,
                 parent,
@@ -256,21 +264,19 @@ mod tests {
 
         for case in test_cases {
             assert_eq!(node_width(case.n_leaves), case.n_nodes);
-            assert_eq!(root(case.n_leaves), case.root);
+            assert_eq!(case.n_leaves.root(), case.root);
 
             for x in 0..case.n_nodes {
-                assert_eq!(left(x).ok(), case.left[x as usize]);
-                assert_eq!(right(x).ok(), case.right[x as usize]);
+                assert_eq!(x.left(), case.left[x as usize]);
+                assert_eq!(x.right(), case.right[x as usize]);
 
-                assert_eq!(
-                    (x != root(case.n_leaves)).then_some(sibling(x)),
-                    case.sibling[x as usize]
-                );
+                let (p, s) = x
+                    .parent_sibling(&case.n_leaves)
+                    .map(|ps| (ps.parent, ps.sibling))
+                    .unzip();
 
-                assert_eq!(
-                    (x != root(case.n_leaves)).then_some(parent(x)),
-                    case.parent[x as usize]
-                );
+                assert_eq!(p, case.parent[x as usize]);
+                assert_eq!(s, case.sibling[x as usize]);
             }
         }
     }
@@ -313,7 +319,13 @@ mod tests {
         .to_vec();
 
         for (i, item) in expected.iter().enumerate() {
-            assert_eq!(item, &direct_path(i as u32, 16).unwrap())
+            let path = (i as u32)
+                .direct_copath(&16)
+                .into_iter()
+                .map(|cp| cp.path)
+                .collect_vec();
+
+            assert_eq!(item, &path)
         }
     }
 
@@ -355,7 +367,13 @@ mod tests {
         .to_vec();
 
         for (i, item) in expected.iter().enumerate() {
-            assert_eq!(item, &copath(i as u32, 16).unwrap())
+            let copath = (i as u32)
+                .direct_copath(&16)
+                .into_iter()
+                .map(|cp| cp.copath)
+                .collect_vec();
+
+            assert_eq!(item, &copath)
         }
     }
 }

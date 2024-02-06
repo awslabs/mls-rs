@@ -16,7 +16,10 @@ use super::{
     secret_tree::{KeyType, MessageKeyData},
     GroupContext,
 };
-use crate::{client::MlsError, tree_kem::node::LeafIndex};
+use crate::{
+    client::MlsError,
+    tree_kem::node::{LeafIndex, NodeIndex},
+};
 use mls_rs_codec::MlsEncode;
 use mls_rs_core::{crypto::CipherSuiteProvider, error::IntoAnyError};
 use zeroize::Zeroizing;
@@ -67,7 +70,7 @@ where
         &mut self,
         key_type: KeyType,
     ) -> Result<MessageKeyData, MlsError> {
-        let self_index = self.group_state.self_index();
+        let self_index = NodeIndex::from(self.group_state.self_index());
 
         self.group_state
             .epoch_secrets_mut()
@@ -83,6 +86,8 @@ where
         key_type: KeyType,
         generation: u32,
     ) -> Result<MessageKeyData, MlsError> {
+        let sender = NodeIndex::from(sender);
+
         self.group_state
             .epoch_secrets_mut()
             .secret_tree
