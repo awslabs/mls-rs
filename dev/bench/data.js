@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1706558246173,
+  "lastUpdate": 1707218462400,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -7223,6 +7223,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 164270,
             "range": "± 12565",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "103590845+mulmarta@users.noreply.github.com",
+            "name": "mulmarta",
+            "username": "mulmarta"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "606bfa389104b0dbd616d0d3373864071862514c",
+          "message": "Make secret tree work with arbitrary indices (#74)\n\n* Make secret tree work with arbitrary indices, not only usize\r\n\r\n* Fixup\r\n\r\n* Fixup\r\n\r\n* Fixup\r\n\r\n* Fixup\r\n\r\n* Update mls-rs/src/group/secret_tree.rs\r\n\r\nCo-authored-by: Stephane Raux <94983192+stefunctional@users.noreply.github.com>\r\n\r\n* Replace BTreeMap by Vec\r\n\r\n* Fixup\r\n\r\n* Fixup\r\n\r\n---------\r\n\r\nCo-authored-by: Marta Mularczyk <mulmarta@amazon.com>\r\nCo-authored-by: Stephane Raux <94983192+stefunctional@users.noreply.github.com>",
+          "timestamp": "2024-02-06T12:16:43+01:00",
+          "tree_id": "f53a6289a0474cabdea83f7d6cb2167fa2a4ded5",
+          "url": "https://github.com/awslabs/mls-rs/commit/606bfa389104b0dbd616d0d3373864071862514c"
+        },
+        "date": 1707218461811,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 497734,
+            "range": "± 8488",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 512194,
+            "range": "± 18696",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 565741,
+            "range": "± 7241",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1175448,
+            "range": "± 31112",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 6850994,
+            "range": "± 25529",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1063519,
+            "range": "± 74074",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1209894,
+            "range": "± 40728",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1292899,
+            "range": "± 47345",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 714739,
+            "range": "± 16800",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 761449,
+            "range": "± 5946",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 817793,
+            "range": "± 4634",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 23567,
+            "range": "± 185",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 76021,
+            "range": "± 3805",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 144846,
+            "range": "± 2474",
             "unit": "ns/iter"
           }
         ]
