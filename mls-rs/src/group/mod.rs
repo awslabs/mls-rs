@@ -1580,6 +1580,7 @@ where
     type OutputType = ReceivedMessage;
     type CipherSuiteProvider = <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider;
 
+    #[cfg(feature = "private_message")]
     fn self_index(&self) -> Option<LeafIndex> {
         Some(self.private_tree.self_index)
     }
@@ -1800,6 +1801,7 @@ where
             && self.pending_commit.is_none())
     }
 
+    #[cfg(feature = "private_message")]
     fn min_epoch_available(&self) -> Option<u64> {
         None
     }
