@@ -23,12 +23,12 @@ pub trait TreeIndex:
     #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
     fn zero() -> Self;
 
-    #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
+    #[cfg(any(feature = "secret_tree_access", feature = "private_message", test))]
     fn left(&self) -> Option<Self> {
         (!self.is_leaf()).then(|| self.left_unchecked())
     }
 
-    #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
+    #[cfg(any(feature = "secret_tree_access", feature = "private_message", test))]
     fn right(&self) -> Option<Self> {
         (!self.is_leaf()).then(|| self.right_unchecked())
     }

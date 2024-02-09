@@ -74,6 +74,7 @@ pub(super) struct CommitGeneration {
 }
 
 #[derive(Clone, PartialEq, Debug, MlsEncode, MlsDecode, MlsSize)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub(crate) struct CommitHash(Vec<u8>);
 
 impl CommitHash {
