@@ -51,7 +51,7 @@ pub mod vec_serde {
         if s.is_human_readable() {
             String::serialize(&hex::encode(v), s)
         } else {
-            Vec::<u8>::serialize(&v, s)
+            Vec::<u8>::serialize(v, s)
         }
     }
 
