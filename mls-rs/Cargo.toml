@@ -122,6 +122,10 @@ name = "large_group"
 required-features = []
 
 [[example]]
+name = "custom"
+required-features = []
+
+[[example]]
 name = "basic_server_usage"
 required-features = ["external_client"]
 
