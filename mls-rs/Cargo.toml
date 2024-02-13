@@ -123,7 +123,7 @@ required-features = []
 
 [[example]]
 name = "custom"
-required-features = []
+required-features = ["std"]
 
 [[example]]
 name = "basic_server_usage"
