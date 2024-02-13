@@ -11,7 +11,12 @@ use mls_rs_core::error::IntoAnyError;
 
 #[derive(Debug, Clone, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct ConfirmationTag(#[mls_codec(with = "mls_rs_codec::byte_vec")] Vec<u8>);
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ConfirmationTag(
+    #[mls_codec(with = "mls_rs_codec::byte_vec")]
+    #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::vec_serde"))]
+    Vec<u8>,
+);
 
 impl Deref for ConfirmationTag {
     type Target = Vec<u8>;

@@ -568,6 +568,7 @@ where
     type OutputType = ExternalReceivedMessage;
     type CipherSuiteProvider = <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider;
 
+    #[cfg(feature = "private_message")]
     fn self_index(&self) -> Option<LeafIndex> {
         None
     }
@@ -640,6 +641,7 @@ where
         true
     }
 
+    #[cfg(feature = "private_message")]
     fn min_epoch_available(&self) -> Option<u64> {
         self.config
             .max_epoch_jitter()

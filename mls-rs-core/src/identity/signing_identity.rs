@@ -14,6 +14,7 @@ use super::Credential;
     all(feature = "ffi", not(test)),
     safer_ffi_gen::ffi_type(clone, opaque)
 )]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 /// MLS group member identity represented as a combination of a
 /// public [`SignaturePublicKey`] and [`Credential`].
 pub struct SigningIdentity {

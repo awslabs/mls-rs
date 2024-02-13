@@ -15,6 +15,7 @@ use super::{Credential, CredentialType, MlsCredential};
     all(feature = "ffi", not(test)),
     safer_ffi_gen::ffi_type(clone, opaque)
 )]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 /// Bare assertion of an identity without any additional information.
 ///
 /// The format of the encoded identity is defined by the application.
@@ -28,6 +29,7 @@ use super::{Credential, CredentialType, MlsCredential};
 pub struct BasicCredential {
     /// Underlying identifier as raw bytes.
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
+    #[cfg_attr(feature = "serde", serde(with = "crate::vec_serde"))]
     pub identifier: Vec<u8>,
 }
 

@@ -31,6 +31,7 @@ pub(crate) use generator::*;
     all(feature = "ffi", not(test)),
     safer_ffi_gen::ffi_type(clone, opaque)
 )]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct KeyPackage {
     pub version: ProtocolVersion,
     pub cipher_suite: CipherSuite,
@@ -38,6 +39,7 @@ pub struct KeyPackage {
     pub(crate) leaf_node: LeafNode,
     pub extensions: ExtensionList,
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
+    #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::vec_serde"))]
     pub signature: Vec<u8>,
 }
 

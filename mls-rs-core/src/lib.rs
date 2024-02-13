@@ -24,3 +24,42 @@ pub use mls_rs_codec;
 
 #[cfg(feature = "arbitrary")]
 pub use arbitrary;
+
+#[cfg(feature = "serde")]
+pub mod zeroizing_serde {
+    use alloc::vec::Vec;
+    use serde::{Deserializer, Serializer};
+    use zeroize::Zeroizing;
+
+    use crate::vec_serde;
+
+    pub fn serialize<S: Serializer>(v: &Zeroizing<Vec<u8>>, s: S) -> Result<S::Ok, S::Error> {
+        vec_serde::serialize(v, s)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Zeroizing<Vec<u8>>, D::Error> {
+        vec_serde::deserialize(d).map(Zeroizing::new)
+    }
+}
+
+#[cfg(feature = "serde")]
+pub mod vec_serde {
+    use alloc::vec::Vec;
+    use serde::{Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(v: &Vec<u8>, s: S) -> Result<S::Ok, S::Error> {
+        if s.is_human_readable() {
+            hex::serde::serialize(v, s)
+        } else {
+            serde_bytes::serialize(v, s)
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
+        if d.is_human_readable() {
+            hex::serde::deserialize(d)
+        } else {
+            serde_bytes::deserialize(d)
+        }
+    }
+}

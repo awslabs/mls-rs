@@ -7,6 +7,7 @@ use crate::crypto::CipherSuiteProvider;
 use super::*;
 
 #[derive(Clone, Debug, MlsEncode, MlsDecode, MlsSize, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct TreeKemPrivate {
     pub self_index: LeafIndex,

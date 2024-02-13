@@ -36,6 +36,7 @@ use alloc::vec::Vec;
 use super::{cipher_suite_provider, epoch::EpochSecrets, state_repo::GroupStateRepository};
 
 #[derive(Debug, PartialEq, Clone, MlsEncode, MlsDecode, MlsSize)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub(crate) struct Snapshot {
     version: u16,
     state: RawGroupState,
@@ -57,6 +58,7 @@ impl Snapshot {
 }
 
 #[derive(Debug, MlsEncode, MlsDecode, MlsSize, PartialEq, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub(crate) struct RawGroupState {
     pub(crate) context: GroupContext,
     #[cfg(all(feature = "std", feature = "by_ref_proposal"))]
@@ -317,5 +319,14 @@ mod tests {
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
         snapshot_restore(group).await
+    }
+
+    #[cfg(feature = "serde")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn serde() {
+        let snapshot = super::test_utils::get_test_snapshot(TEST_CIPHER_SUITE, 5);
+        let json = serde_json::to_string_pretty(&snapshot).unwrap();
+        let recovered = serde_json::from_str(&json).unwrap();
+        assert_eq!(snapshot, recovered);
     }
 }

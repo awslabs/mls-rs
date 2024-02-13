@@ -20,7 +20,12 @@ struct RefHashInput<'a> {
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct HashReference(#[mls_codec(with = "mls_rs_codec::byte_vec")] Vec<u8>);
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct HashReference(
+    #[mls_codec(with = "mls_rs_codec::byte_vec")]
+    #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::vec_serde"))]
+    Vec<u8>,
+);
 
 impl Deref for HashReference {
     type Target = [u8];

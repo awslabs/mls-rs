@@ -18,8 +18,13 @@ use super::{Credential, CredentialType, MlsCredential};
     all(feature = "ffi", not(test)),
     safer_ffi_gen::ffi_type(clone, opaque)
 )]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 /// X.509 certificate in DER format.
-pub struct DerCertificate(#[mls_codec(with = "mls_rs_codec::byte_vec")] Vec<u8>);
+pub struct DerCertificate(
+    #[mls_codec(with = "mls_rs_codec::byte_vec")]
+    #[cfg_attr(feature = "serde", serde(with = "crate::vec_serde"))]
+    Vec<u8>,
+);
 
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl DerCertificate {
@@ -60,6 +65,7 @@ impl AsRef<[u8]> for DerCertificate {
     all(feature = "ffi", not(test)),
     safer_ffi_gen::ffi_type(clone, opaque)
 )]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 /// A chain of [`DerCertificate`] that is ordered from leaf to root.
 ///
 /// Certificate chains MAY leave out root CA's so long as they are

@@ -20,12 +20,15 @@ pub trait TreeIndex:
     fn is_leaf(&self) -> bool;
     fn is_in_tree(&self, root: &Self) -> bool;
 
+    #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
     fn zero() -> Self;
 
+    #[cfg(any(feature = "secret_tree_access", feature = "private_message", test))]
     fn left(&self) -> Option<Self> {
         (!self.is_leaf()).then(|| self.left_unchecked())
     }
 
+    #[cfg(any(feature = "secret_tree_access", feature = "private_message", test))]
     fn right(&self) -> Option<Self> {
         (!self.is_leaf()).then(|| self.right_unchecked())
     }
@@ -115,6 +118,7 @@ macro_rules! impl_tree_stdint {
                 *self <= 2 * root
             }
 
+            #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
             fn zero() -> Self {
                 0
             }

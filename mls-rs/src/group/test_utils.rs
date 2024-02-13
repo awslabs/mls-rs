@@ -467,6 +467,7 @@ impl MessageProcessor for GroupWithoutKeySchedule {
         self.inner.can_continue_processing(provisional_state)
     }
 
+    #[cfg(feature = "private_message")]
     #[cfg_attr(coverage_nightly, coverage(off))]
     fn min_epoch_available(&self) -> Option<u64> {
         self.inner.min_epoch_available()
@@ -512,6 +513,7 @@ impl MessageProcessor for GroupWithoutKeySchedule {
         Ok(())
     }
 
+    #[cfg(feature = "private_message")]
     #[cfg_attr(coverage_nightly, coverage(off))]
     fn self_index(&self) -> Option<LeafIndex> {
         <Group<TestClientConfig> as MessageProcessor>::self_index(&self.inner)

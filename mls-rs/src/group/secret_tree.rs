@@ -26,6 +26,7 @@ use super::key_schedule::kdf_expand_with_label;
 pub(crate) const MAX_RATCHET_BACK_HISTORY: u32 = 1024;
 
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(u8)]
 enum SecretTreeNode {
     Secret(TreeSecret) = 0u8,
@@ -43,7 +44,12 @@ impl SecretTreeNode {
 }
 
 #[derive(Clone, Debug, PartialEq, MlsEncode, MlsDecode, MlsSize)]
-struct TreeSecret(#[mls_codec(with = "mls_rs_codec::byte_vec")] Zeroizing<Vec<u8>>);
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+struct TreeSecret(
+    #[mls_codec(with = "mls_rs_codec::byte_vec")]
+    #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::zeroizing_serde"))]
+    Zeroizing<Vec<u8>>,
+);
 
 impl Deref for TreeSecret {
     type Target = Vec<u8>;
@@ -78,6 +84,7 @@ impl From<Zeroizing<Vec<u8>>> for TreeSecret {
 }
 
 #[derive(Clone, Debug, PartialEq, MlsEncode, MlsDecode, MlsSize, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 struct TreeSecretsVec<T: TreeIndex> {
     #[cfg(feature = "std")]
     inner: HashMap<T, SecretTreeNode>,
@@ -121,6 +128,7 @@ impl<T: TreeIndex> TreeSecretsVec<T> {
 }
 
 #[derive(Clone, Debug, PartialEq, MlsEncode, MlsDecode, MlsSize)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SecretTree<T: TreeIndex> {
     known_secrets: TreeSecretsVec<T>,
     leaf_count: T,
@@ -136,6 +144,7 @@ impl<T: TreeIndex> SecretTree<T> {
 }
 
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SecretRatchets {
     pub application: SecretKeyRatchet,
     pub handshake: SecretKeyRatchet,
@@ -299,11 +308,14 @@ pub enum KeyType {
     safer_ffi_gen::ffi_type(clone, opaque)
 )]
 #[derive(Debug, Clone, PartialEq, Eq, MlsEncode, MlsDecode, MlsSize)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 /// AEAD key derived by the MLS secret tree.
 pub struct MessageKeyData {
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
+    #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::zeroizing_serde"))]
     pub(crate) nonce: Zeroizing<Vec<u8>>,
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
+    #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::zeroizing_serde"))]
     pub(crate) key: Zeroizing<Vec<u8>>,
     pub(crate) generation: u32,
 }
@@ -330,6 +342,7 @@ impl MessageKeyData {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SecretKeyRatchet {
     secret: TreeSecret,
     generation: u32,

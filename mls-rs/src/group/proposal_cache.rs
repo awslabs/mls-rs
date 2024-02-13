@@ -23,6 +23,7 @@ use mls_rs_core::{error::IntoAnyError, psk::PreSharedKeyStorage};
 
 #[cfg(feature = "by_ref_proposal")]
 #[derive(Debug, Clone, MlsSize, MlsEncode, MlsDecode, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CachedProposal {
     pub(crate) proposal: Proposal,
     pub(crate) sender: Sender,

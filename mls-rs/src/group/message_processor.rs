@@ -515,6 +515,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
         Ok(event)
     }
 
+    #[cfg(feature = "private_message")]
     fn process_application_message(
         &self,
         data: ApplicationData,
@@ -814,12 +815,15 @@ pub(crate) trait MessageProcessor: Send + Sync {
 
     fn group_state(&self) -> &GroupState;
     fn group_state_mut(&mut self) -> &mut GroupState;
+    #[cfg(feature = "private_message")]
     fn self_index(&self) -> Option<LeafIndex>;
     fn mls_rules(&self) -> Self::MlsRules;
     fn identity_provider(&self) -> Self::IdentityProvider;
     fn cipher_suite_provider(&self) -> &Self::CipherSuiteProvider;
     fn psk_storage(&self) -> Self::PreSharedKeyStorage;
     fn can_continue_processing(&self, provisional_state: &ProvisionalState) -> bool;
+
+    #[cfg(feature = "private_message")]
     fn min_epoch_available(&self) -> Option<u64>;
 
     fn check_metadata(&self, message: &MlsMessage) -> Result<(), MlsError> {

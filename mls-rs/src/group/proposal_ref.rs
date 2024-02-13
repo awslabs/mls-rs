@@ -11,6 +11,7 @@ use crate::hash_reference::HashReference;
 )]
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 /// Unique identifier for a proposal message.
 pub struct ProposalRef(HashReference);
 
