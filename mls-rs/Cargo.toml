@@ -39,7 +39,6 @@ std = ["mls-rs-core/std", "mls-rs-codec/std", "mls-rs-identity-x509?/std", "hex/
 ffi = ["dep:safer-ffi", "dep:safer-ffi-gen", "mls-rs-core/ffi"]
 
 serde = ["mls-rs-core/serde", "zeroize/serde", "dep:serde", "dep:hex"]
-hex_serde = ["serde", "mls-rs-core/hex_serde"]
 
 # SQLite support
 sqlite = ["std", "mls-rs-provider-sqlite/sqlite"]

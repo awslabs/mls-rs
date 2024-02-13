@@ -42,32 +42,24 @@ pub mod zeroizing_serde {
     }
 }
 
-#[cfg(feature = "hex_serde")]
+#[cfg(feature = "serde")]
 pub mod vec_serde {
     use alloc::{string::String, vec::Vec};
     use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
 
     pub fn serialize<S: Serializer>(v: &Vec<u8>, s: S) -> Result<S::Ok, S::Error> {
-        let string = hex::encode(v);
-        String::serialize(&string, s)
+        if s.is_human_readable() {
+            String::serialize(&hex::encode(v), s)
+        } else {
+            Vec::<u8>::serialize(&v, s)
+        }
     }
 
     pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
-        let string = String::deserialize(d)?;
-        hex::decode(string).map_err(Error::custom)
-    }
-}
-
-#[cfg(all(feature = "serde", not(feature = "hex_serde")))]
-pub mod vec_serde {
-    use alloc::vec::Vec;
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    pub fn serialize<S: Serializer>(v: &Vec<u8>, s: S) -> Result<S::Ok, S::Error> {
-        Vec::<u8>::serialize(&v, s)
-    }
-
-    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
-        Vec::<u8>::deserialize(d)
+        if d.is_human_readable() {
+            hex::decode(String::deserialize(d)?).map_err(Error::custom)
+        } else {
+            Vec::<u8>::deserialize(d)
+        }
     }
 }
