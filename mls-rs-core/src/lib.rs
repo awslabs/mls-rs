@@ -54,7 +54,7 @@ pub mod vec_serde {
 
     pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
         let string = String::deserialize(d)?;
-        hex::decode(&string).map_err(|e| Error::custom(e))
+        hex::decode(string).map_err(Error::custom)
     }
 }
 
