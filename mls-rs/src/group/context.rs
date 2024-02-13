@@ -21,8 +21,10 @@ pub struct GroupContext {
     pub(crate) protocol_version: ProtocolVersion,
     pub(crate) cipher_suite: CipherSuite,
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
+    #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::vec_serde"))]
     pub(crate) group_id: Vec<u8>,
     pub(crate) epoch: u64,
+    #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::vec_serde"))]
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     pub(crate) tree_hash: Vec<u8>,
     pub(crate) confirmed_transcript_hash: ConfirmedTranscriptHash,

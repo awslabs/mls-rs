@@ -29,12 +29,16 @@ use super::message_signature::AuthenticatedContent;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct KeySchedule {
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
+    #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::zeroizing_serde"))]
     exporter_secret: Zeroizing<Vec<u8>>,
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
+    #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::zeroizing_serde"))]
     pub authentication_secret: Zeroizing<Vec<u8>>,
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
+    #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::zeroizing_serde"))]
     external_secret: Zeroizing<Vec<u8>>,
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
+    #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::zeroizing_serde"))]
     membership_key: Zeroizing<Vec<u8>>,
     init_secret: InitSecret,
 }
@@ -346,7 +350,11 @@ const EXPORTER_CONTEXT: &[u8] = b"MLS 1.0 external init secret";
 
 #[derive(Clone, Debug, Eq, PartialEq, MlsEncode, MlsDecode, MlsSize, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct InitSecret(#[mls_codec(with = "mls_rs_codec::byte_vec")] Zeroizing<Vec<u8>>);
+pub struct InitSecret(
+    #[mls_codec(with = "mls_rs_codec::byte_vec")]
+    #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::zeroizing_serde"))]
+    Zeroizing<Vec<u8>>,
+);
 
 impl InitSecret {
     /// Returns init secret and KEM output to be used when creating an external commit.

@@ -75,7 +75,11 @@ pub(super) struct CommitGeneration {
 
 #[derive(Clone, PartialEq, Debug, MlsEncode, MlsDecode, MlsSize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub(crate) struct CommitHash(Vec<u8>);
+pub(crate) struct CommitHash(
+    #[mls_codec(with = "mls_rs_codec::byte_vec")]
+    #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::vec_serde"))]
+    Vec<u8>,
+);
 
 impl CommitHash {
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]

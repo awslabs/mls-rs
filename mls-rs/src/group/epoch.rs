@@ -76,7 +76,9 @@ pub(crate) struct EpochSecrets {
 #[derive(Clone, Debug, PartialEq, MlsEncode, MlsDecode, MlsSize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub(crate) struct SenderDataSecret(
-    #[mls_codec(with = "mls_rs_codec::byte_vec")] Zeroizing<Vec<u8>>,
+    #[mls_codec(with = "mls_rs_codec::byte_vec")]
+    #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::zeroizing_serde"))]
+    Zeroizing<Vec<u8>>,
 );
 
 impl AsRef<[u8]> for SenderDataSecret {

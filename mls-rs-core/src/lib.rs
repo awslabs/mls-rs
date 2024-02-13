@@ -24,3 +24,50 @@ pub use mls_rs_codec;
 
 #[cfg(feature = "arbitrary")]
 pub use arbitrary;
+
+#[cfg(feature = "serde")]
+pub mod zeroizing_serde {
+    use alloc::vec::Vec;
+    use serde::{Deserializer, Serializer};
+    use zeroize::Zeroizing;
+
+    use crate::vec_serde;
+
+    pub fn serialize<S: Serializer>(v: &Zeroizing<Vec<u8>>, s: S) -> Result<S::Ok, S::Error> {
+        vec_serde::serialize(v, s)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Zeroizing<Vec<u8>>, D::Error> {
+        vec_serde::deserialize(d).map(Zeroizing::new)
+    }
+}
+
+#[cfg(feature = "hex_serde")]
+pub mod vec_serde {
+    use alloc::{string::String, vec::Vec};
+    use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S: Serializer>(v: &Vec<u8>, s: S) -> Result<S::Ok, S::Error> {
+        let string = hex::encode(v);
+        String::serialize(&string, s)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
+        let string = String::deserialize(d)?;
+        hex::decode(&string).map_err(|e| Error::custom(e))
+    }
+}
+
+#[cfg(all(feature = "serde", not(feature = "hex_serde")))]
+pub mod vec_serde {
+    use alloc::vec::Vec;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S: Serializer>(v: &Vec<u8>, s: S) -> Result<S::Ok, S::Error> {
+        Vec::<u8>::serialize(&v, s)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
+        Vec::<u8>::deserialize(d)
+    }
+}

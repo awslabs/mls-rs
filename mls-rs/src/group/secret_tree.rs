@@ -45,7 +45,11 @@ impl SecretTreeNode {
 
 #[derive(Clone, Debug, PartialEq, MlsEncode, MlsDecode, MlsSize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-struct TreeSecret(#[mls_codec(with = "mls_rs_codec::byte_vec")] Zeroizing<Vec<u8>>);
+struct TreeSecret(
+    #[mls_codec(with = "mls_rs_codec::byte_vec")]
+    #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::zeroizing_serde"))]
+    Zeroizing<Vec<u8>>,
+);
 
 impl Deref for TreeSecret {
     type Target = Vec<u8>;
@@ -308,8 +312,10 @@ pub enum KeyType {
 /// AEAD key derived by the MLS secret tree.
 pub struct MessageKeyData {
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
+    #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::zeroizing_serde"))]
     pub(crate) nonce: Zeroizing<Vec<u8>>,
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
+    #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::zeroizing_serde"))]
     pub(crate) key: Zeroizing<Vec<u8>>,
     pub(crate) generation: u32,
 }

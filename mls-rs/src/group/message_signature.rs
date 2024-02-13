@@ -236,7 +236,11 @@ impl<'a> Signable<'a> for AuthenticatedContent {
 #[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct MessageSignature(#[mls_codec(with = "mls_rs_codec::byte_vec")] Vec<u8>);
+pub struct MessageSignature(
+    #[mls_codec(with = "mls_rs_codec::byte_vec")]
+    #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::vec_serde"))]
+    Vec<u8>,
+);
 
 impl MessageSignature {
     pub(crate) fn empty() -> Self {

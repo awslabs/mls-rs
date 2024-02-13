@@ -31,6 +31,7 @@ pub struct LeafNode {
     pub leaf_node_source: LeafNodeSource,
     pub extensions: ExtensionList,
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
+    #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::vec_serde"))]
     pub signature: Vec<u8>,
 }
 

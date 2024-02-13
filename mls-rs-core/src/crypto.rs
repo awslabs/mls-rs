@@ -21,8 +21,10 @@ pub mod test_suite;
 /// Ciphertext produced by [`CipherSuiteProvider::hpke_seal`]
 pub struct HpkeCiphertext {
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
+    #[cfg_attr(feature = "serde", serde(with = "crate::vec_serde"))]
     pub kem_output: Vec<u8>,
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
+    #[cfg_attr(feature = "serde", serde(with = "crate::vec_serde"))]
     pub ciphertext: Vec<u8>,
 }
 
@@ -35,7 +37,11 @@ pub struct HpkeCiphertext {
     safer_ffi_gen::ffi_type(clone, opaque)
 )]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct HpkePublicKey(#[mls_codec(with = "mls_rs_codec::byte_vec")] Vec<u8>);
+pub struct HpkePublicKey(
+    #[mls_codec(with = "mls_rs_codec::byte_vec")]
+    #[cfg_attr(feature = "serde", serde(with = "crate::vec_serde"))]
+    Vec<u8>,
+);
 
 impl From<Vec<u8>> for HpkePublicKey {
     fn from(data: Vec<u8>) -> Self {
@@ -71,7 +77,11 @@ impl AsRef<[u8]> for HpkePublicKey {
     safer_ffi_gen::ffi_type(clone, opaque)
 )]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct HpkeSecretKey(#[mls_codec(with = "mls_rs_codec::byte_vec")] Vec<u8>);
+pub struct HpkeSecretKey(
+    #[mls_codec(with = "mls_rs_codec::byte_vec")]
+    #[cfg_attr(feature = "serde", serde(with = "crate::vec_serde"))]
+    Vec<u8>,
+);
 
 impl From<Vec<u8>> for HpkeSecretKey {
     fn from(data: Vec<u8>) -> Self {
@@ -142,7 +152,11 @@ pub trait HpkeContextR {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::ffi_type(opaque))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct SignaturePublicKey(#[mls_codec(with = "mls_rs_codec::byte_vec")] Vec<u8>);
+pub struct SignaturePublicKey(
+    #[mls_codec(with = "mls_rs_codec::byte_vec")]
+    #[cfg_attr(feature = "serde", serde(with = "crate::vec_serde"))]
+    Vec<u8>,
+);
 
 #[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen)]
 impl SignaturePublicKey {
@@ -188,6 +202,7 @@ impl From<Vec<u8>> for SignaturePublicKey {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SignatureSecretKey {
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
+    #[cfg_attr(feature = "serde", serde(with = "crate::vec_serde"))]
     bytes: Vec<u8>,
 }
 

@@ -14,6 +14,7 @@ use crate::{crypto::HpkeSecretKey, error::IntoAnyError};
 #[non_exhaustive]
 /// Representation of a generated key package and secret keys.
 pub struct KeyPackageData {
+    #[cfg_attr(feature = "serde", serde(with = "crate::vec_serde"))]
     pub key_package_bytes: Vec<u8>,
     pub init_key: HpkeSecretKey,
     pub leaf_node_key: HpkeSecretKey,

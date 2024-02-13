@@ -107,6 +107,7 @@ pub struct Extension {
     pub extension_type: ExtensionType,
     /// Data held within this extension
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
+    #[cfg_attr(feature = "serde", serde(with = "crate::vec_serde"))]
     pub extension_data: Vec<u8>,
 }
 

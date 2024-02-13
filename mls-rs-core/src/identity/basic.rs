@@ -29,6 +29,7 @@ use super::{Credential, CredentialType, MlsCredential};
 pub struct BasicCredential {
     /// Underlying identifier as raw bytes.
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
+    #[cfg_attr(feature = "serde", serde(with = "crate::vec_serde"))]
     pub identifier: Vec<u8>,
 }
 

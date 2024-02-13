@@ -154,6 +154,7 @@ impl PreSharedKeyProposal {
 /// A proposal to reinitialize a group using new parameters.
 pub struct ReInitProposal {
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
+    #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::vec_serde"))]
     pub(crate) group_id: Vec<u8>,
     pub(crate) version: ProtocolVersion,
     pub(crate) cipher_suite: CipherSuite,
@@ -188,6 +189,7 @@ impl ReInitProposal {
 /// A proposal used for external commits.
 pub struct ExternalInit {
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
+    #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::vec_serde"))]
     pub(crate) kem_output: Vec<u8>,
 }
 
@@ -204,6 +206,7 @@ pub struct ExternalInit {
 /// User defined proposals are passed through the protocol as an opaque value.
 pub struct CustomProposal {
     proposal_type: ProposalType,
+    #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::vec_serde"))]
     data: Vec<u8>,
 }
 

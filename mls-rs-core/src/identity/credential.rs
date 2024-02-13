@@ -74,6 +74,7 @@ pub struct CustomCredential {
     pub credential_type: CredentialType,
     /// Opaque data representing this custom credential.
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
+    #[cfg_attr(feature = "serde", serde(with = "crate::vec_serde"))]
     pub data: Vec<u8>,
 }
 

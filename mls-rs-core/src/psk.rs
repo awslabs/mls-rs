@@ -13,7 +13,11 @@ use zeroize::Zeroizing;
 #[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 /// Wrapper type that holds a pre-shared key value and zeroizes on drop.
-pub struct PreSharedKey(#[mls_codec(with = "mls_rs_codec::byte_vec")] Zeroizing<Vec<u8>>);
+pub struct PreSharedKey(
+    #[mls_codec(with = "mls_rs_codec::byte_vec")]
+    #[cfg_attr(feature = "serde", serde(with = "crate::zeroizing_serde"))]
+    Zeroizing<Vec<u8>>,
+);
 
 impl PreSharedKey {
     /// Create a new PreSharedKey.
@@ -61,7 +65,11 @@ impl Deref for PreSharedKey {
 )]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 /// An external pre-shared key identifier.
-pub struct ExternalPskId(#[mls_codec(with = "mls_rs_codec::byte_vec")] Vec<u8>);
+pub struct ExternalPskId(
+    #[mls_codec(with = "mls_rs_codec::byte_vec")]
+    #[cfg_attr(feature = "serde", serde(with = "crate::vec_serde"))]
+    Vec<u8>,
+);
 
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl ExternalPskId {

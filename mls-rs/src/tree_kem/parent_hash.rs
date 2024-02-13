@@ -34,7 +34,11 @@ struct ParentHashInput<'a> {
 #[derive(Clone, Debug, MlsSize, MlsEncode, MlsDecode, PartialEq, Eq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct ParentHash(#[mls_codec(with = "mls_rs_codec::byte_vec")] Vec<u8>);
+pub struct ParentHash(
+    #[mls_codec(with = "mls_rs_codec::byte_vec")]
+    #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::vec_serde"))]
+    Vec<u8>,
+);
 
 impl From<Vec<u8>> for ParentHash {
     fn from(v: Vec<u8>) -> Self {

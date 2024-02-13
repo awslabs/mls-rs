@@ -22,7 +22,11 @@ use core::ops::Deref;
 
 #[derive(Clone, Debug, Default, MlsSize, MlsEncode, MlsDecode, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub(crate) struct TreeHash(#[mls_codec(with = "mls_rs_codec::byte_vec")] Vec<u8>);
+pub(crate) struct TreeHash(
+    #[mls_codec(with = "mls_rs_codec::byte_vec")]
+    #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::vec_serde"))]
+    Vec<u8>,
+);
 
 impl Deref for TreeHash {
     type Target = [u8];
