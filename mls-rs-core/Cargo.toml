@@ -19,7 +19,7 @@ rfc_compliant = ["x509"]
 ffi = ["dep:safer-ffi", "dep:safer-ffi-gen"]
 x509 = []
 test_suite = ["dep:serde", "dep:serde_json", "dep:hex", "dep:itertools"]
-serde = ["dep:serde", "zeroize/serde", "dep:hex"]
+serde = ["dep:serde", "zeroize/serde", "dep:hex", "dep:serde_bytes"]
 
 [dependencies]
 mls-rs-codec = { version = "0.5.0", path = "../mls-rs-codec", default-features = false}
@@ -34,6 +34,7 @@ serde = { version = "1.0", default-features = false, features = ["alloc", "deriv
 serde_json = { version = "^1.0", optional = true }
 hex = { version = "^0.4.3", default-features = false, features = ["serde", "alloc"], optional = true }
 itertools = { version = "0.12", optional = true }
+serde_bytes = { version = "0.11", optional = true }
 
 [target.'cfg(mls_build_async)'.dependencies]
 async-trait = "0.1.74"

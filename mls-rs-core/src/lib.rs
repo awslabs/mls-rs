@@ -44,22 +44,22 @@ pub mod zeroizing_serde {
 
 #[cfg(feature = "serde")]
 pub mod vec_serde {
-    use alloc::{string::String, vec::Vec};
-    use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
+    use alloc::vec::Vec;
+    use serde::{Deserializer, Serializer};
 
     pub fn serialize<S: Serializer>(v: &Vec<u8>, s: S) -> Result<S::Ok, S::Error> {
         if s.is_human_readable() {
-            String::serialize(&hex::encode(v), s)
+            hex::serde::serialize(v, s)
         } else {
-            Vec::<u8>::serialize(v, s)
+            serde_bytes::serialize(v, s)
         }
     }
 
     pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
         if d.is_human_readable() {
-            hex::decode(String::deserialize(d)?).map_err(Error::custom)
+            hex::serde::deserialize(d)
         } else {
-            Vec::<u8>::deserialize(d)
+            serde_bytes::deserialize(d)
         }
     }
 }
