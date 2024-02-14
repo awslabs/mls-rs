@@ -148,7 +148,7 @@ impl MlsRules for CustomMlsRules {
             roster.roster.push(add_user.new_user);
         }
 
-        // Issue GroupContextExtensions proposal to modify our roster (eventually we don't have to do this if there we no AddUser proposals)
+        // Issue GroupContextExtensions proposal to modify our roster (eventually we don't have to do this if there were no AddUser proposals)
         let mut new_extensions = extension_list.clone();
         new_extensions.set_from(roster)?;
         let gce_proposal = Proposal::GroupContextExtensions(new_extensions);
