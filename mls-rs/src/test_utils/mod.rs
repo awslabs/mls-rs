@@ -2,10 +2,10 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-#[cfg(feature = "benchmark_util")]
+#[cfg(all(feature = "benchmark_util", not(mls_build_async)))]
 pub mod benchmarks;
 
-#[cfg(feature = "fuzz_util")]
+#[cfg(all(feature = "fuzz_util", not(mls_build_async)))]
 pub mod fuzz_tests;
 
 use mls_rs_core::{

@@ -2,7 +2,7 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-#![cfg(mls_build_async)]
+#![cfg(all(mls_build_async, target_arch = "wasm32"))]
 
 mod aead;
 mod ec;

@@ -1308,7 +1308,7 @@ mod tests {
             .await
             .unwrap();
 
-        let update = server.process_incoming_message(info.clone()).unwrap();
+        let update = server.process_incoming_message(info.clone()).await.unwrap();
         let info = info.into_group_info().unwrap();
 
         assert_matches!(update, ExternalReceivedMessage::GroupInfo(update_info) if update_info == info);
@@ -1321,7 +1321,7 @@ mod tests {
 
         let kp = test_key_package_message(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "john").await;
 
-        let update = server.process_incoming_message(kp.clone()).unwrap();
+        let update = server.process_incoming_message(kp.clone()).await.unwrap();
         let kp = kp.into_key_package().unwrap();
 
         assert_matches!(update, ExternalReceivedMessage::KeyPackage(update_kp) if update_kp == kp);
@@ -1340,12 +1340,13 @@ mod tests {
             )
             .unwrap()
             .build()
+            .await
             .unwrap()
             .welcome_messages
             .try_into()
             .unwrap();
 
-        let update = server.process_incoming_message(welcome).unwrap();
+        let update = server.process_incoming_message(welcome).await.unwrap();
 
         assert_matches!(update, ExternalReceivedMessage::Welcome);
     }

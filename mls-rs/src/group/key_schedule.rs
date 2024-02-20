@@ -472,10 +472,10 @@ pub(crate) mod test_utils {
 
     use super::{InitSecret, JoinerSecret, KeySchedule};
 
-    #[cfg(feature = "rfc_compliant")]
+    #[cfg(all(feature = "rfc_compliant", not(mls_build_async)))]
     use mls_rs_core::error::IntoAnyError;
 
-    #[cfg(feature = "rfc_compliant")]
+    #[cfg(all(feature = "rfc_compliant", not(mls_build_async)))]
     use super::MlsError;
 
     impl From<JoinerSecret> for Vec<u8> {
@@ -502,7 +502,7 @@ pub(crate) mod test_utils {
             InitSecret(Zeroizing::new(init_secret))
         }
 
-        #[cfg(all(feature = "rfc_compliant", test))]
+        #[cfg(all(feature = "rfc_compliant", test, not(mls_build_async)))]
         #[cfg_attr(coverage_nightly, coverage(off))]
         pub fn random<P: CipherSuiteProvider>(cipher_suite: &P) -> Result<Self, MlsError> {
             cipher_suite

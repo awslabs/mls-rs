@@ -643,9 +643,6 @@ mod tests {
     };
     use mls_rules::{CommitOptions, DefaultMlsRules};
 
-    #[cfg(mls_build_async)]
-    use futures::FutureExt;
-
     fn test_sender() -> u32 {
         1
     }
