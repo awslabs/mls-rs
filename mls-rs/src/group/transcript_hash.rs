@@ -2,9 +2,19 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use super::*;
+use alloc::vec::Vec;
 use core::ops::Deref;
-use mls_rs_core::error::IntoAnyError;
+
+use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
+use mls_rs_core::{crypto::CipherSuiteProvider, error::IntoAnyError};
+
+use crate::{
+    client::MlsError,
+    group::{framing::FramedContent, MessageSignature},
+    WireFormat,
+};
+
+use super::{AuthenticatedContent, ConfirmationTag};
 
 #[derive(Debug, Clone, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]

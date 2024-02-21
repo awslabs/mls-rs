@@ -51,7 +51,6 @@ pub use update_path::*;
 
 use tree_index::*;
 
-use self::path_secret::{PathSecret, PathSecretGenerator};
 pub mod kem;
 pub mod leaf_node;
 pub mod leaf_node_validator;

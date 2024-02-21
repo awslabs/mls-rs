@@ -101,13 +101,14 @@ impl PskSecret {
 #[cfg(test)]
 mod tests {
     use alloc::vec::Vec;
+    #[cfg(not(mls_build_async))]
     use core::iter;
     use serde::{Deserialize, Serialize};
 
     use crate::{
         crypto::test_utils::try_test_cipher_suite_provider,
         psk::ExternalPskId,
-        psk::{test_utils::make_nonce, JustPreSharedKeyID, PreSharedKeyID, PskNonce},
+        psk::{JustPreSharedKeyID, PreSharedKeyID, PskNonce},
         CipherSuiteProvider,
     };
 
@@ -160,7 +161,7 @@ mod tests {
                 || PskInfo {
                     id: make_external_psk_id(cs).to_vec(),
                     psk: cs.random_bytes_vec(cs.kdf_extract_size()).unwrap(),
-                    nonce: make_nonce(cs.cipher_suite()).0,
+                    nonce: crate::psk::test_utils::make_nonce(cs.cipher_suite()).0,
                 },
             )
             .take(n)

@@ -2,16 +2,28 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
+use core::ops::Deref;
+
+use crate::{client::MlsError, tree_kem::node::LeafIndex, KeyPackage, KeyPackageRef};
+
+use super::{Commit, FramedContentAuthData, GroupInfo, MembershipTag, Welcome};
+
 #[cfg(feature = "by_ref_proposal")]
-use super::proposal::Proposal;
-use super::*;
-use crate::{client::MlsError, protocol_version::ProtocolVersion};
+use crate::{group::Proposal, mls_rules::ProposalRef};
+
 use alloc::vec::Vec;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
+use mls_rs_core::{
+    crypto::{CipherSuite, CipherSuiteProvider},
+    protocol_version::ProtocolVersion,
+};
 use zeroize::ZeroizeOnDrop;
 
 #[cfg(feature = "private_message")]
 use alloc::boxed::Box;
+
+#[cfg(feature = "custom_proposal")]
+use crate::group::proposal::{CustomProposal, ProposalOrRef};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -457,7 +469,7 @@ impl MlsMessage {
             .iter()
             .filter_map(|p| match p {
                 ProposalOrRef::Proposal(p) => match p.as_ref() {
-                    Proposal::Custom(p) => Some(p),
+                    crate::group::Proposal::Custom(p) => Some(p),
                     _ => None,
                 },
                 _ => None,
@@ -527,6 +539,8 @@ pub(crate) mod test_utils {
     #[cfg(feature = "private_message")]
     use crate::group::test_utils::random_bytes;
 
+    use crate::group::{AuthenticatedContent, MessageSignature};
+
     use super::*;
 
     use alloc::boxed::Box;
@@ -582,7 +596,7 @@ mod tests {
         crypto::test_utils::test_cipher_suite_provider,
         group::{
             framing::test_utils::get_test_ciphertext_content,
-            proposal_ref::test_utils::auth_content_from_proposal,
+            proposal_ref::test_utils::auth_content_from_proposal, RemoveProposal,
         },
     };
 

@@ -17,6 +17,7 @@ rusqlite = { version = "0.30", default-features = false }
 rand = "0.8"
 hex = { version = "0.4" }
 maybe-async = "0.2.7"
+async-trait = "0.1.74"
 
 [dev-dependencies]
 tempfile = "3"

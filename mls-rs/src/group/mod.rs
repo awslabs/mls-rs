@@ -5,12 +5,8 @@
 use alloc::boxed::Box;
 use alloc::vec;
 use alloc::vec::Vec;
-use core::ops::Deref;
-use core::option::Option::Some;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
-use mls_rs_core::extension::ExtensionList;
-use mls_rs_core::identity::IdentityProvider;
 use mls_rs_core::secret::Secret;
 use mls_rs_core::time::MlsTime;
 
@@ -1518,27 +1514,35 @@ where
     }
 
     #[cfg(feature = "secret_tree_access")]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     #[inline(never)]
-    pub fn next_encryption_key(&mut self) -> Result<MessageKey, MlsError> {
-        self.epoch_secrets.secret_tree.next_message_key(
-            &self.cipher_suite_provider,
-            crate::tree_kem::node::NodeIndex::from(self.private_tree.self_index),
-            KeyType::Application,
-        )
+    pub async fn next_encryption_key(&mut self) -> Result<MessageKey, MlsError> {
+        self.epoch_secrets
+            .secret_tree
+            .next_message_key(
+                &self.cipher_suite_provider,
+                crate::tree_kem::node::NodeIndex::from(self.private_tree.self_index),
+                KeyType::Application,
+            )
+            .await
     }
 
     #[cfg(feature = "secret_tree_access")]
-    pub fn derive_decryption_key(
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn derive_decryption_key(
         &mut self,
         sender: u32,
         generation: u32,
     ) -> Result<MessageKey, MlsError> {
-        self.epoch_secrets.secret_tree.message_key_generation(
-            &self.cipher_suite_provider,
-            crate::tree_kem::node::NodeIndex::from(sender),
-            KeyType::Application,
-            generation,
-        )
+        self.epoch_secrets
+            .secret_tree
+            .message_key_generation(
+                &self.cipher_suite_provider,
+                crate::tree_kem::node::NodeIndex::from(sender),
+                KeyType::Application,
+                generation,
+            )
+            .await
     }
 }
 

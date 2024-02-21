@@ -160,8 +160,6 @@ pub(crate) mod test_utils {
         MlsMessage,
     };
 
-    #[cfg(mls_build_async)]
-    use futures::FutureExt;
     use mls_rs_core::crypto::SignatureSecretKey;
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]

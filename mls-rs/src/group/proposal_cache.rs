@@ -2,24 +2,37 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
+use alloc::vec::Vec;
+
 use super::{
+    message_processor::ProvisionalState,
     mls_rules::{CommitDirection, CommitSource, MlsRules},
-    *,
+    GroupState, ProposalOrRef,
 };
 use crate::{
-    group::proposal_filter::{ProposalApplier, ProposalBundle, ProposalSource},
+    client::MlsError,
+    group::{
+        proposal_filter::{ProposalApplier, ProposalBundle, ProposalSource},
+        Proposal, Sender,
+    },
     time::MlsTime,
 };
 
 #[cfg(feature = "by_ref_proposal")]
-use crate::group::proposal_filter::FilterStrategy;
+use crate::group::{proposal_filter::FilterStrategy, ProposalRef, ProtocolVersion};
 
 use crate::tree_kem::leaf_node::LeafNode;
 
 #[cfg(all(feature = "std", feature = "by_ref_proposal"))]
 use std::collections::HashMap;
 
-use mls_rs_core::{error::IntoAnyError, psk::PreSharedKeyStorage};
+#[cfg(feature = "by_ref_proposal")]
+use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
+
+use mls_rs_core::{
+    crypto::CipherSuiteProvider, error::IntoAnyError, identity::IdentityProvider,
+    psk::PreSharedKeyStorage,
+};
 
 #[cfg(feature = "by_ref_proposal")]
 #[derive(Debug, Clone, MlsSize, MlsEncode, MlsDecode, PartialEq)]
@@ -588,16 +601,25 @@ pub(crate) mod test_utils {
 // TODO add tests for lite version of filtering
 #[cfg(all(feature = "by_ref_proposal", test))]
 mod tests {
-    use super::test_utils::{pass_through_rules, CommitReceiver};
-    use super::*;
-    use super::{
-        proposal_ref::test_utils::auth_content_from_proposal, test_utils::make_proposal_cache,
+    use alloc::{boxed::Box, vec, vec::Vec};
+
+    use super::test_utils::{make_proposal_cache, pass_through_rules, CommitReceiver};
+    use super::{CachedProposal, ProposalCache};
+    use crate::client::MlsError;
+    use crate::group::message_processor::ProvisionalState;
+    use crate::group::mls_rules::{CommitDirection, CommitSource, EncryptionOptions};
+    use crate::group::proposal_filter::{ProposalBundle, ProposalInfo, ProposalSource};
+    use crate::group::proposal_ref::test_utils::auth_content_from_proposal;
+    use crate::group::proposal_ref::ProposalRef;
+    use crate::group::{
+        AddProposal, AuthenticatedContent, Content, ExternalInit, Proposal, ProposalOrRef,
+        ReInitProposal, RemoveProposal, Roster, Sender, UpdateProposal,
     };
     use crate::key_package::test_utils::test_key_package_with_signer;
-    use crate::tree_kem::leaf_node::test_utils::{
-        get_basic_test_node_capabilities, get_test_capabilities,
-    };
-    use crate::tree_kem::leaf_node::LeafNodeSigningContext;
+    use crate::signer::Signable;
+    use crate::tree_kem::leaf_node::LeafNode;
+    use crate::tree_kem::node::LeafIndex;
+    use crate::tree_kem::TreeKemPublic;
     use crate::{
         client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         crypto::{self, test_utils::test_cipher_suite_provider},
@@ -610,17 +632,20 @@ mod tests {
         identity::basic::BasicIdentityProvider,
         identity::test_utils::{get_test_signing_identity, BasicWithCustomProvider},
         key_package::{test_utils::test_key_package, KeyPackageGenerator},
+        mls_rules::{CommitOptions, DefaultMlsRules},
         psk::AlwaysFoundPskStorage,
         tree_kem::{
             leaf_node::{
                 test_utils::{
-                    default_properties, get_basic_test_node, get_basic_test_node_sig_key,
+                    default_properties, get_basic_test_node, get_basic_test_node_capabilities,
+                    get_basic_test_node_sig_key, get_test_capabilities,
                 },
-                ConfigProperties, LeafNodeSource,
+                ConfigProperties, LeafNodeSigningContext, LeafNodeSource,
             },
             Lifetime,
         },
     };
+    use crate::{KeyPackage, MlsRules};
 
     use crate::extension::RequiredCapabilitiesExt;
 
@@ -631,20 +656,30 @@ mod tests {
     };
 
     #[cfg(feature = "psk")]
-    use crate::psk::PskNonce;
+    use crate::{
+        group::proposal::PreSharedKeyProposal,
+        psk::{
+            ExternalPskId, JustPreSharedKeyID, PreSharedKeyID, PskGroupId, PskNonce,
+            ResumptionPSKUsage, ResumptionPsk,
+        },
+    };
+
+    #[cfg(feature = "custom_proposal")]
+    use crate::group::proposal::CustomProposal;
 
     use assert_matches::assert_matches;
     use core::convert::Infallible;
     use itertools::Itertools;
-    use mls_rs_core::psk::PreSharedKey;
+    use mls_rs_core::crypto::{CipherSuite, CipherSuiteProvider};
+    use mls_rs_core::extension::ExtensionList;
+    use mls_rs_core::group::{Capabilities, ProposalType};
+    use mls_rs_core::identity::IdentityProvider;
+    use mls_rs_core::protocol_version::ProtocolVersion;
+    use mls_rs_core::psk::{PreSharedKey, PreSharedKeyStorage};
     use mls_rs_core::{
         extension::MlsExtension,
         identity::{Credential, CredentialType, CustomCredential},
     };
-    use mls_rules::{CommitOptions, DefaultMlsRules};
-
-    #[cfg(mls_build_async)]
-    use futures::FutureExt;
 
     fn test_sender() -> u32 {
         1

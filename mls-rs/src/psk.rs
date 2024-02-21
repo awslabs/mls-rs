@@ -134,10 +134,10 @@ pub(crate) mod test_utils {
     use crate::crypto::test_utils::test_cipher_suite_provider;
 
     use super::PskNonce;
-    use mls_rs_core::{
-        crypto::{CipherSuite, CipherSuiteProvider},
-        psk::ExternalPskId,
-    };
+    use mls_rs_core::crypto::CipherSuite;
+
+    #[cfg(not(mls_build_async))]
+    use mls_rs_core::{crypto::CipherSuiteProvider, psk::ExternalPskId};
 
     #[cfg_attr(coverage_nightly, coverage(off))]
     #[cfg(not(mls_build_async))]

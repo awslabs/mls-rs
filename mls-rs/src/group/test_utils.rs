@@ -2,7 +2,7 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use core::ops::DerefMut;
+use core::ops::{Deref, DerefMut};
 
 use alloc::format;
 use rand::RngCore;

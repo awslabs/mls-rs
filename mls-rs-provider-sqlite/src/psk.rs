@@ -62,10 +62,12 @@ impl SqLitePreSharedKeyStorage {
     }
 }
 
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
 impl PreSharedKeyStorage for SqLitePreSharedKeyStorage {
     type Error = SqLiteDataStorageError;
 
-    fn get(&self, id: &ExternalPskId) -> Result<Option<PreSharedKey>, Self::Error> {
+    async fn get(&self, id: &ExternalPskId) -> Result<Option<PreSharedKey>, Self::Error> {
         self.get(id)
             .map_err(|e| SqLiteDataStorageError::DataConversionError(e.into()))
     }
