@@ -4,6 +4,7 @@
 
 use core::{
     convert::Infallible,
+    fmt::{self, Debug},
     ops::{Deref, DerefMut},
 };
 
@@ -12,7 +13,7 @@ use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 
 use super::{Credential, CredentialType, MlsCredential};
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, MlsSize, MlsEncode, MlsDecode)]
+#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(
     all(feature = "ffi", not(test)),
@@ -25,6 +26,14 @@ pub struct DerCertificate(
     #[cfg_attr(feature = "serde", serde(with = "crate::vec_serde"))]
     Vec<u8>,
 );
+
+impl Debug for DerCertificate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        crate::debug::pretty_bytes(&self.0)
+            .named("DerCertificate")
+            .fmt(f)
+    }
+}
 
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl DerCertificate {

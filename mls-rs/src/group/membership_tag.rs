@@ -7,7 +7,10 @@ use crate::crypto::CipherSuiteProvider;
 use crate::group::message_signature::{AuthenticatedContentTBS, FramedContentAuthData};
 use crate::group::GroupContext;
 use alloc::vec::Vec;
-use core::ops::Deref;
+use core::{
+    fmt::{self, Debug},
+    ops::Deref,
+};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
 
@@ -35,9 +38,17 @@ impl<'a> AuthenticatedContentTBM<'a> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
+#[derive(Clone, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct MembershipTag(#[mls_codec(with = "mls_rs_codec::byte_vec")] Vec<u8>);
+
+impl Debug for MembershipTag {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        mls_rs_core::debug::pretty_bytes(&self.0)
+            .named("MembershipTag")
+            .fmt(f)
+    }
+}
 
 impl Deref for MembershipTag {
     type Target = Vec<u8>;

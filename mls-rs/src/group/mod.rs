@@ -2,9 +2,9 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use alloc::boxed::Box;
 use alloc::vec;
 use alloc::vec::Vec;
+use core::fmt::{self, Debug};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
 use mls_rs_core::secret::Secret;
@@ -95,7 +95,6 @@ use self::proposal_ref::ProposalRef;
 use self::state_repo::GroupStateRepository;
 pub(crate) use group_info::GroupInfo;
 
-use self::framing::MlsMessage;
 pub use self::framing::{ContentType, Sender};
 pub use commit::*;
 pub use context::GroupContext;
@@ -188,13 +187,26 @@ pub(crate) struct EncryptedGroupSecrets {
     pub encrypted_group_secrets: HpkeCiphertext,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, MlsSize, MlsEncode, MlsDecode)]
+#[derive(Clone, Eq, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) struct Welcome {
     pub cipher_suite: CipherSuite,
     pub secrets: Vec<EncryptedGroupSecrets>,
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     pub encrypted_group_info: Vec<u8>,
+}
+
+impl Debug for Welcome {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Welcome")
+            .field("cipher_suite", &self.cipher_suite)
+            .field("secrets", &self.secrets)
+            .field(
+                "encrypted_group_info",
+                &mls_rs_core::debug::pretty_bytes(&self.encrypted_group_info),
+            )
+            .finish()
+    }
 }
 
 #[derive(Clone, Debug)]

@@ -7,20 +7,31 @@ use crate::crypto::{CipherSuiteProvider, HpkePublicKey, HpkeSecretKey};
 use crate::group::key_schedule::kdf_derive_secret;
 use alloc::vec;
 use alloc::vec::Vec;
-use core::ops::Deref;
+use core::{
+    fmt::{self, Debug},
+    ops::Deref,
+};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
 use zeroize::Zeroizing;
 
 use super::hpke_encryption::HpkeEncryptable;
 
-#[derive(Debug, Clone, Eq, PartialEq, MlsSize, MlsEncode, MlsDecode)]
+#[derive(Clone, Eq, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PathSecret(
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::zeroizing_serde"))]
     Zeroizing<Vec<u8>>,
 );
+
+impl Debug for PathSecret {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        mls_rs_core::debug::pretty_bytes(&self.0)
+            .named("PathSecret")
+            .fmt(f)
+    }
+}
 
 impl Deref for PathSecret {
     type Target = Vec<u8>;

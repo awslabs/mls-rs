@@ -9,7 +9,10 @@ use crate::tree_kem::node::NodeIndex;
 #[cfg(feature = "prior_epoch")]
 use crate::{crypto::SignaturePublicKey, group::GroupContext, tree_kem::node::LeafIndex};
 use alloc::vec::Vec;
-use core::ops::Deref;
+use core::{
+    fmt::{self, Debug},
+    ops::Deref,
+};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use zeroize::Zeroizing;
 
@@ -73,13 +76,21 @@ pub(crate) struct EpochSecrets {
     pub(crate) secret_tree: SecretTree<NodeIndex>,
 }
 
-#[derive(Clone, Debug, PartialEq, MlsEncode, MlsDecode, MlsSize)]
+#[derive(Clone, PartialEq, MlsEncode, MlsDecode, MlsSize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub(crate) struct SenderDataSecret(
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::zeroizing_serde"))]
     Zeroizing<Vec<u8>>,
 );
+
+impl Debug for SenderDataSecret {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        mls_rs_core::debug::pretty_bytes(&self.0)
+            .named("SenderDataSecret")
+            .fmt(f)
+    }
+}
 
 impl AsRef<[u8]> for SenderDataSecret {
     fn as_ref(&self) -> &[u8] {

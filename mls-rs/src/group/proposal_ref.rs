@@ -49,6 +49,7 @@ impl ProposalRef {
 pub(crate) mod test_utils {
     use super::*;
     use crate::group::test_utils::{random_bytes, TEST_GROUP};
+    use alloc::boxed::Box;
 
     impl ProposalRef {
         pub fn new_fake(bytes: Vec<u8>) -> Self {
@@ -86,6 +87,7 @@ mod test {
         key_package::test_utils::test_key_package,
         tree_kem::leaf_node::test_utils::get_basic_test_node,
     };
+    use alloc::boxed::Box;
 
     use crate::extension::RequiredCapabilitiesExt;
 

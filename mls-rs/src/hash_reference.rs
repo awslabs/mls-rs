@@ -2,7 +2,10 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use core::ops::Deref;
+use core::{
+    fmt::{self, Debug},
+    ops::Deref,
+};
 
 use crate::client::MlsError;
 use crate::CipherSuiteProvider;
@@ -10,7 +13,7 @@ use alloc::vec::Vec;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
 
-#[derive(Debug, MlsSize, MlsEncode)]
+#[derive(MlsSize, MlsEncode)]
 struct RefHashInput<'a> {
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     pub label: &'a [u8],
@@ -18,7 +21,16 @@ struct RefHashInput<'a> {
     pub value: &'a [u8],
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, MlsSize, MlsEncode, MlsDecode)]
+impl Debug for RefHashInput<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RefHashInput")
+            .field("label", &mls_rs_core::debug::pretty_bytes(self.label))
+            .field("value", &mls_rs_core::debug::pretty_bytes(self.value))
+            .finish()
+    }
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HashReference(
@@ -26,6 +38,14 @@ pub struct HashReference(
     #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::vec_serde"))]
     Vec<u8>,
 );
+
+impl Debug for HashReference {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        mls_rs_core::debug::pretty_bytes(&self.0)
+            .named("HashReference")
+            .fmt(f)
+    }
+}
 
 impl Deref for HashReference {
     type Target = [u8];

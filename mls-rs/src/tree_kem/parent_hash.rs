@@ -8,7 +8,10 @@ use crate::tree_kem::math as tree_math;
 use crate::tree_kem::node::{LeafIndex, Node, NodeIndex};
 use crate::tree_kem::TreeKemPublic;
 use alloc::vec::Vec;
-use core::ops::Deref;
+use core::{
+    fmt::{self, Debug},
+    ops::Deref,
+};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
 use tree_math::TreeIndex;
@@ -31,7 +34,7 @@ struct ParentHashInput<'a> {
     original_sibling_tree_hash: &'a [u8],
 }
 
-#[derive(Clone, Debug, MlsSize, MlsEncode, MlsDecode, PartialEq, Eq)]
+#[derive(Clone, MlsSize, MlsEncode, MlsDecode, PartialEq, Eq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ParentHash(
@@ -39,6 +42,14 @@ pub struct ParentHash(
     #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::vec_serde"))]
     Vec<u8>,
 );
+
+impl Debug for ParentHash {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        mls_rs_core::debug::pretty_bytes(&self.0)
+            .named("ParentHash")
+            .fmt(f)
+    }
+}
 
 impl From<Vec<u8>> for ParentHash {
     fn from(v: Vec<u8>) -> Self {

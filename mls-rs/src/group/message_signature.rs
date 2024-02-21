@@ -11,7 +11,10 @@ use crate::signer::Signable;
 use crate::CipherSuiteProvider;
 use alloc::vec;
 use alloc::vec::Vec;
-use core::ops::Deref;
+use core::{
+    fmt::{self, Debug},
+    ops::Deref,
+};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::protocol_version::ProtocolVersion;
 
@@ -233,7 +236,7 @@ impl<'a> Signable<'a> for AuthenticatedContent {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
+#[derive(Clone, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MessageSignature(
@@ -241,6 +244,14 @@ pub struct MessageSignature(
     #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::vec_serde"))]
     Vec<u8>,
 );
+
+impl Debug for MessageSignature {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        mls_rs_core::debug::pretty_bytes(&self.0)
+            .named("MessageSignature")
+            .fmt(f)
+    }
+}
 
 impl MessageSignature {
     pub(crate) fn empty() -> Self {

@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use alloc::vec::Vec;
+use core::fmt::{self, Debug};
 use mls_rs_codec::MlsEncode;
 pub use mls_rs_core::group::{EpochRecord, GroupState};
 
@@ -24,10 +25,19 @@ impl GroupState for Snapshot {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub(crate) struct EpochData {
     pub(crate) id: u64,
     pub(crate) data: Vec<u8>,
+}
+
+impl Debug for EpochData {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EpochData")
+            .field("id", &self.id)
+            .field("data", &mls_rs_core::debug::pretty_bytes(&self.data))
+            .finish()
+    }
 }
 
 impl EpochData {

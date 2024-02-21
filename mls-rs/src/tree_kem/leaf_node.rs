@@ -7,6 +7,7 @@ use crate::client::MlsError;
 use crate::crypto::{CipherSuiteProvider, HpkePublicKey, HpkeSecretKey, SignatureSecretKey};
 use crate::{identity::SigningIdentity, signer::Signable, ExtensionList};
 use alloc::vec::Vec;
+use core::fmt::{self, Debug};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
 
@@ -20,7 +21,7 @@ pub enum LeafNodeSource {
     Commit(ParentHash) = 3u8,
 }
 
-#[derive(Debug, Clone, MlsSize, MlsEncode, MlsDecode, PartialEq)]
+#[derive(Clone, MlsSize, MlsEncode, MlsDecode, PartialEq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
@@ -33,6 +34,22 @@ pub struct LeafNode {
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::vec_serde"))]
     pub signature: Vec<u8>,
+}
+
+impl Debug for LeafNode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LeafNode")
+            .field("public_key", &self.public_key)
+            .field("signing_identity", &self.signing_identity)
+            .field("capabilities", &self.capabilities)
+            .field("leaf_node_source", &self.leaf_node_source)
+            .field("extensions", &self.extensions)
+            .field(
+                "signature",
+                &mls_rs_core::debug::pretty_bytes(&self.signature),
+            )
+            .finish()
+    }
 }
 
 #[derive(Clone, Debug)]

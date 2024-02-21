@@ -4,7 +4,7 @@
 
 use alloc::vec::Vec;
 use core::{
-    fmt::Debug,
+    fmt::{self, Debug},
     ops::{Deref, DerefMut},
 };
 
@@ -43,13 +43,21 @@ impl SecretTreeNode {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, MlsEncode, MlsDecode, MlsSize)]
+#[derive(Clone, PartialEq, MlsEncode, MlsDecode, MlsSize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 struct TreeSecret(
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::zeroizing_serde"))]
     Zeroizing<Vec<u8>>,
 );
+
+impl Debug for TreeSecret {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        mls_rs_core::debug::pretty_bytes(&self.0)
+            .named("TreeSecret")
+            .fmt(f)
+    }
+}
 
 impl Deref for TreeSecret {
     type Target = Vec<u8>;
@@ -307,7 +315,7 @@ pub enum KeyType {
     all(feature = "ffi", not(test)),
     safer_ffi_gen::ffi_type(clone, opaque)
 )]
-#[derive(Debug, Clone, PartialEq, Eq, MlsEncode, MlsDecode, MlsSize)]
+#[derive(Clone, PartialEq, Eq, MlsEncode, MlsDecode, MlsSize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 /// AEAD key derived by the MLS secret tree.
 pub struct MessageKeyData {
@@ -318,6 +326,16 @@ pub struct MessageKeyData {
     #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::zeroizing_serde"))]
     pub(crate) key: Zeroizing<Vec<u8>>,
     pub(crate) generation: u32,
+}
+
+impl Debug for MessageKeyData {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MessageKeyData")
+            .field("nonce", &mls_rs_core::debug::pretty_bytes(&self.nonce))
+            .field("key", &mls_rs_core::debug::pretty_bytes(&self.key))
+            .field("generation", &self.generation)
+            .finish()
+    }
 }
 
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]

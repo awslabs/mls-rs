@@ -2,7 +2,10 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use std::sync::{Arc, Mutex};
+use std::{
+    fmt::{self, Debug},
+    sync::{Arc, Mutex},
+};
 
 use rusqlite::{params, Connection, OptionalExtension};
 
@@ -98,10 +101,19 @@ fn sanitize(string: &str) -> String {
     string.replace('_', "$_").replace('%', "$%")
 }
 
-#[derive(Debug, Clone, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Item {
     pub key: String,
     pub value: Vec<u8>,
+}
+
+impl Debug for Item {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Item")
+            .field("key", &self.key)
+            .field("value", &mls_rs_core::debug::pretty_bytes(&self.value))
+            .finish()
+    }
 }
 
 impl Item {

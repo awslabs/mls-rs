@@ -10,6 +10,7 @@ extern crate alloc;
 wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
 
 pub mod crypto;
+pub mod debug;
 pub mod error;
 pub mod extension;
 pub mod group;

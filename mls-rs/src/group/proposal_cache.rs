@@ -35,6 +35,9 @@ use mls_rs_core::{
 };
 
 #[cfg(feature = "by_ref_proposal")]
+use core::fmt::{self, Debug};
+
+#[cfg(feature = "by_ref_proposal")]
 #[derive(Debug, Clone, MlsSize, MlsEncode, MlsDecode, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CachedProposal {
@@ -43,7 +46,7 @@ pub struct CachedProposal {
 }
 
 #[cfg(feature = "by_ref_proposal")]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub(crate) struct ProposalCache {
     protocol_version: ProtocolVersion,
     group_id: Vec<u8>,
@@ -51,6 +54,20 @@ pub(crate) struct ProposalCache {
     pub(crate) proposals: HashMap<ProposalRef, CachedProposal>,
     #[cfg(not(feature = "std"))]
     pub(crate) proposals: Vec<(ProposalRef, CachedProposal)>,
+}
+
+#[cfg(feature = "by_ref_proposal")]
+impl Debug for ProposalCache {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ProposalCache")
+            .field("protocol_version", &self.protocol_version)
+            .field(
+                "group_id",
+                &mls_rs_core::debug::pretty_group_id(&self.group_id),
+            )
+            .field("proposals", &self.proposals)
+            .finish()
+    }
 }
 
 #[cfg(feature = "by_ref_proposal")]

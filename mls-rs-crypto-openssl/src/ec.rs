@@ -2,6 +2,7 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
+use core::fmt::{self, Debug};
 use mls_rs_crypto_traits::Curve;
 use thiserror::Error;
 
@@ -46,10 +47,19 @@ pub fn generate_keypair(curve: Curve) -> Result<KeyPair, EcError> {
     Ok(KeyPair { public, secret })
 }
 
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Default)]
 pub struct KeyPair {
     pub public: Vec<u8>,
     pub secret: Vec<u8>,
+}
+
+impl Debug for KeyPair {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("KeyPair")
+            .field("public", &mls_rs_core::debug::pretty_bytes(&self.public))
+            .field("secret", &mls_rs_core::debug::pretty_bytes(&self.secret))
+            .finish()
+    }
 }
 
 fn pub_key_from_uncompressed_nist(bytes: &[u8], nid: Nid) -> Result<EcPublicKey, ErrorStack> {

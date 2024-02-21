@@ -16,6 +16,7 @@ use crate::group::SecretTree;
 
 use alloc::vec;
 use alloc::vec::Vec;
+use core::fmt::{self, Debug};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
 use zeroize::Zeroizing;
@@ -25,7 +26,7 @@ use crate::crypto::{HpkeContextR, HpkeContextS, HpkePublicKey, HpkeSecretKey};
 use super::epoch::{EpochSecrets, SenderDataSecret};
 use super::message_signature::AuthenticatedContent;
 
-#[derive(Debug, Clone, PartialEq, Eq, Default, MlsEncode, MlsDecode, MlsSize)]
+#[derive(Clone, PartialEq, Eq, Default, MlsEncode, MlsDecode, MlsSize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct KeySchedule {
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
@@ -41,6 +42,30 @@ pub struct KeySchedule {
     #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::zeroizing_serde"))]
     membership_key: Zeroizing<Vec<u8>>,
     init_secret: InitSecret,
+}
+
+impl Debug for KeySchedule {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("KeySchedule")
+            .field(
+                "exporter_secret",
+                &mls_rs_core::debug::pretty_bytes(&self.exporter_secret),
+            )
+            .field(
+                "authentication_secret",
+                &mls_rs_core::debug::pretty_bytes(&self.authentication_secret),
+            )
+            .field(
+                "external_secret",
+                &mls_rs_core::debug::pretty_bytes(&self.external_secret),
+            )
+            .field(
+                "membership_key",
+                &mls_rs_core::debug::pretty_bytes(&self.membership_key),
+            )
+            .field("init_secret", &self.init_secret)
+            .finish()
+    }
 }
 
 pub(crate) struct KeyScheduleDerivationResult {
@@ -303,8 +328,16 @@ pub(crate) async fn kdf_derive_secret<P: CipherSuiteProvider>(
     kdf_expand_with_label(cipher_suite_provider, secret, label, &[], None).await
 }
 
-#[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
+#[derive(Clone, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 pub(crate) struct JoinerSecret(#[mls_codec(with = "mls_rs_codec::byte_vec")] Zeroizing<Vec<u8>>);
+
+impl Debug for JoinerSecret {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        mls_rs_core::debug::pretty_bytes(&self.0)
+            .named("JoinerSecret")
+            .fmt(f)
+    }
+}
 
 impl From<Zeroizing<Vec<u8>>> for JoinerSecret {
     fn from(bytes: Zeroizing<Vec<u8>>) -> Self {
@@ -348,13 +381,21 @@ impl<'a, P: CipherSuiteProvider> SecretsProducer<'a, P> {
 
 const EXPORTER_CONTEXT: &[u8] = b"MLS 1.0 external init secret";
 
-#[derive(Clone, Debug, Eq, PartialEq, MlsEncode, MlsDecode, MlsSize, Default)]
+#[derive(Clone, Eq, PartialEq, MlsEncode, MlsDecode, MlsSize, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct InitSecret(
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::zeroizing_serde"))]
     Zeroizing<Vec<u8>>,
 );
+
+impl Debug for InitSecret {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        mls_rs_core::debug::pretty_bytes(&self.0)
+            .named("InitSecret")
+            .fmt(f)
+    }
+}
 
 impl InitSecret {
     /// Returns init secret and KEM output to be used when creating an external commit.

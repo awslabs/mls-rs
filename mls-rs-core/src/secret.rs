@@ -3,16 +3,25 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use alloc::vec::Vec;
-use core::ops::{Deref, DerefMut};
+use core::{
+    fmt::{self, Debug},
+    ops::{Deref, DerefMut},
+};
 use zeroize::Zeroizing;
 
 #[cfg_attr(
     all(feature = "ffi", not(test)),
     safer_ffi_gen::ffi_type(clone, opaque)
 )]
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 /// Wrapper struct that represents a zeroize-on-drop `Vec<u8>`
 pub struct Secret(Zeroizing<Vec<u8>>);
+
+impl Debug for Secret {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        crate::debug::pretty_bytes(&self.0).named("Secret").fmt(f)
+    }
+}
 
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl Secret {

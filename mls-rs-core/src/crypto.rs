@@ -5,7 +5,10 @@
 use crate::error::IntoAnyError;
 use alloc::vec;
 use alloc::vec::Vec;
-use core::ops::Deref;
+use core::{
+    fmt::{self, Debug},
+    ops::Deref,
+};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use zeroize::{ZeroizeOnDrop, Zeroizing};
 
@@ -15,7 +18,7 @@ pub use self::cipher_suite::*;
 #[cfg(feature = "test_suite")]
 pub mod test_suite;
 
-#[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
+#[derive(Clone, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 /// Ciphertext produced by [`CipherSuiteProvider::hpke_seal`]
@@ -28,9 +31,18 @@ pub struct HpkeCiphertext {
     pub ciphertext: Vec<u8>,
 }
 
+impl Debug for HpkeCiphertext {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("HpkeCiphertext")
+            .field("kem_output", &crate::debug::pretty_bytes(&self.kem_output))
+            .field("ciphertext", &crate::debug::pretty_bytes(&self.ciphertext))
+            .finish()
+    }
+}
+
 /// Byte representation of an HPKE public key. For ciphersuites using elliptic curves,
 /// the public key should be represented in the uncompressed format.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, MlsSize, MlsDecode, MlsEncode)]
+#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord, MlsSize, MlsDecode, MlsEncode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(
     all(feature = "ffi", not(test)),
@@ -42,6 +54,14 @@ pub struct HpkePublicKey(
     #[cfg_attr(feature = "serde", serde(with = "crate::vec_serde"))]
     Vec<u8>,
 );
+
+impl Debug for HpkePublicKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        crate::debug::pretty_bytes(&self.0)
+            .named("HpkePublicKey")
+            .fmt(f)
+    }
+}
 
 impl From<Vec<u8>> for HpkePublicKey {
     fn from(data: Vec<u8>) -> Self {
@@ -70,7 +90,7 @@ impl AsRef<[u8]> for HpkePublicKey {
 }
 
 /// Byte representation of an HPKE secret key.
-#[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode, ZeroizeOnDrop)]
+#[derive(Clone, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode, ZeroizeOnDrop)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(
     all(feature = "ffi", not(test)),
@@ -82,6 +102,14 @@ pub struct HpkeSecretKey(
     #[cfg_attr(feature = "serde", serde(with = "crate::vec_serde"))]
     Vec<u8>,
 );
+
+impl Debug for HpkeSecretKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        crate::debug::pretty_bytes(&self.0)
+            .named("HpkeSecretKey")
+            .fmt(f)
+    }
+}
 
 impl From<Vec<u8>> for HpkeSecretKey {
     fn from(data: Vec<u8>) -> Self {
@@ -148,7 +176,7 @@ pub trait HpkeContextR {
 
 /// Byte representation of a signature public key. For ciphersuites using elliptic curves,
 /// the public key should be represented in the uncompressed format.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd, MlsSize, MlsEncode, MlsDecode)]
+#[derive(Clone, PartialEq, Eq, Hash, Ord, PartialOrd, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::ffi_type(opaque))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -157,6 +185,14 @@ pub struct SignaturePublicKey(
     #[cfg_attr(feature = "serde", serde(with = "crate::vec_serde"))]
     Vec<u8>,
 );
+
+impl Debug for SignaturePublicKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        crate::debug::pretty_bytes(&self.0)
+            .named("SignaturePublicKey")
+            .fmt(f)
+    }
+}
 
 #[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen)]
 impl SignaturePublicKey {
@@ -198,12 +234,20 @@ impl From<Vec<u8>> for SignaturePublicKey {
     all(feature = "ffi", not(test)),
     ::safer_ffi_gen::ffi_type(clone, opaque)
 )]
-#[derive(Clone, Debug, PartialEq, Eq, ZeroizeOnDrop, MlsSize, MlsEncode, MlsDecode)]
+#[derive(Clone, PartialEq, Eq, ZeroizeOnDrop, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SignatureSecretKey {
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     #[cfg_attr(feature = "serde", serde(with = "crate::vec_serde"))]
     bytes: Vec<u8>,
+}
+
+impl Debug for SignatureSecretKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        crate::debug::pretty_bytes(&self.bytes)
+            .named("SignatureSecretKey")
+            .fmt(f)
+    }
 }
 
 #[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen)]

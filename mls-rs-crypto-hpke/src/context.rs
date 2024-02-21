@@ -11,13 +11,27 @@ use mls_rs_crypto_traits::{AeadType, KdfType};
 use crate::{hpke::HpkeError, kdf::HpkeKdf};
 
 use alloc::vec::Vec;
+use core::fmt::{self, Debug};
 
 /// A type representing an HPKE context
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub(super) struct Context<KDF: KdfType, AEAD: AeadType> {
     exporter_secret: Vec<u8>,
     encryption_context: Option<EncryptionContext<AEAD>>,
     kdf: HpkeKdf<KDF>,
+}
+
+impl<KDF: KdfType + Debug, AEAD: AeadType + Debug> Debug for Context<KDF, AEAD> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Context")
+            .field(
+                "exporter_secret",
+                &mls_rs_core::debug::pretty_bytes(&self.exporter_secret),
+            )
+            .field("encryption_context", &self.encryption_context)
+            .field("kdf", &self.kdf)
+            .finish()
+    }
 }
 
 impl<KDF: KdfType, AEAD: AeadType> Context<KDF, AEAD> {
@@ -122,12 +136,29 @@ impl<KDF: KdfType, AEAD: AeadType> HpkeContextR for ContextR<KDF, AEAD> {
     }
 }
 
-#[derive(PartialEq, Eq, Debug, Clone)]
+#[derive(PartialEq, Eq, Clone)]
 pub(super) struct EncryptionContext<AEAD: AeadType> {
     base_nonce: Vec<u8>,
     seq_number: u64,
     aead: AEAD,
     aead_key: Vec<u8>,
+}
+
+impl<AEAD: AeadType + Debug> Debug for EncryptionContext<AEAD> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EncryptionContext")
+            .field(
+                "base_nonce",
+                &mls_rs_core::debug::pretty_bytes(&self.base_nonce),
+            )
+            .field("seq_number", &self.seq_number)
+            .field("aead", &self.aead)
+            .field(
+                "aead_key",
+                &mls_rs_core::debug::pretty_bytes(&self.aead_key),
+            )
+            .finish()
+    }
 }
 
 impl<AEAD: AeadType> EncryptionContext<AEAD> {

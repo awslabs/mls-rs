@@ -3,18 +3,28 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use alloc::vec::Vec;
+use core::fmt::{self, Debug};
 use mls_rs_codec::{MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
 
 use crate::client::MlsError;
 use crate::crypto::{CipherSuiteProvider, SignaturePublicKey, SignatureSecretKey};
 
-#[derive(Debug, Clone, MlsSize, MlsEncode)]
+#[derive(Clone, MlsSize, MlsEncode)]
 struct SignContent {
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     label: Vec<u8>,
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     content: Vec<u8>,
+}
+
+impl Debug for SignContent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SignContent")
+            .field("label", &mls_rs_core::debug::pretty_bytes(&self.label))
+            .field("content", &mls_rs_core::debug::pretty_bytes(&self.content))
+            .finish()
+    }
 }
 
 impl SignContent {

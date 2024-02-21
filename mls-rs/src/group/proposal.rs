@@ -2,19 +2,27 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use super::*;
-#[cfg(feature = "by_ref_proposal")]
-use crate::tree_kem::leaf_node::LeafNode;
-use core::fmt::Debug;
+use alloc::{boxed::Box, vec::Vec};
 
 #[cfg(feature = "by_ref_proposal")]
-use proposal_ref::ProposalRef;
+use crate::tree_kem::leaf_node::LeafNode;
+
+use crate::{
+    client::MlsError, tree_kem::node::LeafIndex, CipherSuite, KeyPackage, MlsMessage,
+    ProtocolVersion,
+};
+use core::fmt::{self, Debug};
+use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
+use mls_rs_core::{group::Capabilities, identity::SigningIdentity};
+
+#[cfg(feature = "by_ref_proposal")]
+use crate::group::proposal_ref::ProposalRef;
 
 pub use mls_rs_core::extension::ExtensionList;
 pub use mls_rs_core::group::ProposalType;
 
 #[cfg(feature = "psk")]
-use crate::psk::PreSharedKeyID;
+use crate::psk::{ExternalPskId, JustPreSharedKeyID, PreSharedKeyID};
 
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -148,7 +156,7 @@ impl PreSharedKeyProposal {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
+#[derive(Clone, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 /// A proposal to reinitialize a group using new parameters.
@@ -159,6 +167,20 @@ pub struct ReInitProposal {
     pub(crate) version: ProtocolVersion,
     pub(crate) cipher_suite: CipherSuite,
     pub(crate) extensions: ExtensionList,
+}
+
+impl Debug for ReInitProposal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ReInitProposal")
+            .field(
+                "group_id",
+                &mls_rs_core::debug::pretty_group_id(&self.group_id),
+            )
+            .field("version", &self.version)
+            .field("cipher_suite", &self.cipher_suite)
+            .field("extensions", &self.extensions)
+            .finish()
+    }
 }
 
 impl ReInitProposal {
@@ -183,7 +205,7 @@ impl ReInitProposal {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
+#[derive(Clone, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 /// A proposal used for external commits.
@@ -193,8 +215,19 @@ pub struct ExternalInit {
     pub(crate) kem_output: Vec<u8>,
 }
 
+impl Debug for ExternalInit {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ExternalInit")
+            .field(
+                "kem_output",
+                &mls_rs_core::debug::pretty_bytes(&self.kem_output),
+            )
+            .finish()
+    }
+}
+
 #[cfg(feature = "custom_proposal")]
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(
     all(feature = "ffi", not(test)),
@@ -208,6 +241,16 @@ pub struct CustomProposal {
     proposal_type: ProposalType,
     #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::vec_serde"))]
     data: Vec<u8>,
+}
+
+#[cfg(feature = "custom_proposal")]
+impl Debug for CustomProposal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CustomProposal")
+            .field("proposal_type", &self.proposal_type)
+            .field("data", &mls_rs_core::debug::pretty_bytes(&self.data))
+            .finish()
+    }
 }
 
 #[cfg(feature = "custom_proposal")]
