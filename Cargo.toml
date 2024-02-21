@@ -14,7 +14,9 @@ members = [
     "mls-rs-crypto-hpke",
     "mls-rs-provider-sqlite",
     "mls-rs-codec",
-    "mls-rs-codec-derive"
+    "mls-rs-codec-derive",
+    "mls-rs-uniffi",
+    "mls-rs-uniffi/uniffi-bindgen",
 ]
 
 default-members = [
@@ -28,5 +30,6 @@ default-members = [
     "mls-rs-crypto-awslc",
     "mls-rs-crypto-webcrypto",
     "mls-rs-provider-sqlite",
-    "mls-rs-codec"
+    "mls-rs-codec",
+    "mls-rs-uniffi",
 ]
