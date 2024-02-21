@@ -2,6 +2,8 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
+use core::ops::Deref;
+
 use super::*;
 use crate::hash_reference::HashReference;
 

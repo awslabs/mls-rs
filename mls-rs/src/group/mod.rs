@@ -5,12 +5,8 @@
 use alloc::boxed::Box;
 use alloc::vec;
 use alloc::vec::Vec;
-use core::ops::Deref;
-use core::option::Option::Some;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
-use mls_rs_core::extension::ExtensionList;
-use mls_rs_core::identity::IdentityProvider;
 use mls_rs_core::secret::Secret;
 use mls_rs_core::time::MlsTime;
 

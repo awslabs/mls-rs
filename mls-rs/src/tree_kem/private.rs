@@ -1,10 +1,19 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
+use alloc::{vec, vec::Vec};
 
-use crate::crypto::CipherSuiteProvider;
+use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
+use mls_rs_core::crypto::HpkeSecretKey;
 
-use super::*;
+use crate::{client::MlsError, crypto::CipherSuiteProvider};
+
+use super::{
+    math::leaf_lca_level,
+    node::LeafIndex,
+    path_secret::{PathSecret, PathSecretGenerator},
+    TreeKemPublic,
+};
 
 #[derive(Clone, Debug, MlsEncode, MlsDecode, MlsSize, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -40,8 +49,7 @@ impl TreeKemPrivate {
         // Identify the lowest common
         // ancestor of the leaves at index and at GroupInfo.signer_index. Set the private key
         // for this node to the private key derived from the path_secret.
-        let lca_index =
-            tree_math::leaf_lca_level(self.self_index.into(), signer_index.into()) as usize - 2;
+        let lca_index = leaf_lca_level(self.self_index.into(), signer_index.into()) as usize - 2;
 
         // For each parent of the common ancestor, up to the root of the tree, derive a new
         // path secret and set the private key for the node to the private key derived from the
