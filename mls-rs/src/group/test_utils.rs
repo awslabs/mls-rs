@@ -80,7 +80,7 @@ impl TestGroup {
 
         // Add new member to the group
         let CommitOutput {
-            mut welcome_messages,
+            welcome_messages,
             ratchet_tree,
             commit_message,
             ..
@@ -100,7 +100,7 @@ impl TestGroup {
 
         // Group from new member's perspective
         let (new_group, _) = Group::join(
-            welcome_messages.pop().unwrap(),
+            &welcome_messages[0],
             ratchet_tree,
             new_client.config.clone(),
             new_client.signer.clone().unwrap(),
@@ -375,7 +375,7 @@ pub(crate) async fn get_test_groups_with_features(
 
         groups.push(
             client
-                .join_group(None, commit_output.welcome_messages[0].clone())
+                .join_group(None, &commit_output.welcome_messages[0])
                 .await
                 .unwrap()
                 .0,

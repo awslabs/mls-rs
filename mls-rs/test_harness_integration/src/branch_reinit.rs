@@ -75,7 +75,7 @@ pub(crate) mod inner {
                 .map_err(abort)?;
 
             let (group, _info) = reinit_client
-                .join(welcome, get_tree(&request.ratchet_tree)?)
+                .join(&welcome, get_tree(&request.ratchet_tree)?)
                 .map_err(abort)?;
 
             let resp = JoinGroupResponse {
@@ -120,7 +120,7 @@ pub(crate) mod inner {
 
             let welcome = MlsMessage::from_bytes(&request.welcome).map_err(abort)?;
 
-            let (new_group, _info) = group.join_subgroup(welcome, tree).map_err(abort)?;
+            let (new_group, _info) = group.join_subgroup(&welcome, tree).map_err(abort)?;
 
             let resp = HandleBranchResponse {
                 state_id: request.state_id,

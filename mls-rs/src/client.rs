@@ -536,7 +536,7 @@ where
     pub async fn join_group(
         &self,
         tree_data: Option<ExportedTree<'_>>,
-        welcome_message: MlsMessage,
+        welcome_message: &MlsMessage,
     ) -> Result<(Group<C>, NewMemberInfo), MlsError> {
         Group::join(
             welcome_message,

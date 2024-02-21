@@ -143,13 +143,11 @@ fn main() -> Result<(), MlsError> {
     let mut alice_group = alice.create_group(ExtensionList::default())?;
     let bob_key_package = bob.generate_key_package_message()?;
 
-    let welcome = alice_group
+    let welcome = &alice_group
         .commit_builder()
         .add_member(bob_key_package)?
         .build()?
-        .welcome_messages
-        .pop()
-        .expect("key package shouldn't be rejected");
+        .welcome_messages[0];
 
     let (mut bob_group, _) = bob.join_group(None, welcome)?;
     alice_group.apply_pending_commit()?;

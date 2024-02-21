@@ -390,7 +390,7 @@ where
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn join(
-        welcome: MlsMessage,
+        welcome: &MlsMessage,
         tree_data: Option<ExportedTree<'_>>,
         config: C,
         signer: SignatureSecretKey,
@@ -408,7 +408,7 @@ where
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn from_welcome_message(
-        welcome: MlsMessage,
+        welcome: &MlsMessage,
         tree_data: Option<ExportedTree<'_>>,
         config: C,
         signer: SignatureSecretKey,
@@ -420,9 +420,9 @@ where
             return Err(MlsError::UnsupportedProtocolVersion(protocol_version));
         }
 
-        let welcome = welcome
-            .into_welcome()
-            .ok_or(MlsError::UnexpectedMessageType)?;
+        let MlsMessagePayload::Welcome(welcome) = &welcome.payload else {
+            return Err(MlsError::UnexpectedMessageType);
+        };
 
         let cipher_suite_provider =
             cipher_suite_provider(config.crypto_provider(), welcome.cipher_suite)?;
@@ -2161,7 +2161,7 @@ mod tests {
             test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
 
         // Add bob to the group
-        let mut commit_output = test_group
+        let commit_output = test_group
             .group
             .commit_builder()
             .add_member(bob_key_package)
@@ -2172,7 +2172,7 @@ mod tests {
 
         // Group from Bob's perspective
         let bob_group = Group::join(
-            commit_output.welcome_messages.remove(0),
+            &commit_output.welcome_messages[0],
             None,
             bob_client.config,
             bob_client.signer.unwrap(),
@@ -2893,19 +2893,15 @@ mod tests {
         .await
         .unwrap();
 
-        let (mut alice_sub_group, mut welcome) = alice
+        let (mut alice_sub_group, welcome) = alice
             .group
             .branch(b"subgroup".to_vec(), vec![new_key_pkg])
             .await
             .unwrap();
 
-        let welcome = welcome.remove(0);
+        let welcome = &welcome[0];
 
-        let (mut bob_sub_group, _) = bob
-            .group
-            .join_subgroup(welcome.clone(), None)
-            .await
-            .unwrap();
+        let (mut bob_sub_group, _) = bob.group.join_subgroup(welcome, None).await.unwrap();
 
         // Carol can't join
         let res = carol
@@ -3834,7 +3830,7 @@ mod tests {
 
         bob.config.secret_store().insert(psk_id.clone(), psk);
 
-        let mut commit = alice
+        let commit = alice
             .commit_builder()
             .add_member(key_pkg)
             .unwrap()
@@ -3844,7 +3840,7 @@ mod tests {
             .await
             .unwrap();
 
-        bob.join_group(None, commit.welcome_messages.remove(0))
+        bob.join_group(None, &commit.welcome_messages[0])
             .await
             .unwrap();
     }
@@ -3911,7 +3907,7 @@ mod tests {
         alice.apply_pending_commit().await.unwrap();
 
         let mut bob = bob_client
-            .join_group(None, commit.welcome_messages[0].clone())
+            .join_group(None, &commit.welcome_messages[0])
             .await
             .unwrap()
             .0;
@@ -3930,13 +3926,13 @@ mod tests {
             .unwrap();
 
         let mut carol = carol_client
-            .join_group(None, commit.welcome_messages[0].clone())
+            .join_group(None, &commit.welcome_messages[0])
             .await
             .unwrap()
             .0;
 
         let mut dave = dave_client
-            .join_group(None, commit.welcome_messages[0].clone())
+            .join_group(None, &commit.welcome_messages[0])
             .await
             .unwrap()
             .0;

@@ -74,7 +74,7 @@ where
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn join_subgroup(
         &self,
-        welcome: MlsMessage,
+        welcome: &MlsMessage,
         tree_data: Option<ExportedTree<'_>>,
     ) -> Result<(Group<C>, NewMemberInfo), MlsError> {
         let expected_new_group_prams = ResumptionGroupParameters {
@@ -204,7 +204,7 @@ impl<C: ClientConfig + Clone> ReinitClient<C> {
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn join(
         self,
-        welcome: MlsMessage,
+        welcome: &MlsMessage,
         tree_data: Option<ExportedTree<'_>>,
     ) -> Result<(Group<C>, NewMemberInfo), MlsError> {
         let reinit = self.reinit;
@@ -274,7 +274,7 @@ async fn resumption_create_group<C: ClientConfig + Clone>(
 async fn resumption_join_group<C: ClientConfig + Clone>(
     config: C,
     signer: SignatureSecretKey,
-    welcome: MlsMessage,
+    welcome: &MlsMessage,
     tree_data: Option<ExportedTree<'_>>,
     expected_new_group_params: ResumptionGroupParameters<'_>,
     verify_group_id: bool,
