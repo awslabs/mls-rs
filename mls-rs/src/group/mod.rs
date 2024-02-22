@@ -2703,7 +2703,6 @@ mod tests {
         let (bob_group, commit) = bob
             .external_commit_builder()
             .unwrap()
-            .with_tree_data(alice_group.group.export_tree().into_owned())
             .build(
                 alice_group
                     .group
@@ -2908,12 +2907,7 @@ mod tests {
         let (mut bob_sub_group, _) = bob.group.join_subgroup(welcome, None).await.unwrap();
 
         // Carol can't join
-        let res = carol
-            .group
-            .join_subgroup(welcome, Some(alice_sub_group.export_tree()))
-            .await
-            .map(|_| ());
-
+        let res = carol.group.join_subgroup(welcome, None).await.map(|_| ());
         assert_matches!(res, Err(_));
 
         // Alice and Bob can still talk

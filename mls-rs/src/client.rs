@@ -828,12 +828,8 @@ mod tests {
 
         let proposal = bob
             .external_add_proposal(
-                &alice_group
-                    .group
-                    .group_info_message_allowing_ext_commit(true)
-                    .await
-                    .unwrap(),
-                Some(alice_group.group.export_tree()),
+                &alice_group.group.group_info_message(true).await.unwrap(),
+                None,
                 vec![],
             )
             .await
@@ -888,7 +884,7 @@ mod tests {
 
         let group_info_msg = alice_group
             .group
-            .group_info_message_allowing_ext_commit(false)
+            .group_info_message_allowing_ext_commit(true)
             .await
             .unwrap();
 
@@ -902,10 +898,7 @@ mod tests {
             .signing_identity(new_client_identity.clone(), secret_key, TEST_CIPHER_SUITE)
             .build();
 
-        let mut builder = new_client
-            .external_commit_builder()
-            .unwrap()
-            .with_tree_data(alice_group.group.export_tree().into_owned());
+        let mut builder = new_client.external_commit_builder().unwrap();
 
         if do_remove {
             builder = builder.with_removal(1);
@@ -1011,7 +1004,6 @@ mod tests {
         let (_, external_commit) = carol
             .external_commit_builder()
             .unwrap()
-            .with_tree_data(bob_group.group.export_tree().into_owned())
             .build(group_info_msg)
             .await
             .unwrap();
