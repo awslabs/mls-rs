@@ -14,7 +14,7 @@ mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", default-features = false,
 mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", default-features = false, features = ["std"], version = "0.9.0" }
 thiserror = "1.0.40"
 zeroize = { version = "1", features = ["zeroize_derive"] }
-maybe-async = "0.2.7"
+maybe-async = "0.2.10"
 async-trait = "0.1.74"
 js-sys = "0.3.64"
 wasm-bindgen = "0.2.87"

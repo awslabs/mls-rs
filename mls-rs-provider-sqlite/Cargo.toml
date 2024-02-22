@@ -16,7 +16,7 @@ zeroize = { version = "1", features = ["zeroize_derive"] }
 rusqlite = { version = "0.30", default-features = false }
 rand = "0.8"
 hex = { version = "0.4" }
-maybe-async = "0.2.7"
+maybe-async = "0.2.10"
 async-trait = "0.1.74"
 
 [dev-dependencies]
