@@ -1243,7 +1243,7 @@ mod tests {
                 .find(|w| w.welcome_key_package_references().contains(&&kp_ref))
                 .unwrap();
 
-            client.join_group(None, &welcome).await.unwrap();
+            client.join_group(None, welcome).await.unwrap();
 
             assert_eq!(welcome.clone().into_welcome().unwrap().secrets.len(), 1);
         }
