@@ -16,7 +16,7 @@ features = ["external_client", "sqlite"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-default = ["std", "rayon", "rfc_compliant", "tree_index", "fast_serialize", "external_client"]
+default = ["std", "rayon", "rfc_compliant", "tree_index", "fast_serialize"]
 arbitrary = ["std", "dep:arbitrary", "mls-rs-core/arbitrary"]
 rayon = ["std", "dep:rayon"]
 external_client = ["std"]
