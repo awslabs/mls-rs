@@ -11,7 +11,6 @@ use crate::group::framing::MlsMessage;
 use crate::group::{
     framing::{Content, MlsMessagePayload, PublicMessage, Sender, WireFormat},
     message_signature::AuthenticatedContent,
-    process_group_info,
     proposal::{AddProposal, Proposal},
 };
 use crate::group::{ExportedTree, Group, NewMemberInfo};
@@ -627,7 +626,7 @@ where
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn external_add_proposal(
         &self,
-        group_info: MlsMessage,
+        group_info: &MlsMessage,
         tree_data: Option<crate::group::ExportedTree<'_>>,
         authenticated_data: Vec<u8>,
     ) -> Result<MlsMessage, MlsError> {
@@ -638,7 +637,7 @@ where
         }
 
         let group_info = group_info
-            .into_group_info()
+            .as_group_info()
             .ok_or(MlsError::UnexpectedMessageType)?;
 
         let cipher_suite = group_info.group_context.cipher_suite;
@@ -649,15 +648,14 @@ where
             .cipher_suite_provider(cipher_suite)
             .ok_or(MlsError::UnsupportedCipherSuite(cipher_suite))?;
 
-        let group_context = process_group_info(
+        crate::group::validate_group_info_joiner(
             protocol_version,
             group_info,
             tree_data,
             &self.config.identity_provider(),
             &cipher_suite_provider,
         )
-        .await?
-        .group_context;
+        .await?;
 
         let key_package = self.generate_key_package().await?.key_package;
 
@@ -667,7 +665,7 @@ where
 
         let message = AuthenticatedContent::new_signed(
             &cipher_suite_provider,
-            &group_context,
+            &group_info.group_context,
             Sender::NewMemberProposal,
             Content::Proposal(Box::new(Proposal::Add(Box::new(AddProposal {
                 key_package,
@@ -830,7 +828,7 @@ mod tests {
 
         let proposal = bob
             .external_add_proposal(
-                alice_group
+                &alice_group
                     .group
                     .group_info_message_allowing_ext_commit(true)
                     .await

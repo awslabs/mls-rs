@@ -395,6 +395,14 @@ impl MlsMessage {
     }
 
     #[inline(always)]
+    pub fn as_group_info(&self) -> Option<&GroupInfo> {
+        match &self.payload {
+            MlsMessagePayload::GroupInfo(info) => Some(info),
+            _ => None,
+        }
+    }
+
+    #[inline(always)]
     pub fn into_key_package(self) -> Option<KeyPackage> {
         match self.payload {
             MlsMessagePayload::KeyPackage(kp) => Some(kp),

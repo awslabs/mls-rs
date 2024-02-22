@@ -14,140 +14,108 @@ use crate::{
     protocol_version::ProtocolVersion,
     signer::Signable,
     tree_kem::{node::LeafIndex, tree_validator::TreeValidator, TreeKemPublic},
-    CipherSuiteProvider, CryptoProvider, ExtensionList,
+    CipherSuiteProvider, CryptoProvider,
 };
 
 #[cfg(feature = "by_ref_proposal")]
 use crate::extension::ExternalSendersExt;
 
 use super::{
-    confirmation_tag::ConfirmationTag, framing::Sender, message_signature::AuthenticatedContent,
+    framing::Sender, message_signature::AuthenticatedContent,
     transcript_hash::InterimTranscriptHash, ConfirmedTranscriptHash, EncryptedGroupSecrets,
-    ExportedTree, GroupContext, GroupInfo,
+    ExportedTree, GroupInfo, GroupState,
 };
 
 use super::message_processor::ProvisionalState;
 
-#[derive(Clone, Debug)]
-#[non_exhaustive]
-pub(crate) struct JoinContext {
-    pub group_info_extensions: ExtensionList,
-    pub group_context: GroupContext,
-    pub confirmation_tag: ConfirmationTag,
-    pub public_tree: TreeKemPublic,
-    pub signer_index: LeafIndex,
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+pub(crate) async fn validate_group_info_common<C: CipherSuiteProvider>(
+    msg_version: ProtocolVersion,
+    group_info: &GroupInfo,
+    tree: &TreeKemPublic,
+    cs: &C,
+) -> Result<(), MlsError> {
+    if msg_version != group_info.group_context.protocol_version {
+        return Err(MlsError::ProtocolVersionMismatch);
+    }
+
+    if group_info.group_context.cipher_suite != cs.cipher_suite() {
+        return Err(MlsError::CipherSuiteMismatch);
+    }
+
+    let sender_leaf = &tree.get_leaf_node(group_info.signer)?;
+
+    group_info
+        .verify(cs, &sender_leaf.signing_identity.signature_key, &())
+        .await?;
+
+    Ok(())
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-pub(crate) async fn process_group_info<C, I>(
-    msg_protocol_version: ProtocolVersion,
-    group_info: GroupInfo,
-    tree_data: Option<ExportedTree<'_>>,
+pub(crate) async fn validate_group_info_member<C: CipherSuiteProvider>(
+    self_state: &GroupState,
+    msg_version: ProtocolVersion,
+    group_info: &GroupInfo,
+    cs: &C,
+) -> Result<(), MlsError> {
+    validate_group_info_common(msg_version, group_info, &self_state.public_tree, cs).await?;
+
+    let self_tree = ExportedTree::new_borrowed(&self_state.public_tree.nodes);
+
+    if let Some(tree) = group_info.extensions.get_as::<RatchetTreeExt>()? {
+        (tree.tree_data == self_tree)
+            .then_some(())
+            .ok_or(MlsError::InvalidGroupInfo)?;
+    }
+
+    (group_info.group_context == self_state.context
+        && group_info.confirmation_tag == self_state.confirmation_tag)
+        .then_some(())
+        .ok_or(MlsError::InvalidGroupInfo)?;
+
+    Ok(())
+}
+
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+pub(crate) async fn validate_group_info_joiner<C, I>(
+    msg_version: ProtocolVersion,
+    group_info: &GroupInfo,
+    tree: Option<ExportedTree<'_>>,
     id_provider: &I,
     cs: &C,
-) -> Result<JoinContext, MlsError>
+) -> Result<TreeKemPublic, MlsError>
 where
     C: CipherSuiteProvider,
     I: IdentityProvider,
 {
-    let tree_data = match group_info.extensions.get_as::<RatchetTreeExt>()? {
+    let tree = match group_info.extensions.get_as::<RatchetTreeExt>()? {
         Some(ext) => ext.tree_data,
-        None => tree_data.ok_or(MlsError::RatchetTreeNotFound)?,
+        None => tree.ok_or(MlsError::RatchetTreeNotFound)?,
     };
 
-    let context_ext = &group_info.group_context.extensions;
+    let context = &group_info.group_context;
 
-    let public_tree =
-        TreeKemPublic::import_node_data(tree_data.into(), id_provider, context_ext).await?;
-
-    let group_protocol_version = group_info.group_context.protocol_version;
-
-    if msg_protocol_version != group_protocol_version {
-        return Err(MlsError::ProtocolVersionMismatch);
-    }
-
-    let cipher_suite = cs.cipher_suite();
-
-    if group_info.group_context.cipher_suite != cipher_suite {
-        return Err(MlsError::CipherSuiteMismatch);
-    }
-
-    let sender_key_package = public_tree.get_leaf_node(group_info.signer)?;
-
-    group_info
-        .verify(cs, &sender_key_package.signing_identity.signature_key, &())
-        .await?;
-
-    let confirmation_tag = group_info.confirmation_tag;
-    let signer_index = group_info.signer;
-
-    let group_context = GroupContext {
-        protocol_version: msg_protocol_version,
-        cipher_suite,
-        group_id: group_info.group_context.group_id,
-        epoch: group_info.group_context.epoch,
-        tree_hash: group_info.group_context.tree_hash,
-        confirmed_transcript_hash: group_info.group_context.confirmed_transcript_hash,
-        extensions: group_info.group_context.extensions,
-    };
-
-    Ok(JoinContext {
-        group_info_extensions: group_info.extensions,
-        group_context,
-        confirmation_tag,
-        public_tree,
-        signer_index,
-    })
-}
-
-#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-pub(crate) async fn validate_group_info<I: IdentityProvider, C: CipherSuiteProvider>(
-    msg_protocol_version: ProtocolVersion,
-    group_info: GroupInfo,
-    tree_data: Option<ExportedTree<'_>>,
-    identity_provider: &I,
-    cipher_suite_provider: &C,
-) -> Result<JoinContext, MlsError> {
-    let mut join_context = process_group_info(
-        msg_protocol_version,
-        group_info,
-        tree_data,
-        identity_provider,
-        cipher_suite_provider,
-    )
-    .await?;
+    let mut tree =
+        TreeKemPublic::import_node_data(tree.into(), id_provider, &context.extensions).await?;
 
     // Verify the integrity of the ratchet tree
-    let tree_validator = TreeValidator::new(
-        cipher_suite_provider,
-        &join_context.group_context.group_id,
-        &join_context.group_context.tree_hash,
-        &join_context.group_context.extensions,
-        identity_provider,
-    );
-
-    tree_validator
-        .validate(&mut join_context.public_tree)
+    TreeValidator::new(cs, &context, id_provider)
+        .validate(&mut tree)
         .await?;
 
     #[cfg(feature = "by_ref_proposal")]
-    if let Some(ext_senders) = join_context
-        .group_context
-        .extensions
-        .get_as::<ExternalSendersExt>()?
-    {
+    if let Some(ext_senders) = context.extensions.get_as::<ExternalSendersExt>()? {
         // TODO do joiners verify group against current time??
         ext_senders
-            .verify_all(
-                identity_provider,
-                None,
-                &join_context.group_context.extensions,
-            )
+            .verify_all(id_provider, None, &context.extensions)
             .await
             .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?;
     }
 
-    Ok(join_context)
+    validate_group_info_common(msg_version, &group_info, &tree, cs).await?;
+
+    Ok(tree)
 }
 
 pub(crate) fn commit_sender(

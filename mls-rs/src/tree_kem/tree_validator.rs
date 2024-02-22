@@ -12,10 +12,10 @@ use tree_math::TreeIndex;
 use super::node::{Node, NodeIndex};
 use crate::client::MlsError;
 use crate::crypto::CipherSuiteProvider;
+use crate::group::GroupContext;
 use crate::iter::wrap_impl_iter;
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::{leaf_node_validator::LeafNodeValidator, TreeKemPublic};
-use mls_rs_core::extension::ExtensionList;
 use mls_rs_core::identity::IdentityProvider;
 
 #[cfg(all(not(mls_build_async), feature = "rayon"))]
@@ -38,19 +38,17 @@ where
 impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> TreeValidator<'a, C, CSP> {
     pub fn new(
         cipher_suite_provider: &'a CSP,
-        group_id: &'a [u8],
-        tree_hash: &'a [u8],
-        group_context_extensions: &'a ExtensionList,
+        context: &'a GroupContext,
         identity_provider: &'a C,
     ) -> Self {
         TreeValidator {
-            expected_tree_hash: tree_hash,
+            expected_tree_hash: &context.tree_hash,
             leaf_node_validator: LeafNodeValidator::new(
                 cipher_suite_provider,
                 identity_provider,
-                Some(group_context_extensions),
+                Some(&context.extensions),
             ),
-            group_id,
+            group_id: &context.group_id,
             cipher_suite_provider,
         }
     }
@@ -168,7 +166,7 @@ mod tests {
         client::test_utils::TEST_CIPHER_SUITE,
         crypto::test_utils::test_cipher_suite_provider,
         crypto::test_utils::TestCryptoProvider,
-        group::test_utils::{get_test_group_context, random_bytes, TEST_GROUP},
+        group::test_utils::{get_test_group_context, random_bytes},
         identity::basic::BasicIdentityProvider,
         tree_kem::{
             kem::TreeKem,
@@ -238,17 +236,12 @@ mod tests {
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
 
             let mut test_tree = get_valid_tree(cipher_suite).await;
-            let expected_tree_hash = test_tree.tree_hash(&cipher_suite_provider).await.unwrap();
 
-            let extensions = ExtensionList::new();
+            let mut context = get_test_group_context(1, cipher_suite).await;
+            context.tree_hash = test_tree.tree_hash(&cipher_suite_provider).await.unwrap();
 
-            let validator = TreeValidator::new(
-                &cipher_suite_provider,
-                TEST_GROUP,
-                &expected_tree_hash,
-                &extensions,
-                &BasicIdentityProvider,
-            );
+            let validator =
+                TreeValidator::new(&cipher_suite_provider, &context, &BasicIdentityProvider);
 
             validator.validate(&mut test_tree).await.unwrap();
         }
@@ -258,18 +251,12 @@ mod tests {
     async fn test_tree_hash_mismatch() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let mut test_tree = get_valid_tree(cipher_suite).await;
-            let expected_tree_hash = random_bytes(32);
 
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
-            let extensions = ExtensionList::new();
+            let context = get_test_group_context(1, cipher_suite).await;
 
-            let validator = TreeValidator::new(
-                &cipher_suite_provider,
-                b"",
-                &expected_tree_hash,
-                &extensions,
-                &BasicIdentityProvider,
-            );
+            let validator =
+                TreeValidator::new(&cipher_suite_provider, &context, &BasicIdentityProvider);
 
             let res = validator.validate(&mut test_tree).await;
 
@@ -286,17 +273,11 @@ mod tests {
             parent_node.parent_hash = ParentHash::from(random_bytes(32));
 
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
-            let expected_tree_hash = test_tree.tree_hash(&cipher_suite_provider).await.unwrap();
+            let mut context = get_test_group_context(1, cipher_suite).await;
+            context.tree_hash = test_tree.tree_hash(&cipher_suite_provider).await.unwrap();
 
-            let extensions = ExtensionList::new();
-
-            let validator = TreeValidator::new(
-                &cipher_suite_provider,
-                b"",
-                &expected_tree_hash,
-                &extensions,
-                &BasicIdentityProvider,
-            );
+            let validator =
+                TreeValidator::new(&cipher_suite_provider, &context, &BasicIdentityProvider);
 
             let res = validator.validate(&mut test_tree).await;
 
@@ -316,16 +297,11 @@ mod tests {
                 .signature = random_bytes(32);
 
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
-            let expected_tree_hash = test_tree.tree_hash(&cipher_suite_provider).await.unwrap();
-            let extensions = ExtensionList::new();
+            let mut context = get_test_group_context(1, cipher_suite).await;
+            context.tree_hash = test_tree.tree_hash(&cipher_suite_provider).await.unwrap();
 
-            let validator = TreeValidator::new(
-                &cipher_suite_provider,
-                b"",
-                &expected_tree_hash,
-                &extensions,
-                &BasicIdentityProvider,
-            );
+            let validator =
+                TreeValidator::new(&cipher_suite_provider, &context, &BasicIdentityProvider);
 
             let res = validator.validate(&mut test_tree).await;
 

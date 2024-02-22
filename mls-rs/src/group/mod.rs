@@ -501,9 +501,9 @@ where
 
         let group_info = GroupInfo::mls_decode(&mut &**decrypted_group_info)?;
 
-        let join_context = validate_group_info(
+        let public_tree = validate_group_info_joiner(
             protocol_version,
-            group_info,
+            &group_info,
             tree_data,
             &config.identity_provider(),
             &cipher_suite_provider,
@@ -514,8 +514,7 @@ where
         // to the leaf_node field of the KeyPackage. If no such field exists, return an error. Let
         // index represent the index of this node among the leaves in the tree, namely the index of
         // the node in the tree array divided by two.
-        let self_index = join_context
-            .public_tree
+        let self_index = public_tree
             .find_leaf_node(&key_package_generation.key_package.leaf_node)
             .ok_or(MlsError::WelcomeKeyPackageNotFound)?;
 
@@ -529,9 +528,9 @@ where
             private_tree
                 .update_secrets(
                     &cipher_suite_provider,
-                    join_context.signer_index,
+                    group_info.signer,
                     path_secret,
-                    &join_context.public_tree,
+                    &public_tree,
                 )
                 .await?;
         }
@@ -541,20 +540,20 @@ where
         let key_schedule_result = KeySchedule::from_joiner(
             &cipher_suite_provider,
             &group_secrets.joiner_secret,
-            &join_context.group_context,
+            &group_info.group_context,
             #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
-            join_context.public_tree.total_leaf_count(),
+            public_tree.total_leaf_count(),
             &psk_secret,
         )
         .await?;
 
         // Verify the confirmation tag in the GroupInfo using the derived confirmation key and the
         // confirmed_transcript_hash from the GroupInfo.
-        if !join_context
+        if !group_info
             .confirmation_tag
             .matches(
                 &key_schedule_result.confirmation_key,
-                &join_context.group_context.confirmed_transcript_hash,
+                &group_info.group_context.confirmed_transcript_hash,
                 &cipher_suite_provider,
             )
             .await?
@@ -564,8 +563,8 @@ where
 
         Self::join_with(
             config,
-            cipher_suite_provider,
-            join_context,
+            group_info,
+            public_tree,
             key_schedule_result.key_schedule,
             key_schedule_result.epoch_secrets,
             private_tree,
@@ -579,41 +578,46 @@ where
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn join_with(
         config: C,
-        cipher_suite_provider: <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider,
-        join_context: JoinContext,
+        group_info: GroupInfo,
+        public_tree: TreeKemPublic,
         key_schedule: KeySchedule,
         epoch_secrets: EpochSecrets,
         private_tree: TreeKemPrivate,
         used_key_package_ref: Option<KeyPackageRef>,
         signer: SignatureSecretKey,
     ) -> Result<(Self, NewMemberInfo), MlsError> {
+        let cs = group_info.group_context.cipher_suite;
+
+        let cs = config
+            .crypto_provider()
+            .cipher_suite_provider(cs)
+            .ok_or(MlsError::UnsupportedCipherSuite(cs))?;
+
         // Use the confirmed transcript hash and confirmation tag to compute the interim transcript
         // hash in the new state.
         let interim_transcript_hash = InterimTranscriptHash::create(
-            &cipher_suite_provider,
-            &join_context.group_context.confirmed_transcript_hash,
-            &join_context.confirmation_tag,
+            &cs,
+            &group_info.group_context.confirmed_transcript_hash,
+            &group_info.confirmation_tag,
         )
         .await?;
 
         let state_repo = GroupStateRepository::new(
             #[cfg(feature = "prior_epoch")]
-            join_context.group_context.group_id.clone(),
+            group_info.group_context.group_id.clone(),
             config.group_state_storage(),
             config.key_package_repo(),
             used_key_package_ref,
         )
         .await?;
 
-        let group_info_extensions = join_context.group_info_extensions.clone();
-
         let group = Group {
             config,
             state: GroupState::new(
-                join_context.group_context,
-                join_context.public_tree,
+                group_info.group_context,
+                public_tree,
                 interim_transcript_hash,
-                join_context.confirmation_tag,
+                group_info.confirmation_tag,
             ),
             private_tree,
             key_schedule,
@@ -624,13 +628,13 @@ where
             commit_modifiers: Default::default(),
             epoch_secrets,
             state_repo,
-            cipher_suite_provider,
+            cipher_suite_provider: cs,
             #[cfg(feature = "psk")]
             previous_psk: None,
             signer,
         };
 
-        Ok((group, NewMemberInfo::new(group_info_extensions)))
+        Ok((group, NewMemberInfo::new(group_info.extensions)))
     }
 
     #[inline(always)]

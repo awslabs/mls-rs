@@ -24,7 +24,8 @@ use crate::{
         snapshot::RawGroupState,
         state::GroupState,
         transcript_hash::InterimTranscriptHash,
-        validate_group_info, ContentType, ExportedTree, GroupContext, GroupInfo, Roster, Welcome,
+        validate_group_info_joiner, ContentType, ExportedTree, GroupContext, GroupInfo, Roster,
+        Welcome,
     },
     identity::SigningIdentity,
     protocol_version::ProtocolVersion,
@@ -126,9 +127,9 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             group_info.group_context.cipher_suite,
         )?;
 
-        let join_context = validate_group_info(
+        let public_tree = validate_group_info_joiner(
             protocol_version,
-            group_info,
+            &group_info,
             tree_data,
             &config.identity_provider(),
             &cipher_suite_provider,
@@ -137,8 +138,8 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
 
         let interim_transcript_hash = InterimTranscriptHash::create(
             &cipher_suite_provider,
-            &join_context.group_context.confirmed_transcript_hash,
-            &join_context.confirmation_tag,
+            &group_info.group_context.confirmed_transcript_hash,
+            &group_info.confirmation_tag,
         )
         .await?;
 
@@ -146,10 +147,10 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             config,
             signing_data,
             state: GroupState::new(
-                join_context.group_context,
-                join_context.public_tree,
+                group_info.group_context,
+                public_tree,
                 interim_transcript_hash,
-                join_context.confirmation_tag,
+                group_info.confirmation_tag,
             ),
             cipher_suite_provider,
         })
