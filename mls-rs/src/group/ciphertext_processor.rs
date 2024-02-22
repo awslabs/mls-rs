@@ -194,7 +194,7 @@ where
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn open(
         &mut self,
-        ciphertext: PrivateMessage,
+        ciphertext: &PrivateMessage,
     ) -> Result<AuthenticatedContent, MlsError> {
         // Decrypt the sender data with the derived sender_key and sender_nonce from the message
         // epoch's key schedule
@@ -236,7 +236,7 @@ where
             .decrypt(
                 &self.cipher_suite_provider,
                 &ciphertext.ciphertext,
-                &PrivateContentAAD::from(&ciphertext).mls_encode_to_vec()?,
+                &PrivateContentAAD::from(ciphertext).mls_encode_to_vec()?,
                 &sender_data.reuse_guard,
             )
             .await
@@ -252,7 +252,7 @@ where
                 group_id: ciphertext.group_id.clone(),
                 epoch: ciphertext.epoch,
                 sender,
-                authenticated_data: ciphertext.authenticated_data,
+                authenticated_data: ciphertext.authenticated_data.clone(),
                 content: ciphertext_content.content,
             },
             auth: ciphertext_content.auth,
@@ -335,7 +335,7 @@ mod test {
 
             let mut receiver_processor = test_processor(&mut receiver_group, cipher_suite);
 
-            let decrypted = receiver_processor.open(ciphertext).await.unwrap();
+            let decrypted = receiver_processor.open(&ciphertext).await.unwrap();
 
             assert_eq!(decrypted, test_data.content);
         }
@@ -384,7 +384,7 @@ mod test {
             .await
             .unwrap();
 
-        let res = ciphertext_processor.open(ciphertext).await;
+        let res = ciphertext_processor.open(&ciphertext).await;
 
         assert_matches!(res, Err(MlsError::CantProcessMessageFromSelf))
     }
@@ -403,7 +403,7 @@ mod test {
         ciphertext.ciphertext = random_bytes(ciphertext.ciphertext.len());
         receiver_group.group.private_tree.self_index = LeafIndex::new(1);
 
-        let res = ciphertext_processor.open(ciphertext).await;
+        let res = ciphertext_processor.open(&ciphertext).await;
 
         assert!(res.is_err());
     }

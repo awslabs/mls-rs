@@ -488,7 +488,7 @@ impl MessageProcessor for GroupWithoutKeySchedule {
     #[cfg_attr(coverage_nightly, coverage(off))]
     async fn process_ciphertext(
         &mut self,
-        cipher_text: PrivateMessage,
+        cipher_text: &PrivateMessage,
     ) -> Result<EventOrContent<Self::OutputType>, MlsError> {
         self.inner.process_ciphertext(cipher_text).await
     }

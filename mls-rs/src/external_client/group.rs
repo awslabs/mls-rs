@@ -598,7 +598,7 @@ where
     #[cfg(feature = "private_message")]
     async fn process_ciphertext(
         &mut self,
-        cipher_text: PrivateMessage,
+        cipher_text: &PrivateMessage,
     ) -> Result<EventOrContent<Self::OutputType>, MlsError> {
         Ok(EventOrContent::Event(ExternalReceivedMessage::Ciphertext(
             cipher_text.content_type,

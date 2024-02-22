@@ -170,15 +170,14 @@ async fn test_create(
         .await
         .unwrap();
 
-    let welcome = alice_group
+    let welcome = &alice_group
         .commit_builder()
         .add_member(bob_key_pkg)
         .unwrap()
         .build()
         .await
         .unwrap()
-        .welcome_messages
-        .remove(0);
+        .welcome_messages[0];
 
     // Upon server confirmation, alice applies the commit to her own state
     alice_group.apply_pending_commit().await.unwrap();
@@ -605,15 +604,14 @@ async fn reinit_works() {
     let mut alice_group = alice1.create_group(ExtensionList::new()).await.unwrap();
     let kp = bob1.generate_key_package_message().await.unwrap();
 
-    let welcome = alice_group
+    let welcome = &alice_group
         .commit_builder()
         .add_member(kp)
         .unwrap()
         .build()
         .await
         .unwrap()
-        .welcome_messages
-        .remove(0);
+        .welcome_messages[0];
 
     alice_group.apply_pending_commit().await.unwrap();
 
@@ -702,10 +700,10 @@ async fn reinit_works() {
 
     // Bob produces key package, alice commits, bob joins
     let kp = bob2.generate_key_package().await.unwrap();
-    let (mut alice_group, mut welcome) = alice2.commit(vec![kp]).await.unwrap();
+    let (mut alice_group, welcome) = alice2.commit(vec![kp]).await.unwrap();
 
     let (mut bob_group, _) = bob2
-        .join(welcome.remove(0), Some(alice_group.export_tree()))
+        .join(&welcome[0], Some(alice_group.export_tree()))
         .await
         .unwrap();
 
@@ -716,7 +714,7 @@ async fn reinit_works() {
 
     let kp = carol.generate_key_package_message().await.unwrap();
 
-    let mut commit_output = alice_group
+    let commit_output = alice_group
         .commit_builder()
         .add_member(kp)
         .unwrap()
@@ -734,7 +732,7 @@ async fn reinit_works() {
     carol
         .join_group(
             Some(alice_group.export_tree()),
-            commit_output.welcome_messages.remove(0),
+            &commit_output.welcome_messages[0],
         )
         .await
         .unwrap();

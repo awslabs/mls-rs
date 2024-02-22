@@ -484,7 +484,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
                 self.verify_plaintext_authentication(plaintext).await
             }
             #[cfg(feature = "private_message")]
-            MlsMessagePayload::Cipher(cipher_text) => self.process_ciphertext(cipher_text).await,
+            MlsMessagePayload::Cipher(cipher_text) => self.process_ciphertext(&cipher_text).await,
             MlsMessagePayload::GroupInfo(group_info) => {
                 validate_group_info_member(
                     self.group_state(),
@@ -976,7 +976,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
     #[cfg(feature = "private_message")]
     async fn process_ciphertext(
         &mut self,
-        cipher_text: PrivateMessage,
+        cipher_text: &PrivateMessage,
     ) -> Result<EventOrContent<Self::OutputType>, MlsError>;
 
     async fn verify_plaintext_authentication(

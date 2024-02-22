@@ -100,7 +100,7 @@ where
         TreeKemPublic::import_node_data(tree.into(), id_provider, &context.extensions).await?;
 
     // Verify the integrity of the ratchet tree
-    TreeValidator::new(cs, &context, id_provider)
+    TreeValidator::new(cs, context, id_provider)
         .validate(&mut tree)
         .await?;
 
@@ -113,7 +113,7 @@ where
             .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?;
     }
 
-    validate_group_info_common(msg_version, &group_info, &tree, cs).await?;
+    validate_group_info_common(msg_version, group_info, &tree, cs).await?;
 
     Ok(tree)
 }
