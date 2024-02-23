@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use alloc::vec::Vec;
+use core::fmt::{self, Debug};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::extension::{ExtensionType, MlsCodecExtension};
 
@@ -27,11 +28,22 @@ use mls_rs_core::crypto::HpkePublicKey;
     all(feature = "ffi", not(test)),
     safer_ffi_gen::ffi_type(clone, opaque)
 )]
-#[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
+#[derive(Clone, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 pub struct ApplicationIdExt {
     /// Application level identifier presented by this extension.
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     pub identifier: Vec<u8>,
+}
+
+impl Debug for ApplicationIdExt {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ApplicationIdExt")
+            .field(
+                "identifier",
+                &mls_rs_core::debug::pretty_bytes(&self.identifier),
+            )
+            .finish()
+    }
 }
 
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]

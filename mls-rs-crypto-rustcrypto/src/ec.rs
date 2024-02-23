@@ -14,6 +14,7 @@ use std::array::TryFromSliceError;
 #[cfg(not(feature = "std"))]
 use core::array::TryFromSliceError;
 
+use core::fmt::{self, Debug};
 use ed25519_dalek::Signer;
 use p256::elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint};
 use rand_core::OsRng;
@@ -256,10 +257,19 @@ pub fn generate_keypair(curve: Curve) -> Result<KeyPair, EcError> {
     Ok(KeyPair { public, secret })
 }
 
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Default)]
 pub struct KeyPair {
     pub public: Vec<u8>,
     pub secret: Vec<u8>,
+}
+
+impl Debug for KeyPair {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("KeyPair")
+            .field("public", &mls_rs_core::debug::pretty_bytes(&self.public))
+            .field("secret", &mls_rs_core::debug::pretty_bytes(&self.secret))
+            .finish()
+    }
 }
 
 pub fn private_key_bytes_to_public(secret_key: &[u8], curve: Curve) -> Result<Vec<u8>, EcError> {

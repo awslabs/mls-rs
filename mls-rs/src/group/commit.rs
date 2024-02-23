@@ -4,6 +4,7 @@
 
 use alloc::vec;
 use alloc::vec::Vec;
+use core::fmt::{self, Debug};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::{
     crypto::{CipherSuiteProvider, SignatureSecretKey},
@@ -73,13 +74,21 @@ pub(super) struct CommitGeneration {
     pub commit_message_hash: CommitHash,
 }
 
-#[derive(Clone, PartialEq, Debug, MlsEncode, MlsDecode, MlsSize)]
+#[derive(Clone, PartialEq, MlsEncode, MlsDecode, MlsSize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub(crate) struct CommitHash(
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::vec_serde"))]
     Vec<u8>,
 );
+
+impl Debug for CommitHash {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        mls_rs_core::debug::pretty_bytes(&self.0)
+            .named("CommitHash")
+            .fmt(f)
+    }
+}
 
 impl CommitHash {
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]

@@ -32,6 +32,7 @@ use crate::{
 #[cfg(mls_build_async)]
 use alloc::boxed::Box;
 use alloc::vec::Vec;
+use core::fmt::{self, Debug};
 use mls_rs_core::{
     identity::IdentityProvider, protocol_version::ProtocolVersion, psk::PreSharedKeyStorage,
 };
@@ -238,7 +239,7 @@ impl From<KeyPackage> for ReceivedMessage {
     all(feature = "ffi", not(test)),
     safer_ffi_gen::ffi_type(clone, opaque)
 )]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 /// Description of a MLS application message.
 pub struct ApplicationMessageDescription {
     /// Index of this user in the group state.
@@ -247,6 +248,19 @@ pub struct ApplicationMessageDescription {
     data: ApplicationData,
     /// Plaintext authenticated data in the received MLS packet.
     pub authenticated_data: Vec<u8>,
+}
+
+impl Debug for ApplicationMessageDescription {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ApplicationMessageDescription")
+            .field("sender_index", &self.sender_index)
+            .field("data", &self.data)
+            .field(
+                "authenticated_data",
+                &mls_rs_core::debug::pretty_bytes(&self.authenticated_data),
+            )
+            .finish()
+    }
 }
 
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
@@ -260,7 +274,7 @@ impl ApplicationMessageDescription {
     all(feature = "ffi", not(test)),
     safer_ffi_gen::ffi_type(clone, opaque)
 )]
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 #[non_exhaustive]
 /// Description of a processed MLS commit message.
 pub struct CommitMessageDescription {
@@ -272,6 +286,20 @@ pub struct CommitMessageDescription {
     pub state_update: StateUpdate,
     /// Plaintext authenticated data in the received MLS packet.
     pub authenticated_data: Vec<u8>,
+}
+
+impl Debug for CommitMessageDescription {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CommitMessageDescription")
+            .field("is_external", &self.is_external)
+            .field("committer", &self.committer)
+            .field("state_update", &self.state_update)
+            .field(
+                "authenticated_data",
+                &mls_rs_core::debug::pretty_bytes(&self.authenticated_data),
+            )
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -306,7 +334,7 @@ impl TryFrom<Sender> for ProposalSender {
     all(feature = "ffi", not(test)),
     safer_ffi_gen::ffi_type(clone, opaque)
 )]
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 #[non_exhaustive]
 /// Description of a processed MLS proposal message.
 pub struct ProposalMessageDescription {
@@ -318,6 +346,21 @@ pub struct ProposalMessageDescription {
     pub authenticated_data: Vec<u8>,
     /// Proposal reference.
     pub proposal_ref: ProposalRef,
+}
+
+#[cfg(feature = "by_ref_proposal")]
+impl Debug for ProposalMessageDescription {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ProposalMessageDescription")
+            .field("sender", &self.sender)
+            .field("proposal", &self.proposal)
+            .field(
+                "authenticated_data",
+                &mls_rs_core::debug::pretty_bytes(&self.authenticated_data),
+            )
+            .field("proposal_ref", &self.proposal_ref)
+            .finish()
+    }
 }
 
 #[cfg(feature = "by_ref_proposal")]

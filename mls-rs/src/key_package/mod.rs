@@ -12,7 +12,10 @@ use crate::signer::Signable;
 use crate::tree_kem::leaf_node::{LeafNode, LeafNodeSource};
 use crate::CipherSuiteProvider;
 use alloc::vec::Vec;
-use core::ops::Deref;
+use core::{
+    fmt::{self, Debug},
+    ops::Deref,
+};
 use mls_rs_codec::MlsDecode;
 use mls_rs_codec::MlsEncode;
 use mls_rs_codec::MlsSize;
@@ -25,7 +28,7 @@ pub(crate) mod generator;
 pub(crate) use generator::*;
 
 #[non_exhaustive]
-#[derive(Clone, Debug, MlsSize, MlsEncode, MlsDecode, PartialEq)]
+#[derive(Clone, MlsSize, MlsEncode, MlsDecode, PartialEq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(
     all(feature = "ffi", not(test)),
@@ -41,6 +44,22 @@ pub struct KeyPackage {
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::vec_serde"))]
     pub signature: Vec<u8>,
+}
+
+impl Debug for KeyPackage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("KeyPackage")
+            .field("version", &self.version)
+            .field("cipher_suite", &self.cipher_suite)
+            .field("hpke_init_key", &self.hpke_init_key)
+            .field("leaf_node", &self.leaf_node)
+            .field("extensions", &self.extensions)
+            .field(
+                "signature",
+                &mls_rs_core::debug::pretty_bytes(&self.signature),
+            )
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, MlsSize, MlsEncode, MlsDecode)]

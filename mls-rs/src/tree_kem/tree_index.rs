@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use super::*;
+#[cfg(feature = "tree_index")]
+use core::fmt::{self, Debug};
 
 #[cfg(all(feature = "tree_index", feature = "custom_proposal"))]
 use crate::group::proposal::ProposalType;
@@ -29,10 +31,17 @@ use alloc::collections::BTreeSet;
 use mls_rs_core::crypto::HpkePublicKey;
 
 #[cfg(feature = "tree_index")]
-#[derive(
-    Clone, Debug, Default, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode, Hash, PartialOrd, Ord,
-)]
+#[derive(Clone, Default, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode, Hash, PartialOrd, Ord)]
 pub struct Identifier(#[mls_codec(with = "mls_rs_codec::byte_vec")] Vec<u8>);
+
+#[cfg(feature = "tree_index")]
+impl Debug for Identifier {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        mls_rs_core::debug::pretty_bytes(&self.0)
+            .named("Identifier")
+            .fmt(f)
+    }
+}
 
 #[cfg(all(feature = "tree_index", feature = "std"))]
 #[derive(Clone, Debug, Default, PartialEq, MlsSize, MlsEncode, MlsDecode)]

@@ -2,14 +2,17 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use core::convert::Infallible;
+use core::{
+    convert::Infallible,
+    fmt::{self, Debug},
+};
 
 use alloc::vec::Vec;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 
 use super::{Credential, CredentialType, MlsCredential};
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, MlsSize, MlsEncode, MlsDecode)]
+#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(
     all(feature = "ffi", not(test)),
@@ -31,6 +34,14 @@ pub struct BasicCredential {
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     #[cfg_attr(feature = "serde", serde(with = "crate::vec_serde"))]
     pub identifier: Vec<u8>,
+}
+
+impl Debug for BasicCredential {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        crate::debug::pretty_bytes(&self.identifier)
+            .named("BasicCredential")
+            .fmt(f)
+    }
 }
 
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]

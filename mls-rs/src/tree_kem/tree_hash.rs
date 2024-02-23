@@ -13,6 +13,7 @@ use crate::tree_kem::TreeKemPublic;
 use alloc::collections::VecDeque;
 use alloc::vec;
 use alloc::vec::Vec;
+use core::fmt::{self, Debug};
 use itertools::Itertools;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
@@ -20,13 +21,21 @@ use tree_math::TreeIndex;
 
 use core::ops::Deref;
 
-#[derive(Clone, Debug, Default, MlsSize, MlsEncode, MlsDecode, PartialEq)]
+#[derive(Clone, Default, MlsSize, MlsEncode, MlsDecode, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub(crate) struct TreeHash(
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::vec_serde"))]
     Vec<u8>,
 );
+
+impl Debug for TreeHash {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        mls_rs_core::debug::pretty_bytes(&self.0)
+            .named("TreeHash")
+            .fmt(f)
+    }
+}
 
 impl Deref for TreeHash {
     type Target = [u8];

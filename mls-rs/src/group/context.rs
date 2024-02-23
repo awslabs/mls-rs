@@ -4,13 +4,14 @@
 
 use alloc::vec;
 use alloc::vec::Vec;
+use core::fmt::{self, Debug};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 
 use crate::{cipher_suite::CipherSuite, protocol_version::ProtocolVersion, ExtensionList};
 
 use super::ConfirmedTranscriptHash;
 
-#[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
+#[derive(Clone, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(
     all(feature = "ffi", not(test)),
@@ -29,6 +30,26 @@ pub struct GroupContext {
     pub(crate) tree_hash: Vec<u8>,
     pub(crate) confirmed_transcript_hash: ConfirmedTranscriptHash,
     pub(crate) extensions: ExtensionList,
+}
+
+impl Debug for GroupContext {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("GroupContext")
+            .field("protocol_version", &self.protocol_version)
+            .field("cipher_suite", &self.cipher_suite)
+            .field(
+                "group_id",
+                &mls_rs_core::debug::pretty_group_id(&self.group_id),
+            )
+            .field("epoch", &self.epoch)
+            .field(
+                "tree_hash",
+                &mls_rs_core::debug::pretty_bytes(&self.tree_hash),
+            )
+            .field("confirmed_transcript_hash", &self.confirmed_transcript_hash)
+            .field("extensions", &self.extensions)
+            .finish()
+    }
 }
 
 #[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen)]
