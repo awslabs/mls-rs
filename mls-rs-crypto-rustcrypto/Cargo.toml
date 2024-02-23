@@ -62,7 +62,7 @@ mls-rs-identity-x509 = { path = "../mls-rs-identity-x509", optional = true, vers
 x509-cert = { version = "0.2", optional = true, features = ["std"] }
 spki = { version = "0.7", optional = true, features = ["std", "alloc"] }
 const-oid = { version = "0.9", optional = true, features = ["std"] }
-maybe-async = "0.2.7"
+maybe-async = "0.2.10"
 
 [dev-dependencies]
 hex = { version = "^0.4.3", features = ["serde"] }

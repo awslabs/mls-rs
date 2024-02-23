@@ -20,7 +20,7 @@ mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", default-features = fa
 thiserror = { version = "1.0.40", optional = true }
 zeroize = { version = "1", default-features = false, features = ["alloc", "zeroize_derive"] }
 cfg-if = "^1"
-maybe-async = "0.2.7"
+maybe-async = "0.2.10"
 
 [dev-dependencies]
 serde = { version = "1.0", features = ["derive"] }

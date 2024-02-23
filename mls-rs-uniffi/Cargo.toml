@@ -1,0 +1,26 @@
+[package]
+name = "mls-rs-uniffi"
+version = "0.1.0"
+edition = "2021"
+description = "An UniFFI-compatible implementation of Messaging Layer Security (RFC 9420)"
+homepage = "https://github.com/awslabs/mls-rs"
+repository = "https://github.com/awslabs/mls-rs"
+keywords = ["mls", "e2ee", "uniffi"]
+categories = ["cryptography"]
+license = "Apache-2.0 OR MIT"
+rust-version = "1.68.2"
+
+[lib]
+crate-type = ["lib", "cdylib"]
+name = "mls_rs_uniffi"
+
+[dependencies]
+maybe-async = "0.2.10"
+mls-rs = { path = "../mls-rs" }
+mls-rs-core = { path = "../mls-rs-core" }
+mls-rs-crypto-openssl = { path = "../mls-rs-crypto-openssl" }
+thiserror = "1.0.57"
+uniffi = "0.26.0"
+
+[target.'cfg(mls_build_async)'.dependencies]
+tokio = { version = "1.36.0", features = ["sync"] }
