@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1708528357921,
+  "lastUpdate": 1708701252252,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -7763,6 +7763,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 145234,
             "range": "± 2754",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mgeisler@google.com",
+            "name": "Martin Geisler",
+            "username": "mgeisler"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "811047649aa67c86a6345bee82a837d2a5f49472",
+          "message": "Introduce mls-rs-uniffi (#82)\n\n* Bump maybe-async to 0.2.10\r\n\r\nThis version contains https://github.com/fMeow/maybe-async-rs/pull/24,\r\nwhich should make it possible to combine UniFFI and maybe-async.\r\n\r\n* Introduce mls-rs-uniffi\r\n\r\nThis new create is a thin wrapper around mls-rs which exposes a subset\r\nof it’s interface using a [UniFFI-compatible][1] API.\r\n\r\nWe will expand this over the next few weeks to be a full API usable by\r\nmessaging apps on different platforms.\r\n\r\n[1]: https://mozilla.github.io/uniffi-rs/",
+          "timestamp": "2024-02-23T10:09:44-05:00",
+          "tree_id": "8845affb078ad114e806f70ac72c9dfe7628f5be",
+          "url": "https://github.com/awslabs/mls-rs/commit/811047649aa67c86a6345bee82a837d2a5f49472"
+        },
+        "date": 1708701251569,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 544900,
+            "range": "± 16219",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 551896,
+            "range": "± 15344",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 607410,
+            "range": "± 15559",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1199615,
+            "range": "± 22188",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7173087,
+            "range": "± 68344",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1100036,
+            "range": "± 61578",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1221437,
+            "range": "± 52441",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1363143,
+            "range": "± 50834",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 727055,
+            "range": "± 10193",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 775935,
+            "range": "± 10826",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 837902,
+            "range": "± 12934",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 23863,
+            "range": "± 482",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 76553,
+            "range": "± 1384",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 147013,
+            "range": "± 2417",
             "unit": "ns/iter"
           }
         ]
