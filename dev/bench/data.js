@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1708701252252,
+  "lastUpdate": 1708701351436,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -7871,6 +7871,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 147013,
             "range": "± 2417",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "94983192+stefunctional@users.noreply.github.com",
+            "name": "Stephane Raux",
+            "username": "stefunctional"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "13eba2c6874e24c9afc6bc56273e0d0d37fcb602",
+          "message": "Customize debug output of byte arrays (#83)\n\nThis should help reduce the noise when troubleshooting issues and\r\ndebug-printing values.\r\n\r\nBy default byte arrays are written with their length only, unless the\r\nalternate debug format is requested (`\"{:#?}\"`), in which case the bytes\r\nare also written in hex format. Group IDs should usually be short and\r\ntheir bytes are always written.",
+          "timestamp": "2024-02-23T10:11:27-05:00",
+          "tree_id": "e43efa28eb8b7b032d9e98f7c8ce70a7efbcaf36",
+          "url": "https://github.com/awslabs/mls-rs/commit/13eba2c6874e24c9afc6bc56273e0d0d37fcb602"
+        },
+        "date": 1708701350275,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 514001,
+            "range": "± 17824",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 516410,
+            "range": "± 13588",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 576884,
+            "range": "± 17763",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1182558,
+            "range": "± 20690",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7375653,
+            "range": "± 23192",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1113254,
+            "range": "± 76915",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1195960,
+            "range": "± 52211",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1330853,
+            "range": "± 56176",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 720769,
+            "range": "± 22910",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 765852,
+            "range": "± 4251",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 822014,
+            "range": "± 21180",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 23794,
+            "range": "± 230",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 76741,
+            "range": "± 1228",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 145993,
+            "range": "± 1578",
             "unit": "ns/iter"
           }
         ]
