@@ -19,15 +19,16 @@
 
 #[cfg(test)]
 pub mod test_utils;
+mod config;
 
 use std::sync::Arc;
 
+use config::{ClientConfig, UniFFIConfig};
 #[cfg(not(mls_build_async))]
 use std::sync::Mutex;
 #[cfg(mls_build_async)]
 use tokio::sync::Mutex;
 
-use mls_rs::client_builder;
 use mls_rs::error::{IntoAnyError, MlsError};
 use mls_rs::group;
 use mls_rs::identity::basic;
@@ -95,11 +96,6 @@ pub struct SignatureKeypair {
     public_key: Arc<SignaturePublicKey>,
     secret_key: Arc<SignatureSecretKey>,
 }
-
-pub type Config = client_builder::WithIdentityProvider<
-    basic::BasicIdentityProvider,
-    client_builder::WithCryptoProvider<OpensslCryptoProvider, client_builder::BaseConfig>,
->;
 
 /// Light-weight wrapper around a [`mls_rs::ExtensionList`].
 #[derive(uniffi::Object, Debug, Clone)]
@@ -247,7 +243,7 @@ pub async fn generate_signature_keypair(
 /// See [`mls_rs::Client`] for details.
 #[derive(Clone, Debug, uniffi::Object)]
 pub struct Client {
-    inner: mls_rs::client::Client<Config>,
+    inner: mls_rs::client::Client<UniFFIConfig>,
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -260,7 +256,11 @@ impl Client {
     ///
     /// See [`mls_rs::Client::builder`] for details.
     #[uniffi::constructor]
-    pub fn new(id: Vec<u8>, signature_keypair: SignatureKeypair) -> Self {
+    pub fn new(
+        id: Vec<u8>,
+        signature_keypair: SignatureKeypair,
+        client_config: ClientConfig,
+    ) -> Self {
         let cipher_suite = signature_keypair.cipher_suite;
         let public_key = arc_unwrap_or_clone(signature_keypair.public_key);
         let secret_key = arc_unwrap_or_clone(signature_keypair.secret_key);
@@ -268,13 +268,15 @@ impl Client {
         let basic_credential = BasicCredential::new(id);
         let signing_identity =
             identity::SigningIdentity::new(basic_credential.into_credential(), public_key.inner);
-        Client {
-            inner: mls_rs::Client::builder()
-                .crypto_provider(crypto_provider)
-                .identity_provider(basic::BasicIdentityProvider::new())
-                .signing_identity(signing_identity, secret_key.inner, cipher_suite.into())
-                .build(),
-        }
+
+        let client = mls_rs::Client::builder()
+            .crypto_provider(crypto_provider)
+            .identity_provider(basic::BasicIdentityProvider::new())
+            .signing_identity(signing_identity, secret_key.inner, cipher_suite.into())
+            .group_state_storage(client_config.group_state_storage.into())
+            .build();
+
+        Client { inner: client }
     }
 
     /// Generate a new key package for this client.
@@ -379,25 +381,25 @@ impl From<identity::SigningIdentity> for SigningIdentity {
 /// See [`mls_rs::Group`] for details.
 #[derive(Clone, uniffi::Object)]
 pub struct Group {
-    inner: Arc<Mutex<mls_rs::Group<Config>>>,
+    inner: Arc<Mutex<mls_rs::Group<UniFFIConfig>>>,
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 impl Group {
     #[cfg(not(mls_build_async))]
-    fn inner(&self) -> std::sync::MutexGuard<'_, mls_rs::Group<Config>> {
+    fn inner(&self) -> std::sync::MutexGuard<'_, mls_rs::Group<UniFFIConfig>> {
         self.inner.lock().unwrap()
     }
 
     #[cfg(mls_build_async)]
-    async fn inner(&self) -> tokio::sync::MutexGuard<'_, mls_rs::Group<Config>> {
+    async fn inner(&self) -> tokio::sync::MutexGuard<'_, mls_rs::Group<UniFFIConfig>> {
         self.inner.lock().await
     }
 }
 
 /// Find the identity for the member with a given index.
 fn index_to_identity(
-    group: &mls_rs::Group<Config>,
+    group: &mls_rs::Group<UniFFIConfig>,
     index: u32,
 ) -> Result<identity::SigningIdentity, Error> {
     let member = group
