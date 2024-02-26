@@ -655,13 +655,13 @@ where
 
 /// Serializable snapshot of an [ExternalGroup](ExternalGroup) state.
 #[derive(Debug, MlsEncode, MlsSize, MlsDecode, PartialEq, Clone)]
-pub struct ExternalSnapshot {
+pub struct ExternalSnapshot<'a> {
     version: u16,
-    state: RawGroupState,
+    state: RawGroupState<'a>,
     signing_data: Option<(SignatureSecretKey, SigningIdentity)>,
 }
 
-impl ExternalSnapshot {
+impl ExternalSnapshot<'_> {
     /// Serialize the snapshot
     pub fn to_bytes(&self) -> Result<Vec<u8>, MlsError> {
         Ok(self.mls_encode_to_vec()?)
@@ -680,7 +680,7 @@ where
     /// Create a snapshot of this group's current internal state.
     pub fn snapshot(&self) -> ExternalSnapshot {
         ExternalSnapshot {
-            state: RawGroupState::export(self.group_state()),
+            state: RawGroupState::export(self.group_state().clone()),
             version: 1,
             signing_data: self.signing_data.clone(),
         }
@@ -691,7 +691,6 @@ where
         config: C,
         snapshot: ExternalSnapshot,
     ) -> Result<Self, MlsError> {
-        #[cfg(feature = "tree_index")]
         let identity_provider = config.identity_provider();
 
         let cipher_suite_provider = cipher_suite_provider(
@@ -702,13 +701,7 @@ where
         Ok(ExternalGroup {
             config,
             signing_data: snapshot.signing_data,
-            state: snapshot
-                .state
-                .import(
-                    #[cfg(feature = "tree_index")]
-                    &identity_provider,
-                )
-                .await?,
+            state: snapshot.state.import(&identity_provider).await?,
             cipher_suite_provider,
         })
     }

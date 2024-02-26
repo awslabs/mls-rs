@@ -23,7 +23,7 @@ use crate::psk::PreSharedKeyID;
 use crate::signer::Signable;
 use crate::tree_kem::hpke_encryption::HpkeEncryptable;
 use crate::tree_kem::kem::TreeKem;
-use crate::tree_kem::node::LeafIndex;
+pub use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::path_secret::PathSecret;
 pub use crate::tree_kem::Capabilities;
 use crate::tree_kem::{
@@ -31,7 +31,7 @@ use crate::tree_kem::{
     leaf_node_validator::{LeafNodeValidator, ValidationContext},
 };
 use crate::tree_kem::{math as tree_math, ValidatedUpdatePath};
-use crate::tree_kem::{TreeKemPrivate, TreeKemPublic};
+pub use crate::tree_kem::{TreeKemPrivate, TreeKemPublic};
 use crate::{CipherSuiteProvider, CryptoProvider};
 
 #[cfg(feature = "by_ref_proposal")]
@@ -57,7 +57,6 @@ use std::collections::HashMap;
 #[cfg(feature = "private_message")]
 use ciphertext_processor::*;
 
-use confirmation_tag::*;
 use framing::*;
 use key_schedule::*;
 use membership_tag::*;
@@ -67,7 +66,6 @@ use proposal::*;
 #[cfg(feature = "by_ref_proposal")]
 use proposal_cache::*;
 use state::*;
-use transcript_hash::*;
 
 #[cfg(test)]
 pub(crate) use self::commit::test_utils::CommitModifiers;
@@ -78,13 +76,9 @@ pub use self::framing::PrivateMessage;
 #[cfg(feature = "psk")]
 use self::proposal_filter::ProposalInfo;
 
-#[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
-use secret_tree::*;
-
 #[cfg(feature = "prior_epoch")]
 use self::epoch::PriorEpoch;
 
-use self::epoch::EpochSecrets;
 pub use self::message_processor::{
     ApplicationMessageDescription, CommitMessageDescription, ProposalMessageDescription,
     ProposalSender, ReceivedMessage, StateUpdate,
@@ -100,10 +94,9 @@ pub use commit::*;
 pub use context::GroupContext;
 pub use roster::*;
 
-pub(crate) use transcript_hash::ConfirmedTranscriptHash;
 pub(crate) use util::*;
 
-#[cfg(all(feature = "by_ref_proposal", feature = "external_client"))]
+#[cfg(feature = "by_ref_proposal")]
 pub use self::message_processor::CachedProposal;
 
 #[cfg(feature = "private_message")]
@@ -152,7 +145,7 @@ pub mod external_commit;
 pub(crate) mod secret_tree;
 
 #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
-pub use secret_tree::MessageKeyData as MessageKey;
+pub use secret_tree::{KeyType, MessageKeyData as MessageKey, SecretTree};
 
 #[cfg(all(test, feature = "rfc_compliant"))]
 mod interop_test_vectors;
@@ -160,6 +153,14 @@ mod interop_test_vectors;
 mod exported_tree;
 
 pub use exported_tree::ExportedTree;
+
+pub use self::{
+    confirmation_tag::ConfirmationTag,
+    epoch::{EpochSecrets, SenderDataSecret},
+    key_schedule::{InitSecret, KeySchedule},
+    snapshot::{RawGroupState, Snapshot},
+    transcript_hash::{ConfirmedTranscriptHash, InterimTranscriptHash},
+};
 
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 struct GroupSecrets {

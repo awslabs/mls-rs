@@ -184,7 +184,10 @@ where
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn write_to_storage(&mut self, group_snapshot: Snapshot) -> Result<(), MlsError> {
+    pub async fn write_to_storage(
+        &mut self,
+        group_snapshot: &Snapshot<'_>,
+    ) -> Result<(), MlsError> {
         let inserts = self.pending_commit.inserts.iter().cloned().collect();
         let updates = self.pending_commit.updates.clone();
 
@@ -256,7 +259,7 @@ mod tests {
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn test_snapshot(epoch_id: u64) -> Snapshot {
+    async fn test_snapshot(epoch_id: u64) -> Snapshot<'static> {
         crate::group::snapshot::test_utils::get_test_snapshot(TEST_CIPHER_SUITE, epoch_id).await
     }
 
@@ -299,7 +302,7 @@ mod tests {
 
         // Write to the storage
         let snapshot = test_snapshot(test_epoch.epoch_id()).await;
-        test_repo.write_to_storage(snapshot.clone()).await.unwrap();
+        test_repo.write_to_storage(&snapshot).await.unwrap();
 
         // Make sure the memory cache cleared
         assert!(test_repo.pending_commit.inserts.is_empty());
@@ -333,7 +336,7 @@ mod tests {
         test_repo.insert(test_epoch_0.clone()).await.unwrap();
 
         test_repo
-            .write_to_storage(test_snapshot(0).await)
+            .write_to_storage(&test_snapshot(0).await)
             .await
             .unwrap();
 
@@ -365,7 +368,7 @@ mod tests {
 
         // Write the update to storage
         let snapshot = test_snapshot(1).await;
-        test_repo.write_to_storage(snapshot.clone()).await.unwrap();
+        test_repo.write_to_storage(&snapshot).await.unwrap();
 
         assert!(test_repo.pending_commit.updates.is_empty());
         assert!(test_repo.pending_commit.inserts.is_empty());
@@ -398,7 +401,7 @@ mod tests {
         test_repo.insert(test_epoch_0).await.unwrap();
 
         test_repo
-            .write_to_storage(test_snapshot(0).await)
+            .write_to_storage(&test_snapshot(0).await)
             .await
             .unwrap();
 
@@ -413,7 +416,7 @@ mod tests {
         test_repo.insert(test_epoch_1.clone()).await.unwrap();
 
         test_repo
-            .write_to_storage(test_snapshot(1).await)
+            .write_to_storage(&test_snapshot(1).await)
             .await
             .unwrap();
 
@@ -454,7 +457,7 @@ mod tests {
         }
 
         test_repo
-            .write_to_storage(test_snapshot(9).await)
+            .write_to_storage(&test_snapshot(9).await)
             .await
             .unwrap();
 
@@ -473,7 +476,7 @@ mod tests {
         test_repo.insert(test_epoch_0.clone()).await.unwrap();
 
         test_repo
-            .write_to_storage(test_snapshot(0).await)
+            .write_to_storage(&test_snapshot(0).await)
             .await
             .unwrap();
 
@@ -490,7 +493,9 @@ mod tests {
         repo.insert(test_epoch(0)).await.unwrap();
         repo.insert(test_epoch(1)).await.unwrap();
 
-        repo.write_to_storage(test_snapshot(0).await).await.unwrap();
+        repo.write_to_storage(&test_snapshot(0).await)
+            .await
+            .unwrap();
 
         let mut repo = GroupStateRepository {
             storage: repo.storage,
@@ -507,9 +512,13 @@ mod tests {
         let mut repo = test_group_state_repo(1).await;
 
         repo.insert(test_epoch(0)).await.unwrap();
-        repo.write_to_storage(test_snapshot(0).await).await.unwrap();
+        repo.write_to_storage(&test_snapshot(0).await)
+            .await
+            .unwrap();
         repo.insert(test_epoch(1)).await.unwrap();
-        repo.write_to_storage(test_snapshot(1).await).await.unwrap();
+        repo.write_to_storage(&test_snapshot(1).await)
+            .await
+            .unwrap();
 
         #[cfg(feature = "std")]
         let lock = repo.storage.inner.lock().unwrap();
@@ -542,7 +551,9 @@ mod tests {
 
         repo.key_package_repo.get(&key_package.reference).unwrap();
 
-        repo.write_to_storage(test_snapshot(4).await).await.unwrap();
+        repo.write_to_storage(&test_snapshot(4).await)
+            .await
+            .unwrap();
 
         assert!(repo.key_package_repo.get(&key_package.reference).is_none());
     }

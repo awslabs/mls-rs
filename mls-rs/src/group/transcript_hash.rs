@@ -86,7 +86,7 @@ impl ConfirmedTranscriptHash {
 
 #[derive(Clone, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub(crate) struct InterimTranscriptHash(
+pub struct InterimTranscriptHash(
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::vec_serde"))]
     Vec<u8>,
@@ -116,7 +116,7 @@ impl From<Vec<u8>> for InterimTranscriptHash {
 
 impl InterimTranscriptHash {
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn create<P: CipherSuiteProvider>(
+    pub(crate) async fn create<P: CipherSuiteProvider>(
         cipher_suite_provider: &P,
         confirmed: &ConfirmedTranscriptHash,
         confirmation_tag: &ConfirmationTag,

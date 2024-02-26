@@ -66,19 +66,20 @@ impl GroupStateProvider for PriorEpoch {
 
 #[derive(Debug, Clone, PartialEq, MlsEncode, MlsDecode, MlsSize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub(crate) struct EpochSecrets {
+#[non_exhaustive]
+pub struct EpochSecrets {
     #[cfg(feature = "psk")]
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
-    pub(crate) resumption_secret: PreSharedKey,
+    pub resumption_secret: PreSharedKey,
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
-    pub(crate) sender_data_secret: SenderDataSecret,
+    pub sender_data_secret: SenderDataSecret,
     #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
-    pub(crate) secret_tree: SecretTree<NodeIndex>,
+    pub secret_tree: SecretTree<NodeIndex>,
 }
 
 #[derive(Clone, PartialEq, MlsEncode, MlsDecode, MlsSize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub(crate) struct SenderDataSecret(
+pub struct SenderDataSecret(
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::zeroizing_serde"))]
     Zeroizing<Vec<u8>>,

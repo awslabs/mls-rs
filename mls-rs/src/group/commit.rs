@@ -67,11 +67,12 @@ pub(crate) struct Commit {
 
 #[derive(Clone, PartialEq, Debug, MlsEncode, MlsDecode, MlsSize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub(super) struct CommitGeneration {
+#[non_exhaustive]
+pub struct CommitGeneration {
     pub content: AuthenticatedContent,
     pub pending_private_tree: TreeKemPrivate,
     pub pending_commit_secret: PathSecret,
-    pub commit_message_hash: CommitHash,
+    pub(crate) commit_message_hash: CommitHash,
 }
 
 #[derive(Clone, PartialEq, MlsEncode, MlsDecode, MlsSize)]

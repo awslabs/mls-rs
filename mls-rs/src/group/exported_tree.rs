@@ -12,6 +12,7 @@ use crate::{client::MlsError, tree_kem::node::NodeVec};
     safer_ffi_gen::ffi_type(clone, opaque)
 )]
 #[derive(Debug, MlsSize, MlsEncode, MlsDecode, PartialEq, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ExportedTree<'a>(pub(crate) Cow<'a, NodeVec>);
 
 #[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen)]

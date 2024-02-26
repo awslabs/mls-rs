@@ -7,7 +7,7 @@ use crate::{
     client_config::ClientConfig,
     group::{
         key_schedule::KeySchedule, CommitGeneration, ConfirmationTag, Group, GroupContext,
-        GroupState, InterimTranscriptHash, ReInitProposal, TreeKemPublic,
+        GroupState, InterimTranscriptHash, ReInitProposal,
     },
     tree_kem::TreeKemPrivate,
 };
@@ -23,35 +23,36 @@ use super::proposal_cache::{CachedProposal, ProposalCache};
 
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 
-use mls_rs_core::crypto::SignatureSecretKey;
-#[cfg(feature = "tree_index")]
-use mls_rs_core::identity::IdentityProvider;
+use mls_rs_core::{crypto::SignatureSecretKey, identity::IdentityProvider};
 
 #[cfg(all(feature = "std", feature = "by_ref_proposal"))]
 use std::collections::HashMap;
 
-#[cfg(all(feature = "by_ref_proposal", not(feature = "std")))]
 use alloc::vec::Vec;
 
-use super::{cipher_suite_provider, epoch::EpochSecrets, state_repo::GroupStateRepository};
+use super::{
+    cipher_suite_provider, epoch::EpochSecrets, state_repo::GroupStateRepository, ExportedTree,
+    TreeKemPublic,
+};
 
 #[derive(Debug, PartialEq, Clone, MlsEncode, MlsDecode, MlsSize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub(crate) struct Snapshot {
-    version: u16,
-    state: RawGroupState,
-    private_tree: TreeKemPrivate,
-    epoch_secrets: EpochSecrets,
-    key_schedule: KeySchedule,
+#[non_exhaustive]
+pub struct Snapshot<'a> {
+    pub version: u16,
+    pub state: RawGroupState<'a>,
+    pub private_tree: TreeKemPrivate,
+    pub epoch_secrets: EpochSecrets,
+    pub key_schedule: KeySchedule,
     #[cfg(all(feature = "std", feature = "by_ref_proposal"))]
-    pending_updates: HashMap<HpkePublicKey, (HpkeSecretKey, Option<SignatureSecretKey>)>,
+    pub pending_updates: HashMap<HpkePublicKey, (HpkeSecretKey, Option<SignatureSecretKey>)>,
     #[cfg(all(not(feature = "std"), feature = "by_ref_proposal"))]
-    pending_updates: Vec<(HpkePublicKey, (HpkeSecretKey, Option<SignatureSecretKey>))>,
-    pending_commit: Option<CommitGeneration>,
-    signer: SignatureSecretKey,
+    pub pending_updates: Vec<(HpkePublicKey, (HpkeSecretKey, Option<SignatureSecretKey>))>,
+    pub pending_commit: Option<CommitGeneration>,
+    pub signer: SignatureSecretKey,
 }
 
-impl Snapshot {
+impl Snapshot<'_> {
     pub(crate) fn group_id(&self) -> &[u8] {
         &self.state.context.group_id
     }
@@ -59,47 +60,44 @@ impl Snapshot {
 
 #[derive(Debug, MlsEncode, MlsDecode, MlsSize, PartialEq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub(crate) struct RawGroupState {
-    pub(crate) context: GroupContext,
+#[non_exhaustive]
+pub struct RawGroupState<'a> {
+    pub context: GroupContext,
     #[cfg(all(feature = "std", feature = "by_ref_proposal"))]
-    pub(crate) proposals: HashMap<ProposalRef, CachedProposal>,
+    pub proposals: HashMap<ProposalRef, CachedProposal>,
     #[cfg(all(not(feature = "std"), feature = "by_ref_proposal"))]
-    pub(crate) proposals: Vec<(ProposalRef, CachedProposal)>,
-    pub(crate) public_tree: TreeKemPublic,
-    pub(crate) interim_transcript_hash: InterimTranscriptHash,
-    pub(crate) pending_reinit: Option<ReInitProposal>,
-    pub(crate) confirmation_tag: ConfirmationTag,
+    pub proposals: Vec<(ProposalRef, CachedProposal)>,
+    pub public_tree: ExportedTree<'a>,
+    pub interim_transcript_hash: InterimTranscriptHash,
+    pub pending_reinit: Option<ReInitProposal>,
+    pub confirmation_tag: ConfirmationTag,
+    tree_internals: TreeKemPublic,
 }
 
-impl RawGroupState {
-    pub(crate) fn export(state: &GroupState) -> Self {
-        #[cfg(feature = "tree_index")]
-        let public_tree = state.public_tree.clone();
+impl RawGroupState<'_> {
+    pub(crate) fn export(mut state: GroupState) -> RawGroupState<'static> {
+        // TODO this clone isn't necessary if we make the storage trait take bytes
+        let public_tree = ExportedTree::new(state.public_tree.nodes);
+        state.public_tree.nodes = Vec::new().into();
 
-        #[cfg(not(feature = "tree_index"))]
-        let public_tree = {
-            let mut tree = TreeKemPublic::new();
-            tree.nodes = state.public_tree.nodes.clone();
-            tree
-        };
-
-        Self {
-            context: state.context.clone(),
+        RawGroupState {
+            context: state.context,
             #[cfg(feature = "by_ref_proposal")]
-            proposals: state.proposals.proposals.clone(),
+            proposals: state.proposals.proposals,
             public_tree,
-            interim_transcript_hash: state.interim_transcript_hash.clone(),
-            pending_reinit: state.pending_reinit.clone(),
-            confirmation_tag: state.confirmation_tag.clone(),
+            interim_transcript_hash: state.interim_transcript_hash,
+            pending_reinit: state.pending_reinit,
+            confirmation_tag: state.confirmation_tag,
+            tree_internals: state.public_tree,
         }
     }
 
-    #[cfg(feature = "tree_index")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub(crate) async fn import<C>(self, identity_provider: &C) -> Result<GroupState, MlsError>
-    where
-        C: IdentityProvider,
-    {
+    pub(crate) async fn import<C: IdentityProvider>(
+        mut self,
+        #[cfg(feature = "tree_index")] identity_provider: &C,
+        #[cfg(not(feature = "tree_index"))] _identity_provider: &C,
+    ) -> Result<GroupState, MlsError> {
         let context = self.context;
 
         #[cfg(feature = "by_ref_proposal")]
@@ -109,9 +107,10 @@ impl RawGroupState {
             self.proposals,
         );
 
-        let mut public_tree = self.public_tree;
+        self.tree_internals.nodes = self.public_tree.0.into_owned();
 
-        public_tree
+        #[cfg(feature = "tree_index")]
+        self.tree_internals
             .initialize_index_if_necessary(identity_provider, &context.extensions)
             .await?;
 
@@ -119,30 +118,7 @@ impl RawGroupState {
             #[cfg(feature = "by_ref_proposal")]
             proposals,
             context,
-            public_tree,
-            interim_transcript_hash: self.interim_transcript_hash,
-            pending_reinit: self.pending_reinit,
-            confirmation_tag: self.confirmation_tag,
-        })
-    }
-
-    #[cfg(not(feature = "tree_index"))]
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub(crate) async fn import(self) -> Result<GroupState, MlsError> {
-        let context = self.context;
-
-        #[cfg(feature = "by_ref_proposal")]
-        let proposals = ProposalCache::import(
-            context.protocol_version,
-            context.group_id.clone(),
-            self.proposals,
-        );
-
-        Ok(GroupState {
-            #[cfg(feature = "by_ref_proposal")]
-            proposals,
-            context,
-            public_tree: self.public_tree,
+            public_tree: self.tree_internals,
             interim_transcript_hash: self.interim_transcript_hash,
             pending_reinit: self.pending_reinit,
             confirmation_tag: self.confirmation_tag,
@@ -159,12 +135,12 @@ where
     /// that is currently in use by the group.
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn write_to_storage(&mut self) -> Result<(), MlsError> {
-        self.state_repo.write_to_storage(self.snapshot()).await
+        self.state_repo.write_to_storage(&self.snapshot()).await
     }
 
-    pub(crate) fn snapshot(&self) -> Snapshot {
+    pub(crate) fn snapshot(&self) -> Snapshot<'static> {
         Snapshot {
-            state: RawGroupState::export(&self.state),
+            state: RawGroupState::export(self.state.clone()),
             private_tree: self.private_tree.clone(),
             key_schedule: self.key_schedule.clone(),
             #[cfg(feature = "by_ref_proposal")]
@@ -177,13 +153,12 @@ where
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub(crate) async fn from_snapshot(config: C, snapshot: Snapshot) -> Result<Self, MlsError> {
+    pub(crate) async fn from_snapshot(config: C, snapshot: Snapshot<'_>) -> Result<Self, MlsError> {
         let cipher_suite_provider = cipher_suite_provider(
             config.crypto_provider(),
             snapshot.state.context.cipher_suite,
         )?;
 
-        #[cfg(feature = "tree_index")]
         let identity_provider = config.identity_provider();
 
         let state_repo = GroupStateRepository::new(
@@ -197,13 +172,7 @@ where
 
         Ok(Group {
             config,
-            state: snapshot
-                .state
-                .import(
-                    #[cfg(feature = "tree_index")]
-                    &identity_provider,
-                )
-                .await?,
+            state: snapshot.state.import(&identity_provider).await?,
             private_tree: snapshot.private_tree,
             key_schedule: snapshot.key_schedule,
             #[cfg(feature = "by_ref_proposal")]
@@ -231,7 +200,7 @@ pub(crate) mod test_utils {
         group::{
             confirmation_tag::ConfirmationTag, epoch::test_utils::get_test_epoch_secrets,
             key_schedule::test_utils::get_test_key_schedule, test_utils::get_test_group_context,
-            transcript_hash::InterimTranscriptHash,
+            transcript_hash::InterimTranscriptHash, ExportedTree,
         },
         tree_kem::{node::LeafIndex, TreeKemPrivate},
     };
@@ -239,17 +208,21 @@ pub(crate) mod test_utils {
     use super::{RawGroupState, Snapshot};
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub(crate) async fn get_test_snapshot(cipher_suite: CipherSuite, epoch_id: u64) -> Snapshot {
+    pub(crate) async fn get_test_snapshot(
+        cipher_suite: CipherSuite,
+        epoch_id: u64,
+    ) -> Snapshot<'static> {
         Snapshot {
             state: RawGroupState {
                 context: get_test_group_context(epoch_id, cipher_suite).await,
                 #[cfg(feature = "by_ref_proposal")]
                 proposals: Default::default(),
-                public_tree: Default::default(),
+                public_tree: ExportedTree::new(Default::default()),
                 interim_transcript_hash: InterimTranscriptHash::from(vec![]),
                 pending_reinit: None,
                 confirmation_tag: ConfirmationTag::empty(&test_cipher_suite_provider(cipher_suite))
                     .await,
+                tree_internals: Default::default(),
             },
             private_tree: TreeKemPrivate::new(LeafIndex(0)),
             epoch_secrets: get_test_epoch_secrets(cipher_suite),

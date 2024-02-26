@@ -210,7 +210,7 @@ impl GroupStateStorage for InMemoryGroupStateStorage {
 
     async fn write<ST, ET>(
         &mut self,
-        state: ST,
+        state: &ST,
         epoch_inserts: Vec<ET>,
         epoch_updates: Vec<ET>,
     ) -> Result<(), Self::Error>
@@ -280,7 +280,7 @@ mod tests {
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn test_snapshot(epoch_id: u64) -> Snapshot {
+    async fn test_snapshot(epoch_id: u64) -> Snapshot<'static> {
         get_test_snapshot(TEST_CIPHER_SUITE, epoch_id).await
     }
 
@@ -296,7 +296,7 @@ mod tests {
         let epoch_inserts = vec![test_epoch(0), test_epoch(1)];
 
         storage
-            .write(test_snapshot(1).await, epoch_inserts, Vec::new())
+            .write(&test_snapshot(1).await, epoch_inserts, Vec::new())
             .await
             .unwrap();
 
@@ -307,7 +307,7 @@ mod tests {
         let epoch_inserts = vec![test_epoch(3), test_epoch(4)];
 
         storage
-            .write(test_snapshot(1).await, epoch_inserts, Vec::new())
+            .write(&test_snapshot(1).await, epoch_inserts, Vec::new())
             .await
             .unwrap();
 
@@ -321,7 +321,7 @@ mod tests {
         let epoch_inserts = vec![test_epoch(0), test_epoch(1), test_epoch(3), test_epoch(4)];
 
         storage
-            .write(test_snapshot(1).await, epoch_inserts, Vec::new())
+            .write(&test_snapshot(1).await, epoch_inserts, Vec::new())
             .await
             .unwrap();
 
@@ -332,7 +332,7 @@ mod tests {
         let epoch_inserts = vec![test_epoch(5)];
 
         storage
-            .write(test_snapshot(1).await, epoch_inserts, Vec::new())
+            .write(&test_snapshot(1).await, epoch_inserts, Vec::new())
             .await
             .unwrap();
 
@@ -360,7 +360,7 @@ mod tests {
         let snapshot = test_snapshot(1).await;
 
         storage
-            .write(snapshot.clone(), epoch_inserts.clone(), updates)
+            .write(&snapshot, epoch_inserts.clone(), updates)
             .await
             .unwrap();
 

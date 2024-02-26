@@ -28,20 +28,21 @@ use super::message_signature::AuthenticatedContent;
 
 #[derive(Clone, PartialEq, Eq, Default, MlsEncode, MlsDecode, MlsSize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
 pub struct KeySchedule {
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::zeroizing_serde"))]
-    exporter_secret: Zeroizing<Vec<u8>>,
+    pub exporter_secret: Zeroizing<Vec<u8>>,
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::zeroizing_serde"))]
     pub authentication_secret: Zeroizing<Vec<u8>>,
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::zeroizing_serde"))]
-    external_secret: Zeroizing<Vec<u8>>,
+    pub external_secret: Zeroizing<Vec<u8>>,
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::zeroizing_serde"))]
-    membership_key: Zeroizing<Vec<u8>>,
-    init_secret: InitSecret,
+    pub membership_key: Zeroizing<Vec<u8>>,
+    pub init_secret: InitSecret,
 }
 
 impl Debug for KeySchedule {

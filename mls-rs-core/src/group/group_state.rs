@@ -71,7 +71,7 @@ pub trait GroupStateStorage: Send + Sync {
     /// that may corrupt the group state.
     async fn write<ST, ET>(
         &mut self,
-        state: ST,
+        state: &ST,
         epoch_inserts: Vec<ET>,
         epoch_updates: Vec<ET>,
     ) -> Result<(), Self::Error>

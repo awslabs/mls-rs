@@ -46,7 +46,6 @@ pub mod update_path;
 
 pub use capabilities::*;
 pub use lifetime::*;
-pub(crate) use private::*;
 pub use update_path::*;
 
 use tree_index::*;
@@ -58,6 +57,8 @@ mod tree_index;
 
 #[cfg(feature = "std")]
 pub(crate) mod tree_utils;
+
+pub use private::TreeKemPrivate;
 
 #[cfg(test)]
 mod interop_test_vectors;

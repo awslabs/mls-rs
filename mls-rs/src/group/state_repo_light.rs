@@ -46,7 +46,10 @@ where
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn write_to_storage(&mut self, group_snapshot: Snapshot) -> Result<(), MlsError> {
+    pub async fn write_to_storage(
+        &mut self,
+        group_snapshot: &Snapshot<'_>,
+    ) -> Result<(), MlsError> {
         self.storage
             .write(group_snapshot, Vec::<PriorEpoch>::new(), Vec::new())
             .await
@@ -88,7 +91,7 @@ mod tests {
     use super::GroupStateRepository;
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn test_snapshot(epoch_id: u64) -> Snapshot {
+    async fn test_snapshot(epoch_id: u64) -> Snapshot<'static> {
         get_test_snapshot(TEST_CIPHER_SUITE, epoch_id).await
     }
 
@@ -103,7 +106,7 @@ mod tests {
         .unwrap();
 
         test_repo
-            .write_to_storage(test_snapshot(0).await)
+            .write_to_storage(&test_snapshot(0).await)
             .await
             .unwrap();
 
@@ -132,7 +135,9 @@ mod tests {
 
         repo.key_package_repo.get(&key_package.reference).unwrap();
 
-        repo.write_to_storage(test_snapshot(4).await).await.unwrap();
+        repo.write_to_storage(&test_snapshot(4).await)
+            .await
+            .unwrap();
 
         assert!(repo.key_package_repo.get(&key_package.reference).is_none());
     }

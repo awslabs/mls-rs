@@ -19,7 +19,7 @@ impl EpochRecord for PriorEpoch {
     }
 }
 
-impl GroupState for Snapshot {
+impl GroupState for Snapshot<'_> {
     fn id(&self) -> Vec<u8> {
         self.group_id().to_vec()
     }
