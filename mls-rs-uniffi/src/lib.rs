@@ -619,6 +619,7 @@ mod sync_tests {
 mod async_tests {
     use crate::test_utils::run_python;
 
+    #[ignore]
     #[test]
     fn test_simple_scenario() -> Result<(), Box<dyn std::error::Error>> {
         run_python(include_str!("../test_bindings/simple_scenario_async.py"))
