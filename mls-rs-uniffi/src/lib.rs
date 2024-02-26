@@ -17,9 +17,9 @@
 //!
 //! [UniFFI]: https://mozilla.github.io/uniffi-rs/
 
+mod config;
 #[cfg(test)]
 pub mod test_utils;
-mod config;
 
 use std::sync::Arc;
 

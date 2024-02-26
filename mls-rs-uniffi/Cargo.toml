@@ -15,6 +15,7 @@ crate-type = ["lib", "cdylib"]
 name = "mls_rs_uniffi"
 
 [dependencies]
+async-trait = "0.1.77"
 maybe-async = "0.2.10"
 mls-rs = { path = "../mls-rs" }
 mls-rs-core = { path = "../mls-rs-core" }

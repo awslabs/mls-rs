@@ -30,12 +30,12 @@ impl mls_rs_core::group::EpochRecord for EpochRecord {
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 #[cfg_attr(mls_build_async, maybe_async::must_be_async)]
-#[uniffi::export]
+#[uniffi::export(with_foreign)]
 pub trait GroupStateStorage: Send + Sync + Debug {
-    async fn state(&self, group_id: &[u8]) -> Result<Option<Vec<u8>>, FFICallbackError>;
+    async fn state(&self, group_id: Vec<u8>) -> Result<Option<Vec<u8>>, FFICallbackError>;
     async fn epoch(
         &self,
-        group_id: &[u8],
+        group_id: Vec<u8>,
         epoch_id: u64,
     ) -> Result<Option<Vec<u8>>, FFICallbackError>;
 
@@ -46,7 +46,7 @@ pub trait GroupStateStorage: Send + Sync + Debug {
         epoch_updates: Vec<Arc<EpochRecord>>,
     ) -> Result<(), FFICallbackError>;
 
-    async fn max_epoch_id(&self, group_id: &[u8]) -> Result<Option<u64>, FFICallbackError>;
+    async fn max_epoch_id(&self, group_id: Vec<u8>) -> Result<Option<u64>, FFICallbackError>;
 }
 
 #[derive(Debug, Clone)]
@@ -67,7 +67,7 @@ impl mls_rs_core::group::GroupStateStorage for GroupStateStorageWrapper {
     where
         T: mls_rs_core::group::GroupState + MlsEncode + MlsDecode,
     {
-        let state_data = self.0.state(group_id)?;
+        let state_data = self.0.state(group_id.to_vec())?;
 
         state_data
             .as_deref()
@@ -80,7 +80,7 @@ impl mls_rs_core::group::GroupStateStorage for GroupStateStorageWrapper {
     where
         T: mls_rs_core::group::EpochRecord + MlsEncode + MlsDecode,
     {
-        let epoch_data = self.0.epoch(group_id, epoch_id)?;
+        let epoch_data = self.0.epoch(group_id.to_vec(), epoch_id)?;
 
         epoch_data
             .as_deref()
@@ -118,6 +118,6 @@ impl mls_rs_core::group::GroupStateStorage for GroupStateStorageWrapper {
     }
 
     async fn max_epoch_id(&self, group_id: &[u8]) -> Result<Option<u64>, Self::Error> {
-        self.0.max_epoch_id(group_id)
+        self.0.max_epoch_id(group_id.to_vec())
     }
 }
