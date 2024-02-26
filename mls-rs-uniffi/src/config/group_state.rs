@@ -101,18 +101,25 @@ impl mls_rs_core::group::GroupStateStorage for GroupStateStorageWrapper {
     {
         let state = Arc::new(GroupState {
             id: state.id(),
-            data: state.mls_encode_to_vec().unwrap(),
+            data: state.mls_encode_to_vec()?,
         });
 
-        let epoch_to_record = |v: ET| {
-            Arc::new(EpochRecord {
+        let epoch_to_record = |v: ET| -> Result<_, Self::Error> {
+            Ok(Arc::new(EpochRecord {
                 id: v.id(),
-                data: v.mls_encode_to_vec().unwrap(),
-            })
+                data: v.mls_encode_to_vec()?,
+            }))
         };
 
-        let inserts = epoch_inserts.into_iter().map(epoch_to_record).collect();
-        let updates = epoch_updates.into_iter().map(epoch_to_record).collect();
+        let inserts = epoch_inserts
+            .into_iter()
+            .map(epoch_to_record)
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let updates = epoch_updates
+            .into_iter()
+            .map(epoch_to_record)
+            .collect::<Result<Vec<_>, _>>()?;
 
         self.0.write(state, inserts, updates)
     }
