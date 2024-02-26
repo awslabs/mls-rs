@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1708961680042,
+  "lastUpdate": 1708965781029,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -8087,6 +8087,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 146103,
             "range": "± 1441",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "martin@geisler.net",
+            "name": "Martin Geisler",
+            "username": "mgeisler"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d34b971314199fc73cee5a5fb830bc6a732fb629",
+          "message": "Execute UniFFI bindings via a simple Python test (#87)\n\nThis uses the UniFFI test helpers to make the `libmls_rs_uniffi.so`\r\nfile available to the Python script.\r\n\r\nI would have liked to use `$CARGO_TARGET_TMPDIR` to place the\r\ntemporary files in a stable place under `target/`, but this variable\r\nis only set for integration tests, not unit tests. So the script now\r\nends up somewhere in your system temp directory.\r\n\r\nWe could decide to only use integration tests for these tests, let me\r\nknow what you think!\r\n\r\nThe test is very simple here: it simply executes the Python script,\r\nwhich then has to return with a zero exit code. If it fails, the\r\noutput is printed and you then have to debug the Python code by hand.\r\n\r\nRelated to #81.",
+          "timestamp": "2024-02-26T17:38:42+01:00",
+          "tree_id": "43bafa9353b83266448bf7410634103d49c5cb75",
+          "url": "https://github.com/awslabs/mls-rs/commit/d34b971314199fc73cee5a5fb830bc6a732fb629"
+        },
+        "date": 1708965780417,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 509850,
+            "range": "± 13417",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 517551,
+            "range": "± 17560",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 592751,
+            "range": "± 17446",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1180887,
+            "range": "± 81853",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7129162,
+            "range": "± 28624",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1130170,
+            "range": "± 49127",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1185352,
+            "range": "± 48111",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1343902,
+            "range": "± 53387",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 720289,
+            "range": "± 15266",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 765466,
+            "range": "± 7851",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 820906,
+            "range": "± 9551",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 23715,
+            "range": "± 518",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 76022,
+            "range": "± 1166",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 145489,
+            "range": "± 4210",
             "unit": "ns/iter"
           }
         ]
