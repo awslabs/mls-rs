@@ -312,9 +312,8 @@ impl Client {
     /// Join an existing group.
     ///
     /// See [`mls_rs::Client::join_group`] for details.
-    pub async fn join_group(&self, welcome_message: Arc<Message>) -> Result<JoinInfo, Error> {
-        let welcome_message = arc_unwrap_or_clone(welcome_message);
-        let (group, new_member_info) = self.inner.join_group(None, welcome_message.inner).await?;
+    pub async fn join_group(&self, welcome_message: &Message) -> Result<JoinInfo, Error> {
+        let (group, new_member_info) = self.inner.join_group(None, &welcome_message.inner).await?;
 
         let group = Arc::new(Group {
             inner: Arc::new(Mutex::new(group)),

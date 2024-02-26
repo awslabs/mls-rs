@@ -10,15 +10,13 @@ use super::{
     },
     message_signature::AuthenticatedContent,
     mls_rules::{CommitDirection, MlsRules},
-    process_group_info,
     proposal_filter::ProposalBundle,
     state::GroupState,
     transcript_hash::InterimTranscriptHash,
-    transcript_hashes, ExportedTree, GroupContext, GroupInfo, Welcome,
+    transcript_hashes, validate_group_info_member, GroupContext, GroupInfo, Welcome,
 };
 use crate::{
     client::MlsError,
-    extension::RatchetTreeExt,
     key_package::validate_key_package_properties,
     time::MlsTime,
     tree_kem::{
@@ -486,10 +484,15 @@ pub(crate) trait MessageProcessor: Send + Sync {
                 self.verify_plaintext_authentication(plaintext).await
             }
             #[cfg(feature = "private_message")]
-            MlsMessagePayload::Cipher(cipher_text) => self.process_ciphertext(cipher_text).await,
+            MlsMessagePayload::Cipher(cipher_text) => self.process_ciphertext(&cipher_text).await,
             MlsMessagePayload::GroupInfo(group_info) => {
-                self.validate_group_info(group_info.clone(), message.version)
-                    .await?;
+                validate_group_info_member(
+                    self.group_state(),
+                    message.version,
+                    &group_info,
+                    self.cipher_suite_provider(),
+                )
+                .await?;
 
                 Ok(EventOrContent::Event(group_info.into()))
             }
@@ -946,38 +949,6 @@ pub(crate) trait MessageProcessor: Send + Sync {
         Ok(())
     }
 
-    async fn validate_group_info(
-        &self,
-        group_info: GroupInfo,
-        version: ProtocolVersion,
-    ) -> Result<(), MlsError> {
-        let state = self.group_state();
-
-        let self_tree = ExportedTree::new_borrowed(&state.public_tree.nodes);
-
-        if let Some(tree) = group_info.extensions.get_as::<RatchetTreeExt>()? {
-            (tree.tree_data == self_tree)
-                .then_some(())
-                .ok_or(MlsError::InvalidGroupInfo)?;
-        }
-
-        (group_info.group_context == state.context
-            && group_info.confirmation_tag == state.confirmation_tag)
-            .then_some(())
-            .ok_or(MlsError::InvalidGroupInfo)?;
-
-        process_group_info(
-            version,
-            group_info,
-            Some(self_tree),
-            &self.identity_provider(),
-            self.cipher_suite_provider(),
-        )
-        .await?;
-
-        Ok(())
-    }
-
     fn validate_welcome(
         &self,
         welcome: &Welcome,
@@ -1005,7 +976,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
     #[cfg(feature = "private_message")]
     async fn process_ciphertext(
         &mut self,
-        cipher_text: PrivateMessage,
+        cipher_text: &PrivateMessage,
     ) -> Result<EventOrContent<Self::OutputType>, MlsError>;
 
     async fn verify_plaintext_authentication(

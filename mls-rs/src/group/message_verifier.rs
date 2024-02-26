@@ -296,7 +296,7 @@ mod tests {
             let (bob_client, bob_key_pkg) =
                 test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
 
-            let mut commit_output = alice
+            let commit_output = alice
                 .group
                 .commit_builder()
                 .add_member(bob_key_pkg)
@@ -308,7 +308,7 @@ mod tests {
             alice.group.apply_pending_commit().await.unwrap();
 
             let (bob, _) = Group::join(
-                commit_output.welcome_messages.remove(0),
+                &commit_output.welcome_messages[0],
                 None,
                 bob_client.config,
                 bob_client.signer.unwrap(),

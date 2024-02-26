@@ -5,10 +5,7 @@
 use alloc::vec;
 use alloc::vec::Vec;
 use mls_rs_codec::{MlsDecode, MlsEncode};
-use mls_rs_core::{
-    crypto::{CipherSuite, CipherSuiteProvider},
-    extension::ExtensionList,
-};
+use mls_rs_core::crypto::{CipherSuite, CipherSuiteProvider};
 
 use itertools::Itertools;
 
@@ -78,6 +75,8 @@ impl ValidationTestCase {
 #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
 #[cfg_attr(coverage_nightly, coverage(off))]
 async fn validation() {
+    use crate::group::test_utils::get_test_group_context;
+
     #[cfg(mls_build_async)]
     let test_cases: Vec<ValidationTestCase> = load_test_case_json!(
         interop_tree_validation,
@@ -117,16 +116,14 @@ async fn validation() {
                 assert_eq!(&tree.nodes.get_resolution_index(i as u32).unwrap(), res)
             });
 
-        TreeValidator::new(
-            &cs,
-            &test_case.group_id,
-            &tree_hash,
-            &ExtensionList::new(),
-            &BasicIdentityProvider,
-        )
-        .validate(&mut tree)
-        .await
-        .unwrap();
+        let mut context = get_test_group_context(1, test_case.cipher_suite.into()).await;
+        context.tree_hash = tree_hash;
+        context.group_id = test_case.group_id;
+
+        TreeValidator::new(&cs, &context, &BasicIdentityProvider)
+            .validate(&mut tree)
+            .await
+            .unwrap();
     }
 }
 

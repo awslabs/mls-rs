@@ -383,7 +383,7 @@ fn main() -> Result<(), CustomError> {
         .remove(0);
 
     alice_tablet_group.apply_pending_commit()?;
-    let (mut alice_pc_group, _) = alice_pc_client.join_group(None, welcome)?;
+    let (mut alice_pc_group, _) = alice_pc_client.join_group(None, &welcome)?;
 
     // Alice cannot add bob's devices yet
     let bob_tablet_client = make_client(bob_tablet)?;
@@ -401,13 +401,13 @@ fn main() -> Result<(), CustomError> {
         new_user: bob.credential,
     };
 
-    let mut commit = alice_tablet_group
+    let commit = alice_tablet_group
         .commit_builder()
         .custom_proposal(add_bob.to_custom_proposal()?)
         .add_member(key_package)?
         .build()?;
 
-    bob_tablet_client.join_group(None, commit.welcome_messages.remove(0))?;
+    bob_tablet_client.join_group(None, &commit.welcome_messages[0])?;
     alice_tablet_group.apply_pending_commit()?;
     alice_pc_group.process_incoming_message(commit.commit_message)?;
 

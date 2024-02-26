@@ -9,7 +9,7 @@ use mls_rs::{
         builder::MlsConfig as ExternalMlsConfig, ExternalClient, ExternalReceivedMessage,
         ExternalSnapshot,
     },
-    group::{CachedProposal, ExportedTree, ReceivedMessage},
+    group::{CachedProposal, ReceivedMessage},
     identity::{
         basic::{BasicCredential, BasicIdentityProvider},
         SigningIdentity,
@@ -39,11 +39,11 @@ struct BasicServer {
 
 impl BasicServer {
     // Client uploads group data after creating the group
-    fn create_group(group_info: &[u8], tree: ExportedTree) -> Result<Self, MlsError> {
+    fn create_group(group_info: &[u8]) -> Result<Self, MlsError> {
         let server = make_server();
         let group_info = MlsMessage::from_bytes(group_info)?;
 
-        let group = server.observe_group(group_info, Some(tree))?;
+        let group = server.observe_group(group_info, None)?;
 
         Ok(Self {
             group_state: group.snapshot().to_bytes()?,
@@ -143,22 +143,18 @@ fn main() -> Result<(), MlsError> {
     let mut alice_group = alice.create_group(ExtensionList::default())?;
     let bob_key_package = bob.generate_key_package_message()?;
 
-    let welcome = alice_group
+    let welcome = &alice_group
         .commit_builder()
         .add_member(bob_key_package)?
         .build()?
-        .welcome_messages
-        .pop()
-        .expect("key package shouldn't be rejected");
+        .welcome_messages[0];
 
     let (mut bob_group, _) = bob.join_group(None, welcome)?;
     alice_group.apply_pending_commit()?;
 
     // Server starts observing Alice's group
     let group_info = alice_group.group_info_message(true)?.to_bytes()?;
-    let tree = alice_group.export_tree();
-
-    let mut server = BasicServer::create_group(&group_info, tree)?;
+    let mut server = BasicServer::create_group(&group_info)?;
 
     // Bob uploads a proposal
     let proposal = bob_group

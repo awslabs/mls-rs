@@ -271,7 +271,7 @@ impl MlsClient for MlsClientImpl {
 
         let (group, _) = client
             .client
-            .join_group(get_tree(&request.ratchet_tree)?, welcome_msg)
+            .join_group(get_tree(&request.ratchet_tree)?, &welcome_msg)
             .map_err(abort)?;
 
         let epoch_authenticator = group.epoch_authenticator().map_err(abort)?.to_vec();

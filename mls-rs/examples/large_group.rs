@@ -69,7 +69,7 @@ fn make_groups_best_case<P: CryptoProvider + Clone>(
         let bob_kpkg = bob_client.generate_key_package_message()?;
 
         // Last group sends a commit adding the new client to the group.
-        let mut commit = groups
+        let commit = groups
             .last_mut()
             .unwrap()
             .commit_builder()
@@ -85,8 +85,7 @@ fn make_groups_best_case<P: CryptoProvider + Clone>(
         groups.last_mut().unwrap().apply_pending_commit()?;
 
         // The new member joins.
-        let welcome_message = commit.welcome_messages.pop().unwrap();
-        let (bob_group, _info) = bob_client.join_group(None, welcome_message)?;
+        let (bob_group, _info) = bob_client.join_group(None, &commit.welcome_messages[0])?;
 
         groups.push(bob_group);
     }
@@ -115,7 +114,7 @@ fn make_groups_worst_case<P: CryptoProvider + Clone>(
         commit_builder = commit_builder.add_member(bob_kpkg)?;
     }
 
-    let welcome_message: mls_rs::MlsMessage = commit_builder.build()?.welcome_messages.remove(0);
+    let welcome_message = &commit_builder.build()?.welcome_messages[0];
 
     alice_group.apply_pending_commit()?;
 
@@ -123,7 +122,7 @@ fn make_groups_worst_case<P: CryptoProvider + Clone>(
     let mut groups = vec![alice_group];
 
     for bob_client in &bob_clients {
-        let (bob_group, _info) = bob_client.join_group(None, welcome_message.clone())?;
+        let (bob_group, _info) = bob_client.join_group(None, welcome_message)?;
         groups.push(bob_group);
     }
 
