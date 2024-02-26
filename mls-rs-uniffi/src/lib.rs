@@ -582,13 +582,23 @@ mod sync_tests {
 
     #[test]
     fn test_generate_signature_keypair() -> Result<(), Box<dyn std::error::Error>> {
-        run_python(
-            r#"
-from mls_rs_uniffi import CipherSuite, generate_signature_keypair
+        run_python(include_str!("../test_bindings/signatures_sync.py"))
+    }
 
-signature_keypair = generate_signature_keypair(CipherSuite.CURVE25519_AES128)
-assert signature_keypair.cipher_suite == CipherSuite.CURVE25519_AES128
-"#,
-        )
+    #[test]
+    fn test_simple_scenario() -> Result<(), Box<dyn std::error::Error>> {
+        run_python(include_str!("../test_bindings/simple_scenario_sync.py"))
+    }
+}
+
+// TODO(mulmarta): it'll break if we use async trait which will be supported in
+// the next UniFFI release
+#[cfg(all(test, mls_build_async))]
+mod async_tests {
+    use crate::test_utils::run_python;
+
+    #[test]
+    fn test_simple_scenario() -> Result<(), Box<dyn std::error::Error>> {
+        run_python(include_str!("../test_bindings/simple_scenario_async.py"))
     }
 }
