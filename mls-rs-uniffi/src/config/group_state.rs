@@ -4,7 +4,7 @@ use mls_rs_core::mls_rs_codec::{MlsDecode, MlsEncode};
 
 use super::FFICallbackError;
 
-#[derive(Clone, Debug, uniffi::Object)]
+#[derive(Clone, Debug, uniffi::Record)]
 pub struct GroupState {
     pub id: Vec<u8>,
     pub data: Vec<u8>,
@@ -16,7 +16,7 @@ impl mls_rs_core::group::GroupState for GroupState {
     }
 }
 
-#[derive(Clone, Debug, uniffi::Object)]
+#[derive(Clone, Debug, uniffi::Record)]
 pub struct EpochRecord {
     pub id: u64,
     pub data: Vec<u8>,
@@ -41,9 +41,9 @@ pub trait GroupStateStorage: Send + Sync + Debug {
 
     async fn write(
         &self,
-        state: Arc<GroupState>,
-        epoch_inserts: Vec<Arc<EpochRecord>>,
-        epoch_updates: Vec<Arc<EpochRecord>>,
+        state: GroupState,
+        epoch_inserts: Vec<EpochRecord>,
+        epoch_updates: Vec<EpochRecord>,
     ) -> Result<(), FFICallbackError>;
 
     async fn max_epoch_id(&self, group_id: Vec<u8>) -> Result<Option<u64>, FFICallbackError>;
@@ -99,16 +99,16 @@ impl mls_rs_core::group::GroupStateStorage for GroupStateStorageWrapper {
         ST: mls_rs_core::group::GroupState + MlsEncode + MlsDecode + Send + Sync,
         ET: mls_rs_core::group::EpochRecord + MlsEncode + MlsDecode + Send + Sync,
     {
-        let state = Arc::new(GroupState {
+        let state = GroupState {
             id: state.id(),
             data: state.mls_encode_to_vec()?,
-        });
+        };
 
         let epoch_to_record = |v: ET| -> Result<_, Self::Error> {
-            Ok(Arc::new(EpochRecord {
+            Ok(EpochRecord {
                 id: v.id(),
                 data: v.mls_encode_to_vec()?,
-            }))
+            })
         };
 
         let inserts = epoch_inserts

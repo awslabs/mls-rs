@@ -53,12 +53,12 @@ fn arc_unwrap_or_clone<T: Clone>(arc: Arc<T>) -> T {
 #[uniffi(flat_error)]
 #[non_exhaustive]
 pub enum Error {
-    #[error("A mls-rs error occurred")]
+    #[error("A mls-rs error occurred: {inner}")]
     MlsError {
         #[from]
         inner: mls_rs::error::MlsError,
     },
-    #[error("An unknown error occurred")]
+    #[error("An unknown error occurred: {inner}")]
     AnyError {
         #[from]
         inner: mls_rs::error::AnyError,
@@ -329,6 +329,19 @@ impl Client {
             group_info_extensions,
         })
     }
+
+    /// Load an existing group.
+    ///
+    /// See [`mls_rs::Client::load_group`] for details.
+    pub async fn load_group(&self, group_id: Vec<u8>) -> Result<Group, Error> {
+        self.inner
+            .load_group(&group_id)
+            .await
+            .map(|g| Group {
+                inner: Arc::new(Mutex::new(g)),
+            })
+            .map_err(Into::into)
+    }
 }
 
 #[derive(Clone, Debug, uniffi::Object)]
@@ -423,6 +436,13 @@ async fn signing_identity_to_identifier(
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 #[uniffi::export]
 impl Group {
+    /// Write the current state of the group to storage defined by
+    /// [`ClientConfig::group_state_storage`]
+    pub async fn write_to_storage(&self) -> Result<(), Error> {
+        let mut group = self.inner().await;
+        group.write_to_storage().await.map_err(Into::into)
+    }
+
     /// Perform a commit of received proposals (or an empty commit).
     ///
     /// TODO: ensure `path_required` is always set in
