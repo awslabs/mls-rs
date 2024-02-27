@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1708979065346,
+  "lastUpdate": 1709046713519,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -8303,6 +8303,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 145544,
             "range": "± 2989",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "tomleavy@amazon.com",
+            "name": "Tom Leavy",
+            "username": "tomleavy"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7d8c89864cdb22291a3249958a50aea4012733e0",
+          "message": "[uniffi] Add support for custom GroupStateStorage interface (#86)\n\n* [uniffi] Add support for custom GroupStateStorage interface\r\n\r\n* Allow external languages to implement callbacks\r\n\r\n* Remove unwrap from group_state.rs\r\n\r\n* Fix simple_scenario_sync and remove async for now\r\n\r\n* Ignore async tests",
+          "timestamp": "2024-02-27T10:07:16-05:00",
+          "tree_id": "9ece27a3c10be1afbfcf7ec4d4249846edc1257f",
+          "url": "https://github.com/awslabs/mls-rs/commit/7d8c89864cdb22291a3249958a50aea4012733e0"
+        },
+        "date": 1709046712318,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 547045,
+            "range": "± 16144",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 554626,
+            "range": "± 8111",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 575030,
+            "range": "± 17789",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1166479,
+            "range": "± 32578",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7656169,
+            "range": "± 29995",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1125715,
+            "range": "± 76821",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1268541,
+            "range": "± 69957",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1400382,
+            "range": "± 51976",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 733485,
+            "range": "± 18090",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 778330,
+            "range": "± 8825",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 832645,
+            "range": "± 6905",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 23833,
+            "range": "± 12908",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 77003,
+            "range": "± 1935",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 147391,
+            "range": "± 1727",
             "unit": "ns/iter"
           }
         ]
