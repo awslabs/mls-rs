@@ -580,7 +580,7 @@ impl Group {
 mod tests {
     use crate::generate_python_tests;
 
-    generate_python_tests!(generate_signature_keypair, None);
+    generate_python_tests!(generate_signature_keypair, generate_signature_keypair_async);
 
     // TODO(mulmarta): it'll break if we use async trait which will be
     // supported in the next UniFFI release
