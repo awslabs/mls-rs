@@ -576,29 +576,13 @@ impl Group {
     }
 }
 
-#[cfg(all(test, not(mls_build_async)))]
-mod sync_tests {
-    use crate::test_utils::run_python;
+#[cfg(test)]
+mod tests {
+    use crate::generate_python_tests;
 
-    #[test]
-    fn test_generate_signature_keypair() -> Result<(), Box<dyn std::error::Error>> {
-        run_python(include_str!("../test_bindings/signatures_sync.py"))
-    }
+    generate_python_tests!(generate_signature_keypair, None);
 
-    #[test]
-    fn test_simple_scenario() -> Result<(), Box<dyn std::error::Error>> {
-        run_python(include_str!("../test_bindings/simple_scenario_sync.py"))
-    }
-}
-
-// TODO(mulmarta): it'll break if we use async trait which will be supported in
-// the next UniFFI release
-#[cfg(all(test, mls_build_async))]
-mod async_tests {
-    use crate::test_utils::run_python;
-
-    #[test]
-    fn test_simple_scenario() -> Result<(), Box<dyn std::error::Error>> {
-        run_python(include_str!("../test_bindings/simple_scenario_async.py"))
-    }
+    // TODO(mulmarta): it'll break if we use async trait which will be
+    // supported in the next UniFFI release
+    generate_python_tests!(simple_scenario_sync, simple_scenario_async);
 }

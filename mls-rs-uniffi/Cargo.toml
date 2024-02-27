@@ -26,5 +26,4 @@ uniffi = "0.26.0"
 tokio = { version = "1.36.0", features = ["sync"] }
 
 [dev-dependencies]
-tempfile = "3.10.0"
 uniffi_bindgen = "0.26.0"
