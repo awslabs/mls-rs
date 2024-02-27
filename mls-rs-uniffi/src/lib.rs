@@ -18,8 +18,6 @@
 //! [UniFFI]: https://mozilla.github.io/uniffi-rs/
 
 mod config;
-#[cfg(test)]
-pub mod test_utils;
 
 use std::sync::Arc;
 
@@ -595,33 +593,5 @@ impl Group {
                 Ok(ReceivedMessage::KeyPackage { key_package })
             }
         }
-    }
-}
-
-#[cfg(all(test, not(mls_build_async)))]
-mod sync_tests {
-    use crate::test_utils::run_python;
-
-    #[test]
-    fn test_generate_signature_keypair() -> Result<(), Box<dyn std::error::Error>> {
-        run_python(include_str!("../test_bindings/signatures_sync.py"))
-    }
-
-    #[test]
-    fn test_simple_scenario() -> Result<(), Box<dyn std::error::Error>> {
-        run_python(include_str!("../test_bindings/simple_scenario_sync.py"))
-    }
-}
-
-// TODO(mulmarta): it'll break if we use async trait which will be supported in
-// the next UniFFI release
-#[cfg(all(test, mls_build_async))]
-mod async_tests {
-    use crate::test_utils::run_python;
-
-    #[ignore]
-    #[test]
-    fn test_simple_scenario() -> Result<(), Box<dyn std::error::Error>> {
-        run_python(include_str!("../test_bindings/simple_scenario_async.py"))
     }
 }
