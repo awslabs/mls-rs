@@ -39,7 +39,7 @@ use super::{cipher_suite_provider, epoch::EpochSecrets, state_repo::GroupStateRe
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub(crate) struct Snapshot {
     version: u16,
-    state: RawGroupState,
+    pub(crate) state: RawGroupState,
     private_tree: TreeKemPrivate,
     epoch_secrets: EpochSecrets,
     key_schedule: KeySchedule,
@@ -49,12 +49,6 @@ pub(crate) struct Snapshot {
     pending_updates: Vec<(HpkePublicKey, (HpkeSecretKey, Option<SignatureSecretKey>))>,
     pending_commit: Option<CommitGeneration>,
     signer: SignatureSecretKey,
-}
-
-impl Snapshot {
-    pub(crate) fn group_id(&self) -> &[u8] {
-        &self.state.context.group_id
-    }
 }
 
 #[derive(Debug, MlsEncode, MlsDecode, MlsSize, PartialEq, Clone)]

@@ -10,13 +10,15 @@ use alloc::sync::Arc;
 #[cfg(mls_build_async)]
 use alloc::boxed::Box;
 use alloc::vec::Vec;
-use core::fmt::{self, Debug};
-use mls_rs_codec::{MlsDecode, MlsEncode};
+use core::{
+    convert::Infallible,
+    fmt::{self, Debug},
+};
 use mls_rs_core::group::{EpochRecord, GroupState, GroupStateStorage};
 #[cfg(not(target_has_atomic = "ptr"))]
 use portable_atomic_util::Arc;
 
-use crate::{client::MlsError, storage_provider::group_state::EpochData};
+use crate::client::MlsError;
 
 #[cfg(feature = "std")]
 use std::collections::{hash_map::Entry, HashMap};
@@ -35,7 +37,7 @@ pub(crate) const DEFAULT_EPOCH_RETENTION_LIMIT: usize = 3;
 #[derive(Clone)]
 pub(crate) struct InMemoryGroupData {
     pub(crate) state_data: Vec<u8>,
-    pub(crate) epoch_data: VecDeque<EpochData>,
+    pub(crate) epoch_data: VecDeque<EpochRecord>,
 }
 
 impl Debug for InMemoryGroupData {
@@ -64,24 +66,24 @@ impl InMemoryGroupData {
             .and_then(|e| epoch_id.checked_sub(e.id))
     }
 
-    pub fn get_epoch(&self, epoch_id: u64) -> Option<&EpochData> {
+    pub fn get_epoch(&self, epoch_id: u64) -> Option<&EpochRecord> {
         self.get_epoch_data_index(epoch_id)
             .and_then(|i| self.epoch_data.get(i as usize))
     }
 
-    pub fn get_mut_epoch(&mut self, epoch_id: u64) -> Option<&mut EpochData> {
+    pub fn get_mut_epoch(&mut self, epoch_id: u64) -> Option<&mut EpochRecord> {
         self.get_epoch_data_index(epoch_id)
             .and_then(|i| self.epoch_data.get_mut(i as usize))
     }
 
-    pub fn insert_epoch(&mut self, epoch: EpochData) {
+    pub fn insert_epoch(&mut self, epoch: EpochRecord) {
         self.epoch_data.push_back(epoch)
     }
 
     // This function does not fail if an update can't be made. If the epoch
     // is not in the store, then it can no longer be accessed by future
     // get_epoch calls and is no longer relevant.
-    pub fn update_epoch(&mut self, epoch: EpochData) {
+    pub fn update_epoch(&mut self, epoch: EpochRecord) {
         if let Some(existing_epoch) = self.get_mut_epoch(epoch.id) {
             *existing_epoch = epoch
         }
@@ -176,7 +178,7 @@ impl Default for InMemoryGroupStateStorage {
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 #[cfg_attr(mls_build_async, maybe_async::must_be_async)]
 impl GroupStateStorage for InMemoryGroupStateStorage {
-    type Error = mls_rs_codec::Error;
+    type Error = Infallible;
 
     async fn max_epoch_id(&self, group_id: &[u8]) -> Result<Option<u64>, Self::Error> {
         Ok(self
@@ -185,60 +187,44 @@ impl GroupStateStorage for InMemoryGroupStateStorage {
             .and_then(|group_data| group_data.epoch_data.back().map(|e| e.id)))
     }
 
-    async fn state<T>(&self, group_id: &[u8]) -> Result<Option<T>, Self::Error>
-    where
-        T: mls_rs_core::group::GroupState + MlsDecode,
-    {
-        self.lock()
+    async fn state(&self, group_id: &[u8]) -> Result<Option<Vec<u8>>, Self::Error> {
+        Ok(self
+            .lock()
             .get(group_id)
-            .map(|v| T::mls_decode(&mut v.state_data.as_slice()))
-            .transpose()
-            .map_err(Into::into)
+            .map(|data| data.state_data.clone()))
     }
 
-    async fn epoch<T>(&self, group_id: &[u8], epoch_id: u64) -> Result<Option<T>, Self::Error>
-    where
-        T: mls_rs_core::group::EpochRecord + MlsEncode + MlsDecode,
-    {
-        self.lock()
+    async fn epoch(&self, group_id: &[u8], epoch_id: u64) -> Result<Option<Vec<u8>>, Self::Error> {
+        Ok(self
+            .lock()
             .get(group_id)
-            .and_then(|group_data| group_data.get_epoch(epoch_id))
-            .map(|v| T::mls_decode(&mut v.data.as_slice()))
-            .transpose()
-            .map_err(Into::into)
+            .and_then(|data| data.get_epoch(epoch_id).map(|ep| ep.data.clone())))
     }
 
-    async fn write<ST, ET>(
+    async fn write(
         &mut self,
-        state: ST,
-        epoch_inserts: Vec<ET>,
-        epoch_updates: Vec<ET>,
-    ) -> Result<(), Self::Error>
-    where
-        ST: GroupState + MlsEncode + MlsDecode + Send + Sync,
-        ET: EpochRecord + MlsEncode + MlsDecode + Send + Sync,
-    {
+        state: GroupState,
+        epoch_inserts: Vec<EpochRecord>,
+        epoch_updates: Vec<EpochRecord>,
+    ) -> Result<(), Self::Error> {
         let mut group_map = self.lock();
-        let state_data = state.mls_encode_to_vec()?;
 
-        let group_data = match group_map.entry(state.id()) {
+        let group_data = match group_map.entry(state.id) {
             Entry::Occupied(entry) => {
                 let data = entry.into_mut();
-                data.state_data = state_data;
+                data.state_data = state.data;
                 data
             }
-            Entry::Vacant(entry) => entry.insert(InMemoryGroupData::new(state_data)),
+            Entry::Vacant(entry) => entry.insert(InMemoryGroupData::new(state.data)),
         };
 
-        epoch_inserts.into_iter().try_for_each(|e| {
-            group_data.insert_epoch(EpochData::new(e)?);
-            Ok::<_, Self::Error>(())
-        })?;
+        epoch_inserts
+            .into_iter()
+            .for_each(|e| group_data.insert_epoch(e));
 
-        epoch_updates.into_iter().try_for_each(|e| {
-            group_data.update_epoch(EpochData::new(e)?);
-            Ok::<_, Self::Error>(())
-        })?;
+        epoch_updates
+            .into_iter()
+            .for_each(|e| group_data.update_epoch(e));
 
         group_data.trim_epochs(self.max_epoch_retention);
 
@@ -248,22 +234,13 @@ impl GroupStateStorage for InMemoryGroupStateStorage {
 
 #[cfg(all(test, feature = "prior_epoch"))]
 mod tests {
-    use alloc::{vec, vec::Vec};
+    use alloc::{format, vec, vec::Vec};
     use assert_matches::assert_matches;
 
     use super::{InMemoryGroupData, InMemoryGroupStateStorage};
-    use crate::{
-        client::{test_utils::TEST_CIPHER_SUITE, MlsError},
-        group::{
-            epoch::{test_utils::get_test_epoch_with_id, PriorEpoch},
-            snapshot::{test_utils::get_test_snapshot, Snapshot},
-            test_utils::TEST_GROUP,
-        },
-        storage_provider::EpochData,
-    };
+    use crate::{client::MlsError, group::test_utils::TEST_GROUP};
 
-    use mls_rs_codec::MlsEncode;
-    use mls_rs_core::group::GroupStateStorage;
+    use mls_rs_core::group::{EpochRecord, GroupState, GroupStateStorage};
 
     impl InMemoryGroupStateStorage {
         fn test_data(&self) -> InMemoryGroupData {
@@ -275,13 +252,15 @@ mod tests {
         InMemoryGroupStateStorage::new().with_max_epoch_retention(retention_limit)
     }
 
-    fn test_epoch(epoch_id: u64) -> PriorEpoch {
-        get_test_epoch_with_id(Vec::new(), TEST_CIPHER_SUITE, epoch_id)
+    fn test_epoch(epoch_id: u64) -> EpochRecord {
+        EpochRecord::new(epoch_id, format!("epoch {epoch_id}").as_bytes().to_vec())
     }
 
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn test_snapshot(epoch_id: u64) -> Snapshot {
-        get_test_snapshot(TEST_CIPHER_SUITE, epoch_id).await
+    fn test_snapshot(epoch_id: u64) -> GroupState {
+        GroupState {
+            id: TEST_GROUP.into(),
+            data: format!("snapshot {epoch_id}").as_bytes().to_vec(),
+        }
     }
 
     #[test]
@@ -296,7 +275,7 @@ mod tests {
         let epoch_inserts = vec![test_epoch(0), test_epoch(1)];
 
         storage
-            .write(test_snapshot(1).await, epoch_inserts, Vec::new())
+            .write(test_snapshot(0), epoch_inserts, Vec::new())
             .await
             .unwrap();
 
@@ -307,7 +286,7 @@ mod tests {
         let epoch_inserts = vec![test_epoch(3), test_epoch(4)];
 
         storage
-            .write(test_snapshot(1).await, epoch_inserts, Vec::new())
+            .write(test_snapshot(1), epoch_inserts, Vec::new())
             .await
             .unwrap();
 
@@ -321,7 +300,7 @@ mod tests {
         let epoch_inserts = vec![test_epoch(0), test_epoch(1), test_epoch(3), test_epoch(4)];
 
         storage
-            .write(test_snapshot(1).await, epoch_inserts, Vec::new())
+            .write(test_snapshot(1), epoch_inserts, Vec::new())
             .await
             .unwrap();
 
@@ -332,7 +311,7 @@ mod tests {
         let epoch_inserts = vec![test_epoch(5)];
 
         storage
-            .write(test_snapshot(1).await, epoch_inserts, Vec::new())
+            .write(test_snapshot(1), epoch_inserts, Vec::new())
             .await
             .unwrap();
 
@@ -357,7 +336,7 @@ mod tests {
         let updates = with_update
             .then_some(vec![test_epoch(0)])
             .unwrap_or_default();
-        let snapshot = test_snapshot(1).await;
+        let snapshot = test_snapshot(1);
 
         storage
             .write(snapshot.clone(), epoch_inserts.clone(), updates)
@@ -366,10 +345,10 @@ mod tests {
 
         let stored = storage.test_data();
 
-        assert_eq!(stored.state_data, snapshot.mls_encode_to_vec().unwrap());
+        assert_eq!(stored.state_data, snapshot.data);
         assert_eq!(stored.epoch_data.len(), 1);
 
-        let expected = EpochData::new(epoch_inserts.pop().unwrap()).unwrap();
+        let expected = epoch_inserts.pop().unwrap();
         assert_eq!(stored.epoch_data[0], expected);
     }
 }

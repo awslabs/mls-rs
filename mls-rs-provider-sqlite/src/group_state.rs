@@ -2,40 +2,16 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use mls_rs_core::{
-    group::{EpochRecord, GroupState, GroupStateStorage},
-    mls_rs_codec::{MlsDecode, MlsEncode},
-};
+use mls_rs_core::group::{EpochRecord, GroupState, GroupStateStorage};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::{
-    fmt::{self, Debug},
+    fmt::Debug,
     sync::{Arc, Mutex},
 };
 
 use crate::SqLiteDataStorageError;
 
 pub(crate) const DEFAULT_EPOCH_RETENTION_LIMIT: u64 = 3;
-
-#[derive(Clone)]
-struct StoredEpoch {
-    data: Vec<u8>,
-    id: u64,
-}
-
-impl Debug for StoredEpoch {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("StoredEpoch")
-            .field("data", &mls_rs_core::debug::pretty_bytes(&self.data))
-            .field("id", &self.id)
-            .finish()
-    }
-}
-
-impl StoredEpoch {
-    fn new(id: u64, data: Vec<u8>) -> Self {
-        Self { id, data }
-    }
-}
 
 #[derive(Debug, Clone)]
 /// SQLite Storage for MLS group states.
@@ -141,17 +117,13 @@ impl SqLiteGroupStateStorage {
             .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))
     }
 
-    fn update_group_state<I, U>(
+    fn update_group_state(
         &self,
         group_id: &[u8],
         group_snapshot: Vec<u8>,
-        inserts: I,
-        mut updates: U,
-    ) -> Result<(), SqLiteDataStorageError>
-    where
-        I: Iterator<Item = Result<StoredEpoch, SqLiteDataStorageError>>,
-        U: Iterator<Item = Result<StoredEpoch, SqLiteDataStorageError>>,
-    {
+        inserts: Vec<EpochRecord>,
+        updates: Vec<EpochRecord>,
+    ) -> Result<(), SqLiteDataStorageError> {
         let mut max_epoch_id = None;
 
         let mut connection = self.connection.lock().unwrap();
@@ -167,7 +139,6 @@ impl SqLiteGroupStateStorage {
 
         // Insert new epochs as needed
         for epoch in inserts {
-            let epoch = epoch.map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))?;
             max_epoch_id = Some(epoch.id);
 
             transaction
@@ -180,9 +151,7 @@ impl SqLiteGroupStateStorage {
         }
 
         // Update existing epochs as needed
-        updates.try_for_each(|epoch| {
-            let epoch = epoch.map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))?;
-
+        updates.into_iter().try_for_each(|epoch| {
             transaction
                 .execute(
                     "UPDATE epoch SET epoch_data = ? WHERE group_id = ? AND epoch_id = ?",
@@ -218,63 +187,28 @@ impl SqLiteGroupStateStorage {
 impl GroupStateStorage for SqLiteGroupStateStorage {
     type Error = SqLiteDataStorageError;
 
-    async fn write<ST, ET>(
+    async fn write(
         &mut self,
-        state: ST,
-        epoch_inserts: Vec<ET>,
-        epoch_updates: Vec<ET>,
-    ) -> Result<(), Self::Error>
-    where
-        ST: GroupState + MlsEncode + MlsDecode + Send + Sync,
-        ET: EpochRecord + MlsEncode + MlsDecode + Send + Sync,
-    {
-        let group_id = state.id();
+        state: GroupState,
+        inserts: Vec<EpochRecord>,
+        updates: Vec<EpochRecord>,
+    ) -> Result<(), Self::Error> {
+        let group_id = state.id;
+        let snapshot_data = state.data;
 
-        let snapshot_data = state
-            .mls_encode_to_vec()
-            .map_err(|e| SqLiteDataStorageError::DataConversionError(e.into()))?;
-
-        let inserts = epoch_inserts.iter().map(|e| {
-            Ok(StoredEpoch::new(
-                e.id(),
-                e.mls_encode_to_vec()
-                    .map_err(|e| SqLiteDataStorageError::DataConversionError(e.into()))?,
-            ))
-        });
-
-        let updates = epoch_updates.iter().map(|e| {
-            Ok(StoredEpoch::new(
-                e.id(),
-                e.mls_encode_to_vec()
-                    .map_err(|err| SqLiteDataStorageError::DataConversionError(err.into()))?,
-            ))
-        });
-
-        self.update_group_state(group_id.as_slice(), snapshot_data, inserts, updates)
+        self.update_group_state(&group_id, snapshot_data, inserts, updates)
     }
 
-    async fn state<T>(&self, group_id: &[u8]) -> Result<Option<T>, Self::Error>
-    where
-        T: GroupState + MlsEncode + MlsDecode,
-    {
-        self.get_snapshot_data(group_id)?
-            .map(|v| T::mls_decode(&mut v.as_slice()))
-            .transpose()
-            .map_err(|e| SqLiteDataStorageError::DataConversionError(e.into()))
+    async fn state(&self, group_id: &[u8]) -> Result<Option<Vec<u8>>, Self::Error> {
+        self.get_snapshot_data(group_id)
     }
 
     async fn max_epoch_id(&self, group_id: &[u8]) -> Result<Option<u64>, Self::Error> {
         self.max_epoch_id(group_id)
     }
 
-    async fn epoch<T>(&self, group_id: &[u8], epoch_id: u64) -> Result<Option<T>, Self::Error>
-    where
-        T: EpochRecord + MlsEncode + MlsDecode,
-    {
-        self.get_epoch_data(group_id, epoch_id)?
-            .map(|v| T::mls_decode(&mut v.as_slice()))
-            .transpose()
-            .map_err(|e| SqLiteDataStorageError::DataConversionError(e.into()))
+    async fn epoch(&self, group_id: &[u8], epoch_id: u64) -> Result<Option<Vec<u8>>, Self::Error> {
+        self.get_epoch_data(group_id, epoch_id)
     }
 }
 
@@ -302,8 +236,8 @@ mod tests {
         gen_rand_bytes(1024)
     }
 
-    fn test_epoch(id: u64) -> StoredEpoch {
-        StoredEpoch {
+    fn test_epoch(id: u64) -> EpochRecord {
+        EpochRecord {
             data: gen_rand_bytes(256),
             id,
         }
@@ -313,7 +247,7 @@ mod tests {
         storage: SqLiteGroupStateStorage,
         snapshot: Vec<u8>,
         group_id: Vec<u8>,
-        epoch_0: StoredEpoch,
+        epoch_0: EpochRecord,
     }
 
     fn setup_group_storage_test() -> TestData {
@@ -326,8 +260,8 @@ mod tests {
             .update_group_state(
                 &test_group_id,
                 test_snapshot.clone(),
-                vec![test_epoch_0.clone()].into_iter().map(Ok),
-                vec![].into_iter(),
+                vec![test_epoch_0.clone()],
+                vec![],
             )
             .unwrap();
 
@@ -370,8 +304,8 @@ mod tests {
             .update_group_state(
                 &test_data.group_id,
                 test_snapshot.clone(),
-                vec![].into_iter(),
-                vec![Ok(epoch_update.clone())].into_iter(),
+                vec![],
+                vec![epoch_update.clone()],
             )
             .unwrap();
 
@@ -410,8 +344,8 @@ mod tests {
             .update_group_state(
                 &test_data.group_id,
                 test_snapshot(),
-                test_epochs.clone().into_iter().map(Ok),
-                vec![].into_iter(),
+                test_epochs.clone(),
+                vec![],
             )
             .unwrap();
 
@@ -440,8 +374,8 @@ mod tests {
             .update_group_state(
                 &test_data.group_id,
                 test_snapshot(),
-                vec![test_epoch(1)].into_iter().map(Ok),
-                vec![].into_iter(),
+                vec![test_epoch(1)],
+                vec![],
             )
             .unwrap();
 
@@ -453,8 +387,8 @@ mod tests {
             .update_group_state(
                 &test_data.group_id,
                 test_snapshot(),
-                test_epochs.clone().into_iter().map(Ok),
-                vec![Ok(new_epoch_1.clone())].into_iter(),
+                test_epochs.clone(),
+                vec![new_epoch_1.clone()],
             )
             .unwrap();
 
@@ -480,12 +414,7 @@ mod tests {
         let group_id = b"test";
 
         storage
-            .update_group_state(
-                group_id,
-                vec![0, 1, 2],
-                vec![].into_iter(),
-                vec![].into_iter().map(Ok),
-            )
+            .update_group_state(group_id, vec![0, 1, 2], vec![], vec![])
             .unwrap();
 
         let res = storage.max_epoch_id(group_id).unwrap();
@@ -502,8 +431,8 @@ mod tests {
             .update_group_state(
                 &test_data.group_id,
                 test_snapshot(),
-                (1..10).map(test_epoch).map(Ok),
-                vec![].into_iter().map(Ok),
+                (1..10).map(test_epoch).collect(),
+                vec![],
             )
             .unwrap();
 
@@ -529,8 +458,8 @@ mod tests {
             .update_group_state(
                 &new_group,
                 test_snapshot(),
-                vec![new_group_epoch.clone()].into_iter().map(Ok),
-                vec![].into_iter(),
+                vec![new_group_epoch.clone()],
+                vec![],
             )
             .unwrap();
 
