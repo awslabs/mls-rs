@@ -79,10 +79,7 @@ impl TreeKemPublic {
     pub async fn tree_hash<P: CipherSuiteProvider>(
         &mut self,
         cipher_suite_provider: &P,
-    ) -> Result<Vec<u8>, MlsError>
-    where
-        P: CipherSuiteProvider,
-    {
+    ) -> Result<Vec<u8>, MlsError> {
         self.initialize_hashes(cipher_suite_provider).await?;
         let root = self.total_leaf_count().root();
         Ok(self.tree_hashes.current[root as usize].to_vec())
@@ -95,10 +92,7 @@ impl TreeKemPublic {
         &mut self,
         updated_leaves: &[LeafIndex],
         cipher_suite_provider: &P,
-    ) -> Result<(), MlsError>
-    where
-        P: CipherSuiteProvider,
-    {
+    ) -> Result<(), MlsError> {
         let num_leaves = self.total_leaf_count();
 
         let trailing_blanks = (0..num_leaves)
