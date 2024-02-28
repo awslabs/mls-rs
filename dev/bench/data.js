@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1709130371434,
+  "lastUpdate": 1709140557467,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -8519,6 +8519,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 144916,
             "range": "± 1453",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mgeisler@google.com",
+            "name": "Martin Geisler",
+            "username": "mgeisler"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "de125ef942564d3b4029eb0e4c3ab16656b1955d",
+          "message": "Add a `generate_python_tests!` macro (#91)\n\nThe macro generates tests for Python scripts found next to the\r\nintegration test.\r\n\r\nThis saves a bit of boiler-plate code at the point where the test is\r\ncreated. It also allows us to quickly see if there are gaps in the\r\ntest coverage between the sync and async code.\r\n\r\nThis comes at the expense of more “magic” in the form of the macro.",
+          "timestamp": "2024-02-28T18:11:30+01:00",
+          "tree_id": "771931a339fe2b87a543263fbbfbbad42b11429f",
+          "url": "https://github.com/awslabs/mls-rs/commit/de125ef942564d3b4029eb0e4c3ab16656b1955d"
+        },
+        "date": 1709140556193,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 511601,
+            "range": "± 15576",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 518621,
+            "range": "± 15434",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 571825,
+            "range": "± 13678",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1176613,
+            "range": "± 23469",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7202714,
+            "range": "± 34516",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1124008,
+            "range": "± 81133",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1193090,
+            "range": "± 59668",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1326640,
+            "range": "± 39095",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 719217,
+            "range": "± 13548",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 765786,
+            "range": "± 58027",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 822930,
+            "range": "± 11290",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 23582,
+            "range": "± 158",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 76362,
+            "range": "± 1692",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 146205,
+            "range": "± 1681",
             "unit": "ns/iter"
           }
         ]
