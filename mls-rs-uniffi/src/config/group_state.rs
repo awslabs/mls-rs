@@ -1,5 +1,11 @@
 use std::{fmt::Debug, sync::Arc};
 
+#[cfg(feature = "sqlite")]
+use mls_rs::{
+    storage_provider::sqlite::storage::SqLiteGroupStateStorage,
+    GroupStateStorage as MlsRsGroupStateStorage,
+};
+
 use super::FFICallbackError;
 
 // TODO(mulmarta): we'd like to use GroupState and EpochRecord from mls-rs-core
@@ -31,6 +37,24 @@ impl From<mls_rs_core::group::GroupState> for GroupState {
 
 impl From<mls_rs_core::group::EpochRecord> for EpochRecord {
     fn from(value: mls_rs_core::group::EpochRecord) -> Self {
+        Self {
+            id: value.id,
+            data: value.data,
+        }
+    }
+}
+
+impl From<GroupState> for mls_rs_core::group::GroupState {
+    fn from(value: GroupState) -> Self {
+        Self {
+            id: value.id,
+            data: value.data,
+        }
+    }
+}
+
+impl From<EpochRecord> for mls_rs_core::group::EpochRecord {
+    fn from(value: EpochRecord) -> Self {
         Self {
             id: value.id,
             data: value.data,
@@ -96,5 +120,39 @@ impl mls_rs_core::group::GroupStateStorage for GroupStateStorageWrapper {
 
     async fn max_epoch_id(&self, group_id: &[u8]) -> Result<Option<u64>, Self::Error> {
         self.0.max_epoch_id(group_id.to_vec())
+    }
+}
+
+#[cfg(feature = "sqlite")]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
+impl GroupStateStorage for SqLiteGroupStateStorage {
+    async fn state(&self, group_id: Vec<u8>) -> Result<Option<Vec<u8>>, FFICallbackError> {
+        Ok(<Self as MlsRsGroupStateStorage>::state(self, &group_id).await?)
+    }
+
+    async fn epoch(
+        &self,
+        group_id: Vec<u8>,
+        epoch_id: u64,
+    ) -> Result<Option<Vec<u8>>, FFICallbackError> {
+        Ok(<Self as MlsRsGroupStateStorage>::epoch(self, &group_id, epoch_id).await?)
+    }
+
+    async fn write(
+        &self,
+        state: GroupState,
+        inserts: Vec<EpochRecord>,
+        updates: Vec<EpochRecord>,
+    ) -> Result<(), FFICallbackError> {
+        Ok(self.write_to_storage(
+            state.into(),
+            inserts.into_iter().map(Into::into).collect(),
+            updates.into_iter().map(Into::into).collect(),
+        )?)
+    }
+
+    async fn max_epoch_id(&self, group_id: Vec<u8>) -> Result<Option<u64>, FFICallbackError> {
+        Ok(<Self as MlsRsGroupStateStorage>::max_epoch_id(self, &group_id).await?)
     }
 }

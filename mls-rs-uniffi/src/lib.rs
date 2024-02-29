@@ -331,7 +331,7 @@ impl Client {
     pub fn new(
         id: Vec<u8>,
         signature_keypair: SignatureKeypair,
-        client_config: ClientConfig,
+        client_config: Arc<ClientConfig>,
     ) -> Self {
         let cipher_suite = signature_keypair.cipher_suite;
         let public_key = arc_unwrap_or_clone(signature_keypair.public_key);
@@ -340,6 +340,7 @@ impl Client {
         let basic_credential = BasicCredential::new(id);
         let signing_identity =
             identity::SigningIdentity::new(basic_credential.into_credential(), public_key.inner);
+        let client_config = arc_unwrap_or_clone(client_config);
 
         let client = mls_rs::Client::builder()
             .crypto_provider(crypto_provider)

@@ -180,6 +180,18 @@ impl SqLiteGroupStateStorage {
             .commit()
             .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))
     }
+
+    pub fn write_to_storage(
+        &self,
+        state: GroupState,
+        inserts: Vec<EpochRecord>,
+        updates: Vec<EpochRecord>,
+    ) -> Result<(), SqLiteDataStorageError> {
+        let group_id = state.id;
+        let snapshot_data = state.data;
+
+        self.update_group_state(&group_id, snapshot_data, inserts, updates)
+    }
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -193,10 +205,7 @@ impl GroupStateStorage for SqLiteGroupStateStorage {
         inserts: Vec<EpochRecord>,
         updates: Vec<EpochRecord>,
     ) -> Result<(), Self::Error> {
-        let group_id = state.id;
-        let snapshot_data = state.data;
-
-        self.update_group_state(&group_id, snapshot_data, inserts, updates)
+        self.write_to_storage(state, inserts, updates)
     }
 
     async fn state(&self, group_id: &[u8]) -> Result<Option<Vec<u8>>, Self::Error> {
