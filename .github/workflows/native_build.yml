@@ -57,7 +57,13 @@ jobs:
       - name: Setup code coverage
         run: cargo install cargo-llvm-cov
       - name: Run code coverage
-        run: cargo llvm-cov --lcov --features "test_util" --output-path lcov.info
+        # Using `cargo llvm-cov show-env` lets us capture coverage
+        # information from Python integration tests.
+        run: |
+          source <(cargo llvm-cov show-env --export-prefix)
+          cargo llvm-cov clean --workspace
+          cargo test --features "test_util"
+          cargo llvm-cov report --lcov --output-path lcov.info
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v3
         with:
