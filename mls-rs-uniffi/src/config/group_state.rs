@@ -13,7 +13,7 @@ pub struct GroupState {
     pub data: Vec<u8>,
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, uniffi::Record)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, uniffi::Record)]
 pub struct EpochRecord {
     /// A unique epoch identifier within a particular group.
     pub id: u64,

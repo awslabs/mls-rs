@@ -9,7 +9,7 @@ use mls_rs_crypto_openssl::OpensslCryptoProvider;
 
 use self::group_state::{GroupStateStorage, GroupStateStorageWrapper};
 
-mod group_state;
+pub mod group_state;
 
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 #[uniffi(flat_error)]
