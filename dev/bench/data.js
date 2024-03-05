@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1709140557467,
+  "lastUpdate": 1709673899149,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -8627,6 +8627,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 146205,
             "range": "± 1681",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mgeisler@google.com",
+            "name": "Martin Geisler",
+            "username": "mgeisler"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "da7263fe26a248403cdfdc9fc4e147d332fdcaa7",
+          "message": "Tell `rustfmt` about the edition we use (#96)\n\nMy editor (Emacs) likes to format individual files by sending them to\r\n`rustfmt`. This fails without a configuration file to set the edition\r\nsince `rustfmt` (when executed alone, not via `cargo fmt`) defaults to\r\nthe good old Rust 2015 edition.",
+          "timestamp": "2024-03-05T16:20:32-05:00",
+          "tree_id": "ea354b89a1f6e63b1889ad21381dc9ae70f78d68",
+          "url": "https://github.com/awslabs/mls-rs/commit/da7263fe26a248403cdfdc9fc4e147d332fdcaa7"
+        },
+        "date": 1709673898031,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 528654,
+            "range": "± 17750",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 514879,
+            "range": "± 34436",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 572562,
+            "range": "± 15602",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1172630,
+            "range": "± 29120",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7669967,
+            "range": "± 284136",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1115692,
+            "range": "± 96441",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1218267,
+            "range": "± 29121",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1339794,
+            "range": "± 31468",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 721378,
+            "range": "± 35755",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 766009,
+            "range": "± 9151",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 823897,
+            "range": "± 10423",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 23589,
+            "range": "± 834",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 76123,
+            "range": "± 1093",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 146176,
+            "range": "± 1240",
             "unit": "ns/iter"
           }
         ]
