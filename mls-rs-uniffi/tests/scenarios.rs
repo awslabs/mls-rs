@@ -48,6 +48,3 @@ generate_python_tests!(generate_signature_keypair, None);
 // supported in the next UniFFI release
 // TODO(mgeisler): add back simple_scenario_async
 generate_python_tests!(simple_scenario_sync, None);
-
-#[cfg(feature = "sqlite")]
-generate_python_tests!(sqlite_sync, None);

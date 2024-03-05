@@ -14,10 +14,6 @@ rust-version = "1.68.2"
 crate-type = ["lib", "cdylib"]
 name = "mls_rs_uniffi"
 
-[features]
-default = ["sqlite"]
-sqlite = ["mls-rs/sqlcipher-bundled"]
-
 [dependencies]
 async-trait = "0.1.77"
 maybe-async = "0.2.10"
