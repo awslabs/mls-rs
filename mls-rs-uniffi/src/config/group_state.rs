@@ -1,30 +1,40 @@
 use std::{fmt::Debug, sync::Arc};
 
-use mls_rs_core::mls_rs_codec::{MlsDecode, MlsEncode};
-
 use super::FFICallbackError;
 
-#[derive(Clone, Debug, uniffi::Record)]
+// TODO(mulmarta): we'd like to use GroupState and EpochRecord from mls-rs-core
+// but this breaks python tests because using 2 crates makes uniffi generate
+// a python module which must be in a subdirectory of the directory with test scripts
+// which is not supported by the script we use.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, uniffi::Record)]
 pub struct GroupState {
+    /// A unique group identifier.
     pub id: Vec<u8>,
     pub data: Vec<u8>,
 }
 
-impl mls_rs_core::group::GroupState for GroupState {
-    fn id(&self) -> Vec<u8> {
-        self.id.clone()
-    }
-}
-
-#[derive(Clone, Debug, uniffi::Record)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, uniffi::Record)]
 pub struct EpochRecord {
+    /// A unique epoch identifier within a particular group.
     pub id: u64,
     pub data: Vec<u8>,
 }
 
-impl mls_rs_core::group::EpochRecord for EpochRecord {
-    fn id(&self) -> u64 {
-        self.id
+impl From<mls_rs_core::group::GroupState> for GroupState {
+    fn from(value: mls_rs_core::group::GroupState) -> Self {
+        Self {
+            id: value.id,
+            data: value.data,
+        }
+    }
+}
+
+impl From<mls_rs_core::group::EpochRecord> for EpochRecord {
+    fn from(value: mls_rs_core::group::EpochRecord) -> Self {
+        Self {
+            id: value.id,
+            data: value.data,
+        }
     }
 }
 
@@ -63,65 +73,25 @@ impl From<Arc<dyn GroupStateStorage>> for GroupStateStorageWrapper {
 impl mls_rs_core::group::GroupStateStorage for GroupStateStorageWrapper {
     type Error = FFICallbackError;
 
-    async fn state<T>(&self, group_id: &[u8]) -> Result<Option<T>, Self::Error>
-    where
-        T: mls_rs_core::group::GroupState + MlsEncode + MlsDecode,
-    {
-        let state_data = self.0.state(group_id.to_vec())?;
-
-        state_data
-            .as_deref()
-            .map(|v| T::mls_decode(&mut &*v))
-            .transpose()
-            .map_err(Into::into)
+    async fn state(&self, group_id: &[u8]) -> Result<Option<Vec<u8>>, Self::Error> {
+        self.0.state(group_id.to_vec())
     }
 
-    async fn epoch<T>(&self, group_id: &[u8], epoch_id: u64) -> Result<Option<T>, Self::Error>
-    where
-        T: mls_rs_core::group::EpochRecord + MlsEncode + MlsDecode,
-    {
-        let epoch_data = self.0.epoch(group_id.to_vec(), epoch_id)?;
-
-        epoch_data
-            .as_deref()
-            .map(|v| T::mls_decode(&mut &*v))
-            .transpose()
-            .map_err(Into::into)
+    async fn epoch(&self, group_id: &[u8], epoch_id: u64) -> Result<Option<Vec<u8>>, Self::Error> {
+        self.0.epoch(group_id.to_vec(), epoch_id)
     }
 
-    async fn write<ST, ET>(
+    async fn write(
         &mut self,
-        state: ST,
-        epoch_inserts: Vec<ET>,
-        epoch_updates: Vec<ET>,
-    ) -> Result<(), Self::Error>
-    where
-        ST: mls_rs_core::group::GroupState + MlsEncode + MlsDecode + Send + Sync,
-        ET: mls_rs_core::group::EpochRecord + MlsEncode + MlsDecode + Send + Sync,
-    {
-        let state = GroupState {
-            id: state.id(),
-            data: state.mls_encode_to_vec()?,
-        };
-
-        let epoch_to_record = |v: ET| -> Result<_, Self::Error> {
-            Ok(EpochRecord {
-                id: v.id(),
-                data: v.mls_encode_to_vec()?,
-            })
-        };
-
-        let inserts = epoch_inserts
-            .into_iter()
-            .map(epoch_to_record)
-            .collect::<Result<Vec<_>, _>>()?;
-
-        let updates = epoch_updates
-            .into_iter()
-            .map(epoch_to_record)
-            .collect::<Result<Vec<_>, _>>()?;
-
-        self.0.write(state, inserts, updates)
+        state: mls_rs_core::group::GroupState,
+        inserts: Vec<mls_rs_core::group::EpochRecord>,
+        updates: Vec<mls_rs_core::group::EpochRecord>,
+    ) -> Result<(), Self::Error> {
+        self.0.write(
+            state.into(),
+            inserts.into_iter().map(Into::into).collect(),
+            updates.into_iter().map(Into::into).collect(),
+        )
     }
 
     async fn max_epoch_id(&self, group_id: &[u8]) -> Result<Option<u64>, Self::Error> {

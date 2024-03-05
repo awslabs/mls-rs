@@ -13,12 +13,13 @@ use crate::group::{
     message_signature::AuthenticatedContent,
     proposal::{AddProposal, Proposal},
 };
-use crate::group::{ExportedTree, Group, NewMemberInfo};
+use crate::group::{snapshot::Snapshot, ExportedTree, Group, NewMemberInfo};
 use crate::identity::SigningIdentity;
 use crate::key_package::{KeyPackageGeneration, KeyPackageGenerator};
 use crate::protocol_version::ProtocolVersion;
 use crate::tree_kem::node::NodeIndex;
 use alloc::vec::Vec;
+use mls_rs_codec::MlsDecode;
 use mls_rs_core::crypto::{CryptoProvider, SignatureSecretKey};
 use mls_rs_core::error::{AnyError, IntoAnyError};
 use mls_rs_core::extension::{ExtensionError, ExtensionList, ExtensionType};
@@ -613,6 +614,8 @@ where
             .await
             .map_err(|e| MlsError::GroupStorageError(e.into_any_error()))?
             .ok_or(MlsError::GroupNotFound)?;
+
+        let snapshot = Snapshot::mls_decode(&mut &*snapshot)?;
 
         Group::from_snapshot(self.config.clone(), snapshot).await
     }

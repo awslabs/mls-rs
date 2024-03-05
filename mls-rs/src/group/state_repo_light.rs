@@ -6,10 +6,10 @@ use crate::client::MlsError;
 use crate::key_package::KeyPackageRef;
 
 use alloc::vec::Vec;
-use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
+use mls_rs_codec::MlsEncode;
 use mls_rs_core::{
     error::IntoAnyError,
-    group::{EpochRecord, GroupStateStorage},
+    group::{GroupState, GroupStateStorage},
     key_package::KeyPackageStorage,
 };
 
@@ -47,8 +47,13 @@ where
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn write_to_storage(&mut self, group_snapshot: Snapshot) -> Result<(), MlsError> {
+        let group_state = GroupState {
+            data: group_snapshot.mls_encode_to_vec()?,
+            id: group_snapshot.state.context.group_id,
+        };
+
         self.storage
-            .write(group_snapshot, Vec::<PriorEpoch>::new(), Vec::new())
+            .write(group_state, Vec::new(), Vec::new())
             .await
             .map_err(|e| MlsError::GroupStorageError(e.into_any_error()))?;
 
@@ -60,15 +65,6 @@ where
         }
 
         Ok(())
-    }
-}
-
-#[derive(MlsSize, MlsEncode, MlsDecode)]
-struct PriorEpoch {}
-
-impl EpochRecord for PriorEpoch {
-    fn id(&self) -> u64 {
-        0
     }
 }
 

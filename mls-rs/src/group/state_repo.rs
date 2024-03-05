@@ -8,6 +8,8 @@ use crate::{group::PriorEpoch, key_package::KeyPackageRef};
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 use core::fmt::{self, Debug};
+use mls_rs_codec::{MlsDecode, MlsEncode};
+use mls_rs_core::group::{EpochRecord, GroupState};
 use mls_rs_core::{error::IntoAnyError, group::GroupStateStorage, key_package::KeyPackageStorage};
 
 use super::snapshot::Snapshot;
@@ -126,10 +128,11 @@ where
 
         // Search the stored cache
         self.storage
-            .epoch::<PriorEpoch>(&psk_id.psk_group_id.0, psk_id.psk_epoch)
+            .epoch(&psk_id.psk_group_id.0, psk_id.psk_epoch)
             .await
-            .map_err(|e| MlsError::GroupStorageError(e.into_any_error()))
-            .map(|e| e.map(|e| e.secrets.resumption_secret))
+            .map_err(|e| MlsError::GroupStorageError(e.into_any_error()))?
+            .map(|e| Ok(PriorEpoch::mls_decode(&mut &*e)?.secrets.resumption_secret))
+            .transpose()
     }
 
     #[cfg(feature = "private_message")]
@@ -150,18 +153,24 @@ where
 
         // Look in the cached updates map, and if not found look in disk storage
         // and insert into the updates map for future caching
-        Ok(match self.find_pending(epoch_id) {
-            Some(i) => self.pending_commit.updates.get_mut(i),
+        match self.find_pending(epoch_id) {
+            Some(i) => self.pending_commit.updates.get_mut(i).map(Ok),
             None => self
                 .storage
                 .epoch(&self.group_id, epoch_id)
                 .await
                 .map_err(|e| MlsError::GroupStorageError(e.into_any_error()))?
                 .and_then(|epoch| {
-                    self.pending_commit.updates.push(epoch);
-                    self.pending_commit.updates.last_mut()
+                    PriorEpoch::mls_decode(&mut &*epoch)
+                        .map(|epoch| {
+                            self.pending_commit.updates.push(epoch);
+                            self.pending_commit.updates.last_mut()
+                        })
+                        .transpose()
                 }),
-        })
+        }
+        .transpose()
+        .map_err(Into::into)
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -185,11 +194,27 @@ where
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn write_to_storage(&mut self, group_snapshot: Snapshot) -> Result<(), MlsError> {
-        let inserts = self.pending_commit.inserts.iter().cloned().collect();
-        let updates = self.pending_commit.updates.clone();
+        let inserts = self
+            .pending_commit
+            .inserts
+            .iter()
+            .map(|e| Ok(EpochRecord::new(e.epoch_id(), e.mls_encode_to_vec()?)))
+            .collect::<Result<_, MlsError>>()?;
+
+        let updates = self
+            .pending_commit
+            .updates
+            .iter()
+            .map(|e| Ok(EpochRecord::new(e.epoch_id(), e.mls_encode_to_vec()?)))
+            .collect::<Result<_, MlsError>>()?;
+
+        let group_state = GroupState {
+            data: group_snapshot.mls_encode_to_vec()?,
+            id: group_snapshot.state.context.group_id,
+        };
 
         self.storage
-            .write(group_snapshot, inserts, updates)
+            .write(group_state, inserts, updates)
             .await
             .map_err(|e| MlsError::GroupStorageError(e.into_any_error()))?;
 
@@ -227,10 +252,7 @@ mod tests {
             test_utils::{random_bytes, test_member, TEST_GROUP},
             PskGroupId, ResumptionPSKUsage,
         },
-        storage_provider::{
-            group_state::EpochData,
-            in_memory::{InMemoryGroupStateStorage, InMemoryKeyPackageStorage},
-        },
+        storage_provider::in_memory::{InMemoryGroupStateStorage, InMemoryKeyPackageStorage},
     };
 
     use super::*;
@@ -321,7 +343,10 @@ mod tests {
 
         assert_eq!(
             stored.epoch_data.back().unwrap(),
-            &EpochData::new(test_epoch).unwrap()
+            &EpochRecord::new(
+                test_epoch.epoch_id(),
+                test_epoch.mls_encode_to_vec().unwrap()
+            )
         );
     }
 
@@ -386,7 +411,7 @@ mod tests {
 
         assert_eq!(
             stored.epoch_data.back().unwrap(),
-            &EpochData::new(to_update).unwrap()
+            &EpochRecord::new(to_update.epoch_id(), to_update.mls_encode_to_vec().unwrap())
         );
     }
 
@@ -434,12 +459,15 @@ mod tests {
 
         assert_eq!(
             stored.epoch_data.front().unwrap(),
-            &EpochData::new(to_update).unwrap()
+            &EpochRecord::new(to_update.epoch_id(), to_update.mls_encode_to_vec().unwrap())
         );
 
         assert_eq!(
             stored.epoch_data.back().unwrap(),
-            &EpochData::new(test_epoch_1).unwrap()
+            &EpochRecord::new(
+                test_epoch_1.epoch_id(),
+                test_epoch_1.mls_encode_to_vec().unwrap()
+            )
         );
     }
 

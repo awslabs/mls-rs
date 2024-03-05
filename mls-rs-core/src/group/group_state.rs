@@ -2,22 +2,51 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
+use core::fmt::{self, Debug};
+
 use crate::error::IntoAnyError;
 #[cfg(mls_build_async)]
 use alloc::boxed::Box;
 use alloc::vec::Vec;
-use mls_rs_codec::{MlsDecode, MlsEncode};
 
 /// Generic representation of a group's state.
-pub trait GroupState {
+#[derive(Clone, PartialEq, Eq)]
+pub struct GroupState {
     /// A unique group identifier.
-    fn id(&self) -> Vec<u8>;
+    pub id: Vec<u8>,
+    pub data: Vec<u8>,
+}
+
+impl Debug for GroupState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("GroupState")
+            .field("id", &crate::debug::pretty_bytes(&self.id))
+            .field("data", &crate::debug::pretty_bytes(&self.data))
+            .finish()
+    }
 }
 
 /// Generic representation of a prior epoch.
-pub trait EpochRecord {
+#[derive(Clone, PartialEq, Eq)]
+pub struct EpochRecord {
     /// A unique epoch identifier within a particular group.
-    fn id(&self) -> u64;
+    pub id: u64,
+    pub data: Vec<u8>,
+}
+
+impl Debug for EpochRecord {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EpochRecord")
+            .field("id", &self.id)
+            .field("data", &crate::debug::pretty_bytes(&self.data))
+            .finish()
+    }
+}
+
+impl EpochRecord {
+    pub fn new(id: u64, data: Vec<u8>) -> Self {
+        Self { id, data }
+    }
 }
 
 /// Storage that can persist and reload a group state.
@@ -41,14 +70,10 @@ pub trait GroupStateStorage: Send + Sync {
     type Error: IntoAnyError;
 
     /// Fetch a group state from storage.
-    async fn state<T>(&self, group_id: &[u8]) -> Result<Option<T>, Self::Error>
-    where
-        T: GroupState + MlsEncode + MlsDecode;
+    async fn state(&self, group_id: &[u8]) -> Result<Option<Vec<u8>>, Self::Error>;
 
     /// Lazy load cached epoch data from a particular group.
-    async fn epoch<T>(&self, group_id: &[u8], epoch_id: u64) -> Result<Option<T>, Self::Error>
-    where
-        T: EpochRecord + MlsEncode + MlsDecode;
+    async fn epoch(&self, group_id: &[u8], epoch_id: u64) -> Result<Option<Vec<u8>>, Self::Error>;
 
     /// Write pending state updates.
     ///
@@ -69,15 +94,12 @@ pub trait GroupStateStorage: Send + Sync {
     /// of this trait. Calls to [`write`](GroupStateStorage::write) should
     /// optimally be a single atomic transaction in order to avoid partial writes
     /// that may corrupt the group state.
-    async fn write<ST, ET>(
+    async fn write(
         &mut self,
-        state: ST,
-        epoch_inserts: Vec<ET>,
-        epoch_updates: Vec<ET>,
-    ) -> Result<(), Self::Error>
-    where
-        ST: GroupState + MlsEncode + MlsDecode + Send + Sync,
-        ET: EpochRecord + MlsEncode + MlsDecode + Send + Sync;
+        state: GroupState,
+        epoch_inserts: Vec<EpochRecord>,
+        epoch_updates: Vec<EpochRecord>,
+    ) -> Result<(), Self::Error>;
 
     /// The [`EpochRecord::id`] value that is associated with a stored
     /// prior epoch for a particular group.
