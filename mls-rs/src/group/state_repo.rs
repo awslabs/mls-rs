@@ -8,7 +8,7 @@ use crate::{group::PriorEpoch, key_package::KeyPackageRef};
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 use core::fmt::{self, Debug};
-use mls_rs_codec::MlsEncode;
+use mls_rs_codec::{MlsDecode, MlsEncode};
 use mls_rs_core::group::{EpochRecord, GroupState};
 use mls_rs_core::{error::IntoAnyError, group::GroupStateStorage, key_package::KeyPackageStorage};
 
@@ -104,8 +104,6 @@ where
         psk_id: &ResumptionPsk,
     ) -> Result<Option<PreSharedKey>, MlsError> {
         // Search the local inserts cache
-
-        use mls_rs_codec::MlsDecode;
         if let Some(min) = self.pending_commit.inserts.front().map(|e| e.epoch_id()) {
             if psk_id.psk_epoch >= min {
                 return Ok(self
@@ -144,9 +142,6 @@ where
         epoch_id: u64,
     ) -> Result<Option<&mut PriorEpoch>, MlsError> {
         // Search the local inserts cache
-
-        use mls_rs_codec::MlsDecode;
-
         if let Some(min) = self.pending_commit.inserts.front().map(|e| e.epoch_id()) {
             if epoch_id >= min {
                 return Ok(self
@@ -158,24 +153,24 @@ where
 
         // Look in the cached updates map, and if not found look in disk storage
         // and insert into the updates map for future caching
-        Ok(match self.find_pending(epoch_id) {
-            Some(i) => self.pending_commit.updates.get_mut(i),
-            None => {
-                let epoch = self
-                    .storage
-                    .epoch(&self.group_id, epoch_id)
-                    .await
-                    .map_err(|e| MlsError::GroupStorageError(e.into_any_error()))?;
-
-                if let Some(epoch) = epoch {
-                    self.pending_commit
-                        .updates
-                        .push(PriorEpoch::mls_decode(&mut &*epoch)?);
-                }
-
-                self.pending_commit.updates.last_mut()
-            }
-        })
+        match self.find_pending(epoch_id) {
+            Some(i) => self.pending_commit.updates.get_mut(i).map(Ok),
+            None => self
+                .storage
+                .epoch(&self.group_id, epoch_id)
+                .await
+                .map_err(|e| MlsError::GroupStorageError(e.into_any_error()))?
+                .and_then(|epoch| {
+                    PriorEpoch::mls_decode(&mut &*epoch)
+                        .map(|epoch| {
+                            self.pending_commit.updates.push(epoch);
+                            self.pending_commit.updates.last_mut()
+                        })
+                        .transpose()
+                }),
+        }
+        .transpose()
+        .map_err(Into::into)
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]

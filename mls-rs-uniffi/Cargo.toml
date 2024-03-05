@@ -22,7 +22,7 @@ sqlite = ["mls-rs/sqlcipher-bundled"]
 async-trait = "0.1.77"
 maybe-async = "0.2.10"
 mls-rs = { path = "../mls-rs" }
-mls-rs-core = { path = "../mls-rs-core", features = ["uniffi"] }
+mls-rs-core = { path = "../mls-rs-core" }
 mls-rs-crypto-openssl = { path = "../mls-rs-crypto-openssl" }
 thiserror = "1.0.57"
 uniffi = "0.26.0"
