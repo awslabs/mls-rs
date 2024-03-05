@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use alloc::vec::Vec;
+use core::fmt::{self, Debug};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
 use zeroize::Zeroizing;
@@ -23,7 +24,7 @@ pub(crate) struct SenderData {
     pub reuse_guard: ReuseGuard,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
+#[derive(Clone, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 pub(crate) struct SenderDataAAD {
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     pub group_id: Vec<u8>,
@@ -31,11 +32,33 @@ pub(crate) struct SenderDataAAD {
     pub content_type: ContentType,
 }
 
-#[derive(Debug)]
+impl Debug for SenderDataAAD {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SenderDataAAD")
+            .field(
+                "group_id",
+                &mls_rs_core::debug::pretty_group_id(&self.group_id),
+            )
+            .field("epoch", &self.epoch)
+            .field("content_type", &self.content_type)
+            .finish()
+    }
+}
+
 pub(crate) struct SenderDataKey<'a, CP: CipherSuiteProvider> {
     pub(crate) key: Zeroizing<Vec<u8>>,
     pub(crate) nonce: Zeroizing<Vec<u8>>,
     cipher_suite_provider: &'a CP,
+}
+
+impl<CP: CipherSuiteProvider + Debug> Debug for SenderDataKey<'_, CP> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SenderDataKey")
+            .field("key", &mls_rs_core::debug::pretty_bytes(&self.key))
+            .field("nonce", &mls_rs_core::debug::pretty_bytes(&self.nonce))
+            .field("cipher_suite_provider", self.cipher_suite_provider)
+            .finish()
+    }
 }
 
 impl<'a, CP: CipherSuiteProvider> SenderDataKey<'a, CP> {

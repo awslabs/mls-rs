@@ -3,7 +3,10 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use alloc::vec::Vec;
-use core::ops::Deref;
+use core::{
+    fmt::{self, Debug},
+    ops::Deref,
+};
 
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::{crypto::CipherSuiteProvider, error::IntoAnyError};
@@ -16,7 +19,7 @@ use crate::{
 
 use super::{AuthenticatedContent, ConfirmationTag};
 
-#[derive(Debug, Clone, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
+#[derive(Clone, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ConfirmedTranscriptHash(
@@ -24,6 +27,14 @@ pub struct ConfirmedTranscriptHash(
     #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::vec_serde"))]
     Vec<u8>,
 );
+
+impl Debug for ConfirmedTranscriptHash {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        mls_rs_core::debug::pretty_bytes(&self.0)
+            .named("ConfirmedTranscriptHash")
+            .fmt(f)
+    }
+}
 
 impl Deref for ConfirmedTranscriptHash {
     type Target = Vec<u8>;
@@ -73,13 +84,21 @@ impl ConfirmedTranscriptHash {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, MlsSize, MlsEncode, MlsDecode)]
+#[derive(Clone, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub(crate) struct InterimTranscriptHash(
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::vec_serde"))]
     Vec<u8>,
 );
+
+impl Debug for InterimTranscriptHash {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        mls_rs_core::debug::pretty_bytes(&self.0)
+            .named("InterimTranscriptHash")
+            .fmt(f)
+    }
+}
 
 impl Deref for InterimTranscriptHash {
     type Target = Vec<u8>;

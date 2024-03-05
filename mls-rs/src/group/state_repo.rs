@@ -7,6 +7,7 @@ use crate::{group::PriorEpoch, key_package::KeyPackageRef};
 
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
+use core::fmt::{self, Debug};
 use mls_rs_core::{error::IntoAnyError, group::GroupStateStorage, key_package::KeyPackageStorage};
 
 use super::snapshot::Snapshot;
@@ -25,7 +26,7 @@ struct EpochStorageCommit {
     pub(crate) updates: Vec<PriorEpoch>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub(crate) struct GroupStateRepository<S, K>
 where
     S: GroupStateStorage,
@@ -36,6 +37,28 @@ where
     group_id: Vec<u8>,
     storage: S,
     key_package_repo: K,
+}
+
+impl<S, K> Debug for GroupStateRepository<S, K>
+where
+    S: GroupStateStorage + Debug,
+    K: KeyPackageStorage + Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("GroupStateRepository")
+            .field("pending_commit", &self.pending_commit)
+            .field(
+                "pending_key_package_removal",
+                &self.pending_key_package_removal,
+            )
+            .field(
+                "group_id",
+                &mls_rs_core::debug::pretty_group_id(&self.group_id),
+            )
+            .field("storage", &self.storage)
+            .field("key_package_repo", &self.key_package_repo)
+            .finish()
+    }
 }
 
 impl<S, K> GroupStateRepository<S, K>

@@ -14,6 +14,7 @@ use mls_rs_core::psk::PreSharedKeyStorage;
 
 #[cfg(any(test, feature = "external_client"))]
 use core::convert::Infallible;
+use core::fmt::{self, Debug};
 
 #[cfg(feature = "psk")]
 use crate::{client::MlsError, CipherSuiteProvider};
@@ -58,7 +59,7 @@ pub(crate) enum JustPreSharedKeyID {
     Resumption(ResumptionPsk) = 2u8,
 }
 
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialOrd, PartialEq, MlsSize, MlsEncode, MlsDecode)]
+#[derive(Clone, Eq, Hash, Ord, PartialOrd, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub(crate) struct PskGroupId(
@@ -67,7 +68,15 @@ pub(crate) struct PskGroupId(
     pub Vec<u8>,
 );
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq, PartialOrd, Ord, MlsSize, MlsEncode, MlsDecode)]
+impl Debug for PskGroupId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        mls_rs_core::debug::pretty_bytes(&self.0)
+            .named("PskGroupId")
+            .fmt(f)
+    }
+}
+
+#[derive(Clone, Eq, Hash, PartialEq, PartialOrd, Ord, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub(crate) struct PskNonce(
@@ -75,6 +84,14 @@ pub(crate) struct PskNonce(
     #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::vec_serde"))]
     pub Vec<u8>,
 );
+
+impl Debug for PskNonce {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        mls_rs_core::debug::pretty_bytes(&self.0)
+            .named("PskNonce")
+            .fmt(f)
+    }
+}
 
 #[cfg(feature = "psk")]
 impl PskNonce {

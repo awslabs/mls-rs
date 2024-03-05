@@ -5,11 +5,14 @@
 use crate::CipherSuiteProvider;
 use crate::{client::MlsError, group::transcript_hash::ConfirmedTranscriptHash};
 use alloc::vec::Vec;
-use core::ops::Deref;
+use core::{
+    fmt::{self, Debug},
+    ops::Deref,
+};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
 
-#[derive(Debug, Clone, PartialEq, MlsSize, MlsEncode, MlsDecode)]
+#[derive(Clone, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ConfirmationTag(
@@ -17,6 +20,14 @@ pub struct ConfirmationTag(
     #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::vec_serde"))]
     Vec<u8>,
 );
+
+impl Debug for ConfirmationTag {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        mls_rs_core::debug::pretty_bytes(&self.0)
+            .named("ConfirmationTag")
+            .fmt(f)
+    }
+}
 
 impl Deref for ConfirmationTag {
     type Target = Vec<u8>;

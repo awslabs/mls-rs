@@ -188,7 +188,7 @@ async fn interop_passive_client() {
             .ratchet_tree
             .map(|t| ExportedTree::from_bytes(&t.0).unwrap());
 
-        let (mut group, _info) = client.join_group(tree, welcome).await.unwrap();
+        let (mut group, _info) = client.join_group(tree, &welcome).await.unwrap();
 
         assert_eq!(
             group.epoch_authenticator().unwrap().to_vec(),
@@ -631,7 +631,7 @@ pub async fn add_random_members<C: MlsConfig>(
         let commit = commit_output.welcome_messages[0].clone();
 
         let group = client
-            .join_group(Some(tree_data.clone()), commit)
+            .join_group(Some(tree_data.clone()), &commit)
             .await
             .unwrap()
             .0;

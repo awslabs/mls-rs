@@ -2,7 +2,10 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use core::ops::Deref;
+use core::{
+    fmt::{self, Debug},
+    ops::Deref,
+};
 
 use crate::error::{AnyError, IntoAnyError};
 use alloc::vec::Vec;
@@ -90,7 +93,7 @@ impl IntoAnyError for ExtensionError {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
+#[derive(Clone, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(
     all(feature = "ffi", not(test)),
@@ -109,6 +112,18 @@ pub struct Extension {
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     #[cfg_attr(feature = "serde", serde(with = "crate::vec_serde"))]
     pub extension_data: Vec<u8>,
+}
+
+impl Debug for Extension {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Extension")
+            .field("extension_type", &self.extension_type)
+            .field(
+                "extension_data",
+                &crate::debug::pretty_bytes(&self.extension_data),
+            )
+            .finish()
+    }
 }
 
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]

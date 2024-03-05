@@ -12,6 +12,7 @@ use super::{Commit, FramedContentAuthData, GroupInfo, MembershipTag, Welcome};
 use crate::{group::Proposal, mls_rules::ProposalRef};
 
 use alloc::vec::Vec;
+use core::fmt::{self, Debug};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::{
     crypto::{CipherSuite, CipherSuiteProvider},
@@ -86,7 +87,7 @@ impl From<u32> for Sender {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode, ZeroizeOnDrop)]
+#[derive(Clone, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode, ZeroizeOnDrop)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ApplicationData(
@@ -94,6 +95,14 @@ pub struct ApplicationData(
     #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::vec_serde"))]
     Vec<u8>,
 );
+
+impl Debug for ApplicationData {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        mls_rs_core::debug::pretty_bytes(&self.0)
+            .named("ApplicationData")
+            .fmt(f)
+    }
+}
 
 impl From<Vec<u8>> for ApplicationData {
     fn from(data: Vec<u8>) -> Self {
@@ -251,7 +260,7 @@ impl PrivateMessageContent {
 }
 
 #[cfg(feature = "private_message")]
-#[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
+#[derive(Clone, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 pub struct PrivateContentAAD {
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     pub group_id: Vec<u8>,
@@ -262,7 +271,25 @@ pub struct PrivateContentAAD {
 }
 
 #[cfg(feature = "private_message")]
-#[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
+impl Debug for PrivateContentAAD {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PrivateContentAAD")
+            .field(
+                "group_id",
+                &mls_rs_core::debug::pretty_group_id(&self.group_id),
+            )
+            .field("epoch", &self.epoch)
+            .field("content_type", &self.content_type)
+            .field(
+                "authenticated_data",
+                &mls_rs_core::debug::pretty_bytes(&self.authenticated_data),
+            )
+            .finish()
+    }
+}
+
+#[cfg(feature = "private_message")]
+#[derive(Clone, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct PrivateMessage {
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
@@ -275,6 +302,32 @@ pub struct PrivateMessage {
     pub encrypted_sender_data: Vec<u8>,
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     pub ciphertext: Vec<u8>,
+}
+
+#[cfg(feature = "private_message")]
+impl Debug for PrivateMessage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PrivateMessage")
+            .field(
+                "group_id",
+                &mls_rs_core::debug::pretty_group_id(&self.group_id),
+            )
+            .field("epoch", &self.epoch)
+            .field("content_type", &self.content_type)
+            .field(
+                "authenticated_data",
+                &mls_rs_core::debug::pretty_bytes(&self.authenticated_data),
+            )
+            .field(
+                "encrypted_sender_data",
+                &mls_rs_core::debug::pretty_bytes(&self.encrypted_sender_data),
+            )
+            .field(
+                "ciphertext",
+                &mls_rs_core::debug::pretty_bytes(&self.ciphertext),
+            )
+            .finish()
+    }
 }
 
 #[cfg(feature = "private_message")]
@@ -336,6 +389,14 @@ impl MlsMessage {
     #[inline(always)]
     pub fn into_group_info(self) -> Option<GroupInfo> {
         match self.payload {
+            MlsMessagePayload::GroupInfo(info) => Some(info),
+            _ => None,
+        }
+    }
+
+    #[inline(always)]
+    pub fn as_group_info(&self) -> Option<&GroupInfo> {
+        match &self.payload {
             MlsMessagePayload::GroupInfo(info) => Some(info),
             _ => None,
         }
@@ -513,7 +574,7 @@ pub enum WireFormat {
     KeyPackage = 5u16,
 }
 
-#[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
+#[derive(Clone, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub(crate) struct FramedContent {
@@ -526,6 +587,24 @@ pub(crate) struct FramedContent {
     #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::vec_serde"))]
     pub authenticated_data: Vec<u8>,
     pub content: Content,
+}
+
+impl Debug for FramedContent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("FramedContent")
+            .field(
+                "group_id",
+                &mls_rs_core::debug::pretty_group_id(&self.group_id),
+            )
+            .field("epoch", &self.epoch)
+            .field("sender", &self.sender)
+            .field(
+                "authenticated_data",
+                &mls_rs_core::debug::pretty_bytes(&self.authenticated_data),
+            )
+            .field("content", &self.content)
+            .finish()
+    }
 }
 
 impl FramedContent {

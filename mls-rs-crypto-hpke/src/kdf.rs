@@ -5,11 +5,24 @@
 use mls_rs_crypto_traits::KdfType;
 
 use alloc::vec::Vec;
+use core::fmt::{self, Debug};
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub(crate) struct HpkeKdf<K: KdfType> {
     suite_id: Vec<u8>,
     kdf: K,
+}
+
+impl<K: KdfType + Debug> Debug for HpkeKdf<K> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("HpkeKdf")
+            .field(
+                "suite_id",
+                &mls_rs_core::debug::pretty_bytes(&self.suite_id),
+            )
+            .field("kdf", &self.kdf)
+            .finish()
+    }
 }
 
 impl<K: KdfType> HpkeKdf<K> {

@@ -2,7 +2,10 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use core::ops::Deref;
+use core::{
+    fmt::{self, Debug},
+    ops::Deref,
+};
 
 use alloc::vec::Vec;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
@@ -55,7 +58,7 @@ impl Deref for CredentialType {
     }
 }
 
-#[derive(Clone, Debug, MlsSize, MlsEncode, MlsDecode, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, MlsSize, MlsEncode, MlsDecode, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(
     all(feature = "ffi", not(test)),
@@ -76,6 +79,15 @@ pub struct CustomCredential {
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     #[cfg_attr(feature = "serde", serde(with = "crate::vec_serde"))]
     pub data: Vec<u8>,
+}
+
+impl Debug for CustomCredential {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CustomCredential")
+            .field("credential_type", &self.credential_type)
+            .field("data", &crate::debug::pretty_bytes(&self.data))
+            .finish()
+    }
 }
 
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]

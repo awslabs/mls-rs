@@ -7,16 +7,28 @@ use mls_rs_core::{
     mls_rs_codec::{MlsDecode, MlsEncode},
 };
 use rusqlite::{params, Connection, OptionalExtension};
-use std::sync::{Arc, Mutex};
+use std::{
+    fmt::{self, Debug},
+    sync::{Arc, Mutex},
+};
 
 use crate::SqLiteDataStorageError;
 
 pub(crate) const DEFAULT_EPOCH_RETENTION_LIMIT: u64 = 3;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 struct StoredEpoch {
     data: Vec<u8>,
     id: u64,
+}
+
+impl Debug for StoredEpoch {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("StoredEpoch")
+            .field("data", &mls_rs_core::debug::pretty_bytes(&self.data))
+            .field("id", &self.id)
+            .finish()
+    }
 }
 
 impl StoredEpoch {

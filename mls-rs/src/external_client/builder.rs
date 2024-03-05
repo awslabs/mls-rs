@@ -19,7 +19,10 @@ use crate::{
     tree_kem::Capabilities,
     CryptoProvider, Sealed,
 };
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    fmt::{self, Debug},
+};
 
 /// Base client configuration type when instantiating `ExternalClientBuilder`
 pub type ExternalBaseConfig = Config<Missing, DefaultMlsRules, Missing>;
@@ -467,7 +470,7 @@ impl<T: MlsConfig> ExternalClientConfig for T {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub(crate) struct Settings {
     pub(crate) extension_types: Vec<ExtensionType>,
     pub(crate) custom_proposal_types: Vec<ProposalType>,
@@ -475,6 +478,30 @@ pub(crate) struct Settings {
     pub(crate) external_signing_keys: HashMap<Vec<u8>, SignaturePublicKey>,
     pub(crate) max_epoch_jitter: Option<u64>,
     pub(crate) cache_proposals: bool,
+}
+
+impl Debug for Settings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Settings")
+            .field("extension_types", &self.extension_types)
+            .field("custom_proposal_types", &self.custom_proposal_types)
+            .field("protocol_versions", &self.protocol_versions)
+            .field(
+                "external_signing_keys",
+                &mls_rs_core::debug::pretty_with(|f| {
+                    f.debug_map()
+                        .entries(
+                            self.external_signing_keys
+                                .iter()
+                                .map(|(k, v)| (mls_rs_core::debug::pretty_bytes(k), v)),
+                        )
+                        .finish()
+                }),
+            )
+            .field("max_epoch_jitter", &self.max_epoch_jitter)
+            .field("cache_proposals", &self.cache_proposals)
+            .finish()
+    }
 }
 
 impl Default for Settings {

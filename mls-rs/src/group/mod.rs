@@ -2,9 +2,9 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use alloc::boxed::Box;
 use alloc::vec;
 use alloc::vec::Vec;
+use core::fmt::{self, Debug};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
 use mls_rs_core::secret::Secret;
@@ -95,7 +95,6 @@ use self::proposal_ref::ProposalRef;
 use self::state_repo::GroupStateRepository;
 pub(crate) use group_info::GroupInfo;
 
-use self::framing::MlsMessage;
 pub use self::framing::{ContentType, Sender};
 pub use commit::*;
 pub use context::GroupContext;
@@ -188,13 +187,26 @@ pub(crate) struct EncryptedGroupSecrets {
     pub encrypted_group_secrets: HpkeCiphertext,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, MlsSize, MlsEncode, MlsDecode)]
+#[derive(Clone, Eq, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) struct Welcome {
     pub cipher_suite: CipherSuite,
     pub secrets: Vec<EncryptedGroupSecrets>,
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     pub encrypted_group_info: Vec<u8>,
+}
+
+impl Debug for Welcome {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Welcome")
+            .field("cipher_suite", &self.cipher_suite)
+            .field("secrets", &self.secrets)
+            .field(
+                "encrypted_group_info",
+                &mls_rs_core::debug::pretty_bytes(&self.encrypted_group_info),
+            )
+            .finish()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -378,7 +390,7 @@ where
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn join(
-        welcome: MlsMessage,
+        welcome: &MlsMessage,
         tree_data: Option<ExportedTree<'_>>,
         config: C,
         signer: SignatureSecretKey,
@@ -396,7 +408,7 @@ where
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn from_welcome_message(
-        welcome: MlsMessage,
+        welcome: &MlsMessage,
         tree_data: Option<ExportedTree<'_>>,
         config: C,
         signer: SignatureSecretKey,
@@ -408,9 +420,9 @@ where
             return Err(MlsError::UnsupportedProtocolVersion(protocol_version));
         }
 
-        let welcome = welcome
-            .into_welcome()
-            .ok_or(MlsError::UnexpectedMessageType)?;
+        let MlsMessagePayload::Welcome(welcome) = &welcome.payload else {
+            return Err(MlsError::UnexpectedMessageType);
+        };
 
         let cipher_suite_provider =
             cipher_suite_provider(config.crypto_provider(), welcome.cipher_suite)?;
@@ -489,9 +501,9 @@ where
 
         let group_info = GroupInfo::mls_decode(&mut &**decrypted_group_info)?;
 
-        let join_context = validate_group_info(
+        let public_tree = validate_group_info_joiner(
             protocol_version,
-            group_info,
+            &group_info,
             tree_data,
             &config.identity_provider(),
             &cipher_suite_provider,
@@ -502,8 +514,7 @@ where
         // to the leaf_node field of the KeyPackage. If no such field exists, return an error. Let
         // index represent the index of this node among the leaves in the tree, namely the index of
         // the node in the tree array divided by two.
-        let self_index = join_context
-            .public_tree
+        let self_index = public_tree
             .find_leaf_node(&key_package_generation.key_package.leaf_node)
             .ok_or(MlsError::WelcomeKeyPackageNotFound)?;
 
@@ -517,9 +528,9 @@ where
             private_tree
                 .update_secrets(
                     &cipher_suite_provider,
-                    join_context.signer_index,
+                    group_info.signer,
                     path_secret,
-                    &join_context.public_tree,
+                    &public_tree,
                 )
                 .await?;
         }
@@ -529,20 +540,20 @@ where
         let key_schedule_result = KeySchedule::from_joiner(
             &cipher_suite_provider,
             &group_secrets.joiner_secret,
-            &join_context.group_context,
+            &group_info.group_context,
             #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
-            join_context.public_tree.total_leaf_count(),
+            public_tree.total_leaf_count(),
             &psk_secret,
         )
         .await?;
 
         // Verify the confirmation tag in the GroupInfo using the derived confirmation key and the
         // confirmed_transcript_hash from the GroupInfo.
-        if !join_context
+        if !group_info
             .confirmation_tag
             .matches(
                 &key_schedule_result.confirmation_key,
-                &join_context.group_context.confirmed_transcript_hash,
+                &group_info.group_context.confirmed_transcript_hash,
                 &cipher_suite_provider,
             )
             .await?
@@ -552,8 +563,8 @@ where
 
         Self::join_with(
             config,
-            cipher_suite_provider,
-            join_context,
+            group_info,
+            public_tree,
             key_schedule_result.key_schedule,
             key_schedule_result.epoch_secrets,
             private_tree,
@@ -567,41 +578,46 @@ where
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn join_with(
         config: C,
-        cipher_suite_provider: <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider,
-        join_context: JoinContext,
+        group_info: GroupInfo,
+        public_tree: TreeKemPublic,
         key_schedule: KeySchedule,
         epoch_secrets: EpochSecrets,
         private_tree: TreeKemPrivate,
         used_key_package_ref: Option<KeyPackageRef>,
         signer: SignatureSecretKey,
     ) -> Result<(Self, NewMemberInfo), MlsError> {
+        let cs = group_info.group_context.cipher_suite;
+
+        let cs = config
+            .crypto_provider()
+            .cipher_suite_provider(cs)
+            .ok_or(MlsError::UnsupportedCipherSuite(cs))?;
+
         // Use the confirmed transcript hash and confirmation tag to compute the interim transcript
         // hash in the new state.
         let interim_transcript_hash = InterimTranscriptHash::create(
-            &cipher_suite_provider,
-            &join_context.group_context.confirmed_transcript_hash,
-            &join_context.confirmation_tag,
+            &cs,
+            &group_info.group_context.confirmed_transcript_hash,
+            &group_info.confirmation_tag,
         )
         .await?;
 
         let state_repo = GroupStateRepository::new(
             #[cfg(feature = "prior_epoch")]
-            join_context.group_context.group_id.clone(),
+            group_info.group_context.group_id.clone(),
             config.group_state_storage(),
             config.key_package_repo(),
             used_key_package_ref,
         )
         .await?;
 
-        let group_info_extensions = join_context.group_info_extensions.clone();
-
         let group = Group {
             config,
             state: GroupState::new(
-                join_context.group_context,
-                join_context.public_tree,
+                group_info.group_context,
+                public_tree,
                 interim_transcript_hash,
-                join_context.confirmation_tag,
+                group_info.confirmation_tag,
             ),
             private_tree,
             key_schedule,
@@ -612,13 +628,13 @@ where
             commit_modifiers: Default::default(),
             epoch_secrets,
             state_repo,
-            cipher_suite_provider,
+            cipher_suite_provider: cs,
             #[cfg(feature = "psk")]
             previous_psk: None,
             signer,
         };
 
-        Ok((group, NewMemberInfo::new(group_info_extensions)))
+        Ok((group, NewMemberInfo::new(group_info.extensions)))
     }
 
     #[inline(always)]
@@ -1181,7 +1197,7 @@ where
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn decrypt_incoming_ciphertext(
         &mut self,
-        message: PrivateMessage,
+        message: &PrivateMessage,
     ) -> Result<AuthenticatedContent, MlsError> {
         let epoch_id = message.epoch;
 
@@ -1592,7 +1608,7 @@ where
     #[cfg(feature = "private_message")]
     async fn process_ciphertext(
         &mut self,
-        cipher_text: PrivateMessage,
+        cipher_text: &PrivateMessage,
     ) -> Result<EventOrContent<Self::OutputType>, MlsError> {
         self.decrypt_incoming_ciphertext(cipher_text)
             .await
@@ -2149,7 +2165,7 @@ mod tests {
             test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
 
         // Add bob to the group
-        let mut commit_output = test_group
+        let commit_output = test_group
             .group
             .commit_builder()
             .add_member(bob_key_package)
@@ -2160,7 +2176,7 @@ mod tests {
 
         // Group from Bob's perspective
         let bob_group = Group::join(
-            commit_output.welcome_messages.remove(0),
+            &commit_output.welcome_messages[0],
             None,
             bob_client.config,
             bob_client.signer.unwrap(),
@@ -2687,7 +2703,6 @@ mod tests {
         let (bob_group, commit) = bob
             .external_commit_builder()
             .unwrap()
-            .with_tree_data(alice_group.group.export_tree().into_owned())
             .build(
                 alice_group
                     .group
@@ -2881,27 +2896,18 @@ mod tests {
         .await
         .unwrap();
 
-        let (mut alice_sub_group, mut welcome) = alice
+        let (mut alice_sub_group, welcome) = alice
             .group
             .branch(b"subgroup".to_vec(), vec![new_key_pkg])
             .await
             .unwrap();
 
-        let welcome = welcome.remove(0);
+        let welcome = &welcome[0];
 
-        let (mut bob_sub_group, _) = bob
-            .group
-            .join_subgroup(welcome.clone(), None)
-            .await
-            .unwrap();
+        let (mut bob_sub_group, _) = bob.group.join_subgroup(welcome, None).await.unwrap();
 
         // Carol can't join
-        let res = carol
-            .group
-            .join_subgroup(welcome, Some(alice_sub_group.export_tree()))
-            .await
-            .map(|_| ());
-
+        let res = carol.group.join_subgroup(welcome, None).await.map(|_| ());
         assert_matches!(res, Err(_));
 
         // Alice and Bob can still talk
@@ -3822,7 +3828,7 @@ mod tests {
 
         bob.config.secret_store().insert(psk_id.clone(), psk);
 
-        let mut commit = alice
+        let commit = alice
             .commit_builder()
             .add_member(key_pkg)
             .unwrap()
@@ -3832,7 +3838,7 @@ mod tests {
             .await
             .unwrap();
 
-        bob.join_group(None, commit.welcome_messages.remove(0))
+        bob.join_group(None, &commit.welcome_messages[0])
             .await
             .unwrap();
     }
@@ -3899,7 +3905,7 @@ mod tests {
         alice.apply_pending_commit().await.unwrap();
 
         let mut bob = bob_client
-            .join_group(None, commit.welcome_messages[0].clone())
+            .join_group(None, &commit.welcome_messages[0])
             .await
             .unwrap()
             .0;
@@ -3918,13 +3924,13 @@ mod tests {
             .unwrap();
 
         let mut carol = carol_client
-            .join_group(None, commit.welcome_messages[0].clone())
+            .join_group(None, &commit.welcome_messages[0])
             .await
             .unwrap()
             .0;
 
         let mut dave = dave_client
-            .join_group(None, commit.welcome_messages[0].clone())
+            .join_group(None, &commit.welcome_messages[0])
             .await
             .unwrap()
             .0;

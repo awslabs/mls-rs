@@ -11,8 +11,7 @@ use crate::{
         epoch::SenderDataSecret,
         key_schedule::{InitSecret, KeySchedule},
         proposal::{ExternalInit, Proposal, RemoveProposal},
-        validate_group_info, EpochSecrets, ExternalPubExt, LeafIndex, LeafNode, MlsError,
-        TreeKemPrivate,
+        EpochSecrets, ExternalPubExt, LeafIndex, LeafNode, MlsError, TreeKemPrivate,
     },
     Group, MlsMessage,
 };
@@ -40,7 +39,7 @@ use crate::group::{
     PreSharedKeyProposal, {JustPreSharedKeyID, PreSharedKeyID},
 };
 
-use super::ExportedTree;
+use super::{validate_group_info_joiner, ExportedTree};
 
 /// A builder that aids with the construction of an external commit.
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::ffi_type(opaque))]
@@ -164,9 +163,9 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
             .get_as::<ExternalPubExt>()?
             .ok_or(MlsError::MissingExternalPubExtension)?;
 
-        let join_context = validate_group_info(
+        let public_tree = validate_group_info_joiner(
             protocol_version,
-            group_info,
+            &group_info,
             self.tree_data,
             &self.config.identity_provider(),
             &cipher_suite,
@@ -195,8 +194,8 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
 
         let (mut group, _) = Group::join_with(
             self.config,
-            cipher_suite.clone(),
-            join_context,
+            group_info,
+            public_tree,
             KeySchedule::new(init_secret),
             epoch_secrets,
             TreeKemPrivate::new_for_external(),

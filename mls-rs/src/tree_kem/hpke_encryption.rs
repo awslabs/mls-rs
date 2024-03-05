@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use alloc::vec::Vec;
+use core::fmt::{self, Debug};
 use mls_rs_codec::{MlsEncode, MlsSize};
 use mls_rs_core::{
     crypto::{CipherSuiteProvider, HpkeCiphertext, HpkePublicKey, HpkeSecretKey},
@@ -12,12 +13,21 @@ use zeroize::Zeroizing;
 
 use crate::client::MlsError;
 
-#[derive(Debug, Clone, MlsSize, MlsEncode)]
+#[derive(Clone, MlsSize, MlsEncode)]
 struct EncryptContext<'a> {
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     label: Vec<u8>,
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     context: &'a [u8],
+}
+
+impl Debug for EncryptContext<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EncryptContext")
+            .field("label", &mls_rs_core::debug::pretty_bytes(&self.label))
+            .field("context", &mls_rs_core::debug::pretty_bytes(self.context))
+            .finish()
+    }
 }
 
 impl<'a> EncryptContext<'a> {

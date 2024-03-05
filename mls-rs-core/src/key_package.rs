@@ -5,11 +5,12 @@
 #[cfg(mls_build_async)]
 use alloc::boxed::Box;
 use alloc::vec::Vec;
+use core::fmt::{self, Debug};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 
 use crate::{crypto::HpkeSecretKey, error::IntoAnyError};
 
-#[derive(Debug, Clone, PartialEq, Eq, MlsEncode, MlsDecode, MlsSize)]
+#[derive(Clone, PartialEq, Eq, MlsEncode, MlsDecode, MlsSize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 /// Representation of a generated key package and secret keys.
@@ -19,6 +20,20 @@ pub struct KeyPackageData {
     pub init_key: HpkeSecretKey,
     pub leaf_node_key: HpkeSecretKey,
     pub expiration: u64,
+}
+
+impl Debug for KeyPackageData {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("KeyPackageData")
+            .field(
+                "key_package_bytes",
+                &crate::debug::pretty_bytes(&self.key_package_bytes),
+            )
+            .field("init_key", &self.init_key)
+            .field("leaf_node_key", &self.leaf_node_key)
+            .field("expiration", &self.expiration)
+            .finish()
+    }
 }
 
 impl KeyPackageData {

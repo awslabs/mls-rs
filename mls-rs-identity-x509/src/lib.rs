@@ -12,6 +12,7 @@ mod traits;
 mod util;
 
 use alloc::vec::Vec;
+use core::fmt::{self, Debug};
 
 pub use error::*;
 pub use identity_extractor::*;
@@ -20,10 +21,18 @@ pub use traits::*;
 
 pub use mls_rs_core::identity::{CertificateChain, DerCertificate};
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// X.509 certificate request in DER format.
 pub struct DerCertificateRequest(Vec<u8>);
+
+impl Debug for DerCertificateRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        mls_rs_core::debug::pretty_bytes(&self.0)
+            .named("DerCertificateRequest")
+            .fmt(f)
+    }
+}
 
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl DerCertificateRequest {

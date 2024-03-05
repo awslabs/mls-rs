@@ -10,6 +10,7 @@ use alloc::sync::Arc;
 #[cfg(mls_build_async)]
 use alloc::boxed::Box;
 use alloc::vec::Vec;
+use core::fmt::{self, Debug};
 use mls_rs_codec::{MlsDecode, MlsEncode};
 use mls_rs_core::group::{EpochRecord, GroupState, GroupStateStorage};
 #[cfg(not(target_has_atomic = "ptr"))]
@@ -31,10 +32,22 @@ use spin::Mutex;
 
 pub(crate) const DEFAULT_EPOCH_RETENTION_LIMIT: usize = 3;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub(crate) struct InMemoryGroupData {
     pub(crate) state_data: Vec<u8>,
     pub(crate) epoch_data: VecDeque<EpochData>,
+}
+
+impl Debug for InMemoryGroupData {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("InMemoryGroupData")
+            .field(
+                "state_data",
+                &mls_rs_core::debug::pretty_bytes(&self.state_data),
+            )
+            .field("epoch_data", &self.epoch_data)
+            .finish()
+    }
 }
 
 impl InMemoryGroupData {
@@ -81,7 +94,7 @@ impl InMemoryGroupData {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 /// In memory group state storage backed by a HashMap.
 ///
 /// All clones of an instance of this type share the same underlying HashMap.
@@ -91,6 +104,26 @@ pub struct InMemoryGroupStateStorage {
     #[cfg(not(feature = "std"))]
     pub(crate) inner: Arc<Mutex<BTreeMap<Vec<u8>, InMemoryGroupData>>>,
     pub(crate) max_epoch_retention: usize,
+}
+
+impl Debug for InMemoryGroupStateStorage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("InMemoryGroupStateStorage")
+            .field(
+                "inner",
+                &mls_rs_core::debug::pretty_with(|f| {
+                    f.debug_map()
+                        .entries(
+                            self.lock()
+                                .iter()
+                                .map(|(k, v)| (mls_rs_core::debug::pretty_bytes(k), v)),
+                        )
+                        .finish()
+                }),
+            )
+            .field("max_epoch_retention", &self.max_epoch_retention)
+            .finish()
+    }
 }
 
 impl InMemoryGroupStateStorage {
@@ -115,20 +148,22 @@ impl InMemoryGroupStateStorage {
 
     /// Get the set of unique group ids that have data stored.
     pub fn stored_groups(&self) -> Vec<Vec<u8>> {
-        #[cfg(feature = "std")]
-        let res = self.inner.lock().unwrap().keys().cloned().collect();
-        #[cfg(not(feature = "std"))]
-        let res = self.inner.lock().keys().cloned().collect();
-
-        res
+        self.lock().keys().cloned().collect()
     }
 
     /// Delete all data corresponding to `group_id`.
     pub fn delete_group(&self, group_id: &[u8]) {
-        #[cfg(feature = "std")]
-        self.inner.lock().unwrap().remove(group_id);
-        #[cfg(not(feature = "std"))]
-        self.inner.lock().remove(group_id);
+        self.lock().remove(group_id);
+    }
+
+    #[cfg(feature = "std")]
+    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<Vec<u8>, InMemoryGroupData>> {
+        self.inner.lock().unwrap()
+    }
+
+    #[cfg(not(feature = "std"))]
+    fn lock(&self) -> spin::mutex::MutexGuard<'_, BTreeMap<Vec<u8>, InMemoryGroupData>> {
+        self.inner.lock()
     }
 }
 
@@ -144,13 +179,8 @@ impl GroupStateStorage for InMemoryGroupStateStorage {
     type Error = mls_rs_codec::Error;
 
     async fn max_epoch_id(&self, group_id: &[u8]) -> Result<Option<u64>, Self::Error> {
-        #[cfg(feature = "std")]
-        let lock = self.inner.lock().unwrap();
-
-        #[cfg(not(feature = "std"))]
-        let lock = self.inner.lock();
-
-        Ok(lock
+        Ok(self
+            .lock()
             .get(group_id)
             .and_then(|group_data| group_data.epoch_data.back().map(|e| e.id)))
     }
@@ -159,12 +189,8 @@ impl GroupStateStorage for InMemoryGroupStateStorage {
     where
         T: mls_rs_core::group::GroupState + MlsDecode,
     {
-        #[cfg(feature = "std")]
-        let lock = self.inner.lock().unwrap();
-        #[cfg(not(feature = "std"))]
-        let lock = self.inner.lock();
-
-        lock.get(group_id)
+        self.lock()
+            .get(group_id)
             .map(|v| T::mls_decode(&mut v.state_data.as_slice()))
             .transpose()
             .map_err(Into::into)
@@ -174,13 +200,8 @@ impl GroupStateStorage for InMemoryGroupStateStorage {
     where
         T: mls_rs_core::group::EpochRecord + MlsEncode + MlsDecode,
     {
-        #[cfg(feature = "std")]
-        let lock = self.inner.lock().unwrap();
-
-        #[cfg(not(feature = "std"))]
-        let lock = self.inner.lock();
-
-        lock.get(group_id)
+        self.lock()
+            .get(group_id)
             .and_then(|group_data| group_data.get_epoch(epoch_id))
             .map(|v| T::mls_decode(&mut v.data.as_slice()))
             .transpose()
@@ -197,12 +218,7 @@ impl GroupStateStorage for InMemoryGroupStateStorage {
         ST: GroupState + MlsEncode + MlsDecode + Send + Sync,
         ET: EpochRecord + MlsEncode + MlsDecode + Send + Sync,
     {
-        #[cfg(feature = "std")]
-        let mut group_map = self.inner.lock().unwrap();
-
-        #[cfg(not(feature = "std"))]
-        let mut group_map = self.inner.lock();
-
+        let mut group_map = self.lock();
         let state_data = state.mls_encode_to_vec()?;
 
         let group_data = match group_map.entry(state.id()) {
@@ -287,12 +303,7 @@ mod tests {
 
     impl InMemoryGroupStateStorage {
         fn test_data(&self) -> InMemoryGroupData {
-            #[cfg(feature = "std")]
-            let storage = self.inner.lock().unwrap();
-            #[cfg(not(feature = "std"))]
-            let storage = self.inner.lock();
-
-            storage.get(TEST_GROUP).unwrap().clone()
+            self.lock().get(TEST_GROUP).unwrap().clone()
         }
 
         fn has_test_data(&self) -> bool {

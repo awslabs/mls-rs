@@ -2,11 +2,13 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use std::collections::HashMap;
-
 use mls_rs_core::{crypto::SignaturePublicKey, time::MlsTime};
 use mls_rs_identity_x509::{CertificateChain, DerCertificate, X509CredentialValidator};
 use spki::der::{Decode, Encode};
+use std::{
+    collections::HashMap,
+    fmt::{self, Debug},
+};
 use x509_cert::Certificate;
 
 use crate::{
@@ -16,11 +18,32 @@ use crate::{
 
 use super::X509Error;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct X509Validator {
     root_ca_list: HashMap<Vec<u8>, DerCertificate>,
     pinned_cert: Option<DerCertificate>,
     allow_self_signed: bool,
+}
+
+impl Debug for X509Validator {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("X509Validator")
+            .field(
+                "root_ca_list",
+                &mls_rs_core::debug::pretty_with(|f| {
+                    f.debug_map()
+                        .entries(
+                            self.root_ca_list
+                                .iter()
+                                .map(|(k, v)| (mls_rs_core::debug::pretty_bytes(k), v)),
+                        )
+                        .finish()
+                }),
+            )
+            .field("pinned_cert", &self.pinned_cert)
+            .field("allow_self_signed", &self.allow_self_signed)
+            .finish()
+    }
 }
 
 impl X509Validator {

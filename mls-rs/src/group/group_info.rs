@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use alloc::vec::Vec;
+use core::fmt::{self, Debug};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::extension::ExtensionList;
 
@@ -10,7 +11,7 @@ use crate::{signer::Signable, tree_kem::node::LeafIndex};
 
 use super::{ConfirmationTag, GroupContext};
 
-#[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
+#[derive(Clone, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(
     all(feature = "ffi", not(test)),
@@ -23,6 +24,21 @@ pub struct GroupInfo {
     pub(crate) signer: LeafIndex,
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     pub(crate) signature: Vec<u8>,
+}
+
+impl Debug for GroupInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("GroupInfo")
+            .field("group_context", &self.group_context)
+            .field("extensions", &self.extensions)
+            .field("confirmation_tag", &self.confirmation_tag)
+            .field("signer", &self.signer)
+            .field(
+                "signature",
+                &mls_rs_core::debug::pretty_bytes(&self.signature),
+            )
+            .finish()
+    }
 }
 
 #[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen)]

@@ -50,7 +50,7 @@ fn main() -> Result<(), MlsError> {
     let bob_key_package = bob.generate_key_package_message()?;
 
     // Alice issues a commit that adds Bob to the group.
-    let mut alice_commit = alice_group
+    let alice_commit = alice_group
         .commit_builder()
         .add_member(bob_key_package)?
         .build()?;
@@ -61,7 +61,7 @@ fn main() -> Result<(), MlsError> {
     alice_group.apply_pending_commit()?;
 
     // Bob joins the group with the welcome message created as part of Alice's commit.
-    let (mut bob_group, _) = bob.join_group(None, alice_commit.welcome_messages.pop().unwrap())?;
+    let (mut bob_group, _) = bob.join_group(None, &alice_commit.welcome_messages[0])?;
 
     // Alice encrypts an application message to Bob.
     let msg = alice_group.encrypt_application_message(b"hello world", Default::default())?;

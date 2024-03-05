@@ -4,7 +4,10 @@
 
 use alloc::vec;
 use alloc::vec::Vec;
-use core::ops::Deref;
+use core::{
+    fmt::{self, Debug},
+    ops::Deref,
+};
 use mls_rs_core::crypto::CipherSuiteProvider;
 use zeroize::Zeroizing;
 
@@ -28,8 +31,16 @@ pub(crate) struct PskSecretInput {
     pub psk: PreSharedKey,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(PartialEq, Eq, Clone)]
 pub(crate) struct PskSecret(Zeroizing<Vec<u8>>);
+
+impl Debug for PskSecret {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        mls_rs_core::debug::pretty_bytes(&self.0)
+            .named("PskSecret")
+            .fmt(f)
+    }
+}
 
 #[cfg(test)]
 impl From<Vec<u8>> for PskSecret {
