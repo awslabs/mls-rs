@@ -228,6 +228,42 @@ impl GroupStateStorage for InMemoryGroupStateStorage {
 
         Ok(())
     }
+
+    async fn export_snapshot_data(
+        &self,
+        group_id: &[u8],
+    ) -> Result<Option<Vec<u8>>, Self::Error> {
+        #[cfg(feature = "std")]
+        let lock = self.inner.lock().unwrap();
+        #[cfg(not(feature = "std"))]
+        let lock = self.inner.lock();
+
+        Ok(lock.get(group_id)
+            .map(|v| v.state_data.clone()))
+    }
+
+    async fn import_snapshot_data(
+        &self,
+        group_id: &[u8],
+        group_snapshot: Vec<u8>,
+    ) -> Result<(), Self::Error> {
+        #[cfg(feature = "std")]
+        let mut group_map = self.inner.lock().unwrap();
+
+        #[cfg(not(feature = "std"))]
+        let mut group_map = self.inner.lock();
+
+        match group_map.entry(group_id.to_vec()) {
+            Entry::Occupied(entry) => {
+                let data = entry.into_mut();
+                data.state_data = group_snapshot;
+                data
+            }
+            Entry::Vacant(entry) => entry.insert(InMemoryGroupData::new(group_snapshot)),
+        };
+
+        Ok(())
+    }
 }
 
 #[cfg(all(test, feature = "prior_epoch"))]
@@ -257,6 +293,15 @@ mod tests {
             let storage = self.inner.lock();
 
             storage.get(TEST_GROUP).unwrap().clone()
+        }
+
+        fn has_test_data(&self) -> bool {
+            #[cfg(feature = "std")]
+            let storage = self.inner.lock().unwrap();
+            #[cfg(not(feature = "std"))]
+            let storage = self.inner.lock();
+
+            storage.get(TEST_GROUP).is_some()
         }
     }
 
@@ -360,5 +405,28 @@ mod tests {
 
         let expected = EpochData::new(epoch_inserts.pop().unwrap()).unwrap();
         assert_eq!(stored.epoch_data[0], expected);
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn export_and_inport() {
+        let mut storage = test_storage(1).unwrap();
+
+        let epoch_inserts = vec![test_epoch(0), test_epoch(1)];
+
+        storage
+            .write(test_snapshot(1).await, epoch_inserts, Vec::new())
+            .await
+            .unwrap();
+
+        let exported_data = storage.export_snapshot_data(&TEST_GROUP)
+            .unwrap()
+            .unwrap();
+
+        let import_storage = test_storage(1).unwrap();
+        
+        assert!(import_storage.has_test_data() == false); // sanity check.
+
+        import_storage.import_snapshot_data(&TEST_GROUP, exported_data).unwrap();
+        assert!(import_storage.has_test_data() == true);
     }
 }

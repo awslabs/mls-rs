@@ -82,4 +82,16 @@ pub trait GroupStateStorage: Send + Sync {
     /// The [`EpochRecord::id`] value that is associated with a stored
     /// prior epoch for a particular group.
     async fn max_epoch_id(&self, group_id: &[u8]) -> Result<Option<u64>, Self::Error>;
+
+
+    async fn export_snapshot_data(
+        &self,
+        group_id: &[u8],
+    ) -> Result<Option<Vec<u8>>, Self::Error>;
+
+    async fn import_snapshot_data(
+        &self,
+        group_id: &[u8],
+        group_snapshot: Vec<u8>,
+    ) -> Result<(), Self::Error>;
 }

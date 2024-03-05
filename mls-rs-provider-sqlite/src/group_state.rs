@@ -264,6 +264,24 @@ impl GroupStateStorage for SqLiteGroupStateStorage {
             .transpose()
             .map_err(|e| SqLiteDataStorageError::DataConversionError(e.into()))
     }
+
+    async fn export_snapshot_data(
+        &self,
+        group_id: &[u8],
+    ) -> Result<Option<Vec<u8>>, SqLiteDataStorageError> {
+        self.get_snapshot_data(group_id)
+            .map_err(|e| SqLiteDataStorageError::DataConversionError(e.into()))
+
+    }
+
+    async fn import_snapshot_data(
+        &self,
+        group_id: &[u8],
+        group_snapshot: Vec<u8>,
+    ) -> Result<(), SqLiteDataStorageError> {
+        self.update_group_state(group_id, group_snapshot, std::iter::empty(), std::iter::empty())
+            .map_err(|e| SqLiteDataStorageError::DataConversionError(e.into()))
+    }
 }
 
 #[cfg(test)]
@@ -548,5 +566,20 @@ mod tests {
         test_data.storage.delete_group(&test_data.group_id).unwrap();
 
         assert!(test_data.storage.group_ids().unwrap().is_empty());
+    }
+
+    #[test]
+    fn export_and_inport() {
+        let test_data = setup_group_storage_test();
+
+        let exported_data = test_data.storage.export_snapshot_data(&test_data.group_id)
+            .unwrap()
+            .unwrap();
+
+        let import_storage = get_test_storage();
+        assert!(import_storage.group_ids().unwrap().is_empty()); // sanity check.
+
+        import_storage.import_snapshot_data(&test_data.group_id, exported_data).unwrap();
+        assert!(import_storage.group_ids().unwrap().contains(&test_data.group_id));
     }
 }
