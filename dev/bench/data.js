@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1709676424182,
+  "lastUpdate": 1709676434130,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -8951,6 +8951,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 145475,
             "range": "± 1542",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "103590845+mulmarta@users.noreply.github.com",
+            "name": "mulmarta",
+            "username": "mulmarta"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2f7d6d27b5f3dc3ae52a2726bbf8ad4b6e5b5b2a",
+          "message": "Remove generics from GroupStateStorage (#94)\n\n* Remove generics from GroupStateStorage\r\n\r\n* wip\r\n\r\n* Fixup\r\n\r\n* Revert \"wip\"\r\n\r\nThis reverts commit edba2f38b9ea798a2bded2e868563b5809336dd4.\r\n\r\n---------\r\n\r\nCo-authored-by: Marta Mularczyk <mulmarta@amazon.com>",
+          "timestamp": "2024-03-05T17:02:48-05:00",
+          "tree_id": "134f9d7370a3bdc30821d41cadcde8da856129c3",
+          "url": "https://github.com/awslabs/mls-rs/commit/2f7d6d27b5f3dc3ae52a2726bbf8ad4b6e5b5b2a"
+        },
+        "date": 1709676433335,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 546928,
+            "range": "± 7049",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 552562,
+            "range": "± 17327",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 608495,
+            "range": "± 40908",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1191811,
+            "range": "± 31228",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7105603,
+            "range": "± 30572",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1151742,
+            "range": "± 45209",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1255889,
+            "range": "± 48747",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1382987,
+            "range": "± 121617",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 730144,
+            "range": "± 15084",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 775364,
+            "range": "± 12512",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 833692,
+            "range": "± 11413",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 21592,
+            "range": "± 230",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 70121,
+            "range": "± 1787",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 134896,
+            "range": "± 1175",
             "unit": "ns/iter"
           }
         ]
