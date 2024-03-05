@@ -129,14 +129,67 @@ pub struct JoinInfo {
     pub group_info_extensions: Arc<ExtensionList>,
 }
 
+#[derive(Copy, Clone, Debug, uniffi::Enum)]
+pub enum ProtocolVersion {
+    /// MLS version 1.0.
+    Mls10,
+}
+
+impl TryFrom<mls_rs::ProtocolVersion> for ProtocolVersion {
+    type Error = Error;
+
+    fn try_from(version: mls_rs::ProtocolVersion) -> Result<Self, Self::Error> {
+        match version {
+            mls_rs::ProtocolVersion::MLS_10 => Ok(ProtocolVersion::Mls10),
+            _ => Err(MlsError::UnsupportedProtocolVersion(version))?,
+        }
+    }
+}
+
+/// Wrapper around a [`mls_rs::crypto::HpkePublicKey`].
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct HpkePublicKey {
+    pub key: Vec<u8>,
+}
+
+impl From<mls_rs::crypto::HpkePublicKey> for HpkePublicKey {
+    fn from(key: mls_rs::crypto::HpkePublicKey) -> Self {
+        Self { key: key.into() }
+    }
+}
+
+/// Wrapper around a [`mls_rs::KeyPackage`].
 #[derive(Clone, Debug, uniffi::Object)]
 pub struct KeyPackage {
-    _inner: mls_rs::KeyPackage,
+    inner: mls_rs::KeyPackage,
 }
 
 impl From<mls_rs::KeyPackage> for KeyPackage {
     fn from(inner: mls_rs::KeyPackage) -> Self {
-        Self { _inner: inner }
+        Self { inner }
+    }
+}
+
+#[uniffi::export]
+impl KeyPackage {
+    pub fn version(&self) -> Result<ProtocolVersion, Error> {
+        self.inner.version.try_into()
+    }
+
+    pub fn cipher_suite(&self) -> Result<CipherSuite, Error> {
+        self.inner.cipher_suite.try_into()
+    }
+
+    pub fn hpke_init_key(&self) -> HpkePublicKey {
+        self.inner.hpke_init_key.clone().into()
+    }
+
+    pub fn extensions(&self) -> ExtensionList {
+        self.inner.extensions.clone().into()
+    }
+
+    pub fn signature(&self) -> Vec<u8> {
+        self.inner.signature.clone()
     }
 }
 
@@ -149,6 +202,16 @@ pub struct Message {
 impl From<mls_rs::MlsMessage> for Message {
     fn from(inner: mls_rs::MlsMessage) -> Self {
         Self { inner }
+    }
+}
+
+#[uniffi::export]
+impl Message {
+    pub fn into_key_package(self: Arc<Self>) -> Option<Arc<KeyPackage>> {
+        let message = arc_unwrap_or_clone(self).inner;
+        message
+            .into_key_package()
+            .map(|key_package| Arc::new(key_package.into()))
     }
 }
 
@@ -204,6 +267,17 @@ impl From<CipherSuite> for mls_rs::CipherSuite {
     fn from(cipher_suite: CipherSuite) -> mls_rs::CipherSuite {
         match cipher_suite {
             CipherSuite::Curve25519Aes128 => mls_rs::CipherSuite::CURVE25519_AES128,
+        }
+    }
+}
+
+impl TryFrom<mls_rs::CipherSuite> for CipherSuite {
+    type Error = Error;
+
+    fn try_from(cipher_suite: mls_rs::CipherSuite) -> Result<Self, Self::Error> {
+        match cipher_suite {
+            mls_rs::CipherSuite::CURVE25519_AES128 => Ok(CipherSuite::Curve25519Aes128),
+            _ => Err(MlsError::UnsupportedCipherSuite(cipher_suite))?,
         }
     }
 }
