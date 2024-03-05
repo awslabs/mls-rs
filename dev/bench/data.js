@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1709673915748,
+  "lastUpdate": 1709676424182,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -8843,6 +8843,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 145524,
             "range": "± 1185",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mgeisler@google.com",
+            "name": "Martin Geisler",
+            "username": "mgeisler"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1daa244de5627c327e4ce3bcfe001ca611c4db70",
+          "message": "[uniffi] Enable coverage for UniFFI Python tests (#95)\n\nSetting a few environment variables should be enough to give us\r\ncoverage information for the Python integration tests. Based on\r\n\r\n  https://github.com/taiki-e/cargo-llvm-cov#get-coverage-of-external-tests\r\n\r\nRelated to #81.",
+          "timestamp": "2024-03-05T17:02:37-05:00",
+          "tree_id": "34764c643b7d6e257ba8e814e958a9c0a6505a9e",
+          "url": "https://github.com/awslabs/mls-rs/commit/1daa244de5627c327e4ce3bcfe001ca611c4db70"
+        },
+        "date": 1709676423064,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 546043,
+            "range": "± 16722",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 553747,
+            "range": "± 14548",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 610270,
+            "range": "± 8704",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1159669,
+            "range": "± 41167",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7994977,
+            "range": "± 36130",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1127115,
+            "range": "± 61997",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1234980,
+            "range": "± 88094",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1367038,
+            "range": "± 41587",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 721061,
+            "range": "± 17466",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 767801,
+            "range": "± 13587",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 824652,
+            "range": "± 6414",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 23534,
+            "range": "± 208",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 76564,
+            "range": "± 1024",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 145475,
+            "range": "± 1542",
             "unit": "ns/iter"
           }
         ]
