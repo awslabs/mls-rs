@@ -238,8 +238,10 @@ pub enum ReceivedMessage {
     /// A new commit was processed creating a new group state.
     Commit { committer: Arc<SigningIdentity> },
 
+    // TODO(mgeisler): rename to `Proposal` when
+    // https://github.com/awslabs/mls-rs/issues/98 is fixed.
     /// A proposal was received.
-    Proposal {
+    ReceivedProposal {
         sender: Arc<SigningIdentity>,
         proposal: Arc<Proposal>,
     },
@@ -249,8 +251,10 @@ pub enum ReceivedMessage {
     /// Validated welcome message.
     Welcome,
 
+    // TODO(mgeisler): rename to `KeyPackage` when
+    // https://github.com/awslabs/mls-rs/issues/98 is fixed.
     /// Validated key package.
-    KeyPackage { key_package: Arc<KeyPackage> },
+    ValidatedKeyPackage { key_package: Arc<KeyPackage> },
 }
 
 /// Supported cipher suites.
@@ -655,7 +659,7 @@ impl Group {
                     _ => todo!("External and NewMember proposal senders are not supported"),
                 };
                 let proposal = Arc::new(proposal_message.proposal.into());
-                Ok(ReceivedMessage::Proposal { sender, proposal })
+                Ok(ReceivedMessage::ReceivedProposal { sender, proposal })
             }
             // TODO: group::ReceivedMessage::GroupInfo does not have any
             // public methods (unless the "ffi" Cargo feature is set).
@@ -664,7 +668,7 @@ impl Group {
             group::ReceivedMessage::Welcome => Ok(ReceivedMessage::Welcome),
             group::ReceivedMessage::KeyPackage(key_package) => {
                 let key_package = Arc::new(key_package.into());
-                Ok(ReceivedMessage::KeyPackage { key_package })
+                Ok(ReceivedMessage::ValidatedKeyPackage { key_package })
             }
         }
     }
