@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1709735407687,
+  "lastUpdate": 1709915079306,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -9167,6 +9167,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 135669,
             "range": "± 3073",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "103590845+mulmarta@users.noreply.github.com",
+            "name": "mulmarta",
+            "username": "mulmarta"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4606da09135e19d2d428a197db4b6cd7f247cd46",
+          "message": "[Bugfix] Derive external pub extension from the new and not old key schedule (#108)\n\n* [Bugfix] Derive external pub extension from the new and not old key schedule\r\n\r\n* Make clippy stable\r\n\r\n* Change test cipher suite to one supported by WASM\r\n\r\n---------\r\n\r\nCo-authored-by: Marta Mularczyk <mulmarta@amazon.com>",
+          "timestamp": "2024-03-08T11:20:18-05:00",
+          "tree_id": "40e5385b31ff2e60ba8a94f2e866faa6cd6e5923",
+          "url": "https://github.com/awslabs/mls-rs/commit/4606da09135e19d2d428a197db4b6cd7f247cd46"
+        },
+        "date": 1709915078112,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 498633,
+            "range": "± 6318",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 506496,
+            "range": "± 5453",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 563498,
+            "range": "± 43517",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1136204,
+            "range": "± 83152",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 6869367,
+            "range": "± 492643",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1100971,
+            "range": "± 116704",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1217535,
+            "range": "± 43026",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1321823,
+            "range": "± 48734",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 714233,
+            "range": "± 6221",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 762978,
+            "range": "± 22141",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 814983,
+            "range": "± 4707",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 21881,
+            "range": "± 459",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 72431,
+            "range": "± 1751",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 139962,
+            "range": "± 1608",
             "unit": "ns/iter"
           }
         ]
