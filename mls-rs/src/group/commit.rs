@@ -644,7 +644,8 @@ where
                 let mut extensions = ExtensionList::new();
 
                 extensions.set_from({
-                    self.key_schedule
+                    key_schedule_result
+                        .key_schedule
                         .get_external_key_pair_ext(&self.cipher_suite_provider)
                         .await?
                 })?;
