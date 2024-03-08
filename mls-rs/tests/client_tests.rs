@@ -9,6 +9,7 @@ use mls_rs::error::MlsError;
 use mls_rs::group::proposal::Proposal;
 use mls_rs::group::ReceivedMessage;
 use mls_rs::identity::SigningIdentity;
+use mls_rs::mls_rules::CommitOptions;
 use mls_rs::ExtensionList;
 use mls_rs::MlsMessage;
 use mls_rs::ProtocolVersion;
@@ -814,4 +815,32 @@ async fn fake_key_package(id: usize) -> MlsMessage {
         .generate_key_package_message()
         .await
         .unwrap()
+}
+
+#[maybe_async::test(not(mls_build_async), async(mls_build_async, futures_test))]
+async fn external_info_from_commit_allows_to_join() {
+    let cs = CipherSuite::P256_AES128;
+    let version = ProtocolVersion::MLS_10;
+
+    let mut alice = mls_rs::test_utils::get_test_groups(
+        version,
+        cs,
+        1,
+        Some(CommitOptions::new().with_allow_external_commit(true)),
+        false,
+        &TestCryptoProvider::default(),
+    )
+    .await
+    .remove(0);
+
+    let commit = alice.commit(vec![]).await.unwrap();
+    alice.apply_pending_commit().await.unwrap();
+    let bob = generate_client(cs, version, 0xdead, false).await;
+
+    let (_bob, commit) = bob
+        .commit_external(commit.external_commit_group_info.unwrap())
+        .await
+        .unwrap();
+
+    alice.process_incoming_message(commit).await.unwrap();
 }

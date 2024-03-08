@@ -7,16 +7,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
+    - uses: dtolnay/rust-toolchain@stable
     - uses: dtolnay/rust-toolchain@nightly
       with:
         targets: thumbv6m-none-eabi
         components: clippy
     - name: Clippy
-      run: cargo +nightly clippy --no-default-features -p mls-rs -- -D warnings
+      run: cargo +stable clippy --no-default-features -p mls-rs -- -D warnings
     - name: Test
-      run: cargo +nightly test --no-default-features --features test_util --verbose -p mls-rs --lib --test '*'
+      run: cargo +stable test --no-default-features --features test_util --verbose -p mls-rs --lib --test '*'
     - name: Test Full RFC Compliance
-      run: cargo +nightly test --no-default-features --features rfc_compliant,test_util --verbose -p mls-rs
+      run: cargo +stable test --no-default-features --features rfc_compliant,test_util --verbose -p mls-rs
     - name: Build MLS Embedded
       run: cargo +nightly build --package mls-rs --lib --no-default-features --target thumbv6m-none-eabi
     - name: Build MLS Embedded Full RFC Compliance
