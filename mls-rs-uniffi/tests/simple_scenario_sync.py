@@ -21,7 +21,7 @@ class PythonGroupStateStorage(GroupStateStorage):
         if group == None:
             return None 
 
-        group.state
+        return group.state
 
     def epoch(self, group_id: "bytes",epoch_id: "int"):
         group = self.groups[group_id.hex()]
