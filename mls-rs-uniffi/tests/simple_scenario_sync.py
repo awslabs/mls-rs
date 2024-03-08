@@ -1,15 +1,17 @@
+from dataclasses import dataclass, field
+
 from mls_rs_uniffi import CipherSuite, generate_signature_keypair, Client, \
     GroupStateStorage, ClientConfig, ProtocolVersion
 
+@dataclass
 class EpochData:
-    def __init__(self, id: "int", data: "bytes"):
-        self.id = id
-        self.data = data
+    id: int
+    data: bytes
 
+@dataclass
 class GroupStateData:
-    def __init__(self, state: "bytes"):
-        self.state = state
-        self.epoch_data = []
+    state: bytes
+    epoch_data: list[EpochData] = field(default_factory=list)
 
 class PythonGroupStateStorage(GroupStateStorage):
     def __init__(self):
