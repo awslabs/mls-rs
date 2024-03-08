@@ -819,7 +819,7 @@ async fn fake_key_package(id: usize) -> MlsMessage {
 
 #[maybe_async::test(not(mls_build_async), async(mls_build_async, futures_test))]
 async fn external_info_from_commit_allows_to_join() {
-    let cs = CipherSuite::CURVE25519_AES128;
+    let cs = CipherSuite::P256_AES128;
     let version = ProtocolVersion::MLS_10;
 
     let mut alice = mls_rs::test_utils::get_test_groups(
