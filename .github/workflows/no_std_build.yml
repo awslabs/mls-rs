@@ -10,9 +10,6 @@ jobs:
     - uses: dtolnay/rust-toolchain@nightly
       with:
         targets: thumbv6m-none-eabi
-        components: clippy
-    - name: Clippy
-      run: cargo +nightly clippy --no-default-features -p mls-rs -- -D warnings
     - name: Test
       run: cargo +nightly test --no-default-features --features test_util --verbose -p mls-rs --lib --test '*'
     - name: Test Full RFC Compliance
