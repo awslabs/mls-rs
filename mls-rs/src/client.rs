@@ -707,6 +707,27 @@ where
     pub fn key_package_extensions(&self) -> ExtensionList {
         self.config.key_package_extensions()
     }
+
+    /// The [KeyPackageStorage](crate::KeyPackageStorage) that
+    /// this client was configured to use.
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
+    pub fn key_package_store(&self) -> <C as ClientConfig>::KeyPackageRepository {
+        self.config.key_package_repo()
+    }
+
+    /// The [PreSharedKeyStorage](crate::PreSharedKeyStorage) that
+    /// this client was configured to use.
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
+    pub fn secret_store(&self) -> <C as ClientConfig>::PskStore {
+        self.config.secret_store()
+    }
+
+    /// The [GroupStateStorage](crate::GroupStateStorage) that
+    /// this client was configured to use.
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
+    pub fn group_state_storage(&self) -> <C as ClientConfig>::GroupStateStorage {
+        self.config.group_state_storage()
+    }
 }
 
 #[cfg(test)]
