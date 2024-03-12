@@ -1,6 +1,6 @@
 use std::{fmt::Debug, sync::Arc};
 
-use super::FFICallbackError;
+use crate::Error;
 
 // TODO(mulmarta): we'd like to use GroupState and EpochRecord from mls-rs-core
 // but this breaks python tests because using 2 crates makes uniffi generate
@@ -42,21 +42,17 @@ impl From<mls_rs_core::group::EpochRecord> for EpochRecord {
 #[cfg_attr(mls_build_async, maybe_async::must_be_async)]
 #[uniffi::export(with_foreign)]
 pub trait GroupStateStorage: Send + Sync + Debug {
-    async fn state(&self, group_id: Vec<u8>) -> Result<Option<Vec<u8>>, FFICallbackError>;
-    async fn epoch(
-        &self,
-        group_id: Vec<u8>,
-        epoch_id: u64,
-    ) -> Result<Option<Vec<u8>>, FFICallbackError>;
+    async fn state(&self, group_id: Vec<u8>) -> Result<Option<Vec<u8>>, Error>;
+    async fn epoch(&self, group_id: Vec<u8>, epoch_id: u64) -> Result<Option<Vec<u8>>, Error>;
 
     async fn write(
         &self,
         state: GroupState,
         epoch_inserts: Vec<EpochRecord>,
         epoch_updates: Vec<EpochRecord>,
-    ) -> Result<(), FFICallbackError>;
+    ) -> Result<(), Error>;
 
-    async fn max_epoch_id(&self, group_id: Vec<u8>) -> Result<Option<u64>, FFICallbackError>;
+    async fn max_epoch_id(&self, group_id: Vec<u8>) -> Result<Option<u64>, Error>;
 }
 
 #[derive(Debug, Clone)]
@@ -71,7 +67,7 @@ impl From<Arc<dyn GroupStateStorage>> for GroupStateStorageWrapper {
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 #[cfg_attr(mls_build_async, maybe_async::must_be_async)]
 impl mls_rs_core::group::GroupStateStorage for GroupStateStorageWrapper {
-    type Error = FFICallbackError;
+    type Error = Error;
 
     async fn state(&self, group_id: &[u8]) -> Result<Option<Vec<u8>>, Self::Error> {
         self.0.state(group_id.to_vec())

@@ -61,7 +61,19 @@ pub enum Error {
         #[from]
         inner: mls_rs::error::AnyError,
     },
+    #[error("A data encoding error occurred: {inner}")]
+    MlsCodecError {
+        #[from]
+        inner: mls_rs_core::mls_rs_codec::Error,
+    },
+    #[error("Unexpected callback error in UniFFI: {inner}")]
+    UnexpectedCallbackError {
+        #[from]
+        inner: uniffi::UnexpectedUniFFICallbackError,
+    },
 }
+
+impl IntoAnyError for Error {}
 
 /// A [`mls_rs::crypto::SignaturePublicKey`] wrapper.
 #[derive(Clone, Debug, uniffi::Object)]
@@ -678,7 +690,6 @@ impl Group {
 mod tests {
     use super::*;
     use crate::config::group_state::{EpochRecord, GroupState, GroupStateStorage};
-    use crate::config::FFICallbackError;
     use std::collections::HashMap;
 
     #[test]
@@ -708,16 +719,12 @@ mod tests {
         }
 
         impl GroupStateStorage for CustomGroupStateStorage {
-            fn state(&self, group_id: Vec<u8>) -> Result<Option<Vec<u8>>, FFICallbackError> {
+            fn state(&self, group_id: Vec<u8>) -> Result<Option<Vec<u8>>, Error> {
                 let groups = self.lock();
                 Ok(groups.get(&group_id).map(|group| group.state.clone()))
             }
 
-            fn epoch(
-                &self,
-                group_id: Vec<u8>,
-                epoch_id: u64,
-            ) -> Result<Option<Vec<u8>>, FFICallbackError> {
+            fn epoch(&self, group_id: Vec<u8>, epoch_id: u64) -> Result<Option<Vec<u8>>, Error> {
                 let groups = self.lock();
                 match groups.get(&group_id) {
                     Some(group) => {
@@ -735,7 +742,7 @@ mod tests {
                 state: GroupState,
                 epoch_inserts: Vec<EpochRecord>,
                 epoch_updates: Vec<EpochRecord>,
-            ) -> Result<(), FFICallbackError> {
+            ) -> Result<(), Error> {
                 let mut groups = self.lock();
 
                 let group = groups.entry(state.id).or_default();
@@ -756,7 +763,7 @@ mod tests {
                 Ok(())
             }
 
-            fn max_epoch_id(&self, group_id: Vec<u8>) -> Result<Option<u64>, FFICallbackError> {
+            fn max_epoch_id(&self, group_id: Vec<u8>) -> Result<Option<u64>, Error> {
                 let groups = self.lock();
                 Ok(groups
                     .get(&group_id)
