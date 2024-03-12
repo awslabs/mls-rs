@@ -1,12 +1,14 @@
-use std::{fmt::Debug, sync::Arc};
+use std::fmt::Debug;
+use std::sync::Arc;
 
 use mls_rs::{
     client_builder::{self, WithGroupStateStorage},
     identity::basic,
+    storage_provider::in_memory::InMemoryGroupStateStorage,
 };
 use mls_rs_crypto_openssl::OpensslCryptoProvider;
 
-use self::group_state::GroupStateStorage;
+use self::group_state::{GroupStateStorage, GroupStateStorageAdapter};
 use crate::Error;
 
 pub mod group_state;
@@ -62,4 +64,16 @@ pub type UniFFIConfig = client_builder::WithIdentityProvider<
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct ClientConfig {
     pub group_state_storage: Arc<dyn GroupStateStorage>,
+}
+
+// TODO(mgeisler): turn into an associated function when UniFFI
+// supports them: https://github.com/mozilla/uniffi-rs/issues/1074.
+/// Create a client config with an in-memory group state storage.
+#[uniffi::export]
+pub fn client_config_default() -> ClientConfig {
+    ClientConfig {
+        group_state_storage: Arc::new(GroupStateStorageAdapter::new(
+            InMemoryGroupStateStorage::new(),
+        )),
+    }
 }
