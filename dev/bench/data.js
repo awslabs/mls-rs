@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1710321350414,
+  "lastUpdate": 1710326216133,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -9707,6 +9707,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 135797,
             "range": "± 1535",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mgeisler@google.com",
+            "name": "Martin Geisler",
+            "username": "mgeisler"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c2aeb936c67359c7ab313ee411cbf287b95de69f",
+          "message": "[uniffi] Use Python 3.9 type hints in tests (#106)\n\nI believe this is the recommended way for modern Python code. Since\r\nthis only affects the tests, I hope it’s okay to require a recent\r\nPython.\r\n\r\nThis also fixes a few signatures in PythonGroupStateStorage to use the\r\nsame signature as in the parent class.",
+          "timestamp": "2024-03-13T11:32:35+01:00",
+          "tree_id": "869bf1612cc992d1dd1c4aceb6b5dc502314fdc9",
+          "url": "https://github.com/awslabs/mls-rs/commit/c2aeb936c67359c7ab313ee411cbf287b95de69f"
+        },
+        "date": 1710326214931,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 499773,
+            "range": "± 7353",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 508256,
+            "range": "± 4680",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 564474,
+            "range": "± 20917",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1145116,
+            "range": "± 35575",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7719925,
+            "range": "± 28272",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1123971,
+            "range": "± 48920",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1227909,
+            "range": "± 62231",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1340928,
+            "range": "± 73091",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 718069,
+            "range": "± 14682",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 767737,
+            "range": "± 4852",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 826865,
+            "range": "± 5355",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 21491,
+            "range": "± 640",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 70280,
+            "range": "± 3379",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 135373,
+            "range": "± 1377",
             "unit": "ns/iter"
           }
         ]
