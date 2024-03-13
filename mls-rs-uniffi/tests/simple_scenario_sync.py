@@ -1,23 +1,18 @@
 from dataclasses import dataclass, field
 
 from mls_rs_uniffi import CipherSuite, generate_signature_keypair, Client, \
-    GroupStateStorage, ClientConfig, ProtocolVersion
-
-@dataclass
-class EpochData:
-    id: int
-    data: bytes
+    GroupStateStorage, GroupState, EpochRecord, ClientConfig, ProtocolVersion
 
 @dataclass
 class GroupStateData:
     state: bytes
-    epoch_data: list[EpochData] = field(default_factory=list)
+    epoch_data: list[EpochRecord] = field(default_factory=list)
 
 class PythonGroupStateStorage(GroupStateStorage):
     def __init__(self):
-        self.groups = {}
+        self.groups: dict[str, GroupStateData] = {}
 
-    def state(self, group_id: "bytes"):
+    def state(self, group_id: bytes):
         group = self.groups.get(group_id.hex())
 
         if group == None:
@@ -25,19 +20,19 @@ class PythonGroupStateStorage(GroupStateStorage):
 
         return group.state
 
-    def epoch(self, group_id: "bytes",epoch_id: "int"):
+    def epoch(self, group_id: bytes, epoch_id: int):
         group = self.groups[group_id.hex()]
 
         if group == None:
             return None
-        
+
         for epoch in group.epoch_data:
             if epoch.id == epoch_id:
                 return epoch
 
         return None
 
-    def write(self, state: "GroupState",epoch_inserts: "typing.List[EpochRecord]",epoch_updates: "typing.List[EpochRecord]"):
+    def write(self, state: GroupState, epoch_inserts: list[EpochRecord], epoch_updates: list[EpochRecord]):
         if self.groups.get(state.id.hex()) == None:
             self.groups[state.id.hex()] = GroupStateData(state.data)
 
@@ -50,8 +45,8 @@ class PythonGroupStateStorage(GroupStateStorage):
             for i in range(len(group.epoch_data)):
                 if group.epoch_data[i].id == update.id:
                     group.epoch_data[i] = update
-        
-    def max_epoch_id(self, group_id: "bytes"):
+
+    def max_epoch_id(self, group_id: bytes):
         group = self.groups.get(group_id.hex())
 
         if group == None:
