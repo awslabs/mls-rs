@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1709925494872,
+  "lastUpdate": 1710321350414,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -9599,6 +9599,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 134182,
             "range": "± 15857",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mgeisler@google.com",
+            "name": "Martin Geisler",
+            "username": "mgeisler"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f23c6e464a8ff68fafa4e0749b6ca6d025d4f5fa",
+          "message": "Fix documentation for `CommitOutput::rather_tree` (#109)\n\nThe ratchet tree extension is configured in https://docs.rs/mls-rs/latest/mls_rs/group/mls_rules/struct.CommitOptions.html.",
+          "timestamp": "2024-03-13T10:11:33+01:00",
+          "tree_id": "0e7e47e928866aca68de08aeff1f71b477a4a071",
+          "url": "https://github.com/awslabs/mls-rs/commit/f23c6e464a8ff68fafa4e0749b6ca6d025d4f5fa"
+        },
+        "date": 1710321349875,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 503739,
+            "range": "± 6826",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 511443,
+            "range": "± 13201",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 565402,
+            "range": "± 28704",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1155471,
+            "range": "± 27529",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 6991968,
+            "range": "± 39560",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1073170,
+            "range": "± 46898",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1213126,
+            "range": "± 34190",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1335594,
+            "range": "± 51701",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 713628,
+            "range": "± 11091",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 760786,
+            "range": "± 10112",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 816613,
+            "range": "± 4458",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 21518,
+            "range": "± 698",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 70451,
+            "range": "± 954",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 135797,
+            "range": "± 1535",
             "unit": "ns/iter"
           }
         ]
