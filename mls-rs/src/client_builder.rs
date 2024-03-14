@@ -749,11 +749,7 @@ where
         let now_timestamp = 0;
 
         #[cfg(test)]
-        let now_timestamp = if let Some(now_timestamp) = self.settings.key_package_not_before {
-            now_timestamp
-        } else {
-            now_timestamp
-        };
+        let now_timestamp = self.settings.key_package_not_before.unwrap_or(now_timestamp);
 
         Lifetime {
             not_before: now_timestamp,
