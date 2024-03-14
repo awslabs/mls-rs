@@ -19,6 +19,7 @@ use crate::{
     client_builder::{ClientBuilder, MlsConfig},
     identity::basic::BasicIdentityProvider,
     mls_rules::{CommitOptions, DefaultMlsRules},
+    tree_kem::Lifetime,
     Client, Group, MlsMessage,
 };
 
@@ -59,6 +60,7 @@ pub async fn generate_basic_client<C: CryptoProvider + Clone>(
     #[cfg(feature = "private_message")] encrypt_controls: bool,
     #[cfg(not(feature = "private_message"))] _encrypt_controls: bool,
     crypto: &C,
+    lifetime: Option<Lifetime>,
 ) -> Client<impl MlsConfig> {
     let cs = crypto.cipher_suite_provider(cipher_suite).unwrap();
 
@@ -77,7 +79,7 @@ pub async fn generate_basic_client<C: CryptoProvider + Clone>(
         mls_rules
     };
 
-    ClientBuilder::new()
+    let mut builder = ClientBuilder::new()
         .crypto_provider(crypto.clone())
         .identity_provider(BasicIdentityProvider::new())
         .mls_rules(mls_rules)
@@ -86,8 +88,15 @@ pub async fn generate_basic_client<C: CryptoProvider + Clone>(
             make_test_ext_psk().into(),
         )
         .used_protocol_version(protocol_version)
-        .signing_identity(identity, secret_key, cipher_suite)
-        .build()
+        .signing_identity(identity, secret_key, cipher_suite);
+
+    if let Some(lifetime) = lifetime {
+        builder = builder
+            .key_package_lifetime(lifetime.not_after - lifetime.not_before)
+            .key_package_not_before(lifetime.not_before);
+    }
+
+    builder.build()
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -108,6 +117,7 @@ pub async fn get_test_groups<C: CryptoProvider + Clone>(
         commit_options,
         encrypt_controls,
         crypto,
+        None,
     )
     .await;
 
@@ -124,6 +134,7 @@ pub async fn get_test_groups<C: CryptoProvider + Clone>(
             commit_options,
             encrypt_controls,
             crypto,
+            None,
         )
         .await;
         let kp = client.generate_key_package_message().await.unwrap();
