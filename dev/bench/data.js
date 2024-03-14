@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1710326216133,
+  "lastUpdate": 1710437791615,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -9815,6 +9815,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 135373,
             "range": "± 1377",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "CaioSym@gmail.com",
+            "name": "Caio Sym",
+            "username": "CaioSym"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8e7497649271162c3fbeb643a3aeb7d900b76ad9",
+          "message": "Add APIs to client to expose the internal storages so that they may be consulted directly. (#110)",
+          "timestamp": "2024-03-14T13:32:09-04:00",
+          "tree_id": "3237f5dc973d7220a6730e4407b71151ce5cf2ef",
+          "url": "https://github.com/awslabs/mls-rs/commit/8e7497649271162c3fbeb643a3aeb7d900b76ad9"
+        },
+        "date": 1710437790401,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 502886,
+            "range": "± 8676",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 508896,
+            "range": "± 6254",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 563524,
+            "range": "± 20963",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1145560,
+            "range": "± 44088",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 6986083,
+            "range": "± 39157",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1086137,
+            "range": "± 50563",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1155398,
+            "range": "± 33456",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1316354,
+            "range": "± 50678",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 714938,
+            "range": "± 33605",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 759293,
+            "range": "± 23291",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 814958,
+            "range": "± 7415",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 21638,
+            "range": "± 229",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 70797,
+            "range": "± 623",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 136216,
+            "range": "± 1188",
             "unit": "ns/iter"
           }
         ]
