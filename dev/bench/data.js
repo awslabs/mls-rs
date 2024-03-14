@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1710437791615,
+  "lastUpdate": 1710439426562,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -9923,6 +9923,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 136216,
             "range": "± 1188",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mgeisler@google.com",
+            "name": "Martin Geisler",
+            "username": "mgeisler"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "23189d03c5ac613e8957b58c65fee811b66305ad",
+          "message": "Add `client_config_default` function for easy client configuration (#111)\n\n* [uniffi] Merge `FFICallbackError` into `Error`\r\n\r\nPart of the goal of mls-rs-uniffi is to present a small FFI API.\r\nCurrently, it does not seem to be necessary to use a separate error\r\ntype here.\r\n\r\n* [uniffi] Move `GroupStateStorage` wrapper to client\r\n\r\nThis type is specific to our client type so it can be nicely grouped\r\nwith it in the client module.\r\n\r\n* [uniffi] Add a `client_config_default` function\r\n\r\nThis function returns a client config with some simple defaults. Right\r\nnow, the default is in-memory storage.\r\n\r\nThe new `GroupStateStorageAdapter` struct allows us to use any mls-rs\r\ngroup state storage, so we could easily surface the Sqlite storage as\r\nwell now.",
+          "timestamp": "2024-03-14T13:59:27-04:00",
+          "tree_id": "20079f5843ca33968942cf6ff6922c04f1f2da1b",
+          "url": "https://github.com/awslabs/mls-rs/commit/23189d03c5ac613e8957b58c65fee811b66305ad"
+        },
+        "date": 1710439426013,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 502394,
+            "range": "± 20107",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 508818,
+            "range": "± 10808",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 563578,
+            "range": "± 5474",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1141316,
+            "range": "± 30624",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7507547,
+            "range": "± 18637",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1086394,
+            "range": "± 43525",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1182228,
+            "range": "± 52556",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1319077,
+            "range": "± 38561",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 712890,
+            "range": "± 8585",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 755792,
+            "range": "± 22435",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 814626,
+            "range": "± 4275",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 21526,
+            "range": "± 312",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 70362,
+            "range": "± 947",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 135501,
+            "range": "± 1528",
             "unit": "ns/iter"
           }
         ]
