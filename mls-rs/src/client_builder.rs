@@ -532,7 +532,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
         ClientBuilder(c)
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test_util"))]
     pub(crate) fn key_package_not_before(
         self,
         key_package_not_before: u64,
@@ -874,7 +874,7 @@ pub(crate) struct Settings {
     pub(crate) key_package_extensions: ExtensionList,
     pub(crate) leaf_node_extensions: ExtensionList,
     pub(crate) lifetime_in_s: u64,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test_util"))]
     pub(crate) key_package_not_before: Option<u64>,
 }
 
@@ -887,7 +887,7 @@ impl Default for Settings {
             leaf_node_extensions: Default::default(),
             lifetime_in_s: 365 * 24 * 3600,
             custom_proposal_types: Default::default(),
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test_util"))]
             key_package_not_before: None,
         }
     }
@@ -910,7 +910,7 @@ pub(crate) fn recreate_config<T: ClientConfig>(
                 let l = c.lifetime();
                 l.not_after - l.not_before
             },
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test_util"))]
             key_package_not_before: None,
         },
         key_package_repo: c.key_package_repo(),

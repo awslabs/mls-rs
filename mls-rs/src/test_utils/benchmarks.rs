@@ -113,6 +113,7 @@ pub async fn join_group(cs: CipherSuite, group_info: MlsMessage) -> GroupStates<
         None,
         false,
         &MlsCryptoProvider::new(),
+        None,
     );
 
     let mut sender = client.commit_external(group_info).await.unwrap().0;
@@ -124,6 +125,7 @@ pub async fn join_group(cs: CipherSuite, group_info: MlsMessage) -> GroupStates<
         None,
         false,
         &MlsCryptoProvider::new(),
+        None,
     );
 
     let group_info = sender
