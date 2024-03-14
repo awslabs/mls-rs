@@ -43,6 +43,7 @@ macro_rules! generate_python_tests {
 }
 
 generate_python_tests!(generate_signature_keypair, None);
+generate_python_tests!(client_config_default_sync, None);
 
 // TODO(mulmarta): it'll break if we use async trait which will be
 // supported in the next UniFFI release
