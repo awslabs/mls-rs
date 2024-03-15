@@ -158,53 +158,6 @@ impl TryFrom<mls_rs::ProtocolVersion> for ProtocolVersion {
     }
 }
 
-/// Wrapper around a [`mls_rs::crypto::HpkePublicKey`].
-#[derive(Clone, Debug, uniffi::Record)]
-pub struct HpkePublicKey {
-    pub key: Vec<u8>,
-}
-
-impl From<mls_rs::crypto::HpkePublicKey> for HpkePublicKey {
-    fn from(key: mls_rs::crypto::HpkePublicKey) -> Self {
-        Self { key: key.into() }
-    }
-}
-
-/// Wrapper around a [`mls_rs::KeyPackage`].
-#[derive(Clone, Debug, uniffi::Object)]
-pub struct KeyPackage {
-    inner: mls_rs::KeyPackage,
-}
-
-impl From<mls_rs::KeyPackage> for KeyPackage {
-    fn from(inner: mls_rs::KeyPackage) -> Self {
-        Self { inner }
-    }
-}
-
-#[uniffi::export]
-impl KeyPackage {
-    pub fn version(&self) -> Result<ProtocolVersion, Error> {
-        self.inner.version.try_into()
-    }
-
-    pub fn cipher_suite(&self) -> Result<CipherSuite, Error> {
-        self.inner.cipher_suite.try_into()
-    }
-
-    pub fn hpke_init_key(&self) -> HpkePublicKey {
-        self.inner.hpke_init_key.clone().into()
-    }
-
-    pub fn extensions(&self) -> ExtensionList {
-        self.inner.extensions.clone().into()
-    }
-
-    pub fn signature(&self) -> Vec<u8> {
-        self.inner.signature.clone()
-    }
-}
-
 /// Light-weight wrapper around a [`mls_rs::MlsMessage`].
 #[derive(Clone, Debug, uniffi::Object)]
 pub struct Message {
@@ -214,16 +167,6 @@ pub struct Message {
 impl From<mls_rs::MlsMessage> for Message {
     fn from(inner: mls_rs::MlsMessage) -> Self {
         Self { inner }
-    }
-}
-
-#[uniffi::export]
-impl Message {
-    pub fn into_key_package(self: Arc<Self>) -> Option<Arc<KeyPackage>> {
-        let message = arc_unwrap_or_clone(self).inner;
-        message
-            .into_key_package()
-            .map(|key_package| Arc::new(key_package.into()))
     }
 }
 
@@ -262,11 +205,8 @@ pub enum ReceivedMessage {
     GroupInfo,
     /// Validated welcome message.
     Welcome,
-
-    // TODO(mgeisler): rename to `KeyPackage` when
-    // https://github.com/awslabs/mls-rs/issues/98 is fixed.
     /// Validated key package.
-    ValidatedKeyPackage { key_package: Arc<KeyPackage> },
+    KeyPackage,
 }
 
 /// Supported cipher suites.
@@ -738,10 +678,7 @@ impl Group {
             // So perhaps we don't need it?
             group::ReceivedMessage::GroupInfo(_) => Ok(ReceivedMessage::GroupInfo),
             group::ReceivedMessage::Welcome => Ok(ReceivedMessage::Welcome),
-            group::ReceivedMessage::KeyPackage(key_package) => {
-                let key_package = Arc::new(key_package.into());
-                Ok(ReceivedMessage::ValidatedKeyPackage { key_package })
-            }
+            group::ReceivedMessage::KeyPackage(_) => Ok(ReceivedMessage::KeyPackage),
         }
     }
 }

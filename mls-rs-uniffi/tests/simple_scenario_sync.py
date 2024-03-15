@@ -70,11 +70,6 @@ bob = Client(b'bob', key, client_config)
 
 alice = alice.create_group(None)
 message = bob.generate_key_package_message()
-key_package = message.into_key_package()
-assert key_package.version() == ProtocolVersion.MLS10
-assert key_package.cipher_suite() == CipherSuite.CURVE25519_AES128
-assert len(key_package.hpke_init_key().key) == 32
-assert len(key_package.signature()) == 64
 
 commit = alice.add_members([message])
 alice.process_incoming_message(commit.commit_message())
