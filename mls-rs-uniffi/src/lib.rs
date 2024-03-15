@@ -433,6 +433,48 @@ impl Client {
 }
 
 #[derive(Clone, Debug, uniffi::Object)]
+pub struct RatchetTree {
+    inner: mls_rs::group::ExportedTree<'static>,
+}
+
+impl From<mls_rs::group::ExportedTree<'static>> for RatchetTree {
+    fn from(inner: mls_rs::group::ExportedTree<'static>) -> Self {
+        Self { inner }
+    }
+}
+
+#[uniffi::export]
+impl RatchetTree {
+    /// Encode the ratchet tree in MLS encoding.
+    pub fn to_bytes(&self) -> Result<Vec<u8>, Error> {
+        self.inner.to_bytes().map_err(Into::into)
+    }
+
+    /// Return size of ratchet tree in MLS encoding.
+    pub fn byte_size(&self) -> u64 {
+        self.inner.byte_size().try_into().unwrap()
+    }
+}
+
+impl RatchetTree {
+    // TODO(mgeisler): merge with #[uniffi::export] impl above when
+    // https://github.com/mozilla/uniffi-rs/issues/1074 is fixed.
+    /// Decode a ratched tree from its MLS encoding.
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
+        let exported_tree = mls_rs::group::ExportedTree::from_bytes(bytes)?;
+        Ok(exported_tree.into())
+    }
+}
+
+// TODO(mgeisler): remove this when associated functions are supported
+// by UniFFI: https://github.com/mozilla/uniffi-rs/issues/1074.
+#[uniffi::export]
+/// Decode a ratched tree from its MLS encoding.
+pub fn ratchet_tree_from_bytes(bytes: &[u8]) -> Result<RatchetTree, Error> {
+    RatchetTree::from_bytes(bytes)
+}
+
+#[derive(Clone, Debug, uniffi::Object)]
 pub struct CommitOutput {
     inner: mls_rs::group::CommitOutput,
 }
@@ -453,8 +495,26 @@ impl CommitOutput {
             .collect::<Vec<_>>()
     }
 
-    // TODO(mgeisler): decide if we should expose ratchet_tree(),
-    // external_commit_group_info(), and unused_proposals() as well.
+    /// Ratchet tree that can be sent out of band if the ratchet tree
+    /// extension is not used.
+    pub fn ratchet_tree(&self) -> Option<Arc<RatchetTree>> {
+        self.inner
+            .ratchet_tree
+            .as_ref()
+            .map(|ratchet_tree| Arc::new(ratchet_tree.clone().into()))
+    }
+
+    /// A group info that can be provided to new members in order to
+    /// enable external commit functionality.
+    pub fn group_info(&self) -> Option<Arc<Message>> {
+        self.inner
+            .external_commit_group_info
+            .as_ref()
+            .map(|group_info| Arc::new(group_info.clone().into()))
+    }
+
+    // TODO(mgeisler): decide if we should expose unused_proposals()
+    // as well.
 }
 
 impl From<mls_rs::group::CommitOutput> for CommitOutput {
