@@ -69,12 +69,12 @@ pub trait KeyPackageStorage: Send + Sync {
     ///
     /// [`KeyPackageData`] internally contains secret key values. The
     /// provided delete mechanism should securely erase data.
-    async fn delete(&mut self, id: &[u8]) -> Result<(), Self::Error>;
+    async fn delete(&self, id: &[u8]) -> Result<(), Self::Error>;
 
     /// Store [`KeyPackageData`] that can be accessed by `id` in the future.
     ///
     /// This function is automatically called whenever a new key package is created.
-    async fn insert(&mut self, id: Vec<u8>, pkg: KeyPackageData) -> Result<(), Self::Error>;
+    async fn insert(&self, id: Vec<u8>, pkg: KeyPackageData) -> Result<(), Self::Error>;
 
     /// Retrieve [`KeyPackageData`] by its `id`.
     ///

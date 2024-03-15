@@ -22,7 +22,6 @@ use crate::{
     identity::basic::BasicIdentityProvider,
     key_package::KeyPackageGeneration,
     mls_rules::CommitOptions,
-    storage_provider::in_memory::InMemoryKeyPackageStorage,
     test_utils::{
         all_process_message, generate_basic_client, get_test_basic_credential, get_test_groups,
         make_test_ext_psk, TEST_EXT_PSK_ID,
@@ -239,12 +238,10 @@ async fn invite_passive_client<P: CipherSuiteProvider>(
     let (secret_key, public_key) = cs.signature_key_generate().await.unwrap();
     let credential = get_test_basic_credential(b"Arnold".to_vec());
     let identity = SigningIdentity::new(credential, public_key);
-    let key_package_repo = InMemoryKeyPackageStorage::new();
 
     let client = ClientBuilder::new()
         .crypto_provider(crypto_provider)
         .identity_provider(BasicIdentityProvider::new())
-        .key_package_repo(key_package_repo.clone())
         .key_package_lifetime(ETERNAL_LIFETIME.not_after - ETERNAL_LIFETIME.not_before)
         .key_package_not_before(ETERNAL_LIFETIME.not_before)
         .signing_identity(identity.clone(), secret_key.clone(), cs.cipher_suite())
@@ -252,7 +249,7 @@ async fn invite_passive_client<P: CipherSuiteProvider>(
 
     let key_pckg = client.generate_key_package_message().await.unwrap();
 
-    let (_, key_pckg_secrets) = key_package_repo.key_packages()[0].clone();
+    let (_, key_pckg_secrets) = client.key_package_store().key_packages()[0].clone();
 
     let mut commit_builder = groups[0]
         .commit_builder()

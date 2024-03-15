@@ -36,7 +36,7 @@ impl mls_rs_core::group::GroupStateStorage for ClientGroupStorage {
     }
 
     async fn write(
-        &mut self,
+        &self,
         state: mls_rs_core::group::GroupState,
         inserts: Vec<mls_rs_core::group::EpochRecord>,
         updates: Vec<mls_rs_core::group::EpochRecord>,

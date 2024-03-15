@@ -69,8 +69,8 @@ pub(crate) mod inner {
             let reinit_client = group
                 .clone()
                 .get_reinit_client(
-                    Some(client.signer.clone()),
-                    Some(client.signing_identity.clone()),
+                    Some(client.client.signer().map_err(abort)?.clone()),
+                    Some(client.client.signing_identity().map_err(abort)?.0.clone()),
                 )
                 .map_err(abort)?;
 
@@ -101,7 +101,7 @@ pub(crate) mod inner {
                     .get(&request.transaction_id)
                     .ok_or_else(|| Status::aborted("no group with such index."))?;
 
-                key_package_client.key_package_repo.key_packages()[0].clone()
+                key_package_client.client.key_package_store().key_packages()[0].clone()
             };
 
             let client = clients
@@ -109,7 +109,10 @@ pub(crate) mod inner {
                 .ok_or_else(|| Status::aborted("no group with such index."))?;
 
             // Insert the previously created key package
-            client.key_package_repo.insert(id, key_package_data);
+            client
+                .client
+                .key_package_store()
+                .insert(id, key_package_data);
 
             let group = client
                 .group
@@ -169,8 +172,8 @@ pub(crate) mod inner {
                 let client = group
                     .clone()
                     .get_reinit_client(
-                        Some(client.signer.clone()),
-                        Some(client.signing_identity.clone()),
+                        Some(client.client.signer().map_err(abort)?.clone()),
+                        Some(client.client.signing_identity().map_err(abort)?.0.clone()),
                     )
                     .map_err(abort)?;
 
@@ -241,7 +244,7 @@ pub(crate) mod inner {
             // Generate a key packge used to join the new group after reinit
             let reinit_client = group
                 .clone()
-                .get_reinit_client(Some(secret_key.clone()), Some(signing_identity.clone()))
+                .get_reinit_client(Some(secret_key.clone()), Some(signing_identity))
                 .map_err(abort)?;
 
             let key_package = reinit_client.generate_key_package().map_err(abort)?;
@@ -251,9 +254,6 @@ pub(crate) mod inner {
                 key_package: key_package.to_bytes().map_err(abort)?,
                 reinit_id: commit_resp.state_id,
             };
-
-            client.signing_identity = signing_identity;
-            client.signer = secret_key;
 
             Ok(Response::new(resp))
         }

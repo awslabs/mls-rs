@@ -25,11 +25,7 @@ impl SqLiteKeyPackageStorage {
         }
     }
 
-    fn insert(
-        &mut self,
-        id: &[u8],
-        key_package: KeyPackageData,
-    ) -> Result<(), SqLiteDataStorageError> {
+    fn insert(&self, id: &[u8], key_package: KeyPackageData) -> Result<(), SqLiteDataStorageError> {
         let connection = self.connection.lock().unwrap();
 
         connection
@@ -97,7 +93,7 @@ impl SqLiteKeyPackageStorage {
 impl KeyPackageStorage for SqLiteKeyPackageStorage {
     type Error = SqLiteDataStorageError;
 
-    async fn insert(&mut self, id: Vec<u8>, pkg: KeyPackageData) -> Result<(), Self::Error> {
+    async fn insert(&self, id: Vec<u8>, pkg: KeyPackageData) -> Result<(), Self::Error> {
         self.insert(id.as_slice(), pkg)
     }
 
@@ -105,7 +101,7 @@ impl KeyPackageStorage for SqLiteKeyPackageStorage {
         self.get(id)
     }
 
-    async fn delete(&mut self, id: &[u8]) -> Result<(), Self::Error> {
+    async fn delete(&self, id: &[u8]) -> Result<(), Self::Error> {
         (*self).delete(id)
     }
 }
@@ -141,7 +137,7 @@ mod tests {
 
     #[test]
     fn key_package_insert() {
-        let mut storage = test_storage();
+        let storage = test_storage();
         let (key_package_id, key_package) = test_key_package();
 
         storage
@@ -154,7 +150,7 @@ mod tests {
 
     #[test]
     fn duplicate_insert_should_fail() {
-        let mut storage = test_storage();
+        let storage = test_storage();
         let (key_package_id, key_package) = test_key_package();
 
         storage
@@ -168,7 +164,7 @@ mod tests {
 
     #[test]
     fn key_package_not_found() {
-        let mut storage = test_storage();
+        let storage = test_storage();
         let (key_package_id, key_package) = test_key_package();
 
         storage.insert(&key_package_id, key_package).unwrap();
@@ -180,7 +176,7 @@ mod tests {
 
     #[test]
     fn key_package_delete() {
-        let mut storage = test_storage();
+        let storage = test_storage();
         let (key_package_id, key_package) = test_key_package();
 
         storage.insert(&key_package_id, key_package).unwrap();
@@ -191,7 +187,7 @@ mod tests {
 
     #[test]
     fn expired_key_package_gelete() {
-        let mut storage = test_storage();
+        let storage = test_storage();
 
         let data = [1, 15, 30, 1698652376].map(|exp| {
             let mut kp = test_key_package();

@@ -691,7 +691,9 @@ where
         })
     }
 
-    fn signer(&self) -> Result<&SignatureSecretKey, MlsError> {
+    /// The signature secret key used by the client
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
+    pub fn signer(&self) -> Result<&SignatureSecretKey, MlsError> {
         self.signer.as_ref().ok_or(MlsError::SignerNotFound)
     }
 

@@ -188,7 +188,7 @@ impl GroupStateStorage for SqLiteGroupStateStorage {
     type Error = SqLiteDataStorageError;
 
     async fn write(
-        &mut self,
+        &self,
         state: GroupState,
         inserts: Vec<EpochRecord>,
         updates: Vec<EpochRecord>,

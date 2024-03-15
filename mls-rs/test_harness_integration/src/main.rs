@@ -16,7 +16,6 @@ use mls_rs::{
     client_builder::{
         BaseInMemoryConfig, ClientBuilder, WithCryptoProvider, WithIdentityProvider, WithMlsRules,
     },
-    crypto::SignatureSecretKey,
     error::MlsError,
     external_client::ExternalClient,
     group::{ExportedTree, Member, ReceivedMessage, Roster, StateUpdate},
@@ -26,7 +25,6 @@ use mls_rs::{
     },
     mls_rules::{CommitDirection, CommitOptions, CommitSource, EncryptionOptions, ProposalBundle},
     psk::ExternalPskId,
-    storage_provider::in_memory::{InMemoryKeyPackageStorage, InMemoryPreSharedKeyStorage},
     CipherSuite, CipherSuiteProvider, Client, CryptoProvider, Extension, ExtensionList, Group,
     MlsMessage, MlsRules,
 };
@@ -112,11 +110,7 @@ impl MlsClientImpl {
 
 struct ClientDetails {
     client: Client<TestClientConfig>,
-    psk_store: InMemoryPreSharedKeyStorage,
     group: Option<Group<TestClientConfig>>,
-    signing_identity: SigningIdentity,
-    signer: SignatureSecretKey,
-    key_package_repo: InMemoryKeyPackageStorage,
     mls_rules: TestMlsRules,
 }
 
@@ -240,8 +234,8 @@ impl MlsClient for MlsClientImpl {
             .generate_key_package_message()
             .map_err(abort)?;
 
-        let (_, key_pckg_secrets) = client.key_package_repo.key_packages()[0].clone();
-        let signature_priv = client.signer.to_vec();
+        let (_, key_pckg_secrets) = client.client.key_package_store().key_packages()[0].clone();
+        let signature_priv = client.client.signer().map_err(abort)?.to_vec();
 
         let transaction_id = self.insert_client(client).await;
 
@@ -303,7 +297,8 @@ impl MlsClient for MlsClientImpl {
 
         for psk in request.psks.clone().into_iter() {
             client
-                .psk_store
+                .client
+                .secret_store()
                 .insert(psk.psk_id.into(), psk.psk_secret.into());
         }
 
@@ -320,7 +315,12 @@ impl MlsClient for MlsClientImpl {
 
             let idx = find_member(
                 &server.roster().members(),
-                &client.signing_identity.credential,
+                &client
+                    .client
+                    .signing_identity()
+                    .map_err(abort)?
+                    .0
+                    .credential,
             )?;
             Some(idx)
         } else {
@@ -463,7 +463,8 @@ impl MlsClient for MlsClientImpl {
             .await
             .get_mut(&request.state_or_transaction_id)
             .ok_or_else(|| Status::aborted("no group with such index."))?
-            .psk_store
+            .client
+            .secret_store()
             .insert(
                 ExternalPskId::new(request.psk_id),
                 request.psk_secret.into(),
@@ -822,26 +823,18 @@ async fn create_client(cipher_suite: u16, identity: &[u8]) -> Result<ClientDetai
     let credential = BasicCredential::new(identity.to_vec()).into_credential();
     let signing_identity = SigningIdentity::new(credential, public_key);
 
-    let psk_store = InMemoryPreSharedKeyStorage::default();
-    let key_package_repo = InMemoryKeyPackageStorage::new();
     let mls_rules = TestMlsRules::new();
 
     let client = ClientBuilder::new()
         .crypto_provider(OpensslCryptoProvider::default())
         .identity_provider(BasicIdentityProvider::new())
         .mls_rules(mls_rules.clone())
-        .psk_store(psk_store.clone())
-        .key_package_repo(key_package_repo.clone())
-        .signing_identity(signing_identity.clone(), secret_key.clone(), cipher_suite)
+        .signing_identity(signing_identity, secret_key.clone(), cipher_suite)
         .build();
 
     Ok(ClientDetails {
         client,
-        psk_store,
         group: None,
-        signing_identity,
-        signer: secret_key,
-        key_package_repo,
         mls_rules,
     })
 }

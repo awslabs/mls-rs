@@ -202,7 +202,7 @@ impl GroupStateStorage for InMemoryGroupStateStorage {
     }
 
     async fn write(
-        &mut self,
+        &self,
         state: GroupState,
         epoch_inserts: Vec<EpochRecord>,
         epoch_updates: Vec<EpochRecord>,
@@ -330,7 +330,7 @@ mod tests {
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn test_epoch_insert_over_limit(with_update: bool) {
-        let mut storage = test_storage(1).unwrap();
+        let storage = test_storage(1).unwrap();
 
         let mut epoch_inserts = vec![test_epoch(0), test_epoch(1)];
         let updates = with_update

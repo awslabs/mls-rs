@@ -104,12 +104,12 @@ impl InMemoryKeyPackageStorage {
 impl KeyPackageStorage for InMemoryKeyPackageStorage {
     type Error = Infallible;
 
-    async fn delete(&mut self, id: &[u8]) -> Result<(), Self::Error> {
+    async fn delete(&self, id: &[u8]) -> Result<(), Self::Error> {
         (*self).delete(id);
         Ok(())
     }
 
-    async fn insert(&mut self, id: Vec<u8>, pkg: KeyPackageData) -> Result<(), Self::Error> {
+    async fn insert(&self, id: Vec<u8>, pkg: KeyPackageData) -> Result<(), Self::Error> {
         (*self).insert(id, pkg);
         Ok(())
     }

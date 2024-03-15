@@ -376,8 +376,8 @@ pub(crate) mod external_proposal {
                 .to_bytes()
                 .map_err(abort)?;
 
-            let (_, key_pckg_secrets) = client.key_package_repo.key_packages()[0].clone();
-            let signature_priv = client.signer.to_vec();
+            let (_, key_pckg_secrets) = client.client.key_package_store().key_packages()[0].clone();
+            let signature_priv = client.client.signer().map_err(abort)?.to_vec();
 
             let transaction_id = self.insert_client(client).await;
 

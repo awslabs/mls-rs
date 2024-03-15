@@ -95,7 +95,7 @@ pub trait GroupStateStorage: Send + Sync {
     /// optimally be a single atomic transaction in order to avoid partial writes
     /// that may corrupt the group state.
     async fn write(
-        &mut self,
+        &self,
         state: GroupState,
         epoch_inserts: Vec<EpochRecord>,
         epoch_updates: Vec<EpochRecord>,
