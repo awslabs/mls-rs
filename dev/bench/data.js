@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1710441516305,
+  "lastUpdate": 1710489535920,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -10139,6 +10139,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 134287,
             "range": "± 1332",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mgeisler@google.com",
+            "name": "Martin Geisler",
+            "username": "mgeisler"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "25f09c96a3e6746e48b1b1c0a81abcf3388dc9c8",
+          "message": "[uniffi] Add more methods to `CommitOutput` (#112)\n\nThis adds `ratchet_tree` and `group_info` methods to `CommitOutput`.\r\n\r\nRelated to #81.",
+          "timestamp": "2024-03-15T08:54:31+01:00",
+          "tree_id": "ea961573ee4e1b75614a7e97e9c58a6fdec61adb",
+          "url": "https://github.com/awslabs/mls-rs/commit/25f09c96a3e6746e48b1b1c0a81abcf3388dc9c8"
+        },
+        "date": 1710489534659,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 500081,
+            "range": "± 11527",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 507849,
+            "range": "± 7152",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 564984,
+            "range": "± 5135",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1152834,
+            "range": "± 40555",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 6883292,
+            "range": "± 68808",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1075269,
+            "range": "± 112697",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1188133,
+            "range": "± 63352",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1313849,
+            "range": "± 42390",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 713749,
+            "range": "± 16665",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 759560,
+            "range": "± 22823",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 816780,
+            "range": "± 5810",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 21614,
+            "range": "± 221",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 70060,
+            "range": "± 792",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 134250,
+            "range": "± 1518",
             "unit": "ns/iter"
           }
         ]
