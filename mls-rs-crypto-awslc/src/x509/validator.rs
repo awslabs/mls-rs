@@ -5,16 +5,16 @@
 use std::ffi::{c_long, c_ulong, CStr};
 
 use aws_lc_sys::{
-    X509_STORE_CTX_free, X509_STORE_CTX_get0_param, X509_STORE_CTX_get_error, X509_STORE_CTX_init,
-    X509_STORE_CTX_new, X509_STORE_CTX_set0_trusted_stack, X509_STORE_free, X509_STORE_new,
-    X509_VERIFY_PARAM_get_flags, X509_VERIFY_PARAM_set_flags, X509_VERIFY_PARAM_set_time,
-    X509_verify_cert, X509_verify_cert_error_string, X509_VERIFY_PARAM, X509_V_FLAG_NO_CHECK_TIME,
-    X509_V_OK,
+    time_t, X509_STORE_CTX_free, X509_STORE_CTX_get0_param, X509_STORE_CTX_get_error,
+    X509_STORE_CTX_init, X509_STORE_CTX_new, X509_STORE_CTX_set0_trusted_stack, X509_STORE_free,
+    X509_STORE_new, X509_VERIFY_PARAM_get_flags, X509_VERIFY_PARAM_set_flags,
+    X509_VERIFY_PARAM_set_time, X509_verify_cert, X509_verify_cert_error_string, X509_VERIFY_PARAM,
+    X509_V_FLAG_NO_CHECK_TIME, X509_V_OK,
 };
 use mls_rs_core::{crypto::SignaturePublicKey, time::MlsTime};
 use mls_rs_identity_x509::{CertificateChain, DerCertificate, X509CredentialValidator};
 
-use crate::{check_non_null, AwsLcCryptoError};
+use crate::{check_non_null, check_res, AwsLcCryptoError};
 
 use super::{certificate::Certificate, component::Stack};
 
@@ -61,7 +61,7 @@ impl CertificateValidator {
 
             X509_STORE_CTX_set0_trusted_stack(ctx, self.ca_certs.as_ptr().cast());
 
-            set_verify_params(X509_STORE_CTX_get0_param(ctx), timestamp);
+            set_verify_params(X509_STORE_CTX_get0_param(ctx), timestamp)?;
 
             let validation_result = X509_verify_cert(ctx);
             let validation_code = X509_STORE_CTX_get_error(ctx);
@@ -108,14 +108,23 @@ fn certs_to_stack(certs: &[DerCertificate]) -> Result<Stack<Certificate>, AwsLcC
     Ok(stack)
 }
 
-unsafe fn set_verify_params(params: *mut X509_VERIFY_PARAM, timestamp: Option<MlsTime>) {
+unsafe fn set_verify_params(
+    params: *mut X509_VERIFY_PARAM,
+    timestamp: Option<MlsTime>,
+) -> Result<(), AwsLcCryptoError> {
     unsafe {
         if let Some(timestamp) = timestamp {
-            X509_VERIFY_PARAM_set_time(params, timestamp.seconds_since_epoch() as i64);
+            X509_VERIFY_PARAM_set_time(
+                params,
+                time_t::try_from(timestamp.seconds_since_epoch())
+                    .map_err(|_| AwsLcCryptoError::CryptoError)?,
+            );
         } else {
             let flags = X509_VERIFY_PARAM_get_flags(params) | X509_V_FLAG_NO_CHECK_TIME as c_ulong;
-            X509_VERIFY_PARAM_set_flags(params, flags);
+            check_res(X509_VERIFY_PARAM_set_flags(params, flags))?;
         }
+
+        Ok(())
     }
 }
 
