@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1710489535920,
+  "lastUpdate": 1710534272712,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -10247,6 +10247,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 134250,
             "range": "± 1518",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mgeisler@google.com",
+            "name": "Martin Geisler",
+            "username": "mgeisler"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "650ed8de262ffc421520dca6c75348a8d5a2e424",
+          "message": "[uniffi] Remove `KeyPackage` from the API (#116)\n\nWe don’t think people will need to access the key packages and their\r\nfields. As an example, when adding members to a group, you use\r\nmessages, not key packages.\r\n\r\nRelated to #81, reverts most of #102. I left the `ProtocolVersion`\r\nbehind, but I can remove it too if people think we don’t need it.",
+          "timestamp": "2024-03-15T16:20:13-04:00",
+          "tree_id": "344134c853d7718a70fca47a7b296851e6425c3c",
+          "url": "https://github.com/awslabs/mls-rs/commit/650ed8de262ffc421520dca6c75348a8d5a2e424"
+        },
+        "date": 1710534271864,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 502157,
+            "range": "± 4154",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 509295,
+            "range": "± 6295",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 561980,
+            "range": "± 24650",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1142522,
+            "range": "± 42571",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7375065,
+            "range": "± 36495",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1095705,
+            "range": "± 82649",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1194819,
+            "range": "± 33061",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1317287,
+            "range": "± 44603",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 713226,
+            "range": "± 6004",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 759599,
+            "range": "± 5178",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 815940,
+            "range": "± 28570",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 21341,
+            "range": "± 174",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 69889,
+            "range": "± 881",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 135062,
+            "range": "± 1203",
             "unit": "ns/iter"
           }
         ]
