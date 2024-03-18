@@ -46,6 +46,7 @@ async fn generate_client(
         None,
         encrypt_controls,
         &TestCryptoProvider::default(),
+        None,
     )
     .await
 }

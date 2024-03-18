@@ -531,6 +531,16 @@ impl<C: IntoConfig> ClientBuilder<C> {
         c.0.signer = Some(signer);
         ClientBuilder(c)
     }
+
+    #[cfg(any(test, feature = "test_util"))]
+    pub(crate) fn key_package_not_before(
+        self,
+        key_package_not_before: u64,
+    ) -> ClientBuilder<IntoConfigOutput<C>> {
+        let mut c = self.0.into_config();
+        c.0.settings.key_package_not_before = Some(key_package_not_before);
+        ClientBuilder(c)
+    }
 }
 
 impl<C: IntoConfig> ClientBuilder<C>
@@ -738,6 +748,12 @@ where
         #[cfg(not(feature = "std"))]
         let now_timestamp = 0;
 
+        #[cfg(test)]
+        let now_timestamp = self
+            .settings
+            .key_package_not_before
+            .unwrap_or(now_timestamp);
+
         Lifetime {
             not_before: now_timestamp,
             not_after: now_timestamp + self.settings.lifetime_in_s,
@@ -857,6 +873,8 @@ pub(crate) struct Settings {
     pub(crate) key_package_extensions: ExtensionList,
     pub(crate) leaf_node_extensions: ExtensionList,
     pub(crate) lifetime_in_s: u64,
+    #[cfg(any(test, feature = "test_util"))]
+    pub(crate) key_package_not_before: Option<u64>,
 }
 
 impl Default for Settings {
@@ -868,6 +886,8 @@ impl Default for Settings {
             leaf_node_extensions: Default::default(),
             lifetime_in_s: 365 * 24 * 3600,
             custom_proposal_types: Default::default(),
+            #[cfg(any(test, feature = "test_util"))]
+            key_package_not_before: None,
         }
     }
 }
@@ -889,6 +909,8 @@ pub(crate) fn recreate_config<T: ClientConfig>(
                 let l = c.lifetime();
                 l.not_after - l.not_before
             },
+            #[cfg(any(test, feature = "test_util"))]
+            key_package_not_before: None,
         },
         key_package_repo: c.key_package_repo(),
         psk_store: c.secret_store(),

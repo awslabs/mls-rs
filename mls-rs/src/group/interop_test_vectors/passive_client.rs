@@ -11,6 +11,7 @@ use mls_rs_core::{
     identity::SigningIdentity,
     protocol_version::ProtocolVersion,
     psk::ExternalPskId,
+    time::MlsTime,
 };
 use rand::{seq::IteratorRandom, Rng, SeedableRng};
 
@@ -26,10 +27,16 @@ use crate::{
         all_process_message, generate_basic_client, get_test_basic_credential, get_test_groups,
         make_test_ext_psk, TEST_EXT_PSK_ID,
     },
+    tree_kem::Lifetime,
     Client, Group, MlsMessage,
 };
 
 const VERSION: ProtocolVersion = ProtocolVersion::MLS_10;
+
+const ETERNAL_LIFETIME: Lifetime = Lifetime {
+    not_before: 0,
+    not_after: u64::MAX,
+};
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Default, Clone)]
 pub struct TestCase {
@@ -198,11 +205,19 @@ async fn interop_passive_client() {
         for epoch in test_case.epochs {
             for proposal in epoch.proposals.iter() {
                 let message = MlsMessage::from_bytes(&proposal.0).unwrap();
-                group.process_incoming_message(message).await.unwrap();
+
+                group
+                    .process_incoming_message_with_time(message, MlsTime::now())
+                    .await
+                    .unwrap();
             }
 
             let message = MlsMessage::from_bytes(&epoch.commit).unwrap();
-            group.process_incoming_message(message).await.unwrap();
+
+            group
+                .process_incoming_message_with_time(message, MlsTime::now())
+                .await
+                .unwrap();
 
             assert_eq!(
                 epoch.epoch_authenticator,
@@ -230,6 +245,8 @@ async fn invite_passive_client<P: CipherSuiteProvider>(
         .crypto_provider(crypto_provider)
         .identity_provider(BasicIdentityProvider::new())
         .key_package_repo(key_package_repo.clone())
+        .key_package_lifetime(ETERNAL_LIFETIME.not_after - ETERNAL_LIFETIME.not_before)
+        .key_package_not_before(ETERNAL_LIFETIME.not_before)
         .signing_identity(identity.clone(), secret_key.clone(), cs.cipher_suite())
         .build();
 
@@ -273,7 +290,7 @@ async fn invite_passive_client<P: CipherSuiteProvider>(
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub async fn generate_passive_client_proposal_tests() {
+pub async fn generate_passive_client_proposal_tests() -> Vec<TestCase> {
     let mut test_cases: Vec<TestCase> = vec![];
 
     for cs in CipherSuite::all() {
@@ -285,7 +302,7 @@ pub async fn generate_passive_client_proposal_tests() {
         let mut groups =
             get_test_groups(VERSION, cs.cipher_suite(), 7, None, false, &crypto_provider).await;
 
-        let mut partial_test_case = invite_passive_client(&mut groups, false, &cs).await;
+        let mut partial_test_case = invite_passive_client(&mut groups, true, &cs).await;
 
         // Create a new epoch s.t. the passive member can process resumption PSK from the current one
         let commit = groups[0].commit(vec![]).await.unwrap();
@@ -434,6 +451,8 @@ pub async fn generate_passive_client_proposal_tests() {
         test_case.epochs.push(epoch);
         test_cases.push(test_case);
     }
+
+    test_cases
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -459,15 +478,23 @@ where
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 async fn create_key_package(cs: CipherSuite) -> MlsMessage {
-    let client =
-        generate_basic_client(cs, VERSION, 0xbeef, None, false, &TestCryptoProvider::new()).await;
+    let client = generate_basic_client(
+        cs,
+        VERSION,
+        0xbeef,
+        None,
+        false,
+        &TestCryptoProvider::new(),
+        Some(ETERNAL_LIFETIME),
+    )
+    .await;
 
     client.generate_key_package_message().await.unwrap()
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub async fn generate_passive_client_welcome_tests() {
+pub async fn generate_passive_client_welcome_tests() -> Vec<TestCase> {
     let mut test_cases: Vec<TestCase> = vec![];
 
     for cs in CipherSuite::all() {
@@ -508,11 +535,13 @@ pub async fn generate_passive_client_welcome_tests() {
             }
         }
     }
+
+    test_cases
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub async fn generate_passive_client_random_tests() {
+pub async fn generate_passive_client_random_tests() -> Vec<TestCase> {
     let mut test_cases: Vec<TestCase> = vec![];
 
     for cs in CipherSuite::all() {
@@ -521,7 +550,10 @@ pub async fn generate_passive_client_random_tests() {
             continue;
         };
 
-        let creator = generate_basic_client(cs, VERSION, 0, None, false, &crypto).await;
+        let creator =
+            generate_basic_client(cs, VERSION, 0, None, false, &crypto, Some(ETERNAL_LIFETIME))
+                .await;
+
         let creator_group = creator.create_group(Default::default()).await.unwrap();
 
         let mut groups = vec![creator_group];
@@ -529,7 +561,18 @@ pub async fn generate_passive_client_random_tests() {
         let mut new_clients = Vec::new();
 
         for i in 0..10 {
-            new_clients.push(generate_basic_client(cs, VERSION, i + 1, None, false, &crypto).await)
+            new_clients.push(
+                generate_basic_client(
+                    cs,
+                    VERSION,
+                    i + 1,
+                    None,
+                    false,
+                    &crypto,
+                    Some(ETERNAL_LIFETIME),
+                )
+                .await,
+            )
         }
 
         add_random_members(0, &mut groups, new_clients, None).await;
@@ -543,7 +586,7 @@ pub async fn generate_passive_client_random_tests() {
         #[cfg(feature = "std")]
         println!("generating random commits for seed {}", hex::encode(seed));
 
-        let mut next_free_idx = 0;
+        let mut next_free_idx = 11;
         for _ in 0..100 {
             // We keep the passive client and another member to send
             let num_removed = rng.gen_range(0..groups.len() - 2);
@@ -566,8 +609,16 @@ pub async fn generate_passive_client_random_tests() {
 
             for i in 0..num_added {
                 new_clients.push(
-                    generate_basic_client(cs, VERSION, next_free_idx + i, None, false, &crypto)
-                        .await,
+                    generate_basic_client(
+                        cs,
+                        VERSION,
+                        next_free_idx + i,
+                        None,
+                        false,
+                        &crypto,
+                        Some(ETERNAL_LIFETIME),
+                    )
+                    .await,
                 );
             }
 
@@ -578,6 +629,8 @@ pub async fn generate_passive_client_random_tests() {
 
         test_cases.push(test_case);
     }
+
+    test_cases
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]

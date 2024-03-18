@@ -124,7 +124,7 @@ pub struct CommitOutput {
     pub welcome_messages: Vec<MlsMessage>,
     /// Ratchet tree that can be sent out of band if
     /// `ratchet_tree_extension` is not used according to
-    /// [`MlsRules::encryption_options`].
+    /// [`MlsRules::commit_options`].
     pub ratchet_tree: Option<ExportedTree<'static>>,
     /// A group info that can be provided to new members in order to enable external commit
     /// functionality. This value is set if [`MlsRules::commit_options`] returns
@@ -151,7 +151,7 @@ impl CommitOutput {
 
     /// Ratchet tree that can be sent out of band if
     /// `ratchet_tree_extension` is not used according to
-    /// [`MlsRules::encryption_options`].
+    /// [`MlsRules::commit_options`].
     #[cfg(feature = "ffi")]
     pub fn ratchet_tree(&self) -> Option<&ExportedTree<'static>> {
         self.ratchet_tree.as_ref()

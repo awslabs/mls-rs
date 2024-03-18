@@ -61,7 +61,19 @@ pub enum Error {
         #[from]
         inner: mls_rs::error::AnyError,
     },
+    #[error("A data encoding error occurred: {inner}")]
+    MlsCodecError {
+        #[from]
+        inner: mls_rs_core::mls_rs_codec::Error,
+    },
+    #[error("Unexpected callback error in UniFFI: {inner}")]
+    UnexpectedCallbackError {
+        #[from]
+        inner: uniffi::UnexpectedUniFFICallbackError,
+    },
 }
+
+impl IntoAnyError for Error {}
 
 /// A [`mls_rs::crypto::SignaturePublicKey`] wrapper.
 #[derive(Clone, Debug, uniffi::Object)]
@@ -146,53 +158,6 @@ impl TryFrom<mls_rs::ProtocolVersion> for ProtocolVersion {
     }
 }
 
-/// Wrapper around a [`mls_rs::crypto::HpkePublicKey`].
-#[derive(Clone, Debug, uniffi::Record)]
-pub struct HpkePublicKey {
-    pub key: Vec<u8>,
-}
-
-impl From<mls_rs::crypto::HpkePublicKey> for HpkePublicKey {
-    fn from(key: mls_rs::crypto::HpkePublicKey) -> Self {
-        Self { key: key.into() }
-    }
-}
-
-/// Wrapper around a [`mls_rs::KeyPackage`].
-#[derive(Clone, Debug, uniffi::Object)]
-pub struct KeyPackage {
-    inner: mls_rs::KeyPackage,
-}
-
-impl From<mls_rs::KeyPackage> for KeyPackage {
-    fn from(inner: mls_rs::KeyPackage) -> Self {
-        Self { inner }
-    }
-}
-
-#[uniffi::export]
-impl KeyPackage {
-    pub fn version(&self) -> Result<ProtocolVersion, Error> {
-        self.inner.version.try_into()
-    }
-
-    pub fn cipher_suite(&self) -> Result<CipherSuite, Error> {
-        self.inner.cipher_suite.try_into()
-    }
-
-    pub fn hpke_init_key(&self) -> HpkePublicKey {
-        self.inner.hpke_init_key.clone().into()
-    }
-
-    pub fn extensions(&self) -> ExtensionList {
-        self.inner.extensions.clone().into()
-    }
-
-    pub fn signature(&self) -> Vec<u8> {
-        self.inner.signature.clone()
-    }
-}
-
 /// Light-weight wrapper around a [`mls_rs::MlsMessage`].
 #[derive(Clone, Debug, uniffi::Object)]
 pub struct Message {
@@ -202,16 +167,6 @@ pub struct Message {
 impl From<mls_rs::MlsMessage> for Message {
     fn from(inner: mls_rs::MlsMessage) -> Self {
         Self { inner }
-    }
-}
-
-#[uniffi::export]
-impl Message {
-    pub fn into_key_package(self: Arc<Self>) -> Option<Arc<KeyPackage>> {
-        let message = arc_unwrap_or_clone(self).inner;
-        message
-            .into_key_package()
-            .map(|key_package| Arc::new(key_package.into()))
     }
 }
 
@@ -250,11 +205,8 @@ pub enum ReceivedMessage {
     GroupInfo,
     /// Validated welcome message.
     Welcome,
-
-    // TODO(mgeisler): rename to `KeyPackage` when
-    // https://github.com/awslabs/mls-rs/issues/98 is fixed.
     /// Validated key package.
-    ValidatedKeyPackage { key_package: Arc<KeyPackage> },
+    KeyPackage,
 }
 
 /// Supported cipher suites.
@@ -421,6 +373,48 @@ impl Client {
 }
 
 #[derive(Clone, Debug, uniffi::Object)]
+pub struct RatchetTree {
+    inner: mls_rs::group::ExportedTree<'static>,
+}
+
+impl From<mls_rs::group::ExportedTree<'static>> for RatchetTree {
+    fn from(inner: mls_rs::group::ExportedTree<'static>) -> Self {
+        Self { inner }
+    }
+}
+
+#[uniffi::export]
+impl RatchetTree {
+    /// Encode the ratchet tree in MLS encoding.
+    pub fn to_bytes(&self) -> Result<Vec<u8>, Error> {
+        self.inner.to_bytes().map_err(Into::into)
+    }
+
+    /// Return size of ratchet tree in MLS encoding.
+    pub fn byte_size(&self) -> u64 {
+        self.inner.byte_size().try_into().unwrap()
+    }
+}
+
+impl RatchetTree {
+    // TODO(mgeisler): merge with #[uniffi::export] impl above when
+    // https://github.com/mozilla/uniffi-rs/issues/1074 is fixed.
+    /// Decode a ratched tree from its MLS encoding.
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
+        let exported_tree = mls_rs::group::ExportedTree::from_bytes(bytes)?;
+        Ok(exported_tree.into())
+    }
+}
+
+// TODO(mgeisler): remove this when associated functions are supported
+// by UniFFI: https://github.com/mozilla/uniffi-rs/issues/1074.
+#[uniffi::export]
+/// Decode a ratched tree from its MLS encoding.
+pub fn ratchet_tree_from_bytes(bytes: &[u8]) -> Result<RatchetTree, Error> {
+    RatchetTree::from_bytes(bytes)
+}
+
+#[derive(Clone, Debug, uniffi::Object)]
 pub struct CommitOutput {
     inner: mls_rs::group::CommitOutput,
 }
@@ -441,8 +435,26 @@ impl CommitOutput {
             .collect::<Vec<_>>()
     }
 
-    // TODO(mgeisler): decide if we should expose ratchet_tree(),
-    // external_commit_group_info(), and unused_proposals() as well.
+    /// Ratchet tree that can be sent out of band if the ratchet tree
+    /// extension is not used.
+    pub fn ratchet_tree(&self) -> Option<Arc<RatchetTree>> {
+        self.inner
+            .ratchet_tree
+            .as_ref()
+            .map(|ratchet_tree| Arc::new(ratchet_tree.clone().into()))
+    }
+
+    /// A group info that can be provided to new members in order to
+    /// enable external commit functionality.
+    pub fn group_info(&self) -> Option<Arc<Message>> {
+        self.inner
+            .external_commit_group_info
+            .as_ref()
+            .map(|group_info| Arc::new(group_info.clone().into()))
+    }
+
+    // TODO(mgeisler): decide if we should expose unused_proposals()
+    // as well.
 }
 
 impl From<mls_rs::group::CommitOutput> for CommitOutput {
@@ -666,10 +678,7 @@ impl Group {
             // So perhaps we don't need it?
             group::ReceivedMessage::GroupInfo(_) => Ok(ReceivedMessage::GroupInfo),
             group::ReceivedMessage::Welcome => Ok(ReceivedMessage::Welcome),
-            group::ReceivedMessage::KeyPackage(key_package) => {
-                let key_package = Arc::new(key_package.into());
-                Ok(ReceivedMessage::ValidatedKeyPackage { key_package })
-            }
+            group::ReceivedMessage::KeyPackage(_) => Ok(ReceivedMessage::KeyPackage),
         }
     }
 }
@@ -678,7 +687,6 @@ impl Group {
 mod tests {
     use super::*;
     use crate::config::group_state::{EpochRecord, GroupState, GroupStateStorage};
-    use crate::config::FFICallbackError;
     use std::collections::HashMap;
 
     #[test]
@@ -708,16 +716,12 @@ mod tests {
         }
 
         impl GroupStateStorage for CustomGroupStateStorage {
-            fn state(&self, group_id: Vec<u8>) -> Result<Option<Vec<u8>>, FFICallbackError> {
+            fn state(&self, group_id: Vec<u8>) -> Result<Option<Vec<u8>>, Error> {
                 let groups = self.lock();
                 Ok(groups.get(&group_id).map(|group| group.state.clone()))
             }
 
-            fn epoch(
-                &self,
-                group_id: Vec<u8>,
-                epoch_id: u64,
-            ) -> Result<Option<Vec<u8>>, FFICallbackError> {
+            fn epoch(&self, group_id: Vec<u8>, epoch_id: u64) -> Result<Option<Vec<u8>>, Error> {
                 let groups = self.lock();
                 match groups.get(&group_id) {
                     Some(group) => {
@@ -735,7 +739,7 @@ mod tests {
                 state: GroupState,
                 epoch_inserts: Vec<EpochRecord>,
                 epoch_updates: Vec<EpochRecord>,
-            ) -> Result<(), FFICallbackError> {
+            ) -> Result<(), Error> {
                 let mut groups = self.lock();
 
                 let group = groups.entry(state.id).or_default();
@@ -756,7 +760,7 @@ mod tests {
                 Ok(())
             }
 
-            fn max_epoch_id(&self, group_id: Vec<u8>) -> Result<Option<u64>, FFICallbackError> {
+            fn max_epoch_id(&self, group_id: Vec<u8>) -> Result<Option<u64>, Error> {
                 let groups = self.lock();
                 Ok(groups
                     .get(&group_id)
