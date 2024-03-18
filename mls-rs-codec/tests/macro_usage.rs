@@ -41,6 +41,14 @@ enum TestEnum {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
+#[repr(u8)]
+enum TestEnumWithoutSuffixedLiterals {
+    Case1 = 1,
+    Case2(TestFieldStruct) = 200,
+    Case3(TestTupleStruct) = 42,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 struct TestGeneric<T: MlsSize + MlsEncode + MlsDecode>(T);
 
 #[test]
