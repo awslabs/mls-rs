@@ -64,6 +64,20 @@ pub type UniFFIConfig = client_builder::WithIdentityProvider<
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct ClientConfig {
     pub group_state_storage: Arc<dyn GroupStateStorage>,
+    /// Use the ratchet tree extension. If this is false, then you
+    /// must supply `ratchet_tree` out of band to clients.
+    pub use_ratchet_tree_extension: bool,
+}
+
+impl Default for ClientConfig {
+    fn default() -> Self {
+        Self {
+            group_state_storage: Arc::new(GroupStateStorageAdapter::new(
+                InMemoryGroupStateStorage::new(),
+            )),
+            use_ratchet_tree_extension: true,
+        }
+    }
 }
 
 // TODO(mgeisler): turn into an associated function when UniFFI
@@ -71,9 +85,5 @@ pub struct ClientConfig {
 /// Create a client config with an in-memory group state storage.
 #[uniffi::export]
 pub fn client_config_default() -> ClientConfig {
-    ClientConfig {
-        group_state_storage: Arc::new(GroupStateStorageAdapter::new(
-            InMemoryGroupStateStorage::new(),
-        )),
-    }
+    ClientConfig::default()
 }

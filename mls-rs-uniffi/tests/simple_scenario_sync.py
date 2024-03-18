@@ -60,7 +60,7 @@ class PythonGroupStateStorage(GroupStateStorage):
         return last.id
 
 group_state_storage = PythonGroupStateStorage()
-client_config = ClientConfig(group_state_storage)
+client_config = ClientConfig(group_state_storage, use_ratchet_tree_extension=True)
 
 key = generate_signature_keypair(CipherSuite.CURVE25519_AES128)
 alice = Client(b'alice', key, client_config)
@@ -73,7 +73,7 @@ message = bob.generate_key_package_message()
 
 commit = alice.add_members([message])
 alice.process_incoming_message(commit.commit_message)
-bob = bob.join_group(commit.welcome_messages[0]).group
+bob = bob.join_group(None, commit.welcome_messages[0]).group
 
 msg = alice.encrypt_application_message(b'hello, bob')
 output = bob.process_incoming_message(msg)

@@ -30,6 +30,7 @@ use tokio::sync::Mutex;
 use mls_rs::error::{IntoAnyError, MlsError};
 use mls_rs::group;
 use mls_rs::identity::basic;
+use mls_rs::mls_rules;
 use mls_rs::{CipherSuiteProvider, CryptoProvider};
 use mls_rs_core::identity;
 use mls_rs_core::identity::{BasicCredential, IdentityProvider};
@@ -312,12 +313,16 @@ impl Client {
         let basic_credential = BasicCredential::new(id);
         let signing_identity =
             identity::SigningIdentity::new(basic_credential.into_credential(), public_key.into());
-
+        let mls_rules = mls_rules::DefaultMlsRules::new().with_commit_options(
+            mls_rules::CommitOptions::default()
+                .with_ratchet_tree_extension(client_config.use_ratchet_tree_extension),
+        );
         let client = mls_rs::Client::builder()
             .crypto_provider(crypto_provider)
             .identity_provider(basic::BasicIdentityProvider::new())
             .signing_identity(signing_identity, secret_key.into(), cipher_suite.into())
             .group_state_storage(client_config.group_state_storage.into())
+            .mls_rules(mls_rules)
             .build();
 
         Client { inner: client }
@@ -360,9 +365,20 @@ impl Client {
 
     /// Join an existing group.
     ///
+    /// You must supply `ratchet_tree` if the client that created
+    /// `welcome_message` did not set `use_ratchet_tree_extension`.
+    ///
     /// See [`mls_rs::Client::join_group`] for details.
-    pub async fn join_group(&self, welcome_message: &Message) -> Result<JoinInfo, Error> {
-        let (group, new_member_info) = self.inner.join_group(None, &welcome_message.inner).await?;
+    pub async fn join_group(
+        &self,
+        ratchet_tree: Option<RatchetTree>,
+        welcome_message: &Message,
+    ) -> Result<JoinInfo, Error> {
+        let ratchet_tree = ratchet_tree.map(TryInto::try_into).transpose()?;
+        let (group, new_member_info) = self
+            .inner
+            .join_group(ratchet_tree, &welcome_message.inner)
+            .await?;
 
         let group = Arc::new(Group {
             inner: Arc::new(Mutex::new(group)),
@@ -388,17 +404,25 @@ impl Client {
     }
 }
 
-#[derive(Clone, Debug, uniffi::Record)]
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct RatchetTree {
     pub bytes: Vec<u8>,
 }
 
-impl TryFrom<mls_rs::group::ExportedTree<'static>> for RatchetTree {
+impl TryFrom<mls_rs::group::ExportedTree<'_>> for RatchetTree {
     type Error = Error;
 
-    fn try_from(exported_tree: mls_rs::group::ExportedTree<'static>) -> Result<Self, Error> {
+    fn try_from(exported_tree: mls_rs::group::ExportedTree<'_>) -> Result<Self, Error> {
         let bytes = exported_tree.to_bytes()?;
         Ok(Self { bytes })
+    }
+}
+
+impl TryFrom<RatchetTree> for group::ExportedTree<'static> {
+    type Error = Error;
+
+    fn try_from(ratchet_tree: RatchetTree) -> Result<Self, Error> {
+        group::ExportedTree::from_bytes(&ratchet_tree.bytes).map_err(Into::into)
     }
 }
 
@@ -514,6 +538,15 @@ impl Group {
     pub async fn write_to_storage(&self) -> Result<(), Error> {
         let mut group = self.inner().await;
         group.write_to_storage().await.map_err(Into::into)
+    }
+
+    /// Export the current epoch's ratchet tree in serialized format.
+    ///
+    /// This function is used to provide the current group tree to new
+    /// members when `use_ratchet_tree_extension` is set to false in
+    /// `ClientConfig`.
+    pub fn export_tree(&self) -> Result<RatchetTree, Error> {
+        self.inner().export_tree().try_into()
     }
 
     /// Perform a commit of received proposals (or an empty commit).
@@ -756,12 +789,14 @@ mod tests {
 
         let alice_config = ClientConfig {
             group_state_storage: Arc::new(CustomGroupStateStorage::new()),
+            ..Default::default()
         };
         let alice_keypair = generate_signature_keypair(CipherSuite::Curve25519Aes128)?;
         let alice = Client::new(b"alice".to_vec(), alice_keypair, alice_config);
 
         let bob_config = ClientConfig {
             group_state_storage: Arc::new(CustomGroupStateStorage::new()),
+            ..Default::default()
         };
         let bob_keypair = generate_signature_keypair(CipherSuite::Curve25519Aes128)?;
         let bob = Client::new(b"bob".to_vec(), bob_keypair, bob_config);
@@ -771,7 +806,7 @@ mod tests {
         let commit = alice_group.add_members(vec![Arc::new(bob_key_package)])?;
         alice_group.process_incoming_message(commit.commit_message)?;
 
-        let bob_group = bob.join_group(&commit.welcome_messages[0])?.group;
+        let bob_group = bob.join_group(None, &commit.welcome_messages[0])?.group;
         let message = alice_group.encrypt_application_message(b"hello, bob")?;
         let received_message = bob_group.process_incoming_message(Arc::new(message))?;
 
@@ -782,6 +817,42 @@ mod tests {
         };
         assert_eq!(data, b"hello, bob");
 
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(not(mls_build_async))]
+    fn test_ratchet_tree_not_included() -> Result<(), Error> {
+        let alice_config = ClientConfig {
+            use_ratchet_tree_extension: true,
+            ..ClientConfig::default()
+        };
+
+        let alice_keypair = generate_signature_keypair(CipherSuite::Curve25519Aes128)?;
+        let alice = Client::new(b"alice".to_vec(), alice_keypair, alice_config);
+        let group = alice.create_group(None)?;
+
+        assert_eq!(group.commit()?.ratchet_tree, None);
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(not(mls_build_async))]
+    fn test_ratchet_tree_included() -> Result<(), Error> {
+        let alice_config = ClientConfig {
+            use_ratchet_tree_extension: false,
+            ..ClientConfig::default()
+        };
+
+        let alice_keypair = generate_signature_keypair(CipherSuite::Curve25519Aes128)?;
+        let alice = Client::new(b"alice".to_vec(), alice_keypair, alice_config);
+        let group = alice.create_group(None)?;
+
+        let ratchet_tree: group::ExportedTree =
+            group.commit()?.ratchet_tree.unwrap().try_into().unwrap();
+        group.inner().apply_pending_commit()?;
+
+        assert_eq!(ratchet_tree, group.inner().export_tree());
         Ok(())
     }
 }
