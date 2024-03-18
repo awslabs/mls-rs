@@ -76,26 +76,42 @@ pub enum Error {
 impl IntoAnyError for Error {}
 
 /// A [`mls_rs::crypto::SignaturePublicKey`] wrapper.
-#[derive(Clone, Debug, uniffi::Object)]
+#[derive(Clone, Debug, uniffi::Record)]
 pub struct SignaturePublicKey {
-    inner: mls_rs::crypto::SignaturePublicKey,
+    pub bytes: Vec<u8>,
 }
 
 impl From<mls_rs::crypto::SignaturePublicKey> for SignaturePublicKey {
-    fn from(inner: mls_rs::crypto::SignaturePublicKey) -> Self {
-        Self { inner }
+    fn from(public_key: mls_rs::crypto::SignaturePublicKey) -> Self {
+        Self {
+            bytes: public_key.to_vec(),
+        }
+    }
+}
+
+impl From<SignaturePublicKey> for mls_rs::crypto::SignaturePublicKey {
+    fn from(public_key: SignaturePublicKey) -> Self {
+        Self::new(public_key.bytes)
     }
 }
 
 /// A [`mls_rs::crypto::SignatureSecretKey`] wrapper.
-#[derive(Clone, Debug, uniffi::Object)]
+#[derive(Clone, Debug, uniffi::Record)]
 pub struct SignatureSecretKey {
-    inner: mls_rs::crypto::SignatureSecretKey,
+    pub bytes: Vec<u8>,
 }
 
 impl From<mls_rs::crypto::SignatureSecretKey> for SignatureSecretKey {
-    fn from(inner: mls_rs::crypto::SignatureSecretKey) -> Self {
-        Self { inner }
+    fn from(secret_key: mls_rs::crypto::SignatureSecretKey) -> Self {
+        Self {
+            bytes: secret_key.as_bytes().to_vec(),
+        }
+    }
+}
+
+impl From<SignatureSecretKey> for mls_rs::crypto::SignatureSecretKey {
+    fn from(secret_key: SignatureSecretKey) -> Self {
+        Self::new(secret_key.bytes)
     }
 }
 
@@ -103,8 +119,8 @@ impl From<mls_rs::crypto::SignatureSecretKey> for SignatureSecretKey {
 #[derive(uniffi::Record, Clone, Debug)]
 pub struct SignatureKeypair {
     cipher_suite: CipherSuite,
-    public_key: Arc<SignaturePublicKey>,
-    secret_key: Arc<SignatureSecretKey>,
+    public_key: SignaturePublicKey,
+    secret_key: SignatureSecretKey,
 }
 
 /// A [`mls_rs::ExtensionList`] wrapper.
@@ -261,8 +277,8 @@ pub async fn generate_signature_keypair(
 
     Ok(SignatureKeypair {
         cipher_suite,
-        public_key: Arc::new(public_key.into()),
-        secret_key: Arc::new(secret_key.into()),
+        public_key: public_key.into(),
+        secret_key: secret_key.into(),
     })
 }
 
@@ -290,17 +306,17 @@ impl Client {
         client_config: ClientConfig,
     ) -> Self {
         let cipher_suite = signature_keypair.cipher_suite;
-        let public_key = arc_unwrap_or_clone(signature_keypair.public_key);
-        let secret_key = arc_unwrap_or_clone(signature_keypair.secret_key);
+        let public_key = signature_keypair.public_key;
+        let secret_key = signature_keypair.secret_key;
         let crypto_provider = OpensslCryptoProvider::new();
         let basic_credential = BasicCredential::new(id);
         let signing_identity =
-            identity::SigningIdentity::new(basic_credential.into_credential(), public_key.inner);
+            identity::SigningIdentity::new(basic_credential.into_credential(), public_key.into());
 
         let client = mls_rs::Client::builder()
             .crypto_provider(crypto_provider)
             .identity_provider(basic::BasicIdentityProvider::new())
-            .signing_identity(signing_identity, secret_key.inner, cipher_suite.into())
+            .signing_identity(signing_identity, secret_key.into(), cipher_suite.into())
             .group_state_storage(client_config.group_state_storage.into())
             .build();
 
