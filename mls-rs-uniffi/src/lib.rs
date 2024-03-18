@@ -414,52 +414,46 @@ pub fn ratchet_tree_from_bytes(bytes: &[u8]) -> Result<RatchetTree, Error> {
     RatchetTree::from_bytes(bytes)
 }
 
-#[derive(Clone, Debug, uniffi::Object)]
+#[derive(Clone, Debug, uniffi::Record)]
 pub struct CommitOutput {
-    inner: mls_rs::group::CommitOutput,
-}
-
-#[uniffi::export]
-impl CommitOutput {
     /// Commit message to send to other group members.
-    pub fn commit_message(&self) -> Message {
-        self.inner.commit_message.clone().into()
-    }
+    pub commit_message: Arc<Message>,
 
     /// Welcome message to send to new group members.
-    pub fn welcome_messages(&self) -> Vec<Arc<Message>> {
-        self.inner
-            .welcome_messages
-            .iter()
-            .map(|welcome_message| Arc::new(welcome_message.clone().into()))
-            .collect::<Vec<_>>()
-    }
+    pub welcome_messages: Vec<Arc<Message>>,
 
     /// Ratchet tree that can be sent out of band if the ratchet tree
     /// extension is not used.
-    pub fn ratchet_tree(&self) -> Option<Arc<RatchetTree>> {
-        self.inner
-            .ratchet_tree
-            .as_ref()
-            .map(|ratchet_tree| Arc::new(ratchet_tree.clone().into()))
-    }
+    pub ratchet_tree: Option<Arc<RatchetTree>>,
 
     /// A group info that can be provided to new members in order to
     /// enable external commit functionality.
-    pub fn group_info(&self) -> Option<Arc<Message>> {
-        self.inner
-            .external_commit_group_info
-            .as_ref()
-            .map(|group_info| Arc::new(group_info.clone().into()))
-    }
-
+    pub group_info: Option<Arc<Message>>,
     // TODO(mgeisler): decide if we should expose unused_proposals()
     // as well.
 }
 
 impl From<mls_rs::group::CommitOutput> for CommitOutput {
-    fn from(inner: mls_rs::group::CommitOutput) -> Self {
-        Self { inner }
+    fn from(commit_output: mls_rs::group::CommitOutput) -> Self {
+        let commit_message = Arc::new(commit_output.commit_message.into());
+        let welcome_messages = commit_output
+            .welcome_messages
+            .into_iter()
+            .map(|welcome_message| Arc::new(welcome_message.into()))
+            .collect::<Vec<_>>();
+        let ratchet_tree = commit_output
+            .ratchet_tree
+            .map(|ratchet_tree| Arc::new(ratchet_tree.into()));
+        let group_info = commit_output
+            .external_commit_group_info
+            .map(|group_info| Arc::new(group_info.into()));
+
+        Self {
+            commit_message,
+            welcome_messages,
+            ratchet_tree,
+            group_info,
+        }
     }
 }
 
@@ -784,9 +778,9 @@ mod tests {
         let alice_group = alice.create_group(None)?;
         let bob_key_package = bob.generate_key_package_message()?;
         let commit = alice_group.add_members(vec![Arc::new(bob_key_package)])?;
-        alice_group.process_incoming_message(Arc::new(commit.commit_message()))?;
+        alice_group.process_incoming_message(commit.commit_message)?;
 
-        let bob_group = bob.join_group(&commit.welcome_messages()[0])?.group;
+        let bob_group = bob.join_group(&commit.welcome_messages[0])?.group;
         let message = alice_group.encrypt_application_message(b"hello, bob")?;
         let received_message = bob_group.process_incoming_message(Arc::new(message))?;
 
