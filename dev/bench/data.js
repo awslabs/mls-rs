@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1710778703521,
+  "lastUpdate": 1710778803128,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -10463,6 +10463,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 134522,
             "range": "± 1262",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mgeisler@google.com",
+            "name": "Martin Geisler",
+            "username": "mgeisler"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "15c5c35efb63de258e9a9a89d4429d56b1294a1b",
+          "message": "[uniffi] Make docstrings consistent (#119)\n\nThe “light-weight” descriptions are a left-over from when the library\r\nwas called mls-lite and seen as a light-weight wrapper around mls-rs.\r\nThe mls-rs-uniffi library is now more focused on being a FFI layer.",
+          "timestamp": "2024-03-18T12:15:05-04:00",
+          "tree_id": "84e7f3604d2281d778b651242aae9e433956a1b4",
+          "url": "https://github.com/awslabs/mls-rs/commit/15c5c35efb63de258e9a9a89d4429d56b1294a1b"
+        },
+        "date": 1710778802369,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 500245,
+            "range": "± 10957",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 506103,
+            "range": "± 5018",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 563244,
+            "range": "± 23128",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1158246,
+            "range": "± 47097",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 11154774,
+            "range": "± 114474",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1119870,
+            "range": "± 47277",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1235791,
+            "range": "± 55149",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1312552,
+            "range": "± 49688",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 714786,
+            "range": "± 17466",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 760046,
+            "range": "± 4325",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 815066,
+            "range": "± 6560",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 21328,
+            "range": "± 1237",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 69649,
+            "range": "± 1169",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 134149,
+            "range": "± 1404",
             "unit": "ns/iter"
           }
         ]
