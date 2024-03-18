@@ -107,7 +107,7 @@ pub struct SignatureKeypair {
     secret_key: Arc<SignatureSecretKey>,
 }
 
-/// Light-weight wrapper around a [`mls_rs::ExtensionList`].
+/// A [`mls_rs::ExtensionList`] wrapper.
 #[derive(uniffi::Object, Debug, Clone)]
 pub struct ExtensionList {
     _inner: mls_rs::ExtensionList,
@@ -119,7 +119,7 @@ impl From<mls_rs::ExtensionList> for ExtensionList {
     }
 }
 
-/// Light-weight wrapper around a [`mls_rs::Extension`].
+/// A [`mls_rs::Extension`] wrapper.
 #[derive(uniffi::Object, Debug, Clone)]
 pub struct Extension {
     _inner: mls_rs::Extension,
@@ -131,7 +131,7 @@ impl From<mls_rs::Extension> for Extension {
     }
 }
 
-/// Light-weight wrapper around a [`mls_rs::Group`] and a  [`mls_rs::group::NewMemberInfo`].
+/// A [`mls_rs::Group`] and [`mls_rs::group::NewMemberInfo`] wrapper.
 #[derive(uniffi::Record, Clone)]
 pub struct JoinInfo {
     /// The group that was joined.
@@ -158,7 +158,7 @@ impl TryFrom<mls_rs::ProtocolVersion> for ProtocolVersion {
     }
 }
 
-/// Light-weight wrapper around a [`mls_rs::MlsMessage`].
+/// A [`mls_rs::MlsMessage`] wrapper.
 #[derive(Clone, Debug, uniffi::Object)]
 pub struct Message {
     inner: mls_rs::MlsMessage,
@@ -181,7 +181,7 @@ impl From<mls_rs::group::proposal::Proposal> for Proposal {
     }
 }
 
-/// Light-weight wrapper around a [`mls_rs::group::ReceivedMessage`].
+/// A [`mls_rs::group::ReceivedMessage`] wrapper.
 #[derive(Clone, Debug, uniffi::Enum)]
 pub enum ReceivedMessage {
     /// A decrypted application message.
