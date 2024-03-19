@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1710799060027,
+  "lastUpdate": 1710867046766,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -10679,6 +10679,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 134421,
             "range": "± 1294",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mgeisler@google.com",
+            "name": "Martin Geisler",
+            "username": "mgeisler"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "81b190d0983a1d6d50f70bc6dab94bb9f0ca953f",
+          "message": "[uniffi] Turn more types into UniFFI records (#120)\n\n* [uniffi] Turn `CommitOutput` into a record\r\n\r\nThis simplifies the Kotlin API since records don’t have the `close`\r\nmethod that objects have. The downside is that creating the record\r\nrequires you to eagerly create the data for all record fields.\r\n\r\n* [uniffi] Turn `SignaturePublicKey` and `SignatureSecretKey` into records\r\n\r\n* [uniffi] Turn `RatchetTree` into a record",
+          "timestamp": "2024-03-19T17:46:27+01:00",
+          "tree_id": "8c2c8a20ffb6348b615ae446af724f8f0c9ab057",
+          "url": "https://github.com/awslabs/mls-rs/commit/81b190d0983a1d6d50f70bc6dab94bb9f0ca953f"
+        },
+        "date": 1710867046100,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 501305,
+            "range": "± 6848",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 508185,
+            "range": "± 5405",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 562774,
+            "range": "± 4924",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1171386,
+            "range": "± 20757",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 6929072,
+            "range": "± 68919",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1149826,
+            "range": "± 67057",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1225903,
+            "range": "± 67892",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1372571,
+            "range": "± 74298",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 711446,
+            "range": "± 19480",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 758907,
+            "range": "± 22032",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 815072,
+            "range": "± 4761",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 21235,
+            "range": "± 247",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 69716,
+            "range": "± 1010",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 134297,
+            "range": "± 7899",
             "unit": "ns/iter"
           }
         ]
