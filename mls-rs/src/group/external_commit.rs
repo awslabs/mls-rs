@@ -259,6 +259,13 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
             )
             .await?;
 
+        #[cfg(feature = "prior_epoch")]
+        {
+            let repo = &mut group.state_repo;
+            let id = &group.state.context.group_id;
+            repo.set_group_state_id(id, group.private_tree.self_index)?;
+        }
+
         group.apply_pending_commit().await?;
 
         Ok((group, commit_output.commit_message))

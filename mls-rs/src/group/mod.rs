@@ -341,12 +341,13 @@ where
 
         let state_repo = GroupStateRepository::new(
             #[cfg(feature = "prior_epoch")]
-            context.group_id.clone(),
+            &context.group_id,
+            #[cfg(feature = "prior_epoch")]
+            private_tree.self_index,
             config.group_state_storage(),
             config.key_package_repo(),
             None,
-        )
-        .await?;
+        )?;
 
         let key_schedule_result = KeySchedule::from_random_epoch_secret(
             &cipher_suite_provider,
@@ -604,12 +605,13 @@ where
 
         let state_repo = GroupStateRepository::new(
             #[cfg(feature = "prior_epoch")]
-            group_info.group_context.group_id.clone(),
+            &group_info.group_context.group_id,
+            #[cfg(feature = "prior_epoch")]
+            private_tree.self_index,
             config.group_state_storage(),
             config.key_package_repo(),
             used_key_package_ref,
-        )
-        .await?;
+        )?;
 
         let group = Group {
             config,
@@ -1838,8 +1840,8 @@ pub(crate) mod test_utils;
 mod tests {
     use crate::{
         client::test_utils::{
-            test_client_with_key_pkg, TestClientBuilder, TEST_CIPHER_SUITE,
-            TEST_CUSTOM_PROPOSAL_TYPE, TEST_PROTOCOL_VERSION,
+            test_client_with_key_pkg, test_client_with_key_pkg_custom, TestClientBuilder,
+            TEST_CIPHER_SUITE, TEST_CUSTOM_PROPOSAL_TYPE, TEST_PROTOCOL_VERSION,
         },
         client_builder::{test_utils::TestClientConfig, ClientBuilder, MlsConfig},
         crypto::test_utils::TestCryptoProvider,
@@ -3910,7 +3912,7 @@ mod tests {
             .unwrap()
             .0;
 
-        bob.write_to_storage().await.unwrap();
+        let state_id = bob.write_to_storage().await.unwrap().to_vec();
 
         // Bob reloads his group data, but with parameters that will cause his generated leaves to
         // not support the mandatory extension.
@@ -3919,7 +3921,7 @@ mod tests {
             .key_package_repo(bob.config.key_package_repo())
             .group_state_storage(bob.config.group_state_storage())
             .build()
-            .load_group(alice.group_id())
+            .load_group(&state_id)
             .await
             .unwrap();
 
@@ -4224,5 +4226,43 @@ mod tests {
         };
 
         assert_eq!(update.committer, *group.private_tree.self_index);
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn can_have_two_members_in_one_group() {
+        let mut group1 = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
+            .await
+            .group;
+
+        let (client2, _) = test_client_with_key_pkg_custom(
+            TEST_PROTOCOL_VERSION,
+            TEST_CIPHER_SUITE,
+            "arnold",
+            |c| {
+                c.0.group_state_storage = group1.config.group_state_storage();
+                c.0.key_package_repo = group1.config.key_package_repo();
+            },
+        )
+        .await;
+
+        let commit = group1
+            .commit_builder()
+            .add_member(client2.generate_key_package_message().await.unwrap())
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+
+        let (mut group2, _) = client2
+            .join_group(None, &commit.welcome_messages[0])
+            .await
+            .unwrap();
+
+        group1.apply_pending_commit().await.unwrap();
+
+        group1
+            .process_incoming_message(group2.commit(vec![]).await.unwrap().commit_message)
+            .await
+            .unwrap();
     }
 }

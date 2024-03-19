@@ -606,11 +606,11 @@ where
     /// this client was configured to use.
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     #[inline(never)]
-    pub async fn load_group(&self, group_id: &[u8]) -> Result<Group<C>, MlsError> {
+    pub async fn load_group(&self, group_state_id: &[u8]) -> Result<Group<C>, MlsError> {
         let snapshot = self
             .config
             .group_state_storage()
-            .state(group_id)
+            .state(group_state_id)
             .await
             .map_err(|e| MlsError::GroupStorageError(e.into_any_error()))?
             .ok_or(MlsError::GroupNotFound)?;

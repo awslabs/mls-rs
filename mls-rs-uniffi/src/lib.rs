@@ -586,9 +586,9 @@ async fn signing_identity_to_identifier(
 impl Group {
     /// Write the current state of the group to storage defined by
     /// [`ClientConfig::group_state_storage`]
-    pub async fn write_to_storage(&self) -> Result<(), Error> {
+    pub async fn write_to_storage(&self) -> Result<Vec<u8>, Error> {
         let mut group = self.inner().await;
-        group.write_to_storage().await.map_err(Into::into)
+        Ok(group.write_to_storage().await?.to_vec())
     }
 
     /// Perform a commit of received proposals (or an empty commit).
