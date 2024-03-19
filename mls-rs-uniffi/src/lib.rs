@@ -76,26 +76,42 @@ pub enum Error {
 impl IntoAnyError for Error {}
 
 /// A [`mls_rs::crypto::SignaturePublicKey`] wrapper.
-#[derive(Clone, Debug, uniffi::Object)]
+#[derive(Clone, Debug, uniffi::Record)]
 pub struct SignaturePublicKey {
-    inner: mls_rs::crypto::SignaturePublicKey,
+    pub bytes: Vec<u8>,
 }
 
 impl From<mls_rs::crypto::SignaturePublicKey> for SignaturePublicKey {
-    fn from(inner: mls_rs::crypto::SignaturePublicKey) -> Self {
-        Self { inner }
+    fn from(public_key: mls_rs::crypto::SignaturePublicKey) -> Self {
+        Self {
+            bytes: public_key.to_vec(),
+        }
+    }
+}
+
+impl From<SignaturePublicKey> for mls_rs::crypto::SignaturePublicKey {
+    fn from(public_key: SignaturePublicKey) -> Self {
+        Self::new(public_key.bytes)
     }
 }
 
 /// A [`mls_rs::crypto::SignatureSecretKey`] wrapper.
-#[derive(Clone, Debug, uniffi::Object)]
+#[derive(Clone, Debug, uniffi::Record)]
 pub struct SignatureSecretKey {
-    inner: mls_rs::crypto::SignatureSecretKey,
+    pub bytes: Vec<u8>,
 }
 
 impl From<mls_rs::crypto::SignatureSecretKey> for SignatureSecretKey {
-    fn from(inner: mls_rs::crypto::SignatureSecretKey) -> Self {
-        Self { inner }
+    fn from(secret_key: mls_rs::crypto::SignatureSecretKey) -> Self {
+        Self {
+            bytes: secret_key.as_bytes().to_vec(),
+        }
+    }
+}
+
+impl From<SignatureSecretKey> for mls_rs::crypto::SignatureSecretKey {
+    fn from(secret_key: SignatureSecretKey) -> Self {
+        Self::new(secret_key.bytes)
     }
 }
 
@@ -103,8 +119,8 @@ impl From<mls_rs::crypto::SignatureSecretKey> for SignatureSecretKey {
 #[derive(uniffi::Record, Clone, Debug)]
 pub struct SignatureKeypair {
     cipher_suite: CipherSuite,
-    public_key: Arc<SignaturePublicKey>,
-    secret_key: Arc<SignatureSecretKey>,
+    public_key: SignaturePublicKey,
+    secret_key: SignatureSecretKey,
 }
 
 /// A [`mls_rs::ExtensionList`] wrapper.
@@ -261,8 +277,8 @@ pub async fn generate_signature_keypair(
 
     Ok(SignatureKeypair {
         cipher_suite,
-        public_key: Arc::new(public_key.into()),
-        secret_key: Arc::new(secret_key.into()),
+        public_key: public_key.into(),
+        secret_key: secret_key.into(),
     })
 }
 
@@ -290,17 +306,17 @@ impl Client {
         client_config: ClientConfig,
     ) -> Self {
         let cipher_suite = signature_keypair.cipher_suite;
-        let public_key = arc_unwrap_or_clone(signature_keypair.public_key);
-        let secret_key = arc_unwrap_or_clone(signature_keypair.secret_key);
+        let public_key = signature_keypair.public_key;
+        let secret_key = signature_keypair.secret_key;
         let crypto_provider = OpensslCryptoProvider::new();
         let basic_credential = BasicCredential::new(id);
         let signing_identity =
-            identity::SigningIdentity::new(basic_credential.into_credential(), public_key.inner);
+            identity::SigningIdentity::new(basic_credential.into_credential(), public_key.into());
 
         let client = mls_rs::Client::builder()
             .crypto_provider(crypto_provider)
             .identity_provider(basic::BasicIdentityProvider::new())
-            .signing_identity(signing_identity, secret_key.inner, cipher_suite.into())
+            .signing_identity(signing_identity, secret_key.into(), cipher_suite.into())
             .group_state_storage(client_config.group_state_storage.into())
             .build();
 
@@ -372,94 +388,63 @@ impl Client {
     }
 }
 
-#[derive(Clone, Debug, uniffi::Object)]
+#[derive(Clone, Debug, uniffi::Record)]
 pub struct RatchetTree {
-    inner: mls_rs::group::ExportedTree<'static>,
+    pub bytes: Vec<u8>,
 }
 
-impl From<mls_rs::group::ExportedTree<'static>> for RatchetTree {
-    fn from(inner: mls_rs::group::ExportedTree<'static>) -> Self {
-        Self { inner }
+impl TryFrom<mls_rs::group::ExportedTree<'static>> for RatchetTree {
+    type Error = Error;
+
+    fn try_from(exported_tree: mls_rs::group::ExportedTree<'static>) -> Result<Self, Error> {
+        let bytes = exported_tree.to_bytes()?;
+        Ok(Self { bytes })
     }
 }
 
-#[uniffi::export]
-impl RatchetTree {
-    /// Encode the ratchet tree in MLS encoding.
-    pub fn to_bytes(&self) -> Result<Vec<u8>, Error> {
-        self.inner.to_bytes().map_err(Into::into)
-    }
-
-    /// Return size of ratchet tree in MLS encoding.
-    pub fn byte_size(&self) -> u64 {
-        self.inner.byte_size().try_into().unwrap()
-    }
-}
-
-impl RatchetTree {
-    // TODO(mgeisler): merge with #[uniffi::export] impl above when
-    // https://github.com/mozilla/uniffi-rs/issues/1074 is fixed.
-    /// Decode a ratched tree from its MLS encoding.
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
-        let exported_tree = mls_rs::group::ExportedTree::from_bytes(bytes)?;
-        Ok(exported_tree.into())
-    }
-}
-
-// TODO(mgeisler): remove this when associated functions are supported
-// by UniFFI: https://github.com/mozilla/uniffi-rs/issues/1074.
-#[uniffi::export]
-/// Decode a ratched tree from its MLS encoding.
-pub fn ratchet_tree_from_bytes(bytes: &[u8]) -> Result<RatchetTree, Error> {
-    RatchetTree::from_bytes(bytes)
-}
-
-#[derive(Clone, Debug, uniffi::Object)]
+#[derive(Clone, Debug, uniffi::Record)]
 pub struct CommitOutput {
-    inner: mls_rs::group::CommitOutput,
-}
-
-#[uniffi::export]
-impl CommitOutput {
     /// Commit message to send to other group members.
-    pub fn commit_message(&self) -> Message {
-        self.inner.commit_message.clone().into()
-    }
+    pub commit_message: Arc<Message>,
 
     /// Welcome message to send to new group members.
-    pub fn welcome_messages(&self) -> Vec<Arc<Message>> {
-        self.inner
-            .welcome_messages
-            .iter()
-            .map(|welcome_message| Arc::new(welcome_message.clone().into()))
-            .collect::<Vec<_>>()
-    }
+    pub welcome_messages: Vec<Arc<Message>>,
 
     /// Ratchet tree that can be sent out of band if the ratchet tree
     /// extension is not used.
-    pub fn ratchet_tree(&self) -> Option<Arc<RatchetTree>> {
-        self.inner
-            .ratchet_tree
-            .as_ref()
-            .map(|ratchet_tree| Arc::new(ratchet_tree.clone().into()))
-    }
+    pub ratchet_tree: Option<RatchetTree>,
 
     /// A group info that can be provided to new members in order to
     /// enable external commit functionality.
-    pub fn group_info(&self) -> Option<Arc<Message>> {
-        self.inner
-            .external_commit_group_info
-            .as_ref()
-            .map(|group_info| Arc::new(group_info.clone().into()))
-    }
-
+    pub group_info: Option<Arc<Message>>,
     // TODO(mgeisler): decide if we should expose unused_proposals()
     // as well.
 }
 
-impl From<mls_rs::group::CommitOutput> for CommitOutput {
-    fn from(inner: mls_rs::group::CommitOutput) -> Self {
-        Self { inner }
+impl TryFrom<mls_rs::group::CommitOutput> for CommitOutput {
+    type Error = Error;
+
+    fn try_from(commit_output: mls_rs::group::CommitOutput) -> Result<Self, Error> {
+        let commit_message = Arc::new(commit_output.commit_message.into());
+        let welcome_messages = commit_output
+            .welcome_messages
+            .into_iter()
+            .map(|welcome_message| Arc::new(welcome_message.into()))
+            .collect::<Vec<_>>();
+        let ratchet_tree = commit_output
+            .ratchet_tree
+            .map(TryInto::try_into)
+            .transpose()?;
+        let group_info = commit_output
+            .external_commit_group_info
+            .map(|group_info| Arc::new(group_info.into()));
+
+        Ok(Self {
+            commit_message,
+            welcome_messages,
+            ratchet_tree,
+            group_info,
+        })
     }
 }
 
@@ -541,7 +526,7 @@ impl Group {
     pub async fn commit(&self) -> Result<CommitOutput, Error> {
         let mut group = self.inner().await;
         let commit_output = group.commit(Vec::new()).await?;
-        Ok(commit_output.into())
+        commit_output.try_into()
     }
 
     /// Commit the addition of one or more members.
@@ -560,7 +545,7 @@ impl Group {
             commit_builder = commit_builder.add_member(arc_unwrap_or_clone(key_package).inner)?;
         }
         let commit_output = commit_builder.build().await?;
-        Ok(commit_output.into())
+        commit_output.try_into()
     }
 
     /// Propose to add one or more members to this group.
@@ -609,7 +594,7 @@ impl Group {
             commit_builder = commit_builder.remove_member(index)?;
         }
         let commit_output = commit_builder.build().await?;
-        Ok(commit_output.into())
+        commit_output.try_into()
     }
 
     /// Propose to remove one or more members from this group.
@@ -784,9 +769,9 @@ mod tests {
         let alice_group = alice.create_group(None)?;
         let bob_key_package = bob.generate_key_package_message()?;
         let commit = alice_group.add_members(vec![Arc::new(bob_key_package)])?;
-        alice_group.process_incoming_message(Arc::new(commit.commit_message()))?;
+        alice_group.process_incoming_message(commit.commit_message)?;
 
-        let bob_group = bob.join_group(&commit.welcome_messages()[0])?.group;
+        let bob_group = bob.join_group(&commit.welcome_messages[0])?.group;
         let message = alice_group.encrypt_application_message(b"hello, bob")?;
         let received_message = bob_group.process_incoming_message(Arc::new(message))?;
 
