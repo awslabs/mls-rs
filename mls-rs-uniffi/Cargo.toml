@@ -14,12 +14,18 @@ rust-version = "1.68.2"
 crate-type = ["lib", "cdylib"]
 name = "mls_rs_uniffi"
 
+[features]
+default = ["rustcrypto"]
+openssl = ["dep:mls-rs-crypto-openssl"]
+rustcrypto = ["dep:mls-rs-crypto-rustcrypto"]
+
 [dependencies]
 async-trait = "0.1.77"
 maybe-async = "0.2.10"
 mls-rs = { path = "../mls-rs" }
 mls-rs-core = { path = "../mls-rs-core" }
-mls-rs-crypto-openssl = { path = "../mls-rs-crypto-openssl" }
+mls-rs-crypto-openssl = { path = "../mls-rs-crypto-openssl", optional = true }
+mls-rs-crypto-rustcrypto = { path = "../mls-rs-crypto-rustcrypto", optional = true }
 thiserror = "1.0.57"
 uniffi = "0.26.0"
 
