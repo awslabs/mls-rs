@@ -186,8 +186,7 @@ where
             config.group_state_storage(),
             config.key_package_repo(),
             None,
-        )
-        .await?;
+        )?;
 
         Ok(Group {
             config,
