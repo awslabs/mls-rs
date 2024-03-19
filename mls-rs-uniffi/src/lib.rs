@@ -21,7 +21,7 @@ mod config;
 
 use std::sync::Arc;
 
-use config::{ClientConfig, UniFFIConfig};
+use config::{ClientConfig, UniFFIConfig, UniFFICryptoProvider};
 #[cfg(not(mls_build_async))]
 use std::sync::Mutex;
 #[cfg(mls_build_async)]
@@ -33,7 +33,6 @@ use mls_rs::identity::basic;
 use mls_rs::{CipherSuiteProvider, CryptoProvider};
 use mls_rs_core::identity;
 use mls_rs_core::identity::{BasicCredential, IdentityProvider};
-use mls_rs_crypto_openssl::OpensslCryptoProvider;
 
 uniffi::setup_scaffolding!();
 
@@ -249,7 +248,7 @@ impl TryFrom<mls_rs::CipherSuite> for CipherSuite {
 pub async fn generate_signature_keypair(
     cipher_suite: CipherSuite,
 ) -> Result<SignatureKeypair, Error> {
-    let crypto_provider = mls_rs_crypto_openssl::OpensslCryptoProvider::default();
+    let crypto_provider = UniFFICryptoProvider::default();
     let cipher_suite_provider = crypto_provider
         .cipher_suite_provider(cipher_suite.into())
         .ok_or(MlsError::UnsupportedCipherSuite(cipher_suite.into()))?;
@@ -292,7 +291,7 @@ impl Client {
         let cipher_suite = signature_keypair.cipher_suite;
         let public_key = arc_unwrap_or_clone(signature_keypair.public_key);
         let secret_key = arc_unwrap_or_clone(signature_keypair.secret_key);
-        let crypto_provider = OpensslCryptoProvider::new();
+        let crypto_provider = UniFFICryptoProvider::default();
         let basic_credential = BasicCredential::new(id);
         let signing_identity =
             identity::SigningIdentity::new(basic_credential.into_credential(), public_key.inner);
