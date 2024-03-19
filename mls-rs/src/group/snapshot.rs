@@ -2,6 +2,8 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
+use alloc::vec::Vec;
+
 use crate::{
     client::MlsError,
     client_config::ClientConfig,
@@ -30,9 +32,6 @@ use mls_rs_core::identity::IdentityProvider;
 #[cfg(all(feature = "std", feature = "by_ref_proposal"))]
 use std::collections::HashMap;
 
-#[cfg(all(feature = "by_ref_proposal", not(feature = "std")))]
-use alloc::vec::Vec;
-
 use super::{cipher_suite_provider, epoch::EpochSecrets, state_repo::GroupStateRepository};
 
 #[derive(Debug, PartialEq, Clone, MlsEncode, MlsDecode, MlsSize)]
@@ -40,7 +39,7 @@ use super::{cipher_suite_provider, epoch::EpochSecrets, state_repo::GroupStateRe
 pub(crate) struct Snapshot {
     version: u16,
     pub(crate) state: RawGroupState,
-    private_tree: TreeKemPrivate,
+    pub(crate) private_tree: TreeKemPrivate,
     epoch_secrets: EpochSecrets,
     key_schedule: KeySchedule,
     #[cfg(all(feature = "std", feature = "by_ref_proposal"))]
@@ -49,6 +48,12 @@ pub(crate) struct Snapshot {
     pending_updates: Vec<(HpkePublicKey, (HpkeSecretKey, Option<SignatureSecretKey>))>,
     pending_commit: Option<CommitGeneration>,
     signer: SignatureSecretKey,
+}
+
+impl Snapshot {
+    pub(crate) fn group_state_id(&self) -> Result<Vec<u8>, mls_rs_codec::Error> {
+        (&self.state.context.group_id, self.private_tree.self_index).mls_encode_to_vec()
+    }
 }
 
 #[derive(Debug, MlsEncode, MlsDecode, MlsSize, PartialEq, Clone)]
@@ -150,10 +155,17 @@ where
 {
     /// Write the current state of the group to the
     /// [`GroupStorageProvider`](crate::GroupStateStorage)
-    /// that is currently in use by the group.
+    /// that is currently in use by the group. Returns an identifier
+    /// of the stored state that can be later used to load the group
+    /// using [`load_group`](crate::Client::load_group).
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn write_to_storage(&mut self) -> Result<(), MlsError> {
-        self.state_repo.write_to_storage(self.snapshot()).await
+    pub async fn write_to_storage(&mut self) -> Result<Vec<u8>, MlsError> {
+        let snapshot = self.snapshot();
+        let state_id = snapshot.group_state_id()?;
+
+        self.state_repo.write_to_storage(snapshot).await?;
+
+        Ok(state_id)
     }
 
     pub(crate) fn snapshot(&self) -> Snapshot {
@@ -182,12 +194,13 @@ where
 
         let state_repo = GroupStateRepository::new(
             #[cfg(feature = "prior_epoch")]
-            snapshot.state.context.group_id.clone(),
+            &snapshot.state.context.group_id,
+            #[cfg(feature = "prior_epoch")]
+            snapshot.private_tree.self_index,
             config.group_state_storage(),
             config.key_package_repo(),
             None,
-        )
-        .await?;
+        )?;
 
         Ok(Group {
             config,

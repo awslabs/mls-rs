@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use crate::client::MlsError;
+use crate::tree_kem::node::LeafIndex;
 use crate::{group::PriorEpoch, key_package::KeyPackageRef};
 
 use alloc::collections::VecDeque;
@@ -36,7 +37,7 @@ where
 {
     pending_commit: EpochStorageCommit,
     pending_key_package_removal: Option<KeyPackageRef>,
-    group_id: Vec<u8>,
+    group_state_id: Vec<u8>,
     storage: S,
     key_package_repo: K,
 }
@@ -55,7 +56,7 @@ where
             )
             .field(
                 "group_id",
-                &mls_rs_core::debug::pretty_group_id(&self.group_id),
+                &mls_rs_core::debug::pretty_group_id(&self.group_state_id),
             )
             .field("storage", &self.storage)
             .field("key_package_repo", &self.key_package_repo)
@@ -68,21 +69,35 @@ where
     S: GroupStateStorage,
     K: KeyPackageStorage,
 {
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn new(
-        group_id: Vec<u8>,
+    pub fn new(
+        group_id: &[u8],
+        leaf_index: LeafIndex,
         storage: S,
         key_package_repo: K,
         // Set to `None` if restoring from snapshot; set to `Some` when joining a group.
         key_package_to_remove: Option<KeyPackageRef>,
     ) -> Result<GroupStateRepository<S, K>, MlsError> {
-        Ok(GroupStateRepository {
-            group_id,
+        let mut repo = GroupStateRepository {
+            group_state_id: Default::default(),
             storage,
             pending_key_package_removal: key_package_to_remove,
             pending_commit: Default::default(),
             key_package_repo,
-        })
+        };
+
+        repo.set_group_state_id(group_id, leaf_index)?;
+
+        Ok(repo)
+    }
+
+    pub(crate) fn set_group_state_id(
+        &mut self,
+        group_id: &[u8],
+        leaf_index: LeafIndex,
+    ) -> Result<(), MlsError> {
+        self.group_state_id = (group_id, leaf_index).mls_encode_to_vec()?;
+
+        Ok(())
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -91,7 +106,7 @@ where
             Ok(Some(max))
         } else {
             self.storage
-                .max_epoch_id(&self.group_id)
+                .max_epoch_id(&self.group_state_id)
                 .await
                 .map_err(|e| MlsError::GroupStorageError(e.into_any_error()))
         }
@@ -157,7 +172,7 @@ where
             Some(i) => self.pending_commit.updates.get_mut(i).map(Ok),
             None => self
                 .storage
-                .epoch(&self.group_id, epoch_id)
+                .epoch(&self.group_state_id, epoch_id)
                 .await
                 .map_err(|e| MlsError::GroupStorageError(e.into_any_error()))?
                 .and_then(|epoch| {
@@ -175,7 +190,7 @@ where
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn insert(&mut self, epoch: PriorEpoch) -> Result<(), MlsError> {
-        if epoch.group_id() != self.group_id {
+        if (epoch.group_id(), epoch.self_index).mls_encode_to_vec()? != self.group_state_id {
             return Err(MlsError::GroupIdMismatch);
         }
 
@@ -210,7 +225,7 @@ where
 
         let group_state = GroupState {
             data: group_snapshot.mls_encode_to_vec()?,
-            id: group_snapshot.state.context.group_id,
+            id: group_snapshot.group_state_id()?,
         };
 
         self.storage
@@ -257,19 +272,18 @@ mod tests {
 
     use super::*;
 
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn test_group_state_repo(
+    fn test_group_state_repo(
         retention_limit: usize,
     ) -> GroupStateRepository<InMemoryGroupStateStorage, InMemoryKeyPackageStorage> {
         GroupStateRepository::new(
-            TEST_GROUP.to_vec(),
+            TEST_GROUP,
+            LeafIndex(0),
             InMemoryGroupStateStorage::new()
                 .with_max_epoch_retention(retention_limit)
                 .unwrap(),
             InMemoryKeyPackageStorage::default(),
             None,
         )
-        .await
         .unwrap()
     }
 
@@ -284,7 +298,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_epoch_inserts() {
-        let mut test_repo = test_group_state_repo(1).await;
+        let mut test_repo = test_group_state_repo(1);
         let test_epoch = test_epoch(0);
 
         test_repo.insert(test_epoch.clone()).await.unwrap();
@@ -304,7 +318,7 @@ mod tests {
 
         let psk_id = ResumptionPsk {
             psk_epoch: 0,
-            psk_group_id: PskGroupId(test_repo.group_id.clone()),
+            psk_group_id: PskGroupId(test_repo.group_state_id.clone()),
             usage: ResumptionPSKUsage::Application,
         };
 
@@ -335,7 +349,7 @@ mod tests {
 
         assert_eq!(storage.len(), 1);
 
-        let stored = storage.get(TEST_GROUP).unwrap();
+        let stored = storage.get(&test_repo.group_state_id).unwrap();
 
         assert_eq!(stored.state_data, snapshot.mls_encode_to_vec().unwrap());
 
@@ -352,7 +366,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_updates() {
-        let mut test_repo = test_group_state_repo(2).await;
+        let mut test_repo = test_group_state_repo(2);
         let test_epoch_0 = test_epoch(0);
 
         test_repo.insert(test_epoch_0.clone()).await.unwrap();
@@ -381,7 +395,7 @@ mod tests {
         // Make sure you can access an epoch pending update
         let psk_id = ResumptionPsk {
             psk_epoch: 0,
-            psk_group_id: PskGroupId(test_repo.group_id.clone()),
+            psk_group_id: PskGroupId(test_repo.group_state_id.clone()),
             usage: ResumptionPSKUsage::Application,
         };
 
@@ -403,7 +417,7 @@ mod tests {
 
         assert_eq!(storage.len(), 1);
 
-        let stored = storage.get(TEST_GROUP).unwrap();
+        let stored = storage.get(&test_repo.group_state_id).unwrap();
 
         assert_eq!(stored.state_data, snapshot.mls_encode_to_vec().unwrap());
 
@@ -417,7 +431,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_insert_and_update() {
-        let mut test_repo = test_group_state_repo(2).await;
+        let mut test_repo = test_group_state_repo(2);
         let test_epoch_0 = test_epoch(0);
 
         test_repo.insert(test_epoch_0).await.unwrap();
@@ -453,7 +467,7 @@ mod tests {
 
         assert_eq!(storage.len(), 1);
 
-        let stored = storage.get(TEST_GROUP).unwrap();
+        let stored = storage.get(&test_repo.group_state_id).unwrap();
 
         assert_eq!(stored.epoch_data.len(), 2);
 
@@ -475,7 +489,7 @@ mod tests {
     async fn test_many_epochs_in_storage() {
         let epochs = (0..10).map(test_epoch).collect::<Vec<_>>();
 
-        let mut test_repo = test_group_state_repo(10).await;
+        let mut test_repo = test_group_state_repo(10);
 
         for epoch in epochs.iter().cloned() {
             test_repo.insert(epoch).await.unwrap()
@@ -495,7 +509,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_stored_groups_list() {
-        let mut test_repo = test_group_state_repo(2).await;
+        let mut test_repo = test_group_state_repo(2);
         let test_epoch_0 = test_epoch(0);
 
         test_repo.insert(test_epoch_0.clone()).await.unwrap();
@@ -507,13 +521,13 @@ mod tests {
 
         assert_eq!(
             test_repo.storage.stored_groups(),
-            vec![test_epoch_0.context.group_id]
+            vec![test_repo.group_state_id]
         )
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn reducing_retention_limit_takes_effect_on_epoch_access() {
-        let mut repo = test_group_state_repo(1).await;
+        let mut repo = test_group_state_repo(1);
 
         repo.insert(test_epoch(0)).await.unwrap();
         repo.insert(test_epoch(1)).await.unwrap();
@@ -522,7 +536,7 @@ mod tests {
 
         let mut repo = GroupStateRepository {
             storage: repo.storage,
-            ..test_group_state_repo(1).await
+            ..test_group_state_repo(1)
         };
 
         let res = repo.get_epoch_mut(0).await.unwrap();
@@ -532,7 +546,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn in_memory_storage_obeys_retention_limit_after_saving() {
-        let mut repo = test_group_state_repo(1).await;
+        let mut repo = test_group_state_repo(1);
 
         repo.insert(test_epoch(0)).await.unwrap();
         repo.write_to_storage(test_snapshot(0).await).await.unwrap();
@@ -544,7 +558,7 @@ mod tests {
         #[cfg(not(feature = "std"))]
         let lock = repo.storage.inner.lock();
 
-        assert_eq!(lock.get(TEST_GROUP).unwrap().epoch_data.len(), 1);
+        assert_eq!(lock.get(&repo.group_state_id).unwrap().epoch_data.len(), 1);
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -560,12 +574,12 @@ mod tests {
         key_package_repo.insert(id, data);
 
         let mut repo = GroupStateRepository::new(
-            TEST_GROUP.to_vec(),
+            TEST_GROUP,
+            LeafIndex(0),
             InMemoryGroupStateStorage::new(),
             key_package_repo,
             Some(key_package.reference.clone()),
         )
-        .await
         .unwrap();
 
         repo.key_package_repo.get(&key_package.reference).unwrap();
@@ -573,5 +587,32 @@ mod tests {
         repo.write_to_storage(test_snapshot(4).await).await.unwrap();
 
         assert!(repo.key_package_repo.get(&key_package.reference).is_none());
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn can_have_two_members_in_one_group() {
+        let mut repo1 = test_group_state_repo(1);
+        let state1 = test_snapshot(1).await;
+
+        let mut repo2 = repo1.clone();
+        repo2.set_group_state_id(TEST_GROUP, LeafIndex(15)).unwrap();
+
+        let mut state2 = state1.clone();
+        state2.state.interim_transcript_hash = b"different transcript hash".to_vec().into();
+        state2.private_tree.self_index = LeafIndex(15);
+
+        for (repo, state) in [&mut repo1, &mut repo2].into_iter().zip([&state1, &state2]) {
+            repo.write_to_storage(state.clone()).await.unwrap();
+        }
+
+        for (repo, state) in [&repo1, &repo2].iter().zip([&state1, &state2]) {
+            #[cfg(feature = "std")]
+            let storage = repo.storage.inner.lock().unwrap();
+            #[cfg(not(feature = "std"))]
+            let storage = repo.storage.inner.lock();
+
+            let stored = storage.get(&state.group_state_id().unwrap()).unwrap();
+            assert_eq!(&stored.state_data, &state.mls_encode_to_vec().unwrap());
+        }
     }
 }
