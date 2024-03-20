@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 
 from mls_rs_uniffi import CipherSuite, generate_signature_keypair, Client, \
-    GroupStateStorage, GroupState, EpochRecord, ClientConfig, ProtocolVersion
+    GroupStateStorage, EpochRecord, ClientConfig, ProtocolVersion
 
 @dataclass
 class GroupStateData:
@@ -32,11 +32,11 @@ class PythonGroupStateStorage(GroupStateStorage):
 
         return None
 
-    def write(self, state: GroupState, epoch_inserts: list[EpochRecord], epoch_updates: list[EpochRecord]):
-        if self.groups.get(state.id.hex()) == None:
-            self.groups[state.id.hex()] = GroupStateData(state.data)
+    def write(self, group_id: bytes, group_state: bytes, epoch_inserts: list[EpochRecord], epoch_updates: list[EpochRecord]):
+        if self.groups.get(group_id.hex()) == None:
+            self.groups[group_id.hex()] = GroupStateData(group_state)
 
-        group = self.groups[state.id.hex()]
+        group = self.groups[group_id.hex()]
 
         for insert in epoch_inserts:
             group.epoch_data.append(insert)

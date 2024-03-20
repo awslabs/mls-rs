@@ -42,7 +42,8 @@ impl mls_rs_core::group::GroupStateStorage for ClientGroupStorage {
         updates: Vec<mls_rs_core::group::EpochRecord>,
     ) -> Result<(), Self::Error> {
         self.0.write(
-            state.into(),
+            state.id,
+            state.data,
             inserts.into_iter().map(Into::into).collect(),
             updates.into_iter().map(Into::into).collect(),
         )
