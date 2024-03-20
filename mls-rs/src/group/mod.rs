@@ -345,8 +345,7 @@ where
             config.group_state_storage(),
             config.key_package_repo(),
             None,
-        )
-        .await?;
+        )?;
 
         let key_schedule_result = KeySchedule::from_random_epoch_secret(
             &cipher_suite_provider,
@@ -608,8 +607,7 @@ where
             config.group_state_storage(),
             config.key_package_repo(),
             used_key_package_ref,
-        )
-        .await?;
+        )?;
 
         let group = Group {
             config,

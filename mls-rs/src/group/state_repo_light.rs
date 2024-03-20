@@ -31,8 +31,7 @@ where
     S: GroupStateStorage,
     K: KeyPackageStorage,
 {
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn new(
+    pub fn new(
         storage: S,
         key_package_repo: K,
         // Set to `None` if restoring from snapshot; set to `Some` when joining a group.
@@ -95,7 +94,6 @@ mod tests {
             InMemoryKeyPackageStorage::default(),
             None,
         )
-        .await
         .unwrap();
 
         test_repo
@@ -123,7 +121,6 @@ mod tests {
             key_package_repo,
             Some(key_package.reference.clone()),
         )
-        .await
         .unwrap();
 
         repo.key_package_repo.get(&key_package.reference).unwrap();

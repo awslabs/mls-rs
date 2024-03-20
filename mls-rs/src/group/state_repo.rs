@@ -68,8 +68,7 @@ where
     S: GroupStateStorage,
     K: KeyPackageStorage,
 {
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn new(
+    pub fn new(
         group_id: Vec<u8>,
         storage: S,
         key_package_repo: K,
@@ -257,8 +256,7 @@ mod tests {
 
     use super::*;
 
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn test_group_state_repo(
+    fn test_group_state_repo(
         retention_limit: usize,
     ) -> GroupStateRepository<InMemoryGroupStateStorage, InMemoryKeyPackageStorage> {
         GroupStateRepository::new(
@@ -269,7 +267,6 @@ mod tests {
             InMemoryKeyPackageStorage::default(),
             None,
         )
-        .await
         .unwrap()
     }
 
@@ -284,7 +281,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_epoch_inserts() {
-        let mut test_repo = test_group_state_repo(1).await;
+        let mut test_repo = test_group_state_repo(1);
         let test_epoch = test_epoch(0);
 
         test_repo.insert(test_epoch.clone()).await.unwrap();
@@ -352,7 +349,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_updates() {
-        let mut test_repo = test_group_state_repo(2).await;
+        let mut test_repo = test_group_state_repo(2);
         let test_epoch_0 = test_epoch(0);
 
         test_repo.insert(test_epoch_0.clone()).await.unwrap();
@@ -417,7 +414,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_insert_and_update() {
-        let mut test_repo = test_group_state_repo(2).await;
+        let mut test_repo = test_group_state_repo(2);
         let test_epoch_0 = test_epoch(0);
 
         test_repo.insert(test_epoch_0).await.unwrap();
@@ -475,7 +472,7 @@ mod tests {
     async fn test_many_epochs_in_storage() {
         let epochs = (0..10).map(test_epoch).collect::<Vec<_>>();
 
-        let mut test_repo = test_group_state_repo(10).await;
+        let mut test_repo = test_group_state_repo(10);
 
         for epoch in epochs.iter().cloned() {
             test_repo.insert(epoch).await.unwrap()
@@ -495,7 +492,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_stored_groups_list() {
-        let mut test_repo = test_group_state_repo(2).await;
+        let mut test_repo = test_group_state_repo(2);
         let test_epoch_0 = test_epoch(0);
 
         test_repo.insert(test_epoch_0.clone()).await.unwrap();
@@ -513,7 +510,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn reducing_retention_limit_takes_effect_on_epoch_access() {
-        let mut repo = test_group_state_repo(1).await;
+        let mut repo = test_group_state_repo(1);
 
         repo.insert(test_epoch(0)).await.unwrap();
         repo.insert(test_epoch(1)).await.unwrap();
@@ -522,7 +519,7 @@ mod tests {
 
         let mut repo = GroupStateRepository {
             storage: repo.storage,
-            ..test_group_state_repo(1).await
+            ..test_group_state_repo(1)
         };
 
         let res = repo.get_epoch_mut(0).await.unwrap();
@@ -532,7 +529,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn in_memory_storage_obeys_retention_limit_after_saving() {
-        let mut repo = test_group_state_repo(1).await;
+        let mut repo = test_group_state_repo(1);
 
         repo.insert(test_epoch(0)).await.unwrap();
         repo.write_to_storage(test_snapshot(0).await).await.unwrap();
@@ -565,7 +562,6 @@ mod tests {
             key_package_repo,
             Some(key_package.reference.clone()),
         )
-        .await
         .unwrap();
 
         repo.key_package_repo.get(&key_package.reference).unwrap();
