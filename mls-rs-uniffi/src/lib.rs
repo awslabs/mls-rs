@@ -198,6 +198,51 @@ impl From<mls_rs::group::proposal::Proposal> for Proposal {
     }
 }
 
+/// Update of a member due to a commit.
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct MemberUpdate {
+    pub prior: Arc<SigningIdentity>,
+    pub new: Arc<SigningIdentity>,
+}
+
+/// A set of roster updates due to a commit.
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct RosterUpdate {
+    pub added: Vec<Arc<SigningIdentity>>,
+    pub removed: Vec<Arc<SigningIdentity>>,
+    pub updated: Vec<MemberUpdate>,
+}
+
+impl RosterUpdate {
+    // This is an associated function because it felt wrong to hide
+    // the clones in an `impl From<&mls_rs::identity::RosterUpdate>`.
+    fn new(roster_update: &mls_rs::identity::RosterUpdate) -> Self {
+        let added = roster_update
+            .added()
+            .iter()
+            .map(|member| Arc::new(member.signing_identity.clone().into()))
+            .collect();
+        let removed = roster_update
+            .removed()
+            .iter()
+            .map(|member| Arc::new(member.signing_identity.clone().into()))
+            .collect();
+        let updated = roster_update
+            .updated()
+            .iter()
+            .map(|update| MemberUpdate {
+                prior: Arc::new(update.prior.signing_identity.clone().into()),
+                new: Arc::new(update.new.signing_identity.clone().into()),
+            })
+            .collect();
+        RosterUpdate {
+            added,
+            removed,
+            updated,
+        }
+    }
+}
+
 /// A [`mls_rs::group::ReceivedMessage`] wrapper.
 #[derive(Clone, Debug, uniffi::Enum)]
 pub enum ReceivedMessage {
@@ -208,7 +253,10 @@ pub enum ReceivedMessage {
     },
 
     /// A new commit was processed creating a new group state.
-    Commit { committer: Arc<SigningIdentity> },
+    Commit {
+        committer: Arc<SigningIdentity>,
+        roster_update: RosterUpdate,
+    },
 
     // TODO(mgeisler): rename to `Proposal` when
     // https://github.com/awslabs/mls-rs/issues/98 is fixed.
@@ -343,6 +391,11 @@ impl Client {
         Ok(message.into())
     }
 
+    pub fn signing_identity(&self) -> Result<Arc<SigningIdentity>, Error> {
+        let (signing_identity, _) = self.inner.signing_identity()?;
+        Ok(Arc::new(signing_identity.clone().into()))
+    }
+
     /// Create and immediately join a new group.
     ///
     /// If a group ID is not given, the underlying library will create
@@ -475,7 +528,8 @@ impl TryFrom<mls_rs::group::CommitOutput> for CommitOutput {
     }
 }
 
-#[derive(Clone, Debug, uniffi::Object)]
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Object)]
+#[uniffi::export(Eq)]
 pub struct SigningIdentity {
     inner: identity::SigningIdentity,
 }
@@ -686,7 +740,11 @@ impl Group {
             group::ReceivedMessage::Commit(commit_message) => {
                 let committer =
                     Arc::new(index_to_identity(&group, commit_message.committer)?.into());
-                Ok(ReceivedMessage::Commit { committer })
+                let roster_update = RosterUpdate::new(commit_message.state_update.roster_update());
+                Ok(ReceivedMessage::Commit {
+                    committer,
+                    roster_update,
+                })
             }
             group::ReceivedMessage::Proposal(proposal_message) => {
                 let sender = match proposal_message.sender {
