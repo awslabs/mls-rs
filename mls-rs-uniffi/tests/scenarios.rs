@@ -49,3 +49,4 @@ generate_python_tests!(client_config_default_sync, None);
 // supported in the next UniFFI release
 // TODO(mgeisler): add back simple_scenario_async
 generate_python_tests!(simple_scenario_sync, None);
+generate_python_tests!(ratchet_tree_sync, None);
