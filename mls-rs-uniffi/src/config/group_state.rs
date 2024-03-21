@@ -4,34 +4,16 @@ use std::sync::Mutex;
 
 use crate::Error;
 
-// TODO(mulmarta): we'd like to use GroupState and EpochRecord from mls-rs-core
-// but this breaks python tests because using 2 crates makes uniffi generate
-// a python module which must be in a subdirectory of the directory with test scripts
-// which is not supported by the script we use.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, uniffi::Record)]
-pub struct GroupState {
-    /// A unique group identifier.
-    pub id: Vec<u8>,
-    pub data: Vec<u8>,
-}
-
+// TODO(mulmarta): we'd like to use EpochRecord from mls-rs-core but
+// this breaks the Python tests because using two crates makes UniFFI
+// generate a Python module which must be in a subdirectory of the
+// directory with test scripts which is not supported by the script we
+// use.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, uniffi::Record)]
 pub struct EpochRecord {
     /// A unique epoch identifier within a particular group.
     pub id: u64,
     pub data: Vec<u8>,
-}
-
-impl From<mls_rs_core::group::GroupState> for GroupState {
-    fn from(mls_rs_core::group::GroupState { id, data }: mls_rs_core::group::GroupState) -> Self {
-        Self { id, data }
-    }
-}
-
-impl From<GroupState> for mls_rs_core::group::GroupState {
-    fn from(GroupState { id, data }: GroupState) -> Self {
-        Self { id, data }
-    }
 }
 
 impl From<mls_rs_core::group::EpochRecord> for EpochRecord {
@@ -55,7 +37,8 @@ pub trait GroupStateStorage: Send + Sync + Debug {
 
     async fn write(
         &self,
-        state: GroupState,
+        group_id: Vec<u8>,
+        group_state: Vec<u8>,
         epoch_inserts: Vec<EpochRecord>,
         epoch_updates: Vec<EpochRecord>,
     ) -> Result<(), Error>;
@@ -102,13 +85,14 @@ where
 
     async fn write(
         &self,
-        state: GroupState,
+        id: Vec<u8>,
+        data: Vec<u8>,
         epoch_inserts: Vec<EpochRecord>,
         epoch_updates: Vec<EpochRecord>,
     ) -> Result<(), Error> {
         self.inner()
             .write(
-                state.into(),
+                mls_rs_core::group::GroupState { id, data },
                 epoch_inserts.into_iter().map(Into::into).collect(),
                 epoch_updates.into_iter().map(Into::into).collect(),
             )

@@ -704,7 +704,7 @@ impl Group {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::group_state::{EpochRecord, GroupState, GroupStateStorage};
+    use crate::config::group_state::{EpochRecord, GroupStateStorage};
     use std::collections::HashMap;
 
     #[test]
@@ -754,14 +754,15 @@ mod tests {
 
             fn write(
                 &self,
-                state: GroupState,
+                group_id: Vec<u8>,
+                group_state: Vec<u8>,
                 epoch_inserts: Vec<EpochRecord>,
                 epoch_updates: Vec<EpochRecord>,
             ) -> Result<(), Error> {
                 let mut groups = self.lock();
 
-                let group = groups.entry(state.id).or_default();
-                group.state = state.data;
+                let group = groups.entry(group_id).or_default();
+                group.state = group_state;
                 for insert in epoch_inserts {
                     group.epoch_data.push(insert);
                 }
