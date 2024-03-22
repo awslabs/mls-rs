@@ -76,7 +76,7 @@ message = bob.generate_key_package_message()
 
 output = alice.add_members([message])
 alice.process_incoming_message(output.commit_message)
-bob = bob.join_group(None, output.welcome_messages[0]).group
+bob = bob.join_group(None, output.welcome_message).group
 
 msg = alice.encrypt_application_message(b'hello, bob')
 output = bob.process_incoming_message(msg)
