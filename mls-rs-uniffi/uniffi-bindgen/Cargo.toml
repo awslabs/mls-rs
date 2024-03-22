@@ -7,4 +7,4 @@ publish = false
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-uniffi = { version = "0.26.0", features = ["cli"] }
+uniffi = { git = "https://github.com/mozilla/uniffi-rs/", rev = "6b09f11", version = "0.26.0", features = ["cli"] }
