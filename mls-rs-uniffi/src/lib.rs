@@ -315,10 +315,10 @@ impl Client {
         let basic_credential = BasicCredential::new(id);
         let signing_identity =
             identity::SigningIdentity::new(basic_credential.into_credential(), public_key.into());
-        let mls_rules = mls_rules::DefaultMlsRules::new().with_commit_options(
-            mls_rules::CommitOptions::default()
-                .with_ratchet_tree_extension(client_config.use_ratchet_tree_extension),
-        );
+        let commit_options = mls_rules::CommitOptions::default()
+            .with_ratchet_tree_extension(client_config.use_ratchet_tree_extension)
+            .with_single_welcome_message(true);
+        let mls_rules = mls_rules::DefaultMlsRules::new().with_commit_options(commit_options);
         let client = mls_rs::Client::builder()
             .crypto_provider(crypto_provider)
             .identity_provider(basic::BasicIdentityProvider::new())
@@ -433,8 +433,9 @@ pub struct CommitOutput {
     /// Commit message to send to other group members.
     pub commit_message: Arc<Message>,
 
-    /// Welcome message to send to new group members.
-    pub welcome_messages: Vec<Arc<Message>>,
+    /// Welcome message to send to new group members. This will be
+    /// `None` if the commit did not add new members.
+    pub welcome_message: Option<Arc<Message>>,
 
     /// Ratchet tree that can be sent out of band if the ratchet tree
     /// extension is not used.
@@ -452,11 +453,11 @@ impl TryFrom<mls_rs::group::CommitOutput> for CommitOutput {
 
     fn try_from(commit_output: mls_rs::group::CommitOutput) -> Result<Self, Error> {
         let commit_message = Arc::new(commit_output.commit_message.into());
-        let welcome_messages = commit_output
+        let welcome_message = commit_output
             .welcome_messages
             .into_iter()
-            .map(|welcome_message| Arc::new(welcome_message.into()))
-            .collect::<Vec<_>>();
+            .next()
+            .map(|welcome_message| Arc::new(welcome_message.into()));
         let ratchet_tree = commit_output
             .ratchet_tree
             .map(TryInto::try_into)
@@ -467,7 +468,7 @@ impl TryFrom<mls_rs::group::CommitOutput> for CommitOutput {
 
         Ok(Self {
             commit_message,
-            welcome_messages,
+            welcome_message,
             ratchet_tree,
             group_info,
         })
@@ -816,7 +817,9 @@ mod tests {
         let commit = alice_group.add_members(vec![Arc::new(bob_key_package)])?;
         alice_group.process_incoming_message(commit.commit_message)?;
 
-        let bob_group = bob.join_group(None, &commit.welcome_messages[0])?.group;
+        let bob_group = bob
+            .join_group(None, &commit.welcome_message.unwrap())?
+            .group;
         let message = alice_group.encrypt_application_message(b"hello, bob")?;
         let received_message = bob_group.process_incoming_message(Arc::new(message))?;
 
