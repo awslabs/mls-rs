@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1711383314006,
+  "lastUpdate": 1711399042867,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -11435,6 +11435,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 130689,
             "range": "± 1177",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mgeisler@google.com",
+            "name": "Martin Geisler",
+            "username": "mgeisler"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ae345093115059d5a34f6ca939673596873a8242",
+          "message": "[uniffi] Use a single welcome message in our API (#129)\n\nWe have an expectation that all participants implement the\r\nfunctionalities the way we do (but not necessarily using mls-rs-uniffi\r\nas the underlying library). So if we make the assumption that\r\n`single_welcome_message = true` is always set, we can simplify the\r\nAPI.",
+          "timestamp": "2024-03-25T16:32:43-04:00",
+          "tree_id": "9dd2745d3ac8f40836e53c2094ef50733da48318",
+          "url": "https://github.com/awslabs/mls-rs/commit/ae345093115059d5a34f6ca939673596873a8242"
+        },
+        "date": 1711399041557,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 497517,
+            "range": "± 6568",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 508950,
+            "range": "± 6840",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 565261,
+            "range": "± 8151",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1154794,
+            "range": "± 62439",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 6970990,
+            "range": "± 138386",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1062728,
+            "range": "± 39307",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1185936,
+            "range": "± 44221",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1308268,
+            "range": "± 40797",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 711704,
+            "range": "± 20499",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 758730,
+            "range": "± 6817",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 813816,
+            "range": "± 9095",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 20915,
+            "range": "± 452",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 67790,
+            "range": "± 1797",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 131115,
+            "range": "± 1774",
             "unit": "ns/iter"
           }
         ]
