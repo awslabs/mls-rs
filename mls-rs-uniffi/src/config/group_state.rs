@@ -31,9 +31,10 @@ impl From<EpochRecord> for mls_rs_core::group::EpochRecord {
     }
 }
 
-// When building for async, uniffi::export has to be applied _after_
-// maybe-async's injection of the async trait. When building for sync,
-// the order has to be the opposite.
+// When building for async, uniffi::export has to be applied _before_ maybe-async's injection of
+// the async trait so that uniffi::export sees the definition before async_trait is expanded. When
+// building for sync, the order has to be the opposite so that uniffi::export sees the sync
+// definition of the trait.
 #[cfg_attr(mls_build_async, uniffi::export(with_foreign))]
 #[cfg_attr(mls_build_async, maybe_async::must_be_async)]
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
