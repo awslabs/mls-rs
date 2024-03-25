@@ -1,6 +1,9 @@
 use mls_rs::error::IntoAnyError;
 use std::fmt::Debug;
+#[cfg(not(mls_build_async))]
 use std::sync::Mutex;
+#[cfg(mls_build_async)]
+use tokio::sync::Mutex;
 
 use crate::Error;
 
@@ -28,9 +31,13 @@ impl From<EpochRecord> for mls_rs_core::group::EpochRecord {
     }
 }
 
-#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+// When building for async, uniffi::export has to be applied _after_
+// maybe-async's injection of the async trait. When building for sync,
+// the order has to be the opposite.
+#[cfg_attr(mls_build_async, uniffi::export(with_foreign))]
 #[cfg_attr(mls_build_async, maybe_async::must_be_async)]
-#[uniffi::export(with_foreign)]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(not(mls_build_async), uniffi::export(with_foreign))]
 pub trait GroupStateStorage: Send + Sync + Debug {
     async fn state(&self, group_id: Vec<u8>) -> Result<Option<Vec<u8>>, Error>;
     async fn epoch(&self, group_id: Vec<u8>, epoch_id: u64) -> Result<Option<Vec<u8>>, Error>;
@@ -59,8 +66,14 @@ impl<S> GroupStateStorageAdapter<S> {
         Self(Mutex::new(group_state_storage))
     }
 
+    #[cfg(not(mls_build_async))]
     fn inner(&self) -> std::sync::MutexGuard<'_, S> {
         self.0.lock().unwrap()
+    }
+
+    #[cfg(mls_build_async)]
+    async fn inner(&self) -> tokio::sync::MutexGuard<'_, S> {
+        self.0.lock().await
     }
 }
 
@@ -73,13 +86,17 @@ where
 {
     async fn state(&self, group_id: Vec<u8>) -> Result<Option<Vec<u8>>, Error> {
         self.inner()
+            .await
             .state(&group_id)
+            .await
             .map_err(|err| err.into_any_error().into())
     }
 
     async fn epoch(&self, group_id: Vec<u8>, epoch_id: u64) -> Result<Option<Vec<u8>>, Error> {
         self.inner()
+            .await
             .epoch(&group_id, epoch_id)
+            .await
             .map_err(|err| err.into_any_error().into())
     }
 
@@ -91,17 +108,21 @@ where
         epoch_updates: Vec<EpochRecord>,
     ) -> Result<(), Error> {
         self.inner()
+            .await
             .write(
                 mls_rs_core::group::GroupState { id, data },
                 epoch_inserts.into_iter().map(Into::into).collect(),
                 epoch_updates.into_iter().map(Into::into).collect(),
             )
+            .await
             .map_err(|err| err.into_any_error().into())
     }
 
     async fn max_epoch_id(&self, group_id: Vec<u8>) -> Result<Option<u64>, Error> {
         self.inner()
+            .await
             .max_epoch_id(&group_id)
+            .await
             .map_err(|err| err.into_any_error().into())
     }
 }

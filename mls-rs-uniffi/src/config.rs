@@ -28,11 +28,11 @@ impl mls_rs_core::group::GroupStateStorage for ClientGroupStorage {
     type Error = Error;
 
     async fn state(&self, group_id: &[u8]) -> Result<Option<Vec<u8>>, Self::Error> {
-        self.0.state(group_id.to_vec())
+        self.0.state(group_id.to_vec()).await
     }
 
     async fn epoch(&self, group_id: &[u8], epoch_id: u64) -> Result<Option<Vec<u8>>, Self::Error> {
-        self.0.epoch(group_id.to_vec(), epoch_id)
+        self.0.epoch(group_id.to_vec(), epoch_id).await
     }
 
     async fn write(
@@ -41,16 +41,18 @@ impl mls_rs_core::group::GroupStateStorage for ClientGroupStorage {
         inserts: Vec<mls_rs_core::group::EpochRecord>,
         updates: Vec<mls_rs_core::group::EpochRecord>,
     ) -> Result<(), Self::Error> {
-        self.0.write(
-            state.id,
-            state.data,
-            inserts.into_iter().map(Into::into).collect(),
-            updates.into_iter().map(Into::into).collect(),
-        )
+        self.0
+            .write(
+                state.id,
+                state.data,
+                inserts.into_iter().map(Into::into).collect(),
+                updates.into_iter().map(Into::into).collect(),
+            )
+            .await
     }
 
     async fn max_epoch_id(&self, group_id: &[u8]) -> Result<Option<u64>, Self::Error> {
-        self.0.max_epoch_id(group_id.to_vec())
+        self.0.max_epoch_id(group_id.to_vec()).await
     }
 }
 

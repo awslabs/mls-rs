@@ -62,7 +62,7 @@ class PythonGroupStateStorage(GroupStateStorage):
 
 
 group_state_storage = PythonGroupStateStorage()
-client_config = ClientConfig(group_state_storage,
+client_config = ClientConfig(group_state_storage=group_state_storage,
                              use_ratchet_tree_extension=True)
 
 key = generate_signature_keypair(CipherSuite.CURVE25519_AES128)

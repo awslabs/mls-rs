@@ -262,6 +262,7 @@ impl TryFrom<mls_rs::CipherSuite> for CipherSuite {
 /// See [`mls_rs::CipherSuiteProvider::signature_key_generate`]
 /// for details.
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
 #[uniffi::export]
 pub async fn generate_signature_keypair(
     cipher_suite: CipherSuite,
@@ -292,6 +293,7 @@ pub struct Client {
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
 #[uniffi::export]
 impl Client {
     /// Create a new client.
@@ -495,6 +497,7 @@ pub struct Group {
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
 impl Group {
     #[cfg(not(mls_build_async))]
     fn inner(&self) -> std::sync::MutexGuard<'_, mls_rs::Group<UniFFIConfig>> {
@@ -520,6 +523,7 @@ fn index_to_identity(
 
 /// Extract the basic credential identifier from a  from a key package.
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
 async fn signing_identity_to_identifier(
     signing_identity: &identity::SigningIdentity,
 ) -> Result<Vec<u8>, Error> {
@@ -531,6 +535,7 @@ async fn signing_identity_to_identifier(
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
 #[uniffi::export]
 impl Group {
     /// Write the current state of the group to storage defined by
@@ -545,8 +550,9 @@ impl Group {
     /// This function is used to provide the current group tree to new
     /// members when `use_ratchet_tree_extension` is set to false in
     /// `ClientConfig`.
-    pub fn export_tree(&self) -> Result<RatchetTree, Error> {
-        self.inner().export_tree().try_into()
+    pub async fn export_tree(&self) -> Result<RatchetTree, Error> {
+        let group = self.inner().await;
+        group.export_tree().try_into()
     }
 
     /// Perform a commit of received proposals (or an empty commit).
@@ -703,8 +709,11 @@ impl Group {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(not(mls_build_async))]
     use super::*;
+    #[cfg(not(mls_build_async))]
     use crate::config::group_state::{EpochRecord, GroupStateStorage};
+    #[cfg(not(mls_build_async))]
     use std::collections::HashMap;
 
     #[test]

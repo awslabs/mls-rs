@@ -42,12 +42,11 @@ macro_rules! generate_python_tests {
     };
 }
 
-generate_python_tests!(generate_signature_keypair, None);
-generate_python_tests!(client_config_default_sync, None);
+generate_python_tests!(
+    generate_signature_keypair_sync,
+    generate_signature_keypair_async
+);
+generate_python_tests!(client_config_default_sync, client_config_default_async);
 generate_python_tests!(custom_storage_sync, None);
-
-// TODO(mulmarta): it'll break if we use async trait which will be
-// supported in the next UniFFI release
-// TODO(mgeisler): add back simple_scenario_async
-generate_python_tests!(simple_scenario_sync, None);
-generate_python_tests!(ratchet_tree_sync, None);
+generate_python_tests!(simple_scenario_sync, simple_scenario_async);
+generate_python_tests!(ratchet_tree_sync, ratchet_tree_async);
