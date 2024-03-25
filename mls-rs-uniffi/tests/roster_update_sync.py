@@ -11,7 +11,7 @@ output = alice_group.add_members([bob.generate_key_package_message()])
 alice_group.process_incoming_message(output.commit_message)
 
 # Bob join the group and adds Carla.
-bob_group = bob.join_group(None, output.welcome_messages[0]).group
+bob_group = bob.join_group(None, output.welcome_message).group
 output = bob_group.add_members([carla.generate_key_package_message()])
 bob_group.process_incoming_message(output.commit_message)
 
