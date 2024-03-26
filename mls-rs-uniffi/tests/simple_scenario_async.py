@@ -18,7 +18,7 @@ async def scenario():
 
     commit = await alice.add_members([message])
     await alice.process_incoming_message(commit.commit_message)
-    bob = (await bob.join_group(None, commit.welcome_messages[0])).group
+    bob = (await bob.join_group(None, commit.welcome_message)).group
 
     msg = await alice.encrypt_application_message(b'hello, bob')
     output = await bob.process_incoming_message(msg)

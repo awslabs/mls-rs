@@ -50,3 +50,4 @@ generate_python_tests!(client_config_default_sync, client_config_default_async);
 generate_python_tests!(custom_storage_sync, None);
 generate_python_tests!(simple_scenario_sync, simple_scenario_async);
 generate_python_tests!(ratchet_tree_sync, ratchet_tree_async);
+generate_python_tests!(roster_update_sync, None);
