@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1711411798833,
+  "lastUpdate": 1711538345142,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -11651,6 +11651,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 131851,
             "range": "± 1464",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "94983192+stefunctional@users.noreply.github.com",
+            "name": "Stephane Raux",
+            "username": "stefunctional"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "73af0471215e2734a662be3e54248b64bba9d7cc",
+          "message": "Fix comment regarding macro order (#131)\n\nFollow-up for #130.",
+          "timestamp": "2024-03-27T12:14:32+01:00",
+          "tree_id": "ac73fc00cdee1ef226d33a45d3e792aacc587225",
+          "url": "https://github.com/awslabs/mls-rs/commit/73af0471215e2734a662be3e54248b64bba9d7cc"
+        },
+        "date": 1711538344461,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 500981,
+            "range": "± 5532",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 507822,
+            "range": "± 11394",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 562206,
+            "range": "± 7948",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1154471,
+            "range": "± 54663",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7945459,
+            "range": "± 59443",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1103631,
+            "range": "± 39058",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1151949,
+            "range": "± 51883",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1299643,
+            "range": "± 44063",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 712359,
+            "range": "± 9936",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 758268,
+            "range": "± 6031",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 816588,
+            "range": "± 6057",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 21051,
+            "range": "± 258",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 68269,
+            "range": "± 3387",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 132643,
+            "range": "± 1624",
             "unit": "ns/iter"
           }
         ]
