@@ -27,32 +27,32 @@ use crate::psk::{ExternalPskId, JustPreSharedKeyID, PreSharedKeyID};
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-/// A proposal that adds a member to a [`Group`].
+/// A proposal that adds a member to a [`Group`](crate::group::Group).
 pub struct AddProposal {
     pub(crate) key_package: KeyPackage,
 }
 
 impl AddProposal {
-    /// The [`SigningIdentity`]
-    /// of the [`Member`] that will be added by this proposal.
+    /// The [`SigningIdentity`] of the [`Member`](mls_rs_core::group::Member)
+    /// that will be added by this proposal.
     pub fn signing_identity(&self) -> &SigningIdentity {
         self.key_package.signing_identity()
     }
 
-    /// Client [`Capabilities`] of the
-    /// [`Member`] that will be added by this proposal.
+    /// Client [`Capabilities`] of the [`Member`](mls_rs_core::group::Member)
+    /// that will be added by this proposal.
     pub fn capabilities(&self) -> Capabilities {
         self.key_package.leaf_node.ungreased_capabilities()
     }
 
     /// Key package extensions that are assoiciated with the
-    /// [`Member`] that will be added by this proposal.
+    /// [`Member`](mls_rs_core::group::Member) that will be added by this proposal.
     pub fn key_package_extensions(&self) -> ExtensionList {
         self.key_package.ungreased_extensions()
     }
 
     /// Leaf node extensions that will be entered into the group state for the
-    /// [`Member`] that will be added.
+    /// [`Member`](mls_rs_core::group::Member) that will be added.
     pub fn leaf_node_extensions(&self) -> ExtensionList {
         self.key_package.leaf_node.ungreased_extensions()
     }
@@ -79,28 +79,28 @@ impl TryFrom<MlsMessage> for AddProposal {
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-/// A proposal that will update an existing [`Member`] of a
-/// [`Group`]
+/// A proposal that will update an existing [`Member`](mls_rs_core::group::Member) of a
+/// [`Group`](crate::group::Group).
 pub struct UpdateProposal {
     pub(crate) leaf_node: LeafNode,
 }
 
 #[cfg(feature = "by_ref_proposal")]
 impl UpdateProposal {
-    /// The new [`SigningIdentity`]
-    /// of the [`Member`] that is being updated by this proposal.
+    /// The new [`SigningIdentity`] of the [`Member`](mls_rs_core::group::Member)
+    /// that is being updated by this proposal.
     pub fn signing_identity(&self) -> &SigningIdentity {
         &self.leaf_node.signing_identity
     }
 
-    /// New Client [`Capabilities`] of the
-    /// [`Member`] that will be updated by this proposal.
+    /// New Client [`Capabilities`] of the [`Member`](mls_rs_core::group::Member)
+    /// that will be updated by this proposal.
     pub fn capabilities(&self) -> Capabilities {
         self.leaf_node.ungreased_capabilities()
     }
 
     /// New Leaf node extensions that will be entered into the group state for the
-    /// [`Member`] that is being updated by this proposal.
+    /// [`Member`](mls_rs_core::group::Member) that is being updated by this proposal.
     pub fn leaf_node_extensions(&self) -> ExtensionList {
         self.leaf_node.ungreased_extensions()
     }
@@ -109,14 +109,14 @@ impl UpdateProposal {
 #[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-/// A proposal to remove an existing [`Member`] of a
-/// [`Group`].
+/// A proposal to remove an existing [`Member`](mls_rs_core::group::Member) of a
+/// [`Group`](crate::group::Group).
 pub struct RemoveProposal {
     pub(crate) to_remove: LeafIndex,
 }
 
 impl RemoveProposal {
-    /// The index of the [`Member`] that will be removed by
+    /// The index of the [`Member`](mls_rs_core::group::Member) that will be removed by
     /// this proposal.
     pub fn to_remove(&self) -> u32 {
         *self.to_remove
