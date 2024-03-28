@@ -21,7 +21,9 @@ mod config;
 
 use std::sync::Arc;
 
-use config::{ClientConfig, UniFFIConfig};
+pub use config::ClientConfig;
+use config::UniFFIConfig;
+
 #[cfg(not(mls_build_async))]
 use std::sync::Mutex;
 #[cfg(mls_build_async)]

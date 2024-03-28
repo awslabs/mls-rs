@@ -93,7 +93,7 @@ use self::message_processor::{EventOrContent, MessageProcessor, ProvisionalState
 #[cfg(feature = "by_ref_proposal")]
 use self::proposal_ref::ProposalRef;
 use self::state_repo::GroupStateRepository;
-pub(crate) use group_info::GroupInfo;
+pub use group_info::GroupInfo;
 
 pub use self::framing::{ContentType, Sender};
 pub use commit::*;

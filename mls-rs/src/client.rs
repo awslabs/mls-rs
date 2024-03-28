@@ -708,8 +708,7 @@ where
         self.config.key_package_extensions()
     }
 
-    /// The [KeyPackageStorage](crate::KeyPackageStorage) that
-    /// this client was configured to use.
+    /// The [KeyPackageStorage] that this client was configured to use.
     #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     pub fn key_package_store(&self) -> <C as ClientConfig>::KeyPackageRepository {
         self.config.key_package_repo()
@@ -722,8 +721,7 @@ where
         self.config.secret_store()
     }
 
-    /// The [GroupStateStorage](crate::GroupStateStorage) that
-    /// this client was configured to use.
+    /// The [GroupStateStorage] that this client was configured to use.
     #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     pub fn group_state_storage(&self) -> <C as ClientConfig>::GroupStateStorage {
         self.config.group_state_storage()
