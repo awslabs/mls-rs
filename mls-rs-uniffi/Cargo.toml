@@ -21,10 +21,10 @@ mls-rs = { version = "0.39.0", path = "../mls-rs" }
 mls-rs-core = { version = "0.18.0", path = "../mls-rs-core" }
 mls-rs-crypto-openssl = { version = "0.9.0", path = "../mls-rs-crypto-openssl" }
 thiserror = "1.0.57"
-uniffi = { git = "https://github.com/mozilla/uniffi-rs/", rev = "6b09f11", version = "0.26.0" }
+uniffi = { git = "https://github.com/mozilla/uniffi-rs/", rev = "eeb785c", version = "0.27.0" }
 
 [target.'cfg(mls_build_async)'.dependencies]
 tokio = { version = "1.36.0", features = ["sync"] }
 
 [dev-dependencies]
-uniffi_bindgen = { git = "https://github.com/mozilla/uniffi-rs/", rev = "6b09f11", version = "0.26.0" }
+uniffi_bindgen = { git = "https://github.com/mozilla/uniffi-rs/", rev = "eeb785c", version = "0.27.0" }

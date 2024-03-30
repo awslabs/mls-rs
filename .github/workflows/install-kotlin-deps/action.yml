@@ -1,0 +1,27 @@
+# This action downloads the Kotlin dependencies using Maven. This
+# fails on Windows for some unknown reason:
+#
+#   The goal you specified requires a project to execute but there is
+#   no POM in this directory
+#
+# For now, it seems okay to just run the tests on Linux and macOS.
+name: Install Kotlin dependencies
+description: Install Kotlin dependencies for UniFFI generated code.
+runs:
+  using: composite
+  steps:
+    - name: Install JNA
+      run: |
+        mvn --no-transfer-progress dependency:copy \
+          -Dartifact=net.java.dev.jna:jna:5.14.0 \
+          -Dmdep.stripVersion=true -DoutputDirectory=$PWD
+        echo "CLASSPATH=$PWD/jna.jar:$CLASSPATH" >> "$GITHUB_ENV"
+      shell: bash
+
+    - name: Install Kotlin Test
+      run: |
+        mvn --no-transfer-progress dependency:copy \
+          -Dartifact=org.jetbrains.kotlin:kotlin-test:1.9.23 \
+          -Dmdep.stripVersion=true -DoutputDirectory=$PWD
+        echo "CLASSPATH=$PWD/kotlin-test.jar:$CLASSPATH" >> "$GITHUB_ENV"
+      shell: bash
