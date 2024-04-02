@@ -28,8 +28,6 @@ jobs:
         if: runner.os == 'Windows'
       - run: echo "SSL_CERT_FILE=C:/cacert.pem" | Out-File -FilePath $env:GITHUB_ENV -Append
         if: runner.os == 'Windows'
-      - name: Rust Fmt
-        run: cargo fmt --all -- --check
       - name: Clippy Full RFC Compliance
         run: cargo clippy --all-targets --all-features --workspace -- -D warnings
       - name: Clippy Bare Bones
@@ -49,6 +47,13 @@ jobs:
       - name: Examples
         working-directory: mls-rs
         run: cargo run --example basic_usage
+  Formatting:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Rust Fmt
+        run: cargo fmt --all -- --check
   CodeCoverage:
     runs-on: ubuntu-latest
     steps:
