@@ -249,6 +249,9 @@ impl RosterUpdate {
 #[derive(Clone, Debug, uniffi::Enum)]
 pub enum ReceivedMessage {
     /// A decrypted application message.
+    ///
+    /// The encoding of the data in the message is
+    /// application-specific and is not determined by MLS.
     ApplicationMessage {
         sender: Arc<SigningIdentity>,
         data: Vec<u8>,
@@ -717,6 +720,16 @@ impl Group {
     }
 
     /// Encrypt an application message using the current group state.
+    ///
+    /// An application message is an application-specific payload,
+    /// e.g., an UTF-8 encoded text message in a chat app. The
+    /// encoding is not determined by MLS and applications will have
+    /// to implement their own mechanism for how to agree on the
+    /// content encoding.
+    ///
+    /// The other group members will find the message in
+    /// [`ReceivedMessage::ApplicationMessage`] after calling
+    /// [`Group::process_incoming_message`].
     pub async fn encrypt_application_message(&self, message: &[u8]) -> Result<Message, Error> {
         let mut group = self.inner().await;
         let mls_message = group
