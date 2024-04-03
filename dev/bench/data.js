@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1712126308030,
+  "lastUpdate": 1712126372243,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -11975,6 +11975,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 131887,
             "range": "± 3133",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mgeisler@google.com",
+            "name": "Martin Geisler",
+            "username": "mgeisler"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d6bfcafea352e6711c801760345be29ca35f20c6",
+          "message": "Add new job for lint and formatting checks (#135)\n\n* Move `cargo fmt` to its own job\r\n\r\nThis does not need to run on all three operating systems.\r\n\r\n* Move Clippy linting to separate job\r\n\r\nClippy gives the same results for each platform, so we can save time\r\nby running it just once on Ubuntu.",
+          "timestamp": "2024-04-03T08:35:02+02:00",
+          "tree_id": "7d2ff66f2c0e06a4233f30d9325b66afb4fd82b4",
+          "url": "https://github.com/awslabs/mls-rs/commit/d6bfcafea352e6711c801760345be29ca35f20c6"
+        },
+        "date": 1712126371684,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 499765,
+            "range": "± 6668",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 506616,
+            "range": "± 6208",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 562149,
+            "range": "± 26203",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1146888,
+            "range": "± 26290",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7305946,
+            "range": "± 45390",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1061387,
+            "range": "± 67549",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1174752,
+            "range": "± 72699",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1292970,
+            "range": "± 61776",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 710313,
+            "range": "± 5257",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 757640,
+            "range": "± 7073",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 814196,
+            "range": "± 5290",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 21438,
+            "range": "± 208",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 69706,
+            "range": "± 1098",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 132435,
+            "range": "± 1214",
             "unit": "ns/iter"
           }
         ]
