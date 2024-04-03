@@ -612,14 +612,19 @@ impl Group {
         group.export_tree().try_into()
     }
 
-    /// Perform a commit of received proposals (or an empty commit).
+    /// Perform a commit to update encryption keys.
     ///
-    /// TODO: ensure `path_required` is always set in
-    /// [`MlsRules::commit_options`](`mls_rs::MlsRules::commit_options`).
+    /// This will commit any received proposals (or create an empty
+    /// commit). Empty commits are important since they let clients
+    /// refresh their encryption keys. Doing so periodically ensures
+    /// forward secrecy and post-compromise security the group
+    /// messages.
     ///
     /// Returns the resulting commit message. See
     /// [`mls_rs::Group::commit`] for details.
-    pub async fn commit(&self) -> Result<CommitOutput, Error> {
+    // TODO: ensure `path_required` is always set in
+    // [`MlsRules::commit_options`](`mls_rs::MlsRules::commit_options`).
+    pub async fn key_update(&self) -> Result<CommitOutput, Error> {
         let mut group = self.inner().await;
         let commit_output = group.commit(Vec::new()).await?;
         commit_output.try_into()
@@ -905,7 +910,7 @@ mod tests {
         let alice = Client::new(b"alice".to_vec(), alice_keypair, alice_config);
         let group = alice.create_group(None)?;
 
-        assert_eq!(group.commit()?.ratchet_tree, None);
+        assert_eq!(group.key_update()?.ratchet_tree, None);
         Ok(())
     }
 
@@ -921,8 +926,12 @@ mod tests {
         let alice = Client::new(b"alice".to_vec(), alice_keypair, alice_config);
         let group = alice.create_group(None)?;
 
-        let ratchet_tree: group::ExportedTree =
-            group.commit()?.ratchet_tree.unwrap().try_into().unwrap();
+        let ratchet_tree: group::ExportedTree = group
+            .key_update()?
+            .ratchet_tree
+            .unwrap()
+            .try_into()
+            .unwrap();
         group.inner().apply_pending_commit()?;
 
         assert_eq!(ratchet_tree, group.inner().export_tree());
