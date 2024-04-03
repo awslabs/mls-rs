@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1712157486442,
+  "lastUpdate": 1712157722195,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -12299,6 +12299,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 133317,
             "range": "± 1842",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mgeisler@google.com",
+            "name": "Martin Geisler",
+            "username": "mgeisler"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7bb26b996d28065cbcb30b2077cf4817315ed4e8",
+          "message": "Split jobs into dedicated sync and async jobs (#137)\n\nThis allows us to cache the compilation artifacts per job, which\r\nshould lead to faster builds.",
+          "timestamp": "2024-04-03T17:17:28+02:00",
+          "tree_id": "c1d7066c8b3e9051e40bae2ee6319f69306c62e6",
+          "url": "https://github.com/awslabs/mls-rs/commit/7bb26b996d28065cbcb30b2077cf4817315ed4e8"
+        },
+        "date": 1712157721345,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 501876,
+            "range": "± 14814",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 510064,
+            "range": "± 4350",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 565770,
+            "range": "± 34022",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1164135,
+            "range": "± 27493",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 6934595,
+            "range": "± 54623",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1107055,
+            "range": "± 76032",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1164210,
+            "range": "± 50330",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1286734,
+            "range": "± 43165",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 713564,
+            "range": "± 50568",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 760698,
+            "range": "± 30563",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 816823,
+            "range": "± 9398",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 21143,
+            "range": "± 220",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 69002,
+            "range": "± 1662",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 132860,
+            "range": "± 1225",
             "unit": "ns/iter"
           }
         ]
