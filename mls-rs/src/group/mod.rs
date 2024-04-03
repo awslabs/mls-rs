@@ -1260,6 +1260,12 @@ where
         self.process_commit(pending_commit.content, None).await
     }
 
+    /// Returns true if a commit has been created but not yet applied
+    /// with [`Group::apply_pending_commit`] or cleared with [`Group::clear_pending_commit`]
+    pub fn has_pending_commit(&self) -> bool {
+        self.pending_commit.is_some()
+    }
+
     /// Clear the currently pending commit.
     ///
     /// This function will automatically be called in the event that a
@@ -1936,6 +1942,8 @@ mod tests {
             #[cfg(feature = "by_ref_proposal")]
             assert!(group.pending_updates.is_empty());
 
+            assert!(!group.has_pending_commit());
+
             assert_eq!(
                 group.private_tree.self_index.0,
                 group.current_member_index()
@@ -1973,6 +1981,8 @@ mod tests {
 
         // We should be able to send application messages after a commit
         test_group.group.commit(vec![]).await.unwrap();
+
+        assert!(test_group.group.has_pending_commit());
 
         test_group.group.apply_pending_commit().await.unwrap();
 
