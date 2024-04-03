@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1711636919815,
+  "lastUpdate": 1712126308030,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -11867,6 +11867,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 132779,
             "range": "± 1528",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mgeisler@google.com",
+            "name": "Martin Geisler",
+            "username": "mgeisler"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5a5715ab8e9f5fde48d8f7a995ae4290c16c7251",
+          "message": "Simplify Windows build steps into a single step (#136)\n\nThe commands depend on each other, so I think it’s clearer if they are\r\nput into a single step.",
+          "timestamp": "2024-04-03T08:33:56+02:00",
+          "tree_id": "54dcd29746808e03bf4129fc893cd2a17f832df2",
+          "url": "https://github.com/awslabs/mls-rs/commit/5a5715ab8e9f5fde48d8f7a995ae4290c16c7251"
+        },
+        "date": 1712126306633,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 483194,
+            "range": "± 11014",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 505267,
+            "range": "± 10116",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 553692,
+            "range": "± 25453",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1133210,
+            "range": "± 40062",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 6675802,
+            "range": "± 169103",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1054627,
+            "range": "± 39271",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1146789,
+            "range": "± 49839",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1261560,
+            "range": "± 40598",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 707718,
+            "range": "± 15513",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 748114,
+            "range": "± 15203",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 812244,
+            "range": "± 13601",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 21223,
+            "range": "± 425",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 68894,
+            "range": "± 2460",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 131887,
+            "range": "± 3133",
             "unit": "ns/iter"
           }
         ]
