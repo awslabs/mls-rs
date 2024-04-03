@@ -4,7 +4,7 @@ env:
   CARGO_TERM_COLOR: always
   SSH_AUTH_SOCK: /tmp/ssh_agent.sock
 jobs:
-  BuildAndTest:
+  SyncBuildAndTestS:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
@@ -17,6 +17,7 @@ jobs:
           version: "25.x"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - uses: ilammy/setup-nasm@v1
         if: runner.os == 'Windows'
       - run: |
@@ -30,17 +31,38 @@ jobs:
         run: cargo test --all-features --verbose --workspace
       - name: Test Bare Bones
         run: cargo test --no-default-features --features std,test_util  --verbose --workspace
-      - name: Test Async Full RFC
-        run: cargo test --lib --test '*' --verbose --features test_util -p mls-rs
-        env:
-          RUSTFLAGS: '--cfg mls_build_async'
-      - name: Test Async Bare Bones
-        run: cargo test --no-default-features --lib --test '*' --features std,test_util --verbose -p mls-rs
-        env:
-          RUSTFLAGS: '--cfg mls_build_async'
       - name: Examples
         working-directory: mls-rs
         run: cargo run --example basic_usage
+  AsyncBuildAndTest:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+      fail-fast: false
+    runs-on: ${{ matrix.os }}
+    env:
+      RUSTFLAGS: '--cfg mls_build_async'
+    steps:
+      - uses: actions/checkout@v3
+      - uses: arduino/setup-protoc@v2
+        with:
+          version: "25.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: ilammy/setup-nasm@v1
+        if: runner.os == 'Windows'
+      - run: |
+          echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
+          vcpkg install openssl:x64-windows-static-md sqlite3:x64-windows-static-md
+          echo "OPENSSL_DIR=C:/vcpkg/packages/openssl_x64-windows-static-md" | Out-File -FilePath $env:GITHUB_ENV -Append
+          curl -o C:/cacert.pem https://curl.se/ca/cacert.pem
+          echo "SSL_CERT_FILE=C:/cacert.pem" | Out-File -FilePath $env:GITHUB_ENV -Append
+        if: runner.os == 'Windows'
+      - name: Test Async Full RFC
+        run: cargo test --lib --test '*' --verbose --features test_util -p mls-rs
+      - name: Test Async Bare Bones
+        run: cargo test --no-default-features --lib --test '*' --features std,test_util --verbose -p mls-rs
   LintAndFormatting:
     runs-on: ubuntu-latest
     steps:
@@ -50,6 +72,7 @@ jobs:
           version: "25.x"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - name: Rust Fmt
         run: cargo fmt --all -- --check
       - name: Clippy Full RFC Compliance
@@ -61,6 +84,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
       - name: Setup code coverage
         run: cargo install cargo-llvm-cov
       - name: Run code coverage
