@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1712126372243,
+  "lastUpdate": 1712126414896,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -12083,6 +12083,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 132435,
             "range": "± 1214",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mgeisler@google.com",
+            "name": "Martin Geisler",
+            "username": "mgeisler"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8f7d38bddb0c043531334897a58653a085ae4615",
+          "message": "Run all matrix builds to completion (#134)\n\nWhen working with platform specific code (such as adding Kotlin tests\r\nto the CI), it is very convenient to let the matrix builds run to\r\ncompletion so you can get a full overview of the platforms where\r\nthings work and where they fail.",
+          "timestamp": "2024-04-03T08:35:48+02:00",
+          "tree_id": "77fa4de89183a4aa184c4c0c3c5960b08a0d8a51",
+          "url": "https://github.com/awslabs/mls-rs/commit/8f7d38bddb0c043531334897a58653a085ae4615"
+        },
+        "date": 1712126414198,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 501839,
+            "range": "± 8032",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 507916,
+            "range": "± 7536",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 564708,
+            "range": "± 57272",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1169021,
+            "range": "± 26591",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7330227,
+            "range": "± 25165",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1087461,
+            "range": "± 48328",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1153618,
+            "range": "± 50027",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1285684,
+            "range": "± 49088",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 712389,
+            "range": "± 12073",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 759751,
+            "range": "± 12855",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 815728,
+            "range": "± 7353",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 21235,
+            "range": "± 287",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 69215,
+            "range": "± 897",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 133122,
+            "range": "± 1681",
             "unit": "ns/iter"
           }
         ]
