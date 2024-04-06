@@ -19,6 +19,8 @@ pub enum KdfError {
     TooShortKey(usize, usize),
     #[cfg_attr(feature = "std", error("unsupported cipher suite"))]
     UnsupportedCipherSuite,
+    #[cfg_attr(feature = "std", error("CryptoKit error"))]
+    CryptoKitError,
 }
 
 impl IntoAnyError for KdfError {
@@ -29,6 +31,24 @@ impl IntoAnyError for KdfError {
 }
 
 extern "C" {
+    fn hash(
+        kdf_id: u16,
+        in_ptr: *const u8,
+        in_len: u64,
+        output_ptr: *mut u8,
+        output_len: u64,
+    ) -> u64;
+
+    fn hmac(
+        kdf_id: u16,
+        key_ptr: *const u8,
+        key_len: u64,
+        data_ptr: *const u8,
+        data_len: u64,
+        output_ptr: *mut u8,
+        output_len: u64,
+    ) -> u64;
+
     fn hkdf_extract(
         kdf_id: u16,
         ikm_ptr: *const u8,
@@ -37,7 +57,7 @@ extern "C" {
         salt_len: u64,
         output_ptr: *mut u8,
         output_len: u64,
-    );
+    ) -> u64;
 
     fn hkdf_expand(
         kdf_id: u16,
@@ -47,8 +67,7 @@ extern "C" {
         info_len: u64,
         output_ptr: *mut u8,
         output_len: u64,
-    );
-
+    ) -> u64;
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -57,6 +76,59 @@ pub struct Kdf(KdfId);
 impl Kdf {
     pub fn new(cipher_suite: CipherSuite) -> Option<Self> {
         KdfId::new(cipher_suite).map(Self)
+    }
+
+    fn ensure_valid_ciphersuite(&self) -> Result<(), KdfError> {
+        match self.0 {
+            KdfId::HkdfSha256 => Ok(()),
+            KdfId::HkdfSha384 => Ok(()),
+            KdfId::HkdfSha512 => Ok(()),
+            _ => Err(KdfError::UnsupportedCipherSuite),
+        }
+    }
+
+    pub fn hash(&self, data: &[u8]) -> Result<Vec<u8>, KdfError> {
+        self.ensure_valid_ciphersuite()?;
+
+        let mut output = vec![0; self.extract_size()];
+        let rv = unsafe {
+            hash(
+                self.0 as u16,
+                data.as_ptr(),
+                data.len() as u64,
+                output.as_mut_ptr(),
+                output.len() as u64,
+            )
+        };
+
+        if rv != 1 {
+            return Err(KdfError::CryptoKitError);
+        }
+
+        Ok(output)
+    }
+
+    pub fn mac(&self, key: &[u8], data: &[u8]) -> Result<Vec<u8>, KdfError> {
+        self.ensure_valid_ciphersuite()?;
+
+        let mut output = vec![0; self.extract_size()];
+        let rv = unsafe {
+            hmac(
+                self.0 as u16,
+                key.as_ptr(),
+                key.len() as u64,
+                data.as_ptr(),
+                data.len() as u64,
+                output.as_mut_ptr(),
+                output.len() as u64,
+            )
+        };
+
+        if rv != 1 {
+            return Err(KdfError::CryptoKitError);
+        }
+
+        Ok(output)
     }
 }
 
@@ -83,7 +155,7 @@ impl KdfType for Kdf {
 
         let mut output = vec![0; self.extract_size()];
 
-        unsafe {
+        let rv = unsafe {
             hkdf_extract(
                 self.0 as u16,
                 ikm.as_ptr(),
@@ -92,7 +164,11 @@ impl KdfType for Kdf {
                 salt.len() as u64,
                 output.as_mut_ptr(),
                 output.len() as u64,
-            );
+            )
+        };
+
+        if rv != 1 {
+            return Err(KdfError::CryptoKitError);
         }
 
         Ok(output)
@@ -112,7 +188,7 @@ impl KdfType for Kdf {
 
         let mut output = vec![0; len];
 
-        unsafe {
+        let rv = unsafe {
             hkdf_expand(
                 self.0 as u16,
                 prk.as_ptr(),
@@ -121,7 +197,11 @@ impl KdfType for Kdf {
                 info.len() as u64,
                 output.as_mut_ptr(),
                 output.len() as u64,
-            );
+            )
+        };
+
+        if rv != 1 {
+            return Err(KdfError::CryptoKitError);
         }
 
         Ok(output)
@@ -141,8 +221,34 @@ mod test {
     use super::*;
     use hex_literal::hex;
 
-    // XXX(RLB) This is just a basic test of HKDF-SHA256 to make sure we got the plumbing right.
-    // Once all the scaffolding is in place, we should use the standard mls-rs test suite.
+    // XXX(RLB) This is just a basic test of SHA256 functions to make sure we got the plumbing
+    // right.  Once all the scaffolding is in place, we should use the standard mls-rs test suite.
+
+    #[test]
+    fn hash() {
+        let cipher_suite = CipherSuite::CURVE25519_AES128;
+        let input = b"This is a string.";
+        let output_expected =
+            hex!("a13da8b26228f4c73e6c7447619b4b69a83dc9e94cca8044f3afbf4489da8d5c");
+
+        let kdf = Kdf::new(cipher_suite).unwrap();
+        let output_actual = kdf.hash(input).unwrap();
+        assert_eq!(output_actual, output_expected);
+    }
+
+    #[test]
+    fn mac() {
+        let cipher_suite = CipherSuite::CURVE25519_AES128;
+        let key = b"This is a key.";
+        let data = b"This is some data.";
+        let output_expected =
+            hex!("1b0c3ec1573e60eaff70d314c5fc65661d16c7fac5c5c8c4dfa3af57b839126b");
+
+        let kdf = Kdf::new(cipher_suite).unwrap();
+        let output_actual = kdf.mac(key, data).unwrap();
+        assert_eq!(output_actual, output_expected);
+    }
+
     #[test]
     fn hkdf() {
         let cipher_suite = CipherSuite::CURVE25519_AES128;
