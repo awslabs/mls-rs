@@ -16,6 +16,7 @@ serde_json = "1.0"
 [dev-dependencies]
 # For test values, we can remove this once we use real mls-rs tests
 hex-literal = "0.4.1"
+assert_matches = "1.5.0"
 
 [dependencies]
 maybe-async = "0.2.10"
