@@ -74,8 +74,8 @@ KEM / HPKE:
 * [ ] `hpke_setup_r`
 
 Signature:
-* [ ] `signature_key_generate`
-* [ ] `signature_key_derive_public`
-* [ ] `sign`
-* [ ] `verify`
+* [X] `signature_key_generate`
+* [X] `signature_key_derive_public`
+* [X] `sign`
+* [X] `verify`
 
