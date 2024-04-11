@@ -39,6 +39,60 @@ enum KemId : UInt16 {
             }
         }
     }
+
+    var suiteID: Data {
+        get {
+            var id = "HPKE".data(using: .utf8)!
+
+            switch self {
+            case .DhKemP256Sha256Aes128:       id.append(Data([0, 0x10, 0, 1, 0, 1]))
+            case .DhKemP384Sha384Aes256:       id.append(Data([0, 0x11, 0, 2, 0, 2]))
+            case .DhKemP521Sha512Aes256:       id.append(Data([0, 0x12, 0, 3, 0, 2]))
+            case .DhKemX25519Sha256Aes128:     id.append(Data([0, 0x20, 0, 1, 0, 1]))
+            case .DhKemX25519Sha256ChaChaPoly: id.append(Data([0, 0x21, 0, 1, 0, 3]))
+            }
+
+            return id
+        }
+    }
+
+    var nsk: Int {
+        get {
+            switch self {
+            case .DhKemP256Sha256Aes128: 32
+            case .DhKemP384Sha384Aes256: 48
+            case .DhKemP521Sha512Aes256: 66
+            case .DhKemX25519Sha256Aes128: 32
+            case .DhKemX25519Sha256ChaChaPoly: 56
+            }
+        }
+    }
+
+    var order: Data {
+        get {
+            switch self {
+            case .DhKemP256Sha256Aes128: Data([0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 
+                                               0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 
+                                               0xbc, 0xe6, 0xfa, 0xad, 0xa7, 0x17, 0x9e, 0x84, 
+                                               0xf3, 0xb9, 0xca, 0xc2, 0xfc, 0x63, 0x25, 0x51,])
+            case .DhKemP384Sha384Aes256: Data([0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 
+                                               0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 
+                                               0xbc, 0xe6, 0xfa, 0xad, 0xa7, 0x17, 0x9e, 0x84, 
+                                               0xf3, 0xb9, 0xca, 0xc2, 0xfc, 0x63, 0x25, 0x51])
+            case .DhKemP521Sha512Aes256: Data([0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 
+                                               0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 
+                                               0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 
+                                               0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 
+                                               0xff, 0xfa, 0x51, 0x86, 0x87, 0x83, 0xbf, 0x2f, 
+                                               0x96, 0x6b, 0x7f, 0xcc, 0x01, 0x48, 0xf7, 0x09, 
+                                               0xa5, 0xd0, 0x3b, 0xb5, 0xc9, 0xb8, 0x89, 0x9c, 
+                                               0x47, 0xae, 0xbb, 0x6f, 0xb7, 0x1e, 0x91, 0x38, 
+                                               0x64, 0x09])
+            case .DhKemX25519Sha256Aes128: Data() // not used
+            case .DhKemX25519Sha256ChaChaPoly: Data() // not used
+            }
+        }
+    }
 }
 
 class SenderWrapper {
@@ -106,6 +160,115 @@ public func kem_generate(kemID: UInt16,
     return 1
 }
 
+func unwrapBytes<B>(_ data: B) -> Data 
+where B: ContiguousBytes
+{
+    return data.withUnsafeBytes { buffer in Data(buffer) }
+}
+
+func LabeledExtract(kemID: KemId, salt: Data, label: Data, ikm: Data) -> Data {
+    // labeled_ikm = concat("HPKE-v1", suite_id, label, ikm)
+    var labeledIKM = "HPKE-v1".data(using: .utf8)!
+    labeledIKM.append(kemID.suiteID)
+    labeledIKM.append(label)
+    labeledIKM.append(ikm)
+
+    // return Extract(salt, labeled_ikm)
+    let ikm = SymmetricKey(data: labeledIKM)
+    switch kemID {
+    case .DhKemP256Sha256Aes128:
+        fallthrough
+    case .DhKemX25519Sha256Aes128:
+        fallthrough
+    case .DhKemX25519Sha256ChaChaPoly:
+        return unwrapBytes(HKDF<SHA256>.extract(inputKeyMaterial: ikm, salt: salt))
+
+    case .DhKemP384Sha384Aes256:
+        return unwrapBytes(HKDF<SHA384>.extract(inputKeyMaterial: ikm, salt: salt))
+
+    case .DhKemP521Sha512Aes256:
+        return unwrapBytes(HKDF<SHA512>.extract(inputKeyMaterial: ikm, salt: salt))
+    }
+}
+
+func LabeledExpand(kemID: KemId, prk: Data, label: Data, info: Data, len: Int) -> Data {
+    // labeled_info = concat(I2OSP(L, 2), "HPKE-v1", suite_id, label, info)
+    var labeledInfo = Data([UInt8(len >> 8), UInt8(len)])
+    labeledInfo.append("HPKE-v1".data(using: .utf8)!)
+    labeledInfo.append(kemID.suiteID)
+    labeledInfo.append(label)
+    labeledInfo.append(info)
+
+    // return Expand(prk, labeled_info, L)
+    switch kemID {
+    case .DhKemP256Sha256Aes128:
+        fallthrough
+    case .DhKemX25519Sha256Aes128:
+        fallthrough
+    case .DhKemX25519Sha256ChaChaPoly:
+        return unwrapBytes(HKDF<SHA256>.expand(pseudoRandomKey: prk, info: labeledInfo, outputByteCount: len))
+
+    case .DhKemP384Sha384Aes256:
+        return unwrapBytes(HKDF<SHA384>.expand(pseudoRandomKey: prk, info: labeledInfo, outputByteCount: len))
+
+    case .DhKemP521Sha512Aes256:
+        return unwrapBytes(HKDF<SHA512>.expand(pseudoRandomKey: prk, info: labeledInfo, outputByteCount: len))
+    }
+}
+
+func bigintLessThan(_ a: Data, _ b: Data) -> Bool {
+    // For big-endian a, b, a < b iff at the first digit at which a and b
+    // differ, the a digit is less than the b digit
+    let diffs = zip(a, b).filter { (x, y) in x == y }
+    if diffs.count == 0 {
+        // The two numbers are equal
+        return false
+    }
+
+    let (da, db) = diffs[0]
+    return da < db
+}
+
+func derive_key_pair_nist(kemID: KemId, ikm: Data) -> Data? {
+    let prkLabel = "dkp_prk".data(using: .utf8)!
+    let candidateLabel = "candidate".data(using: .utf8)!
+    let dkpPrk = LabeledExtract(kemID: kemID, salt: Data(), label: prkLabel, ikm: ikm)
+    let zero = Data([UInt8](repeating: 0, count: kemID.nsk))
+    let order = kemID.order
+
+    let bitmask = switch kemID {
+    case .DhKemP256Sha256Aes128: UInt8(0xff)
+    case .DhKemX25519Sha256Aes128: UInt8(0xff)
+    case .DhKemX25519Sha256ChaChaPoly: UInt8(0x01)
+    case .DhKemP384Sha384Aes256: UInt8(0x00) // unused
+    case .DhKemP521Sha512Aes256: UInt8(0x00) // unused
+    }
+
+    var counter = 0
+    while counter <= 255 {
+        let counterInfo = Data([UInt8(counter)])
+        var sk = LabeledExpand(kemID: kemID, prk: dkpPrk, label: candidateLabel, info: counterInfo, len: kemID.nsk)
+        sk[0] &= bitmask
+
+        if bigintLessThan(zero, sk) && bigintLessThan(sk, order) {
+            return sk
+        }
+
+        counter += 1
+    }
+
+    return nil
+}
+
+func derive_key_pair_x25519(kemID: KemId, ikm: Data) -> Data {
+    let Nsk = 32
+    let prkLabel = "dkp_prk".data(using: .utf8)!
+    let skLabel = "sk".data(using: .utf8)!
+
+    let dkpPrk = LabeledExtract(kemID: kemID, salt: Data(), label: prkLabel, ikm: ikm)
+    return LabeledExpand(kemID: kemID, prk: dkpPrk, label: skLabel, info: Data(), len: Nsk)
+}
+
 // fn kem_derive(
 //     &self,
 //     ikm: &[u8]
@@ -117,7 +280,50 @@ public func kem_derive(kemID: UInt16,
     pubPtr: UnsafeMutablePointer<UInt8>, pubLen: UnsafeMutablePointer<UInt64>
 ) -> UInt64 
 {
-    return 0 // TODO
+    let ikm = dataFromRawParts(ptr: ikmPtr, len: ikmLen)
+
+    var privRaw = Data()
+    var pubRaw = Data()
+    let kemID = KemId(rawValue: kemID)!
+    switch kemID {
+    case .DhKemP256Sha256Aes128:
+        guard let skm = derive_key_pair_nist(kemID: kemID, ikm: ikm) else { return 0 }
+        let priv = try! P256.KeyAgreement.PrivateKey(rawRepresentation: skm)
+        let pub = priv.publicKey 
+
+        privRaw = priv.rawRepresentation
+        pubRaw = try! pub.hpkeRepresentation(kem: kemID.hpkeKem)
+
+    case .DhKemP384Sha384Aes256:
+        guard let skm = derive_key_pair_nist(kemID: kemID, ikm: ikm) else { return 0 }
+        let priv = try! P384.KeyAgreement.PrivateKey(rawRepresentation: skm)
+        let pub = priv.publicKey 
+
+        privRaw = priv.rawRepresentation
+        pubRaw = try! pub.hpkeRepresentation(kem: kemID.hpkeKem)
+
+    case .DhKemP521Sha512Aes256:
+        guard let skm = derive_key_pair_nist(kemID: kemID, ikm: ikm) else { return 0 }
+        let priv = try! P521.KeyAgreement.PrivateKey(rawRepresentation: skm)
+        let pub = priv.publicKey 
+
+        privRaw = priv.rawRepresentation
+        pubRaw = try! pub.hpkeRepresentation(kem: kemID.hpkeKem)
+
+    case .DhKemX25519Sha256Aes128:
+        fallthrough
+    case .DhKemX25519Sha256ChaChaPoly:
+        let skm = derive_key_pair_x25519(kemID: kemID, ikm: ikm)
+        let priv = try! Curve25519.KeyAgreement.PrivateKey(rawRepresentation: skm)
+        let pub = priv.publicKey 
+
+        privRaw = priv.rawRepresentation
+        pubRaw = try! pub.hpkeRepresentation(kem: kemID.hpkeKem)
+    }
+
+    guard copyToOutput(from: privRaw, ptr: privPtr, lenPtr: privLen) == 1 else { return 0 }
+    guard copyToOutput(from: pubRaw, ptr: pubPtr, lenPtr: pubLen) == 1 else { return 0 }
+    return 1
 }
 
 // fn kem_public_key_validate(
