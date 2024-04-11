@@ -153,6 +153,12 @@ extern "C" {
 
 pub struct HpkeContextS(*mut Sender);
 
+// XXX(RLB) I believe these are safe because:
+// * For Send: HpkeContextS is a unique owner of the Sender and
+// * For Sync: The mutability controls on HpkeContextS correectly limit use of references
+unsafe impl Send for HpkeContextS {}
+unsafe impl Sync for HpkeContextS {}
+
 impl HpkeContextS {
     const MAX_CIPHER_OVERHEAD: usize = 16;
 }
@@ -214,6 +220,12 @@ impl Drop for HpkeContextS {
 }
 
 pub struct HpkeContextR(*mut Recipient);
+
+// XXX(RLB) I believe these are safe because:
+// * For Send: HpkeContextR is a unique owner of the Sender and
+// * For Sync: The mutability controls on HpkeContextR correectly limit use of references
+unsafe impl Send for HpkeContextR {}
+unsafe impl Sync for HpkeContextR {}
 
 impl crypto::HpkeContextR for HpkeContextR {
     type Error = KemError;
@@ -290,7 +302,7 @@ impl Kem {
         KemId::from_ciphersuite(cipher_suite).map(Self)
     }
 
-    pub fn kem_generate(&self) -> Result<(HpkeSecretKey, HpkePublicKey), KemError> {
+    pub fn generate(&self) -> Result<(HpkeSecretKey, HpkePublicKey), KemError> {
         let mut priv_buf = vec![0u8; Self::DEFAULT_BUFFER_SIZE];
         let mut priv_len = priv_buf.len() as u64;
         let mut pub_buf = vec![0u8; Self::DEFAULT_BUFFER_SIZE];
@@ -315,7 +327,7 @@ impl Kem {
         return Ok((priv_buf.into(), pub_buf.into()));
     }
 
-    pub fn kem_derive(&self, ikm: &[u8]) -> Result<(HpkeSecretKey, HpkePublicKey), KemError> {
+    pub fn derive(&self, ikm: &[u8]) -> Result<(HpkeSecretKey, HpkePublicKey), KemError> {
         let mut priv_buf = vec![0u8; Self::DEFAULT_BUFFER_SIZE];
         let mut priv_len = priv_buf.len() as u64;
         let mut pub_buf = vec![0u8; Self::DEFAULT_BUFFER_SIZE];
@@ -342,7 +354,7 @@ impl Kem {
         return Ok((priv_buf.into(), pub_buf.into()));
     }
 
-    pub fn kem_public_key_validate(&self, key: &HpkePublicKey) -> Result<(), KemError> {
+    pub fn public_key_validate(&self, key: &HpkePublicKey) -> Result<(), KemError> {
         let rv = unsafe { kem_public_key_validate(self.0 as u16, key.as_ptr(), key.len() as u64) };
 
         (rv == 1).then(|| ()).ok_or(KemError::CryptoKitError)
@@ -434,8 +446,8 @@ mod test {
         let export_len = 42;
 
         for kem in get_kems() {
-            let (priv_key, pub_key) = kem.kem_generate().unwrap();
-            assert!(kem.kem_public_key_validate(&pub_key).is_ok());
+            let (priv_key, pub_key) = kem.generate().unwrap();
+            assert!(kem.public_key_validate(&pub_key).is_ok());
 
             println!("pub_key: {:?}", pub_key.to_vec().len());
 

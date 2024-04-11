@@ -11,24 +11,13 @@ use mls_rs_crypto_traits::Curve;
 
 #[derive(Debug)]
 #[cfg_attr(feature = "std", derive(thiserror::Error))]
-pub enum EcSignerError {
+pub enum SignatureError {
     #[cfg_attr(feature = "std", error("unsupported curve"))]
     UnsupportedCurve,
     #[cfg_attr(feature = "std", error("invalid signature"))]
     InvalidSignature,
     #[cfg_attr(feature = "std", error("CryptoKit error"))]
     CryptoKitError,
-}
-
-#[derive(Clone, Debug, Copy, PartialEq, Eq)]
-pub struct EcSigner(Curve);
-
-impl Deref for EcSigner {
-    type Target = Curve;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
 }
 
 extern "C" {
@@ -69,7 +58,18 @@ extern "C" {
     ) -> u64;
 }
 
-impl EcSigner {
+#[derive(Clone, Debug, Copy, PartialEq, Eq)]
+pub struct Signature(Curve);
+
+impl Deref for Signature {
+    type Target = Curve;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Signature {
     // Default size used for buffers into which public keys, private keys, and signatures are read.
     const DEFAULT_BUFFER_SIZE: usize = 192;
 
@@ -89,15 +89,13 @@ impl EcSigner {
             .map(Self)
     }
 
-    pub fn new_from_curve(curve: Curve) -> Result<Self, EcSignerError> {
+    pub fn new_from_curve(curve: Curve) -> Result<Self, SignatureError> {
         Self::supported_curve(curve)
             .then(|| Self(curve))
-            .ok_or(EcSignerError::UnsupportedCurve)
+            .ok_or(SignatureError::UnsupportedCurve)
     }
 
-    pub fn signature_key_generate(
-        &self,
-    ) -> Result<(SignatureSecretKey, SignaturePublicKey), EcSignerError> {
+    pub fn generate(&self) -> Result<(SignatureSecretKey, SignaturePublicKey), SignatureError> {
         let mut priv_buf = [0u8; Self::DEFAULT_BUFFER_SIZE];
         let mut priv_len = priv_buf.len() as u64;
         let mut pub_buf = [0u8; Self::DEFAULT_BUFFER_SIZE];
@@ -113,7 +111,7 @@ impl EcSigner {
         };
 
         if rv != 1 {
-            return Err(EcSignerError::CryptoKitError);
+            return Err(SignatureError::CryptoKitError);
         }
 
         let priv_len = priv_len as usize;
@@ -125,10 +123,10 @@ impl EcSigner {
         return Ok((priv_key, pub_key));
     }
 
-    pub fn signature_key_derive_public(
+    pub fn derive_public(
         &self,
         secret_key: &SignatureSecretKey,
-    ) -> Result<SignaturePublicKey, EcSignerError> {
+    ) -> Result<SignaturePublicKey, SignatureError> {
         let mut pub_buf = [0u8; Self::DEFAULT_BUFFER_SIZE];
         let mut pub_len = pub_buf.len() as u64;
         let rv = unsafe {
@@ -142,7 +140,7 @@ impl EcSigner {
         };
 
         if rv != 1 {
-            return Err(EcSignerError::CryptoKitError);
+            return Err(SignatureError::CryptoKitError);
         }
 
         let pub_len = pub_len as usize;
@@ -155,7 +153,7 @@ impl EcSigner {
         &self,
         secret_key: &SignatureSecretKey,
         data: &[u8],
-    ) -> Result<Vec<u8>, EcSignerError> {
+    ) -> Result<Vec<u8>, SignatureError> {
         let mut sig_buf = [0u8; Self::DEFAULT_BUFFER_SIZE];
         let mut sig_len = sig_buf.len() as u64;
         let rv = unsafe {
@@ -171,7 +169,7 @@ impl EcSigner {
         };
 
         if rv != 1 {
-            return Err(EcSignerError::CryptoKitError);
+            return Err(SignatureError::CryptoKitError);
         }
 
         let sig_len = sig_len as usize;
@@ -183,7 +181,7 @@ impl EcSigner {
         public_key: &SignaturePublicKey,
         signature: &[u8],
         data: &[u8],
-    ) -> Result<(), EcSignerError> {
+    ) -> Result<(), SignatureError> {
         let rv = unsafe {
             verify(
                 self.0 as u16,
@@ -196,7 +194,9 @@ impl EcSigner {
             )
         };
 
-        (rv == 1).then(|| ()).ok_or(EcSignerError::InvalidSignature)
+        (rv == 1)
+            .then(|| ())
+            .ok_or(SignatureError::InvalidSignature)
     }
 }
 
@@ -204,11 +204,11 @@ impl EcSigner {
 mod test {
     extern crate alloc;
 
-    use super::EcSigner;
+    use super::Signature;
     use alloc::vec::Vec;
     use mls_rs_core::crypto::CipherSuite;
 
-    fn get_sigs() -> Vec<EcSigner> {
+    fn get_sigs() -> Vec<Signature> {
         [
             CipherSuite::P256_AES128,
             CipherSuite::P384_AES256,
@@ -216,15 +216,15 @@ mod test {
             CipherSuite::CURVE25519_AES128,
         ]
         .into_iter()
-        .map(|cs| EcSigner::new(cs).unwrap())
+        .map(|cs| Signature::new(cs).unwrap())
         .collect()
     }
 
     #[test]
     fn round_trip() {
         for sig in get_sigs() {
-            let (priv_key, pub_key) = sig.signature_key_generate().unwrap();
-            let pub_key_derived = sig.signature_key_derive_public(&priv_key).unwrap();
+            let (priv_key, pub_key) = sig.generate().unwrap();
+            let pub_key_derived = sig.derive_public(&priv_key).unwrap();
             assert_eq!(pub_key, pub_key_derived);
 
             let data = b"message";
