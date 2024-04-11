@@ -35,3 +35,24 @@ where D: ContiguousBytes
             return 1
     }
 }
+
+func exportPointer<Instance>(_ obj: Instance) -> UnsafeMutableRawPointer 
+where Instance: AnyObject
+{
+    return Unmanaged.passRetained(obj).toOpaque()
+}
+
+func pointerToRef<Instance>(_ ptr: UnsafeMutableRawPointer) -> Instance
+where Instance: AnyObject
+{
+    return Unmanaged<Instance>.fromOpaque(ptr).takeUnretainedValue()
+}
+
+// XXX(RLB) The bogus return value is needed to avoid "generic parameter
+// 'Instance' is not used in function signature" errors
+func importAndDropPointer<Instance>(_ ptr: UnsafeMutableRawPointer) -> Instance?
+where Instance: AnyObject
+{
+    Unmanaged<Instance>.fromOpaque(ptr).release()
+    return nil
+}

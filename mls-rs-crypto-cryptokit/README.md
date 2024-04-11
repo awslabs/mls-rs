@@ -64,14 +64,14 @@ AEAD:
 
 KEM / HPKE:
 * [ ] `kem_derive`
-* [ ] `kem_generate`
-* [ ] `kem_public_key_validate`
-* [ ] `type HpkeContextS: HpkeContextS + Send + Sync;`
-* [ ] `type HpkeContextR: HpkeContextR + Send + Sync;`
-* [ ] `hpke_seal`
-* [ ] `hpke_open`
-* [ ] `hpke_setup_s`
-* [ ] `hpke_setup_r`
+* [X] `kem_generate`
+* [X] `kem_public_key_validate`
+* [X] `type HpkeContextS: HpkeContextS + Send + Sync;`
+* [X] `type HpkeContextR: HpkeContextR + Send + Sync;`
+* [X] `hpke_seal`
+* [X] `hpke_open`
+* [X] `hpke_setup_s`
+* [X] `hpke_setup_r`
 
 Signature:
 * [X] `signature_key_generate`
