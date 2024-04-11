@@ -11,7 +11,18 @@ enum KemId : UInt16 {
     case DhKemX25519Sha256ChaChaPoly = 5
     
     // X448 KEMs Unsupported: https://forums.developer.apple.com/forums/thread/715865
-    
+    var hpkeKem: HPKE.KEM {
+        get {
+            switch self {
+            case .DhKemP256Sha256Aes128: HPKE.KEM.P256_HKDF_SHA256
+            case .DhKemP384Sha384Aes256: HPKE.KEM.P384_HKDF_SHA384
+            case .DhKemP521Sha512Aes256: HPKE.KEM.P521_HKDF_SHA512
+            case .DhKemX25519Sha256Aes128: HPKE.KEM.Curve25519_HKDF_SHA256
+            case .DhKemX25519Sha256ChaChaPoly: HPKE.KEM.Curve25519_HKDF_SHA256
+            }
+        }
+    }
+
     var hpkeCipherSuite: HPKE.Ciphersuite {
         get {
             switch self {
@@ -57,27 +68,28 @@ public func kem_generate(kemID: UInt16,
 {
     var privRaw = Data()
     var pubRaw = Data()
-    switch KemId(rawValue: kemID)! {
+    let kemID = KemId(rawValue: kemID)!
+    switch kemID {
     case .DhKemP256Sha256Aes128:
         let priv = P256.KeyAgreement.PrivateKey()
         let pub = priv.publicKey 
 
         privRaw = priv.rawRepresentation
-        pubRaw = pub.rawRepresentation
+        pubRaw = try! pub.hpkeRepresentation(kem: kemID.hpkeKem)
 
     case .DhKemP384Sha384Aes256:
         let priv = P384.KeyAgreement.PrivateKey()
         let pub = priv.publicKey 
 
         privRaw = priv.rawRepresentation
-        pubRaw = pub.rawRepresentation
+        pubRaw = try! pub.hpkeRepresentation(kem: kemID.hpkeKem)
 
     case .DhKemP521Sha512Aes256:
         let priv = P521.KeyAgreement.PrivateKey()
         let pub = priv.publicKey 
 
         privRaw = priv.rawRepresentation
-        pubRaw = pub.rawRepresentation
+        pubRaw = try! pub.hpkeRepresentation(kem: kemID.hpkeKem)
 
     case .DhKemX25519Sha256Aes128:
         fallthrough
@@ -86,7 +98,7 @@ public func kem_generate(kemID: UInt16,
         let pub = priv.publicKey 
 
         privRaw = priv.rawRepresentation
-        pubRaw = pub.rawRepresentation
+        pubRaw = try! pub.hpkeRepresentation(kem: kemID.hpkeKem)
     }
 
     guard copyToOutput(from: privRaw, ptr: privPtr, lenPtr: privLen) == 1 else { return 0 }
@@ -119,10 +131,11 @@ public func kem_public_key_validate(kemID: UInt16,
 {
     let pubRaw = dataFromRawParts(ptr: pubPtr, len: pubLen)
     
-    switch KemId(rawValue: kemID)! {
+    let kemID = KemId(rawValue: kemID)!
+    switch kemID {
     case .DhKemP256Sha256Aes128:
         do {
-            _ = try P256.KeyAgreement.PublicKey(rawRepresentation: pubRaw)
+            _ = try P256.KeyAgreement.PublicKey(pubRaw, kem: kemID.hpkeKem)
             return 1
         } catch {
             return 0
@@ -130,7 +143,7 @@ public func kem_public_key_validate(kemID: UInt16,
 
     case .DhKemP384Sha384Aes256:
         do {
-            _ = try P384.KeyAgreement.PublicKey(rawRepresentation: pubRaw)
+            _ = try P384.KeyAgreement.PublicKey(pubRaw, kem: kemID.hpkeKem)
             return 1
         } catch {
             return 0
@@ -138,7 +151,7 @@ public func kem_public_key_validate(kemID: UInt16,
 
     case .DhKemP521Sha512Aes256:
         do {
-            _ = try P521.KeyAgreement.PublicKey(rawRepresentation: pubRaw)
+            _ = try P521.KeyAgreement.PublicKey(pubRaw, kem: kemID.hpkeKem)
             return 1
         } catch {
             return 0
@@ -148,7 +161,7 @@ public func kem_public_key_validate(kemID: UInt16,
         fallthrough
     case .DhKemX25519Sha256ChaChaPoly:
         do {
-            _ = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: pubRaw)
+            _ = try Curve25519.KeyAgreement.PublicKey(pubRaw, kem: kemID.hpkeKem)
             return 1
         } catch {
             return 0
@@ -176,7 +189,7 @@ public func hpke_setup_s(kemID: UInt16,
     switch kemID {
     case .DhKemP256Sha256Aes128:
         do {
-            let pub = try P256.KeyAgreement.PublicKey(rawRepresentation: pubRaw)
+            let pub = try P256.KeyAgreement.PublicKey(pubRaw, kem: kemID.hpkeKem)
             maybe_sender = try HPKE.Sender(recipientKey: pub, ciphersuite: kemID.hpkeCipherSuite, info: info)
         } catch {
             return nil
@@ -184,7 +197,7 @@ public func hpke_setup_s(kemID: UInt16,
 
     case .DhKemP384Sha384Aes256:
         do {
-            let pub = try P384.KeyAgreement.PublicKey(rawRepresentation: pubRaw)
+            let pub = try P384.KeyAgreement.PublicKey(pubRaw, kem: kemID.hpkeKem)
             maybe_sender = try HPKE.Sender(recipientKey: pub, ciphersuite: kemID.hpkeCipherSuite, info: info)
         } catch {
             return nil
@@ -192,7 +205,7 @@ public func hpke_setup_s(kemID: UInt16,
 
     case .DhKemP521Sha512Aes256:
         do {
-            let pub = try P521.KeyAgreement.PublicKey(rawRepresentation: pubRaw)
+            let pub = try P521.KeyAgreement.PublicKey(pubRaw, kem: kemID.hpkeKem)
             maybe_sender = try HPKE.Sender(recipientKey: pub, ciphersuite: kemID.hpkeCipherSuite, info: info)
         } catch {
             return nil
@@ -202,7 +215,7 @@ public func hpke_setup_s(kemID: UInt16,
         fallthrough
     case .DhKemX25519Sha256ChaChaPoly:
         do {
-            let pub = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: pubRaw)
+            let pub = try Curve25519.KeyAgreement.PublicKey(pubRaw, kem: kemID.hpkeKem)
             maybe_sender = try HPKE.Sender(recipientKey: pub, ciphersuite: kemID.hpkeCipherSuite, info: info)
         } catch {
             return nil
