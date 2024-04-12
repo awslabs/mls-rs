@@ -32,6 +32,7 @@ impl_stdint!(u8);
 impl_stdint!(u16);
 impl_stdint!(u32);
 impl_stdint!(u64);
+impl_stdint!(u128);
 
 #[cfg(test)]
 mod tests {
@@ -80,5 +81,18 @@ mod tests {
         let recovered = u64::mls_decode(&mut &*serialized).unwrap();
 
         assert_eq!(recovered, 100000000000u64);
+    }
+
+    #[test]
+    fn u128_round_trip() {
+        let serialized = 10000000000000000u128.mls_encode_to_vec().unwrap();
+        assert_eq!(
+            serialized,
+            vec![0, 0, 0, 0, 0, 0, 0, 0, 0, 35, 134, 242, 111, 193, 0, 0]
+        );
+
+        let recovered = u128::mls_decode(&mut &*serialized).unwrap();
+
+        assert_eq!(recovered, 10000000000000000u128);
     }
 }
