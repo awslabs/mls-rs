@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1712611692902,
+  "lastUpdate": 1712905546360,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -12623,6 +12623,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 133304,
             "range": "± 1065",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mgeisler@google.com",
+            "name": "Martin Geisler",
+            "username": "mgeisler"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "aa18d8ee54e458254c84869f859cafd495f3dbdc",
+          "message": "Add more caching to the CI (#143)\n\nThis is a followup to #137 to make the caching more consistent across\r\nthe different CI jobs.\r\n\r\nI’ve noticed from other projects that it’s not very useful to cache\r\nthe build artifacts for each branch: that just ends up polluting the\r\n10 GB cache GitHub provides us with. So saving the cache is now\r\ndisabled on non-main branches (the cache will still be read on all PRs\r\nfrom all branches).",
+          "timestamp": "2024-04-12T09:01:12+02:00",
+          "tree_id": "b8eb35388ef0de39d4188770cacb4ca13085b5a6",
+          "url": "https://github.com/awslabs/mls-rs/commit/aa18d8ee54e458254c84869f859cafd495f3dbdc"
+        },
+        "date": 1712905545711,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 502399,
+            "range": "± 6495",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 509408,
+            "range": "± 7675",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 564970,
+            "range": "± 5119",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1175775,
+            "range": "± 22316",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 6872013,
+            "range": "± 47118",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1037730,
+            "range": "± 31441",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1154755,
+            "range": "± 43948",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1301315,
+            "range": "± 36862",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 713388,
+            "range": "± 9905",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 760236,
+            "range": "± 4438",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 817717,
+            "range": "± 5994",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 21134,
+            "range": "± 331",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 69096,
+            "range": "± 594",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 132860,
+            "range": "± 1296",
             "unit": "ns/iter"
           }
         ]
