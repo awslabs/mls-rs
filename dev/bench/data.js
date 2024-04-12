@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1712905546360,
+  "lastUpdate": 1712929448572,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -12731,6 +12731,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 132860,
             "range": "± 1296",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "CaioSym@gmail.com",
+            "name": "Caio Sym",
+            "username": "CaioSym"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "76a796ba554d220c50ad8e9f1e054342d90c1abb",
+          "message": "Add support for encoding and decoding u128 primitives (#145)",
+          "timestamp": "2024-04-12T15:39:25+02:00",
+          "tree_id": "d85a2e8ed16be80ae1a6d6fc778c59b3eeb032b1",
+          "url": "https://github.com/awslabs/mls-rs/commit/76a796ba554d220c50ad8e9f1e054342d90c1abb"
+        },
+        "date": 1712929447277,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 501532,
+            "range": "± 5699",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 509446,
+            "range": "± 15083",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 561474,
+            "range": "± 35071",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1150251,
+            "range": "± 22170",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7061158,
+            "range": "± 41112",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1102038,
+            "range": "± 38664",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1166235,
+            "range": "± 54693",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1294678,
+            "range": "± 56561",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 711501,
+            "range": "± 10280",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 760635,
+            "range": "± 5880",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 814538,
+            "range": "± 6783",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 21163,
+            "range": "± 167",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 68743,
+            "range": "± 970",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 132171,
+            "range": "± 1492",
             "unit": "ns/iter"
           }
         ]
