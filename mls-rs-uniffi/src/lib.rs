@@ -337,6 +337,37 @@ pub async fn generate_signature_keypair(
     })
 }
 
+/// A group ID.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, uniffi::Record)]
+pub struct GroupId {
+    id: Vec<u8>,
+}
+
+impl GroupId {
+    fn new(group_id: Vec<u8>) -> Self {
+        GroupId { id: group_id }
+    }
+}
+
+impl std::ops::Deref for GroupId {
+    type Target = [u8];
+    fn deref(&self) -> &[u8] {
+        &self.id
+    }
+}
+
+impl From<&[u8]> for GroupId {
+    fn from(group_id: &[u8]) -> Self {
+        GroupId::new(group_id.to_vec())
+    }
+}
+
+impl From<GroupId> for Vec<u8> {
+    fn from(group_id: GroupId) -> Vec<u8> {
+        group_id.id
+    }
+}
+
 /// An MLS client used to create key packages and manage groups.
 ///
 /// See [`mls_rs::Client`] for details.
@@ -408,12 +439,12 @@ impl Client {
     ///
     /// See [`mls_rs::Client::create_group`] and
     /// [`mls_rs::Client::create_group_with_id`] for details.
-    pub async fn create_group(&self, group_id: Option<Vec<u8>>) -> Result<Group, Error> {
+    pub async fn create_group(&self, group_id: Option<GroupId>) -> Result<Group, Error> {
         let extensions = mls_rs::ExtensionList::new();
         let inner = match group_id {
             Some(group_id) => {
                 self.inner
-                    .create_group_with_id(group_id, extensions)
+                    .create_group_with_id(group_id.into(), extensions)
                     .await?
             }
             None => self.inner.create_group(extensions).await?,
@@ -453,7 +484,7 @@ impl Client {
     /// Load an existing group.
     ///
     /// See [`mls_rs::Client::load_group`] for details.
-    pub async fn load_group(&self, group_id: Vec<u8>) -> Result<Group, Error> {
+    pub async fn load_group(&self, group_id: GroupId) -> Result<Group, Error> {
         self.inner
             .load_group(&group_id)
             .await
@@ -801,7 +832,7 @@ mod tests {
 
         #[derive(Debug)]
         struct CustomGroupStateStorage {
-            groups: Mutex<HashMap<Vec<u8>, GroupStateData>>,
+            groups: Mutex<HashMap<GroupId, GroupStateData>>,
         }
 
         impl CustomGroupStateStorage {
@@ -811,18 +842,18 @@ mod tests {
                 }
             }
 
-            fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<Vec<u8>, GroupStateData>> {
+            fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<GroupId, GroupStateData>> {
                 self.groups.lock().unwrap()
             }
         }
 
         impl GroupStateStorage for CustomGroupStateStorage {
-            fn state(&self, group_id: Vec<u8>) -> Result<Option<Vec<u8>>, Error> {
+            fn state(&self, group_id: GroupId) -> Result<Option<Vec<u8>>, Error> {
                 let groups = self.lock();
                 Ok(groups.get(&group_id).map(|group| group.state.clone()))
             }
 
-            fn epoch(&self, group_id: Vec<u8>, epoch_id: u64) -> Result<Option<Vec<u8>>, Error> {
+            fn epoch(&self, group_id: GroupId, epoch_id: u64) -> Result<Option<Vec<u8>>, Error> {
                 let groups = self.lock();
                 match groups.get(&group_id) {
                     Some(group) => {
@@ -837,7 +868,7 @@ mod tests {
 
             fn write(
                 &self,
-                group_id: Vec<u8>,
+                group_id: GroupId,
                 group_state: Vec<u8>,
                 epoch_inserts: Vec<EpochRecord>,
                 epoch_updates: Vec<EpochRecord>,
@@ -862,7 +893,7 @@ mod tests {
                 Ok(())
             }
 
-            fn max_epoch_id(&self, group_id: Vec<u8>) -> Result<Option<u64>, Error> {
+            fn max_epoch_id(&self, group_id: GroupId) -> Result<Option<u64>, Error> {
                 let groups = self.lock();
                 Ok(groups
                     .get(&group_id)

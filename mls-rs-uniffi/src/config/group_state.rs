@@ -5,7 +5,7 @@ use std::sync::Mutex;
 #[cfg(mls_build_async)]
 use tokio::sync::Mutex;
 
-use crate::Error;
+use crate::{Error, GroupId};
 
 // TODO(mulmarta): we'd like to use EpochRecord from mls-rs-core but
 // this breaks the Python tests because using two crates makes UniFFI
@@ -40,18 +40,16 @@ impl From<EpochRecord> for mls_rs_core::group::EpochRecord {
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 #[cfg_attr(not(mls_build_async), uniffi::export(with_foreign))]
 pub trait GroupStateStorage: Send + Sync + Debug {
-    async fn state(&self, group_id: Vec<u8>) -> Result<Option<Vec<u8>>, Error>;
-    async fn epoch(&self, group_id: Vec<u8>, epoch_id: u64) -> Result<Option<Vec<u8>>, Error>;
-
+    async fn state(&self, group_id: GroupId) -> Result<Option<Vec<u8>>, Error>;
+    async fn epoch(&self, group_id: GroupId, epoch_id: u64) -> Result<Option<Vec<u8>>, Error>;
     async fn write(
         &self,
-        group_id: Vec<u8>,
+        group_id: GroupId,
         group_state: Vec<u8>,
         epoch_inserts: Vec<EpochRecord>,
         epoch_updates: Vec<EpochRecord>,
     ) -> Result<(), Error>;
-
-    async fn max_epoch_id(&self, group_id: Vec<u8>) -> Result<Option<u64>, Error>;
+    async fn max_epoch_id(&self, group_id: GroupId) -> Result<Option<u64>, Error>;
 }
 
 /// Adapt a mls-rs `GroupStateStorage` implementation.
@@ -85,7 +83,7 @@ where
     S: mls_rs::GroupStateStorage<Error = Err> + Debug,
     Err: IntoAnyError,
 {
-    async fn state(&self, group_id: Vec<u8>) -> Result<Option<Vec<u8>>, Error> {
+    async fn state(&self, group_id: GroupId) -> Result<Option<Vec<u8>>, Error> {
         self.inner()
             .await
             .state(&group_id)
@@ -93,7 +91,7 @@ where
             .map_err(|err| err.into_any_error().into())
     }
 
-    async fn epoch(&self, group_id: Vec<u8>, epoch_id: u64) -> Result<Option<Vec<u8>>, Error> {
+    async fn epoch(&self, group_id: GroupId, epoch_id: u64) -> Result<Option<Vec<u8>>, Error> {
         self.inner()
             .await
             .epoch(&group_id, epoch_id)
@@ -103,7 +101,7 @@ where
 
     async fn write(
         &self,
-        id: Vec<u8>,
+        group_id: GroupId,
         data: Vec<u8>,
         epoch_inserts: Vec<EpochRecord>,
         epoch_updates: Vec<EpochRecord>,
@@ -111,7 +109,10 @@ where
         self.inner()
             .await
             .write(
-                mls_rs_core::group::GroupState { id, data },
+                mls_rs_core::group::GroupState {
+                    id: group_id.into(),
+                    data,
+                },
                 epoch_inserts.into_iter().map(Into::into).collect(),
                 epoch_updates.into_iter().map(Into::into).collect(),
             )
@@ -119,7 +120,7 @@ where
             .map_err(|err| err.into_any_error().into())
     }
 
-    async fn max_epoch_id(&self, group_id: Vec<u8>) -> Result<Option<u64>, Error> {
+    async fn max_epoch_id(&self, group_id: GroupId) -> Result<Option<u64>, Error> {
         self.inner()
             .await
             .max_epoch_id(&group_id)
