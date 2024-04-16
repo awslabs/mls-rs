@@ -50,8 +50,8 @@ where Instance: AnyObject
     return Unmanaged<Instance>.fromOpaque(ptr).takeUnretainedValue()
 }
 
-// XXX(RLB) The bogus return value is needed to avoid "generic parameter
-// 'Instance' is not used in function signature" errors
+// The bogus return value is needed to avoid "generic parameter 'Instance' is
+// not used in function signature" errors.  It can be safely ignored.
 func importAndDropPointer<Instance>(_ ptr: UnsafeMutableRawPointer) -> Instance?
 where Instance: AnyObject
 {

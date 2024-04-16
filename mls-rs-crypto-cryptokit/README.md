@@ -29,3 +29,7 @@ can be called from Rust.
 |        CryptoKit        |
 +-------------------------+
 ```
+
+The Rust source files in this crate include only very basic testing, enough to
+verify that the plumbing depicted above is working.  We rely on the crypto
+provider tests in `mls-rs-core` for more thorough validation.

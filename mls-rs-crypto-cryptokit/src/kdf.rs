@@ -221,9 +221,6 @@ mod test {
     use super::*;
     use hex_literal::hex;
 
-    // XXX(RLB) This is just a basic test of SHA256 functions to make sure we got the plumbing
-    // right.  Once all the scaffolding is in place, we should use the standard mls-rs test suite.
-
     #[test]
     fn hash() {
         let cipher_suite = CipherSuite::CURVE25519_AES128;

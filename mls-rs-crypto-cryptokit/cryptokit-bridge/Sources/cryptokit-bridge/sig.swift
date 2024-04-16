@@ -27,39 +27,45 @@ extension Curve25519.Signing.PrivateKey {
 }
 
 // RFC 9420 specifies that signature public keys are in the form prefixed with 0x04.
+func unpadNISTPrivateKey(_ data: Data) throws -> Data {
+    guard data[0] == 0x04 else {
+        throw CryptoKitError.invalidParameter
+    }
+
+    return data.suffix(from: 1)
+}
+
+func padNISTPrivateKey(_ data: Data) -> Data {
+    return [0x04] + data
+}
+
 extension P256.Signing.PublicKey {
     init(rawRepresentationWithPrefix: Data) throws {
-        // XXX(RLB) Should this validate that the first octet is 0x04?
-        let rawRepresentation = rawRepresentationWithPrefix.suffix(from: 1)
-        try self.init(rawRepresentation: rawRepresentation)
+        try self.init(rawRepresentation: unpadNISTPrivateKey(rawRepresentationWithPrefix))
     }
 
     var rawRepresentationWithPrefix: Data {
-        [0x04] + self.rawRepresentation
+        padNISTPrivateKey(self.rawRepresentation)
     }
 }
 
 extension P384.Signing.PublicKey {
     init(rawRepresentationWithPrefix: Data) throws {
-        // XXX(RLB) Should this validate that the first octet is 0x04?
-        let rawRepresentation = rawRepresentationWithPrefix.suffix(from: 1)
-        try self.init(rawRepresentation: rawRepresentation)
+        try self.init(rawRepresentation: unpadNISTPrivateKey(rawRepresentationWithPrefix))
     }
 
     var rawRepresentationWithPrefix: Data {
-        [0x04] + self.rawRepresentation
+        padNISTPrivateKey(self.rawRepresentation)
     }
 }
 
 extension P521.Signing.PublicKey {
     init(rawRepresentationWithPrefix: Data) throws {
-        // XXX(RLB) Should this validate that the first octet is 0x04?
-        let rawRepresentation = rawRepresentationWithPrefix.suffix(from: 1)
-        try self.init(rawRepresentation: rawRepresentation)
+        try self.init(rawRepresentation: unpadNISTPrivateKey(rawRepresentationWithPrefix))
     }
 
     var rawRepresentationWithPrefix: Data {
-        [0x04] + self.rawRepresentation
+        padNISTPrivateKey(self.rawRepresentation)
     }
 }
 

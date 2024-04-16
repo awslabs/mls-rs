@@ -327,16 +327,4 @@ impl CipherSuiteProvider for CryptoKitCipherSuite {
 fn mls_core_tests() {
     let provider = CryptoKitProvider::default();
     mls_rs_core::crypto::test_suite::verify_tests(&provider, true);
-
-    // XXX(RLB) These tests are disabled because they look at internals of HPKE that are not
-    // exposed by CryptoKit.  It seems like it should be safe to rely on CryptoKit's
-    // implementation of HPKE being correct.
-    /*
-    for cs in CryptoKitProvider::all_supported_cipher_suites() {
-        let mut hpke = provider.cipher_suite_provider(cs).unwrap().hpke;
-
-        mls_rs_core::crypto::test_suite::verify_hpke_context_tests(&hpke, cs);
-        mls_rs_core::crypto::test_suite::verify_hpke_encap_tests(&mut hpke, cs);
-    }
-    */
 }
