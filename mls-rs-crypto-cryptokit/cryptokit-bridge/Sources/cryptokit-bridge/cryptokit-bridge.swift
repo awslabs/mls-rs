@@ -1,6 +1,7 @@
 import Foundation
 import CryptoKit
 
+// Convenience methods for C FFI
 func dataFromRawParts(ptr: UnsafePointer<UInt8>, len: UInt64) -> Data {
     if len == 0 {
         return Data()
@@ -36,6 +37,7 @@ where D: ContiguousBytes
     }
 }
 
+// Conversion between managed objects and unmanaged pointers
 func exportPointer<Instance>(_ obj: Instance) -> UnsafeMutableRawPointer 
 where Instance: AnyObject
 {
@@ -56,3 +58,33 @@ where Instance: AnyObject
     Unmanaged<Instance>.fromOpaque(ptr).release()
     return nil
 }
+
+// Conversion to/from hex strings
+extension String {
+    var hex : [UInt8] {
+        var i = 0
+        return self.map({ c -> UInt8 in UInt8(String(c), radix: 16)! })
+                .reduce( into: [UInt8](), { (buf, digit) in 
+                    if  i % 2 == 0 {
+                        buf = buf + [digit << 4]
+                    } else {
+                        buf[buf.count - 1] += digit
+                    }
+                    i += 1
+                })
+    }
+    
+    var hexData : Data {
+        return Data(self.hex)
+    }
+}
+
+extension Data {
+    var hexString : String {
+        return self.reduce("") { (a: String, v: UInt8) -> String in
+            return a + String(format: "%02x", v)
+        }
+    }
+}
+
+

@@ -39,8 +39,8 @@ CryptoKit.  Once all of the CryptoKit wiring is in place, implementing
 `CipherSuiteProvider` and `CryptoProvider` should be straightforward.
 
 Final packaging:
-* [ ] `type Error: IntoAnyError;`
-* [ ] `cipher_suite`
+* [X] `type Error: IntoAnyError;`
+* [X] `cipher_suite`
 
 Random bytes:
 * [X] `random_bytes`
@@ -63,7 +63,7 @@ AEAD:
 * [X] `aead_nonce_size`
 
 KEM / HPKE:
-* [ ] `kem_derive`
+* [X] `kem_derive`
 * [X] `kem_generate`
 * [X] `kem_public_key_validate`
 * [X] `type HpkeContextS: HpkeContextS + Send + Sync;`

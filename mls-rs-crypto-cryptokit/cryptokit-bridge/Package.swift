@@ -14,5 +14,6 @@ let package = Package(
     dependencies: [],
     targets: [
         .target(name: "cryptokit-bridge", dependencies: []),
+        .testTarget(name: "cryptokit-bridge-tests", dependencies: ["cryptokit-bridge"])        
     ]
 )

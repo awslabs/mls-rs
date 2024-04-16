@@ -42,14 +42,14 @@ enum KemId : UInt16 {
 
     var suiteID: Data {
         get {
-            var id = "HPKE".data(using: .utf8)!
+            var id = "KEM".data(using: .utf8)!
 
             switch self {
-            case .DhKemP256Sha256Aes128:       id.append(Data([0, 0x10, 0, 1, 0, 1]))
-            case .DhKemP384Sha384Aes256:       id.append(Data([0, 0x11, 0, 2, 0, 2]))
-            case .DhKemP521Sha512Aes256:       id.append(Data([0, 0x12, 0, 3, 0, 2]))
-            case .DhKemX25519Sha256Aes128:     id.append(Data([0, 0x20, 0, 1, 0, 1]))
-            case .DhKemX25519Sha256ChaChaPoly: id.append(Data([0, 0x21, 0, 1, 0, 3]))
+            case .DhKemP256Sha256Aes128:       id.append(Data([0, 0x10]))
+            case .DhKemP384Sha384Aes256:       id.append(Data([0, 0x11]))
+            case .DhKemP521Sha512Aes256:       id.append(Data([0, 0x12]))
+            case .DhKemX25519Sha256Aes128:     id.append(Data([0, 0x20]))
+            case .DhKemX25519Sha256ChaChaPoly: id.append(Data([0, 0x20]))
             }
 
             return id
@@ -63,7 +63,7 @@ enum KemId : UInt16 {
             case .DhKemP384Sha384Aes256: 48
             case .DhKemP521Sha512Aes256: 66
             case .DhKemX25519Sha256Aes128: 32
-            case .DhKemX25519Sha256ChaChaPoly: 56
+            case .DhKemX25519Sha256ChaChaPoly: 32
             }
         }
     }
@@ -198,7 +198,7 @@ func LabeledExpand(kemID: KemId, prk: Data, label: Data, info: Data, len: Int) -
     labeledInfo.append(kemID.suiteID)
     labeledInfo.append(label)
     labeledInfo.append(info)
-
+    
     // return Expand(prk, labeled_info, L)
     switch kemID {
     case .DhKemP256Sha256Aes128:
@@ -219,7 +219,7 @@ func LabeledExpand(kemID: KemId, prk: Data, label: Data, info: Data, len: Int) -
 func bigintLessThan(_ a: Data, _ b: Data) -> Bool {
     // For big-endian a, b, a < b iff at the first digit at which a and b
     // differ, the a digit is less than the b digit
-    let diffs = zip(a, b).filter { (x, y) in x == y }
+    let diffs = zip(a, b).filter { (x, y) in x != y }
     if diffs.count == 0 {
         // The two numbers are equal
         return false
@@ -238,10 +238,10 @@ func derive_key_pair_nist(kemID: KemId, ikm: Data) -> Data? {
 
     let bitmask = switch kemID {
     case .DhKemP256Sha256Aes128: UInt8(0xff)
-    case .DhKemX25519Sha256Aes128: UInt8(0xff)
-    case .DhKemX25519Sha256ChaChaPoly: UInt8(0x01)
-    case .DhKemP384Sha384Aes256: UInt8(0x00) // unused
-    case .DhKemP521Sha512Aes256: UInt8(0x00) // unused
+    case .DhKemP384Sha384Aes256: UInt8(0xff)
+    case .DhKemP521Sha512Aes256: UInt8(0x01)
+    case .DhKemX25519Sha256Aes128: UInt8(0x00) // unused
+    case .DhKemX25519Sha256ChaChaPoly: UInt8(0x00) // unused
     }
 
     var counter = 0
