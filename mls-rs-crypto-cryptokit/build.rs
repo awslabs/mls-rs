@@ -1,3 +1,5 @@
+#![cfg(any(target_os = "macos", target_os = "ios"))]
+
 fn main() {
     link_swift();
     link_swift_package("cryptokit-bridge", "./cryptokit-bridge/");
@@ -34,7 +36,7 @@ pub struct SwiftTarget {
 
 pub fn get_swift_target_info() -> SwiftTarget {
     let swift_target_info_str = Command::new("swift")
-        .args(&["-print-target-info"])
+        .args(["-print-target-info"])
         .output()
         .unwrap()
         .stdout;
@@ -62,7 +64,7 @@ pub fn link_swift_package(package_name: &str, package_root: &str) {
     dbg!(&profile);
 
     if !Command::new("swift")
-        .args(&["build", "-c", &profile])
+        .args(["build", "-c", &profile])
         .current_dir(package_root)
         .status()
         .unwrap()
