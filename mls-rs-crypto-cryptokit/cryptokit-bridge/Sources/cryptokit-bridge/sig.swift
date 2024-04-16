@@ -13,6 +13,92 @@ enum SignatureId : UInt16 {
     // case Ed448 = 6
 }
 
+// Convention in mls-rs is to append the public key to the private key, which
+// improves efficiency in some other crypto back-ends.
+extension Curve25519.Signing.PrivateKey {
+    init(rawRepresentationWithPublicKey: Data) throws {
+        let rawRepresentation = rawRepresentationWithPublicKey.prefix(upTo: 32)
+        try self.init(rawRepresentation: rawRepresentation)
+    }
+
+    var rawRepresentationWithPublicKey: Data {
+        self.rawRepresentation + self.publicKey.rawRepresentation
+    }
+}
+
+// RFC 9420 specifies that signature public keys are in the form prefixed with 0x04.
+extension P256.Signing.PublicKey {
+    init(rawRepresentationWithPrefix: Data) throws {
+        // XXX(RLB) Should this validate that the first octet is 0x04?
+        let rawRepresentation = rawRepresentationWithPrefix.suffix(from: 1)
+        try self.init(rawRepresentation: rawRepresentation)
+    }
+
+    var rawRepresentationWithPrefix: Data {
+        [0x04] + self.rawRepresentation
+    }
+}
+
+extension P384.Signing.PublicKey {
+    init(rawRepresentationWithPrefix: Data) throws {
+        // XXX(RLB) Should this validate that the first octet is 0x04?
+        let rawRepresentation = rawRepresentationWithPrefix.suffix(from: 1)
+        try self.init(rawRepresentation: rawRepresentation)
+    }
+
+    var rawRepresentationWithPrefix: Data {
+        [0x04] + self.rawRepresentation
+    }
+}
+
+extension P521.Signing.PublicKey {
+    init(rawRepresentationWithPrefix: Data) throws {
+        // XXX(RLB) Should this validate that the first octet is 0x04?
+        let rawRepresentation = rawRepresentationWithPrefix.suffix(from: 1)
+        try self.init(rawRepresentation: rawRepresentation)
+    }
+
+    var rawRepresentationWithPrefix: Data {
+        [0x04] + self.rawRepresentation
+    }
+}
+
+// CryptoKit requires that private keys have exactly the right number of bytes
+func leftPad(_ data: Data, count: Int) -> Data {
+    let pad = Data(repeating: 0x00, count: count - data.count)
+    return pad + data
+}
+
+extension P256.Signing.PrivateKey {
+    init(unpaddedRawRepresentation: Data) throws {
+        try self.init(rawRepresentation: leftPad(unpaddedRawRepresentation, count: 32))
+    }
+
+    var paddedRawRepresentation: Data {
+        leftPad(self.rawRepresentation, count: 32)
+    }
+}
+
+extension P384.Signing.PrivateKey {
+    init(unpaddedRawRepresentation: Data) throws {
+        try self.init(rawRepresentation: leftPad(unpaddedRawRepresentation, count: 48))
+    }
+
+    var paddedRawRepresentation: Data {
+        leftPad(self.rawRepresentation, count: 48)
+    }
+}
+
+extension P521.Signing.PrivateKey {
+    init(unpaddedRawRepresentation: Data) throws {
+        try self.init(rawRepresentation: leftPad(unpaddedRawRepresentation, count: 66))
+    }
+
+    var paddedRawRepresentation: Data {
+        leftPad(self.rawRepresentation, count: 66)
+    }
+}
+
 // fn signature_key_generate(
 //     &self
 // ) -> Result<(SignatureSecretKey, SignaturePublicKey), Self::Error>;
@@ -29,28 +115,28 @@ public func signature_key_generate(sigID: UInt16,
         let priv = P256.Signing.PrivateKey()
         let pub = priv.publicKey 
 
-        privRaw = priv.rawRepresentation
-        pubRaw = pub.rawRepresentation
+        privRaw = priv.paddedRawRepresentation
+        pubRaw = pub.rawRepresentationWithPrefix
 
     case .P384:
         let priv = P384.Signing.PrivateKey()
         let pub = priv.publicKey 
 
-        privRaw = priv.rawRepresentation
-        pubRaw = pub.rawRepresentation
+        privRaw = priv.paddedRawRepresentation
+        pubRaw = pub.rawRepresentationWithPrefix
 
     case .P521:
         let priv = P521.Signing.PrivateKey()
         let pub = priv.publicKey 
 
-        privRaw = priv.rawRepresentation
-        pubRaw = pub.rawRepresentation
+        privRaw = priv.paddedRawRepresentation
+        pubRaw = pub.rawRepresentationWithPrefix
 
     case .Ed25519:
         let priv = Curve25519.Signing.PrivateKey()
         let pub = priv.publicKey 
 
-        privRaw = priv.rawRepresentation
+        privRaw = priv.rawRepresentationWithPublicKey
         pubRaw = pub.rawRepresentation
     }
 
@@ -71,37 +157,38 @@ public func signature_key_derive_public(sigID: UInt16,
 {
     let privRaw = dataFromRawParts(ptr: privPtr, len: privLen)
     var pubRaw = Data()
+    
     switch SignatureId(rawValue: sigID)! {
     case .P256:
         do {
-            let priv = try P256.Signing.PrivateKey(rawRepresentation: privRaw)
+            let priv = try P256.Signing.PrivateKey(unpaddedRawRepresentation: privRaw)
             let pub = priv.publicKey 
-            pubRaw = pub.rawRepresentation
+            pubRaw = pub.rawRepresentationWithPrefix
         } catch {
             return 0
         }
 
     case .P384:
         do {
-            let priv = try P384.Signing.PrivateKey(rawRepresentation: privRaw)
+            let priv = try P384.Signing.PrivateKey(unpaddedRawRepresentation: privRaw)
             let pub = priv.publicKey 
-            pubRaw = pub.rawRepresentation
+            pubRaw = pub.rawRepresentationWithPrefix
         } catch {
             return 0
         }
 
     case .P521:
         do {
-            let priv = try P521.Signing.PrivateKey(rawRepresentation: privRaw)
+            let priv = try P521.Signing.PrivateKey(unpaddedRawRepresentation: privRaw)
             let pub = priv.publicKey 
-            pubRaw = pub.rawRepresentation
+            pubRaw = pub.rawRepresentationWithPrefix
         } catch {
             return 0
         }
 
     case .Ed25519:
         do {
-            let priv = try Curve25519.Signing.PrivateKey(rawRepresentation: privRaw)
+            let priv = try Curve25519.Signing.PrivateKey(rawRepresentationWithPublicKey: privRaw)
             let pub = priv.publicKey 
             pubRaw = pub.rawRepresentation
         } catch {
@@ -132,7 +219,7 @@ public func sign(sigID: UInt16,
     switch SignatureId(rawValue: sigID)! {
     case .P256:
         do {
-            let priv = try P256.Signing.PrivateKey(rawRepresentation: privRaw)
+            let priv = try P256.Signing.PrivateKey(unpaddedRawRepresentation: privRaw)
             sig = try priv.signature(for: data).derRepresentation
         } catch {
             return 0
@@ -140,7 +227,7 @@ public func sign(sigID: UInt16,
 
     case .P384:
         do {
-            let priv = try P384.Signing.PrivateKey(rawRepresentation: privRaw)
+            let priv = try P384.Signing.PrivateKey(unpaddedRawRepresentation: privRaw)
             sig = try priv.signature(for: data).derRepresentation
         } catch {
             return 0
@@ -148,7 +235,7 @@ public func sign(sigID: UInt16,
 
     case .P521:
         do {
-            let priv = try P521.Signing.PrivateKey(rawRepresentation: privRaw)
+            let priv = try P521.Signing.PrivateKey(unpaddedRawRepresentation: privRaw)
             sig = try priv.signature(for: data).derRepresentation
         } catch {
             return 0
@@ -156,7 +243,7 @@ public func sign(sigID: UInt16,
 
     case .Ed25519:
         do {
-            let priv = try Curve25519.Signing.PrivateKey(rawRepresentation: privRaw)
+            let priv = try Curve25519.Signing.PrivateKey(rawRepresentationWithPublicKey: privRaw)
             sig = try priv.signature(for: data)
         } catch {
             return 0
@@ -189,7 +276,7 @@ public func verify(sigID: UInt16,
     case .P256:
         do {
             let sig = try P256.Signing.ECDSASignature(derRepresentation: sig)
-            let pub = try P256.Signing.PublicKey(rawRepresentation: pubRaw)
+            let pub = try P256.Signing.PublicKey(rawRepresentationWithPrefix: pubRaw)
             valid = pub.isValidSignature(sig, for: data)
         } catch {
             return 0
@@ -198,7 +285,7 @@ public func verify(sigID: UInt16,
     case .P384:
         do {
             let sig = try P384.Signing.ECDSASignature(derRepresentation: sig)
-            let pub = try P384.Signing.PublicKey(rawRepresentation: pubRaw)
+            let pub = try P384.Signing.PublicKey(rawRepresentationWithPrefix: pubRaw)
             valid = pub.isValidSignature(sig, for: data)
         } catch {
             return 0
@@ -207,7 +294,7 @@ public func verify(sigID: UInt16,
     case .P521:
         do {
             let sig = try P521.Signing.ECDSASignature(derRepresentation: sig)
-            let pub = try P521.Signing.PublicKey(rawRepresentation: pubRaw)
+            let pub = try P521.Signing.PublicKey(rawRepresentationWithPrefix: pubRaw)
             valid = pub.isValidSignature(sig, for: data)
         } catch {
             return 0

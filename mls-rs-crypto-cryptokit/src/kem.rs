@@ -449,8 +449,6 @@ mod test {
             let (priv_key, pub_key) = kem.generate().unwrap();
             assert!(kem.public_key_validate(&pub_key).is_ok());
 
-            println!("pub_key: {:?}", pub_key.to_vec().len());
-
             let (enc, mut ctx_s) = kem.hpke_setup_s(&pub_key, info).unwrap();
             let mut ctx_r = kem.hpke_setup_r(&enc, &priv_key, &pub_key, info).unwrap();
 
