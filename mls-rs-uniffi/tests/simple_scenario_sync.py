@@ -18,7 +18,7 @@ bob = bob.join_group(None, commit.welcome_message).group
 
 msg = alice.encrypt_application_message(b'hello, bob')
 output = bob.process_incoming_message(msg)
+assert output.data == b'hello, bob'
 
 alice.write_to_storage()
-
-assert output.data == b'hello, bob'
+bob.write_to_storage()
