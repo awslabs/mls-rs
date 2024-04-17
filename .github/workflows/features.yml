@@ -12,6 +12,13 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
+      - run: |
+          # XXX(RLB) According to the Github Runners repo, this should be the
+          # default, but without this line, we get  "error: 'cryptokit-bridge':
+          # package 'cryptokit-bridge' is using Swift tools version 5.9.0 but the
+          # installed version is 5.7.1"
+          sudo xcode-select -s /Applications/Xcode_15.0.1.app
+        if: runner.os == 'macOS'
       - name: Install cargo-hack
         run: cargo install cargo-hack
       - name: Build one feature at a time

@@ -27,10 +27,13 @@ jobs:
           curl -o C:/cacert.pem https://curl.se/ca/cacert.pem
           echo "SSL_CERT_FILE=C:/cacert.pem" | Out-File -FilePath $env:GITHUB_ENV -Append
         if: runner.os == 'Windows'
-      - uses: SwiftyLab/setup-swift@latest
+      - run: |
+          # XXX(RLB) According to the Github Runners repo, this should be the
+          # default, but without this line, we get  "error: 'cryptokit-bridge':
+          # package 'cryptokit-bridge' is using Swift tools version 5.9.0 but the
+          # installed version is 5.7.1"          
+          sudo xcode-select -s /Applications/Xcode_15.2.app
         if: runner.os == 'macOS'
-        with:
-          swift-version: '5.9'
       - name: Test Full RFC Compliance
         run: cargo test --all-features --verbose --workspace
       - name: Test Bare Bones
