@@ -23,6 +23,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Install Kotlin dependencies
+        uses: ./.github/workflows/install-kotlin-deps
+        if: runner.os != 'Windows'
       - uses: ilammy/setup-nasm@v1
         if: runner.os == 'Windows'
       - run: |
@@ -82,6 +85,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Install Kotlin dependencies
+        uses: ./.github/workflows/install-kotlin-deps
       - name: Rust Fmt
         run: cargo fmt --all -- --check
       - name: Clippy Full RFC Compliance
@@ -98,6 +103,8 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Setup code coverage
         run: cargo install cargo-llvm-cov
+      - name: Install Kotlin dependencies
+        uses: ./.github/workflows/install-kotlin-deps
       - name: Run code coverage
         # Using `cargo llvm-cov show-env` lets us capture coverage
         # information from Python integration tests.

@@ -1,6 +1,6 @@
 [package]
 name = "mls-rs-codec"
-version = "0.5.2"
+version = "0.5.3"
 edition = "2021"
 description = "TLS codec and MLS specific encoding used by mls-rs"
 homepage = "https://github.com/awslabs/mls-rs"
