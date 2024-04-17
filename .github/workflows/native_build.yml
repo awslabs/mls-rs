@@ -27,9 +27,10 @@ jobs:
           curl -o C:/cacert.pem https://curl.se/ca/cacert.pem
           echo "SSL_CERT_FILE=C:/cacert.pem" | Out-File -FilePath $env:GITHUB_ENV -Append
         if: runner.os == 'Windows'
-      - run: |
-          sudo xcode-select -s /Applications/Xcode_15.0.app
+      - uses: SwiftyLab/setup-swift@latest
         if: runner.os == 'macOS'
+        with:
+          swift-version: '5.9'
       - name: Test Full RFC Compliance
         run: cargo test --all-features --verbose --workspace
       - name: Test Bare Bones
