@@ -155,7 +155,7 @@ pub struct HpkeContextS(*mut Sender);
 
 // XXX(RLB) I believe these are safe because:
 // * For Send: HpkeContextS is a unique owner of the Sender and
-// * For Sync: The mutability controls on HpkeContextS correectly limit use of references
+// * For Sync: The mutability controls on HpkeContextS correctly limit use of references
 unsafe impl Send for HpkeContextS {}
 unsafe impl Sync for HpkeContextS {}
 

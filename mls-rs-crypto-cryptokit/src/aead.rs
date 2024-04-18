@@ -25,6 +25,11 @@ pub enum AeadError {
         error("AEAD key of invalid length {0}. Expected length {1}")
     )]
     InvalidKeyLen(usize, usize),
+    #[cfg_attr(
+        feature = "std",
+        error("AEAD nonce of invalid length {0}. Expected length {1}")
+    )]
+    InvalidNonceLen(usize, usize),
     #[cfg_attr(feature = "std", error("unsupported cipher suite"))]
     UnsupportedCipherSuite,
     #[cfg_attr(feature = "std", error("CryptoKit error"))]
@@ -114,6 +119,10 @@ impl AeadType for Aead {
         (key.len() == self.key_size())
             .then_some(())
             .ok_or_else(|| AeadError::InvalidKeyLen(key.len(), self.key_size()))?;
+
+        (nonce.len() == self.nonce_size())
+            .then_some(())
+            .ok_or_else(|| AeadError::InvalidNonceLen(nonce.len(), self.nonce_size()))?;
 
         self.ensure_valid_ciphersuite()?;
 
