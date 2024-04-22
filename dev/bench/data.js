@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1713371935326,
+  "lastUpdate": 1713826761807,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -13163,6 +13163,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 131993,
             "range": "± 4191",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mgeisler@google.com",
+            "name": "Martin Geisler",
+            "username": "mgeisler"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "aca74a7d5de3514b067e248cf1fa2934a12147fc",
+          "message": "[uniffi] Auto-download Kotlin dependencies (#149)\n\nThis makes `cargo test` automatically download the necessary jar files\r\nused by the test code. The jars are cached in `$CARGO_TARGET_TMPDIR`,\r\ni.e., in `target/tmp`.\r\n\r\nCo-authored-by: mulmarta <103590845+mulmarta@users.noreply.github.com>",
+          "timestamp": "2024-04-22T18:54:50-04:00",
+          "tree_id": "99e5e5fe8d8ff274da5ec0ca2d91bf492c4cf0ab",
+          "url": "https://github.com/awslabs/mls-rs/commit/aca74a7d5de3514b067e248cf1fa2934a12147fc"
+        },
+        "date": 1713826761089,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 495984,
+            "range": "± 9210",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 507464,
+            "range": "± 4303",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 565350,
+            "range": "± 20116",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1176680,
+            "range": "± 33072",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7480453,
+            "range": "± 59067",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1101518,
+            "range": "± 48628",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1197212,
+            "range": "± 52233",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1314231,
+            "range": "± 52510",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 712941,
+            "range": "± 24984",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 760875,
+            "range": "± 7734",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 816940,
+            "range": "± 6812",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 21107,
+            "range": "± 216",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 68691,
+            "range": "± 1035",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 131770,
+            "range": "± 1175",
             "unit": "ns/iter"
           }
         ]
