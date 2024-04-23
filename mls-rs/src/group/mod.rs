@@ -1660,7 +1660,12 @@ where
             )
             .await?;
 
-        if let Some(pending) = &self.pending_commit {
+        if sender == self.private_tree.self_index {
+            let pending = self
+                .pending_commit
+                .as_ref()
+                .ok_or(MlsError::CantProcessMessageFromSelf)?;
+
             Ok(Some((
                 pending.pending_private_tree.clone(),
                 pending.pending_commit_secret.clone(),
@@ -4232,5 +4237,19 @@ mod tests {
         };
 
         assert_eq!(update.committer, *group.private_tree.self_index);
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn can_process_commit_when_pending_commit() {
+        let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 2).await;
+
+        let commit = groups[0].group.commit(vec![]).await.unwrap().commit_message;
+        groups[1].group.commit(vec![]).await.unwrap();
+
+        groups[1]
+            .group
+            .process_incoming_message(commit)
+            .await
+            .unwrap();
     }
 }
