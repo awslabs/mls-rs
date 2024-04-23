@@ -7,7 +7,10 @@ jobs:
   SyncBuildAndTestS:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-13, windows-latest]
+        # XXX(RLB): It would be good to just use macos-latest here, but
+        # apparently if you do that, sometimes you get an older (not latest)
+        # version.  And we require v14 in order to build the CryptoKit provider.
+        os: [ubuntu-latest, macos-14, windows-latest]
       fail-fast: false
     runs-on: ${{ matrix.os }}
     steps:
