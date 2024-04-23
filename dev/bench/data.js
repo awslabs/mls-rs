@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1713881319936,
+  "lastUpdate": 1713887559979,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -13379,6 +13379,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 132041,
             "range": "± 908",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "103590845+mulmarta@users.noreply.github.com",
+            "name": "mulmarta",
+            "username": "mulmarta"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c38cdefdf89c272831533920bcee8d6e53700701",
+          "message": "Fix receiving commit when pending commit (#151)\n\n* Fix committing when pending commit\r\n\r\n* Add more test\r\n\r\n---------\r\n\r\nCo-authored-by: mulmarta <mulmarta@amazon.com>",
+          "timestamp": "2024-04-23T11:48:09-04:00",
+          "tree_id": "1f2f20b7498e01c9b6d1d8fc1634875b5fe2d9ef",
+          "url": "https://github.com/awslabs/mls-rs/commit/c38cdefdf89c272831533920bcee8d6e53700701"
+        },
+        "date": 1713887559067,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 505968,
+            "range": "± 12616",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 508342,
+            "range": "± 17478",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 565427,
+            "range": "± 23282",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1168074,
+            "range": "± 25928",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7234603,
+            "range": "± 48868",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1090458,
+            "range": "± 42628",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1184736,
+            "range": "± 43035",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1327284,
+            "range": "± 52461",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 710075,
+            "range": "± 25091",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 758892,
+            "range": "± 6329",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 814594,
+            "range": "± 3136",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 21074,
+            "range": "± 414",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 68492,
+            "range": "± 1209",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 131548,
+            "range": "± 710",
             "unit": "ns/iter"
           }
         ]
