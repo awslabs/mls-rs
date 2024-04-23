@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1713826761807,
+  "lastUpdate": 1713881319936,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -13271,6 +13271,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 131770,
             "range": "± 1175",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "rlb@ipv.sx",
+            "name": "Richard Barnes",
+            "username": "bifurcation"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1b1960d908bd808f538320cacd951d91918d3fea",
+          "message": "Add a crypto provider based on the Apple CryptoKit library (#148)\n\n* Add a stub CryptoKit provider and Swift FFI bridge\r\n\r\n* Add a more properly structured KDF module\r\n\r\n* Update Swift module README\r\n\r\n* Use enums and split KDF logic into its own file\r\n\r\n* Implement random, hash, MAC functions\r\n\r\n* Add AEAD functions\r\n\r\n* Add CryptoKit create README\r\n\r\n* Add checklist to README\r\n\r\n* Add sign/verify functions\r\n\r\n* Add KEM functions, except for derive()\r\n\r\n* Add overall plumbing\r\n\r\n* Use HPKE representation for KEM public keys\r\n\r\n* Implement DeriveKeyPair\r\n\r\n* Verify that Swift DeriveKeyPair passes test vectors\r\n\r\n* Debug signature tests\r\n\r\n* Update README\r\n\r\n* Cleanup\r\n\r\n* Attempt to address CI errors\r\n\r\n* Attempt to address CI errors\r\n\r\n* One more attempt to xcode-select the proper version\r\n\r\n* Add CryptoKit provider to the table in the README\r\n\r\n* Pin macOS runners to v14\r\n\r\n* Respond to review by @mulmarta",
+          "timestamp": "2024-04-23T10:04:03-04:00",
+          "tree_id": "1b143e80648c4ba417f6df0943481521aca01e80",
+          "url": "https://github.com/awslabs/mls-rs/commit/1b1960d908bd808f538320cacd951d91918d3fea"
+        },
+        "date": 1713881318818,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 502072,
+            "range": "± 8605",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 509190,
+            "range": "± 16957",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 564013,
+            "range": "± 6040",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1157860,
+            "range": "± 79087",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 10271180,
+            "range": "± 86030",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1131806,
+            "range": "± 52271",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1159460,
+            "range": "± 56491",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1342172,
+            "range": "± 52257",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 713586,
+            "range": "± 16666",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 761173,
+            "range": "± 35832",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 818127,
+            "range": "± 5487",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 21254,
+            "range": "± 285",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 68677,
+            "range": "± 2092",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 132041,
+            "range": "± 908",
             "unit": "ns/iter"
           }
         ]
