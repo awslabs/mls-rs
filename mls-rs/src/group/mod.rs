@@ -4251,5 +4251,8 @@ mod tests {
             .process_incoming_message(commit)
             .await
             .unwrap();
+
+        let res = groups[1].group.apply_pending_commit().await;
+        assert_matches!(res, Err(MlsError::PendingCommitNotFound));
     }
 }
