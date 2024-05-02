@@ -187,6 +187,8 @@ pub enum ReceivedMessage {
     Commit(CommitMessageDescription),
     /// A proposal was received.
     Proposal(ProposalMessageDescription),
+    /// A proposal previously sent by this member was received.
+    OwnProposal,
     /// Validated GroupInfo object
     GroupInfo(GroupInfo),
     /// Validated welcome message

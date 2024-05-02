@@ -271,6 +271,8 @@ pub enum ReceivedMessage {
         proposal: Arc<Proposal>,
     },
 
+    /// A proposal previously sent by this member was received.
+    OwnProposal,
     /// Validated GroupInfo object.
     GroupInfo,
     /// Validated welcome message.
@@ -771,6 +773,7 @@ impl Group {
                 let proposal = Arc::new(proposal_message.proposal.into());
                 Ok(ReceivedMessage::ReceivedProposal { sender, proposal })
             }
+            group::ReceivedMessage::OwnProposal => Ok(ReceivedMessage::OwnProposal),
             // TODO: group::ReceivedMessage::GroupInfo does not have any
             // public methods (unless the "ffi" Cargo feature is set).
             // So perhaps we don't need it?

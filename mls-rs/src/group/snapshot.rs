@@ -20,7 +20,10 @@ use crate::{
 };
 
 #[cfg(feature = "by_ref_proposal")]
-use super::proposal_cache::{CachedProposal, ProposalCache};
+use super::{
+    message_hash::MessageHash,
+    proposal_cache::{CachedProposal, ProposalCache},
+};
 
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 
@@ -50,6 +53,8 @@ pub(crate) struct RawGroupState {
     pub(crate) context: GroupContext,
     #[cfg(feature = "by_ref_proposal")]
     pub(crate) proposals: SmallMap<ProposalRef, CachedProposal>,
+    #[cfg(feature = "by_ref_proposal")]
+    pub(crate) own_proposals: Vec<MessageHash>,
     pub(crate) public_tree: TreeKemPublic,
     pub(crate) interim_transcript_hash: InterimTranscriptHash,
     pub(crate) pending_reinit: Option<ReInitProposal>,
@@ -72,6 +77,8 @@ impl RawGroupState {
             context: state.context.clone(),
             #[cfg(feature = "by_ref_proposal")]
             proposals: state.proposals.proposals.clone(),
+            #[cfg(feature = "by_ref_proposal")]
+            own_proposals: state.proposals.own_proposals.clone(),
             public_tree,
             interim_transcript_hash: state.interim_transcript_hash.clone(),
             pending_reinit: state.pending_reinit.clone(),
@@ -92,6 +99,7 @@ impl RawGroupState {
             context.protocol_version,
             context.group_id.clone(),
             self.proposals,
+            self.own_proposals.clone(),
         );
 
         let mut public_tree = self.public_tree;
@@ -121,6 +129,7 @@ impl RawGroupState {
             context.protocol_version,
             context.group_id.clone(),
             self.proposals,
+            self.own_proposals.clone(),
         );
 
         Ok(GroupState {
@@ -229,6 +238,8 @@ pub(crate) mod test_utils {
                 context: get_test_group_context(epoch_id, cipher_suite).await,
                 #[cfg(feature = "by_ref_proposal")]
                 proposals: Default::default(),
+                #[cfg(feature = "by_ref_proposal")]
+                own_proposals: Default::default(),
                 public_tree: Default::default(),
                 interim_transcript_hash: InterimTranscriptHash::from(vec![]),
                 pending_reinit: None,

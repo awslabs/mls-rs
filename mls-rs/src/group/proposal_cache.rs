@@ -19,7 +19,12 @@ use crate::{
 };
 
 #[cfg(feature = "by_ref_proposal")]
-use crate::group::{proposal_filter::FilterStrategy, ProposalRef, ProtocolVersion};
+use crate::{
+    group::{
+        message_hash::MessageHash, proposal_filter::FilterStrategy, ProposalRef, ProtocolVersion,
+    },
+    MlsMessage,
+};
 
 use crate::tree_kem::leaf_node::LeafNode;
 
@@ -43,11 +48,21 @@ pub struct CachedProposal {
 }
 
 #[cfg(feature = "by_ref_proposal")]
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
 pub(crate) struct ProposalCache {
     protocol_version: ProtocolVersion,
     group_id: Vec<u8>,
     pub(crate) proposals: crate::map::SmallMap<ProposalRef, CachedProposal>,
+    pub(crate) own_proposals: Vec<MessageHash>,
+}
+
+#[cfg(feature = "by_ref_proposal")]
+impl PartialEq for ProposalCache {
+    fn eq(&self, other: &Self) -> bool {
+        self.protocol_version == other.protocol_version
+            && self.group_id == other.group_id
+            && self.proposals == other.proposals
+    }
 }
 
 #[cfg(feature = "by_ref_proposal")]
@@ -71,6 +86,7 @@ impl ProposalCache {
             protocol_version,
             group_id,
             proposals: Default::default(),
+            own_proposals: Default::default(),
         }
     }
 
@@ -78,11 +94,13 @@ impl ProposalCache {
         protocol_version: ProtocolVersion,
         group_id: Vec<u8>,
         proposals: crate::map::SmallMap<ProposalRef, CachedProposal>,
+        own_proposals: Vec<MessageHash>,
     ) -> Self {
         Self {
             protocol_version,
             group_id,
             proposals,
+            own_proposals,
         }
     }
 
@@ -106,6 +124,22 @@ impl ProposalCache {
         #[cfg(not(feature = "std"))]
         // This may result in dups but it does not matter
         self.proposals.push((proposal_ref, cached_proposal));
+    }
+
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn insert_own<CS: CipherSuiteProvider>(
+        &mut self,
+        proposal_ref: ProposalRef,
+        proposal: Proposal,
+        sender: Sender,
+        message: &MlsMessage,
+        cs: &CS,
+    ) -> Result<(), MlsError> {
+        self.insert(proposal_ref, proposal, sender);
+        let message_hash = MessageHash::compute(cs, message).await?;
+        self.own_proposals.push(message_hash);
+
+        Ok(())
     }
 
     pub fn prepare_commit(
@@ -161,6 +195,17 @@ impl ProposalCache {
         }
 
         Ok(proposals)
+    }
+
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn contains_own<CS: CipherSuiteProvider>(
+        &self,
+        cs: &CS,
+        message: &MlsMessage,
+    ) -> Result<bool, MlsError> {
+        let message_hash = MessageHash::compute(cs, message).await?;
+
+        Ok(self.own_proposals.iter().any(|op| op == &message_hash))
     }
 }
 
