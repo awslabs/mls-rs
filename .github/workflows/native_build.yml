@@ -88,6 +88,25 @@ jobs:
         run: cargo clippy --all-targets --all-features --workspace -- -D warnings
       - name: Clippy Bare Bones
         run: cargo clippy --all-targets --no-default-features --features std,test_util --workspace -- -D warnings
+  LintAndFormattingMacOS:
+    # XXX(RLB): It would be good to just use macos-latest here, but
+    # apparently if you do that, sometimes you get an older (not latest)
+    # version.  And we require v14 in order to build the CryptoKit provider.
+    runs-on: macos-14
+    steps: 
+      - uses: actions/checkout@v3
+      - uses: arduino/setup-protoc@v2
+        with:
+          version: "25.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Rust Fmt
+        run: cargo fmt -p mls-rs-crypto-cryptokit
+      - name: Clippy
+        run: cargo clippy -p mls-rs-crypto-cryptokit -- -D warnings
   CodeCoverage:
     runs-on: ubuntu-latest
     steps:
