@@ -324,7 +324,7 @@ impl Kem {
         priv_buf.truncate(priv_len as usize);
         pub_buf.truncate(pub_len as usize);
 
-        return Ok((priv_buf.into(), pub_buf.into()));
+        Ok((priv_buf.into(), pub_buf.into()))
     }
 
     pub fn derive(&self, ikm: &[u8]) -> Result<(HpkeSecretKey, HpkePublicKey), KemError> {
@@ -351,13 +351,13 @@ impl Kem {
         priv_buf.truncate(priv_len as usize);
         pub_buf.truncate(pub_len as usize);
 
-        return Ok((priv_buf.into(), pub_buf.into()));
+        Ok((priv_buf.into(), pub_buf.into()))
     }
 
     pub fn public_key_validate(&self, key: &HpkePublicKey) -> Result<(), KemError> {
         let rv = unsafe { kem_public_key_validate(self.0 as u16, key.as_ptr(), key.len() as u64) };
 
-        (rv == 1).then(|| ()).ok_or(KemError::CryptoKitError)
+        (rv == 1).then_some(()).ok_or(KemError::CryptoKitError)
     }
 
     pub fn hpke_setup_s(

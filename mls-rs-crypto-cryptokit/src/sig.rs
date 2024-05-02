@@ -74,13 +74,10 @@ impl Signature {
     const DEFAULT_BUFFER_SIZE: usize = 192;
 
     fn supported_curve(curve: Curve) -> bool {
-        match curve {
-            Curve::P256 => true,
-            Curve::P384 => true,
-            Curve::P521 => true,
-            Curve::Ed25519 => true,
-            _ => false,
-        }
+        matches!(
+            curve,
+            Curve::P256 | Curve::P384 | Curve::P521 | Curve::Ed25519
+        )
     }
 
     pub fn new(cipher_suite: CipherSuite) -> Option<Self> {
@@ -91,7 +88,7 @@ impl Signature {
 
     pub fn new_from_curve(curve: Curve) -> Result<Self, SignatureError> {
         Self::supported_curve(curve)
-            .then(|| Self(curve))
+            .then_some(Self(curve))
             .ok_or(SignatureError::UnsupportedCurve)
     }
 
@@ -120,7 +117,7 @@ impl Signature {
         let pub_len = pub_len as usize;
         let pub_key = SignaturePublicKey::new_slice(&pub_buf[..pub_len]);
 
-        return Ok((priv_key, pub_key));
+        Ok((priv_key, pub_key))
     }
 
     pub fn derive_public(
@@ -146,7 +143,7 @@ impl Signature {
         let pub_len = pub_len as usize;
         let pub_key = SignaturePublicKey::new_slice(&pub_buf[..pub_len]);
 
-        return Ok(pub_key);
+        Ok(pub_key)
     }
 
     pub fn sign(
@@ -173,7 +170,7 @@ impl Signature {
         }
 
         let sig_len = sig_len as usize;
-        return Ok(sig_buf[..sig_len].to_vec());
+        Ok(sig_buf[..sig_len].to_vec())
     }
 
     pub fn verify(
@@ -195,7 +192,7 @@ impl Signature {
         };
 
         (rv == 1)
-            .then(|| ())
+            .then_some(())
             .ok_or(SignatureError::InvalidSignature)
     }
 }

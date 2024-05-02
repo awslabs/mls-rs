@@ -147,7 +147,7 @@ impl CryptoKitCipherSuite {
 
     pub fn random_bytes(&self, out: &mut [u8]) -> Result<(), CryptoKitError> {
         random::fill(out)
-            .then(|| ())
+            .then_some(())
             .ok_or(CryptoKitError::RandError)
     }
 }
@@ -263,7 +263,7 @@ impl CipherSuiteProvider for CryptoKitCipherSuite {
         let (kem_output, mut ctx) = self.hpke_setup_s(remote_key, info)?;
         let ciphertext = ctx
             .seal(aad, pt)
-            .map_err(|e| <KemError as Into<CryptoKitError>>::into(e))?;
+            .map_err(<KemError as Into<CryptoKitError>>::into)?;
         Ok(HpkeCiphertext {
             kem_output,
             ciphertext,
@@ -281,12 +281,12 @@ impl CipherSuiteProvider for CryptoKitCipherSuite {
         let mut ctx =
             self.hpke_setup_r(&ciphertext.kem_output, local_secret, local_public, info)?;
         ctx.open(aad, &ciphertext.ciphertext)
-            .map_err(|e| <KemError as Into<CryptoKitError>>::into(e))
+            .map_err(<KemError as Into<CryptoKitError>>::into)
     }
 
     fn random_bytes(&self, out: &mut [u8]) -> Result<(), Self::Error> {
         random::fill(out)
-            .then(|| ())
+            .then_some(())
             .ok_or(CryptoKitError::RandError)
     }
 
