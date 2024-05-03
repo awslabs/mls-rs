@@ -104,9 +104,9 @@ impl ProposalCache {
         }
     }
 
-    #[inline]
     pub fn clear(&mut self) {
         self.proposals.clear();
+        self.own_proposals.clear();
     }
 
     #[cfg(feature = "private_message")]

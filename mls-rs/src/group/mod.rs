@@ -4321,4 +4321,21 @@ mod tests {
             .iter()
             .any(|member| member.index() == 0));
     }
+
+    #[cfg(feature = "by_ref_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn commit_clears_proposals() {
+        let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 2).await;
+
+        groups[0].group.propose_update(vec![]).await.unwrap();
+
+        assert_eq!(groups[0].group.state.proposals.proposals.len(), 1);
+        assert_eq!(groups[0].group.state.proposals.own_proposals.len(), 1);
+
+        let commit = groups[1].group.commit(vec![]).await.unwrap().commit_message;
+        groups[0].process_message(commit).await.unwrap();
+
+        assert!(groups[0].group.state.proposals.proposals.is_empty());
+        assert!(groups[0].group.state.proposals.own_proposals.is_empty());
+    }
 }
