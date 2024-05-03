@@ -205,7 +205,7 @@ impl ProposalCache {
     ) -> Result<bool, MlsError> {
         let message_hash = MessageHash::compute(cs, message).await?;
 
-        Ok(self.own_proposals.iter().any(|op| op == &message_hash))
+        Ok(self.own_proposals.contains(&message_hash))
     }
 }
 

@@ -18,7 +18,7 @@ pub(crate) struct MessageHash(
 impl Debug for MessageHash {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         mls_rs_core::debug::pretty_bytes(&self.0)
-            .named("CommitHash")
+            .named("MessageHash")
             .fmt(f)
     }
 }
