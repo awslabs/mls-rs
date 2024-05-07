@@ -512,10 +512,4 @@ impl MessageProcessor for GroupWithoutKeySchedule {
         self.secrets = secrets;
         Ok(())
     }
-
-    #[cfg(feature = "private_message")]
-    #[cfg_attr(coverage_nightly, coverage(off))]
-    fn self_index(&self) -> Option<LeafIndex> {
-        <Group<TestClientConfig> as MessageProcessor>::self_index(&self.inner)
-    }
 }

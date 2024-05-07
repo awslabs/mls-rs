@@ -569,11 +569,6 @@ where
     type OutputType = ExternalReceivedMessage;
     type CipherSuiteProvider = <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider;
 
-    #[cfg(feature = "private_message")]
-    fn self_index(&self) -> Option<LeafIndex> {
-        None
-    }
-
     fn mls_rules(&self) -> Self::MlsRules {
         self.config.mls_rules()
     }

@@ -190,7 +190,12 @@ impl TreeKemPublic {
             };
 
             let p = ps.parent;
-            filtered_sets[n] = filtered_sets[p as usize].clone();
+
+            // Clippy's suggestion `filtered_sets[n].clone_from(&filtered_sets[p as usize])` is wrong and does not compile
+            #[allow(clippy::assigning_clones)]
+            {
+                filtered_sets[n] = filtered_sets[p as usize].clone();
+            }
 
             if self.different_unmerged(*filtered_sets[p as usize].last().unwrap(), p)? {
                 filtered_sets[n].push(p);

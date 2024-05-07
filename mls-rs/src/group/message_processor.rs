@@ -861,8 +861,6 @@ pub(crate) trait MessageProcessor: Send + Sync {
 
     fn group_state(&self) -> &GroupState;
     fn group_state_mut(&mut self) -> &mut GroupState;
-    #[cfg(feature = "private_message")]
-    fn self_index(&self) -> Option<LeafIndex>;
     fn mls_rules(&self) -> Self::MlsRules;
     fn identity_provider(&self) -> Self::IdentityProvider;
     fn cipher_suite_provider(&self) -> &Self::CipherSuiteProvider;

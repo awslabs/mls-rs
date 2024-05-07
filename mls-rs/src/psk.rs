@@ -123,6 +123,7 @@ pub(crate) enum ResumptionPSKUsage {
     Branch = 3u8,
 }
 
+#[cfg(feature = "psk")]
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode)]
 struct PSKLabel<'a> {
     id: &'a PreSharedKeyID,

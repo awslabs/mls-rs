@@ -25,13 +25,6 @@ struct TestType {
     field_h: TestFieldStruct,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, MlsSize, MlsEncode)]
-struct BorrowedTestType<'a> {
-    field_a: u8,
-    field_b: Option<&'a [u8]>,
-    field_c: &'a [u16],
-}
-
 #[repr(u16)]
 #[derive(Debug, Clone, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 enum TestEnum {
