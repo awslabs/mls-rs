@@ -1605,11 +1605,6 @@ where
     type CipherSuiteProvider = <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider;
 
     #[cfg(feature = "private_message")]
-    fn self_index(&self) -> Option<LeafIndex> {
-        Some(self.private_tree.self_index)
-    }
-
-    #[cfg(feature = "private_message")]
     async fn process_ciphertext(
         &mut self,
         cipher_text: &PrivateMessage,

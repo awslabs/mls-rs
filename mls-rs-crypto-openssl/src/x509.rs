@@ -21,13 +21,13 @@ use openssl::{
     hash::MessageDigest,
     nid::Nid,
     pkey::{PKey, PKeyRef, Private, Public},
-    stack::{Stack, StackRef},
+    stack::Stack,
     x509::{
         extension::{BasicConstraints, KeyUsage, SubjectAlternativeName},
         store::{X509Store, X509StoreBuilder},
         verify::{X509VerifyFlags, X509VerifyParam},
-        X509Builder, X509Extension, X509Name, X509NameBuilder, X509NameRef, X509Ref,
-        X509ReqBuilder, X509StoreContext, X509VerifyResult, X509v3Context, X509,
+        X509Builder, X509Extension, X509Name, X509NameBuilder, X509ReqBuilder, X509StoreContext,
+        X509VerifyResult, X509v3Context, X509,
     },
 };
 use thiserror::Error;
@@ -372,10 +372,6 @@ fn build_subject_alt_name(
 }
 
 trait X509BuilderCommon {
-    fn set_pubkey(&mut self, pub_key: &PKeyRef<Public>) -> Result<(), ErrorStack>;
-    fn set_subject_name(&mut self, name: &X509NameRef) -> Result<(), ErrorStack>;
-    fn add_extensions(&mut self, extensions: &StackRef<X509Extension>) -> Result<(), ErrorStack>;
-    fn x509v3_context<'a>(&'a self, issuer: Option<&'a X509Ref>) -> X509v3Context<'a>;
     fn sign(&mut self, key: &PKeyRef<Private>, digest: MessageDigest) -> Result<(), ErrorStack>;
 
     fn sign_with_ec_signer(
@@ -395,46 +391,12 @@ trait X509BuilderCommon {
 }
 
 impl X509BuilderCommon for X509ReqBuilder {
-    fn set_pubkey(&mut self, pub_key: &PKeyRef<Public>) -> Result<(), ErrorStack> {
-        self.set_pubkey(pub_key)
-    }
-
-    fn set_subject_name(&mut self, name: &X509NameRef) -> Result<(), ErrorStack> {
-        self.set_subject_name(name)
-    }
-
-    fn add_extensions(&mut self, extensions: &StackRef<X509Extension>) -> Result<(), ErrorStack> {
-        self.add_extensions(extensions)
-    }
-
-    fn x509v3_context<'a>(&'a self, _issuer: Option<&X509Ref>) -> X509v3Context<'a> {
-        self.x509v3_context(None)
-    }
-
     fn sign(&mut self, key: &PKeyRef<Private>, digest: MessageDigest) -> Result<(), ErrorStack> {
         self.sign(key, digest)
     }
 }
 
 impl X509BuilderCommon for X509Builder {
-    fn set_pubkey(&mut self, pub_key: &PKeyRef<Public>) -> Result<(), ErrorStack> {
-        self.set_pubkey(pub_key)
-    }
-
-    fn set_subject_name(&mut self, name: &X509NameRef) -> Result<(), ErrorStack> {
-        self.set_subject_name(name)
-    }
-
-    fn add_extensions(&mut self, extensions: &StackRef<X509Extension>) -> Result<(), ErrorStack> {
-        extensions
-            .into_iter()
-            .try_for_each(|ex| self.append_extension2(ex))
-    }
-
-    fn x509v3_context<'a>(&'a self, issuer: Option<&'a X509Ref>) -> X509v3Context<'a> {
-        self.x509v3_context(issuer, None)
-    }
-
     fn sign(&mut self, key: &PKeyRef<Private>, digest: MessageDigest) -> Result<(), ErrorStack> {
         self.sign(key, digest)
     }
