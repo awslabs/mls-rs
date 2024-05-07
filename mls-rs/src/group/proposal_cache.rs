@@ -551,7 +551,7 @@ pub(crate) mod test_utils {
                 ConfirmationTag::empty(cipher_suite_provider).await,
             );
 
-            state.proposals.proposals = self.proposals.clone();
+            state.proposals.proposals.clone_from(&self.proposals);
             let proposals = self.resolve_for_commit(sender, proposal_list)?;
 
             state
