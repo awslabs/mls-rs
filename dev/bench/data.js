@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1714051482103,
+  "lastUpdate": 1715094841389,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -13595,6 +13595,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 131145,
             "range": "± 1453",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "103590845+mulmarta@users.noreply.github.com",
+            "name": "mulmarta",
+            "username": "mulmarta"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "acca8542b4a11e78925231485c759fc9e98bb0c9",
+          "message": "Cryptokit clippy (#153)\n\n* Add clippy check to cryptokit\r\n\r\n* Fix clippy warnings for cryptokit\r\n\r\n* Make all safer-ffi versions same\r\n\r\n* Update .github/workflows/native_build.yml\r\n\r\nCo-authored-by: Stephane Raux <94983192+stefunctional@users.noreply.github.com>\r\n\r\n* Fix clippy warnings\r\n\r\n* Fix more clippy warnings\r\n\r\n---------\r\n\r\nCo-authored-by: mulmarta <mulmarta@amazon.com>\r\nCo-authored-by: Stephane Raux <94983192+stefunctional@users.noreply.github.com>",
+          "timestamp": "2024-05-07T17:09:25+02:00",
+          "tree_id": "a97e357589dead5ca735616a4b198cf22a230086",
+          "url": "https://github.com/awslabs/mls-rs/commit/acca8542b4a11e78925231485c759fc9e98bb0c9"
+        },
+        "date": 1715094840491,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 498615,
+            "range": "± 10681",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 508332,
+            "range": "± 7949",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 565786,
+            "range": "± 9053",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1161230,
+            "range": "± 56222",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7688532,
+            "range": "± 119351",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1087002,
+            "range": "± 48555",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1173116,
+            "range": "± 40560",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1264998,
+            "range": "± 54583",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 708781,
+            "range": "± 18105",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 754447,
+            "range": "± 8466",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 814884,
+            "range": "± 10786",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 20843,
+            "range": "± 495",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 67656,
+            "range": "± 2200",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 130243,
+            "range": "± 2189",
             "unit": "ns/iter"
           }
         ]
