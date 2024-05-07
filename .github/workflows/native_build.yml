@@ -104,7 +104,7 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Rust Fmt
-        run: cargo fmt -p mls-rs-crypto-cryptokit
+        run: cargo fmt --check -p mls-rs-crypto-cryptokit
       - name: Clippy
         run: cargo clippy -p mls-rs-crypto-cryptokit -- -D warnings
   CodeCoverage:
