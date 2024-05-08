@@ -21,8 +21,8 @@ mod config;
 
 use std::sync::Arc;
 
-pub use config::ClientConfig;
-use config::UniFFIConfig;
+pub use config::{client_config_default, ClientConfig};
+use config::{UniFFIConfig, UniFFICryptoProvider};
 
 #[cfg(not(mls_build_async))]
 use std::sync::Mutex;
@@ -36,7 +36,6 @@ use mls_rs::mls_rules;
 use mls_rs::{CipherSuiteProvider, CryptoProvider};
 use mls_rs_core::identity;
 use mls_rs_core::identity::{BasicCredential, IdentityProvider};
-use mls_rs_crypto_openssl::OpensslCryptoProvider;
 
 uniffi::setup_scaffolding!();
 
@@ -320,7 +319,7 @@ impl TryFrom<mls_rs::CipherSuite> for CipherSuite {
 pub async fn generate_signature_keypair(
     cipher_suite: CipherSuite,
 ) -> Result<SignatureKeypair, Error> {
-    let crypto_provider = mls_rs_crypto_openssl::OpensslCryptoProvider::default();
+    let crypto_provider = UniFFICryptoProvider::new();
     let cipher_suite_provider = crypto_provider
         .cipher_suite_provider(cipher_suite.into())
         .ok_or(MlsError::UnsupportedCipherSuite(cipher_suite.into()))?;
@@ -364,7 +363,6 @@ impl Client {
         let cipher_suite = signature_keypair.cipher_suite;
         let public_key = signature_keypair.public_key;
         let secret_key = signature_keypair.secret_key;
-        let crypto_provider = OpensslCryptoProvider::new();
         let basic_credential = BasicCredential::new(id);
         let signing_identity =
             identity::SigningIdentity::new(basic_credential.into_credential(), public_key.into());
@@ -373,7 +371,7 @@ impl Client {
             .with_single_welcome_message(true);
         let mls_rules = mls_rules::DefaultMlsRules::new().with_commit_options(commit_options);
         let client = mls_rs::Client::builder()
-            .crypto_provider(crypto_provider)
+            .crypto_provider(UniFFICryptoProvider::new())
             .identity_provider(basic::BasicIdentityProvider::new())
             .signing_identity(signing_identity, secret_key.into(), cipher_suite.into())
             .group_state_storage(client_config.group_state_storage.into())
