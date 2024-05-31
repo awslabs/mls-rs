@@ -21,6 +21,8 @@ use mls_rs_core::{
 use mls_rs_crypto_traits::{AeadType, KdfType};
 use zeroize::Zeroizing;
 
+uniffi::setup_scaffolding!();
+
 #[derive(Debug)]
 #[cfg_attr(feature = "std", derive(thiserror::Error))]
 pub enum CryptoKitError {
