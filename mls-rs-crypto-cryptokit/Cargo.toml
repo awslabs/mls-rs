@@ -26,6 +26,7 @@ uniffi = { version = "0.27.2", features = ["build"] }
 maybe-async = "0.2.10"
 mls-rs-core = { path = "../mls-rs-core", default-features = false, version = "0.18.0" }
 mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", default-features = false, version = "0.10.0" }
+thiserror = "1.0.61"
 uniffi = "0.27.2"
 zeroize = { version = "1", default-features = false, features = ["alloc", "zeroize_derive"] }
 
@@ -35,3 +36,4 @@ async-trait = "0.1.74"
 [[bin]]
 name = "uniffi-bindgen"
 path = "uniffi-bindgen.rs"
+required-features = ["uniffi/cli"]

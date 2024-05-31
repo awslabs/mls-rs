@@ -23,6 +23,17 @@ use zeroize::Zeroizing;
 
 uniffi::setup_scaffolding!();
 
+#[derive(Debug, thiserror::Error, uniffi::Error)]
+pub enum UniFfiCompatibleError {
+    #[error("oh no")]
+    OhNo,
+}
+
+#[uniffi::export(with_foreign)]
+pub trait BoxedConstant: Send + Sync {
+    fn add(&self, b: u32) -> Result<u32, UniFfiCompatibleError>;
+}
+
 #[derive(Debug)]
 #[cfg_attr(feature = "std", derive(thiserror::Error))]
 pub enum CryptoKitError {
