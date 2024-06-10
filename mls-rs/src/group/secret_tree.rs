@@ -10,16 +10,10 @@ use core::{
 
 use zeroize::Zeroizing;
 
-use crate::{client::MlsError, tree_kem::math::TreeIndex, CipherSuiteProvider};
+use crate::{client::MlsError, map::LargeMap, tree_kem::math::TreeIndex, CipherSuiteProvider};
 
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
-
-#[cfg(feature = "std")]
-use std::collections::HashMap;
-
-#[cfg(not(feature = "std"))]
-use alloc::collections::BTreeMap;
 
 use super::key_schedule::kdf_expand_with_label;
 
@@ -94,13 +88,9 @@ impl From<Zeroizing<Vec<u8>>> for TreeSecret {
 #[derive(Clone, Debug, PartialEq, MlsEncode, MlsDecode, MlsSize, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 struct TreeSecretsVec<T: TreeIndex> {
-    #[cfg(feature = "std")]
-    inner: HashMap<T, SecretTreeNode>,
-    #[cfg(not(feature = "std"))]
-    inner: Vec<(T, SecretTreeNode)>,
+    inner: LargeMap<T, SecretTreeNode>,
 }
 
-#[cfg(feature = "std")]
 impl<T: TreeIndex> TreeSecretsVec<T> {
     fn set_node(&mut self, index: T, value: SecretTreeNode) {
         self.inner.insert(index, value);
@@ -108,30 +98,6 @@ impl<T: TreeIndex> TreeSecretsVec<T> {
 
     fn take_node(&mut self, index: &T) -> Option<SecretTreeNode> {
         self.inner.remove(index)
-    }
-}
-
-#[cfg(not(feature = "std"))]
-impl<T: TreeIndex> TreeSecretsVec<T> {
-    fn set_node(&mut self, index: T, value: SecretTreeNode) {
-        if let Some(i) = self.find_node(&index) {
-            self.inner[i] = (index, value)
-        } else {
-            self.inner.push((index, value))
-        }
-    }
-
-    fn take_node(&mut self, index: &T) -> Option<SecretTreeNode> {
-        self.find_node(index).map(|i| self.inner.remove(i).1)
-    }
-
-    fn find_node(&self, index: &T) -> Option<usize> {
-        use itertools::Itertools;
-
-        self.inner
-            .iter()
-            .find_position(|(i, _)| i == index)
-            .map(|(i, _)| i)
     }
 }
 
@@ -364,10 +330,8 @@ impl MessageKeyData {
 pub struct SecretKeyRatchet {
     secret: TreeSecret,
     generation: u32,
-    #[cfg(all(feature = "out_of_order", feature = "std"))]
-    history: HashMap<u32, MessageKeyData>,
-    #[cfg(all(feature = "out_of_order", not(feature = "std")))]
-    history: BTreeMap<u32, MessageKeyData>,
+    #[cfg(feature = "out_of_order")]
+    history: LargeMap<u32, MessageKeyData>,
 }
 
 impl MlsSize for SecretKeyRatchet {
@@ -404,20 +368,9 @@ impl MlsDecode for SecretKeyRatchet {
         Ok(Self {
             secret: mls_rs_codec::byte_vec::mls_decode(reader)?,
             generation: u32::mls_decode(reader)?,
-            #[cfg(all(feature = "std", feature = "out_of_order"))]
+            #[cfg(feature = "out_of_order")]
             history: mls_rs_codec::iter::mls_decode_collection(reader, |data| {
-                let mut items = HashMap::default();
-
-                while !data.is_empty() {
-                    let item = MessageKeyData::mls_decode(data)?;
-                    items.insert(item.generation, item);
-                }
-
-                Ok(items)
-            })?,
-            #[cfg(all(not(feature = "std"), feature = "out_of_order"))]
-            history: mls_rs_codec::iter::mls_decode_collection(reader, |data| {
-                let mut items = alloc::collections::BTreeMap::default();
+                let mut items = LargeMap::default();
 
                 while !data.is_empty() {
                     let item = MessageKeyData::mls_decode(data)?;
