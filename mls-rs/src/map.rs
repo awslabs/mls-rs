@@ -62,9 +62,7 @@ mod map_impl {
         }
 
         fn find(&self, key: &K) -> Option<usize> {
-            self.0
-                .iter()
-                .position(|(k, _)| k == key)
+            self.0.iter().position(|(k, _)| k == key)
         }
     }
 }
