@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1715098535049,
+  "lastUpdate": 1718220541333,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -13811,6 +13811,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 131485,
             "range": "± 1239",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "103590845+mulmarta@users.noreply.github.com",
+            "name": "mulmarta",
+            "username": "mulmarta"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f4af668bd49d9a35472036267c69f9f5c6e8e4f0",
+          "message": "Simplify map conditional compilation (#158)\n\n* Simplify map conditional compilation\r\n\r\n* Fix aws-lc-rs version\r\n\r\n* Apply suggestions from code review\r\n\r\nCo-authored-by: Stephane Raux <94983192+stefunctional@users.noreply.github.com>\r\n\r\n* Run fmt\r\n\r\n---------\r\n\r\nCo-authored-by: Marta Mularczyk <mulmarta@amazon.com>\r\nCo-authored-by: Stephane Raux <94983192+stefunctional@users.noreply.github.com>",
+          "timestamp": "2024-06-12T21:24:31+02:00",
+          "tree_id": "f38e442d335c8b71749f55bcddec76c9616afd22",
+          "url": "https://github.com/awslabs/mls-rs/commit/f4af668bd49d9a35472036267c69f9f5c6e8e4f0"
+        },
+        "date": 1718220539969,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 501572,
+            "range": "± 7417",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 508938,
+            "range": "± 10803",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 564259,
+            "range": "± 17107",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1139275,
+            "range": "± 26828",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7351512,
+            "range": "± 128227",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1090725,
+            "range": "± 44208",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1143877,
+            "range": "± 41707",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1278747,
+            "range": "± 43726",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 710480,
+            "range": "± 13156",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 758382,
+            "range": "± 10365",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 815409,
+            "range": "± 12071",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 20916,
+            "range": "± 1315",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 67865,
+            "range": "± 1512",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 129824,
+            "range": "± 2889",
             "unit": "ns/iter"
           }
         ]
