@@ -23,9 +23,6 @@ use crate::group::{proposal_filter::FilterStrategy, ProposalRef, ProtocolVersion
 
 use crate::tree_kem::leaf_node::LeafNode;
 
-#[cfg(all(feature = "std", feature = "by_ref_proposal"))]
-use std::collections::HashMap;
-
 #[cfg(feature = "by_ref_proposal")]
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 
@@ -50,10 +47,7 @@ pub struct CachedProposal {
 pub(crate) struct ProposalCache {
     protocol_version: ProtocolVersion,
     group_id: Vec<u8>,
-    #[cfg(feature = "std")]
-    pub(crate) proposals: HashMap<ProposalRef, CachedProposal>,
-    #[cfg(not(feature = "std"))]
-    pub(crate) proposals: Vec<(ProposalRef, CachedProposal)>,
+    pub(crate) proposals: crate::map::SmallMap<ProposalRef, CachedProposal>,
 }
 
 #[cfg(feature = "by_ref_proposal")]
@@ -83,8 +77,7 @@ impl ProposalCache {
     pub fn import(
         protocol_version: ProtocolVersion,
         group_id: Vec<u8>,
-        #[cfg(feature = "std")] proposals: HashMap<ProposalRef, CachedProposal>,
-        #[cfg(not(feature = "std"))] proposals: Vec<(ProposalRef, CachedProposal)>,
+        proposals: crate::map::SmallMap<ProposalRef, CachedProposal>,
     ) -> Self {
         Self {
             protocol_version,
