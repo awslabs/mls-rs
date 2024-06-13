@@ -3580,7 +3580,6 @@ mod tests {
             cipher_suite_provider: &test_cipher_suite_provider(TEST_CIPHER_SUITE),
             signing_identity: &signing_identity,
             signing_key: &secret_key,
-            identity_provider: &BasicWithCustomProvider::new(BasicIdentityProvider::new()),
         };
 
         generator
