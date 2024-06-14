@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1718220541333,
+  "lastUpdate": 1718351845667,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -13919,6 +13919,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 129824,
             "range": "± 2889",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "tomleavy@amazon.com",
+            "name": "Tom Leavy",
+            "username": "tomleavy"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7c2926e0e691f3c6e1b9fd0ffd860a7f51c49856",
+          "message": "[crypto-awslc] update aws-lc-rs to 1.7.3 (#159)\n\n* [crypto-awslc] update aws-lc to 1.7.3\r\n\r\n* Remove unused identity_provider field in KeyPackageGenerator",
+          "timestamp": "2024-06-14T09:52:50+02:00",
+          "tree_id": "8776787799f46c69c862e7991848b7adaeb9e8d1",
+          "url": "https://github.com/awslabs/mls-rs/commit/7c2926e0e691f3c6e1b9fd0ffd860a7f51c49856"
+        },
+        "date": 1718351844202,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 502312,
+            "range": "± 6912",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 510201,
+            "range": "± 5648",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 566272,
+            "range": "± 28408",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1170366,
+            "range": "± 25875",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 6853071,
+            "range": "± 256281",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1075679,
+            "range": "± 53336",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1149561,
+            "range": "± 57497",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1320495,
+            "range": "± 43707",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 710842,
+            "range": "± 8396",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 757683,
+            "range": "± 13287",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 813581,
+            "range": "± 22171",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 20469,
+            "range": "± 236",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 67196,
+            "range": "± 2321",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 130362,
+            "range": "± 1458",
             "unit": "ns/iter"
           }
         ]
