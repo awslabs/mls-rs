@@ -445,7 +445,6 @@ where
             cipher_suite_provider: &cipher_suite_provider,
             signing_key: self.signer()?,
             signing_identity,
-            identity_provider: &self.config.identity_provider(),
         };
 
         let key_pkg_gen = key_package_generator
