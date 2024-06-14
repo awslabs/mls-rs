@@ -19,7 +19,6 @@ use crate::{
     client_builder::test_utils::{TestClientBuilder, TestClientConfig},
     crypto::test_utils::test_cipher_suite_provider,
     extension::ExtensionType,
-    identity::basic::BasicIdentityProvider,
     identity::test_utils::get_test_signing_identity,
     key_package::{KeyPackageGeneration, KeyPackageGenerator},
     mls_rules::{CommitOptions, DefaultMlsRules},
@@ -210,7 +209,6 @@ pub(crate) async fn test_member(
         cipher_suite_provider: &test_cipher_suite_provider(cipher_suite),
         signing_identity: &signing_identity,
         signing_key: &signing_key,
-        identity_provider: &BasicIdentityProvider,
     };
 
     let key_package = key_package_generator

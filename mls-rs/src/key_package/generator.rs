@@ -5,7 +5,7 @@
 use alloc::vec;
 use alloc::vec::Vec;
 use mls_rs_codec::{MlsDecode, MlsEncode};
-use mls_rs_core::{error::IntoAnyError, identity::IdentityProvider, key_package::KeyPackageData};
+use mls_rs_core::{error::IntoAnyError, key_package::KeyPackageData};
 
 use crate::client::MlsError;
 use crate::{
@@ -24,16 +24,14 @@ use crate::{
 use super::{KeyPackage, KeyPackageRef};
 
 #[derive(Clone, Debug)]
-pub struct KeyPackageGenerator<'a, IP, CP>
+pub struct KeyPackageGenerator<'a, CP>
 where
-    IP: IdentityProvider,
     CP: CipherSuiteProvider,
 {
     pub protocol_version: ProtocolVersion,
     pub cipher_suite_provider: &'a CP,
     pub signing_identity: &'a SigningIdentity,
     pub signing_key: &'a SignatureSecretKey,
-    pub identity_provider: &'a IP,
 }
 
 #[derive(Clone, Debug)]
@@ -75,9 +73,8 @@ impl KeyPackageGeneration {
     }
 }
 
-impl<'a, IP, CP> KeyPackageGenerator<'a, IP, CP>
+impl<'a, CP> KeyPackageGenerator<'a, CP>
 where
-    IP: IdentityProvider,
     CP: CipherSuiteProvider,
 {
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -199,7 +196,6 @@ mod tests {
                 cipher_suite_provider: &cipher_suite_provider,
                 signing_identity: &signing_identity,
                 signing_key: &signing_key,
-                identity_provider: &BasicIdentityProvider,
             };
 
             let mut capabilities = get_test_capabilities();
@@ -300,7 +296,6 @@ mod tests {
                 cipher_suite_provider: &test_cipher_suite_provider(cipher_suite),
                 signing_identity: &signing_identity,
                 signing_key: &signing_key,
-                identity_provider: &BasicIdentityProvider,
             };
 
             let first_key_package = test_generator
