@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1718370637212,
+  "lastUpdate": 1718375337717,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -14135,6 +14135,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 129671,
             "range": "± 1812",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "103590845+mulmarta@users.noreply.github.com",
+            "name": "mulmarta",
+            "username": "mulmarta"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9b55525c3d34cc0f249d7eec41f8c969dba47e18",
+          "message": "Support receiving own proposals without an error (#154)\n\n* Support receiving own proposals without an error\r\n\r\n* Fixup\r\n\r\n* Apply suggestions from code review\r\n\r\nCo-authored-by: Stephane Raux <94983192+stefunctional@users.noreply.github.com>\r\n\r\n* Rebase on main and unify received proposal\r\n\r\n* Fixup\r\n\r\n* Remove unused field\r\n\r\n* Remove unused enum variant\r\n\r\n---------\r\n\r\nCo-authored-by: mulmarta <mulmarta@amazon.com>\r\nCo-authored-by: Stephane Raux <94983192+stefunctional@users.noreply.github.com>",
+          "timestamp": "2024-06-14T10:24:20-04:00",
+          "tree_id": "f659f95557c8dd664f59f9417c4bb9515e8aedad",
+          "url": "https://github.com/awslabs/mls-rs/commit/9b55525c3d34cc0f249d7eec41f8c969dba47e18"
+        },
+        "date": 1718375337096,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 504116,
+            "range": "± 5540",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 509127,
+            "range": "± 8288",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 572889,
+            "range": "± 13847",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1220375,
+            "range": "± 24373",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 8328581,
+            "range": "± 111767",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1101086,
+            "range": "± 78297",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1213364,
+            "range": "± 52650",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1302421,
+            "range": "± 56566",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 715347,
+            "range": "± 5707",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 761022,
+            "range": "± 2750",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 818252,
+            "range": "± 16398",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 20571,
+            "range": "± 296",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 67517,
+            "range": "± 1221",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 129545,
+            "range": "± 1829",
             "unit": "ns/iter"
           }
         ]
