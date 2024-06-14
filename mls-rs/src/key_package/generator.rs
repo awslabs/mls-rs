@@ -24,7 +24,10 @@ use crate::{
 use super::{KeyPackage, KeyPackageRef};
 
 #[derive(Clone, Debug)]
-pub struct KeyPackageGenerator<'a, CP: CipherSuiteProvider> {
+pub struct KeyPackageGenerator<'a, CP>
+where
+    CP: CipherSuiteProvider,
+{
     pub protocol_version: ProtocolVersion,
     pub cipher_suite_provider: &'a CP,
     pub signing_identity: &'a SigningIdentity,
@@ -70,7 +73,10 @@ impl KeyPackageGeneration {
     }
 }
 
-impl<'a, CP: CipherSuiteProvider> KeyPackageGenerator<'a, CP> {
+impl<'a, CP> KeyPackageGenerator<'a, CP>
+where
+    CP: CipherSuiteProvider,
+{
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(super) async fn sign(&self, package: &mut KeyPackage) -> Result<(), MlsError> {
         package
