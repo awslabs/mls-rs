@@ -34,8 +34,14 @@ jobs:
           export GOPATH=$HOME/go
           export GOBIN=$GOPATH/bin
           export PATH=$PATH:$GOROOT:$GOPATH:$GOBIN
+          cd test-runner
+          go mod edit -go=1.18
+          go get -u google.golang.org/grpc
+          cd ..
+          protoc --go_out=proto --go_opt=paths=source_relative --go-grpc_out=proto --go-grpc_opt=paths=source_relative -I proto mls_client.proto
           GOFLAGS=-mod=mod go generate ./...
-          make test-runner/test-runner
+          cd test-runner
+          go build
       - name: Test interop; full feature set with itself
         run: |
           cd mls-rs/test_harness_integration
