@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use std::{
+    borrow::Cow,
     fmt::{self, Debug},
     sync::{Arc, Mutex},
 };
@@ -30,7 +31,7 @@ impl SqLiteApplicationStorage {
     /// Insert `value` into storage indexed by `key`.
     ///
     /// If a value already exists for `key` it will be overwritten.
-    pub fn insert(&self, key: String, value: Vec<u8>) -> Result<(), SqLiteDataStorageError> {
+    pub fn insert(&self, key: &str, value: &[u8]) -> Result<(), SqLiteDataStorageError> {
         let connection = self.connection.lock().unwrap();
 
         // Upsert into the database
@@ -81,7 +82,10 @@ impl SqLiteApplicationStorage {
     }
 
     /// Get all keys and values from storage for which key starts with `key_prefix`.
-    pub fn get_by_prefix(&self, key_prefix: &str) -> Result<Vec<Item>, SqLiteDataStorageError> {
+    pub fn get_by_prefix(
+        &self,
+        key_prefix: &str,
+    ) -> Result<Vec<Item<'static>>, SqLiteDataStorageError> {
         let connection = self.connection.lock().unwrap();
         let mut key_prefix = sanitize(key_prefix);
         key_prefix.push('%');
@@ -93,7 +97,12 @@ impl SqLiteApplicationStorage {
         let rows = stmt
             .query(params![key_prefix])
             .map_err(sql_engine_error)?
-            .mapped(|row| Ok(Item::new(row.get(0)?, row.get(1)?)));
+            .mapped(|row| {
+                Ok(Item {
+                    key: Cow::Owned(row.get(0)?),
+                    value: Cow::Owned(row.get(1)?),
+                })
+            });
 
         rows.collect::<Result<_, _>>().map_err(sql_engine_error)
     }
@@ -123,23 +132,26 @@ fn sql_engine_error(e: rusqlite::Error) -> SqLiteDataStorageError {
 }
 
 #[derive(Clone, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Item {
-    pub key: String,
-    pub value: Vec<u8>,
+pub struct Item<'a> {
+    pub key: Cow<'a, str>,
+    pub value: Cow<'a, [u8]>,
 }
 
-impl Debug for Item {
+impl<'a> Debug for Item<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Item")
             .field("key", &self.key)
-            .field("value", &mls_rs_core::debug::pretty_bytes(&self.value))
+            .field("value", &"***".to_string())
             .finish()
     }
 }
 
-impl Item {
-    pub fn new(key: String, value: Vec<u8>) -> Self {
-        Self { key, value }
+impl<'a> Item<'a> {
+    pub fn new(key: &'a str, value: &'a [u8]) -> Self {
+        Self {
+            key: Cow::Borrowed(key),
+            value: Cow::Borrowed(value),
+        }
     }
 
     pub fn key(&self) -> &str {
@@ -153,6 +165,8 @@ impl Item {
 
 #[cfg(test)]
 mod tests {
+    use std::borrow::Cow;
+
     use crate::{
         application::Item, connection_strategy::MemoryStrategy, test_utils::gen_rand_bytes,
         SqLiteDataStorageEngine,
@@ -179,7 +193,7 @@ mod tests {
         let (key, value) = test_kv();
         let storage = test_storage();
 
-        storage.insert(key.clone(), value.clone()).unwrap();
+        storage.insert(&key, &value).unwrap();
 
         let from_storage = storage.get(&key).unwrap().unwrap();
         assert_eq!(from_storage, value);
@@ -192,8 +206,8 @@ mod tests {
 
         let storage = test_storage();
 
-        storage.insert(key.clone(), value).unwrap();
-        storage.insert(key.clone(), new_value.clone()).unwrap();
+        storage.insert(&key, &value).unwrap();
+        storage.insert(&key, &new_value).unwrap();
 
         let from_storage = storage.get(&key).unwrap().unwrap();
         assert_eq!(from_storage, new_value);
@@ -204,7 +218,7 @@ mod tests {
         let (key, value) = test_kv();
         let storage = test_storage();
 
-        storage.insert(key.clone(), value).unwrap();
+        storage.insert(&key, &value).unwrap();
         storage.delete(&key).unwrap();
 
         assert!(storage.get(&key).unwrap().is_none());
@@ -218,12 +232,9 @@ mod tests {
         let storage = test_storage();
 
         keys.iter()
-            .for_each(|k| storage.insert(k.clone(), value.clone()).unwrap());
+            .for_each(|k| storage.insert(&k, &value).unwrap());
 
-        let mut expected = vec![
-            Item::new(keys[0].clone(), value.clone()),
-            Item::new(keys[1].clone(), value.clone()),
-        ];
+        let mut expected = vec![Item::new(&keys[0], &value), Item::new(&keys[1], &value)];
 
         expected.sort();
 
@@ -241,23 +252,17 @@ mod tests {
         storage.delete_by_prefix("prefix").unwrap();
         let result = storage.get_by_prefix("").unwrap();
         assert_eq!(result.len(), 2);
-        assert!(result.contains(&Item::new("prefiy ".to_string(), value.clone())));
-        assert!(result.contains(&Item::new("prefiw ".to_string(), value)));
+        assert!(result.contains(&Item::new("prefiy ", &value)));
+        assert!(result.contains(&Item::new("prefiw ", &value)));
     }
 
     #[test]
     fn test_special_characters() {
         let storage = test_storage();
 
-        storage
-            .insert("%$_ƕ❤_$%".to_string(), gen_rand_bytes(5))
-            .unwrap();
-        storage
-            .insert("%$_ƕ❤a$%".to_string(), gen_rand_bytes(5))
-            .unwrap();
-        storage
-            .insert("%$_ƕ❤Ḉ$%".to_string(), gen_rand_bytes(5))
-            .unwrap();
+        storage.insert("%$_ƕ❤_$%", &gen_rand_bytes(5)).unwrap();
+        storage.insert("%$_ƕ❤a$%", &gen_rand_bytes(5)).unwrap();
+        storage.insert("%$_ƕ❤Ḉ$%", &gen_rand_bytes(5)).unwrap();
 
         let items = storage.get_by_prefix("%$_ƕ❤_").unwrap();
         let keys = items.into_iter().map(|i| i.key).collect::<Vec<_>>();
@@ -272,11 +277,17 @@ mod tests {
         storage.transact_insert(items.clone()).unwrap();
 
         for item in items {
-            assert_eq!(storage.get(&item.key).unwrap(), Some(item.value));
+            assert_eq!(
+                storage.get(&item.key).unwrap(),
+                Some(item.value.into_owned())
+            );
         }
     }
 
-    fn test_item() -> Item {
-        Item::new(hex::encode(gen_rand_bytes(5)), gen_rand_bytes(5))
+    fn test_item() -> Item<'static> {
+        Item {
+            key: Cow::Owned(hex::encode(gen_rand_bytes(5))),
+            value: Cow::Owned(gen_rand_bytes(5)),
+        }
     }
 }
