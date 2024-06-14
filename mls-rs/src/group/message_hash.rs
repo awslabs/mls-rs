@@ -7,7 +7,7 @@ use mls_rs_core::crypto::CipherSuiteProvider;
 
 use crate::{client::MlsError, error::IntoAnyError, MlsMessage};
 
-#[derive(Clone, PartialEq, Eq, MlsEncode, MlsDecode, MlsSize)]
+#[derive(Clone, PartialEq, Eq, MlsEncode, MlsDecode, MlsSize, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub(crate) struct MessageHash(
     #[mls_codec(with = "mls_rs_codec::byte_vec")]

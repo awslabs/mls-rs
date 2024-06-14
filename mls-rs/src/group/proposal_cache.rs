@@ -7,7 +7,7 @@ use alloc::vec::Vec;
 use super::{
     message_processor::ProvisionalState,
     mls_rules::{CommitDirection, CommitSource, MlsRules},
-    GroupState, ProposalOrRef,
+    GroupState, ProposalMessageDescription, ProposalOrRef,
 };
 use crate::{
     client::MlsError,
@@ -53,7 +53,7 @@ pub(crate) struct ProposalCache {
     protocol_version: ProtocolVersion,
     group_id: Vec<u8>,
     pub(crate) proposals: crate::map::SmallMap<ProposalRef, CachedProposal>,
-    pub(crate) own_proposals: Vec<MessageHash>,
+    pub(crate) own_proposals: crate::map::SmallMap<MessageHash, ProposalMessageDescription>,
 }
 
 #[cfg(feature = "by_ref_proposal")]
@@ -94,7 +94,7 @@ impl ProposalCache {
         protocol_version: ProtocolVersion,
         group_id: Vec<u8>,
         proposals: crate::map::SmallMap<ProposalRef, CachedProposal>,
-        own_proposals: Vec<MessageHash>,
+        own_proposals: crate::map::SmallMap<MessageHash, ProposalMessageDescription>,
     ) -> Self {
         Self {
             protocol_version,
@@ -129,15 +129,19 @@ impl ProposalCache {
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn insert_own<CS: CipherSuiteProvider>(
         &mut self,
-        proposal_ref: ProposalRef,
-        proposal: Proposal,
-        sender: Sender,
+        proposal: ProposalMessageDescription,
         message: &MlsMessage,
+        sender: Sender,
         cs: &CS,
     ) -> Result<(), MlsError> {
-        self.insert(proposal_ref, proposal, sender);
+        self.insert(
+            proposal.proposal_ref.clone(),
+            proposal.proposal.clone(),
+            sender,
+        );
+
         let message_hash = MessageHash::compute(cs, message).await?;
-        self.own_proposals.push(message_hash);
+        self.own_proposals.insert(message_hash, proposal);
 
         Ok(())
     }
@@ -198,14 +202,14 @@ impl ProposalCache {
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn contains_own<CS: CipherSuiteProvider>(
+    pub async fn get_own<CS: CipherSuiteProvider>(
         &self,
         cs: &CS,
         message: &MlsMessage,
-    ) -> Result<bool, MlsError> {
+    ) -> Result<Option<ProposalMessageDescription>, MlsError> {
         let message_hash = MessageHash::compute(cs, message).await?;
 
-        Ok(self.own_proposals.contains(&message_hash))
+        Ok(self.own_proposals.get(&message_hash).cloned())
     }
 }
 

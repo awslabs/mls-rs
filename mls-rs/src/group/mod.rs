@@ -703,20 +703,15 @@ where
 
         let sender = auth_content.content.sender;
 
-        let proposal_ref =
-            ProposalRef::from_content(&self.cipher_suite_provider, &auth_content).await?;
+        let proposal_desc =
+            ProposalMessageDescription::new(&self.cipher_suite_provider, &auth_content, proposal)
+                .await?;
 
         let message = self.format_for_wire(auth_content).await?;
 
         self.state
             .proposals
-            .insert_own(
-                proposal_ref,
-                proposal,
-                sender,
-                &message,
-                &self.cipher_suite_provider,
-            )
+            .insert_own(proposal_desc, &message, sender, &self.cipher_suite_provider)
             .await?;
 
         Ok(message)
@@ -1313,11 +1308,11 @@ where
             let cached_own_proposal = self
                 .state
                 .proposals
-                .contains_own(&self.cipher_suite_provider, &message)
+                .get_own(&self.cipher_suite_provider, &message)
                 .await?;
 
-            if cached_own_proposal {
-                return Ok(ReceivedMessage::OwnProposal);
+            if let Some(cached) = cached_own_proposal {
+                return Ok(ReceivedMessage::Proposal(cached));
             }
         }
 

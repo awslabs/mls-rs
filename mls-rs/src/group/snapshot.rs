@@ -31,7 +31,10 @@ use mls_rs_core::crypto::SignatureSecretKey;
 #[cfg(feature = "tree_index")]
 use mls_rs_core::identity::IdentityProvider;
 
-use super::{cipher_suite_provider, epoch::EpochSecrets, state_repo::GroupStateRepository};
+use super::{
+    cipher_suite_provider, epoch::EpochSecrets, state_repo::GroupStateRepository,
+    ProposalMessageDescription,
+};
 
 #[derive(Debug, PartialEq, Clone, MlsEncode, MlsDecode, MlsSize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -54,7 +57,7 @@ pub(crate) struct RawGroupState {
     #[cfg(feature = "by_ref_proposal")]
     pub(crate) proposals: SmallMap<ProposalRef, CachedProposal>,
     #[cfg(feature = "by_ref_proposal")]
-    pub(crate) own_proposals: Vec<MessageHash>,
+    pub(crate) own_proposals: SmallMap<MessageHash, ProposalMessageDescription>,
     pub(crate) public_tree: TreeKemPublic,
     pub(crate) interim_transcript_hash: InterimTranscriptHash,
     pub(crate) pending_reinit: Option<ReInitProposal>,
