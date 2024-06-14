@@ -6,7 +6,8 @@ use crate::{
     client::MlsError,
     client_config::ClientConfig,
     group::{
-        key_schedule::KeySchedule, CommitGeneration, ConfirmationTag, Group, GroupContext,
+        cipher_suite_provider, epoch::EpochSecrets, key_schedule::KeySchedule,
+        state_repo::GroupStateRepository, CommitGeneration, ConfirmationTag, Group, GroupContext,
         GroupState, InterimTranscriptHash, ReInitProposal, TreeKemPublic,
     },
     tree_kem::TreeKemPrivate,
@@ -15,26 +16,18 @@ use crate::{
 #[cfg(feature = "by_ref_proposal")]
 use crate::{
     crypto::{HpkePublicKey, HpkeSecretKey},
-    group::ProposalRef,
+    group::{
+        message_hash::MessageHash,
+        proposal_cache::{CachedProposal, ProposalCache},
+        ProposalMessageDescription, ProposalRef,
+    },
     map::SmallMap,
 };
 
-#[cfg(feature = "by_ref_proposal")]
-use super::{
-    message_hash::MessageHash,
-    proposal_cache::{CachedProposal, ProposalCache},
-};
-
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
-
 use mls_rs_core::crypto::SignatureSecretKey;
 #[cfg(feature = "tree_index")]
 use mls_rs_core::identity::IdentityProvider;
-
-use super::{
-    cipher_suite_provider, epoch::EpochSecrets, state_repo::GroupStateRepository,
-    ProposalMessageDescription,
-};
 
 #[derive(Debug, PartialEq, Clone, MlsEncode, MlsDecode, MlsSize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

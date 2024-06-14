@@ -7,7 +7,7 @@ use alloc::vec::Vec;
 use super::{
     message_processor::ProvisionalState,
     mls_rules::{CommitDirection, CommitSource, MlsRules},
-    GroupState, ProposalMessageDescription, ProposalOrRef,
+    GroupState, ProposalOrRef,
 };
 use crate::{
     client::MlsError,
@@ -21,7 +21,8 @@ use crate::{
 #[cfg(feature = "by_ref_proposal")]
 use crate::{
     group::{
-        message_hash::MessageHash, proposal_filter::FilterStrategy, ProposalRef, ProtocolVersion,
+        message_hash::MessageHash, proposal_filter::FilterStrategy, ProposalMessageDescription,
+        ProposalRef, ProtocolVersion,
     },
     MlsMessage,
 };
