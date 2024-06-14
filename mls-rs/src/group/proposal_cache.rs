@@ -19,7 +19,13 @@ use crate::{
 };
 
 #[cfg(feature = "by_ref_proposal")]
-use crate::group::{proposal_filter::FilterStrategy, ProposalRef, ProtocolVersion};
+use crate::{
+    group::{
+        message_hash::MessageHash, proposal_filter::FilterStrategy, ProposalMessageDescription,
+        ProposalRef, ProtocolVersion,
+    },
+    MlsMessage,
+};
 
 use crate::tree_kem::leaf_node::LeafNode;
 
@@ -43,11 +49,21 @@ pub struct CachedProposal {
 }
 
 #[cfg(feature = "by_ref_proposal")]
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
 pub(crate) struct ProposalCache {
     protocol_version: ProtocolVersion,
     group_id: Vec<u8>,
     pub(crate) proposals: crate::map::SmallMap<ProposalRef, CachedProposal>,
+    pub(crate) own_proposals: crate::map::SmallMap<MessageHash, ProposalMessageDescription>,
+}
+
+#[cfg(feature = "by_ref_proposal")]
+impl PartialEq for ProposalCache {
+    fn eq(&self, other: &Self) -> bool {
+        self.protocol_version == other.protocol_version
+            && self.group_id == other.group_id
+            && self.proposals == other.proposals
+    }
 }
 
 #[cfg(feature = "by_ref_proposal")]
@@ -71,6 +87,7 @@ impl ProposalCache {
             protocol_version,
             group_id,
             proposals: Default::default(),
+            own_proposals: Default::default(),
         }
     }
 
@@ -78,17 +95,19 @@ impl ProposalCache {
         protocol_version: ProtocolVersion,
         group_id: Vec<u8>,
         proposals: crate::map::SmallMap<ProposalRef, CachedProposal>,
+        own_proposals: crate::map::SmallMap<MessageHash, ProposalMessageDescription>,
     ) -> Self {
         Self {
             protocol_version,
             group_id,
             proposals,
+            own_proposals,
         }
     }
 
-    #[inline]
     pub fn clear(&mut self) {
         self.proposals.clear();
+        self.own_proposals.clear();
     }
 
     #[cfg(feature = "private_message")]
@@ -106,6 +125,26 @@ impl ProposalCache {
         #[cfg(not(feature = "std"))]
         // This may result in dups but it does not matter
         self.proposals.push((proposal_ref, cached_proposal));
+    }
+
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn insert_own<CS: CipherSuiteProvider>(
+        &mut self,
+        proposal: ProposalMessageDescription,
+        message: &MlsMessage,
+        sender: Sender,
+        cs: &CS,
+    ) -> Result<(), MlsError> {
+        self.insert(
+            proposal.proposal_ref.clone(),
+            proposal.proposal.clone(),
+            sender,
+        );
+
+        let message_hash = MessageHash::compute(cs, message).await?;
+        self.own_proposals.insert(message_hash, proposal);
+
+        Ok(())
     }
 
     pub fn prepare_commit(
@@ -161,6 +200,17 @@ impl ProposalCache {
         }
 
         Ok(proposals)
+    }
+
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn get_own<CS: CipherSuiteProvider>(
+        &self,
+        cs: &CS,
+        message: &MlsMessage,
+    ) -> Result<Option<ProposalMessageDescription>, MlsError> {
+        let message_hash = MessageHash::compute(cs, message).await?;
+
+        Ok(self.own_proposals.get(&message_hash).cloned())
     }
 }
 
