@@ -37,7 +37,7 @@ thiserror = { version = "1.0.40", optional = true }
 zeroize = { version = "1", default-features = false, features = ["alloc", "zeroize_derive"] }
 
 # Random
-getrandom = { version = "0.2", default-features = false, features = ["custom"] }
+getrandom = { version = "0.2", default-features = false, optional = true }
 rand_core = { version = "0.6", default-features = false, features = ["alloc"] }
 
 # AEAD
