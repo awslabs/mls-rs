@@ -6,9 +6,8 @@ use mls_rs::{
     identity::basic,
     storage_provider::in_memory::InMemoryGroupStateStorage,
 };
-use mls_rs_crypto_openssl::OpensslCryptoProvider;
 
-use self::group_state::{GroupStateStorage, GroupStateStorageAdapter};
+use crate::config::group_state::{GroupStateStorage, GroupStateStorageAdapter};
 use crate::Error;
 
 pub mod group_state;
@@ -56,10 +55,19 @@ impl mls_rs_core::group::GroupStateStorage for ClientGroupStorage {
     }
 }
 
+#[cfg(not(any(feature = "openssl")))]
+compile_error!(
+    "The crypto provider must be set by enabling exactly one of the \
+     following Cargo features: [\"openssl\"]."
+);
+
+#[cfg(feature = "openssl")]
+pub type UniFFICryptoProvider = mls_rs_crypto_openssl::OpensslCryptoProvider;
+
 pub type UniFFIConfig = client_builder::WithIdentityProvider<
     basic::BasicIdentityProvider,
     client_builder::WithCryptoProvider<
-        OpensslCryptoProvider,
+        UniFFICryptoProvider,
         WithGroupStateStorage<ClientGroupStorage, client_builder::BaseConfig>,
     >,
 >;
