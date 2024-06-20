@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1718823464047,
+  "lastUpdate": 1718912404210,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -14351,6 +14351,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 130598,
             "range": "± 2578",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "tomleavy@amazon.com",
+            "name": "Tom Leavy",
+            "username": "tomleavy"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "95a513db08b6abe67aa95b3bc6208bf2ce6d6969",
+          "message": "Add key package count to sqlite provider (#163)\n\n* [sqlite] Add key package count function\r\n\r\n* bump mls-rs-provider-sqlite to 0.12.0",
+          "timestamp": "2024-06-20T15:35:32-04:00",
+          "tree_id": "3d5e7ddee9c4a6a2349bbb59b544726faa31cd9b",
+          "url": "https://github.com/awslabs/mls-rs/commit/95a513db08b6abe67aa95b3bc6208bf2ce6d6969"
+        },
+        "date": 1718912403358,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 497028,
+            "range": "± 6859",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 509249,
+            "range": "± 8768",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 569819,
+            "range": "± 5927",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1237820,
+            "range": "± 35427",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7501395,
+            "range": "± 46284",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1112407,
+            "range": "± 99131",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1197428,
+            "range": "± 59192",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1286920,
+            "range": "± 37696",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 712194,
+            "range": "± 9142",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 759248,
+            "range": "± 19371",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 815205,
+            "range": "± 10855",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 20797,
+            "range": "± 4382",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 67737,
+            "range": "± 1086",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 130306,
+            "range": "± 1297",
             "unit": "ns/iter"
           }
         ]
