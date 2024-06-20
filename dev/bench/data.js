@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1718912404210,
+  "lastUpdate": 1718917386445,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -14459,6 +14459,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 130306,
             "range": "± 1297",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "9853417+jszczepanik@users.noreply.github.com",
+            "name": "Jakub Szczepanik",
+            "username": "jszczepanik"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e76945c618bb34b7aa77990db3de228a6334b896",
+          "message": "Expose the key_package on AddProposal (#165) (#166)",
+          "timestamp": "2024-06-20T16:57:55-04:00",
+          "tree_id": "8ba2c387ca8f7b3680e1b5c7ffeac16c6ec7e070",
+          "url": "https://github.com/awslabs/mls-rs/commit/e76945c618bb34b7aa77990db3de228a6334b896"
+        },
+        "date": 1718917385147,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 507485,
+            "range": "± 10308",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 513584,
+            "range": "± 6179",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 575274,
+            "range": "± 13077",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1240046,
+            "range": "± 28261",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 8117405,
+            "range": "± 175468",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1134200,
+            "range": "± 50502",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1212133,
+            "range": "± 57759",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1335318,
+            "range": "± 52274",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 713073,
+            "range": "± 5203",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 759591,
+            "range": "± 7247",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 818131,
+            "range": "± 30848",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 20908,
+            "range": "± 463",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 68045,
+            "range": "± 1046",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 130979,
+            "range": "± 1935",
             "unit": "ns/iter"
           }
         ]
