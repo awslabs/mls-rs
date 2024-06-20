@@ -90,6 +90,16 @@ impl SqLiteKeyPackageStorage {
             .map(|_| ())
             .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))
     }
+
+    pub fn count(&self) -> Result<usize, SqLiteDataStorageError> {
+        let connection = self.connection.lock().unwrap();
+
+        connection
+            .query_row("SELECT count(*) FROM key_package", params![], |row| {
+                row.get(0)
+            })
+            .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))
+    }
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -214,5 +224,20 @@ mod tests {
 
         assert!(storage.get(&data[2].0).unwrap().is_none());
         assert!(storage.get(&data[3].0).unwrap().is_none());
+    }
+
+    #[test]
+    fn key_count() {
+        let mut storage = test_storage();
+
+        let test_packages = (0..10).map(|_| test_key_package()).collect::<Vec<_>>();
+
+        test_packages
+            .into_iter()
+            .for_each(|(key_package_id, key_package)| {
+                storage.insert(&key_package_id, key_package).unwrap();
+            });
+
+        assert_eq!(storage.count().unwrap(), 10);
     }
 }
