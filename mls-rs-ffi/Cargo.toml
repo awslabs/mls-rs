@@ -1,6 +1,6 @@
 [package]
 name = "mls-rs-ffi"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 description = "Helper crate to generate FFI definitions for mls-rs"
 homepage = "https://github.com/awslabs/mls-rs"
