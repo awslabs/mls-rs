@@ -11,7 +11,7 @@ license = "Apache-2.0 OR MIT"
 [dependencies]
 aws-lc-rs = "=1.7.3"
 aws-lc-sys = { version = "0.18.0" }
-mls-rs-core = { path = "../mls-rs-core", version = "=0.18.0" }
+mls-rs-core = { path = "../mls-rs-core", version = "0.18.0" }
 mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", version = "0.9.0" }
 mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", version = "0.10.0" }
 mls-rs-identity-x509 = { path = "../mls-rs-identity-x509", version = "0.11.0" }
