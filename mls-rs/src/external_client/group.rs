@@ -414,9 +414,14 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             .await
     }
 
+    /// Issue an external proposal.
+    ///
+    /// This function is useful for reissuing external proposals that
+    /// are returned in [CommitMessageDescription::unused_proposals]
+    /// after a commit is processed.
     #[cfg(feature = "by_ref_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn propose(
+    pub async fn propose(
         &mut self,
         proposal: Proposal,
         authenticated_data: Vec<u8>,
