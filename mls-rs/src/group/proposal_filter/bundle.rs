@@ -11,7 +11,7 @@ use itertools::Itertools;
 use crate::{
     group::{
         AddProposal, BorrowedProposal, Proposal, ProposalOrRef, ProposalType, ReInitProposal,
-        RemoveProposal, Sender,
+        RemoveProposal, ReplaceProposal, Sender,
     },
     ExtensionList,
 };
@@ -38,6 +38,8 @@ pub struct ProposalBundle {
     pub(crate) updates: Vec<ProposalInfo<UpdateProposal>>,
     #[cfg(feature = "by_ref_proposal")]
     pub(crate) update_senders: Vec<LeafIndex>,
+    #[cfg(feature = "replace_proposal")]
+    pub(crate) replaces: Vec<ProposalInfo<ReplaceProposal>>,
     pub(crate) removals: Vec<ProposalInfo<RemoveProposal>>,
     #[cfg(feature = "psk")]
     pub(crate) psks: Vec<ProposalInfo<PreSharedKeyProposal>>,
@@ -58,6 +60,12 @@ impl ProposalBundle {
             }),
             #[cfg(feature = "by_ref_proposal")]
             Proposal::Update(proposal) => self.updates.push(ProposalInfo {
+                proposal,
+                sender,
+                source,
+            }),
+            #[cfg(feature = "replace_proposal")]
+            Proposal::Replace(proposal) => self.replaces.push(ProposalInfo {
                 proposal,
                 sender,
                 source,
@@ -621,6 +629,8 @@ macro_rules! impl_proposable {
 impl_proposable!(AddProposal, ADD, additions);
 #[cfg(feature = "by_ref_proposal")]
 impl_proposable!(UpdateProposal, UPDATE, updates);
+#[cfg(feature = "replace_proposal")]
+impl_proposable!(ReplaceProposal, REPLACE, replaces);
 impl_proposable!(RemoveProposal, REMOVE, removals);
 #[cfg(feature = "psk")]
 impl_proposable!(PreSharedKeyProposal, PSK, psks);

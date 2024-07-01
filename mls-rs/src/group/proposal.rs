@@ -106,6 +106,38 @@ impl UpdateProposal {
     }
 }
 
+#[cfg(feature = "replace_proposal")]
+#[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+/// A proposal that will replace an existing [`Member`](mls_rs_core::group::Member) of a
+/// [`Group`](crate::group::Group).
+pub struct ReplaceProposal {
+    pub(crate) to_replace: LeafIndex,
+    pub(crate) leaf_node: LeafNode,
+}
+
+#[cfg(feature = "replace_proposal")]
+impl ReplaceProposal {
+    /// The new [`SigningIdentity`] of the [`Member`](mls_rs_core::group::Member)
+    /// that is being updated by this proposal.
+    pub fn signing_identity(&self) -> &SigningIdentity {
+        &self.leaf_node.signing_identity
+    }
+
+    /// New Client [`Capabilities`] of the [`Member`](mls_rs_core::group::Member)
+    /// that will be updated by this proposal.
+    pub fn capabilities(&self) -> Capabilities {
+        self.leaf_node.ungreased_capabilities()
+    }
+
+    /// New Leaf node extensions that will be entered into the group state for the
+    /// [`Member`](mls_rs_core::group::Member) that is being updated by this proposal.
+    pub fn leaf_node_extensions(&self) -> ExtensionList {
+        self.leaf_node.ungreased_extensions()
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -320,6 +352,8 @@ pub enum Proposal {
     Add(alloc::boxed::Box<AddProposal>),
     #[cfg(feature = "by_ref_proposal")]
     Update(UpdateProposal),
+    #[cfg(feature = "replace_proposal")]
+    Replace(ReplaceProposal),
     Remove(RemoveProposal),
     #[cfg(feature = "psk")]
     Psk(PreSharedKeyProposal),
@@ -336,6 +370,8 @@ impl MlsSize for Proposal {
             Proposal::Add(p) => p.mls_encoded_len(),
             #[cfg(feature = "by_ref_proposal")]
             Proposal::Update(p) => p.mls_encoded_len(),
+            #[cfg(feature = "replace_proposal")]
+            Proposal::Replace(p) => p.mls_encoded_len(),
             Proposal::Remove(p) => p.mls_encoded_len(),
             #[cfg(feature = "psk")]
             Proposal::Psk(p) => p.mls_encoded_len(),
@@ -358,6 +394,8 @@ impl MlsEncode for Proposal {
             Proposal::Add(p) => p.mls_encode(writer),
             #[cfg(feature = "by_ref_proposal")]
             Proposal::Update(p) => p.mls_encode(writer),
+            #[cfg(feature = "replace_proposal")]
+            Proposal::Replace(p) => p.mls_encode(writer),
             Proposal::Remove(p) => p.mls_encode(writer),
             #[cfg(feature = "psk")]
             Proposal::Psk(p) => p.mls_encode(writer),
@@ -391,6 +429,8 @@ impl MlsDecode for Proposal {
             }
             #[cfg(feature = "by_ref_proposal")]
             ProposalType::UPDATE => Proposal::Update(UpdateProposal::mls_decode(reader)?),
+            #[cfg(feature = "replace_proposal")]
+            ProposalType::REPLACE => Proposal::Replace(ReplaceProposal::mls_decode(reader)?),
             ProposalType::REMOVE => Proposal::Remove(RemoveProposal::mls_decode(reader)?),
             #[cfg(feature = "psk")]
             ProposalType::PSK => Proposal::Psk(PreSharedKeyProposal::mls_decode(reader)?),
@@ -419,6 +459,8 @@ impl Proposal {
             Proposal::Add(_) => ProposalType::ADD,
             #[cfg(feature = "by_ref_proposal")]
             Proposal::Update(_) => ProposalType::UPDATE,
+            #[cfg(feature = "replace_proposal")]
+            Proposal::Replace(_) => ProposalType::REPLACE,
             Proposal::Remove(_) => ProposalType::REMOVE,
             #[cfg(feature = "psk")]
             Proposal::Psk(_) => ProposalType::PSK,
@@ -437,6 +479,8 @@ pub enum BorrowedProposal<'a> {
     Add(&'a AddProposal),
     #[cfg(feature = "by_ref_proposal")]
     Update(&'a UpdateProposal),
+    #[cfg(feature = "replace_proposal")]
+    Replace(&'a ReplaceProposal),
     Remove(&'a RemoveProposal),
     #[cfg(feature = "psk")]
     Psk(&'a PreSharedKeyProposal),
@@ -453,6 +497,8 @@ impl<'a> From<BorrowedProposal<'a>> for Proposal {
             BorrowedProposal::Add(add) => Proposal::Add(alloc::boxed::Box::new(add.clone())),
             #[cfg(feature = "by_ref_proposal")]
             BorrowedProposal::Update(update) => Proposal::Update(update.clone()),
+            #[cfg(feature = "replace_proposal")]
+            BorrowedProposal::Replace(replace) => Proposal::Replace(replace.clone()),
             BorrowedProposal::Remove(remove) => Proposal::Remove(remove.clone()),
             #[cfg(feature = "psk")]
             BorrowedProposal::Psk(psk) => Proposal::Psk(psk.clone()),
@@ -473,6 +519,8 @@ impl BorrowedProposal<'_> {
             BorrowedProposal::Add(_) => ProposalType::ADD,
             #[cfg(feature = "by_ref_proposal")]
             BorrowedProposal::Update(_) => ProposalType::UPDATE,
+            #[cfg(feature = "replace_proposal")]
+            BorrowedProposal::Replace(_) => ProposalType::REPLACE,
             BorrowedProposal::Remove(_) => ProposalType::REMOVE,
             #[cfg(feature = "psk")]
             BorrowedProposal::Psk(_) => ProposalType::PSK,
@@ -491,6 +539,8 @@ impl<'a> From<&'a Proposal> for BorrowedProposal<'a> {
             Proposal::Add(p) => BorrowedProposal::Add(p),
             #[cfg(feature = "by_ref_proposal")]
             Proposal::Update(p) => BorrowedProposal::Update(p),
+            #[cfg(feature = "replace_proposal")]
+            Proposal::Replace(p) => BorrowedProposal::Replace(p),
             Proposal::Remove(p) => BorrowedProposal::Remove(p),
             #[cfg(feature = "psk")]
             Proposal::Psk(p) => BorrowedProposal::Psk(p),
@@ -513,6 +563,13 @@ impl<'a> From<&'a AddProposal> for BorrowedProposal<'a> {
 impl<'a> From<&'a UpdateProposal> for BorrowedProposal<'a> {
     fn from(p: &'a UpdateProposal) -> Self {
         Self::Update(p)
+    }
+}
+
+#[cfg(feature = "replace_proposal")]
+impl<'a> From<&'a ReplaceProposal> for BorrowedProposal<'a> {
+    fn from(p: &'a ReplaceProposal) -> Self {
+        Self::Replace(p)
     }
 }
 

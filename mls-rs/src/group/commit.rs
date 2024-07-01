@@ -230,8 +230,12 @@ where
 
     /// Insert a [`ReplaceProposal`](crate::group::proposal::ReplaceProposal) into
     /// the current commit that is being built.
-    pub fn replace_member(mut self, index: u32, leaf_node: LeafNode) -> Result<Self, MlsError> {
-        let proposal = self.group.replace_proposal(index, leaf_node)?;
+    pub fn replace_member(
+        mut self,
+        to_replace: u32,
+        leaf_node: LeafNode,
+    ) -> Result<Self, MlsError> {
+        let proposal = self.group.replace_proposal(to_replace, leaf_node)?;
         self.proposals.push(proposal);
         Ok(self)
     }
@@ -1059,7 +1063,11 @@ mod tests {
     #[cfg(feature = "replace_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_commit_builder_replace() {
-        let mut group = test_commit_builder_group().await;
+        let mut group = test_group_custom_config(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, |b| {
+            b.custom_proposal_type(ProposalType::REPLACE)
+        })
+        .await
+        .group;
 
         let (alice, alice_kp) =
             test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "a").await;

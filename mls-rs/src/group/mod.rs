@@ -916,11 +916,11 @@ where
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn propose_replace(
         &mut self,
-        index: u32,
+        to_replace: u32,
         leaf_node: LeafNode,
         authenticated_data: Vec<u8>,
     ) -> Result<MlsMessage, MlsError> {
-        let proposal = self.replace_proposal(index, leaf_node).await?;
+        let proposal = self.replace_proposal(to_replace, leaf_node).await?;
         self.proposal_message(proposal, authenticated_data).await
     }
 
@@ -928,16 +928,16 @@ where
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn replace_proposal(
         &mut self,
-        _index: u32,
-        _leaf_node: LeafNode,
+        to_replace: u32,
+        leaf_node: LeafNode,
     ) -> Result<Proposal, MlsError> {
-        unimplemented!();
-        /*
+        // TODO(RLB) Verify that the new LeafNode is a plausible replacement for the current leaf
+        // node.
+
         Ok(Proposal::Replace(ReplaceProposal {
-            index: index,
-            leaf_node: new_leaf_node,
+            to_replace: LeafIndex(to_replace),
+            leaf_node,
         }))
-        */
     }
 
     /// Create a fresh LeafNode that can be used to update this member's leaf.
