@@ -228,6 +228,14 @@ where
         Ok(self)
     }
 
+    /// Insert a [`ReplaceProposal`](crate::group::proposal::ReplaceProposal) into
+    /// the current commit that is being built.
+    pub fn replace_member(mut self, index: u32, leaf_node: LeafNode) -> Result<Self, MlsError> {
+        let proposal = self.group.replace_proposal(index, leaf_node)?;
+        self.proposals.push(proposal);
+        Ok(self)
+    }
+
     /// Insert a
     /// [`GroupContextExtensions`](crate::group::proposal::Proposal::GroupContextExtensions)
     /// into the current commit that is being built.
@@ -1046,6 +1054,43 @@ mod tests {
         let expected_remove = group.remove_proposal(1).unwrap();
 
         assert_commit_builder_output(group, commit_output, vec![expected_remove], 0);
+    }
+
+    #[cfg(feature = "replace_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_commit_builder_replace() {
+        let mut group = test_commit_builder_group().await;
+
+        let (alice, alice_kp) =
+            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "a").await;
+
+        // Add alice to theh group
+        let output = group
+            .commit_builder()
+            .add_member(alice_kp)
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+
+        group.apply_pending_commit().await.unwrap();
+
+        // Alice joins the group and produces a new LeafNode
+        let (mut alice_group, _) = alice.join_group(None, &output.welcome_messages[0]).unwrap();
+        let new_alice_leaf = alice_group.replacement_leaf_node(None, None).unwrap();
+
+        // Replace Alice's appearance in the group
+        let commit_output = group
+            .commit_builder()
+            .replace_member(1, new_alice_leaf.clone())
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+
+        let expected_replace = group.replace_proposal(1, new_alice_leaf).unwrap();
+
+        assert_commit_builder_output(group, commit_output, vec![expected_replace], 0);
     }
 
     #[cfg(feature = "psk")]

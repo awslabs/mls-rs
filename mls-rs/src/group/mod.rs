@@ -904,6 +904,50 @@ where
         signer: Option<SignatureSecretKey>,
         signing_identity: Option<SigningIdentity>,
     ) -> Result<Proposal, MlsError> {
+        let leaf_node = self.replacement_leaf_node(signer, signing_identity).await?;
+        Ok(Proposal::Update(UpdateProposal { leaf_node }))
+    }
+
+    /// Create a proposal message that replaces another member.
+    ///
+    /// `authenticated_data` will be sent unencrypted along with the contents
+    /// of the proposal message.
+    #[cfg(feature = "replace_proposal")]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn propose_replace(
+        &mut self,
+        index: u32,
+        leaf_node: LeafNode,
+        authenticated_data: Vec<u8>,
+    ) -> Result<MlsMessage, MlsError> {
+        let proposal = self.replace_proposal(index, leaf_node).await?;
+        self.proposal_message(proposal, authenticated_data).await
+    }
+
+    #[cfg(feature = "by_ref_proposal")]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn replace_proposal(
+        &mut self,
+        _index: u32,
+        _leaf_node: LeafNode,
+    ) -> Result<Proposal, MlsError> {
+        unimplemented!();
+        /*
+        Ok(Proposal::Replace(ReplaceProposal {
+            index: index,
+            leaf_node: new_leaf_node,
+        }))
+        */
+    }
+
+    /// Create a fresh LeafNode that can be used to update this member's leaf.
+    #[cfg(any(feature = "by_ref_proposal", feature = "replace_proposal"))]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn replacement_leaf_node(
+        &mut self,
+        signer: Option<SignatureSecretKey>,
+        signing_identity: Option<SigningIdentity>,
+    ) -> Result<LeafNode, MlsError> {
         // Grab a copy of the current node and update it to have new key material
         let mut new_leaf_node = self.current_user_leaf_node()?.clone();
 
@@ -927,9 +971,7 @@ where
         self.pending_updates
             .push((new_leaf_node.public_key.clone(), (secret_key, signer)));
 
-        Ok(Proposal::Update(UpdateProposal {
-            leaf_node: new_leaf_node,
-        }))
+        Ok(new_leaf_node)
     }
 
     /// Create a proposal message that removes an existing member from the
