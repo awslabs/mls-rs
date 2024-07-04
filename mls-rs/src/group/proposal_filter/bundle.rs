@@ -306,6 +306,9 @@ impl ProposalBundle {
         #[cfg(feature = "by_ref_proposal")]
         let res = res.chain(self.updates.into_iter().map(|p| p.map(Proposal::Update)));
 
+        #[cfg(feature = "replace_proposal")]
+        let res = res.chain(self.replaces.into_iter().map(|p| p.map(Proposal::Replace)));
+
         res.chain(
             self.additions
                 .into_iter()
