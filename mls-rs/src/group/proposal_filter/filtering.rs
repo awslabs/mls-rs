@@ -64,8 +64,13 @@ where
     ) -> Result<ApplyProposalsOutput, MlsError> {
         let proposals = filter_out_invalid_proposers(strategy, proposals)?;
         let proposals = filter_out_update_for_committer(strategy, commit_sender, proposals)?;
+
+        #[cfg(feature = "replace_proposal")]
         let proposals = filter_out_replace_for_committer(strategy, commit_sender, proposals)?;
+
         let proposals = filter_out_duplicate_updates(strategy, commit_sender, proposals)?;
+
+        #[cfg(feature = "replace_proposal")]
         let proposals = filter_out_duplicate_replaces(strategy, commit_sender, proposals)?;
 
         let mut proposals = proposals;
@@ -228,49 +233,58 @@ where
         });
 
         // Check that Replaces are valid
-        let bad_indices: Vec<_> = wrap_iter(proposals.replace_proposals())
-            .enumerate()
-            .filter_map(|(i, p)| async move {
-                let res = {
-                    let to_replace = p.proposal.to_replace;
-                    let leaf = &p.proposal.leaf_node;
+        #[cfg(feature = "replace_proposal")]
+        {
+            let bad_indices: Vec<_> = wrap_iter(proposals.replace_proposals())
+                .enumerate()
+                .filter_map(|(i, p)| async move {
+                    let res = {
+                        let to_replace = p.proposal.to_replace;
+                        let leaf = &p.proposal.leaf_node;
 
-                    let res = leaf_node_validator
-                        .check_if_valid(
-                            leaf,
-                            ValidationContext::Update((self.group_id, *to_replace, commit_time)),
-                        )
-                        .await;
+                        let res = leaf_node_validator
+                            .check_if_valid(
+                                leaf,
+                                ValidationContext::Update((
+                                    self.group_id,
+                                    *to_replace,
+                                    commit_time,
+                                )),
+                            )
+                            .await;
 
-                    let old_leaf = match self.original_tree.get_leaf_node(to_replace) {
-                        Ok(leaf) => leaf,
-                        Err(e) => return Some(Err(e)),
+                        let old_leaf = match self.original_tree.get_leaf_node(to_replace) {
+                            Ok(leaf) => leaf,
+                            Err(e) => return Some(Err(e)),
+                        };
+
+                        let valid_successor = self
+                            .identity_provider
+                            .valid_successor(
+                                &old_leaf.signing_identity,
+                                &leaf.signing_identity,
+                                group_extensions_in_use,
+                            )
+                            .await
+                            .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))
+                            .and_then(|valid| {
+                                valid.then_some(()).ok_or(MlsError::InvalidSuccessor)
+                            });
+
+                        res.and(valid_successor)
                     };
 
-                    let valid_successor = self
-                        .identity_provider
-                        .valid_successor(
-                            &old_leaf.signing_identity,
-                            &leaf.signing_identity,
-                            group_extensions_in_use,
-                        )
-                        .await
-                        .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))
-                        .and_then(|valid| valid.then_some(()).ok_or(MlsError::InvalidSuccessor));
+                    apply_strategy(strategy, p.is_by_reference(), res)
+                        .map(|b| (!b).then_some(i))
+                        .transpose()
+                })
+                .try_collect()
+                .await?;
 
-                    res.and(valid_successor)
-                };
-
-                apply_strategy(strategy, p.is_by_reference(), res)
-                    .map(|b| (!b).then_some(i))
-                    .transpose()
-            })
-            .try_collect()
-            .await?;
-
-        bad_indices.into_iter().rev().for_each(|i| {
-            proposals.remove::<ReplaceProposal>(i);
-        });
+            bad_indices.into_iter().rev().for_each(|i| {
+                proposals.remove::<ReplaceProposal>(i);
+            });
+        }
 
         // Check that Adds are valid
         let bad_indices: Vec<_> = wrap_iter(proposals.add_proposals())
