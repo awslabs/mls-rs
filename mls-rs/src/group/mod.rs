@@ -999,17 +999,17 @@ where
     #[cfg(feature = "replace_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn abandon_replacement(&mut self, leaf_node: &LeafNode) {
-        #[cfg(all(feature = "std", feature = "by_ref_proposal"))]
+        #[cfg(feature = "std")]
         {
             self.pending_updates.retain(|pk, upd| {
-                upd.context == PendingUpdateContext::Replace && *pk == leaf_node.public_key
+                upd.context != PendingUpdateContext::Replace || *pk != leaf_node.public_key
             });
         }
 
-        #[cfg(all(not(feature = "std"), feature = "by_ref_proposal"))]
+        #[cfg(not(feature = "std"))]
         {
             self.pending_updates.retain(|(pk, upd)| {
-                upd.context == PendingUpdateContext::Replace && *pk == leaf_node.public_key
+                upd.context != PendingUpdateContext::Replace || *pk != leaf_node.public_key
             });
         }
     }
@@ -1909,13 +1909,19 @@ where
         self.state.proposals.clear();
 
         // Remove any state corresponding to Update proposals
-        #[cfg(all(feature = "std", feature = "by_ref_proposal"))]
+        #[cfg(all(
+            feature = "std",
+            any(feature = "by_ref_proposal", feature = "replace_proposal")
+        ))]
         {
             self.pending_updates
                 .retain(|_pk, upd| upd.context != PendingUpdateContext::Update);
         }
 
-        #[cfg(all(not(feature = "std"), feature = "by_ref_proposal"))]
+        #[cfg(all(
+            not(feature = "std"),
+            any(feature = "by_ref_proposal", feature = "replace_proposal")
+        ))]
         {
             self.pending_updates
                 .retain(|(_pk, upd)| upd.context != PendingUpdateContext::Update);
