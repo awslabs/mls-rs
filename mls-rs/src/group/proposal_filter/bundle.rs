@@ -188,6 +188,11 @@ impl ProposalBundle {
             f(&proposal.as_ref().map(BorrowedProposal::from))
         })?;
 
+        #[cfg(feature = "replace_proposal")]
+        self.retain_by_type::<ReplaceProposal, _, _>(|proposal| {
+            f(&proposal.as_ref().map(BorrowedProposal::from))
+        })?;
+
         self.retain_by_type::<RemoveProposal, _, _>(|proposal| {
             f(&proposal.as_ref().map(BorrowedProposal::from))
         })?;
@@ -356,6 +361,12 @@ impl ProposalBundle {
     #[cfg(feature = "by_ref_proposal")]
     pub fn update_proposal_senders(&self) -> &[LeafIndex] {
         &self.update_senders
+    }
+
+    /// Replace proposals in the bundle.
+    #[cfg(feature = "replace_proposal")]
+    pub fn replace_proposals(&self) -> &[ProposalInfo<ReplaceProposal>] {
+        &self.replaces
     }
 
     /// Remove proposals in the bundle.
