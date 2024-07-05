@@ -242,6 +242,25 @@ impl NewMemberInfo {
     }
 }
 
+// An enum to reflect whether cached private information related to an update is for an Update
+// proposal or for a Replace proposal.  Update-related information is cleared on epoch change;
+// Replace-related information is not.
+#[derive(Copy, Clone, Debug, PartialEq, MlsEncode, MlsDecode, MlsSize)]
+#[repr(u8)]
+enum PendingUpdateContext {
+    Update = 1u8,
+
+    #[cfg(feature = "replace_proposal")]
+    Replace = 2u8,
+}
+
+#[derive(Clone, Debug, PartialEq, MlsEncode, MlsDecode, MlsSize)]
+struct PendingUpdate {
+    context: PendingUpdateContext,
+    secret_key: HpkeSecretKey,
+    signer: Option<SignatureSecretKey>,
+}
+
 /// An MLS end-to-end encrypted group.
 ///
 /// # Group Evolution
@@ -266,9 +285,9 @@ where
     private_tree: TreeKemPrivate,
     key_schedule: KeySchedule,
     #[cfg(all(feature = "std", feature = "by_ref_proposal"))]
-    pending_updates: HashMap<HpkePublicKey, (HpkeSecretKey, Option<SignatureSecretKey>)>, // Hash of leaf node hpke public key to secret key
+    pending_updates: HashMap<HpkePublicKey, PendingUpdate>, // Hash of leaf node hpke public key to secret key
     #[cfg(all(not(feature = "std"), feature = "by_ref_proposal"))]
-    pending_updates: Vec<(HpkePublicKey, (HpkeSecretKey, Option<SignatureSecretKey>))>,
+    pending_updates: Vec<(HpkePublicKey, PendingUpdate)>,
     pending_commit: Option<CommitGeneration>,
     #[cfg(feature = "psk")]
     previous_psk: Option<PskSecretInput>,
@@ -783,7 +802,7 @@ where
         if let Some(leaf_pk) = self_update {
             // Update the leaf in the private tree if this is our update
             #[cfg(feature = "std")]
-            let new_leaf_sk_and_signer = self.pending_updates.get(&leaf_pk);
+            let pending_update = self.pending_updates.get(&leaf_pk);
 
             #[cfg(not(feature = "std"))]
             let new_leaf_sk_and_signer = self
@@ -791,8 +810,8 @@ where
                 .iter()
                 .find_map(|(pk, sk)| (pk == leaf_pk).then_some(sk));
 
-            let new_leaf_sk = new_leaf_sk_and_signer.map(|(sk, _)| sk.clone());
-            new_signer = new_leaf_sk_and_signer.and_then(|(_, sk)| sk.clone());
+            let new_leaf_sk = pending_update.map(|upd| upd.secret_key.clone());
+            new_signer = pending_update.and_then(|upd| upd.signer.clone());
 
             provisional_private_tree
                 .update_leaf(new_leaf_sk.ok_or(MlsError::UpdateErrorNoSecretKey)?);
@@ -930,7 +949,9 @@ where
         signer: Option<SignatureSecretKey>,
         signing_identity: Option<SigningIdentity>,
     ) -> Result<Proposal, MlsError> {
-        let leaf_node = self.replacement_leaf_node(signer, signing_identity).await?;
+        let leaf_node = self
+            .updated_leaf_node(PendingUpdateContext::Update, signer, signing_identity)
+            .await?;
         Ok(Proposal::Update(UpdateProposal { leaf_node }))
     }
 
@@ -964,10 +985,41 @@ where
     }
 
     /// Create a fresh LeafNode that can be used to update this member's leaf.
-    #[cfg(any(feature = "by_ref_proposal", feature = "replace_proposal"))]
+    #[cfg(feature = "replace_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn replacement_leaf_node(
         &mut self,
+        signer: Option<SignatureSecretKey>,
+        signing_identity: Option<SigningIdentity>,
+    ) -> Result<LeafNode, MlsError> {
+        self.updated_leaf_node(PendingUpdateContext::Replace, signer, signing_identity)
+    }
+
+    /// Abandon any cached state corresponding to a replacement leaf node
+    #[cfg(feature = "replace_proposal")]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn abandon_replacement(&mut self, leaf_node: &LeafNode) {
+        #[cfg(all(feature = "std", feature = "by_ref_proposal"))]
+        {
+            self.pending_updates.retain(|pk, upd| {
+                upd.context == PendingUpdateContext::Replace && *pk == leaf_node.public_key
+            });
+        }
+
+        #[cfg(all(not(feature = "std"), feature = "by_ref_proposal"))]
+        {
+            self.pending_updates.retain(|(pk, upd)| {
+                upd.context == PendingUpdateContext::Replace && *pk == leaf_node.public_key
+            });
+        }
+    }
+
+    /// Create a fresh LeafNode that can be used to update this member's leaf.
+    #[cfg(any(feature = "by_ref_proposal", feature = "replace_proposal"))]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn updated_leaf_node(
+        &mut self,
+        context: PendingUpdateContext,
         signer: Option<SignatureSecretKey>,
         signing_identity: Option<SigningIdentity>,
     ) -> Result<LeafNode, MlsError> {
@@ -985,14 +1037,20 @@ where
             )
             .await?;
 
+        let pending_update = PendingUpdate {
+            context,
+            secret_key,
+            signer,
+        };
+
         // Store the secret key in the pending updates storage for later
         #[cfg(feature = "std")]
         self.pending_updates
-            .insert(new_leaf_node.public_key.clone(), (secret_key, signer));
+            .insert(new_leaf_node.public_key.clone(), pending_update);
 
         #[cfg(not(feature = "std"))]
         self.pending_updates
-            .push((new_leaf_node.public_key.clone(), (secret_key, signer)));
+            .push((new_leaf_node.public_key.clone(), pending_update));
 
         Ok(new_leaf_node)
     }
@@ -1850,10 +1908,17 @@ where
         #[cfg(feature = "by_ref_proposal")]
         self.state.proposals.clear();
 
-        // Clear the pending updates list
-        #[cfg(feature = "by_ref_proposal")]
+        // Remove any state corresponding to Update proposals
+        #[cfg(all(feature = "std", feature = "by_ref_proposal"))]
         {
-            self.pending_updates = Default::default();
+            self.pending_updates
+                .retain(|_pk, upd| upd.context != PendingUpdateContext::Update);
+        }
+
+        #[cfg(all(not(feature = "std"), feature = "by_ref_proposal"))]
+        {
+            self.pending_updates
+                .retain(|(_pk, upd)| upd.context != PendingUpdateContext::Update);
         }
 
         self.pending_commit = None;

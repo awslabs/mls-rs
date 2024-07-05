@@ -13,10 +13,7 @@ use crate::{
 };
 
 #[cfg(feature = "by_ref_proposal")]
-use crate::{
-    crypto::{HpkePublicKey, HpkeSecretKey},
-    group::ProposalRef,
-};
+use crate::{crypto::HpkePublicKey, group::ProposalRef};
 
 #[cfg(feature = "by_ref_proposal")]
 use super::proposal_cache::{CachedProposal, ProposalCache};
@@ -33,7 +30,9 @@ use std::collections::HashMap;
 #[cfg(all(feature = "by_ref_proposal", not(feature = "std")))]
 use alloc::vec::Vec;
 
-use super::{cipher_suite_provider, epoch::EpochSecrets, state_repo::GroupStateRepository};
+use super::{
+    cipher_suite_provider, epoch::EpochSecrets, state_repo::GroupStateRepository, PendingUpdate,
+};
 
 #[derive(Debug, PartialEq, Clone, MlsEncode, MlsDecode, MlsSize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -44,9 +43,9 @@ pub(crate) struct Snapshot {
     epoch_secrets: EpochSecrets,
     key_schedule: KeySchedule,
     #[cfg(all(feature = "std", feature = "by_ref_proposal"))]
-    pending_updates: HashMap<HpkePublicKey, (HpkeSecretKey, Option<SignatureSecretKey>)>,
+    pending_updates: HashMap<HpkePublicKey, PendingUpdate>,
     #[cfg(all(not(feature = "std"), feature = "by_ref_proposal"))]
-    pending_updates: Vec<(HpkePublicKey, (HpkeSecretKey, Option<SignatureSecretKey>))>,
+    pending_updates: Vec<(HpkePublicKey, PendingUpdate)>,
     pending_commit: Option<CommitGeneration>,
     signer: SignatureSecretKey,
 }
