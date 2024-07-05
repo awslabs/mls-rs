@@ -11,10 +11,13 @@ use itertools::Itertools;
 use crate::{
     group::{
         AddProposal, BorrowedProposal, Proposal, ProposalOrRef, ProposalType, ReInitProposal,
-        RemoveProposal, ReplaceProposal, Sender,
+        RemoveProposal, Sender,
     },
     ExtensionList,
 };
+
+#[cfg(feature = "replace_proposal")]
+use crate::group::ReplaceProposal;
 
 #[cfg(feature = "by_ref_proposal")]
 use crate::group::{proposal_cache::CachedProposal, LeafIndex, ProposalRef, UpdateProposal};

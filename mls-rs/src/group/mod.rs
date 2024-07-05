@@ -741,35 +741,61 @@ where
             }
         }
 
-        // Apply own update
+        // Apply own update or a Replace proposal replacing us
         let new_signer = None;
+        let updated_leaves = std::iter::empty();
 
-        #[cfg(feature = "by_ref_proposal")]
+        #[cfg(any(feature = "by_ref_proposal", feature = "replace_proposal"))]
         let mut new_signer = new_signer;
 
         #[cfg(feature = "by_ref_proposal")]
-        for p in &provisional_state.applied_proposals.updates {
-            if p.sender == Sender::Member(*self_index) {
-                let leaf_pk = &p.proposal.leaf_node.public_key;
+        let updated_leaves = updated_leaves.chain(
+            provisional_state
+                .applied_proposals
+                .update_senders
+                .iter()
+                .zip(provisional_state.applied_proposals.updates.iter())
+                .filter(|(&i, _p)| i.0 == *self_index)
+                .map(|(_i, p)| p.proposal.leaf_node.public_key.clone()),
+        );
 
-                // Update the leaf in the private tree if this is our update
-                #[cfg(feature = "std")]
-                let new_leaf_sk_and_signer = self.pending_updates.get(leaf_pk);
+        #[cfg(feature = "replace_proposal")]
+        let updated_leaves = updated_leaves.chain(
+            provisional_state
+                .applied_proposals
+                .replaces
+                .iter()
+                .filter(|p| p.proposal.to_replace.0 == *self_index)
+                .map(|p| p.proposal.leaf_node.public_key.clone()),
+        );
 
-                #[cfg(not(feature = "std"))]
-                let new_leaf_sk_and_signer = self
-                    .pending_updates
-                    .iter()
-                    .find_map(|(pk, sk)| (pk == leaf_pk).then_some(sk));
+        let mut updated_leaves = updated_leaves;
+        let self_update = updated_leaves.next();
 
-                let new_leaf_sk = new_leaf_sk_and_signer.map(|(sk, _)| sk.clone());
-                new_signer = new_leaf_sk_and_signer.and_then(|(_, sk)| sk.clone());
+        if updated_leaves.count() > 0 {
+            // XXX(RLB) This error code is wrong; might need a new value?  Or just not bother
+            // checking, assuming checks have been done upstream?  But then we might also need a
+            // new error code there.  In any case, we need to enforce that there are not multiple
+            // Update **or Replace** proposals for the same leaf.
+            return Err(MlsError::InvalidCommitSelfUpdate);
+        }
 
-                provisional_private_tree
-                    .update_leaf(new_leaf_sk.ok_or(MlsError::UpdateErrorNoSecretKey)?);
+        if let Some(leaf_pk) = self_update {
+            // Update the leaf in the private tree if this is our update
+            #[cfg(feature = "std")]
+            let new_leaf_sk_and_signer = self.pending_updates.get(&leaf_pk);
 
-                break;
-            }
+            #[cfg(not(feature = "std"))]
+            let new_leaf_sk_and_signer = self
+                .pending_updates
+                .iter()
+                .find_map(|(pk, sk)| (pk == leaf_pk).then_some(sk));
+
+            let new_leaf_sk = new_leaf_sk_and_signer.map(|(sk, _)| sk.clone());
+            new_signer = new_leaf_sk_and_signer.and_then(|(_, sk)| sk.clone());
+
+            provisional_private_tree
+                .update_leaf(new_leaf_sk.ok_or(MlsError::UpdateErrorNoSecretKey)?);
         }
 
         Ok((provisional_private_tree, new_signer))
@@ -924,16 +950,13 @@ where
         self.proposal_message(proposal, authenticated_data).await
     }
 
-    #[cfg(feature = "by_ref_proposal")]
+    #[cfg(feature = "replace_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn replace_proposal(
         &mut self,
         to_replace: u32,
         leaf_node: LeafNode,
     ) -> Result<Proposal, MlsError> {
-        // TODO(RLB) Verify that the new LeafNode is a plausible replacement for the current leaf
-        // node.
-
         Ok(Proposal::Replace(ReplaceProposal {
             to_replace: LeafIndex(to_replace),
             leaf_node,

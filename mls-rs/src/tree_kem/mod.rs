@@ -26,6 +26,9 @@ use crate::crypto::{self, CipherSuiteProvider, HpkeSecretKey};
 #[cfg(feature = "by_ref_proposal")]
 use crate::group::proposal::{AddProposal, UpdateProposal};
 
+#[cfg(feature = "replace_proposal")]
+use crate::group::proposal::ReplaceProposal;
+
 #[cfg(any(test, feature = "by_ref_proposal"))]
 use crate::group::proposal::RemoveProposal;
 
@@ -369,13 +372,43 @@ impl TreeKemPublic {
             }
         }
 
-        // Remove from the tree old leaves from updates
+        // Remove from the tree old leaves from updates and replaces
         let mut partial_updates = vec![];
+
         let senders = proposal_bundle.update_senders.iter().copied();
+        let updates =
+            proposal_bundle
+                .updates
+                .iter()
+                .zip(senders)
+                .enumerate()
+                .map(|(i, (p, index))| {
+                    (
+                        true,
+                        i,
+                        index,
+                        p.proposal.leaf_node.clone(),
+                        p.is_by_reference(),
+                    )
+                });
 
-        for (i, (p, index)) in proposal_bundle.updates.iter().zip(senders).enumerate() {
-            let new_leaf = p.proposal.leaf_node.clone();
+        #[cfg(not(feature = "replace_proposal"))]
+        let replaces = std::iter::empty();
 
+        #[cfg(feature = "replace_proposal")]
+        let replaces = proposal_bundle.replaces.iter().enumerate().map(|(i, p)| {
+            (
+                false,
+                i,
+                p.proposal.to_replace,
+                p.proposal.leaf_node.clone(),
+                p.is_by_reference(),
+            )
+        });
+
+        let updates = updates.chain(replaces);
+
+        for (is_update, i, index, new_leaf, is_by_reference) in updates {
             match self.nodes.blank_leaf_node(index) {
                 Ok(old_leaf) => {
                     #[cfg(feature = "tree_index")]
@@ -385,10 +418,10 @@ impl TreeKemPublic {
                     #[cfg(feature = "tree_index")]
                     self.index.remove(&old_leaf, &old_id);
 
-                    partial_updates.push((index, old_leaf, new_leaf, i));
+                    partial_updates.push((index, old_leaf, new_leaf, is_update, i));
                 }
                 _ => {
-                    if !filter || !p.is_by_reference() {
+                    if !filter || !is_by_reference {
                         return Err(MlsError::UpdatingNonExistingMember);
                     }
                 }
@@ -400,11 +433,12 @@ impl TreeKemPublic {
 
         let mut removed_leaves = vec![];
         let mut updated_indices = vec![];
-        let mut bad_indices = vec![];
+        let mut bad_update_indices = vec![];
+        let mut bad_replace_indices = vec![];
 
         // Apply updates one by one. If there's an update which we can't apply or revert, we revert
         // all updates.
-        for (index, old_leaf, new_leaf, i) in partial_updates.into_iter() {
+        for (index, old_leaf, new_leaf, is_update, i) in partial_updates.into_iter() {
             #[cfg(feature = "tree_index")]
             let res =
                 index_insert(&mut self.index, &new_leaf, index, id_provider, extensions).await;
@@ -433,7 +467,11 @@ impl TreeKemPublic {
 
                 if res.is_ok() {
                     self.nodes.insert_leaf(index, old_leaf);
-                    bad_indices.push(i);
+                    if is_update {
+                        bad_update_indices.push(i);
+                    } else {
+                        bad_replace_indices.push(i);
+                    }
                 } else {
                     // Revert all updates and stop. We're already in the "filter" case, so we don't throw an error.
                     #[cfg(feature = "tree_index")]
@@ -461,10 +499,20 @@ impl TreeKemPublic {
         if updated_indices.is_empty() {
             // This takes care of the "revert all" scenario
             proposal_bundle.updates = vec![];
+
+            #[cfg(feature = "replace_proposal")]
+            {
+                proposal_bundle.replaces = vec![];
+            }
         } else {
-            for i in bad_indices.into_iter().rev() {
+            for i in bad_update_indices.into_iter().rev() {
                 proposal_bundle.remove::<UpdateProposal>(i);
                 proposal_bundle.update_senders.remove(i);
+            }
+
+            #[cfg(feature = "replace_proposal")]
+            for i in bad_replace_indices.into_iter().rev() {
+                proposal_bundle.remove::<ReplaceProposal>(i);
             }
         }
 

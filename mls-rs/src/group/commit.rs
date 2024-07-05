@@ -230,6 +230,7 @@ where
 
     /// Insert a [`ReplaceProposal`](crate::group::proposal::ReplaceProposal) into
     /// the current commit that is being built.
+    #[cfg(feature = "replace_proposal")]
     pub fn replace_member(
         mut self,
         to_replace: u32,
@@ -1062,7 +1063,7 @@ mod tests {
 
     #[cfg(feature = "replace_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn test_commit_builder_replace() {
+    async fn test_commit_builder_replace() -> Result<(), MlsError> {
         let mut group = test_group_custom_config(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, |b| {
             b.custom_proposal_type(ProposalType::REPLACE)
         })
@@ -1072,33 +1073,60 @@ mod tests {
         let (alice, alice_kp) =
             test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "a").await;
 
-        // Add alice to theh group
+        // Add Alice to the group
         let output = group
             .commit_builder()
-            .add_member(alice_kp)
+            .add_member(alice_kp.clone())
             .unwrap()
             .build()
-            .await
-            .unwrap();
+            .await?;
 
-        group.apply_pending_commit().await.unwrap();
+        group.apply_pending_commit().await?;
 
-        // Alice joins the group and produces a new LeafNode
-        let (mut alice_group, _) = alice.join_group(None, &output.welcome_messages[0]).unwrap();
-        let new_alice_leaf = alice_group.replacement_leaf_node(None, None).unwrap();
+        // Check that Alice's represntation in the tree is correct
+        let alice_leaf_in_kp = alice_kp.into_key_package().unwrap().leaf_node;
+        let alice_leaf_in_group = group.current_epoch_tree().get_leaf_node(LeafIndex(1))?;
+        assert_eq!(&alice_leaf_in_kp, alice_leaf_in_group);
 
-        // Replace Alice's appearance in the group
+        // Alice joins the group
+        let (mut alice_group, _) = alice.join_group(None, &output.welcome_messages[0])?;
+
+        // Alice produces a new LeafNode
+        let new_alice_leaf = alice_group.replacement_leaf_node(None, None)?;
+
+        // The committer replaces Alice's appearance in the group
         let commit_output = group
             .commit_builder()
-            .replace_member(1, new_alice_leaf.clone())
-            .unwrap()
+            .replace_member(1, new_alice_leaf.clone())?
             .build()
-            .await
-            .unwrap();
+            .await?;
 
-        let expected_replace = group.replace_proposal(1, new_alice_leaf).unwrap();
+        let expected_replace = group.replace_proposal(1, new_alice_leaf.clone())?;
 
-        assert_commit_builder_output(group, commit_output, vec![expected_replace], 0);
+        assert_commit_builder_output(
+            group.clone(),
+            commit_output.clone(),
+            vec![expected_replace],
+            0,
+        );
+
+        // Check that Alice's representation in the tree gets updated in the committer's
+        // representation of the group.
+        group.apply_pending_commit().await?;
+
+        let alice_leaf_in_group = group.current_epoch_tree().get_leaf_node(LeafIndex(1))?;
+        assert_eq!(&new_alice_leaf, alice_leaf_in_group);
+
+        // Check that Alice's representation in the tree gets updated in Alice's representation of
+        // the group.
+        alice_group.process_incoming_message(commit_output.commit_message)?;
+
+        let alice_leaf_in_group = alice_group
+            .current_epoch_tree()
+            .get_leaf_node(LeafIndex(1))?;
+        assert_eq!(&new_alice_leaf, alice_leaf_in_group);
+
+        Ok(())
     }
 
     #[cfg(feature = "psk")]
