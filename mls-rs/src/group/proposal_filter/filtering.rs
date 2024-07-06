@@ -26,7 +26,7 @@ use super::filtering_common::{filter_out_invalid_psks, ApplyProposalsOutput, Pro
 use crate::extension::ExternalSendersExt;
 
 #[cfg(feature = "replace_proposal")]
-use crate::group::ReplaceProposal;
+use crate::{extension::LeafNodeEpochExt, group::ReplaceProposal};
 
 use alloc::vec::Vec;
 use mls_rs_core::{error::IntoAnyError, identity::IdentityProvider, psk::PreSharedKeyStorage};
@@ -271,7 +271,18 @@ where
                                 valid.then_some(()).ok_or(MlsError::InvalidSuccessor)
                             });
 
-                        res.and(valid_successor)
+                        // If the old leaf has a leaf_node_epoch extension, then the new leaf must
+                        // have one as well, and the new value must be at least as big as the old
+                        // value.
+                        let old_epoch = old_leaf.extensions.get_as::<LeafNodeEpochExt>().ok()?;
+                        let new_epoch = leaf.extensions.get_as::<LeafNodeEpochExt>().ok()?;
+                        let epoch_successor = old_epoch
+                            .and_then(|old| new_epoch.map(|new| new.epoch >= old.epoch))
+                            .unwrap_or(true)
+                            .then_some(())
+                            .ok_or(MlsError::InvalidSuccessor);
+
+                        res.and(valid_successor).and(epoch_successor)
                     };
 
                     apply_strategy(strategy, p.is_by_reference(), res)

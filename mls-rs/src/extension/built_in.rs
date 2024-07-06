@@ -235,6 +235,35 @@ impl MlsCodecExtension for ExternalSendersExt {
     }
 }
 
+/// Mark a LeafNode with the epoch in which it was created.  Note that a LeafNode with
+/// `leaf_node_source` set to `update` or `commit` is already bound to the `group_id` for the group
+/// by way of the `LeafNodeTBS` signed structure.
+#[cfg(feature = "replace_proposal")]
+#[cfg_attr(
+    all(feature = "ffi", not(test)),
+    safer_ffi_gen::ffi_type(clone, opaque)
+)]
+#[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
+#[non_exhaustive]
+pub struct LeafNodeEpochExt {
+    pub epoch: u64,
+}
+
+#[cfg(feature = "replace_proposal")]
+#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
+impl LeafNodeEpochExt {
+    pub fn new(epoch: u64) -> Self {
+        Self { epoch }
+    }
+}
+
+#[cfg(feature = "replace_proposal")]
+impl MlsCodecExtension for LeafNodeEpochExt {
+    fn extension_type() -> ExtensionType {
+        ExtensionType::LEAF_NODE_EPOCH
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -325,6 +354,19 @@ mod tests {
         assert_eq!(as_extension.extension_type, ExtensionType::EXTERNAL_PUB);
 
         let restored = ExternalPubExt::from_extension(&as_extension).unwrap();
+        assert_eq!(ext, restored)
+    }
+
+    #[test]
+    fn test_leaf_node_epoch() {
+        let ext = LeafNodeEpochExt {
+            epoch: 0x01234567890abcdef,
+        };
+
+        let as_extension = ext.clone().into_extension().unwrap();
+        assert_eq!(as_extension.extension_type, ExtensionType::LEAF_NODE_EPOCH);
+
+        let restored = LeafNodeEpochExt::from_extension(&as_extension).unwrap();
         assert_eq!(ext, restored)
     }
 }

@@ -3049,7 +3049,6 @@ mod tests {
         assert_matches!(res, Err(MlsError::InvalidSuccessor));
     }
 
-    // TODO
     #[cfg(feature = "replace_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn sending_replace_for_different_identity_filters_it_out() {
@@ -3070,6 +3069,61 @@ mod tests {
 
         #[cfg(feature = "state_update")]
         assert_eq!(processed_proposals.1.unused_proposals, vec![replace_info]);
+    }
+
+    // TODO(RLB) Scenario
+    // * Alice creates the group
+    // * Bob joins
+    // * Bob creates a LeafNode
+    // * Bob commits
+    // * Alice sends Replace {1, bob_leaf_node}
+
+    #[cfg(feature = "replace_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn receiving_replace_for_old_epoch_fails() {
+        /*
+        let (alice, mut tree) = new_tree("alice").await;
+        let _bob = add_member(&mut tree, "bob").await;
+
+        let replace = Proposal::Replace(make_replace_proposal(1, "carol"));
+        let replace_ref = make_proposal_ref(&replace, alice).await;
+
+        let res = CommitReceiver::new(
+            &tree,
+            alice,
+            alice,
+            test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .cache(replace_ref.clone(), replace, alice)
+        .receive([replace_ref])
+        .await;
+
+        assert_matches!(res, Err(MlsError::InvalidSuccessor));
+        */
+    }
+
+    #[cfg(feature = "replace_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn sending_replace_for_old_epoch_filters_it_out() {
+        /*
+        let (alice, mut tree) = new_tree("alice").await;
+        let _bob = add_member(&mut tree, "bob").await;
+
+        let replace = Proposal::Replace(make_replace_proposal(1, "carol"));
+        let replace_info = make_proposal_info(&replace, alice).await;
+
+        let processed_proposals =
+            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+                .cache(replace_info.proposal_ref().unwrap().clone(), replace, alice)
+                .send()
+                .await
+                .unwrap();
+
+        assert_eq!(processed_proposals.0, Vec::new());
+
+        #[cfg(feature = "state_update")]
+        assert_eq!(processed_proposals.1.unused_proposals, vec![replace_info]);
+        */
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]

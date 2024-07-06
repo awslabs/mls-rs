@@ -37,6 +37,12 @@ use crate::{CipherSuiteProvider, CryptoProvider};
 #[cfg(feature = "by_ref_proposal")]
 use crate::crypto::{HpkePublicKey, HpkeSecretKey};
 
+#[cfg(feature = "replace_proposal")]
+use crate::extension::LeafNodeEpochExt;
+
+#[cfg(feature = "replace_proposal")]
+use mls_rs_core::extension::MlsExtension;
+
 use crate::extension::ExternalPubExt;
 
 #[cfg(feature = "private_message")]
@@ -1025,13 +1031,21 @@ where
     ) -> Result<LeafNode, MlsError> {
         // Grab a copy of the current node and update it to have new key material
         let mut new_leaf_node = self.current_user_leaf_node()?.clone();
+        let mut properties = self.config.leaf_properties();
+
+        #[cfg(feature = "replace_proposal")]
+        if context == PendingUpdateContext::Replace {
+            properties
+                .extensions
+                .set(LeafNodeEpochExt::new(self.current_epoch()).into_extension()?);
+        }
 
         let secret_key = new_leaf_node
             .update(
                 &self.cipher_suite_provider,
                 self.group_id(),
                 self.current_member_index(),
-                self.config.leaf_properties(),
+                properties,
                 signing_identity,
                 signer.as_ref().unwrap_or(&self.signer),
             )
