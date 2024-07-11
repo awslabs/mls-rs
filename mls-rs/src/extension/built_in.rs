@@ -357,6 +357,7 @@ mod tests {
         assert_eq!(ext, restored)
     }
 
+    #[cfg(feature = "replace_proposal")]
     #[test]
     fn test_leaf_node_epoch() {
         let ext = LeafNodeEpochExt {

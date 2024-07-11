@@ -870,6 +870,8 @@ pub(crate) mod test_utils {
 #[cfg(test)]
 mod tests {
     use alloc::boxed::Box;
+
+    #[cfg(feature = "replace_proposal")]
     use assert_matches::assert_matches;
 
     use mls_rs_core::{
@@ -1062,6 +1064,17 @@ mod tests {
         assert_commit_builder_output(group, commit_output, vec![expected_remove], 0);
     }
 
+    fn replacement_leaf_node<C>(group: &mut Group<C>) -> Result<LeafNode, MlsError>
+    where
+        C: ClientConfig + Clone,
+    {
+        let update = group.update_proposal(None, None)?;
+        let Proposal::Update(update) = update else {
+            panic!("Incorrect proposal type")
+        };
+        Ok(update.leaf_node)
+    }
+
     // XXX(RLB): This test is an omnibus that validates that all of the required machinery works as
     // expected.  It should probably be trimmed down / sliced up / done elsewhere.
     #[cfg(feature = "replace_proposal")]
@@ -1095,8 +1108,8 @@ mod tests {
         let (mut alice_group, _) = alice.join_group(None, &output.welcome_messages[0])?;
 
         // Alice produces two new LeafNodes
-        let new_alice_leaf_1 = alice_group.replacement_leaf_node(None, None)?;
-        let new_alice_leaf_2 = alice_group.replacement_leaf_node(None, None)?;
+        let new_alice_leaf_1 = replacement_leaf_node(&mut alice_group)?;
+        let new_alice_leaf_2 = replacement_leaf_node(&mut alice_group)?;
 
         // Alice makes an empty commit, and both members apply it.  Alice's cached state should
         // survive the epoch transition.
@@ -1137,7 +1150,7 @@ mod tests {
         assert_eq!(&new_alice_leaf_1, alice_leaf_in_group);
 
         // Alice deletes her local state for the other LeafNode
-        alice_group.abandon_replacement(&new_alice_leaf_2);
+        alice_group.abandon_leaf_node(&new_alice_leaf_2);
 
         // Now when the committer attempts to replace Alice again, she should be unable to process
         // the Commit

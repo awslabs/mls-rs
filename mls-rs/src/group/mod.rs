@@ -248,21 +248,8 @@ impl NewMemberInfo {
     }
 }
 
-// An enum to reflect whether cached private information related to an update is for an Update
-// proposal or for a Replace proposal.  Update-related information is cleared on epoch change;
-// Replace-related information is not.
-#[derive(Copy, Clone, Debug, PartialEq, MlsEncode, MlsDecode, MlsSize)]
-#[repr(u8)]
-enum PendingUpdateContext {
-    Update = 1u8,
-
-    #[cfg(feature = "replace_proposal")]
-    Replace = 2u8,
-}
-
 #[derive(Clone, Debug, PartialEq, MlsEncode, MlsDecode, MlsSize)]
 struct PendingUpdate {
-    context: PendingUpdateContext,
     secret_key: HpkeSecretKey,
     signer: Option<SignatureSecretKey>,
 }
@@ -955,9 +942,7 @@ where
         signer: Option<SignatureSecretKey>,
         signing_identity: Option<SigningIdentity>,
     ) -> Result<Proposal, MlsError> {
-        let leaf_node = self
-            .updated_leaf_node(PendingUpdateContext::Update, signer, signing_identity)
-            .await?;
+        let leaf_node = self.updated_leaf_node(signer, signing_identity).await?;
         Ok(Proposal::Update(UpdateProposal { leaf_node }))
     }
 
@@ -990,33 +975,19 @@ where
         }))
     }
 
-    /// Create a fresh LeafNode that can be used to update this member's leaf.
+    /// Abandon any cached state corresponding to a leaf node
     #[cfg(feature = "replace_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn replacement_leaf_node(
-        &mut self,
-        signer: Option<SignatureSecretKey>,
-        signing_identity: Option<SigningIdentity>,
-    ) -> Result<LeafNode, MlsError> {
-        self.updated_leaf_node(PendingUpdateContext::Replace, signer, signing_identity)
-    }
-
-    /// Abandon any cached state corresponding to a replacement leaf node
-    #[cfg(feature = "replace_proposal")]
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn abandon_replacement(&mut self, leaf_node: &LeafNode) {
+    pub async fn abandon_leaf_node(&mut self, leaf_node: &LeafNode) {
         #[cfg(feature = "std")]
         {
-            self.pending_updates.retain(|pk, upd| {
-                upd.context != PendingUpdateContext::Replace || *pk != leaf_node.public_key
-            });
+            self.pending_updates.remove(&leaf_node.public_key);
         }
 
         #[cfg(not(feature = "std"))]
         {
-            self.pending_updates.retain(|(pk, upd)| {
-                upd.context != PendingUpdateContext::Replace || *pk != leaf_node.public_key
-            });
+            self.pending_updates
+                .retain(|(pk, _upd)| *pk != leaf_node.public_key);
         }
     }
 
@@ -1025,20 +996,20 @@ where
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn updated_leaf_node(
         &mut self,
-        context: PendingUpdateContext,
         signer: Option<SignatureSecretKey>,
         signing_identity: Option<SigningIdentity>,
     ) -> Result<LeafNode, MlsError> {
         // Grab a copy of the current node and update it to have new key material
         let mut new_leaf_node = self.current_user_leaf_node()?.clone();
-        let mut properties = self.config.leaf_properties();
+        let properties = self.config.leaf_properties();
 
         #[cfg(feature = "replace_proposal")]
-        if context == PendingUpdateContext::Replace {
-            properties
-                .extensions
-                .set(LeafNodeEpochExt::new(self.current_epoch()).into_extension()?);
-        }
+        let mut properties = properties;
+
+        #[cfg(feature = "replace_proposal")]
+        properties
+            .extensions
+            .set(LeafNodeEpochExt::new(self.current_epoch()).into_extension()?);
 
         let secret_key = new_leaf_node
             .update(
@@ -1051,11 +1022,7 @@ where
             )
             .await?;
 
-        let pending_update = PendingUpdate {
-            context,
-            secret_key,
-            signer,
-        };
+        let pending_update = PendingUpdate { secret_key, signer };
 
         // Store the secret key in the pending updates storage for later
         #[cfg(feature = "std")]
@@ -1922,23 +1889,10 @@ where
         #[cfg(feature = "by_ref_proposal")]
         self.state.proposals.clear();
 
-        // Remove any state corresponding to Update proposals
-        #[cfg(all(
-            feature = "std",
-            any(feature = "by_ref_proposal", feature = "replace_proposal")
-        ))]
+        // Clear the pending updates list (but only if they can't show up in a Replace)
+        #[cfg(all(feature = "by_ref_proposal", not(feature = "replace_proposal")))]
         {
-            self.pending_updates
-                .retain(|_pk, upd| upd.context != PendingUpdateContext::Update);
-        }
-
-        #[cfg(all(
-            not(feature = "std"),
-            any(feature = "by_ref_proposal", feature = "replace_proposal")
-        ))]
-        {
-            self.pending_updates
-                .retain(|(_pk, upd)| upd.context != PendingUpdateContext::Update);
+            self.pending_updates = Default::default();
         }
 
         self.pending_commit = None;
