@@ -629,8 +629,8 @@ mod tests {
     use crate::group::proposal_ref::test_utils::auth_content_from_proposal;
     use crate::group::proposal_ref::ProposalRef;
     use crate::group::{
-        AddProposal, AuthenticatedContent, Content, ExternalInit, Proposal, ProposalOrRef,
-        ReInitProposal, RemoveProposal, Roster, Sender, UpdateProposal,
+        AddProposal, AuthenticatedContent, Content, ExternalInit, LeafNodeEpochExt, Proposal,
+        ProposalOrRef, ReInitProposal, RemoveProposal, Roster, Sender, UpdateProposal,
     };
     use crate::key_package::test_utils::test_key_package_with_signer;
     use crate::signer::Signable;
@@ -746,15 +746,40 @@ mod tests {
         .unwrap()[0]
     }
 
+    #[cfg(feature = "replace_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn update_leaf_node(name: &str, leaf_index: u32) -> LeafNode {
+    async fn update_member(tree: &mut TreeKemPublic, leaf_index: u32, leaf_node: LeafNode) {
+        tree.update_leaf(
+            leaf_index,
+            leaf_node,
+            &BasicIdentityProvider,
+            &test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .await
+        .unwrap();
+    }
+
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn update_leaf_node(name: &str, leaf_index: u32, epoch: Option<u64>) -> LeafNode {
         let (mut leaf, _, signer) = get_basic_test_node_sig_key(TEST_CIPHER_SUITE, name).await;
+
+        let properties = default_properties();
+
+        #[cfg(feature = "replace_proposal")]
+        let mut properties = properties;
+
+        #[cfg(feature = "replace_proposal")]
+        if let Some(epoch) = epoch {
+            properties
+                .extensions
+                .set(LeafNodeEpochExt::new(epoch).into_extension().unwrap());
+        }
 
         leaf.update(
             &test_cipher_suite_provider(TEST_CIPHER_SUITE),
             TEST_GROUP,
             leaf_index,
-            default_properties(),
+            properties,
             None,
             &signer,
         )
@@ -3071,21 +3096,18 @@ mod tests {
         assert_eq!(processed_proposals.1.unused_proposals, vec![replace_info]);
     }
 
-    // TODO(RLB) Scenario
-    // * Alice creates the group
-    // * Bob joins
-    // * Bob creates a LeafNode
-    // * Bob commits
-    // * Alice sends Replace {1, bob_leaf_node}
-
     #[cfg(feature = "replace_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn receiving_replace_for_old_epoch_fails() {
-        /*
         let (alice, mut tree) = new_tree("alice").await;
-        let _bob = add_member(&mut tree, "bob").await;
+        add_member(&mut tree, "bob").await;
 
-        let replace = Proposal::Replace(make_replace_proposal(1, "carol"));
+        // Fast-forward Bob to epoch 42
+        let bob_leaf_new_epoch = update_leaf_node("bob", 1, Some(42));
+        update_member(&mut tree, 1, bob_leaf_new_epoch);
+
+        // Try to replace Bob with a LeafNode from epoch 21
+        let replace = Proposal::Replace(make_replace_proposal_custom(1, "bob", 21));
         let replace_ref = make_proposal_ref(&replace, alice).await;
 
         let res = CommitReceiver::new(
@@ -3099,17 +3121,20 @@ mod tests {
         .await;
 
         assert_matches!(res, Err(MlsError::InvalidSuccessor));
-        */
     }
 
     #[cfg(feature = "replace_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn sending_replace_for_old_epoch_filters_it_out() {
-        /*
         let (alice, mut tree) = new_tree("alice").await;
-        let _bob = add_member(&mut tree, "bob").await;
+        add_member(&mut tree, "bob").await;
 
-        let replace = Proposal::Replace(make_replace_proposal(1, "carol"));
+        // Fast-forward Bob to epoch 42
+        let bob_leaf_new_epoch = update_leaf_node("bob", 1, Some(42));
+        update_member(&mut tree, 1, bob_leaf_new_epoch);
+
+        // Try to replace Bob with a LeafNode from epoch 21
+        let replace = Proposal::Replace(make_replace_proposal_custom(1, "bob", 21));
         let replace_info = make_proposal_info(&replace, alice).await;
 
         let processed_proposals =
@@ -3123,7 +3148,6 @@ mod tests {
 
         #[cfg(feature = "state_update")]
         assert_eq!(processed_proposals.1.unused_proposals, vec![replace_info]);
-        */
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -3804,7 +3828,7 @@ mod tests {
             .await
             .unwrap();
 
-        let bob_new_leaf = update_leaf_node("bob", 1).await;
+        let bob_new_leaf = update_leaf_node("bob", 1, None).await;
 
         let pk1_to_pk2 = Proposal::Update(UpdateProposal {
             leaf_node: alice_new_leaf.clone(),
@@ -4527,7 +4551,7 @@ mod tests {
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn make_update_proposal(name: &str) -> UpdateProposal {
         UpdateProposal {
-            leaf_node: update_leaf_node(name, 1).await,
+            leaf_node: update_leaf_node(name, 1, None).await,
         }
     }
 
@@ -4536,14 +4560,23 @@ mod tests {
     async fn make_replace_proposal(index: u32, name: &str) -> ReplaceProposal {
         ReplaceProposal {
             to_replace: LeafIndex(index),
-            leaf_node: update_leaf_node(name, index).await,
+            leaf_node: update_leaf_node(name, index, None).await,
+        }
+    }
+
+    #[cfg(feature = "replace_proposal")]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn make_replace_proposal_custom(index: u32, name: &str, epoch: u64) -> ReplaceProposal {
+        ReplaceProposal {
+            to_replace: LeafIndex(index),
+            leaf_node: update_leaf_node(name, index, Some(epoch)).await,
         }
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn make_update_proposal_custom(name: &str, leaf_index: u32) -> UpdateProposal {
         UpdateProposal {
-            leaf_node: update_leaf_node(name, leaf_index).await,
+            leaf_node: update_leaf_node(name, leaf_index, None).await,
         }
     }
 
