@@ -233,9 +233,7 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
             };
 
             let auth_content = AuthenticatedContent::from(plaintext.clone());
-
-            verify_plaintext_authentication(&cipher_suite, plaintext, None, None, &group.state)
-                .await?;
+            verify_plaintext_authentication(&cipher_suite, plaintext, None, &group.state).await?;
 
             group
                 .process_event_or_content(EventOrContent::Content(auth_content), true, None)

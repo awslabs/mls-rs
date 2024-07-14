@@ -27,6 +27,8 @@ use crate::{
     },
     CipherSuiteProvider, KeyPackage,
 };
+use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
+
 #[cfg(mls_build_async)]
 use alloc::boxed::Box;
 use alloc::vec::Vec;
@@ -67,9 +69,6 @@ use super::proposal::CustomProposal;
 
 #[cfg(feature = "private_message")]
 use crate::group::framing::PrivateMessage;
-
-#[cfg(feature = "by_ref_proposal")]
-use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 
 #[derive(Debug)]
 pub(crate) struct ProvisionalState {
@@ -300,16 +299,18 @@ impl Debug for CommitMessageDescription {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, MlsEncode, MlsDecode, MlsSize)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[repr(u8)]
 /// Proposal sender type.
 pub enum ProposalSender {
     /// A current member of the group by index in the group state.
-    Member(u32),
+    Member(u32) = 1u8,
     /// An external entity by index within an
     /// [`ExternalSendersExt`](crate::extension::built_in::ExternalSendersExt).
-    External(u32),
+    External(u32) = 2u8,
     /// A new member proposing their addition to the group.
-    NewMember,
+    NewMember = 3u8,
 }
 
 impl TryFrom<Sender> for ProposalSender {
@@ -332,7 +333,8 @@ impl TryFrom<Sender> for ProposalSender {
     all(feature = "ffi", not(test)),
     safer_ffi_gen::ffi_type(clone, opaque)
 )]
-#[derive(Clone)]
+#[derive(Clone, MlsEncode, MlsDecode, MlsSize, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 /// Description of a processed MLS proposal message.
 pub struct ProposalMessageDescription {
@@ -400,6 +402,20 @@ impl ProposalMessageDescription {
 
     pub fn proposal_ref(&self) -> Vec<u8> {
         self.proposal_ref.to_vec()
+    }
+
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub(crate) async fn new<C: CipherSuiteProvider>(
+        cs: &C,
+        content: &AuthenticatedContent,
+        proposal: Proposal,
+    ) -> Result<Self, MlsError> {
+        Ok(ProposalMessageDescription {
+            authenticated_data: content.content.authenticated_data.clone(),
+            proposal,
+            sender: content.content.sender.try_into()?,
+            proposal_ref: ProposalRef::from_content(cs, content).await?,
+        })
     }
 }
 
@@ -587,27 +603,24 @@ pub(crate) trait MessageProcessor: Send + Sync {
         proposal: &Proposal,
         cache_proposal: bool,
     ) -> Result<ProposalMessageDescription, MlsError> {
-        let proposal_ref =
-            ProposalRef::from_content(self.cipher_suite_provider(), auth_content).await?;
+        let proposal = ProposalMessageDescription::new(
+            self.cipher_suite_provider(),
+            auth_content,
+            proposal.clone(),
+        )
+        .await?;
 
         let group_state = self.group_state_mut();
 
         if cache_proposal {
-            let proposal_ref = proposal_ref.clone();
-
             group_state.proposals.insert(
-                proposal_ref.clone(),
-                proposal.clone(),
+                proposal.proposal_ref.clone(),
+                proposal.proposal.clone(),
                 auth_content.content.sender,
             );
         }
 
-        Ok(ProposalMessageDescription {
-            authenticated_data: auth_content.content.authenticated_data.clone(),
-            proposal: proposal.clone(),
-            sender: auth_content.content.sender.try_into()?,
-            proposal_ref,
-        })
+        Ok(proposal)
     }
 
     #[cfg(feature = "state_update")]

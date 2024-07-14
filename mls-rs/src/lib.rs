@@ -148,6 +148,7 @@ mod hash_reference;
 pub mod identity;
 mod iter;
 mod key_package;
+pub(crate) mod map;
 /// Pre-shared key support.
 pub mod psk;
 mod signer;

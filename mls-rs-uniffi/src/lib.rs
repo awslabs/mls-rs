@@ -270,7 +270,6 @@ pub enum ReceivedMessage {
         sender: Arc<SigningIdentity>,
         proposal: Arc<Proposal>,
     },
-
     /// Validated GroupInfo object.
     GroupInfo,
     /// Validated welcome message.

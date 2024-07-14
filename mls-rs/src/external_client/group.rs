@@ -414,9 +414,14 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             .await
     }
 
+    /// Issue an external proposal.
+    ///
+    /// This function is useful for reissuing external proposals that
+    /// are returned in [CommitMessageDescription::unused_proposals]
+    /// after a commit is processed.
     #[cfg(feature = "by_ref_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn propose(
+    pub async fn propose(
         &mut self,
         proposal: Proposal,
         authenticated_data: Vec<u8>,
@@ -450,11 +455,8 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         )
         .await?;
 
-        self.state.proposals.insert(
-            ProposalRef::from_content(&self.cipher_suite_provider, &auth_content).await?,
-            proposal,
-            sender,
-        );
+        let proposal_ref =
+            ProposalRef::from_content(&self.cipher_suite_provider, &auth_content).await?;
 
         let plaintext = PublicMessage {
             content: auth_content.content,
@@ -462,10 +464,14 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             membership_tag: None,
         };
 
-        Ok(MlsMessage::new(
+        let message = MlsMessage::new(
             self.group_context().version(),
             MlsMessagePayload::Plain(plaintext),
-        ))
+        );
+
+        self.state.proposals.insert(proposal_ref, proposal, sender);
+
+        Ok(message)
     }
 
     /// Delete all sent and received proposals cached for commit.
@@ -581,7 +587,6 @@ where
         let auth_content = crate::group::message_verifier::verify_plaintext_authentication(
             &self.cipher_suite_provider,
             message,
-            None,
             None,
             &self.state,
         )

@@ -40,11 +40,9 @@ use crate::crypto::{HpkePublicKey, HpkeSecretKey};
 #[cfg(feature = "replace_proposal")]
 use crate::extension::LeafNodeEpochExt;
 
-#[cfg(feature = "replace_proposal")]
-use mls_rs_core::extension::MlsExtension;
-
 use crate::extension::ExternalPubExt;
 
+use self::message_hash::MessageHash;
 #[cfg(feature = "private_message")]
 use self::mls_rules::{EncryptionOptions, MlsRules};
 
@@ -56,9 +54,6 @@ use crate::psk::{
     resolver::PskResolver, secret::PskSecretInput, ExternalPskId, JustPreSharedKeyID, PskGroupId,
     ResumptionPSKUsage, ResumptionPsk,
 };
-
-#[cfg(all(feature = "std", feature = "by_ref_proposal"))]
-use std::collections::HashMap;
 
 #[cfg(feature = "private_message")]
 use ciphertext_processor::*;
@@ -123,6 +118,7 @@ pub(crate) mod framing;
 mod group_info;
 pub(crate) mod key_schedule;
 mod membership_tag;
+pub(crate) mod message_hash;
 pub(crate) mod message_processor;
 pub(crate) mod message_signature;
 pub(crate) mod message_verifier;
@@ -277,10 +273,8 @@ where
     epoch_secrets: EpochSecrets,
     private_tree: TreeKemPrivate,
     key_schedule: KeySchedule,
-    #[cfg(all(feature = "std", feature = "by_ref_proposal"))]
-    pending_updates: HashMap<HpkePublicKey, PendingUpdate>, // Hash of leaf node hpke public key to secret key
-    #[cfg(all(not(feature = "std"), feature = "by_ref_proposal"))]
-    pending_updates: Vec<(HpkePublicKey, PendingUpdate)>,
+    #[cfg(feature = "by_ref_proposal")]
+    pending_updates: crate::map::SmallMap<HpkePublicKey, PendingUpdate>, // Hash of leaf node hpke public key to secret key
     pending_commit: Option<CommitGeneration>,
     #[cfg(feature = "psk")]
     previous_psk: Option<PskSecretInput>,
@@ -715,14 +709,20 @@ where
         )
         .await?;
 
-        let proposal_ref =
-            ProposalRef::from_content(&self.cipher_suite_provider, &auth_content).await?;
+        let sender = auth_content.content.sender;
+
+        let proposal_desc =
+            ProposalMessageDescription::new(&self.cipher_suite_provider, &auth_content, proposal)
+                .await?;
+
+        let message = self.format_for_wire(auth_content).await?;
 
         self.state
             .proposals
-            .insert(proposal_ref, proposal, auth_content.content.sender);
+            .insert_own(proposal_desc, &message, sender, &self.cipher_suite_provider)
+            .await?;
 
-        self.format_for_wire(auth_content).await
+        Ok(message)
     }
 
     /// Unique identifier for this group.
@@ -794,14 +794,7 @@ where
 
         if let Some(leaf_pk) = self_update {
             // Update the leaf in the private tree if this is our update
-            #[cfg(feature = "std")]
             let pending_update = self.pending_updates.get(&leaf_pk);
-
-            #[cfg(not(feature = "std"))]
-            let new_leaf_sk_and_signer = self
-                .pending_updates
-                .iter()
-                .find_map(|(pk, sk)| (pk == leaf_pk).then_some(sk));
 
             let new_leaf_sk = pending_update.map(|upd| upd.secret_key.clone());
             new_signer = pending_update.and_then(|upd| upd.signer.clone());
@@ -979,16 +972,7 @@ where
     #[cfg(feature = "replace_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn abandon_leaf_node(&mut self, leaf_node: &LeafNode) {
-        #[cfg(feature = "std")]
-        {
-            self.pending_updates.remove(&leaf_node.public_key);
-        }
-
-        #[cfg(not(feature = "std"))]
-        {
-            self.pending_updates
-                .retain(|(pk, _upd)| *pk != leaf_node.public_key);
-        }
+        self.pending_updates.remove(&leaf_node.public_key);
     }
 
     /// Create a fresh LeafNode that can be used to update this member's leaf.
@@ -1009,7 +993,7 @@ where
         #[cfg(feature = "replace_proposal")]
         properties
             .extensions
-            .set(LeafNodeEpochExt::new(self.current_epoch()).into_extension()?);
+            .set_from(LeafNodeEpochExt::new(self.current_epoch()))?;
 
         let secret_key = new_leaf_node
             .update(
@@ -1025,13 +1009,8 @@ where
         let pending_update = PendingUpdate { secret_key, signer };
 
         // Store the secret key in the pending updates storage for later
-        #[cfg(feature = "std")]
         self.pending_updates
             .insert(new_leaf_node.public_key.clone(), pending_update);
-
-        #[cfg(not(feature = "std"))]
-        self.pending_updates
-            .push((new_leaf_node.public_key.clone(), pending_update));
 
         Ok(new_leaf_node)
     }
@@ -1394,12 +1373,25 @@ where
         message: MlsMessage,
     ) -> Result<ReceivedMessage, MlsError> {
         if let Some(pending) = &self.pending_commit {
-            let message_hash = CommitHash::compute(&self.cipher_suite_provider, &message).await?;
+            let message_hash = MessageHash::compute(&self.cipher_suite_provider, &message).await?;
 
             if message_hash == pending.commit_message_hash {
                 let message_description = self.apply_pending_commit().await?;
 
                 return Ok(ReceivedMessage::Commit(message_description));
+            }
+        }
+
+        #[cfg(feature = "by_ref_proposal")]
+        if message.wire_format() == WireFormat::PrivateMessage {
+            let cached_own_proposal = self
+                .state
+                .proposals
+                .get_own(&self.cipher_suite_provider, &message)
+                .await?;
+
+            if let Some(cached) = cached_own_proposal {
+                return Ok(ReceivedMessage::Proposal(cached));
             }
         }
 
@@ -1726,7 +1718,6 @@ where
             &self.cipher_suite_provider,
             message,
             Some(&self.key_schedule),
-            Some(self.private_tree.self_index),
             &self.state,
         )
         .await?;
@@ -1946,8 +1937,8 @@ pub(crate) mod test_utils;
 mod tests {
     use crate::{
         client::test_utils::{
-            test_client_with_key_pkg, TestClientBuilder, TEST_CIPHER_SUITE,
-            TEST_CUSTOM_PROPOSAL_TYPE, TEST_PROTOCOL_VERSION,
+            test_client_with_key_pkg, test_client_with_key_pkg_custom, TestClientBuilder,
+            TEST_CIPHER_SUITE, TEST_CUSTOM_PROPOSAL_TYPE, TEST_PROTOCOL_VERSION,
         },
         client_builder::{test_utils::TestClientConfig, ClientBuilder, MlsConfig},
         crypto::test_utils::TestCryptoProvider,
@@ -2105,6 +2096,16 @@ mod tests {
         let mut extension_list = ExtensionList::default();
         extension_list.set_from(new_extension).unwrap();
 
+        let mut extensions: Vec<ExtensionType> = vec![];
+        extensions.push(42.into());
+
+        #[cfg(feature = "replace_proposal")]
+        {
+            let epoch_extension = LeafNodeEpochExt::new(0);
+            extension_list.set_from(epoch_extension).unwrap();
+            extensions.push(ExtensionType::LEAF_NODE_EPOCH);
+        }
+
         let mut test_group = test_group_custom(
             TEST_PROTOCOL_VERSION,
             TEST_CIPHER_SUITE,
@@ -2135,7 +2136,7 @@ mod tests {
         assert_eq!(
             update.leaf_node.ungreased_capabilities().sorted(),
             Capabilities {
-                extensions: vec![42.into()],
+                extensions,
                 ..get_test_capabilities()
             }
             .sorted()
@@ -4353,5 +4354,72 @@ mod tests {
 
         let res = groups[1].group.apply_pending_commit().await;
         assert_matches!(res, Err(MlsError::PendingCommitNotFound));
+    }
+
+    #[cfg(feature = "by_ref_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn can_process_own_plaintext_proposal() {
+        can_process_own_roposal(false).await;
+    }
+
+    #[cfg(feature = "by_ref_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn can_process_own_ciphertext_proposal() {
+        can_process_own_roposal(true).await;
+    }
+
+    #[cfg(feature = "by_ref_proposal")]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn can_process_own_roposal(encrypt_proposal: bool) {
+        let (alice, _) = test_client_with_key_pkg_custom(
+            TEST_PROTOCOL_VERSION,
+            TEST_CIPHER_SUITE,
+            "alice",
+            |c| c.0.mls_rules.encryption_options.encrypt_control_messages = encrypt_proposal,
+        )
+        .await;
+
+        let mut alice = TestGroup {
+            group: alice.create_group(Default::default()).await.unwrap(),
+        };
+
+        let mut bob = alice.join("bob").await.0.group;
+        let mut alice = alice.group;
+
+        let upd = alice.propose_update(vec![]).await.unwrap();
+        alice.process_incoming_message(upd.clone()).await.unwrap();
+
+        bob.process_incoming_message(upd).await.unwrap();
+        let commit = bob.commit(vec![]).await.unwrap().commit_message;
+        let update = alice.process_incoming_message(commit).await.unwrap();
+
+        let ReceivedMessage::Commit(update) = update else {
+            panic!("expected commit")
+        };
+
+        // Check that proposal was applied i.e. alice's index 0 is updated
+        assert!(update
+            .state_update
+            .roster_update
+            .updated()
+            .iter()
+            .any(|member| member.index() == 0));
+    }
+
+    #[cfg(feature = "by_ref_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn commit_clears_proposals() {
+        let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 2).await;
+
+        groups[0].group.propose_update(vec![]).await.unwrap();
+
+        assert_eq!(groups[0].group.state.proposals.proposals.len(), 1);
+        assert_eq!(groups[0].group.state.proposals.own_proposals.len(), 1);
+
+        let commit = groups[1].group.commit(vec![]).await.unwrap().commit_message;
+        groups[0].process_message(commit).await.unwrap();
+
+        assert!(groups[0].group.state.proposals.proposals.is_empty());
+        assert!(groups[0].group.state.proposals.own_proposals.is_empty());
     }
 }

@@ -6,33 +6,28 @@ use crate::{
     client::MlsError,
     client_config::ClientConfig,
     group::{
-        key_schedule::KeySchedule, CommitGeneration, ConfirmationTag, Group, GroupContext,
-        GroupState, InterimTranscriptHash, ReInitProposal, TreeKemPublic,
+        cipher_suite_provider, epoch::EpochSecrets, key_schedule::KeySchedule,
+        state_repo::GroupStateRepository, CommitGeneration, ConfirmationTag, Group, GroupContext,
+        GroupState, InterimTranscriptHash, PendingUpdate, ReInitProposal, TreeKemPublic,
     },
     tree_kem::TreeKemPrivate,
 };
 
 #[cfg(feature = "by_ref_proposal")]
-use crate::{crypto::HpkePublicKey, group::ProposalRef};
-
-#[cfg(feature = "by_ref_proposal")]
-use super::proposal_cache::{CachedProposal, ProposalCache};
+use crate::{
+    crypto::HpkePublicKey,
+    group::{
+        message_hash::MessageHash,
+        proposal_cache::{CachedProposal, ProposalCache},
+        ProposalMessageDescription, ProposalRef,
+    },
+    map::SmallMap,
+};
 
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
-
 use mls_rs_core::crypto::SignatureSecretKey;
 #[cfg(feature = "tree_index")]
 use mls_rs_core::identity::IdentityProvider;
-
-#[cfg(all(feature = "std", feature = "by_ref_proposal"))]
-use std::collections::HashMap;
-
-#[cfg(all(feature = "by_ref_proposal", not(feature = "std")))]
-use alloc::vec::Vec;
-
-use super::{
-    cipher_suite_provider, epoch::EpochSecrets, state_repo::GroupStateRepository, PendingUpdate,
-};
 
 #[derive(Debug, PartialEq, Clone, MlsEncode, MlsDecode, MlsSize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -42,10 +37,8 @@ pub(crate) struct Snapshot {
     private_tree: TreeKemPrivate,
     epoch_secrets: EpochSecrets,
     key_schedule: KeySchedule,
-    #[cfg(all(feature = "std", feature = "by_ref_proposal"))]
-    pending_updates: HashMap<HpkePublicKey, PendingUpdate>,
-    #[cfg(all(not(feature = "std"), feature = "by_ref_proposal"))]
-    pending_updates: Vec<(HpkePublicKey, PendingUpdate)>,
+    #[cfg(any(feature = "by_ref_proposal", feature = "replace_proposal"))]
+    pending_updates: SmallMap<HpkePublicKey, PendingUpdate>,
     pending_commit: Option<CommitGeneration>,
     signer: SignatureSecretKey,
 }
@@ -54,10 +47,10 @@ pub(crate) struct Snapshot {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub(crate) struct RawGroupState {
     pub(crate) context: GroupContext,
-    #[cfg(all(feature = "std", feature = "by_ref_proposal"))]
-    pub(crate) proposals: HashMap<ProposalRef, CachedProposal>,
-    #[cfg(all(not(feature = "std"), feature = "by_ref_proposal"))]
-    pub(crate) proposals: Vec<(ProposalRef, CachedProposal)>,
+    #[cfg(feature = "by_ref_proposal")]
+    pub(crate) proposals: SmallMap<ProposalRef, CachedProposal>,
+    #[cfg(feature = "by_ref_proposal")]
+    pub(crate) own_proposals: SmallMap<MessageHash, ProposalMessageDescription>,
     pub(crate) public_tree: TreeKemPublic,
     pub(crate) interim_transcript_hash: InterimTranscriptHash,
     pub(crate) pending_reinit: Option<ReInitProposal>,
@@ -80,6 +73,8 @@ impl RawGroupState {
             context: state.context.clone(),
             #[cfg(feature = "by_ref_proposal")]
             proposals: state.proposals.proposals.clone(),
+            #[cfg(feature = "by_ref_proposal")]
+            own_proposals: state.proposals.own_proposals.clone(),
             public_tree,
             interim_transcript_hash: state.interim_transcript_hash.clone(),
             pending_reinit: state.pending_reinit.clone(),
@@ -100,6 +95,7 @@ impl RawGroupState {
             context.protocol_version,
             context.group_id.clone(),
             self.proposals,
+            self.own_proposals.clone(),
         );
 
         let mut public_tree = self.public_tree;
@@ -129,6 +125,7 @@ impl RawGroupState {
             context.protocol_version,
             context.group_id.clone(),
             self.proposals,
+            self.own_proposals.clone(),
         );
 
         Ok(GroupState {
@@ -237,6 +234,8 @@ pub(crate) mod test_utils {
                 context: get_test_group_context(epoch_id, cipher_suite).await,
                 #[cfg(feature = "by_ref_proposal")]
                 proposals: Default::default(),
+                #[cfg(feature = "by_ref_proposal")]
+                own_proposals: Default::default(),
                 public_tree: Default::default(),
                 interim_transcript_hash: InterimTranscriptHash::from(vec![]),
                 pending_reinit: None,

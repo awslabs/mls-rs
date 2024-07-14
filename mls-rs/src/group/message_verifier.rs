@@ -38,7 +38,6 @@ pub(crate) async fn verify_plaintext_authentication<P: CipherSuiteProvider>(
     cipher_suite_provider: &P,
     plaintext: PublicMessage,
     key_schedule: Option<&KeySchedule>,
-    self_index: Option<LeafIndex>,
     state: &GroupState,
 ) -> Result<AuthenticatedContent, MlsError> {
     let tag = plaintext.membership_tag.clone();
@@ -52,7 +51,7 @@ pub(crate) async fn verify_plaintext_authentication<P: CipherSuiteProvider>(
 
     // Verify the membership tag if needed
     match &auth_content.content.sender {
-        Sender::Member(index) => {
+        Sender::Member(_) => {
             if let Some(key_schedule) = key_schedule {
                 let expected_tag = &key_schedule
                     .get_membership_tag(&auth_content, context, cipher_suite_provider)
@@ -63,10 +62,6 @@ pub(crate) async fn verify_plaintext_authentication<P: CipherSuiteProvider>(
                 if expected_tag != plaintext_tag {
                     return Err(MlsError::InvalidMembershipTag);
                 }
-            }
-
-            if self_index == Some(LeafIndex(*index)) {
-                return Err(MlsError::CantProcessMessageFromSelf);
             }
         }
         _ => {
@@ -333,7 +328,6 @@ mod tests {
             &env.bob.group.cipher_suite_provider,
             message,
             Some(&env.bob.group.key_schedule),
-            None,
             &env.bob.group.state,
         )
         .await
@@ -381,7 +375,6 @@ mod tests {
             &env.bob.group.cipher_suite_provider,
             message,
             Some(&env.bob.group.key_schedule),
-            None,
             &env.bob.group.state,
         )
         .await;
@@ -399,7 +392,6 @@ mod tests {
             &env.bob.group.cipher_suite_provider,
             message,
             Some(&env.bob.group.key_schedule),
-            None,
             &env.bob.group.state,
         )
         .await;
@@ -417,7 +409,6 @@ mod tests {
             &env.bob.group.cipher_suite_provider,
             message,
             Some(&env.bob.group.key_schedule),
-            None,
             &env.bob.group.state,
         )
         .await;
@@ -485,7 +476,6 @@ mod tests {
             &test_group.group.cipher_suite_provider,
             message,
             Some(&test_group.group.key_schedule),
-            None,
             &test_group.group.state,
         )
         .await
@@ -506,7 +496,6 @@ mod tests {
             &test_group.group.cipher_suite_provider,
             message,
             Some(&test_group.group.key_schedule),
-            None,
             &test_group.group.state,
         )
         .await;
@@ -532,7 +521,6 @@ mod tests {
             &test_group.group.cipher_suite_provider,
             message,
             Some(&test_group.group.key_schedule),
-            None,
             &test_group.group.state,
         )
         .await;
@@ -556,7 +544,6 @@ mod tests {
             &test_group.group.cipher_suite_provider,
             message,
             Some(&test_group.group.key_schedule),
-            None,
             &test_group.group.state,
         )
         .await;
@@ -601,7 +588,6 @@ mod tests {
             &test_group.group.cipher_suite_provider,
             message,
             Some(&test_group.group.key_schedule),
-            None,
             &test_group.group.state,
         )
         .await
@@ -625,7 +611,6 @@ mod tests {
             &test_group.group.cipher_suite_provider,
             message,
             Some(&test_group.group.key_schedule),
-            None,
             &test_group.group.state,
         )
         .await;
@@ -652,29 +637,10 @@ mod tests {
             &test_group.group.cipher_suite_provider,
             message,
             Some(&test_group.group.key_schedule),
-            None,
             &test_group.group.state,
         )
         .await;
 
         assert_matches!(res, Err(MlsError::MembershipTagForNonMember));
-    }
-
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn plaintext_from_self_fails_verification() {
-        let mut env = TestEnv::new().await;
-
-        let message = make_signed_plaintext(&mut env.alice.group).await;
-
-        let res = verify_plaintext_authentication(
-            &env.alice.group.cipher_suite_provider,
-            message,
-            Some(&env.alice.group.key_schedule),
-            Some(LeafIndex::new(env.alice.group.current_member_index())),
-            &env.alice.group.state,
-        )
-        .await;
-
-        assert_matches!(res, Err(MlsError::CantProcessMessageFromSelf))
     }
 }

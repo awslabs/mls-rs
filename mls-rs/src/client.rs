@@ -445,7 +445,6 @@ where
             cipher_suite_provider: &cipher_suite_provider,
             signing_key: self.signer()?,
             signing_identity,
-            identity_provider: &self.config.identity_provider(),
         };
 
         let key_pkg_gen = key_package_generator
@@ -725,6 +724,12 @@ where
     #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     pub fn group_state_storage(&self) -> <C as ClientConfig>::GroupStateStorage {
         self.config.group_state_storage()
+    }
+
+    /// The [IdentityProvider] that this client was configured to use.
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
+    pub fn identity_provider(&self) -> <C as ClientConfig>::IdentityProvider {
+        self.config.identity_provider()
     }
 }
 
@@ -1044,6 +1049,9 @@ mod tests {
             .extension_type(33.into())
             .build();
         let bob = alice.to_builder().extension_type(34.into()).build();
-        assert_eq!(bob.config.supported_extensions(), [33, 34].map(Into::into));
+        assert_eq!(
+            bob.config.supported_extensions(),
+            [0xff01, 33, 34].map(Into::into)
+        );
     }
 }

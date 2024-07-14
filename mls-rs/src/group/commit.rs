@@ -4,12 +4,9 @@
 
 use alloc::vec;
 use alloc::vec::Vec;
-use core::fmt::{self, Debug};
+use core::fmt::Debug;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
-use mls_rs_core::{
-    crypto::{CipherSuiteProvider, SignatureSecretKey},
-    error::IntoAnyError,
-};
+use mls_rs_core::{crypto::SignatureSecretKey, error::IntoAnyError};
 
 use crate::{
     cipher_suite::CipherSuite,
@@ -43,6 +40,7 @@ use super::{
     confirmation_tag::ConfirmationTag,
     framing::{Content, MlsMessage, MlsMessagePayload, Sender},
     key_schedule::{KeySchedule, WelcomeSecret},
+    message_hash::MessageHash,
     message_processor::{path_update_required, MessageProcessor},
     message_signature::AuthenticatedContent,
     mls_rules::CommitDirection,
@@ -71,36 +69,7 @@ pub(super) struct CommitGeneration {
     pub content: AuthenticatedContent,
     pub pending_private_tree: TreeKemPrivate,
     pub pending_commit_secret: PathSecret,
-    pub commit_message_hash: CommitHash,
-}
-
-#[derive(Clone, PartialEq, MlsEncode, MlsDecode, MlsSize)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub(crate) struct CommitHash(
-    #[mls_codec(with = "mls_rs_codec::byte_vec")]
-    #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::vec_serde"))]
-    Vec<u8>,
-);
-
-impl Debug for CommitHash {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        mls_rs_core::debug::pretty_bytes(&self.0)
-            .named("CommitHash")
-            .fmt(f)
-    }
-}
-
-impl CommitHash {
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub(crate) async fn compute<CS: CipherSuiteProvider>(
-        cs: &CS,
-        commit: &MlsMessage,
-    ) -> Result<Self, MlsError> {
-        cs.hash(&commit.mls_encode_to_vec()?)
-            .await
-            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
-            .map(Self)
-    }
+    pub commit_message_hash: MessageHash,
 }
 
 #[cfg_attr(
@@ -773,7 +742,7 @@ where
             content: auth_content,
             pending_private_tree: provisional_private_tree,
             pending_commit_secret: commit_secret,
-            commit_message_hash: CommitHash::compute(&self.cipher_suite_provider, &commit_message)
+            commit_message_hash: MessageHash::compute(&self.cipher_suite_provider, &commit_message)
                 .await?,
         };
 

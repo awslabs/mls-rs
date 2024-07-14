@@ -17,7 +17,6 @@ use mls_rs::{
         BaseInMemoryConfig, ClientBuilder, WithCryptoProvider, WithIdentityProvider, WithMlsRules,
     },
     crypto::SignatureSecretKey,
-    error::MlsError,
     external_client::ExternalClient,
     group::{ExportedTree, Member, ReceivedMessage, Roster, StateUpdate},
     identity::{
@@ -692,11 +691,7 @@ impl MlsClientImpl {
 
         for proposal_bytes in &request.by_reference {
             let proposal = MlsMessage::from_bytes(proposal_bytes).map_err(abort)?;
-
-            match group.process_incoming_message(proposal) {
-                Ok(_) | Err(MlsError::CantProcessMessageFromSelf) => Ok(()),
-                Err(e) => Err(abort(e)),
-            }?;
+            group.process_incoming_message(proposal).map_err(abort)?;
         }
 
         {
@@ -788,11 +783,7 @@ impl MlsClientImpl {
 
         for proposal in &request.proposal {
             let proposal = MlsMessage::from_bytes(proposal).map_err(abort)?;
-
-            match group.process_incoming_message(proposal) {
-                Ok(_) | Err(MlsError::CantProcessMessageFromSelf) => Ok(()),
-                Err(e) => Err(abort(e)),
-            }?;
+            group.process_incoming_message(proposal).map_err(abort)?;
         }
 
         let commit = MlsMessage::from_bytes(&request.commit).map_err(abort)?;
