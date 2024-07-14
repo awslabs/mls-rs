@@ -2228,6 +2228,126 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "replace_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_replace_proposals() {
+        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (mut bob_group, _) = alice_group.join("bob").await;
+
+        // Create a replace proposal
+        let bob_new_leaf = match bob_group.update_proposal() {
+            Proposal::Update(update) => update.leaf_node,
+            _ => panic!("non update proposal found"),
+        };
+
+        let proposal = alice_group.replace_proposal(1, bob_new_leaf.clone()).await;
+
+        let replace = match proposal.clone() {
+            Proposal::Replace(replace) => replace,
+            _ => panic!("non replace proposal found"),
+        };
+
+        assert_eq!(replace.to_replace, LeafIndex(1));
+        assert_eq!(replace.leaf_node, bob_new_leaf);
+
+        // Commit the replace and verify that Bob was replaced
+        let commit_output = alice_group
+            .group
+            .commit_builder()
+            .raw_proposal(proposal)
+            .build()
+            .unwrap();
+        alice_group.process_pending_commit().unwrap();
+        bob_group
+            .process_message(commit_output.commit_message)
+            .unwrap();
+
+        let alice_new_leaf_for_bob = alice_group
+            .group
+            .current_epoch_tree()
+            .get_leaf_node(LeafIndex(1))
+            .unwrap();
+        assert_eq!(*alice_new_leaf_for_bob, bob_new_leaf);
+
+        let bob_new_leaf_for_bob = bob_group.group.current_user_leaf_node().unwrap();
+        assert_eq!(*bob_new_leaf_for_bob, bob_new_leaf);
+    }
+
+    #[cfg(feature = "replace_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_replace_proposals_across_epochs() {
+        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (mut bob_group, _) = alice_group.join("bob").await;
+
+        // Bob produces an Update including a new LeafNode
+        let bob_new_leaf = match bob_group.update_proposal() {
+            Proposal::Update(update) => update.leaf_node,
+            _ => panic!("non update proposal found"),
+        };
+
+        // Alice commits without replacing Bob
+        let commit_output = alice_group.group.commit_builder().build().unwrap();
+        alice_group.process_pending_commit().unwrap();
+        bob_group
+            .process_message(commit_output.commit_message)
+            .unwrap();
+
+        // Alice commits a Replace proposal for Bob
+        let proposal = alice_group.replace_proposal(1, bob_new_leaf.clone()).await;
+        let commit_output = alice_group
+            .group
+            .commit_builder()
+            .raw_proposal(proposal)
+            .build()
+            .unwrap();
+        alice_group.process_pending_commit().unwrap();
+        bob_group
+            .process_message(commit_output.commit_message)
+            .unwrap();
+
+        // Check that Bob has been replaced by his new appearance
+        let alice_new_leaf_for_bob = alice_group
+            .group
+            .current_epoch_tree()
+            .get_leaf_node(LeafIndex(1))
+            .unwrap();
+        assert_eq!(*alice_new_leaf_for_bob, bob_new_leaf);
+
+        let bob_new_leaf_for_bob = bob_group.group.current_user_leaf_node().unwrap();
+        assert_eq!(*bob_new_leaf_for_bob, bob_new_leaf);
+    }
+
+    #[cfg(feature = "replace_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_replace_proposal_abandon() {
+        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (mut bob_group, _) = alice_group.join("bob").await;
+
+        // Bob produces an Update including a new LeafNode
+        let bob_new_leaf = match bob_group.update_proposal() {
+            Proposal::Update(update) => update.leaf_node,
+            _ => panic!("non update proposal found"),
+        };
+
+        // Bob abandons the LeafNode, deleting its cached private state
+        bob_group.group.abandon_leaf_node(&bob_new_leaf);
+
+        // Alice commits a Replace proposal for Bob
+        let proposal = alice_group.replace_proposal(1, bob_new_leaf.clone()).await;
+        let commit_output = alice_group
+            .group
+            .commit_builder()
+            .raw_proposal(proposal)
+            .build()
+            .unwrap();
+
+        alice_group.process_pending_commit().unwrap();
+
+        // Bob should fail to process the commit because of the missing state
+        let res = bob_group.process_message(commit_output.commit_message);
+        assert_matches!(res, Err(MlsError::UpdateErrorNoSecretKey))
+    }
+
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn test_two_member_group(
         protocol_version: ProtocolVersion,

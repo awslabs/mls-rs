@@ -50,6 +50,19 @@ impl TestGroup {
         self.group.update_proposal(None, None).await.unwrap()
     }
 
+    #[cfg(feature = "replace_proposal")]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub(crate) async fn replace_proposal(
+        &mut self,
+        to_replace: u32,
+        leaf_node: LeafNode,
+    ) -> Proposal {
+        self.group
+            .replace_proposal(to_replace, leaf_node)
+            .await
+            .unwrap()
+    }
+
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn join_with_custom_config<F>(
         &mut self,

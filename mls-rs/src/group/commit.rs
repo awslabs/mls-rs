@@ -840,9 +840,6 @@ pub(crate) mod test_utils {
 mod tests {
     use alloc::boxed::Box;
 
-    #[cfg(feature = "replace_proposal")]
-    use assert_matches::assert_matches;
-
     use mls_rs_core::{
         error::IntoAnyError,
         extension::ExtensionType,
@@ -1034,20 +1031,6 @@ mod tests {
     }
 
     #[cfg(feature = "replace_proposal")]
-    fn replacement_leaf_node<C>(group: &mut Group<C>) -> Result<LeafNode, MlsError>
-    where
-        C: ClientConfig + Clone,
-    {
-        let update = group.update_proposal(None, None)?;
-        let Proposal::Update(update) = update else {
-            panic!("Incorrect proposal type")
-        };
-        Ok(update.leaf_node)
-    }
-
-    // XXX(RLB): This test is an omnibus that validates that all of the required machinery works as
-    // expected.  It should probably be trimmed down / sliced up / done elsewhere.
-    #[cfg(feature = "replace_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_commit_builder_replace() -> Result<(), MlsError> {
         let mut group = test_group_custom_config(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, |b| {
@@ -1057,7 +1040,7 @@ mod tests {
         .group;
 
         let (alice, alice_kp) =
-            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "a").await;
+            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "alice").await;
 
         // Add Alice to the group
         let output = group
@@ -1069,32 +1052,21 @@ mod tests {
 
         group.apply_pending_commit().await?;
 
-        // Check that Alice's represntation in the tree is correct
-        let alice_leaf_in_kp = alice_kp.into_key_package().unwrap().leaf_node;
-        let alice_leaf_in_group = group.current_epoch_tree().get_leaf_node(LeafIndex(1))?;
-        assert_eq!(&alice_leaf_in_kp, alice_leaf_in_group);
-
-        // Alice joins the group
+        // Alice creates an Update proposal, including a fresh LeafNode
         let (mut alice_group, _) = alice.join_group(None, &output.welcome_messages[0])?;
-
-        // Alice produces two new LeafNodes
-        let new_alice_leaf_1 = replacement_leaf_node(&mut alice_group)?;
-        let new_alice_leaf_2 = replacement_leaf_node(&mut alice_group)?;
-
-        // Alice makes an empty commit, and both members apply it.  Alice's cached state should
-        // survive the epoch transition.
-        let commit_output = alice_group.commit_builder().build().await?;
-        alice_group.apply_pending_commit()?;
-        group.process_incoming_message(commit_output.commit_message)?;
+        let proposal = alice_group.update_proposal(None, None)?;
+        let Proposal::Update(update) = proposal else {
+            panic!("non update proposal found")
+        };
 
         // The committer replaces Alice's appearance in the group
         let commit_output = group
             .commit_builder()
-            .replace_member(1, new_alice_leaf_1.clone())?
+            .replace_member(1, update.leaf_node.clone())?
             .build()
             .await?;
 
-        let expected_replace = group.replace_proposal(1, new_alice_leaf_1.clone())?;
+        let expected_replace = group.replace_proposal(1, update.leaf_node)?;
 
         assert_commit_builder_output(
             group.clone(),
@@ -1102,45 +1074,6 @@ mod tests {
             vec![expected_replace],
             0,
         );
-
-        // Check that Alice's representation in the tree gets updated in the committer's
-        // representation of the group.
-        group.apply_pending_commit().await?;
-
-        let alice_leaf_in_group = group.current_epoch_tree().get_leaf_node(LeafIndex(1))?;
-        assert_eq!(&new_alice_leaf_1, alice_leaf_in_group);
-
-        // Check that Alice's representation in the tree gets updated in Alice's representation of
-        // the group.
-        alice_group.process_incoming_message(commit_output.commit_message)?;
-
-        let alice_leaf_in_group = alice_group
-            .current_epoch_tree()
-            .get_leaf_node(LeafIndex(1))?;
-        assert_eq!(&new_alice_leaf_1, alice_leaf_in_group);
-
-        // Alice deletes her local state for the other LeafNode
-        alice_group.abandon_leaf_node(&new_alice_leaf_2);
-
-        // Now when the committer attempts to replace Alice again, she should be unable to process
-        // the Commit
-        let commit_output = group
-            .commit_builder()
-            .replace_member(1, new_alice_leaf_2.clone())?
-            .build()
-            .await?;
-
-        let expected_replace = group.replace_proposal(1, new_alice_leaf_2.clone())?;
-
-        assert_commit_builder_output(
-            group.clone(),
-            commit_output.clone(),
-            vec![expected_replace],
-            0,
-        );
-
-        let res = alice_group.process_incoming_message(commit_output.commit_message);
-        assert_matches!(res, Err(MlsError::UpdateErrorNoSecretKey));
 
         Ok(())
     }
