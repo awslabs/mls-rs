@@ -672,8 +672,8 @@ mod tests {
     use crate::group::proposal_ref::test_utils::auth_content_from_proposal;
     use crate::group::proposal_ref::ProposalRef;
     use crate::group::{
-        AddProposal, AuthenticatedContent, Content, ExternalInit, LeafNodeEpochExt, Proposal,
-        ProposalOrRef, ReInitProposal, RemoveProposal, Roster, Sender, UpdateProposal,
+        AddProposal, AuthenticatedContent, Content, ExternalInit, Proposal, ProposalOrRef,
+        ReInitProposal, RemoveProposal, Roster, Sender, UpdateProposal,
     };
     use crate::key_package::test_utils::test_key_package_with_signer;
     use crate::signer::Signable;
@@ -710,7 +710,7 @@ mod tests {
     use crate::extension::RequiredCapabilitiesExt;
 
     #[cfg(feature = "replace_proposal")]
-    use crate::group::ReplaceProposal;
+    use crate::group::{LeafNodeEpochExt, ReplaceProposal};
 
     #[cfg(feature = "by_ref_proposal")]
     use crate::{
@@ -802,6 +802,7 @@ mod tests {
         .unwrap();
     }
 
+    #[allow(unused_variables)] // `epoch` is only used conditionally
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn update_leaf_node(name: &str, leaf_index: u32, epoch: Option<u64>) -> LeafNode {
         let (mut leaf, _, signer) = get_basic_test_node_sig_key(TEST_CIPHER_SUITE, name).await;
@@ -2692,18 +2693,16 @@ mod tests {
                 .await
                 .unwrap();
 
-        assert_eq!(processed_proposals.0, vec![update1_ref.into()]);
-
-        #[cfg(feature = "state_update")]
-        assert_eq!(processed_proposals.1.unused_proposals, vec![update2_info]);
-
-        // XXX(RLB): We can't verify which proposal was sent and which was removed, because
-        // CommitSender processes proposals in an unpredictable order.  Instead, we verify that one
-        // was processed and one was unused.
         assert_eq!(processed_proposals.0.len(), 1);
-
-        #[cfg(feature = "state_replace")]
         assert_eq!(processed_proposals.1.unused_proposals.len(), 1);
+
+        // Proposals are processed in an unpredictable order, so we can't test that a specific
+        // proposal was selected.  We just check that one was selected and the other was rejected.
+        let processed1 = processed_proposals.0[0] == update1_ref.into();
+        let processed2 = processed_proposals.0[0] == update2_ref.into();
+        let unused1 = processed_proposals.1.unused_proposals[0] == update1_info;
+        let unused2 = processed_proposals.1.unused_proposals[0] == update2_info;
+        assert!((processed1 && unused2) || (unused1 && processed2));
     }
 
     #[cfg(feature = "replace_proposal")]
@@ -2713,11 +2712,11 @@ mod tests {
         let bob = add_member(&mut tree, "bob").await;
 
         let replace1 = Proposal::Replace(make_replace_proposal(1, "bob"));
-        let replace1_info = make_proposal_info(&replace1, alice).await;
+        let replace1_info = make_proposal_info(&replace1, bob).await;
         let replace1_ref = replace1_info.proposal_ref().unwrap().clone();
 
         let replace2 = Proposal::Replace(make_replace_proposal(1, "bob"));
-        let replace2_info = make_proposal_info(&replace2, alice).await;
+        let replace2_info = make_proposal_info(&replace2, bob).await;
         let replace2_ref = replace2_info.proposal_ref().unwrap().clone();
 
         let processed_proposals =
@@ -2728,13 +2727,17 @@ mod tests {
                 .await
                 .unwrap();
 
-        // XXX(RLB): We can't verify which proposal was sent and which was removed, because
-        // CommitSender processes proposals in an unpredictable order.  Instead, we verify that one
-        // was processed and one was unused.
         assert_eq!(processed_proposals.0.len(), 1);
-
-        #[cfg(feature = "state_replace")]
         assert_eq!(processed_proposals.1.unused_proposals.len(), 1);
+
+        // Proposals are processed in an unpredictable order, so we can't test that a specific
+        // proposal was selected.  We just check that one was selected and the other was rejected.
+        let processed1 = processed_proposals.0[0] == replace1_ref.into();
+        let processed2 = processed_proposals.0[0] == replace2_ref.into();
+        let unused1 = processed_proposals.1.unused_proposals[0] == replace1_info;
+        let unused2 = processed_proposals.1.unused_proposals[0] == replace2_info;
+        println!("{} {} {} {}", processed1, processed2, unused1, unused2);
+        assert!((processed1 && unused2) || (unused1 && processed2));
     }
 
     #[cfg(feature = "replace_proposal")]

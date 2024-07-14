@@ -262,6 +262,13 @@ impl ProposalBundle {
                 .map(|p| p.as_ref().map(BorrowedProposal::Update)),
         );
 
+        #[cfg(feature = "replace_proposal")]
+        let res = res.chain(
+            self.replaces
+                .iter()
+                .map(|p| p.as_ref().map(BorrowedProposal::Replace)),
+        );
+
         #[cfg(feature = "psk")]
         let res = res.chain(
             self.psks
