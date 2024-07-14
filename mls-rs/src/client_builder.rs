@@ -886,7 +886,7 @@ impl Default for Settings {
         let extension_types = vec![ExtensionType::LEAF_NODE_EPOCH];
 
         Self {
-            extension_types: extension_types,
+            extension_types,
             protocol_versions: Default::default(),
             key_package_extensions: Default::default(),
             leaf_node_extensions: Default::default(),

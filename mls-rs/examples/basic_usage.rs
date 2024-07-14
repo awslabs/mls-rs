@@ -9,7 +9,7 @@ use mls_rs::{
         basic::{BasicCredential, BasicIdentityProvider},
         SigningIdentity,
     },
-    CipherSuite, CipherSuiteProvider, Client, CryptoProvider, ExtensionList,
+    CipherSuite, CipherSuiteProvider, Client, CryptoProvider, ExtensionList, Group,
 };
 
 const CIPHERSUITE: CipherSuite = CipherSuite::CURVE25519_AES128;
@@ -61,16 +61,19 @@ fn main() -> Result<(), MlsError> {
     alice_group.apply_pending_commit()?;
 
     // Bob joins the group with the welcome message created as part of Alice's commit.
-    let (mut bob_group, _) = bob.join_group(None, &alice_commit.welcome_messages[0])?;
+    let (bob_group, _) = bob.join_group(None, &alice_commit.welcome_messages[0])?;
 
     #[cfg(feature = "private_message")]
-    encrypt_decrypt(alice_group, bob_group);
+    encrypt_decrypt(alice_group, bob_group)?;
 
     Ok(())
 }
 
 #[cfg(feature = "private_message")]
-fn encrypt_decrypt<C: MlsConfig>(alice_group: &Group<C>, bob_group: &Group<C>) {
+fn encrypt_decrypt<C: MlsConfig>(
+    mut alice_group: Group<C>,
+    mut bob_group: Group<C>,
+) -> Result<(), MlsError> {
     // Alice encrypts an application message to Bob.
     let msg = alice_group.encrypt_application_message(b"hello world", Default::default())?;
 
@@ -82,4 +85,6 @@ fn encrypt_decrypt<C: MlsConfig>(alice_group: &Group<C>, bob_group: &Group<C>) {
     // Alice and bob write the group state to their configured storage engine
     alice_group.write_to_storage()?;
     bob_group.write_to_storage()?;
+
+    Ok(())
 }
