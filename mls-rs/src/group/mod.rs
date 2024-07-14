@@ -245,9 +245,8 @@ impl NewMemberInfo {
 }
 
 #[cfg(any(feature = "by_ref_proposal", feature = "replace_proposal"))]
-#[derive(
-    Clone, Debug, PartialEq, MlsEncode, MlsDecode, MlsSize, serde::Serialize, serde::Deserialize,
-)]
+#[derive(Clone, Debug, PartialEq, MlsEncode, MlsDecode, MlsSize)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 struct PendingUpdate {
     secret_key: HpkeSecretKey,
     signer: Option<SignatureSecretKey>,
