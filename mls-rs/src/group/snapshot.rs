@@ -8,10 +8,13 @@ use crate::{
     group::{
         cipher_suite_provider, epoch::EpochSecrets, key_schedule::KeySchedule,
         state_repo::GroupStateRepository, CommitGeneration, ConfirmationTag, Group, GroupContext,
-        GroupState, InterimTranscriptHash, PendingUpdate, ReInitProposal, TreeKemPublic,
+        GroupState, InterimTranscriptHash, ReInitProposal, TreeKemPublic,
     },
     tree_kem::TreeKemPrivate,
 };
+
+#[cfg(any(feature = "by_ref_proposal", feature = "replace_proposal"))]
+use crate::group::PendingUpdate;
 
 #[cfg(feature = "by_ref_proposal")]
 use crate::{

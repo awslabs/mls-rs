@@ -244,6 +244,7 @@ impl NewMemberInfo {
     }
 }
 
+#[cfg(any(feature = "by_ref_proposal", feature = "replace_proposal"))]
 #[derive(Clone, Debug, PartialEq, MlsEncode, MlsDecode, MlsSize)]
 struct PendingUpdate {
     secret_key: HpkeSecretKey,
@@ -273,7 +274,7 @@ where
     epoch_secrets: EpochSecrets,
     private_tree: TreeKemPrivate,
     key_schedule: KeySchedule,
-    #[cfg(feature = "by_ref_proposal")]
+    #[cfg(any(feature = "by_ref_proposal", feature = "replace_proposal"))]
     pending_updates: crate::map::SmallMap<HpkePublicKey, PendingUpdate>, // Hash of leaf node hpke public key to secret key
     pending_commit: Option<CommitGeneration>,
     #[cfg(feature = "psk")]
@@ -755,52 +756,56 @@ where
 
         // Apply own update or a Replace proposal replacing us
         let new_signer = None;
-        let updated_leaves = std::iter::empty();
 
         #[cfg(any(feature = "by_ref_proposal", feature = "replace_proposal"))]
         let mut new_signer = new_signer;
 
-        #[cfg(feature = "by_ref_proposal")]
-        let updated_leaves = updated_leaves.chain(
-            provisional_state
-                .applied_proposals
-                .update_senders
-                .iter()
-                .zip(provisional_state.applied_proposals.updates.iter())
-                .filter(|(&i, _p)| i.0 == *self_index)
-                .map(|(_i, p)| p.proposal.leaf_node.public_key.clone()),
-        );
+        #[cfg(any(feature = "by_ref_proposal", feature = "replace_proposal"))]
+        {
+            let updated_leaves = std::iter::empty();
 
-        #[cfg(feature = "replace_proposal")]
-        let updated_leaves = updated_leaves.chain(
-            provisional_state
-                .applied_proposals
-                .replaces
-                .iter()
-                .filter(|p| p.proposal.to_replace.0 == *self_index)
-                .map(|p| p.proposal.leaf_node.public_key.clone()),
-        );
+            #[cfg(feature = "by_ref_proposal")]
+            let updated_leaves = updated_leaves.chain(
+                provisional_state
+                    .applied_proposals
+                    .update_senders
+                    .iter()
+                    .zip(provisional_state.applied_proposals.updates.iter())
+                    .filter(|(&i, _p)| i.0 == *self_index)
+                    .map(|(_i, p)| p.proposal.leaf_node.public_key.clone()),
+            );
 
-        let mut updated_leaves = updated_leaves;
-        let self_update = updated_leaves.next();
+            #[cfg(feature = "replace_proposal")]
+            let updated_leaves = updated_leaves.chain(
+                provisional_state
+                    .applied_proposals
+                    .replaces
+                    .iter()
+                    .filter(|p| p.proposal.to_replace.0 == *self_index)
+                    .map(|p| p.proposal.leaf_node.public_key.clone()),
+            );
 
-        if updated_leaves.count() > 0 {
-            // XXX(RLB) This error code is wrong; might need a new value?  Or just not bother
-            // checking, assuming checks have been done upstream?  But then we might also need a
-            // new error code there.  In any case, we need to enforce that there are not multiple
-            // Update **or Replace** proposals for the same leaf.
-            return Err(MlsError::InvalidCommitSelfUpdate);
-        }
+            let mut updated_leaves = updated_leaves;
+            let self_update = updated_leaves.next();
 
-        if let Some(leaf_pk) = self_update {
-            // Update the leaf in the private tree if this is our update
-            let pending_update = self.pending_updates.get(&leaf_pk);
+            if updated_leaves.count() > 0 {
+                // XXX(RLB) This error code is wrong; might need a new value?  Or just not bother
+                // checking, assuming checks have been done upstream?  But then we might also need a
+                // new error code there.  In any case, we need to enforce that there are not multiple
+                // Update **or Replace** proposals for the same leaf.
+                return Err(MlsError::InvalidCommitSelfUpdate);
+            }
 
-            let new_leaf_sk = pending_update.map(|upd| upd.secret_key.clone());
-            new_signer = pending_update.and_then(|upd| upd.signer.clone());
+            if let Some(leaf_pk) = self_update {
+                // Update the leaf in the private tree if this is our update
+                let pending_update = self.pending_updates.get(&leaf_pk);
 
-            provisional_private_tree
-                .update_leaf(new_leaf_sk.ok_or(MlsError::UpdateErrorNoSecretKey)?);
+                let new_leaf_sk = pending_update.map(|upd| upd.secret_key.clone());
+                new_signer = pending_update.and_then(|upd| upd.signer.clone());
+
+                provisional_private_tree
+                    .update_leaf(new_leaf_sk.ok_or(MlsError::UpdateErrorNoSecretKey)?);
+            }
         }
 
         Ok((provisional_private_tree, new_signer))
