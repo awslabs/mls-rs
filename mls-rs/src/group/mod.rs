@@ -763,7 +763,7 @@ where
 
         #[cfg(any(feature = "by_ref_proposal", feature = "replace_proposal"))]
         {
-            let updated_leaves = std::iter::empty();
+            let updated_leaves = core::iter::empty();
 
             #[cfg(feature = "by_ref_proposal")]
             let updated_leaves = updated_leaves.chain(

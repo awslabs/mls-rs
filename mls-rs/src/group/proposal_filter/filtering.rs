@@ -28,6 +28,7 @@ use crate::extension::ExternalSendersExt;
 #[cfg(feature = "replace_proposal")]
 use crate::{extension::LeafNodeEpochExt, group::ReplaceProposal};
 
+use alloc::vec;
 use alloc::vec::Vec;
 use mls_rs_core::{error::IntoAnyError, identity::IdentityProvider, psk::PreSharedKeyStorage};
 

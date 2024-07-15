@@ -393,7 +393,7 @@ impl TreeKemPublic {
                 });
 
         #[cfg(not(feature = "replace_proposal"))]
-        let replaces = std::iter::empty();
+        let replaces = core::iter::empty();
 
         #[cfg(feature = "replace_proposal")]
         let replaces = proposal_bundle.replaces.iter().enumerate().map(|(i, p)| {
