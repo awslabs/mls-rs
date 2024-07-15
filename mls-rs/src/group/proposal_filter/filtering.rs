@@ -274,9 +274,13 @@ where
                                 valid.then_some(()).ok_or(MlsError::InvalidSuccessor)
                             });
 
-                        // If the old leaf has a leaf_node_epoch extension, then the new leaf must
-                        // have one as well, and the new value must be at least as big as the old
-                        // value.
+                        // XXX(RLB) It's not clear that this is the right policy.  On the one hand,
+                        // it allows for the epoch locking to be turned off.  On the other hand,
+                        // this can be abused to roll back to any leaf that doesn't have an epoch
+                        // marker.
+
+                        // If both the old and new leaves have `leaf_node_epoch` extensions, then
+                        // the new value must be at least as big as the old value.
                         let old_epoch = old_leaf.extensions.get_as::<LeafNodeEpochExt>().ok()?;
                         let new_epoch = leaf.extensions.get_as::<LeafNodeEpochExt>().ok()?;
                         let epoch_successor = old_epoch
@@ -415,7 +419,7 @@ fn filter_out_duplicate_updates(
     let mut seen = vec![];
     proposals.retain_by_type::<UpdateProposal, _, _>(|p| {
         let Sender::Member(index) = p.sender else {
-            unreachable!()
+            return Err(MlsError::InvalidSender);
         };
 
         let fresh = !seen.contains(&index);
@@ -630,11 +634,21 @@ pub(crate) fn proposer_can_propose(
         ),
         #[cfg(feature = "by_ref_proposal")]
         (Sender::External(_), false) => false,
-        #[cfg(feature = "by_ref_proposal")]
+        #[cfg(all(feature = "by_ref_proposal", not(feature = "replace_proposal")))]
         (Sender::External(_), true) => matches!(
             proposal_type,
             ProposalType::ADD
                 | ProposalType::REMOVE
+                | ProposalType::RE_INIT
+                | ProposalType::PSK
+                | ProposalType::GROUP_CONTEXT_EXTENSIONS
+        ),
+        #[cfg(all(feature = "by_ref_proposal", feature = "replace_proposal"))]
+        (Sender::External(_), true) => matches!(
+            proposal_type,
+            ProposalType::ADD
+                | ProposalType::REMOVE
+                | ProposalType::REPLACE
                 | ProposalType::RE_INIT
                 | ProposalType::PSK
                 | ProposalType::GROUP_CONTEXT_EXTENSIONS

@@ -58,7 +58,7 @@ impl ProposalType {
     pub const GROUP_CONTEXT_EXTENSIONS: ProposalType = ProposalType(7);
 
     #[cfg(feature = "replace_proposal")]
-    pub const REPLACE: ProposalType = ProposalType(8);
+    pub const REPLACE: ProposalType = ProposalType(0xff01);
 
     /// Default proposal types defined
     /// in [RFC 9420](https://www.rfc-editor.org/rfc/rfc9420.html#name-leaf-node-contents)

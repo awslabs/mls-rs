@@ -62,6 +62,13 @@ mod map_impl {
         fn find(&self, key: &K) -> Option<usize> {
             self.0.iter().position(|(k, _)| k == key)
         }
+
+        pub fn retain<F>(&mut self, mut f: F)
+        where
+            F: FnMut(&K, &mut V) -> bool,
+        {
+            self.0.retain_mut(|(k, v)| f(k, v));
+        }
     }
 }
 

@@ -251,6 +251,7 @@ impl NewMemberInfo {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, PartialEq, MlsEncode, MlsDecode, MlsSize)]
 struct PendingUpdate {
+    epoch: u64,
     secret_key: HpkeSecretKey,
     signer: Option<SignatureSecretKey>,
 }
@@ -789,16 +790,9 @@ where
                     .map(|p| p.proposal.leaf_node.public_key.clone()),
             );
 
+            // The duplicate update filtering above assures that there is at most one self-update.
             let mut updated_leaves = updated_leaves;
             let self_update = updated_leaves.next();
-
-            if updated_leaves.count() > 0 {
-                // XXX(RLB) This error code is wrong; might need a new value?  Or just not bother
-                // checking, assuming checks have been done upstream?  But then we might also need a
-                // new error code there.  In any case, we need to enforce that there are not multiple
-                // Update **or Replace** proposals for the same leaf.
-                return Err(MlsError::InvalidCommitSelfUpdate);
-            }
 
             if let Some(leaf_pk) = self_update {
                 // Update the leaf in the private tree if this is our update
@@ -947,6 +941,7 @@ where
         // Grab a copy of the current node and update it to have new key material
         let mut leaf_node = self.current_user_leaf_node()?.clone();
         let properties = self.config.leaf_properties();
+        let epoch = self.current_epoch();
 
         #[cfg(feature = "replace_proposal")]
         let mut properties = properties;
@@ -954,7 +949,7 @@ where
         #[cfg(feature = "replace_proposal")]
         properties
             .extensions
-            .set_from(LeafNodeEpochExt::new(self.current_epoch()))?;
+            .set_from(LeafNodeEpochExt::new(epoch))?;
 
         let secret_key = leaf_node
             .update(
@@ -967,7 +962,11 @@ where
             )
             .await?;
 
-        let pending_update = PendingUpdate { secret_key, signer };
+        let pending_update = PendingUpdate {
+            epoch,
+            secret_key,
+            signer,
+        };
 
         // Store the secret key in the pending updates storage for later
         self.pending_updates
@@ -1877,10 +1876,30 @@ where
         #[cfg(feature = "by_ref_proposal")]
         self.state.proposals.clear();
 
-        // Clear the pending updates list (but only if they can't show up in a Replace)
+        // If the only way our leaf can change is via Update, just clear the cache
         #[cfg(all(feature = "by_ref_proposal", not(feature = "replace_proposal")))]
         {
             self.pending_updates = Default::default();
+        }
+
+        // If Updates can span epochs via Replace, only clear out leaf nodes that cannot possibly
+        // be used again, namely those that have been committed or those with an earlier epoch than
+        // the current leaf.
+        #[cfg(feature = "replace_proposal")]
+        {
+            // Delete any cached state for the current public key
+            let current_leaf_pk = self.current_user_leaf_node()?.public_key.clone();
+            self.pending_updates.remove(&current_leaf_pk);
+
+            // If the current leaf node contains an epoch value, delete any cached state for
+            // updates from prior epochs.
+            self.current_user_leaf_node()?
+                .extensions
+                .get_as::<LeafNodeEpochExt>()?
+                .map(|epoch_ext| {
+                    self.pending_updates
+                        .retain(|_pk, upd| upd.epoch >= epoch_ext.epoch);
+                });
         }
 
         self.pending_commit = None;
