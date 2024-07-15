@@ -34,8 +34,6 @@ mod map_impl {
         collections::{btree_map::Entry, BTreeMap},
         vec::Vec,
     };
-    #[cfg(feature = "by_ref_proposal")]
-    use itertools::Itertools;
 
     #[derive(Clone, Debug, PartialEq, Eq)]
     pub struct SmallMap<K: Hash + Eq, V>(pub(super) Vec<(K, V)>);

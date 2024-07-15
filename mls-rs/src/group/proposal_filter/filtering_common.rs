@@ -41,8 +41,11 @@ use crate::group::{JustPreSharedKeyID, ResumptionPSKUsage, ResumptionPsk};
 #[cfg(all(feature = "std", feature = "psk"))]
 use std::collections::HashSet;
 
+#[cfg(all(feature = "by_ref_proposal", feature = "psk"))]
+use super::filtering::apply_strategy;
+
 #[cfg(feature = "by_ref_proposal")]
-use super::filtering::{apply_strategy, filter_out_invalid_proposers, FilterStrategy};
+use super::filtering::{filter_out_invalid_proposers, FilterStrategy};
 
 #[cfg(feature = "custom_proposal")]
 use super::filtering::filter_out_unsupported_custom_proposals;

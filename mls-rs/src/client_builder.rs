@@ -29,6 +29,7 @@ use crate::{
 #[cfg(feature = "std")]
 use crate::time::MlsTime;
 
+use alloc::vec;
 use alloc::vec::Vec;
 
 #[cfg(feature = "sqlite")]

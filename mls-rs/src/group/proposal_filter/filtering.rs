@@ -15,10 +15,12 @@ use crate::{
     tree_kem::{
         leaf_node_validator::{LeafNodeValidator, ValidationContext},
         node::LeafIndex,
-        TreeKemPublic,
     },
     CipherSuiteProvider, ExtensionList,
 };
+
+#[cfg(feature = "custom_proposal")]
+use crate::tree_kem::TreeKemPublic;
 
 use super::filtering_common::{filter_out_invalid_psks, ApplyProposalsOutput, ProposalApplier};
 

@@ -2736,7 +2736,6 @@ mod tests {
         let processed2 = processed_proposals.0[0] == replace2_ref.into();
         let unused1 = processed_proposals.1.unused_proposals[0] == replace1_info;
         let unused2 = processed_proposals.1.unused_proposals[0] == replace2_info;
-        println!("{} {} {} {}", processed1, processed2, unused1, unused2);
         assert!((processed1 && unused2) || (unused1 && processed2));
     }
 

@@ -596,6 +596,39 @@ impl TreeKemPublic {
             self.nodes.blank_direct_path(index)?;
         }
 
+        // Apply replaces
+        let mut replaced = vec![];
+
+        #[cfg(feature = "replace_proposal")]
+        for p in &proposal_bundle.replaces {
+            let index = p.proposal.to_replace;
+
+            #[cfg(feature = "tree_index")]
+            {
+                // If this fails, it's not because the proposal is bad.
+                let old_leaf = self.nodes.blank_leaf_node(index)?;
+
+                let identity =
+                    identity(&old_leaf.signing_identity, id_provider, extensions).await?;
+
+                self.index.remove(&old_leaf, &identity);
+                index_insert(
+                    &mut self.index,
+                    &p.proposal.leaf_node,
+                    index,
+                    id_provider,
+                    extensions,
+                )
+                .await?;
+            }
+
+            #[cfg(feature = "tree_index")]
+            self.nodes.insert_leaf(index, p.proposal.leaf_node);
+
+            self.nodes.blank_direct_path(index)?;
+            replaced.push(index);
+        }
+
         // Apply adds
         let mut start = LeafIndex(0);
         let mut added = vec![];
@@ -615,6 +648,7 @@ impl TreeKemPublic {
             .iter()
             .map(|p| p.proposal.to_remove)
             .chain(added.iter().copied())
+            .chain(replaced.iter().copied())
             .collect_vec();
 
         self.update_hashes(&updated_leaves, cipher_suite_provider)
