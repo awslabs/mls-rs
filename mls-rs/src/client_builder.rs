@@ -29,7 +29,9 @@ use crate::{
 #[cfg(feature = "std")]
 use crate::time::MlsTime;
 
+#[cfg(feature = "replace_proposal")]
 use alloc::vec;
+
 use alloc::vec::Vec;
 
 #[cfg(feature = "sqlite")]

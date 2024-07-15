@@ -2093,6 +2093,9 @@ mod tests {
         let mut extension_list = ExtensionList::default();
         extension_list.set_from(new_extension).unwrap();
 
+        // If we don't push here, then we get "no need to be `mut`" warnings when replace_proposal
+        // isn't enabled.
+        #[allow(vec-init-then-push)]
         let mut extensions: Vec<ExtensionType> = vec![];
         extensions.push(42.into());
 

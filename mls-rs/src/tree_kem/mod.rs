@@ -597,6 +597,10 @@ impl TreeKemPublic {
         }
 
         // Apply replaces
+        #[cfg(not(feature = "replace_proposal"))]
+        let replaced = [];
+
+        #[cfg(feature = "replace_proposal")]
         let mut replaced = vec![];
 
         #[cfg(feature = "replace_proposal")]
