@@ -2095,9 +2095,10 @@ mod tests {
 
         // If we don't push here, then we get "no need to be `mut`" warnings when replace_proposal
         // isn't enabled.
-        #[allow(vec-init-then-push)]
-        let mut extensions: Vec<ExtensionType> = vec![];
-        extensions.push(42.into());
+        let extensions: Vec<ExtensionType> = vec![42.into()];
+
+        #[cfg(feature = "replace_proposal")]
+        let mut extensions = extensions;
 
         #[cfg(feature = "replace_proposal")]
         {
