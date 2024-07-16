@@ -197,6 +197,19 @@ where
         Ok(self)
     }
 
+    /// Insert a [`ReplaceProposal`](crate::group::proposal::ReplaceProposal) into
+    /// the current commit that is being built.
+    #[cfg(feature = "replace_proposal")]
+    pub fn replace_member(
+        mut self,
+        to_replace: u32,
+        leaf_node: LeafNode,
+    ) -> Result<Self, MlsError> {
+        let proposal = self.group.replace_proposal(to_replace, leaf_node)?;
+        self.proposals.push(proposal);
+        Ok(self)
+    }
+
     /// Insert a
     /// [`GroupContextExtensions`](crate::group::proposal::Proposal::GroupContextExtensions)
     /// into the current commit that is being built.
@@ -1015,6 +1028,54 @@ mod tests {
         let expected_remove = group.remove_proposal(1).unwrap();
 
         assert_commit_builder_output(group, commit_output, vec![expected_remove], 0);
+    }
+
+    #[cfg(feature = "replace_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_commit_builder_replace() -> Result<(), MlsError> {
+        let mut group = test_group_custom_config(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, |b| {
+            b.custom_proposal_type(ProposalType::REPLACE)
+        })
+        .await
+        .group;
+
+        let (alice, alice_kp) =
+            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "alice").await;
+
+        // Add Alice to the group
+        let output = group
+            .commit_builder()
+            .add_member(alice_kp.clone())
+            .unwrap()
+            .build()
+            .await?;
+
+        group.apply_pending_commit().await?;
+
+        // Alice creates an Update proposal, including a fresh LeafNode
+        let (mut alice_group, _) = alice.join_group(None, &output.welcome_messages[0])?;
+        let proposal = alice_group.update_proposal(None, None)?;
+        let Proposal::Update(update) = proposal else {
+            panic!("non update proposal found")
+        };
+
+        // The committer replaces Alice's appearance in the group
+        let commit_output = group
+            .commit_builder()
+            .replace_member(1, update.leaf_node.clone())?
+            .build()
+            .await?;
+
+        let expected_replace = group.replace_proposal(1, update.leaf_node)?;
+
+        assert_commit_builder_output(
+            group.clone(),
+            commit_output.clone(),
+            vec![expected_replace],
+            0,
+        );
+
+        Ok(())
     }
 
     #[cfg(feature = "psk")]

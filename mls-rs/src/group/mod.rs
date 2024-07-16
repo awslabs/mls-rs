@@ -35,7 +35,13 @@ use crate::tree_kem::{TreeKemPrivate, TreeKemPublic};
 use crate::{CipherSuiteProvider, CryptoProvider};
 
 #[cfg(feature = "by_ref_proposal")]
-use crate::crypto::{HpkePublicKey, HpkeSecretKey};
+use crate::{
+    crypto::{HpkePublicKey, HpkeSecretKey},
+    map::SmallMap,
+};
+
+#[cfg(feature = "replace_proposal")]
+use crate::extension::LeafNodeEpochExt;
 
 use crate::extension::ExternalPubExt;
 
@@ -241,6 +247,15 @@ impl NewMemberInfo {
     }
 }
 
+#[cfg(feature = "by_ref_proposal")]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Debug, PartialEq, MlsEncode, MlsDecode, MlsSize)]
+struct PendingUpdate {
+    epoch: u64,
+    secret_key: HpkeSecretKey,
+    signer: Option<SignatureSecretKey>,
+}
+
 /// An MLS end-to-end encrypted group.
 ///
 /// # Group Evolution
@@ -265,8 +280,7 @@ where
     private_tree: TreeKemPrivate,
     key_schedule: KeySchedule,
     #[cfg(feature = "by_ref_proposal")]
-    pending_updates:
-        crate::map::SmallMap<HpkePublicKey, (HpkeSecretKey, Option<SignatureSecretKey>)>, // Hash of leaf node hpke public key to secret key
+    pending_updates: SmallMap<HpkePublicKey, PendingUpdate>, // Hash of leaf node hpke public key to secret key
     pending_commit: Option<CommitGeneration>,
     #[cfg(feature = "psk")]
     previous_psk: Option<PskSecretInput>,
@@ -745,34 +759,50 @@ where
             }
         }
 
-        // Apply own update
+        // Apply own update or a Replace proposal replacing us
         let new_signer = None;
 
         #[cfg(feature = "by_ref_proposal")]
         let mut new_signer = new_signer;
 
         #[cfg(feature = "by_ref_proposal")]
-        for p in &provisional_state.applied_proposals.updates {
-            if p.sender == Sender::Member(*self_index) {
-                let leaf_pk = &p.proposal.leaf_node.public_key;
+        {
+            let updated_leaves = core::iter::empty();
 
-                // Update the leaf in the private tree if this is our update
-                #[cfg(feature = "std")]
-                let new_leaf_sk_and_signer = self.pending_updates.get(leaf_pk);
-
-                #[cfg(not(feature = "std"))]
-                let new_leaf_sk_and_signer = self
-                    .pending_updates
+            #[cfg(feature = "by_ref_proposal")]
+            let updated_leaves = updated_leaves.chain(
+                provisional_state
+                    .applied_proposals
+                    .update_senders
                     .iter()
-                    .find_map(|(pk, sk)| (pk == leaf_pk).then_some(sk));
+                    .zip(provisional_state.applied_proposals.updates.iter())
+                    .filter(|(&i, _p)| i.0 == *self_index)
+                    .map(|(_i, p)| p.proposal.leaf_node.public_key.clone()),
+            );
 
-                let new_leaf_sk = new_leaf_sk_and_signer.map(|(sk, _)| sk.clone());
-                new_signer = new_leaf_sk_and_signer.and_then(|(_, sk)| sk.clone());
+            #[cfg(feature = "replace_proposal")]
+            let updated_leaves = updated_leaves.chain(
+                provisional_state
+                    .applied_proposals
+                    .replaces
+                    .iter()
+                    .filter(|p| p.proposal.to_replace.0 == *self_index)
+                    .map(|p| p.proposal.leaf_node.public_key.clone()),
+            );
+
+            // The duplicate update filtering above assures that there is at most one self-update.
+            let mut updated_leaves = updated_leaves;
+            let self_update = updated_leaves.next();
+
+            if let Some(leaf_pk) = self_update {
+                // Update the leaf in the private tree if this is our update
+                let pending_update = self.pending_updates.get(&leaf_pk);
+
+                let new_leaf_sk = pending_update.map(|upd| upd.secret_key.clone());
+                new_signer = pending_update.and_then(|upd| upd.signer.clone());
 
                 provisional_private_tree
                     .update_leaf(new_leaf_sk.ok_or(MlsError::UpdateErrorNoSecretKey)?);
-
-                break;
             }
         }
 
@@ -909,31 +939,76 @@ where
         signing_identity: Option<SigningIdentity>,
     ) -> Result<Proposal, MlsError> {
         // Grab a copy of the current node and update it to have new key material
-        let mut new_leaf_node = self.current_user_leaf_node()?.clone();
+        let mut leaf_node = self.current_user_leaf_node()?.clone();
+        let properties = self.config.leaf_properties();
+        let epoch = self.current_epoch();
 
-        let secret_key = new_leaf_node
+        #[cfg(feature = "replace_proposal")]
+        let mut properties = properties;
+
+        #[cfg(feature = "replace_proposal")]
+        properties
+            .extensions
+            .set_from(LeafNodeEpochExt::new(epoch))?;
+
+        let secret_key = leaf_node
             .update(
                 &self.cipher_suite_provider,
                 self.group_id(),
                 self.current_member_index(),
-                self.config.leaf_properties(),
+                properties,
                 signing_identity,
                 signer.as_ref().unwrap_or(&self.signer),
             )
             .await?;
 
+        let pending_update = PendingUpdate {
+            epoch,
+            secret_key,
+            signer,
+        };
+
         // Store the secret key in the pending updates storage for later
-        #[cfg(feature = "std")]
         self.pending_updates
-            .insert(new_leaf_node.public_key.clone(), (secret_key, signer));
+            .insert(leaf_node.public_key.clone(), pending_update);
 
-        #[cfg(not(feature = "std"))]
-        self.pending_updates
-            .push((new_leaf_node.public_key.clone(), (secret_key, signer)));
+        Ok(Proposal::Update(UpdateProposal { leaf_node }))
+    }
 
-        Ok(Proposal::Update(UpdateProposal {
-            leaf_node: new_leaf_node,
+    /// Create a proposal message that replaces another member.
+    ///
+    /// `authenticated_data` will be sent unencrypted along with the contents
+    /// of the proposal message.
+    #[cfg(feature = "replace_proposal")]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn propose_replace(
+        &mut self,
+        to_replace: u32,
+        leaf_node: LeafNode,
+        authenticated_data: Vec<u8>,
+    ) -> Result<MlsMessage, MlsError> {
+        let proposal = self.replace_proposal(to_replace, leaf_node).await?;
+        self.proposal_message(proposal, authenticated_data).await
+    }
+
+    #[cfg(feature = "replace_proposal")]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn replace_proposal(
+        &mut self,
+        to_replace: u32,
+        leaf_node: LeafNode,
+    ) -> Result<Proposal, MlsError> {
+        Ok(Proposal::Replace(ReplaceProposal {
+            to_replace: LeafIndex(to_replace),
+            leaf_node,
         }))
+    }
+
+    /// Abandon any cached state corresponding to a leaf node
+    #[cfg(feature = "replace_proposal")]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn abandon_leaf_node(&mut self, leaf_node: &LeafNode) {
+        self.pending_updates.remove(&leaf_node.public_key);
     }
 
     /// Create a proposal message that removes an existing member from the
@@ -1801,10 +1876,31 @@ where
         #[cfg(feature = "by_ref_proposal")]
         self.state.proposals.clear();
 
-        // Clear the pending updates list
-        #[cfg(feature = "by_ref_proposal")]
+        // If the only way our leaf can change is via Update, just clear the cache
+        #[cfg(all(feature = "by_ref_proposal", not(feature = "replace_proposal")))]
         {
             self.pending_updates = Default::default();
+        }
+
+        // If Updates can span epochs via Replace, only clear out leaf nodes that cannot possibly
+        // be used again, namely those that have been committed or those with an earlier epoch than
+        // the current leaf.
+        #[cfg(feature = "replace_proposal")]
+        {
+            // Delete any cached state for the current public key
+            let current_leaf_pk = self.current_user_leaf_node()?.public_key.clone();
+            self.pending_updates.remove(&current_leaf_pk);
+
+            // If the current leaf node contains an epoch value, delete any cached state for
+            // updates from prior epochs.
+            let epoch_ext = self
+                .current_user_leaf_node()?
+                .extensions
+                .get_as::<LeafNodeEpochExt>()?;
+            if let Some(epoch_ext) = epoch_ext {
+                self.pending_updates
+                    .retain(|_pk, upd| upd.epoch >= epoch_ext.epoch);
+            }
         }
 
         self.pending_commit = None;
@@ -2017,6 +2113,20 @@ mod tests {
         let mut extension_list = ExtensionList::default();
         extension_list.set_from(new_extension).unwrap();
 
+        // If we don't push here, then we get "no need to be `mut`" warnings when replace_proposal
+        // isn't enabled.
+        let extensions: Vec<ExtensionType> = vec![42.into()];
+
+        #[cfg(feature = "replace_proposal")]
+        let mut extensions = extensions;
+
+        #[cfg(feature = "replace_proposal")]
+        {
+            let epoch_extension = LeafNodeEpochExt::new(0);
+            extension_list.set_from(epoch_extension).unwrap();
+            extensions.push(ExtensionType::LEAF_NODE_EPOCH);
+        }
+
         let mut test_group = test_group_custom(
             TEST_PROTOCOL_VERSION,
             TEST_CIPHER_SUITE,
@@ -2047,7 +2157,7 @@ mod tests {
         assert_eq!(
             update.leaf_node.ungreased_capabilities().sorted(),
             Capabilities {
-                extensions: vec![42.into()],
+                extensions,
                 ..get_test_capabilities()
             }
             .sorted()
@@ -2137,6 +2247,126 @@ mod tests {
                 ..
             } if c.proposals.is_empty()
         );
+    }
+
+    #[cfg(feature = "replace_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_replace_proposals() {
+        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (mut bob_group, _) = alice_group.join("bob").await;
+
+        // Create a replace proposal
+        let bob_new_leaf = match bob_group.update_proposal() {
+            Proposal::Update(update) => update.leaf_node,
+            _ => panic!("non update proposal found"),
+        };
+
+        let proposal = alice_group.replace_proposal(1, bob_new_leaf.clone()).await;
+
+        let replace = match proposal.clone() {
+            Proposal::Replace(replace) => replace,
+            _ => panic!("non replace proposal found"),
+        };
+
+        assert_eq!(replace.to_replace, LeafIndex(1));
+        assert_eq!(replace.leaf_node, bob_new_leaf);
+
+        // Commit the replace and verify that Bob was replaced
+        let commit_output = alice_group
+            .group
+            .commit_builder()
+            .raw_proposal(proposal)
+            .build()
+            .unwrap();
+        alice_group.process_pending_commit().unwrap();
+        bob_group
+            .process_message(commit_output.commit_message)
+            .unwrap();
+
+        let alice_new_leaf_for_bob = alice_group
+            .group
+            .current_epoch_tree()
+            .get_leaf_node(LeafIndex(1))
+            .unwrap();
+        assert_eq!(*alice_new_leaf_for_bob, bob_new_leaf);
+
+        let bob_new_leaf_for_bob = bob_group.group.current_user_leaf_node().unwrap();
+        assert_eq!(*bob_new_leaf_for_bob, bob_new_leaf);
+    }
+
+    #[cfg(feature = "replace_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_replace_proposals_across_epochs() {
+        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (mut bob_group, _) = alice_group.join("bob").await;
+
+        // Bob produces an Update including a new LeafNode
+        let bob_new_leaf = match bob_group.update_proposal() {
+            Proposal::Update(update) => update.leaf_node,
+            _ => panic!("non update proposal found"),
+        };
+
+        // Alice commits without replacing Bob
+        let commit_output = alice_group.group.commit_builder().build().unwrap();
+        alice_group.process_pending_commit().unwrap();
+        bob_group
+            .process_message(commit_output.commit_message)
+            .unwrap();
+
+        // Alice commits a Replace proposal for Bob
+        let proposal = alice_group.replace_proposal(1, bob_new_leaf.clone()).await;
+        let commit_output = alice_group
+            .group
+            .commit_builder()
+            .raw_proposal(proposal)
+            .build()
+            .unwrap();
+        alice_group.process_pending_commit().unwrap();
+        bob_group
+            .process_message(commit_output.commit_message)
+            .unwrap();
+
+        // Check that Bob has been replaced by his new appearance
+        let alice_new_leaf_for_bob = alice_group
+            .group
+            .current_epoch_tree()
+            .get_leaf_node(LeafIndex(1))
+            .unwrap();
+        assert_eq!(*alice_new_leaf_for_bob, bob_new_leaf);
+
+        let bob_new_leaf_for_bob = bob_group.group.current_user_leaf_node().unwrap();
+        assert_eq!(*bob_new_leaf_for_bob, bob_new_leaf);
+    }
+
+    #[cfg(feature = "replace_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_replace_proposal_abandon() {
+        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (mut bob_group, _) = alice_group.join("bob").await;
+
+        // Bob produces an Update including a new LeafNode
+        let bob_new_leaf = match bob_group.update_proposal() {
+            Proposal::Update(update) => update.leaf_node,
+            _ => panic!("non update proposal found"),
+        };
+
+        // Bob abandons the LeafNode, deleting its cached private state
+        bob_group.group.abandon_leaf_node(&bob_new_leaf);
+
+        // Alice commits a Replace proposal for Bob
+        let proposal = alice_group.replace_proposal(1, bob_new_leaf.clone()).await;
+        let commit_output = alice_group
+            .group
+            .commit_builder()
+            .raw_proposal(proposal)
+            .build()
+            .unwrap();
+
+        alice_group.process_pending_commit().unwrap();
+
+        // Bob should fail to process the commit because of the missing state
+        let res = bob_group.process_message(commit_output.commit_message);
+        assert_matches!(res, Err(MlsError::UpdateErrorNoSecretKey))
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]

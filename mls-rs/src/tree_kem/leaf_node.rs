@@ -267,10 +267,12 @@ pub(crate) mod test_utils {
     use crate::{
         cipher_suite::CipherSuite,
         crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider},
+        extension::ApplicationIdExt,
         identity::test_utils::{get_test_signing_identity, BasicWithCustomProvider},
     };
 
-    use crate::extension::ApplicationIdExt;
+    #[cfg(feature = "replace_proposal")]
+    use crate::extension::ExtensionType;
 
     use super::*;
 
@@ -385,6 +387,10 @@ pub(crate) mod test_utils {
                 CredentialType::from(BasicWithCustomProvider::CUSTOM_CREDENTIAL_TYPE),
             ],
             cipher_suites: TestCryptoProvider::all_supported_cipher_suites(),
+
+            #[cfg(feature = "replace_proposal")]
+            extensions: vec![ExtensionType::LEAF_NODE_EPOCH],
+
             ..Default::default()
         }
     }

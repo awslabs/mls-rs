@@ -15,16 +15,22 @@ use crate::{
     tree_kem::{
         leaf_node_validator::{LeafNodeValidator, ValidationContext},
         node::LeafIndex,
-        TreeKemPublic,
     },
     CipherSuiteProvider, ExtensionList,
 };
+
+#[cfg(feature = "custom_proposal")]
+use crate::tree_kem::TreeKemPublic;
 
 use super::filtering_common::{filter_out_invalid_psks, ApplyProposalsOutput, ProposalApplier};
 
 #[cfg(feature = "by_ref_proposal")]
 use crate::extension::ExternalSendersExt;
 
+#[cfg(feature = "replace_proposal")]
+use crate::{extension::LeafNodeEpochExt, group::ReplaceProposal};
+
+use alloc::vec;
 use alloc::vec::Vec;
 use mls_rs_core::{error::IntoAnyError, identity::IdentityProvider, psk::PreSharedKeyStorage};
 
@@ -60,9 +66,17 @@ where
         commit_time: Option<MlsTime>,
     ) -> Result<ApplyProposalsOutput, MlsError> {
         let proposals = filter_out_invalid_proposers(strategy, proposals)?;
+        let proposals = filter_out_update_for_committer(strategy, commit_sender, proposals)?;
 
-        let mut proposals: ProposalBundle =
-            filter_out_update_for_committer(strategy, commit_sender, proposals)?;
+        #[cfg(feature = "replace_proposal")]
+        let proposals = filter_out_replace_for_committer(strategy, commit_sender, proposals)?;
+
+        let proposals = filter_out_duplicate_updates(strategy, commit_sender, proposals)?;
+
+        #[cfg(feature = "replace_proposal")]
+        let proposals = filter_out_duplicate_replaces(strategy, commit_sender, proposals)?;
+
+        let mut proposals = proposals;
 
         // We ignore the strategy here because the check above ensures all updates are from members
         proposals.update_senders = proposals
@@ -175,6 +189,7 @@ where
             Some(group_extensions_in_use),
         );
 
+        // Check that Updates are valid
         let bad_indices: Vec<_> = wrap_iter(proposals.update_proposals())
             .zip(wrap_iter(proposals.update_proposal_senders()))
             .enumerate()
@@ -220,6 +235,76 @@ where
             proposals.update_senders.remove(i);
         });
 
+        // Check that Replaces are valid
+        #[cfg(feature = "replace_proposal")]
+        {
+            let bad_indices: Vec<_> = wrap_iter(proposals.replace_proposals())
+                .enumerate()
+                .filter_map(|(i, p)| async move {
+                    let res = {
+                        let to_replace = p.proposal.to_replace;
+                        let leaf = &p.proposal.leaf_node;
+
+                        let res = leaf_node_validator
+                            .check_if_valid(
+                                leaf,
+                                ValidationContext::Update((
+                                    self.group_id,
+                                    *to_replace,
+                                    commit_time,
+                                )),
+                            )
+                            .await;
+
+                        let old_leaf = match self.original_tree.get_leaf_node(to_replace) {
+                            Ok(leaf) => leaf,
+                            Err(e) => return Some(Err(e)),
+                        };
+
+                        let valid_successor = self
+                            .identity_provider
+                            .valid_successor(
+                                &old_leaf.signing_identity,
+                                &leaf.signing_identity,
+                                group_extensions_in_use,
+                            )
+                            .await
+                            .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))
+                            .and_then(|valid| {
+                                valid.then_some(()).ok_or(MlsError::InvalidSuccessor)
+                            });
+
+                        // XXX(RLB) It's not clear that this is the right policy.  On the one hand,
+                        // it allows for the epoch locking to be turned off.  On the other hand,
+                        // this can be abused to roll back to any leaf that doesn't have an epoch
+                        // marker.
+
+                        // If both the old and new leaves have `leaf_node_epoch` extensions, then
+                        // the new value must be at least as big as the old value.
+                        let old_epoch = old_leaf.extensions.get_as::<LeafNodeEpochExt>().ok()?;
+                        let new_epoch = leaf.extensions.get_as::<LeafNodeEpochExt>().ok()?;
+                        let epoch_successor = old_epoch
+                            .and_then(|old| new_epoch.map(|new| new.epoch >= old.epoch))
+                            .unwrap_or(true)
+                            .then_some(())
+                            .ok_or(MlsError::InvalidSuccessor);
+
+                        res.and(valid_successor).and(epoch_successor)
+                    };
+
+                    apply_strategy(strategy, p.is_by_reference(), res)
+                        .map(|b| (!b).then_some(i))
+                        .transpose()
+                })
+                .try_collect()
+                .await?;
+
+            bad_indices.into_iter().rev().for_each(|i| {
+                proposals.remove::<ReplaceProposal>(i);
+            });
+        }
+
+        // Check that Adds are valid
         let bad_indices: Vec<_> = wrap_iter(proposals.add_proposals())
             .enumerate()
             .filter_map(|(i, p)| async move {
@@ -291,6 +376,24 @@ fn filter_out_update_for_committer(
     Ok(proposals)
 }
 
+#[cfg(feature = "replace_proposal")]
+fn filter_out_replace_for_committer(
+    strategy: FilterStrategy,
+    commit_sender: LeafIndex,
+    mut proposals: ProposalBundle,
+) -> Result<ProposalBundle, MlsError> {
+    proposals.retain_by_type::<ReplaceProposal, _, _>(|p| {
+        apply_strategy(
+            strategy,
+            p.is_by_reference(),
+            (p.proposal.to_replace != commit_sender)
+                .then_some(())
+                .ok_or(MlsError::InvalidCommitSelfUpdate),
+        )
+    })?;
+    Ok(proposals)
+}
+
 fn filter_out_removal_of_committer(
     strategy: FilterStrategy,
     commit_sender: LeafIndex,
@@ -303,6 +406,63 @@ fn filter_out_removal_of_committer(
             (p.proposal.to_remove != commit_sender)
                 .then_some(())
                 .ok_or(MlsError::CommitterSelfRemoval),
+        )
+    })?;
+    Ok(proposals)
+}
+
+fn filter_out_duplicate_updates(
+    strategy: FilterStrategy,
+    _commit_sender: LeafIndex,
+    mut proposals: ProposalBundle,
+) -> Result<ProposalBundle, MlsError> {
+    let mut seen = vec![];
+    proposals.retain_by_type::<UpdateProposal, _, _>(|p| {
+        let Sender::Member(index) = p.sender else {
+            return Err(MlsError::InvalidSender);
+        };
+
+        let fresh = !seen.contains(&index);
+        seen.push(index);
+
+        apply_strategy(
+            strategy,
+            p.is_by_reference(),
+            fresh
+                .then_some(())
+                .ok_or(MlsError::UpdatingNonExistingMember),
+        )
+    })?;
+    Ok(proposals)
+}
+
+#[cfg(feature = "replace_proposal")]
+fn filter_out_duplicate_replaces(
+    strategy: FilterStrategy,
+    _commit_sender: LeafIndex,
+    mut proposals: ProposalBundle,
+) -> Result<ProposalBundle, MlsError> {
+    let mut seen: Vec<_> = proposals
+        .by_type::<UpdateProposal>()
+        .map(|p| {
+            let Sender::Member(index) = p.sender else {
+                unreachable!()
+            };
+            index
+        })
+        .collect();
+
+    proposals.retain_by_type::<ReplaceProposal, _, _>(|p| {
+        let index = *p.proposal.to_replace;
+        let fresh = !seen.contains(&index);
+        seen.push(index);
+
+        apply_strategy(
+            strategy,
+            p.is_by_reference(),
+            fresh
+                .then_some(())
+                .ok_or(MlsError::UpdatingNonExistingMember),
         )
     })?;
     Ok(proposals)
@@ -432,6 +592,7 @@ pub(crate) fn proposer_can_propose(
     by_ref: bool,
 ) -> Result<(), MlsError> {
     let can_propose = match (proposer, by_ref) {
+        #[cfg(not(feature = "replace_proposal"))]
         (Sender::Member(_), false) => matches!(
             proposal_type,
             ProposalType::ADD
@@ -440,6 +601,17 @@ pub(crate) fn proposer_can_propose(
                 | ProposalType::RE_INIT
                 | ProposalType::GROUP_CONTEXT_EXTENSIONS
         ),
+        #[cfg(feature = "replace_proposal")]
+        (Sender::Member(_), false) => matches!(
+            proposal_type,
+            ProposalType::ADD
+                | ProposalType::REPLACE
+                | ProposalType::REMOVE
+                | ProposalType::PSK
+                | ProposalType::RE_INIT
+                | ProposalType::GROUP_CONTEXT_EXTENSIONS
+        ),
+        #[cfg(not(feature = "replace_proposal"))]
         (Sender::Member(_), true) => matches!(
             proposal_type,
             ProposalType::ADD
@@ -449,13 +621,34 @@ pub(crate) fn proposer_can_propose(
                 | ProposalType::RE_INIT
                 | ProposalType::GROUP_CONTEXT_EXTENSIONS
         ),
+        #[cfg(feature = "replace_proposal")]
+        (Sender::Member(_), true) => matches!(
+            proposal_type,
+            ProposalType::ADD
+                | ProposalType::UPDATE
+                | ProposalType::REPLACE
+                | ProposalType::REMOVE
+                | ProposalType::PSK
+                | ProposalType::RE_INIT
+                | ProposalType::GROUP_CONTEXT_EXTENSIONS
+        ),
         #[cfg(feature = "by_ref_proposal")]
         (Sender::External(_), false) => false,
-        #[cfg(feature = "by_ref_proposal")]
+        #[cfg(all(feature = "by_ref_proposal", not(feature = "replace_proposal")))]
         (Sender::External(_), true) => matches!(
             proposal_type,
             ProposalType::ADD
                 | ProposalType::REMOVE
+                | ProposalType::RE_INIT
+                | ProposalType::PSK
+                | ProposalType::GROUP_CONTEXT_EXTENSIONS
+        ),
+        #[cfg(all(feature = "by_ref_proposal", feature = "replace_proposal"))]
+        (Sender::External(_), true) => matches!(
+            proposal_type,
+            ProposalType::ADD
+                | ProposalType::REMOVE
+                | ProposalType::REPLACE
                 | ProposalType::RE_INIT
                 | ProposalType::PSK
                 | ProposalType::GROUP_CONTEXT_EXTENSIONS
@@ -494,6 +687,16 @@ pub(crate) fn filter_out_invalid_proposers(
         if !apply_strategy(strategy, p.is_by_reference(), res)? {
             proposals.remove::<UpdateProposal>(i);
             proposals.update_senders.remove(i);
+        }
+    }
+
+    #[cfg(feature = "replace_proposal")]
+    for i in (0..proposals.replace_proposals().len()).rev() {
+        let p = &proposals.replace_proposals()[i];
+        let res = proposer_can_propose(p.sender, ProposalType::REPLACE, p.is_by_reference());
+
+        if !apply_strategy(strategy, p.is_by_reference(), res)? {
+            proposals.remove::<ReplaceProposal>(i);
         }
     }
 

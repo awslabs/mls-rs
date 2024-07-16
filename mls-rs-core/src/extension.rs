@@ -34,6 +34,12 @@ impl ExtensionType {
     pub const EXTERNAL_PUB: ExtensionType = ExtensionType(4);
     pub const EXTERNAL_SENDERS: ExtensionType = ExtensionType(5);
 
+    // XXX(RLB): This value is chosen from the vendor range, since this is an experimental
+    // implementation that is only intended to work between `mls-rs` instances.  Once a real value
+    // is assigned by IANA, this code will need to be updated.
+    #[cfg(feature = "replace_proposal")]
+    pub const LEAF_NODE_EPOCH: ExtensionType = ExtensionType(0xFF01);
+
     /// Default extension types defined
     /// in [RFC 9420](https://www.rfc-editor.org/rfc/rfc9420.html#name-leaf-node-contents)
     pub const DEFAULT: &'static [ExtensionType] = &[

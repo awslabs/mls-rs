@@ -34,8 +34,6 @@ mod map_impl {
         collections::{btree_map::Entry, BTreeMap},
         vec::Vec,
     };
-    #[cfg(feature = "by_ref_proposal")]
-    use itertools::Itertools;
 
     #[derive(Clone, Debug, PartialEq, Eq)]
     pub struct SmallMap<K: Hash + Eq, V>(pub(super) Vec<(K, V)>);
@@ -63,6 +61,13 @@ mod map_impl {
 
         fn find(&self, key: &K) -> Option<usize> {
             self.0.iter().position(|(k, _)| k == key)
+        }
+
+        pub fn retain<F>(&mut self, mut f: F)
+        where
+            F: FnMut(&K, &mut V) -> bool,
+        {
+            self.0.retain_mut(|(k, v)| f(k, v));
         }
     }
 }

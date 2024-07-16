@@ -709,6 +709,9 @@ mod tests {
 
     use crate::extension::RequiredCapabilitiesExt;
 
+    #[cfg(feature = "replace_proposal")]
+    use crate::group::{LeafNodeEpochExt, ReplaceProposal};
+
     #[cfg(feature = "by_ref_proposal")]
     use crate::{
         extension::ExternalSendersExt,
@@ -786,15 +789,42 @@ mod tests {
         .unwrap()[0]
     }
 
+    #[cfg(feature = "replace_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn update_leaf_node(name: &str, leaf_index: u32) -> LeafNode {
+    async fn update_member(tree: &mut TreeKemPublic, leaf_index: u32, leaf_node: LeafNode) {
+        tree.update_leaf(
+            leaf_index,
+            leaf_node,
+            &BasicIdentityProvider,
+            &test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .await
+        .unwrap();
+    }
+
+    #[allow(unused_variables)] // `epoch` is only used conditionally
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn update_leaf_node(name: &str, leaf_index: u32, epoch: Option<u64>) -> LeafNode {
         let (mut leaf, _, signer) = get_basic_test_node_sig_key(TEST_CIPHER_SUITE, name).await;
+
+        let properties = default_properties();
+
+        #[cfg(feature = "replace_proposal")]
+        let mut properties = properties;
+
+        #[cfg(feature = "replace_proposal")]
+        if let Some(epoch) = epoch {
+            properties
+                .extensions
+                .set_from(LeafNodeEpochExt::new(epoch))
+                .unwrap();
+        }
 
         leaf.update(
             &test_cipher_suite_provider(TEST_CIPHER_SUITE),
             TEST_GROUP,
             leaf_index,
-            default_properties(),
+            properties,
             None,
             &signer,
         )
@@ -2558,6 +2588,29 @@ mod tests {
         assert_matches!(res, Err(MlsError::InvalidCommitSelfUpdate));
     }
 
+    #[cfg(feature = "replace_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn receiving_replace_for_committer_fails() {
+        let (alice, mut tree) = new_tree("alice").await;
+        let bob = add_member(&mut tree, "bob").await;
+
+        let replace = Proposal::Replace(make_replace_proposal(0, "alice"));
+        let replace_ref = make_proposal_ref(&replace, bob).await;
+
+        let res = CommitReceiver::new(
+            &tree,
+            alice,
+            alice,
+            test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .cache(replace_ref.clone(), replace, bob)
+        .receive([replace_ref])
+        .await;
+
+        // XXX(RLB): Should this use a different error code?
+        assert_matches!(res, Err(MlsError::InvalidCommitSelfUpdate));
+    }
+
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn sending_additional_update_for_committer_fails() {
         let (alice, tree) = new_tree("alice").await;
@@ -2591,6 +2644,127 @@ mod tests {
 
         #[cfg(feature = "state_update")]
         assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
+    }
+
+    #[cfg(feature = "replace_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn sending_replace_for_committer_filters_it_out() {
+        let (alice, mut tree) = new_tree("alice").await;
+        let bob = add_member(&mut tree, "bob").await;
+
+        let proposal = Proposal::Replace(make_replace_proposal(0, "alice"));
+        let proposal_info = make_proposal_info(&proposal, bob).await;
+
+        let processed_proposals =
+            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+                .cache(
+                    proposal_info.proposal_ref().unwrap().clone(),
+                    proposal.clone(),
+                    bob,
+                )
+                .send()
+                .await
+                .unwrap();
+
+        assert_eq!(processed_proposals.0, Vec::new());
+
+        #[cfg(feature = "state_update")]
+        assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn sending_multiple_update_sends_only_one() {
+        let (alice, mut tree) = new_tree("alice").await;
+        let bob = add_member(&mut tree, "bob").await;
+
+        let update1 = Proposal::Update(make_update_proposal("bob").await);
+        let update1_info = make_proposal_info(&update1, bob).await;
+        let update1_ref = update1_info.proposal_ref().unwrap().clone();
+
+        let update2 = Proposal::Update(make_update_proposal("bob").await);
+        let update2_info = make_proposal_info(&update2, bob).await;
+        let update2_ref = update2_info.proposal_ref().unwrap().clone();
+
+        let processed_proposals =
+            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+                .cache(update1_ref.clone(), update1.clone(), bob)
+                .cache(update2_ref.clone(), update2.clone(), bob)
+                .send()
+                .await
+                .unwrap();
+
+        assert_eq!(processed_proposals.0.len(), 1);
+        assert_eq!(processed_proposals.1.unused_proposals.len(), 1);
+
+        // Proposals are processed in an unpredictable order, so we can't test that a specific
+        // proposal was selected.  We just check that one was selected and the other was rejected.
+        let processed1 = processed_proposals.0[0] == update1_ref.into();
+        let processed2 = processed_proposals.0[0] == update2_ref.into();
+        let unused1 = processed_proposals.1.unused_proposals[0] == update1_info;
+        let unused2 = processed_proposals.1.unused_proposals[0] == update2_info;
+        assert!((processed1 && unused2) || (unused1 && processed2));
+    }
+
+    #[cfg(feature = "replace_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn sending_multiple_replace_sends_only_one() {
+        let (alice, mut tree) = new_tree("alice").await;
+        let bob = add_member(&mut tree, "bob").await;
+
+        let replace1 = Proposal::Replace(make_replace_proposal(1, "bob"));
+        let replace1_info = make_proposal_info(&replace1, bob).await;
+        let replace1_ref = replace1_info.proposal_ref().unwrap().clone();
+
+        let replace2 = Proposal::Replace(make_replace_proposal(1, "bob"));
+        let replace2_info = make_proposal_info(&replace2, bob).await;
+        let replace2_ref = replace2_info.proposal_ref().unwrap().clone();
+
+        let processed_proposals =
+            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+                .cache(replace1_ref.clone(), replace1.clone(), bob)
+                .cache(replace2_ref.clone(), replace2.clone(), bob)
+                .send()
+                .await
+                .unwrap();
+
+        assert_eq!(processed_proposals.0.len(), 1);
+        assert_eq!(processed_proposals.1.unused_proposals.len(), 1);
+
+        // Proposals are processed in an unpredictable order, so we can't test that a specific
+        // proposal was selected.  We just check that one was selected and the other was rejected.
+        let processed1 = processed_proposals.0[0] == replace1_ref.into();
+        let processed2 = processed_proposals.0[0] == replace2_ref.into();
+        let unused1 = processed_proposals.1.unused_proposals[0] == replace1_info;
+        let unused2 = processed_proposals.1.unused_proposals[0] == replace2_info;
+        assert!((processed1 && unused2) || (unused1 && processed2));
+    }
+
+    #[cfg(feature = "replace_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn sending_update_and_replace_for_the_same_leaf_filters_the_replace() {
+        let (alice, mut tree) = new_tree("alice").await;
+        let bob = add_member(&mut tree, "bob").await;
+
+        let update = Proposal::Update(make_update_proposal("bob").await);
+        let update_info = make_proposal_info(&update, bob).await;
+        let update_ref = update_info.proposal_ref().unwrap().clone();
+
+        let replace = Proposal::Replace(make_replace_proposal(1, "bob"));
+        let replace_info = make_proposal_info(&replace, alice).await;
+        let replace_ref = replace_info.proposal_ref().unwrap().clone();
+
+        let processed_proposals =
+            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+                .cache(update_ref.clone(), update.clone(), bob)
+                .cache(replace_ref.clone(), replace.clone(), alice)
+                .send()
+                .await
+                .unwrap();
+
+        assert_eq!(processed_proposals.0, vec![update_ref.into()]);
+
+        #[cfg(feature = "state_update")]
+        assert_eq!(processed_proposals.1.unused_proposals, vec![replace_info]);
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -2669,6 +2843,85 @@ mod tests {
         assert_matches!(res, Err(MlsError::UpdatingNonExistingMember));
     }
 
+    #[cfg(feature = "replace_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn receiving_replace_and_remove_for_same_leaf_fails() {
+        let (alice, mut tree) = new_tree("alice").await;
+        let bob = add_member(&mut tree, "bob").await;
+
+        let replace = Proposal::Replace(make_replace_proposal(1, "bob"));
+        let replace_ref = make_proposal_ref(&replace, alice).await;
+
+        let remove = Proposal::Remove(RemoveProposal { to_remove: bob });
+        let remove_ref = make_proposal_ref(&remove, bob).await;
+
+        let res = CommitReceiver::new(
+            &tree,
+            alice,
+            alice,
+            test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .cache(replace_ref.clone(), replace, bob)
+        .cache(remove_ref.clone(), remove, bob)
+        .receive([replace_ref, remove_ref])
+        .await;
+
+        assert_matches!(res, Err(MlsError::UpdatingNonExistingMember));
+    }
+
+    #[cfg(feature = "replace_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn receiving_update_and_replace_for_same_leaf_fails() {
+        let (alice, mut tree) = new_tree("alice").await;
+        let bob = add_member(&mut tree, "bob").await;
+
+        let update = Proposal::Update(make_update_proposal("bob").await);
+        let update_ref = make_proposal_ref(&update, bob).await;
+
+        let replace = Proposal::Replace(make_replace_proposal(1, "bob"));
+        let replace_ref = make_proposal_ref(&replace, alice).await;
+
+        let res = CommitReceiver::new(
+            &tree,
+            alice,
+            alice,
+            test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .cache(update_ref.clone(), update, bob)
+        .cache(replace_ref.clone(), replace, alice)
+        .receive([update_ref, replace_ref])
+        .await;
+
+        // XXX(RLB): This doesn't seem like the most apt error code.
+        assert_matches!(res, Err(MlsError::UpdatingNonExistingMember));
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn receiving_multiple_update_for_same_leaf_fails() {
+        let (alice, mut tree) = new_tree("alice").await;
+        let bob = add_member(&mut tree, "bob").await;
+
+        let update1 = Proposal::Update(make_update_proposal("bob").await);
+        let update1_ref = make_proposal_ref(&update1, bob).await;
+
+        let update2 = Proposal::Update(make_update_proposal("bob").await);
+        let update2_ref = make_proposal_ref(&update2, bob).await;
+
+        let res = CommitReceiver::new(
+            &tree,
+            alice,
+            alice,
+            test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .cache(update1_ref.clone(), update1, bob)
+        .cache(update2_ref.clone(), update2, bob)
+        .receive([update1_ref, update2_ref])
+        .await;
+
+        // XXX(RLB): This doesn't seem like the most apt error code.
+        assert_matches!(res, Err(MlsError::UpdatingNonExistingMember));
+    }
+
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn sending_update_and_remove_for_same_leaf_filters_update_out() {
         let (alice, mut tree) = new_tree("alice").await;
@@ -2696,6 +2949,36 @@ mod tests {
 
         #[cfg(feature = "state_update")]
         assert_eq!(processed_proposals.1.unused_proposals, vec![update_info]);
+    }
+
+    #[cfg(feature = "replace_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn sending_replace_and_remove_for_same_leaf_filters_replace_out() {
+        let (alice, mut tree) = new_tree("alice").await;
+        let bob = add_member(&mut tree, "bob").await;
+
+        let replace = Proposal::Replace(make_replace_proposal(1, "bob"));
+        let replace_info = make_proposal_info(&replace, alice).await;
+
+        let remove = Proposal::Remove(RemoveProposal { to_remove: bob });
+        let remove_ref = make_proposal_ref(&remove, alice).await;
+
+        let processed_proposals =
+            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+                .cache(
+                    replace_info.proposal_ref().unwrap().clone(),
+                    replace.clone(),
+                    alice,
+                )
+                .cache(remove_ref.clone(), remove, alice)
+                .send()
+                .await
+                .unwrap();
+
+        assert_eq!(processed_proposals.0, vec![remove_ref.into()]);
+
+        #[cfg(feature = "state_update")]
+        assert_eq!(processed_proposals.1.unused_proposals, vec![replace_info]);
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -2813,6 +3096,104 @@ mod tests {
         // she didn't propose it.
         #[cfg(feature = "state_update")]
         assert_eq!(processed_proposals.1.unused_proposals, vec![update_info]);
+    }
+
+    #[cfg(feature = "replace_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn receiving_replace_for_different_identity_fails() {
+        let (alice, mut tree) = new_tree("alice").await;
+        let _bob = add_member(&mut tree, "bob").await;
+
+        let replace = Proposal::Replace(make_replace_proposal(1, "carol"));
+        let replace_ref = make_proposal_ref(&replace, alice).await;
+
+        let res = CommitReceiver::new(
+            &tree,
+            alice,
+            alice,
+            test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .cache(replace_ref.clone(), replace, alice)
+        .receive([replace_ref])
+        .await;
+
+        assert_matches!(res, Err(MlsError::InvalidSuccessor));
+    }
+
+    #[cfg(feature = "replace_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn sending_replace_for_different_identity_filters_it_out() {
+        let (alice, mut tree) = new_tree("alice").await;
+        let _bob = add_member(&mut tree, "bob").await;
+
+        let replace = Proposal::Replace(make_replace_proposal(1, "carol"));
+        let replace_info = make_proposal_info(&replace, alice).await;
+
+        let processed_proposals =
+            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+                .cache(replace_info.proposal_ref().unwrap().clone(), replace, alice)
+                .send()
+                .await
+                .unwrap();
+
+        assert_eq!(processed_proposals.0, Vec::new());
+
+        #[cfg(feature = "state_update")]
+        assert_eq!(processed_proposals.1.unused_proposals, vec![replace_info]);
+    }
+
+    #[cfg(feature = "replace_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn receiving_replace_for_old_epoch_fails() {
+        let (alice, mut tree) = new_tree("alice").await;
+        add_member(&mut tree, "bob").await;
+
+        // Fast-forward Bob to epoch 42
+        let bob_leaf_new_epoch = update_leaf_node("bob", 1, Some(42));
+        update_member(&mut tree, 1, bob_leaf_new_epoch);
+
+        // Try to replace Bob with a LeafNode from epoch 21
+        let replace = Proposal::Replace(make_replace_proposal_custom(1, "bob", 21));
+        let replace_ref = make_proposal_ref(&replace, alice).await;
+
+        let res = CommitReceiver::new(
+            &tree,
+            alice,
+            alice,
+            test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .cache(replace_ref.clone(), replace, alice)
+        .receive([replace_ref])
+        .await;
+
+        assert_matches!(res, Err(MlsError::InvalidSuccessor));
+    }
+
+    #[cfg(feature = "replace_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn sending_replace_for_old_epoch_filters_it_out() {
+        let (alice, mut tree) = new_tree("alice").await;
+        add_member(&mut tree, "bob").await;
+
+        // Fast-forward Bob to epoch 42
+        let bob_leaf_new_epoch = update_leaf_node("bob", 1, Some(42));
+        update_member(&mut tree, 1, bob_leaf_new_epoch);
+
+        // Try to replace Bob with a LeafNode from epoch 21
+        let replace = Proposal::Replace(make_replace_proposal_custom(1, "bob", 21));
+        let replace_info = make_proposal_info(&replace, alice).await;
+
+        let processed_proposals =
+            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+                .cache(replace_info.proposal_ref().unwrap().clone(), replace, alice)
+                .send()
+                .await
+                .unwrap();
+
+        assert_eq!(processed_proposals.0, Vec::new());
+
+        #[cfg(feature = "state_update")]
+        assert_eq!(processed_proposals.1.unused_proposals, vec![replace_info]);
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -3493,7 +3874,7 @@ mod tests {
             .await
             .unwrap();
 
-        let bob_new_leaf = update_leaf_node("bob", 1).await;
+        let bob_new_leaf = update_leaf_node("bob", 1, None).await;
 
         let pk1_to_pk2 = Proposal::Update(UpdateProposal {
             leaf_node: alice_new_leaf.clone(),
@@ -4215,14 +4596,32 @@ mod tests {
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn make_update_proposal(name: &str) -> UpdateProposal {
         UpdateProposal {
-            leaf_node: update_leaf_node(name, 1).await,
+            leaf_node: update_leaf_node(name, 1, None).await,
+        }
+    }
+
+    #[cfg(feature = "replace_proposal")]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn make_replace_proposal(index: u32, name: &str) -> ReplaceProposal {
+        ReplaceProposal {
+            to_replace: LeafIndex(index),
+            leaf_node: update_leaf_node(name, index, None).await,
+        }
+    }
+
+    #[cfg(feature = "replace_proposal")]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn make_replace_proposal_custom(index: u32, name: &str, epoch: u64) -> ReplaceProposal {
+        ReplaceProposal {
+            to_replace: LeafIndex(index),
+            leaf_node: update_leaf_node(name, index, Some(epoch)).await,
         }
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn make_update_proposal_custom(name: &str, leaf_index: u32) -> UpdateProposal {
         UpdateProposal {
-            leaf_node: update_leaf_node(name, leaf_index).await,
+            leaf_node: update_leaf_node(name, leaf_index, None).await,
         }
     }
 

@@ -16,6 +16,9 @@ use crate::{
     ExtensionList,
 };
 
+#[cfg(feature = "replace_proposal")]
+use crate::group::ReplaceProposal;
+
 #[cfg(feature = "by_ref_proposal")]
 use crate::group::{proposal_cache::CachedProposal, LeafIndex, ProposalRef, UpdateProposal};
 
@@ -38,6 +41,8 @@ pub struct ProposalBundle {
     pub(crate) updates: Vec<ProposalInfo<UpdateProposal>>,
     #[cfg(feature = "by_ref_proposal")]
     pub(crate) update_senders: Vec<LeafIndex>,
+    #[cfg(feature = "replace_proposal")]
+    pub(crate) replaces: Vec<ProposalInfo<ReplaceProposal>>,
     pub(crate) removals: Vec<ProposalInfo<RemoveProposal>>,
     #[cfg(feature = "psk")]
     pub(crate) psks: Vec<ProposalInfo<PreSharedKeyProposal>>,
@@ -58,6 +63,12 @@ impl ProposalBundle {
             }),
             #[cfg(feature = "by_ref_proposal")]
             Proposal::Update(proposal) => self.updates.push(ProposalInfo {
+                proposal,
+                sender,
+                source,
+            }),
+            #[cfg(feature = "replace_proposal")]
+            Proposal::Replace(proposal) => self.replaces.push(ProposalInfo {
                 proposal,
                 sender,
                 source,
@@ -177,6 +188,11 @@ impl ProposalBundle {
             f(&proposal.as_ref().map(BorrowedProposal::from))
         })?;
 
+        #[cfg(feature = "replace_proposal")]
+        self.retain_by_type::<ReplaceProposal, _, _>(|proposal| {
+            f(&proposal.as_ref().map(BorrowedProposal::from))
+        })?;
+
         self.retain_by_type::<RemoveProposal, _, _>(|proposal| {
             f(&proposal.as_ref().map(BorrowedProposal::from))
         })?;
@@ -246,6 +262,13 @@ impl ProposalBundle {
                 .map(|p| p.as_ref().map(BorrowedProposal::Update)),
         );
 
+        #[cfg(feature = "replace_proposal")]
+        let res = res.chain(
+            self.replaces
+                .iter()
+                .map(|p| p.as_ref().map(BorrowedProposal::Replace)),
+        );
+
         #[cfg(feature = "psk")]
         let res = res.chain(
             self.psks
@@ -298,6 +321,9 @@ impl ProposalBundle {
         #[cfg(feature = "by_ref_proposal")]
         let res = res.chain(self.updates.into_iter().map(|p| p.map(Proposal::Update)));
 
+        #[cfg(feature = "replace_proposal")]
+        let res = res.chain(self.replaces.into_iter().map(|p| p.map(Proposal::Replace)));
+
         res.chain(
             self.additions
                 .into_iter()
@@ -342,6 +368,12 @@ impl ProposalBundle {
     #[cfg(feature = "by_ref_proposal")]
     pub fn update_proposal_senders(&self) -> &[LeafIndex] {
         &self.update_senders
+    }
+
+    /// Replace proposals in the bundle.
+    #[cfg(feature = "replace_proposal")]
+    pub fn replace_proposals(&self) -> &[ProposalInfo<ReplaceProposal>] {
+        &self.replaces
     }
 
     /// Remove proposals in the bundle.
@@ -621,6 +653,8 @@ macro_rules! impl_proposable {
 impl_proposable!(AddProposal, ADD, additions);
 #[cfg(feature = "by_ref_proposal")]
 impl_proposable!(UpdateProposal, UPDATE, updates);
+#[cfg(feature = "replace_proposal")]
+impl_proposable!(ReplaceProposal, REPLACE, replaces);
 impl_proposable!(RemoveProposal, REMOVE, removals);
 #[cfg(feature = "psk")]
 impl_proposable!(PreSharedKeyProposal, PSK, psks);

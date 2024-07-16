@@ -1045,10 +1045,16 @@ mod tests {
 
     #[test]
     fn builder_can_be_obtained_from_client_to_edit_properties_for_new_client() {
+        #[cfg(not(feature = "replace_proposal"))]
+        let expected_extensions = [33, 34].map(Into::into);
+
+        #[cfg(feature = "replace_proposal")]
+        let expected_extensions = [0xff01, 33, 34].map(Into::into);
+
         let alice = TestClientBuilder::new_for_test()
             .extension_type(33.into())
             .build();
         let bob = alice.to_builder().extension_type(34.into()).build();
-        assert_eq!(bob.config.supported_extensions(), [33, 34].map(Into::into));
+        assert_eq!(bob.config.supported_extensions(), expected_extensions);
     }
 }

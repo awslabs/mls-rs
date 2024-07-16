@@ -14,18 +14,18 @@ use crate::{
 };
 
 #[cfg(feature = "by_ref_proposal")]
-use crate::{
-    crypto::{HpkePublicKey, HpkeSecretKey},
-    group::{
-        message_hash::MessageHash,
-        proposal_cache::{CachedProposal, ProposalCache},
-        ProposalMessageDescription, ProposalRef,
-    },
-    map::SmallMap,
+use crate::{crypto::HpkePublicKey, group::PendingUpdate, map::SmallMap};
+
+#[cfg(feature = "by_ref_proposal")]
+use crate::group::{
+    message_hash::MessageHash,
+    proposal_cache::{CachedProposal, ProposalCache},
+    ProposalMessageDescription, ProposalRef,
 };
 
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::crypto::SignatureSecretKey;
+
 #[cfg(feature = "tree_index")]
 use mls_rs_core::identity::IdentityProvider;
 
@@ -38,7 +38,7 @@ pub(crate) struct Snapshot {
     epoch_secrets: EpochSecrets,
     key_schedule: KeySchedule,
     #[cfg(feature = "by_ref_proposal")]
-    pending_updates: SmallMap<HpkePublicKey, (HpkeSecretKey, Option<SignatureSecretKey>)>,
+    pending_updates: SmallMap<HpkePublicKey, PendingUpdate>,
     pending_commit: Option<CommitGeneration>,
     signer: SignatureSecretKey,
 }
