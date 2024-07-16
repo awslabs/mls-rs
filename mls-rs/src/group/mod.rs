@@ -1893,13 +1893,14 @@ where
 
             // If the current leaf node contains an epoch value, delete any cached state for
             // updates from prior epochs.
-            self.current_user_leaf_node()?
+            let epoch_ext = self
+                .current_user_leaf_node()?
                 .extensions
-                .get_as::<LeafNodeEpochExt>()?
-                .map(|epoch_ext| {
-                    self.pending_updates
-                        .retain(|_pk, upd| upd.epoch >= epoch_ext.epoch);
-                });
+                .get_as::<LeafNodeEpochExt>()?;
+            if let Some(epoch_ext) = epoch_ext {
+                self.pending_updates
+                    .retain(|_pk, upd| upd.epoch >= epoch_ext.epoch);
+            }
         }
 
         self.pending_commit = None;
