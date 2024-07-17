@@ -264,8 +264,9 @@ pub(crate) mod inner {
 
 #[cfg(not(feature = "psk"))]
 pub(crate) mod inner {
-    use mls_rs::group::StateUpdate;
     use tonic::{Request, Response, Status};
+
+    use mls_rs::group::CommitEffect;
 
     use crate::{
         mls_client::{
@@ -301,7 +302,7 @@ pub(crate) mod inner {
         pub(crate) async fn handle_re_init_commit(
             &self,
             _: Response<HandleCommitResponse>,
-            _: StateUpdate,
+            _: CommitEffect,
         ) -> Result<Response<HandleReInitCommitResponse>, Status> {
             Err(Status::aborted("Unsupported"))
         }
