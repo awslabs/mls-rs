@@ -1860,7 +1860,7 @@ mod tests {
         crypto::test_utils::TestCryptoProvider,
         group::{
             mls_rules::{CommitDirection, CommitSource},
-            proposal_filter::ProposalBundle,
+            proposal_filter::{ProposalBundle, ProposalInfo},
         },
         identity::{
             basic::BasicIdentityProvider,
@@ -2574,10 +2574,6 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn commit_description_external_commit() {
-        use message_processor::CommitEffect;
-
-        use crate::client::test_utils::TestClientBuilder;
-
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
         let (bob_identity, secret_key) = get_test_signing_identity(TEST_CIPHER_SUITE, b"bob").await;
