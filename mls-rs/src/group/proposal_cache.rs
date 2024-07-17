@@ -331,6 +331,9 @@ impl GroupState {
             &applier_output.applied_proposals,
         );
 
+        #[cfg(not(feature = "by_ref_proposal"))]
+        let unused_proposals = alloc::vec::Vec::default();
+
         let mut group_context = self.context.clone();
         group_context.epoch += 1;
 
@@ -347,7 +350,6 @@ impl GroupState {
             applied_proposals: proposals,
             external_init_index: applier_output.external_init_index,
             indexes_of_added_kpkgs: applier_output.indexes_of_added_kpkgs,
-            #[cfg(feature = "by_ref_proposal")]
             unused_proposals,
         })
     }

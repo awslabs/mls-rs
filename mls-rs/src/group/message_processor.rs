@@ -31,7 +31,6 @@ use crate::{
 use itertools::Itertools;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 
-#[cfg(mls_build_async)]
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::fmt::{self, Debug};
@@ -45,10 +44,7 @@ use super::proposal_ref::ProposalRef;
 #[cfg(not(feature = "by_ref_proposal"))]
 use crate::group::proposal_cache::resolve_for_commit;
 
-#[cfg(feature = "by_ref_proposal")]
 use super::proposal::Proposal;
-
-#[cfg(feature = "custom_proposal")]
 use super::proposal_filter::ProposalInfo;
 
 #[cfg(feature = "private_message")]
