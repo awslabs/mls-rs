@@ -417,7 +417,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     /// Issue an external proposal.
     ///
     /// This function is useful for reissuing external proposals that
-    /// are returned in [CommitMessageDescription::unused_proposals]
+    /// are returned in [crate::group::NewEpoch::unused_proposals]
     /// after a commit is processed.
     #[cfg(feature = "by_ref_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]

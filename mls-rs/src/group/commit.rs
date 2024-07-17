@@ -261,7 +261,7 @@ where
 
     /// Insert a proposal that was previously constructed such as when a
     /// proposal is returned from
-    /// [`StateUpdate::unused_proposals`](super::StateUpdate::unused_proposals).
+    /// [`NewEpoch::unused_proposals`](super::NewEpoch::unused_proposals).
     pub fn raw_proposal(mut self, proposal: Proposal) -> Self {
         self.proposals.push(proposal);
         self
@@ -269,7 +269,7 @@ where
 
     /// Insert proposals that were previously constructed such as when a
     /// proposal is returned from
-    /// [`StateUpdate::unused_proposals`](super::StateUpdate::unused_proposals).
+    /// [`NewEpoch::unused_proposals`](super::NewEpoch::unused_proposals).
     pub fn raw_proposals(mut self, mut proposals: Vec<Proposal>) -> Self {
         self.proposals.append(&mut proposals);
         self

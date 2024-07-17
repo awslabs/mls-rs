@@ -103,8 +103,7 @@ where
     ///
     /// If the [`ReInitProposal`] changes the ciphersuite, then `new_signer`
     /// and `new_signer_identity` must be set and match the new ciphersuite, as indicated by
-    /// [`pending_reinit_ciphersuite`](crate::group::StateUpdate::pending_reinit_ciphersuite)
-    /// of the [`StateUpdate`](crate::group::StateUpdate) outputted after processing the
+    /// the [`CommitEffect::ReInit`](crate::group::CommitEffect::ReInit) outputted after processing the
     /// commit to the reinit proposal. The value of [identity](crate::IdentityProvider::identity)
     /// must be the same for `new_signing_identity` and the current identity in use by this
     /// group instance.

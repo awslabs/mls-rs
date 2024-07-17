@@ -726,7 +726,7 @@ where
         self.config.group_state_storage()
     }
 
-    /// The [IdentityProvider] that this client was configured to use.
+    /// The [IdentityProvider](crate::IdentityProvider) that this client was configured to use.
     #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     pub fn identity_provider(&self) -> <C as ClientConfig>::IdentityProvider {
         self.config.identity_provider()
