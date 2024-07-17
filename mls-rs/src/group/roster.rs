@@ -6,11 +6,6 @@ use super::*;
 
 pub use mls_rs_core::group::Member;
 
-#[cfg(feature = "state_update")]
-pub(crate) fn member_from_key_package(key_package: &KeyPackage, index: LeafIndex) -> Member {
-    member_from_leaf_node(&key_package.leaf_node, index)
-}
-
 pub(crate) fn member_from_leaf_node(leaf_node: &LeafNode, leaf_index: LeafIndex) -> Member {
     Member::new(
         *leaf_index,

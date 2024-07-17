@@ -585,6 +585,8 @@ async fn test_remove_nonexisting_leaf() {
 #[cfg(feature = "psk")]
 #[maybe_async::test(not(mls_build_async), async(mls_build_async, futures_test))]
 async fn reinit_works() {
+    use mls_rs::group::{CommitEffect, CommitMessageDescription};
+
     let suite1 = CipherSuite::P256_AES128;
 
     let Some(suite2) = CipherSuite::all()
@@ -637,27 +639,18 @@ async fn reinit_works() {
 
     // Both process Bob's commit
 
-    #[cfg(feature = "state_update")]
-    {
-        let state_update = bob_group.apply_pending_commit().await.unwrap().state_update;
-        assert!(!state_update.is_active() && state_update.is_pending_reinit());
-    }
-
-    #[cfg(not(feature = "state_update"))]
-    bob_group.apply_pending_commit().await.unwrap();
+    let commit_effect = bob_group.apply_pending_commit().await.unwrap().effect;
+    assert_matches!(commit_effect, CommitEffect::ReInit(_));
 
     let message = alice_group.process_incoming_message(commit).await.unwrap();
 
-    #[cfg(feature = "state_update")]
-    if let ReceivedMessage::Commit(commit_description) = message {
-        assert!(
-            !commit_description.state_update.is_active()
-                && commit_description.state_update.is_pending_reinit()
-        );
-    }
-
-    #[cfg(not(feature = "state_update"))]
-    assert_matches!(message, ReceivedMessage::Commit(_));
+    assert_matches!(
+        message,
+        ReceivedMessage::Commit(CommitMessageDescription {
+            effect: CommitEffect::ReInit(_),
+            ..
+        })
+    );
 
     // They can't create new epochs anymore
     let res = alice_group.commit(Vec::new()).await;

@@ -897,7 +897,6 @@ mod tests {
             group_context: get_test_group_context(1, cipher_suite).await,
             external_init_index: None,
             indexes_of_added_kpkgs: vec![LeafIndex(1)],
-            #[cfg(feature = "state_update")]
             unused_proposals: vec![],
             applied_proposals: bundle,
         };
@@ -998,7 +997,6 @@ mod tests {
 
         assert_eq!(expected_state.public_tree, state.public_tree);
 
-        #[cfg(feature = "state_update")]
         assert_eq!(expected_state.unused_proposals, state.unused_proposals);
     }
 
@@ -2131,7 +2129,6 @@ mod tests {
 
         assert_eq!(processed_proposals.0, Vec::new());
 
-        #[cfg(feature = "state_update")]
         assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
     }
 
@@ -2178,7 +2175,6 @@ mod tests {
 
         assert_eq!(processed_proposals.0, Vec::new());
 
-        #[cfg(feature = "state_update")]
         assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
     }
 
@@ -2226,7 +2222,6 @@ mod tests {
 
         assert_eq!(processed_proposals.0, Vec::new());
 
-        #[cfg(feature = "state_update")]
         assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
     }
 
@@ -2285,7 +2280,6 @@ mod tests {
 
         assert_eq!(processed_proposals.0, Vec::new());
 
-        #[cfg(feature = "state_update")]
         assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
     }
 
@@ -2367,7 +2361,6 @@ mod tests {
 
         assert_eq!(processed_proposals.0, Vec::new());
 
-        #[cfg(feature = "state_update")]
         assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
     }
 
@@ -2436,7 +2429,6 @@ mod tests {
 
         assert_eq!(processed_proposals.0, Vec::new());
 
-        #[cfg(feature = "state_update")]
         assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
     }
 
@@ -2535,7 +2527,6 @@ mod tests {
 
         assert_eq!(processed_proposals.0, Vec::new());
 
-        #[cfg(feature = "state_update")]
         assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
     }
 
@@ -2589,7 +2580,6 @@ mod tests {
 
         assert_eq!(processed_proposals.0, Vec::new());
 
-        #[cfg(feature = "state_update")]
         assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
     }
 
@@ -2640,7 +2630,6 @@ mod tests {
 
         assert_eq!(processed_proposals.0, Vec::new());
 
-        #[cfg(feature = "state_update")]
         assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
     }
 
@@ -2694,7 +2683,6 @@ mod tests {
 
         assert_eq!(processed_proposals.0, vec![remove_ref.into()]);
 
-        #[cfg(feature = "state_update")]
         assert_eq!(processed_proposals.1.unused_proposals, vec![update_info]);
     }
 
@@ -2764,7 +2752,6 @@ mod tests {
         let add_refs = [add_ref_one, add_ref_two];
         assert!(add_refs.contains(committed_add_ref));
 
-        #[cfg(feature = "state_update")]
         assert_matches!(
             &*processed_proposals.1.unused_proposals,
             [rejected_add_info] if committed_add_ref != rejected_add_info.proposal_ref().unwrap() && add_refs.contains(rejected_add_info.proposal_ref().unwrap())
@@ -2811,7 +2798,6 @@ mod tests {
 
         // Bob proposed the update, so it is not listed as rejected when Alice commits it because
         // she didn't propose it.
-        #[cfg(feature = "state_update")]
         assert_eq!(processed_proposals.1.unused_proposals, vec![update_info]);
     }
 
@@ -2902,7 +2888,6 @@ mod tests {
 
         assert_eq!(processed_proposals.0, Vec::new());
 
-        #[cfg(feature = "state_update")]
         assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
     }
 
@@ -2981,7 +2966,6 @@ mod tests {
 
         assert!(proposal_info.contains(&committed_info));
 
-        #[cfg(feature = "state_update")]
         match &*processed_proposals.1.unused_proposals {
             [r] => {
                 assert_ne!(*r, committed_info);
@@ -3112,7 +3096,6 @@ mod tests {
 
         assert!(gce_info.contains(&committed_gce_info));
 
-        #[cfg(feature = "state_update")]
         assert_matches!(
             &*processed_proposals.1.unused_proposals,
             [rejected_gce_info] if committed_gce_info != *rejected_gce_info && gce_info.contains(rejected_gce_info)
@@ -3191,7 +3174,6 @@ mod tests {
 
         assert_eq!(processed_proposals.0, Vec::new());
 
-        #[cfg(feature = "state_update")]
         assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
     }
 
@@ -3251,7 +3233,6 @@ mod tests {
 
         assert_eq!(processed_proposals.0, vec![add_ref.into()]);
 
-        #[cfg(feature = "state_update")]
         assert_eq!(processed_proposals.1.unused_proposals, vec![reinit_info]);
     }
 
@@ -3315,7 +3296,6 @@ mod tests {
 
         assert!(*processed_ref == reinit_ref || *processed_ref == other_reinit_ref);
 
-        #[cfg(feature = "state_update")]
         {
             let (rejected_ref, unused_proposal) = match &*processed_proposals.1.unused_proposals {
                 [r] => (r.proposal_ref().unwrap().clone(), r.proposal.clone()),
@@ -3381,7 +3361,6 @@ mod tests {
 
         assert_eq!(processed_proposals.0, Vec::new());
 
-        #[cfg(feature = "state_update")]
         assert_eq!(
             processed_proposals.1.unused_proposals,
             vec![external_init_info]
@@ -3453,7 +3432,6 @@ mod tests {
 
         assert_eq!(processed_proposals.0, Vec::new());
 
-        #[cfg(feature = "state_update")]
         assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
     }
 
@@ -3698,7 +3676,6 @@ mod tests {
 
         assert_eq!(processed_proposals.0, Vec::new());
 
-        #[cfg(feature = "state_update")]
         assert_eq!(processed_proposals.1.unused_proposals, vec![add_info]);
     }
 
@@ -3744,7 +3721,6 @@ mod tests {
 
         assert_eq!(processed_proposals.0, Vec::new());
 
-        #[cfg(feature = "state_update")]
         assert_eq!(processed_proposals.1.unused_proposals, vec![custom_info]);
     }
 
@@ -3828,7 +3804,6 @@ mod tests {
 
         assert_eq!(processed_proposals.0, Vec::new());
 
-        #[cfg(feature = "state_update")]
         assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
     }
 
@@ -3900,7 +3875,6 @@ mod tests {
 
         assert_eq!(processed_proposals.0, Vec::new());
 
-        #[cfg(feature = "state_update")]
         assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
     }
 

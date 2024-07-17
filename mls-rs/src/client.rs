@@ -893,6 +893,8 @@ mod tests {
         // interim_transcript_hash to be computed from the confirmed_transcript_hash and
         // confirmation_tag, which is not the case for the initial interim_transcript_hash.
 
+        use crate::group::{message_processor::CommitEffect, CommitMessageDescription};
+
         let psk = PreSharedKey::from(b"psk".to_vec());
         let psk_id = ExternalPskId::new(b"psk id".to_vec());
 
@@ -963,11 +965,13 @@ mod tests {
             // Bob was removed so his epoch must stay the same
             assert_eq!(bob_group.group.current_epoch(), bob_current_epoch);
 
-            #[cfg(feature = "state_update")]
-            assert_matches!(message, ReceivedMessage::Commit(desc) if !desc.state_update.active);
-
-            #[cfg(not(feature = "state_update"))]
-            assert_matches!(message, ReceivedMessage::Commit(_));
+            assert_matches!(
+                message,
+                ReceivedMessage::Commit(CommitMessageDescription {
+                    effect: CommitEffect::Removed,
+                    ..
+                })
+            );
         }
 
         // Comparing epoch authenticators is sufficient to check that members are in sync.

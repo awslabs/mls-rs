@@ -181,7 +181,6 @@ mod tests {
             group_context: get_test_group_context(1, cipher_suite).await,
             indexes_of_added_kpkgs: vec![],
             external_init_index: None,
-            #[cfg(feature = "state_update")]
             unused_proposals: vec![],
         }
     }

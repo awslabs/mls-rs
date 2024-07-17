@@ -84,8 +84,8 @@ use self::epoch::PriorEpoch;
 
 use self::epoch::EpochSecrets;
 pub use self::message_processor::{
-    ApplicationMessageDescription, CommitMessageDescription, ProposalMessageDescription,
-    ProposalSender, ReceivedMessage, StateUpdate,
+    ApplicationMessageDescription, CommitEffect, CommitMessageDescription, NewEpoch,
+    ProposalMessageDescription, ProposalSender, ReceivedMessage,
 };
 use self::message_processor::{EventOrContent, MessageProcessor, ProvisionalState};
 #[cfg(feature = "by_ref_proposal")]
@@ -670,12 +670,7 @@ where
     /// These indexes correspond to indexes in content descriptions within
     /// [`ReceivedMessage`].
     pub fn member_at_index(&self, index: u32) -> Option<Member> {
-        let leaf_index = LeafIndex(index);
-
-        self.current_epoch_tree()
-            .get_leaf_node(leaf_index)
-            .ok()
-            .map(|ln| member_from_leaf_node(ln, leaf_index))
+        self.group_state().member_at_index(index)
     }
 
     #[cfg(feature = "by_ref_proposal")]
@@ -1912,22 +1907,17 @@ mod tests {
 
     use assert_matches::assert_matches;
 
+    use message_processor::CommitEffect;
     use mls_rs_core::extension::{Extension, ExtensionType};
     use mls_rs_core::identity::{Credential, CredentialType, CustomCredential};
 
     #[cfg(feature = "by_ref_proposal")]
     use mls_rs_core::identity::CertificateChain;
 
-    #[cfg(feature = "state_update")]
-    use itertools::Itertools;
-
-    #[cfg(feature = "state_update")]
-    use alloc::format;
-
     #[cfg(feature = "by_ref_proposal")]
     use crate::{crypto::test_utils::test_cipher_suite_provider, extension::ExternalSendersExt};
 
-    #[cfg(any(feature = "private_message", feature = "state_update"))]
+    #[cfg(feature = "private_message")]
     use super::test_utils::test_member;
 
     use mls_rs_core::extension::MlsExtension;
@@ -2255,6 +2245,8 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_group_context_ext_proposal_commit() {
+        use message_processor::CommitEffect;
+
         let mut extension_list = ExtensionList::new();
 
         extension_list
@@ -2268,14 +2260,10 @@ mod tests {
         let (mut test_group, _) =
             group_context_extension_proposal_test(extension_list.clone()).await;
 
-        #[cfg(feature = "state_update")]
-        {
-            let update = test_group.group.apply_pending_commit().await.unwrap();
-            assert!(update.state_update.active);
-        }
+        let update = test_group.group.apply_pending_commit().await.unwrap();
 
-        #[cfg(not(feature = "state_update"))]
-        test_group.group.apply_pending_commit().await.unwrap();
+        // FIXME: Test Reporting
+        assert_matches!(update.effect, CommitEffect::NewEpoch(_));
 
         assert_eq!(test_group.group.state.context.extensions, extension_list)
     }
@@ -2584,136 +2572,10 @@ mod tests {
         assert_matches!(res, Err(MlsError::UnencryptedApplicationMessage));
     }
 
-    #[cfg(feature = "state_update")]
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn test_state_update() {
-        let protocol_version = TEST_PROTOCOL_VERSION;
-        let cipher_suite = TEST_CIPHER_SUITE;
-
-        // Create a group with 10 members
-        let mut alice = test_group(protocol_version, cipher_suite).await;
-        let (mut bob, _) = alice.join("bob").await;
-        let mut leaves = vec![];
-
-        for i in 0..8 {
-            let (group, commit) = alice.join(&format!("charlie{i}")).await;
-            leaves.push(group.group.current_user_leaf_node().unwrap().clone());
-            bob.process_message(commit).await.unwrap();
-        }
-
-        // Create many proposals, make Alice commit them
-
-        let update_message = bob.group.propose_update(vec![]).await.unwrap();
-
-        alice.process_message(update_message).await.unwrap();
-
-        let external_psk_ids: Vec<ExternalPskId> = (0..5)
-            .map(|i| {
-                let external_id = ExternalPskId::new(vec![i]);
-
-                alice
-                    .group
-                    .config
-                    .secret_store()
-                    .insert(ExternalPskId::new(vec![i]), PreSharedKey::from(vec![i]));
-
-                bob.group
-                    .config
-                    .secret_store()
-                    .insert(ExternalPskId::new(vec![i]), PreSharedKey::from(vec![i]));
-
-                external_id
-            })
-            .collect();
-
-        let mut commit_builder = alice.group.commit_builder();
-
-        for external_psk in external_psk_ids {
-            commit_builder = commit_builder.add_external_psk(external_psk).unwrap();
-        }
-
-        for index in [2, 5, 6] {
-            commit_builder = commit_builder.remove_member(index).unwrap();
-        }
-
-        for i in 0..5 {
-            let (key_package, _) = test_member(
-                protocol_version,
-                cipher_suite,
-                format!("dave{i}").as_bytes(),
-            )
-            .await;
-
-            commit_builder = commit_builder
-                .add_member(key_package.key_package_message())
-                .unwrap()
-        }
-
-        let commit_output = commit_builder.build().await.unwrap();
-
-        let commit_description = alice.process_pending_commit().await.unwrap();
-
-        assert!(!commit_description.is_external);
-
-        assert_eq!(
-            commit_description.committer,
-            alice.group.current_member_index()
-        );
-
-        // Check that applying pending commit and processing commit yields correct update.
-        let state_update_alice = commit_description.state_update.clone();
-
-        assert_eq!(
-            state_update_alice
-                .roster_update
-                .added()
-                .iter()
-                .map(|m| m.index)
-                .collect::<Vec<_>>(),
-            vec![2, 5, 6, 10, 11]
-        );
-
-        assert_eq!(
-            state_update_alice.roster_update.removed(),
-            vec![2, 5, 6]
-                .into_iter()
-                .map(|i| member_from_leaf_node(&leaves[i as usize - 2], LeafIndex(i)))
-                .collect::<Vec<_>>()
-        );
-
-        assert_eq!(
-            state_update_alice
-                .roster_update
-                .updated()
-                .iter()
-                .map(|update| update.new.clone())
-                .collect_vec()
-                .as_slice(),
-            &alice.group.roster().members()[0..2]
-        );
-
-        assert_eq!(
-            state_update_alice.added_psks,
-            (0..5)
-                .map(|i| ExternalPskId::new(vec![i]))
-                .collect::<Vec<_>>()
-        );
-
-        let payload = bob
-            .process_message(commit_output.commit_message)
-            .await
-            .unwrap();
-
-        let ReceivedMessage::Commit(bob_commit_description) = payload else {
-            panic!("expected commit");
-        };
-
-        assert_eq!(commit_description, bob_commit_description);
-    }
-
-    #[cfg(feature = "state_update")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn commit_description_external_commit() {
+        use message_processor::CommitEffect;
+
         use crate::client::test_utils::TestClientBuilder;
 
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
@@ -2746,10 +2608,12 @@ mod tests {
         assert!(commit_description.is_external);
         assert_eq!(commit_description.committer, 1);
 
-        assert_eq!(
-            commit_description.state_update.roster_update.added(),
-            &bob_group.roster().members()[1..2]
-        );
+        let new_epoch = match commit_description.effect {
+            CommitEffect::NewEpoch(new_epoch) => new_epoch,
+            _ => panic!("unexpected commit effect"),
+        };
+
+        assert_eq!(new_epoch.applied_proposals.len(), 1);
 
         itertools::assert_equal(
             bob_group.roster().members_iter(),
@@ -3097,7 +2961,7 @@ mod tests {
         alice_group
             .group
             .commit_builder()
-            .add_member(test_key_package)
+            .add_member(test_key_package.clone())
             .unwrap()
             .set_group_context_ext(Default::default())
             .unwrap()
@@ -3105,25 +2969,19 @@ mod tests {
             .await
             .unwrap();
 
-        let state_update = alice_group
-            .process_pending_commit()
-            .await
-            .unwrap()
-            .state_update;
+        let CommitEffect::NewEpoch(new_epoch) =
+            alice_group.process_pending_commit().await.unwrap().effect
+        else {
+            panic!("unexpected commit effect")
+        };
 
-        #[cfg(feature = "state_update")]
-        assert_eq!(
-            state_update
-                .roster_update
-                .added()
-                .iter()
-                .map(|m| m.index)
-                .collect::<Vec<_>>(),
-            vec![1]
+        assert_eq!(new_epoch.applied_proposals.len(), 2);
+
+        assert_matches!(
+            new_epoch.applied_proposals[0],
+            ProposalInfo { proposal: Proposal::Add(ref add), .. }
+                if add.key_package == test_key_package.into_key_package().unwrap()
         );
-
-        #[cfg(not(feature = "state_update"))]
-        assert!(state_update == StateUpdate {});
 
         assert_eq!(alice_group.group.roster().members_iter().count(), 2);
     }
@@ -3793,14 +3651,20 @@ mod tests {
             .unwrap()
             .commit_message;
 
-        let res = bob.group.process_incoming_message(commit).await.unwrap();
+        let ReceivedMessage::Commit(CommitMessageDescription {
+            effect: CommitEffect::NewEpoch(new_epoch),
+            ..
+        }) = bob.group.process_incoming_message(commit).await.unwrap()
+        else {
+            panic!("unexpected commit effect");
+        };
 
-        #[cfg(feature = "state_update")]
-        assert_matches!(res, ReceivedMessage::Commit(CommitMessageDescription { state_update: StateUpdate { custom_proposals, .. }, .. })
-            if custom_proposals.len() == 1 && custom_proposals[0].proposal == custom_proposal);
+        assert_eq!(new_epoch.applied_proposals.len(), 1);
 
-        #[cfg(not(feature = "state_update"))]
-        assert_matches!(res, ReceivedMessage::Commit(_));
+        assert_eq!(
+            new_epoch.applied_proposals[0].proposal,
+            Proposal::Custom(custom_proposal)
+        );
     }
 
     #[cfg(feature = "custom_proposal")]
@@ -3822,14 +3686,21 @@ mod tests {
             if c == custom_proposal);
 
         let commit = bob.group.commit(vec![]).await.unwrap().commit_message;
-        let res = alice.group.process_incoming_message(commit).await.unwrap();
 
-        #[cfg(feature = "state_update")]
-        assert_matches!(res, ReceivedMessage::Commit(CommitMessageDescription { state_update: StateUpdate { custom_proposals, .. }, .. })
-            if custom_proposals.len() == 1 && custom_proposals[0].proposal == custom_proposal);
+        let ReceivedMessage::Commit(CommitMessageDescription {
+            effect: CommitEffect::NewEpoch(new_epoch),
+            ..
+        }) = bob.group.process_incoming_message(commit).await.unwrap()
+        else {
+            panic!("unexpected commit effect");
+        };
 
-        #[cfg(not(feature = "state_update"))]
-        assert_matches!(res, ReceivedMessage::Commit(_));
+        assert_eq!(new_epoch.applied_proposals.len(), 1);
+
+        assert_eq!(
+            new_epoch.applied_proposals[0].proposal,
+            Proposal::Custom(custom_proposal)
+        );
     }
 
     #[cfg(feature = "psk")]
@@ -3971,32 +3842,22 @@ mod tests {
 
         // Alice commits the update proposals.
         alice.commit(Vec::new()).await.unwrap();
-        let commit_desc = alice.apply_pending_commit().await.unwrap();
 
-        let find_update_for = |id: &str| {
-            commit_desc
-                .state_update
-                .roster_update
-                .updated()
-                .iter()
-                .filter_map(|u| u.prior.signing_identity.credential.as_basic())
-                .any(|c| c.identifier == id.as_bytes())
+        let CommitEffect::NewEpoch(new_epoch) = alice.apply_pending_commit().await.unwrap().effect
+        else {
+            panic!("unexpected commit effect");
         };
 
-        // Check that all updates preserve identities.
-        let identities_are_preserved = commit_desc
-            .state_update
-            .roster_update
-            .updated()
-            .iter()
-            .filter_map(|u| {
-                let before = &u.prior.signing_identity.credential.as_basic()?.identifier;
-                let after = &u.new.signing_identity.credential.as_basic()?.identifier;
-                Some((before, after))
-            })
-            .all(|(before, after)| before == after);
-
-        assert!(identities_are_preserved);
+        let find_update_for = |id: &str| {
+            new_epoch
+                .applied_proposals
+                .iter()
+                .filter_map(|p| match p.proposal {
+                    Proposal::Update(ref u) => u.signing_identity().credential.as_basic(),
+                    _ => None,
+                })
+                .any(|c| c.identifier == id.as_bytes())
+        };
 
         // Carol's and Dave's updates should be part of the commit.
         assert!(find_update_for("carol"));
@@ -4270,18 +4131,18 @@ mod tests {
     #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn can_process_own_plaintext_proposal() {
-        can_process_own_roposal(false).await;
+        can_process_own_proposal(false).await;
     }
 
     #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn can_process_own_ciphertext_proposal() {
-        can_process_own_roposal(true).await;
+        can_process_own_proposal(true).await;
     }
 
     #[cfg(feature = "by_ref_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn can_process_own_roposal(encrypt_proposal: bool) {
+    async fn can_process_own_proposal(encrypt_proposal: bool) {
         let (alice, _) = test_client_with_key_pkg_custom(
             TEST_PROTOCOL_VERSION,
             TEST_CIPHER_SUITE,
@@ -4304,17 +4165,16 @@ mod tests {
         let commit = bob.commit(vec![]).await.unwrap().commit_message;
         let update = alice.process_incoming_message(commit).await.unwrap();
 
-        let ReceivedMessage::Commit(update) = update else {
-            panic!("expected commit")
+        let ReceivedMessage::Commit(CommitMessageDescription {
+            effect: CommitEffect::NewEpoch(new_epoch),
+            ..
+        }) = update
+        else {
+            panic!("unexpected commit effect")
         };
 
-        // Check that proposal was applied i.e. alice's index 0 is updated
-        assert!(update
-            .state_update
-            .roster_update
-            .updated()
-            .iter()
-            .any(|member| member.index() == 0));
+        assert_eq!(new_epoch.applied_proposals.len(), 1);
+        assert_eq!(new_epoch.applied_proposals[0].sender, Sender::Member(0));
     }
 
     #[cfg(feature = "by_ref_proposal")]

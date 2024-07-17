@@ -16,11 +16,11 @@ serde_json = "1.0"
 [dev-dependencies]
 hex-literal = "0.4.1"
 assert_matches = "1.5.0"
-mls-rs-core = { path = "../mls-rs-core", version = "0.18.0", features = ["test_suite"] }
+mls-rs-core = { path = "../mls-rs-core", version = "0.19.0", features = ["test_suite"] }
 
 [dependencies]
 maybe-async = "0.2.10"
-mls-rs-core = { path = "../mls-rs-core", default-features = false, version = "0.18.0" }
+mls-rs-core = { path = "../mls-rs-core", default-features = false, version = "0.19.0" }
 mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", default-features = false, version = "0.10.0" }
 zeroize = { version = "1", default-features = false, features = ["alloc", "zeroize_derive"] }
 
