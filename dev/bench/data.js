@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1719348872670,
+  "lastUpdate": 1721316132907,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -15107,6 +15107,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 129527,
             "range": "± 2031",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "tomleavy@amazon.com",
+            "name": "Tom Leavy",
+            "username": "tomleavy"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a111c64264d30e45a17d50777a9b1abae727b003",
+          "message": "Remove StateUpdate in favor of CommitEffect (#175)\n\n* Remove StateUpdate in favor of CommitEffect\r\n\r\n* Fix test harness compile error without psk feature\r\n\r\n* Fix doc comments\r\n\r\n* Fix no_std build\r\n\r\n* Fix test compilation on no_std\r\n\r\n* Address PR comments",
+          "timestamp": "2024-07-18T11:17:39-04:00",
+          "tree_id": "22a0a6f804ab6d1ffb79406260db33a1b7697df8",
+          "url": "https://github.com/awslabs/mls-rs/commit/a111c64264d30e45a17d50777a9b1abae727b003"
+        },
+        "date": 1721316131731,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 510490,
+            "range": "± 7830",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 518960,
+            "range": "± 23141",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 580374,
+            "range": "± 4199",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1250891,
+            "range": "± 25013",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 8988284,
+            "range": "± 256831",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1060139,
+            "range": "± 70617",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1222720,
+            "range": "± 50633",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1331575,
+            "range": "± 50441",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 739502,
+            "range": "± 16896",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 812815,
+            "range": "± 30411",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 909367,
+            "range": "± 5788",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 20777,
+            "range": "± 1047",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 68352,
+            "range": "± 1088",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 131422,
+            "range": "± 7528",
             "unit": "ns/iter"
           }
         ]
