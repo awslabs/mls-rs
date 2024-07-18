@@ -660,7 +660,7 @@ async fn reinit_works() {
     assert!(res.is_err());
 
     // Get reinit clients for alice and bob
-    let (secret_key, public_key) = TestCryptoProvider::new()
+    let (secret_key, public_key) = TestCryptoProvider::default()
         .cipher_suite_provider(suite2)
         .unwrap()
         .signature_key_generate()
@@ -673,7 +673,7 @@ async fn reinit_works() {
         .get_reinit_client(Some(secret_key), Some(identity))
         .unwrap();
 
-    let (secret_key, public_key) = TestCryptoProvider::new()
+    let (secret_key, public_key) = TestCryptoProvider::default()
         .cipher_suite_provider(suite2)
         .unwrap()
         .signature_key_generate()

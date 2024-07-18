@@ -16,6 +16,19 @@ pub use dh::DhType;
 pub use ec::Curve;
 pub use kdf::{KdfId, KdfType};
 pub use kem::{KemId, KemResult, KemType};
+use mls_rs_core::error::IntoAnyError;
 
 #[cfg(feature = "mock")]
 pub mod mock;
+
+pub trait Hash: Send + Sync {
+    type Error: IntoAnyError + Send + Sync;
+
+    fn hash(&self, input: &[u8]) -> Result<Vec<u8>, Self::Error>;
+}
+
+pub trait VariableLengthHash: Send + Sync {
+    type Error: IntoAnyError + Send + Sync;
+
+    fn hash(&self, input: &[u8], out_len: usize) -> Result<Vec<u8>, Self::Error>;
+}

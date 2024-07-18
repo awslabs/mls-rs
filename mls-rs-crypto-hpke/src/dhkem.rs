@@ -150,6 +150,10 @@ impl<DH: DhType, KDF: KdfType> KemType for DhKem<DH, KDF> {
             .public_key_validate(key)
             .map_err(|e| DhKemError::DhError(e.into_any_error()))
     }
+
+    fn seed_length_for_derive(&self) -> usize {
+        self.n_secret
+    }
 }
 
 impl<DH: DhType, KDF: KdfType> DhKem<DH, KDF> {

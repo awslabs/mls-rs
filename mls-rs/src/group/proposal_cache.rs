@@ -2045,7 +2045,7 @@ mod tests {
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn key_package_with_invalid_signature() -> KeyPackage {
         let mut kp = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "mallory").await;
-        kp.signature.clear();
+        kp.signature = vec![1, 2, 3];
         kp
     }
 
@@ -2079,6 +2079,7 @@ mod tests {
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn receiving_add_with_invalid_key_package_fails() {
         let (alice, tree) = new_tree("alice").await;
+        let kp = key_package_with_invalid_signature().await;
 
         let res = CommitReceiver::new(
             &tree,
@@ -2086,9 +2087,7 @@ mod tests {
             alice,
             test_cipher_suite_provider(TEST_CIPHER_SUITE),
         )
-        .receive([Proposal::Add(Box::new(AddProposal {
-            key_package: key_package_with_invalid_signature().await,
-        }))])
+        .receive([Proposal::Add(Box::new(AddProposal { key_package: kp }))])
         .await;
 
         assert_matches!(res, Err(MlsError::InvalidSignature));

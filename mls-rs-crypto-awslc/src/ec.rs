@@ -2,160 +2,22 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use std::{os::raw::c_void, ptr::null_mut};
+use std::ptr::null_mut;
 
 use aws_lc_rs::error::Unspecified;
 use aws_lc_sys::{
-    d2i_ECPrivateKey, point_conversion_form_t, BN_bin2bn, BN_bn2bin, BN_free, ECDH_compute_key,
-    EC_GROUP_free, EC_GROUP_new_by_curve_name, EC_KEY_free, EC_KEY_generate_key, EC_KEY_get0_group,
+    d2i_ECPrivateKey, point_conversion_form_t, BN_bin2bn, BN_bn2bin, BN_free, EC_GROUP_free,
+    EC_GROUP_new_by_curve_name, EC_KEY_free, EC_KEY_generate_key, EC_KEY_get0_group,
     EC_KEY_get0_private_key, EC_KEY_get0_public_key, EC_KEY_new_by_curve_name,
     EC_KEY_set_private_key, EC_KEY_set_public_key, EC_POINT_copy, EC_POINT_free, EC_POINT_mul,
     EC_POINT_new, EC_POINT_oct2point, EC_POINT_point2oct, EVP_PKEY_free, EVP_PKEY_new,
-    EVP_PKEY_set1_EC_KEY, NID_X9_62_prime256v1, NID_secp384r1, NID_secp521r1, X25519_keypair,
-    X25519_public_from_private, EC_POINT, EVP_PKEY, X25519,
+    EVP_PKEY_set1_EC_KEY, NID_X9_62_prime256v1, NID_secp384r1, NID_secp521r1, EC_POINT, EVP_PKEY,
 };
-use mls_rs_core::crypto::{CipherSuite, HpkePublicKey, HpkeSecretKey};
 use mls_rs_crypto_traits::Curve;
 
 use crate::AwsLcCryptoError;
 
 pub(crate) const SUPPORTED_NIST_CURVES: [Curve; 3] = [Curve::P521, Curve::P256, Curve::P384];
-
-#[derive(Clone)]
-pub(crate) struct Ecdh(Curve);
-
-impl Ecdh {
-    pub fn new(cipher_suite: CipherSuite) -> Option<Self> {
-        let curve = Curve::from_ciphersuite(cipher_suite, false)?;
-
-        (SUPPORTED_NIST_CURVES.contains(&curve) || curve == Curve::X25519).then_some(Self(curve))
-    }
-}
-
-#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-#[cfg_attr(all(target_arch = "wasm32", mls_build_async), maybe_async::must_be_async(?Send))]
-#[cfg_attr(
-    all(not(target_arch = "wasm32"), mls_build_async),
-    maybe_async::must_be_async
-)]
-impl mls_rs_crypto_traits::DhType for Ecdh {
-    type Error = AwsLcCryptoError;
-
-    async fn dh(
-        &self,
-        secret_key: &HpkeSecretKey,
-        public_key: &HpkePublicKey,
-    ) -> Result<Vec<u8>, Self::Error> {
-        if self.0 == Curve::X25519 {
-            x25519(secret_key, public_key)
-        } else {
-            ecdh(self.0, secret_key, public_key)
-        }
-    }
-
-    async fn generate(&self) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
-        let (secret, public) = if self.0 == Curve::X25519 {
-            x25519_generate()
-        } else {
-            ec_generate(self.0)
-        }?;
-
-        Ok((secret.into(), public.into()))
-    }
-
-    async fn to_public(&self, secret_key: &HpkeSecretKey) -> Result<HpkePublicKey, Self::Error> {
-        let public = if self.0 == Curve::X25519 {
-            x25519_public_key(secret_key)
-        } else {
-            ec_public_key(self.0, secret_key)
-        }?;
-
-        Ok(public.into())
-    }
-
-    fn bitmask_for_rejection_sampling(&self) -> Option<u8> {
-        self.0.curve_bitmask()
-    }
-
-    fn secret_key_size(&self) -> usize {
-        self.0.secret_key_size()
-    }
-
-    fn public_key_validate(&self, key: &HpkePublicKey) -> Result<(), Self::Error> {
-        if self.0 != Curve::X25519 {
-            EcPublicKey::from_bytes(key, self.0)?;
-        }
-
-        Ok(())
-    }
-}
-
-pub fn ecdh(
-    curve: Curve,
-    secret_key: &HpkeSecretKey,
-    public_key: &HpkePublicKey,
-) -> Result<Vec<u8>, AwsLcCryptoError> {
-    let secret_key = EcPrivateKey::from_bytes(secret_key, curve)?;
-    let public_key = EcPublicKey::from_bytes(public_key, curve)?;
-
-    let mut shared_secret_data = vec![0u8; curve.secret_key_size()];
-
-    let out_len = unsafe {
-        ECDH_compute_key(
-            shared_secret_data.as_mut_ptr() as *mut c_void,
-            shared_secret_data.len(),
-            public_key.inner,
-            secret_key.inner,
-            None,
-        )
-    };
-
-    (out_len as usize == shared_secret_data.len())
-        .then_some(shared_secret_data)
-        .ok_or(Unspecified.into())
-}
-
-pub fn x25519(
-    secret_key: &HpkeSecretKey,
-    public_key: &HpkePublicKey,
-) -> Result<Vec<u8>, AwsLcCryptoError> {
-    let curve = Curve::X25519;
-
-    (secret_key.len() == curve.secret_key_size() && public_key.len() == curve.public_key_size())
-        .then_some(())
-        .ok_or(AwsLcCryptoError::InvalidKeyData)?;
-
-    let mut secret = vec![0u8; curve.secret_key_size()];
-
-    // returns one on success and zero on error
-    let res = unsafe {
-        X25519(
-            secret.as_mut_ptr(),
-            secret_key.as_ptr(),
-            public_key.as_ptr(),
-        )
-    };
-
-    (res == 1).then_some(secret).ok_or(Unspecified.into())
-}
-
-pub fn ec_generate(curve: Curve) -> Result<(Vec<u8>, Vec<u8>), AwsLcCryptoError> {
-    let private_key = EcPrivateKey::generate(curve)?;
-    let public_key = private_key.public_key()?;
-
-    Ok((private_key.to_vec()?, public_key.to_vec()?))
-}
-
-pub fn x25519_generate() -> Result<(Vec<u8>, Vec<u8>), AwsLcCryptoError> {
-    let curve = Curve::X25519;
-
-    let mut private_key = vec![0u8; curve.secret_key_size()];
-    let mut public_key = vec![0u8; curve.public_key_size()];
-
-    unsafe { X25519_keypair(public_key.as_mut_ptr(), private_key.as_mut_ptr()) }
-
-    Ok((private_key, public_key))
-}
 
 pub fn ec_public_key(curve: Curve, secret_key: &[u8]) -> Result<Vec<u8>, AwsLcCryptoError> {
     Ok(EcPrivateKey::from_bytes(secret_key, curve)?
@@ -163,12 +25,11 @@ pub fn ec_public_key(curve: Curve, secret_key: &[u8]) -> Result<Vec<u8>, AwsLcCr
         .to_vec()?)
 }
 
-pub fn x25519_public_key(secret_key: &[u8]) -> Result<Vec<u8>, AwsLcCryptoError> {
-    let mut public_key = vec![0u8; Curve::X25519.public_key_size()];
+pub fn ec_generate(curve: Curve) -> Result<(Vec<u8>, Vec<u8>), AwsLcCryptoError> {
+    let private_key = EcPrivateKey::generate(curve)?;
+    let public_key = private_key.public_key()?;
 
-    unsafe { X25519_public_from_private(public_key.as_mut_ptr(), secret_key.as_ptr()) }
-
-    Ok(public_key)
+    Ok((private_key.to_vec()?, public_key.to_vec()?))
 }
 
 pub struct EcPrivateKey {

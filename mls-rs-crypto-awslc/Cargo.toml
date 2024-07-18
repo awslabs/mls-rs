@@ -9,8 +9,8 @@ keywords = ["mls", "mls-rs", "aws-lc"]
 license = "Apache-2.0 OR MIT"
 
 [dependencies]
-aws-lc-rs = "=1.8.0"
-aws-lc-sys = { version = "0.19.0" }
+aws-lc-rs = { git = "https://github.com/aws/aws-lc-rs.git", features = ["unstable"] }
+aws-lc-sys = { git = "https://github.com/aws/aws-lc-rs.git" }
 mls-rs-core = { path = "../mls-rs-core", version = "0.19.0" }
 mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", version = "0.10.0" }
 mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", version = "0.11.0" }

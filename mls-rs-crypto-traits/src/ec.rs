@@ -51,9 +51,14 @@ impl Curve {
     pub fn from_ciphersuite(cipher_suite: CipherSuite, for_sig: bool) -> Option<Self> {
         match cipher_suite {
             CipherSuite::P256_AES128 => Some(Curve::P256),
-            CipherSuite::P384_AES256 => Some(Curve::P384),
+            CipherSuite::P384_AES256 | CipherSuite::KYBER1024 => Some(Curve::P384),
             CipherSuite::P521_AES256 => Some(Curve::P521),
-            CipherSuite::CURVE25519_AES128 | CipherSuite::CURVE25519_CHACHA if for_sig => {
+            CipherSuite::CURVE25519_AES128
+            | CipherSuite::CURVE25519_CHACHA
+            | CipherSuite::KYBER512
+            | CipherSuite::KYBER768
+                if for_sig =>
+            {
                 Some(Curve::Ed25519)
             }
             CipherSuite::CURVE25519_AES128 | CipherSuite::CURVE25519_CHACHA => Some(Curve::X25519),
