@@ -21,6 +21,8 @@ use mls_rs_core::error::IntoAnyError;
 #[cfg(feature = "mock")]
 pub mod mock;
 
+use alloc::vec::Vec;
+
 pub trait Hash: Send + Sync {
     type Error: IntoAnyError + Send + Sync;
 

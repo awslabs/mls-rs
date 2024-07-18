@@ -1,3 +1,4 @@
+use alloc::vec::Vec;
 use mls_rs_core::{
     crypto::{HpkePublicKey, HpkeSecretKey},
     error::{AnyError, IntoAnyError},
@@ -16,7 +17,14 @@ pub enum Error {
     #[cfg_attr(feature = "std", error("invalid key data"))]
     InvalidKeyData,
     #[cfg_attr(feature = "std", error(transparent))]
-    MlsCodecError(#[from] mls_rs_core::mls_rs_codec::Error),
+    MlsCodecError(mls_rs_core::mls_rs_codec::Error),
+}
+
+impl From<mls_rs_core::mls_rs_codec::Error> for Error {
+    #[inline]
+    fn from(e: mls_rs_core::mls_rs_codec::Error) -> Self {
+        Error::MlsCodecError(e)
+    }
 }
 
 impl IntoAnyError for Error {}
@@ -141,6 +149,12 @@ impl<'a> SharedSecretDetails<'a> {
     }
 }
 
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(all(target_arch = "wasm32", mls_build_async), maybe_async::must_be_async(?Send))]
+#[cfg_attr(
+    all(not(target_arch = "wasm32"), mls_build_async),
+    maybe_async::must_be_async
+)]
 impl<KEM1, KEM2, H, VH, F> KemType for CombinedKem<KEM1, KEM2, H, VH, F>
 where
     KEM1: KemType,
@@ -156,7 +170,7 @@ where
         15
     }
 
-    fn derive(&self, ikm: &[u8]) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
+    async fn derive(&self, ikm: &[u8]) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
         let ikm = self
             .variable_length_hash
             .hash(ikm, self.seed_length_for_derive())
@@ -167,11 +181,13 @@ where
         let (sk1, pk1) = self
             .kem1
             .derive(ikm1)
+            .await
             .map_err(|e| Error::KemError(e.into_any_error()))?;
 
         let (sk2, pk2) = self
             .kem2
             .derive(ikm2)
+            .await
             .map_err(|e| Error::KemError(e.into_any_error()))?;
 
         let sk = (sk1, sk2).mls_encode_to_vec()?;
@@ -180,17 +196,19 @@ where
         Ok((sk.into(), pk.into()))
     }
 
-    fn encap(&self, remote_key: &HpkePublicKey) -> Result<KemResult, Self::Error> {
+    async fn encap(&self, remote_key: &HpkePublicKey) -> Result<KemResult, Self::Error> {
         let (pk1, pk2) = <(HpkePublicKey, HpkePublicKey)>::mls_decode(&mut remote_key.as_ref())?;
 
         let ct1 = self
             .kem1
             .encap(&pk1)
+            .await
             .map_err(|e| Error::KemError(e.into_any_error()))?;
 
         let ct2 = self
             .kem2
             .encap(&pk2)
+            .await
             .map_err(|e| Error::KemError(e.into_any_error()))?;
 
         let enc = (&ct1.enc, &ct2.enc)
@@ -213,7 +231,7 @@ where
         Ok(KemResult { shared_secret, enc })
     }
 
-    fn decap(
+    async fn decap(
         &self,
         enc: &[u8],
         secret_key: &HpkeSecretKey,
@@ -226,11 +244,13 @@ where
         let shared_secret1 = self
             .kem1
             .decap(&enc1, &sk1, &pk1)
+            .await
             .map_err(|e| Error::KemError(e.into_any_error()))?;
 
         let shared_secret2 = self
             .kem2
             .decap(&enc2, &sk2, &pk2)
+            .await
             .map_err(|e| Error::KemError(e.into_any_error()))?;
 
         let ss_details1 = SharedSecretDetails::new(&shared_secret1, &enc1, &pk1);
@@ -254,15 +274,17 @@ where
         Ok(())
     }
 
-    fn generate(&self) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
+    async fn generate(&self) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
         let (sk1, pk1) = self
             .kem1
             .generate()
+            .await
             .map_err(|e| Error::KemError(e.into_any_error()))?;
 
         let (sk2, pk2) = self
             .kem2
             .generate()
+            .await
             .map_err(|e| Error::KemError(e.into_any_error()))?;
 
         let sk = (sk1, sk2).mls_encode_to_vec()?;
