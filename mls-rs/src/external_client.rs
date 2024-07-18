@@ -121,7 +121,7 @@ where
         Ok(key_package)
     }
 
-    /// The [IdentityProvider] that this client was configured to use.
+    /// The [IdentityProvider](crate::IdentityProvider) that this client was configured to use.
     pub fn identity_provider(&self) -> <C as ExternalClientConfig>::IdentityProvider {
         self.config.identity_provider()
     }

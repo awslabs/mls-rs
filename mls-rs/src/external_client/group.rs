@@ -417,7 +417,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     /// Issue an external proposal.
     ///
     /// This function is useful for reissuing external proposals that
-    /// are returned in [CommitMessageDescription::unused_proposals]
+    /// are returned in [crate::group::NewEpoch::unused_proposals]
     /// after a commit is processed.
     #[cfg(feature = "by_ref_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -811,10 +811,11 @@ mod tests {
         },
         group::{
             framing::{Content, MlsMessagePayload},
+            message_processor::CommitEffect,
             proposal::{AddProposal, Proposal, ProposalOrRef},
             proposal_ref::ProposalRef,
             test_utils::{test_group, TestGroup},
-            ProposalMessageDescription,
+            CommitMessageDescription, ProposalMessageDescription,
         },
         identity::{test_utils::get_test_signing_identity, SigningIdentity},
         key_package::test_utils::{test_key_package, test_key_package_message},
@@ -917,20 +918,24 @@ mod tests {
         let commit_output = alice.group.commit(vec![]).await.unwrap();
         alice.group.apply_pending_commit().await.unwrap();
 
-        let commit_result = server
+        let new_epoch = match server
             .process_incoming_message(commit_output.commit_message)
             .await
-            .unwrap();
+            .unwrap()
+        {
+            ExternalReceivedMessage::Commit(CommitMessageDescription {
+                effect: CommitEffect::NewEpoch(new_epoch),
+                ..
+            }) => new_epoch,
+            _ => panic!("Expected processed commit"),
+        };
 
-        #[cfg(feature = "state_update")]
-        assert_matches!(
-            commit_result,
-            ExternalReceivedMessage::Commit(commit_description)
-                if commit_description.state_update.roster_update.added().iter().any(|added| added.index == 1)
-        );
+        assert_eq!(new_epoch.applied_proposals.len(), 1);
 
-        #[cfg(not(feature = "state_update"))]
-        assert_matches!(commit_result, ExternalReceivedMessage::Commit(_));
+        assert!(new_epoch
+            .applied_proposals
+            .into_iter()
+            .any(|p| p.proposal == add_proposal));
 
         assert_eq!(alice.group.state, server.state);
     }
@@ -941,13 +946,24 @@ mod tests {
         let mut server = make_external_group(&alice).await;
         let (_, commit) = alice.join("bob").await;
 
-        let update = match server.process_incoming_message(commit).await.unwrap() {
-            ExternalReceivedMessage::Commit(update) => update.state_update,
+        let new_epoch = match server.process_incoming_message(commit).await.unwrap() {
+            ExternalReceivedMessage::Commit(CommitMessageDescription {
+                effect: CommitEffect::NewEpoch(new_epoch),
+                ..
+            }) => new_epoch,
             _ => panic!("Expected processed commit"),
         };
 
-        #[cfg(feature = "state_update")]
-        assert_eq!(update.roster_update.added().len(), 1);
+        assert_eq!(new_epoch.applied_proposals.len(), 1);
+
+        assert_eq!(
+            new_epoch
+                .applied_proposals
+                .into_iter()
+                .filter(|p| matches!(p.proposal, Proposal::Add(_)))
+                .count(),
+            1
+        );
 
         assert_eq!(server.state.public_tree.get_leaf_nodes().len(), 2);
 

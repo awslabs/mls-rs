@@ -1,8 +1,8 @@
 #[cfg(feature = "psk")]
 pub(crate) mod inner {
     use mls_rs::{
-        group::StateUpdate, identity::SigningIdentity, mls_rs_codec::MlsEncode,
-        CipherSuiteProvider, CryptoProvider, MlsMessage,
+        group::CommitEffect, identity::SigningIdentity, mls_rs_codec::MlsEncode,
+        mls_rules::ProposalInfo, CipherSuiteProvider, CryptoProvider, MlsMessage,
     };
     use mls_rs_crypto_openssl::OpensslCryptoProvider;
     use tonic::{Request, Response, Status};
@@ -44,7 +44,7 @@ pub(crate) mod inner {
                 (resp, update)
             };
 
-            self.handle_re_init_commit(Response::new(resp), update.state_update)
+            self.handle_re_init_commit(Response::new(resp), update.effect)
                 .await
         }
 
@@ -205,7 +205,7 @@ pub(crate) mod inner {
         pub(crate) async fn handle_re_init_commit(
             &self,
             commit_resp: Response<HandleCommitResponse>,
-            update: StateUpdate,
+            effect: CommitEffect,
         ) -> Result<Response<HandleReInitCommitResponse>, Status> {
             let commit_resp = commit_resp.into_inner();
             let mut clients = self.clients.lock().await;
@@ -220,9 +220,11 @@ pub(crate) mod inner {
                 .ok_or_else(|| Status::aborted("no group with such index."))?;
 
             // Generate a signing identity for the possibly new ciphersuite after reinit
-            let cipher_suite = update
-                .pending_reinit_ciphersuite()
-                .ok_or_else(|| Status::aborted("reinit not found in commit"))?;
+            let CommitEffect::ReInit(ProposalInfo { proposal, .. }) = effect else {
+                return Err(Status::aborted("reinit not found in commit"));
+            };
+
+            let cipher_suite = proposal.new_cipher_suite();
 
             let provider = OpensslCryptoProvider::new()
                 .cipher_suite_provider(cipher_suite)
@@ -262,8 +264,9 @@ pub(crate) mod inner {
 
 #[cfg(not(feature = "psk"))]
 pub(crate) mod inner {
-    use mls_rs::group::StateUpdate;
     use tonic::{Request, Response, Status};
+
+    use mls_rs::group::CommitEffect;
 
     use crate::{
         mls_client::{
@@ -299,7 +302,7 @@ pub(crate) mod inner {
         pub(crate) async fn handle_re_init_commit(
             &self,
             _: Response<HandleCommitResponse>,
-            _: StateUpdate,
+            _: CommitEffect,
         ) -> Result<Response<HandleReInitCommitResponse>, Status> {
             Err(Status::aborted("Unsupported"))
         }

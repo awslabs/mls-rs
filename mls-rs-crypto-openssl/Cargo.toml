@@ -1,6 +1,6 @@
 [package]
 name = "mls-rs-crypto-openssl"
-version = "0.9.1"
+version = "0.10.0"
 edition = "2021"
 description = "OpenSSL based CryptoProvider for mls-rs"
 homepage = "https://github.com/awslabs/mls-rs"
@@ -14,10 +14,10 @@ default = ["x509"]
 
 [dependencies]
 openssl = { version = "0.10.40" }
-mls-rs-core = { path = "../mls-rs-core", version = "0.18.0" }
-mls-rs-identity-x509 = { path = "../mls-rs-identity-x509", optional = true, version = "0.11.0" }
-mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", version = "0.9.0" }
-mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", version = "0.10.0" }
+mls-rs-core = { path = "../mls-rs-core", version = "0.19.0" }
+mls-rs-identity-x509 = { path = "../mls-rs-identity-x509", optional = true, version = "0.12.0" }
+mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", version = "0.10.0" }
+mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", version = "0.11.0" }
 thiserror = "1.0.40"
 zeroize = { version = "1", features = ["zeroize_derive"] }
 maybe-async = "0.2.10"
@@ -27,8 +27,8 @@ hex = { version = "^0.4.3", features = ["serde"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "^1.0" }
 assert_matches = "1.5.0"
-mls-rs-core = { path = "../mls-rs-core", version = "0.18.0", features = ["test_suite"] }
-mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", version = "0.9.0", features = ["test_utils"] }
+mls-rs-core = { path = "../mls-rs-core", version = "0.19.0", features = ["test_suite"] }
+mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", version = "0.10.0", features = ["test_utils"] }
 
 [target.'cfg(mls_build_async)'.dependencies]
 async-trait = "0.1.74"

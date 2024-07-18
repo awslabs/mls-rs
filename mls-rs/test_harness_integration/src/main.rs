@@ -18,7 +18,7 @@ use mls_rs::{
     },
     crypto::SignatureSecretKey,
     external_client::ExternalClient,
-    group::{ExportedTree, Member, ReceivedMessage, Roster, StateUpdate},
+    group::{CommitEffect, ExportedTree, Member, ReceivedMessage, Roster},
     identity::{
         basic::{BasicCredential, BasicIdentityProvider},
         Credential, SigningIdentity,
@@ -770,7 +770,7 @@ impl MlsClientImpl {
     async fn handle_commit(
         &self,
         request: Request<HandleCommitRequest>,
-    ) -> Result<(Response<HandleCommitResponse>, StateUpdate), Status> {
+    ) -> Result<(Response<HandleCommitResponse>, CommitEffect), Status> {
         let request = request.into_inner();
         let clients = &mut self.clients.lock().await;
 
@@ -796,7 +796,7 @@ impl MlsClientImpl {
         };
 
         match message {
-            ReceivedMessage::Commit(update) => Ok((Response::new(resp), update.state_update)),
+            ReceivedMessage::Commit(update) => Ok((Response::new(resp), update.effect)),
             _ => Err(Status::aborted("message not a commit.")),
         }
     }

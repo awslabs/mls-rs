@@ -191,6 +191,8 @@ impl From<mls_rs::MlsMessage> for Message {
 
 #[derive(Clone, Debug, uniffi::Object)]
 pub struct Proposal {
+    // FIXME: This isn't very useful because we get no details about the
+    // action this proposal performs
     _inner: mls_rs::group::proposal::Proposal,
 }
 
@@ -200,47 +202,33 @@ impl From<mls_rs::group::proposal::Proposal> for Proposal {
     }
 }
 
-/// Update of a member due to a commit.
-#[derive(Clone, Debug, uniffi::Record)]
-pub struct MemberUpdate {
-    pub prior: Arc<SigningIdentity>,
-    pub new: Arc<SigningIdentity>,
+#[derive(Debug, Clone, uniffi::Enum)]
+pub enum CommitEffect {
+    NewEpoch {
+        applied_proposals: Vec<Arc<Proposal>>,
+        unused_proposals: Vec<Arc<Proposal>>,
+    },
+    ReInit,
+    Removed,
 }
 
-/// A set of roster updates due to a commit.
-#[derive(Clone, Debug, uniffi::Record)]
-pub struct RosterUpdate {
-    pub added: Vec<Arc<SigningIdentity>>,
-    pub removed: Vec<Arc<SigningIdentity>>,
-    pub updated: Vec<MemberUpdate>,
-}
-
-impl RosterUpdate {
-    // This is an associated function because it felt wrong to hide
-    // the clones in an `impl From<&mls_rs::identity::RosterUpdate>`.
-    fn new(roster_update: &mls_rs::identity::RosterUpdate) -> Self {
-        let added = roster_update
-            .added()
-            .iter()
-            .map(|member| Arc::new(member.signing_identity.clone().into()))
-            .collect();
-        let removed = roster_update
-            .removed()
-            .iter()
-            .map(|member| Arc::new(member.signing_identity.clone().into()))
-            .collect();
-        let updated = roster_update
-            .updated()
-            .iter()
-            .map(|update| MemberUpdate {
-                prior: Arc::new(update.prior.signing_identity.clone().into()),
-                new: Arc::new(update.new.signing_identity.clone().into()),
-            })
-            .collect();
-        RosterUpdate {
-            added,
-            removed,
-            updated,
+impl From<mls_rs::group::CommitEffect> for CommitEffect {
+    fn from(value: mls_rs::group::CommitEffect) -> Self {
+        match value {
+            group::CommitEffect::NewEpoch(new_epoch) => CommitEffect::NewEpoch {
+                applied_proposals: new_epoch
+                    .applied_proposals
+                    .into_iter()
+                    .map(|p| Arc::new(p.proposal.into()))
+                    .collect(),
+                unused_proposals: new_epoch
+                    .unused_proposals
+                    .into_iter()
+                    .map(|p| Arc::new(p.proposal.into()))
+                    .collect(),
+            },
+            group::CommitEffect::Removed => CommitEffect::Removed,
+            group::CommitEffect::ReInit(_) => CommitEffect::ReInit,
         }
     }
 }
@@ -260,7 +248,7 @@ pub enum ReceivedMessage {
     /// A new commit was processed creating a new group state.
     Commit {
         committer: Arc<SigningIdentity>,
-        roster_update: RosterUpdate,
+        effect: CommitEffect,
     },
 
     // TODO(mgeisler): rename to `Proposal` when
@@ -754,10 +742,10 @@ impl Group {
             group::ReceivedMessage::Commit(commit_message) => {
                 let committer =
                     Arc::new(index_to_identity(&group, commit_message.committer)?.into());
-                let roster_update = RosterUpdate::new(commit_message.state_update.roster_update());
+
                 Ok(ReceivedMessage::Commit {
                     committer,
-                    roster_update,
+                    effect: commit_message.effect.into(),
                 })
             }
             group::ReceivedMessage::Proposal(proposal_message) => {

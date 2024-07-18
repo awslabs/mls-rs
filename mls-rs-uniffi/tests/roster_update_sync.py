@@ -17,6 +17,5 @@ bob_group.process_incoming_message(output.commit_message)
 
 # Alice learns that Carla has been added to the group.
 received = alice_group.process_incoming_message(output.commit_message)
-assert received.roster_update.added == [carla.signing_identity()]
-assert received.roster_update.removed == []
-assert received.roster_update.updated == []
+
+assert len(received.effect.applied_proposals) == 1

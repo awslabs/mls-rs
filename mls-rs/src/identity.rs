@@ -15,8 +15,6 @@ pub use mls_rs_core::identity::{
     Credential, CredentialType, CustomCredential, MlsCredential, SigningIdentity,
 };
 
-pub use mls_rs_core::group::RosterUpdate;
-
 #[cfg(test)]
 pub(crate) mod test_utils {
     use alloc::boxed::Box;

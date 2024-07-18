@@ -505,7 +505,7 @@ impl MlsMessage {
     }
 
     /// If this is a plaintext proposal, return the proposal reference that can be matched e.g. with
-    /// [`StateUpdate::unused_proposals`](super::StateUpdate::unused_proposals).
+    /// [`NewEpoch::unused_proposals`](super::NewEpoch::unused_proposals).
     #[cfg(feature = "by_ref_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn into_proposal_reference<C: CipherSuiteProvider>(
