@@ -1827,13 +1827,19 @@ where
         &mut self.state
     }
 
-    fn can_continue_processing(&self, provisional_state: &ProvisionalState) -> bool {
-        !(provisional_state
-            .applied_proposals
-            .removals
-            .iter()
-            .any(|p| p.proposal.to_remove == self.private_tree.self_index)
-            && self.pending_commit.is_none())
+    fn removal_proposal(
+        &self,
+        provisional_state: &ProvisionalState,
+    ) -> Option<ProposalInfo<RemoveProposal>> {
+        match self.pending_commit {
+            Some(_) => None,
+            None => provisional_state
+                .applied_proposals
+                .removals
+                .iter()
+                .find(|p| p.proposal.to_remove == self.private_tree.self_index)
+                .cloned(),
+        }
     }
 
     #[cfg(feature = "private_message")]
