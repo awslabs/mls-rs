@@ -10,7 +10,8 @@ use mls_rs::{
         SigningIdentity,
     },
     mls_rules::{CommitOptions, DefaultMlsRules},
-    CipherSuite, CipherSuiteProvider, Client, CryptoProvider,
+    test_utils::benchmarks::{MlsCryptoProvider, BENCH_CIPHER_SUITE},
+    CipherSuiteProvider, Client, CryptoProvider,
 };
 use mls_rs_crypto_openssl::OpensslCryptoProvider;
 
@@ -59,8 +60,8 @@ criterion::criterion_group!(benches, bench);
 criterion::criterion_main!(benches);
 
 fn make_client(name: &str) -> Client<impl MlsConfig> {
-    let crypto_provider = OpensslCryptoProvider::new();
-    let cipher_suite = CipherSuite::CURVE25519_AES128;
+    let crypto_provider = MlsCryptoProvider::new();
+    let cipher_suite = BENCH_CIPHER_SUITE;
 
     let (secret_key, public_key) = crypto_provider
         .cipher_suite_provider(cipher_suite)

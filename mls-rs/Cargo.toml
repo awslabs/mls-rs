@@ -47,6 +47,7 @@ sqlcipher-bundled = ["sqlite", "mls-rs-provider-sqlite/sqlcipher-bundled"]
 
 test_util = []
 benchmark_util = ["test_util", "default", "dep:mls-rs-crypto-openssl"]
+benchmark_pq_crypto = ["dep:mls-rs-crypto-awslc"]
 fuzz_util = ["test_util", "default", "dep:once_cell", "dep:mls-rs-crypto-openssl"]
 
 [dependencies]
@@ -64,6 +65,7 @@ maybe-async = { version = "0.2.10" }
 # Optional dependencies
 mls-rs-provider-sqlite = { path = "../mls-rs-provider-sqlite", version = "0.13.0", default-features = false, optional = true }
 mls-rs-crypto-openssl = { path = "../mls-rs-crypto-openssl", optional = true, version = "0.10.0" }
+mls-rs-crypto-awslc = { path = "../mls-rs-crypto-awslc", optional = true, version = "0.12" }
 # TODO: https://github.com/GoogleChromeLabs/wasm-bindgen-rayon
 rayon = { version = "1", optional = true }
 arbitrary = { version = "1", features = ["derive"], optional = true }
