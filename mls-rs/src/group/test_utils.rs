@@ -461,11 +461,8 @@ impl MessageProcessor for GroupWithoutKeySchedule {
         self.inner.psk_storage()
     }
 
-    fn removal_proposal(
-        &self,
-        provisional_state: &ProvisionalState,
-    ) -> Option<ProposalInfo<RemoveProposal>> {
-        self.inner.removal_proposal(provisional_state)
+    fn can_continue_processing(&self, provisional_state: &ProvisionalState) -> bool {
+        self.inner.can_continue_processing(provisional_state)
     }
 
     #[cfg(feature = "private_message")]

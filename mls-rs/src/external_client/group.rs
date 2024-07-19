@@ -21,7 +21,6 @@ use crate::{
             ApplicationMessageDescription, CommitMessageDescription, EventOrContent,
             MessageProcessor, ProposalMessageDescription, ProvisionalState,
         },
-        proposal_filter::ProposalInfo,
         snapshot::RawGroupState,
         state::GroupState,
         transcript_hash::InterimTranscriptHash,
@@ -639,11 +638,8 @@ where
         &mut self.state
     }
 
-    fn removal_proposal(
-        &self,
-        _provisional_state: &ProvisionalState,
-    ) -> Option<ProposalInfo<RemoveProposal>> {
-        None
+    fn can_continue_processing(&self, _provisional_state: &ProvisionalState) -> bool {
+        true
     }
 
     #[cfg(feature = "private_message")]

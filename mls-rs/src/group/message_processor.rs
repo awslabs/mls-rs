@@ -14,7 +14,7 @@ use super::{
     state::GroupState,
     transcript_hash::InterimTranscriptHash,
     transcript_hashes, validate_group_info_member, GroupContext, GroupInfo, ReInitProposal,
-    RemoveProposal, Welcome,
+    Welcome,
 };
 use crate::{
     client::MlsError,
@@ -121,7 +121,7 @@ impl NewEpoch {
 #[derive(Clone, Debug, PartialEq)]
 pub enum CommitEffect {
     NewEpoch(Box<NewEpoch>),
-    Removed(ProposalInfo<RemoveProposal>),
+    Removed,
     ReInit(ProposalInfo<ReInitProposal>),
 }
 
@@ -636,12 +636,12 @@ pub(crate) trait MessageProcessor: Send + Sync {
             return Err(MlsError::CommitMissingPath);
         }
 
-        if let Some(removal) = self.removal_proposal(&provisional_state) {
+        if !self.can_continue_processing(&provisional_state) {
             return Ok(CommitMessageDescription {
                 is_external: matches!(auth_content.content.sender, Sender::NewMemberCommit),
                 authenticated_data: auth_content.content.authenticated_data,
                 committer: *sender,
-                effect: CommitEffect::Removed(removal),
+                effect: CommitEffect::Removed,
             });
         }
 
@@ -727,11 +727,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
     fn identity_provider(&self) -> Self::IdentityProvider;
     fn cipher_suite_provider(&self) -> &Self::CipherSuiteProvider;
     fn psk_storage(&self) -> Self::PreSharedKeyStorage;
-
-    fn removal_proposal(
-        &self,
-        provisional_state: &ProvisionalState,
-    ) -> Option<ProposalInfo<RemoveProposal>>;
+    fn can_continue_processing(&self, provisional_state: &ProvisionalState) -> bool;
 
     #[cfg(feature = "private_message")]
     fn min_epoch_available(&self) -> Option<u64>;
