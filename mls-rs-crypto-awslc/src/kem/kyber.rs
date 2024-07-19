@@ -91,7 +91,7 @@ impl KemType for KyberKem {
     }
 
     fn encap(&self, remote_key: &HpkePublicKey) -> Result<KemResult, Self::Error> {
-        let remote_key = EncapsulationKey::new(self.kyber.algorithm()?, &remote_key)?;
+        let remote_key = EncapsulationKey::new(self.kyber.algorithm()?, remote_key)?;
         let (enc, shared_secret) = remote_key.encapsulate()?;
 
         Ok(KemResult {

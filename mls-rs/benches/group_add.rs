@@ -13,7 +13,6 @@ use mls_rs::{
     test_utils::benchmarks::{MlsCryptoProvider, BENCH_CIPHER_SUITE},
     CipherSuiteProvider, Client, CryptoProvider,
 };
-use mls_rs_crypto_openssl::OpensslCryptoProvider;
 
 fn bench(c: &mut Criterion) {
     let alice = make_client("alice")

@@ -85,6 +85,12 @@ pub struct AwsLcCryptoProvider {
     pub enabled_cipher_suites: Vec<CipherSuite>,
 }
 
+impl Default for AwsLcCryptoProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AwsLcCryptoProvider {
     pub fn new() -> Self {
         Self {
@@ -161,11 +167,7 @@ impl CryptoProvider for AwsLcCryptoProvider {
 
         let hpke = match cipher_suite {
             CipherSuite::KYBER512 | CipherSuite::KYBER768 | CipherSuite::KYBER1024 => {
-                AwsLcHpke::PostQuantum(Hpke::new(
-                    KyberKem::new(cipher_suite)?,
-                    kdf.clone(),
-                    Some(aead.clone()),
-                ))
+                AwsLcHpke::PostQuantum(Hpke::new(KyberKem::new(cipher_suite)?, kdf, Some(aead)))
             }
             CipherSuite::KYBER768_X25519 => {
                 let kem = CombinedKem::new_xwing(
@@ -175,13 +177,9 @@ impl CryptoProvider for AwsLcCryptoProvider {
                     AwsLcShake128,
                 );
 
-                AwsLcHpke::Combined(Hpke::new(kem, kdf.clone(), Some(aead.clone())))
+                AwsLcHpke::Combined(Hpke::new(kem, kdf, Some(aead)))
             }
-            _ => AwsLcHpke::Classical(Hpke::new(
-                dhkem(cipher_suite)?,
-                kdf.clone(),
-                Some(aead.clone()),
-            )),
+            _ => AwsLcHpke::Classical(Hpke::new(dhkem(cipher_suite)?, kdf, Some(aead))),
         };
 
         Some(AwsLcCipherSuite {
