@@ -968,7 +968,7 @@ mod tests {
             assert_matches!(
                 message,
                 ReceivedMessage::Commit(CommitMessageDescription {
-                    effect: CommitEffect::Removed,
+                    effect: CommitEffect::Removed(_),
                     ..
                 })
             );

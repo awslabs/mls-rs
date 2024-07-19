@@ -21,6 +21,8 @@ use crate::{
             ApplicationMessageDescription, CommitMessageDescription, EventOrContent,
             MessageProcessor, ProposalMessageDescription, ProvisionalState,
         },
+        proposal::RemoveProposal,
+        proposal_filter::ProposalInfo,
         snapshot::RawGroupState,
         state::GroupState,
         transcript_hash::InterimTranscriptHash,
@@ -56,7 +58,7 @@ use mls_rs_core::{crypto::CipherSuiteProvider, psk::ExternalPskId};
 #[cfg(feature = "by_ref_proposal")]
 use crate::{
     extension::ExternalSendersExt,
-    group::proposal::{AddProposal, ReInitProposal, RemoveProposal},
+    group::proposal::{AddProposal, ReInitProposal},
 };
 
 #[cfg(all(feature = "by_ref_proposal", feature = "psk"))]
@@ -638,8 +640,11 @@ where
         &mut self.state
     }
 
-    fn can_continue_processing(&self, _provisional_state: &ProvisionalState) -> bool {
-        true
+    fn removal_proposal(
+        &self,
+        _provisional_state: &ProvisionalState,
+    ) -> Option<ProposalInfo<RemoveProposal>> {
+        None
     }
 
     #[cfg(feature = "private_message")]

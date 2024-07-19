@@ -73,7 +73,6 @@ pub(crate) use self::commit::test_utils::CommitModifiers;
 #[cfg(all(test, feature = "private_message"))]
 pub use self::framing::PrivateMessage;
 
-#[cfg(feature = "psk")]
 use self::proposal_filter::ProposalInfo;
 
 #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
@@ -1827,13 +1826,19 @@ where
         &mut self.state
     }
 
-    fn can_continue_processing(&self, provisional_state: &ProvisionalState) -> bool {
-        !(provisional_state
-            .applied_proposals
-            .removals
-            .iter()
-            .any(|p| p.proposal.to_remove == self.private_tree.self_index)
-            && self.pending_commit.is_none())
+    fn removal_proposal(
+        &self,
+        provisional_state: &ProvisionalState,
+    ) -> Option<ProposalInfo<RemoveProposal>> {
+        match self.pending_commit {
+            Some(_) => None,
+            None => provisional_state
+                .applied_proposals
+                .removals
+                .iter()
+                .find(|p| p.proposal.to_remove == self.private_tree.self_index)
+                .cloned(),
+        }
     }
 
     #[cfg(feature = "private_message")]
