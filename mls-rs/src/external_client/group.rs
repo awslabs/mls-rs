@@ -21,6 +21,7 @@ use crate::{
             ApplicationMessageDescription, CommitMessageDescription, EventOrContent,
             MessageProcessor, ProposalMessageDescription, ProvisionalState,
         },
+        proposal::RemoveProposal,
         proposal_filter::ProposalInfo,
         snapshot::RawGroupState,
         state::GroupState,
@@ -57,7 +58,7 @@ use mls_rs_core::{crypto::CipherSuiteProvider, psk::ExternalPskId};
 #[cfg(feature = "by_ref_proposal")]
 use crate::{
     extension::ExternalSendersExt,
-    group::proposal::{AddProposal, ReInitProposal, RemoveProposal},
+    group::proposal::{AddProposal, ReInitProposal},
 };
 
 #[cfg(all(feature = "by_ref_proposal", feature = "psk"))]
