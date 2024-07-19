@@ -73,7 +73,6 @@ pub(crate) use self::commit::test_utils::CommitModifiers;
 #[cfg(all(test, feature = "private_message"))]
 pub use self::framing::PrivateMessage;
 
-#[cfg(feature = "psk")]
 use self::proposal_filter::ProposalInfo;
 
 #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
