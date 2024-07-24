@@ -94,6 +94,21 @@ pub struct NewEpoch {
     pub unused_proposals: Vec<ProposalInfo<Proposal>>,
 }
 
+impl NewEpoch {
+    fn new(prior_state: GroupState, provisional_state: &ProvisionalState) -> NewEpoch {
+        NewEpoch {
+            epoch: provisional_state.group_context.epoch,
+            prior_state,
+            unused_proposals: provisional_state.unused_proposals.clone(),
+            applied_proposals: provisional_state
+                .applied_proposals
+                .clone()
+                .into_proposals()
+                .collect_vec(),
+        }
+    }
+}
+
 #[cfg(all(feature = "ffi", not(test)))]
 #[safer_ffi_gen::safer_ffi_gen]
 impl NewEpoch {
@@ -121,7 +136,10 @@ impl NewEpoch {
 #[derive(Clone, Debug, PartialEq)]
 pub enum CommitEffect {
     NewEpoch(Box<NewEpoch>),
-    Removed(ProposalInfo<RemoveProposal>),
+    Removed {
+        new_epoch: Box<NewEpoch>,
+        remove_proposal: ProposalInfo<RemoveProposal>,
+    },
     ReInit(ProposalInfo<ReInitProposal>),
 }
 
@@ -636,12 +654,17 @@ pub(crate) trait MessageProcessor: Send + Sync {
             return Err(MlsError::CommitMissingPath);
         }
 
-        if let Some(removal) = self.removal_proposal(&provisional_state) {
+        if let Some(remove_proposal) = self.removal_proposal(&provisional_state) {
+            let new_epoch = NewEpoch::new(self.group_state().clone(), &provisional_state);
+
             return Ok(CommitMessageDescription {
                 is_external: matches!(auth_content.content.sender, Sender::NewMemberCommit),
                 authenticated_data: auth_content.content.authenticated_data,
                 committer: *sender,
-                effect: CommitEffect::Removed(removal),
+                effect: CommitEffect::Removed {
+                    remove_proposal,
+                    new_epoch: Box::new(new_epoch),
+                },
             });
         }
 
@@ -650,16 +673,10 @@ pub(crate) trait MessageProcessor: Send + Sync {
                 self.group_state_mut().pending_reinit = Some(reinit.proposal.clone());
                 CommitEffect::ReInit(reinit)
             } else {
-                CommitEffect::NewEpoch(Box::new(NewEpoch {
-                    epoch: provisional_state.group_context.epoch,
-                    prior_state: self.group_state().clone(),
-                    unused_proposals: provisional_state.unused_proposals.clone(),
-                    applied_proposals: provisional_state
-                        .applied_proposals
-                        .clone()
-                        .into_proposals()
-                        .collect_vec(),
-                }))
+                CommitEffect::NewEpoch(Box::new(NewEpoch::new(
+                    self.group_state().clone(),
+                    &provisional_state,
+                )))
             };
 
         let update_path = match commit.path {

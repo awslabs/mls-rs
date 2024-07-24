@@ -1,6 +1,6 @@
 [package]
 name = "mls-rs-uniffi"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "An UniFFI-compatible implementation of Messaging Layer Security (RFC 9420)"
 homepage = "https://github.com/awslabs/mls-rs"
@@ -17,7 +17,7 @@ name = "mls_rs_uniffi"
 [dependencies]
 async-trait = "0.1.77"
 maybe-async = "0.2.10"
-mls-rs = { version = "0.40.0", path = "../mls-rs" }
+mls-rs = { version = "0.41.0", path = "../mls-rs" }
 mls-rs-core = { version = "0.19.0", path = "../mls-rs-core" }
 mls-rs-crypto-openssl = { version = "0.10.0", path = "../mls-rs-crypto-openssl" }
 thiserror = "1.0.57"

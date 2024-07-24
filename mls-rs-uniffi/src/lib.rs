@@ -227,7 +227,10 @@ impl From<mls_rs::group::CommitEffect> for CommitEffect {
                     .map(|p| Arc::new(p.proposal.into()))
                     .collect(),
             },
-            group::CommitEffect::Removed(_) => CommitEffect::Removed,
+            group::CommitEffect::Removed {
+                new_epoch: _,
+                remove_proposal: _,
+            } => CommitEffect::Removed,
             group::CommitEffect::ReInit(_) => CommitEffect::ReInit,
         }
     }
