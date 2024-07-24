@@ -33,6 +33,7 @@ use crate::tree_kem::{
 use crate::tree_kem::{math as tree_math, ValidatedUpdatePath};
 use crate::tree_kem::{TreeKemPrivate, TreeKemPublic};
 use crate::{CipherSuiteProvider, CryptoProvider};
+pub use state::GroupState;
 
 #[cfg(feature = "by_ref_proposal")]
 use crate::crypto::{HpkePublicKey, HpkeSecretKey};
@@ -64,7 +65,6 @@ use message_verifier::*;
 use proposal::*;
 #[cfg(feature = "by_ref_proposal")]
 use proposal_cache::*;
-use state::*;
 use transcript_hash::*;
 
 #[cfg(test)]
