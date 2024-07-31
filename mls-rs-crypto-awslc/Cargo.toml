@@ -8,8 +8,12 @@ repository = "https://github.com/awslabs/mls-rs"
 keywords = ["mls", "mls-rs", "aws-lc"]
 license = "Apache-2.0 OR MIT"
 
+[features]
+default = []
+post-quantum = ["aws-lc-rs/unstable"]
+
 [dependencies]
-aws-lc-rs = { version = "=1.8.1", features = ["unstable"] }
+aws-lc-rs = { version = "=1.8.1" }
 aws-lc-sys = { version = "0.20.1" }
 mls-rs-core = { path = "../mls-rs-core", version = "0.19.0" }
 mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", version = "0.10.0" }

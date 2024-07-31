@@ -2,16 +2,14 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use std::{mem::MaybeUninit, os::raw::c_uint, ptr::null_mut};
+use std::mem::MaybeUninit;
 
 use aws_lc_rs::{digest, error::Unspecified, hmac};
-use aws_lc_sys::{
-    EVP_Digest, EVP_sha256, EVP_sha384, EVP_sha512, EVP_shake128, HKDF_expand, HKDF_extract, EVP_MD,
-};
+use aws_lc_sys::{EVP_sha256, EVP_sha384, EVP_sha512, HKDF_expand, HKDF_extract, EVP_MD};
 use mls_rs_core::crypto::CipherSuite;
-use mls_rs_crypto_traits::{Hash, KdfId, VariableLengthHash};
+use mls_rs_crypto_traits::{Hash, KdfId};
 
-use crate::{check_int_return, AwsLcCryptoError};
+use crate::AwsLcCryptoError;
 
 #[derive(Clone, Copy)]
 pub struct AwsLcHkdf(KdfId);
@@ -112,6 +110,7 @@ impl AwsLcHash {
         })
     }
 
+    #[cfg(feature = "post-quantum")]
     pub fn new_sha3(sha3: Sha3) -> Option<Self> {
         let algo = match sha3 {
             Sha3::SHA3_256 => &digest::SHA3_256,
@@ -123,6 +122,7 @@ impl AwsLcHash {
     }
 }
 
+#[cfg(feature = "post-quantum")]
 #[derive(Clone, Copy, Debug)]
 #[non_exhaustive]
 pub enum Sha3 {
@@ -139,47 +139,54 @@ impl Hash for AwsLcHash {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct AwsLcShake128;
-
-impl VariableLengthHash for AwsLcShake128 {
-    type Error = AwsLcCryptoError;
-
-    fn hash(&self, input: &[u8], out_len: usize) -> Result<Vec<u8>, Self::Error> {
-        let mut output = vec![0u8; out_len];
-
-        let mut len: u32 = out_len
-            .try_into()
-            .map_err(|_| AwsLcCryptoError::CryptoError)?;
-
-        unsafe {
-            check_int_return(EVP_Digest(
-                input.as_ptr().cast(),
-                input.len(),
-                output.as_mut_ptr(),
-                &mut len as *mut c_uint,
-                EVP_shake128(),
-                null_mut(),
-            ))?;
-        }
-
-        Ok(output)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-
+#[cfg(feature = "post-quantum")]
+pub mod shake {
+    use crate::{check_int_return, AwsLcCryptoError};
+    use aws_lc_sys::{EVP_Digest, EVP_shake128};
     use mls_rs_crypto_traits::VariableLengthHash;
+    use std::{os::raw::c_uint, ptr::null_mut};
 
-    use crate::kdf::AwsLcShake128;
+    #[derive(Clone, Copy, Debug)]
+    pub struct AwsLcShake128;
 
-    #[test]
-    fn shake() {
-        let input = b"\x84\xe9\x50\x05\x18\x76\x05\x0d\xc8\x51\xfb\xd9\x9e\x62\x47\xb8";
-        let output = AwsLcShake128.hash(input, 16).unwrap();
-        let expected = b"\x85\x99\xbd\x89\xf6\x3a\x84\x8c\x49\xca\x59\x3e\xc3\x7a\x12\xc6";
+    impl VariableLengthHash for AwsLcShake128 {
+        type Error = AwsLcCryptoError;
 
-        assert_eq!(&output, expected);
+        fn hash(&self, input: &[u8], out_len: usize) -> Result<Vec<u8>, Self::Error> {
+            let mut output = vec![0u8; out_len];
+
+            let mut len: u32 = out_len
+                .try_into()
+                .map_err(|_| AwsLcCryptoError::CryptoError)?;
+
+            unsafe {
+                check_int_return(EVP_Digest(
+                    input.as_ptr().cast(),
+                    input.len(),
+                    output.as_mut_ptr(),
+                    &mut len as *mut c_uint,
+                    EVP_shake128(),
+                    null_mut(),
+                ))?;
+            }
+
+            Ok(output)
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use mls_rs_crypto_traits::VariableLengthHash;
+
+        use super::AwsLcShake128;
+
+        #[test]
+        fn shake() {
+            let input = b"\x84\xe9\x50\x05\x18\x76\x05\x0d\xc8\x51\xfb\xd9\x9e\x62\x47\xb8";
+            let output = AwsLcShake128.hash(input, 16).unwrap();
+            let expected = b"\x85\x99\xbd\x89\xf6\x3a\x84\x8c\x49\xca\x59\x3e\xc3\x7a\x12\xc6";
+
+            assert_eq!(&output, expected);
+        }
     }
 }

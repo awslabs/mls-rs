@@ -47,7 +47,7 @@ sqlcipher-bundled = ["sqlite", "mls-rs-provider-sqlite/sqlcipher-bundled"]
 
 test_util = []
 benchmark_util = ["test_util", "default", "dep:mls-rs-crypto-openssl"]
-benchmark_pq_crypto = ["dep:mls-rs-crypto-awslc"]
+benchmark_pq_crypto = ["mls-rs-crypto-awslc/post-quantum"]
 fuzz_util = ["test_util", "default", "dep:once_cell", "dep:mls-rs-crypto-openssl"]
 
 [dependencies]
