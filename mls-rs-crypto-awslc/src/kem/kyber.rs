@@ -8,7 +8,8 @@ use aws_lc_rs::{
 use aws_lc_sys::{
     EVP_PKEY_CTX_free, EVP_PKEY_CTX_kem_set_params, EVP_PKEY_CTX_new, EVP_PKEY_CTX_new_id,
     EVP_PKEY_decapsulate, EVP_PKEY_free, EVP_PKEY_get_raw_private_key, EVP_PKEY_get_raw_public_key,
-    EVP_PKEY_kem_new_raw_secret_key, EVP_PKEY_keygen_init, EVP_PKEY, EVP_PKEY_CTX, EVP_PKEY_KEM,
+    EVP_PKEY_kem_new_raw_secret_key, EVP_PKEY_keygen_deterministic, EVP_PKEY_keygen_init, EVP_PKEY,
+    EVP_PKEY_KEM,
 };
 use mls_rs_core::crypto::{CipherSuite, HpkePublicKey, HpkeSecretKey};
 use mls_rs_crypto_traits::{KemResult, KemType};
@@ -163,16 +164,6 @@ impl KemType for KyberKem {
 
         self.derive(&out)
     }
-}
-
-extern "C" {
-    #[link_name = "\u{1}_aws_lc_0_20_0_EVP_PKEY_keygen_deterministic"]
-    pub fn EVP_PKEY_keygen_deterministic(
-        ctx: *mut EVP_PKEY_CTX,
-        out_pkey: *mut *mut EVP_PKEY,
-        seed: *const u8,
-        seed_len: *mut usize,
-    ) -> ::std::os::raw::c_int;
 }
 
 unsafe fn kem_derive(
