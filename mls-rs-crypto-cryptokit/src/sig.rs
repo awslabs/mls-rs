@@ -9,14 +9,13 @@ use core::ops::Deref;
 use mls_rs_core::crypto::{CipherSuite, SignaturePublicKey, SignatureSecretKey};
 use mls_rs_crypto_traits::Curve;
 
-#[derive(Debug)]
-#[cfg_attr(feature = "std", derive(thiserror::Error))]
+#[derive(Debug, thiserror::Error)]
 pub enum SignatureError {
-    #[cfg_attr(feature = "std", error("unsupported curve"))]
+    #[error("unsupported curve")]
     UnsupportedCurve,
-    #[cfg_attr(feature = "std", error("invalid signature"))]
+    #[error("invalid signature")]
     InvalidSignature,
-    #[cfg_attr(feature = "std", error("CryptoKit error"))]
+    #[error("CryptoKit error")]
     CryptoKitError,
 }
 

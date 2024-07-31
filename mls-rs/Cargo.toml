@@ -110,6 +110,9 @@ criterion = { version = "0.5.1", default-features = false, features = ["plotters
 mls-rs-crypto-openssl = { path = "../mls-rs-crypto-openssl", version = "0.10.0"}
 criterion = { version = "0.5.1", features = ["async_futures", "html_reports"] }
 
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(mls_build_async)', 'cfg(coverage_nightly)'] }
+
 [[example]]
 name = "basic_usage"
 required-features = []

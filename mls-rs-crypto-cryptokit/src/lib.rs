@@ -21,18 +21,17 @@ use mls_rs_core::{
 use mls_rs_crypto_traits::{AeadType, KdfType};
 use zeroize::Zeroizing;
 
-#[derive(Debug)]
-#[cfg_attr(feature = "std", derive(thiserror::Error))]
+#[derive(Debug, thiserror::Error)]
 pub enum CryptoKitError {
-    #[cfg_attr(feature = "std", error(transparent))]
+    #[error(transparent)]
     AeadError(AeadError),
-    #[cfg_attr(feature = "std", error(transparent))]
+    #[error(transparent)]
     KdfError(KdfError),
-    #[cfg_attr(feature = "std", error(transparent))]
+    #[error(transparent)]
     KemError(KemError),
-    #[cfg_attr(feature = "std", error("randomness error"))]
+    #[error("randomness error")]
     RandError,
-    #[cfg_attr(feature = "std", error(transparent))]
+    #[error(transparent)]
     SignatureError(SignatureError),
 }
 
@@ -61,7 +60,6 @@ impl From<SignatureError> for CryptoKitError {
 }
 
 impl IntoAnyError for CryptoKitError {
-    #[cfg(feature = "std")]
     fn into_dyn_error(self) -> Result<Box<dyn std::error::Error + Send + Sync>, Self> {
         Ok(self.into())
     }

@@ -30,7 +30,6 @@ rand = "0.8"
 wasm-bindgen-test = { version = "0.3.26", default-features = false }
 getrandom = { version = "0.2", features = ["js"] }
 
-
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { version = "^0.2.79" }
 
