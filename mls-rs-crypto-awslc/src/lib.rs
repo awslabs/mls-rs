@@ -112,6 +112,7 @@ impl AwsLcCryptoProvider {
     pub fn all_supported_cipher_suites() -> Vec<CipherSuite> {
         [
             Self::supported_classical_cipher_suites(),
+            #[cfg(feature = "post-quantum")]
             Self::supported_pq_cipher_suites(),
         ]
         .concat()
@@ -127,6 +128,7 @@ impl AwsLcCryptoProvider {
         ]
     }
 
+    #[cfg(feature = "post-quantum")]
     pub fn supported_pq_cipher_suites() -> Vec<CipherSuite> {
         vec![
             CipherSuite::KYBER512,
@@ -157,7 +159,9 @@ impl CryptoProvider for AwsLcCryptoProvider {
         cipher_suite: CipherSuite,
     ) -> Option<Self::CipherSuiteProvider> {
         let classical_cs = match cipher_suite {
+            #[cfg(feature = "post-quantum")]
             CipherSuite::KYBER1024 => CipherSuite::P384_AES256,
+            #[cfg(feature = "post-quantum")]
             CipherSuite::KYBER512 | CipherSuite::KYBER768 | CipherSuite::KYBER768_X25519 => {
                 CipherSuite::CURVE25519_AES128
             }
@@ -207,7 +211,7 @@ impl CryptoProvider for AwsLcCryptoProvider {
     }
 }
 
-fn dhkem(cipher_suite: CipherSuite) -> Option<DhKem<Ecdh, AwsLcHkdf>> {
+pub(crate) fn dhkem(cipher_suite: CipherSuite) -> Option<DhKem<Ecdh, AwsLcHkdf>> {
     let kem_id = KemId::new(cipher_suite)?;
     let dh = Ecdh::new(cipher_suite)?;
     let kdf = AwsLcHkdf::new(cipher_suite)?;
@@ -538,7 +542,7 @@ fn mls_core_tests() {
     }
 }
 
-#[cfg(not(mls_build_async))]
+#[cfg(all(not(mls_build_async), feature = "post-quantum"))]
 #[test]
 fn pq_cipher_suite_test() {
     for cs in AwsLcCryptoProvider::supported_pq_cipher_suites() {

@@ -9,8 +9,8 @@ keywords = ["mls", "mls-rs", "aws-lc"]
 license = "Apache-2.0 OR MIT"
 
 [features]
-default = []
-post-quantum = ["aws-lc-rs/unstable"]
+default = ["post-quantum"]
+post-quantum = ["aws-lc-rs/unstable", "mls-rs-core/post-quantum"]
 
 [dependencies]
 aws-lc-rs = { version = "=1.8.1" }
@@ -22,12 +22,17 @@ mls-rs-identity-x509 = { path = "../mls-rs-identity-x509", version = "0.12.0" }
 thiserror = "1.0.40"
 zeroize = { version = "1", features = ["zeroize_derive"] }
 maybe-async = "0.2.10"
+hex = { version = "0.4", features = ["serde"] }
+
 
 [dev-dependencies]
 assert_matches = "1.5.0"
 mls-rs-core = { path = "../mls-rs-core", version = "0.19.0", features = ["test_suite"] }
 mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", version = "0.10.0", features = ["test_utils"] }
 futures-test = "0.3.25"
+serde = { version = "1.0", features = ["derive"] }
+hex = { version = "0.4", features = ["serde"] }
+serde_json = "1.0"
 
 [target.'cfg(mls_build_async)'.dependencies]
 async-trait = "0.1.74"

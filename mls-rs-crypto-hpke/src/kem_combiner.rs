@@ -2,7 +2,6 @@ use alloc::vec::Vec;
 use mls_rs_core::{
     crypto::{HpkePublicKey, HpkeSecretKey},
     error::{AnyError, IntoAnyError},
-    mls_rs_codec::{MlsDecode, MlsEncode},
 };
 use mls_rs_crypto_traits::{Hash, KemResult, KemType, VariableLengthHash};
 use zeroize::Zeroize;
@@ -170,34 +169,18 @@ where
         15
     }
 
-    async fn derive(&self, ikm: &[u8]) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
-        let ikm = self
-            .variable_length_hash
-            .hash(ikm, self.seed_length_for_derive())
-            .map_err(|e| Error::KemError(e.into_any_error()))?;
-
-        let (ikm1, ikm2) = ikm.split_at(self.kem1.seed_length_for_derive());
-
-        let (sk1, pk1) = self
-            .kem1
-            .derive(ikm1)
-            .await
-            .map_err(|e| Error::KemError(e.into_any_error()))?;
-
-        let (sk2, pk2) = self
-            .kem2
-            .derive(ikm2)
-            .await
-            .map_err(|e| Error::KemError(e.into_any_error()))?;
-
-        let sk = (sk1, sk2).mls_encode_to_vec()?;
-        let pk = (pk1, pk2).mls_encode_to_vec()?;
-
-        Ok((sk.into(), pk.into()))
+    async fn generate_deterministic(
+        &self,
+        seed: &[u8],
+    ) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
+        self.generate_deterministic(seed).await
     }
 
     async fn encap(&self, remote_key: &HpkePublicKey) -> Result<KemResult, Self::Error> {
-        let (pk1, pk2) = <(HpkePublicKey, HpkePublicKey)>::mls_decode(&mut remote_key.as_ref())?;
+        let (pk1, pk2) = self.parse_key(&remote_key, self.kem1.public_key_size())?;
+
+        let pk1 = pk1.into();
+        let pk2 = pk2.into();
 
         let ct1 = self
             .kem1
@@ -211,9 +194,7 @@ where
             .await
             .map_err(|e| Error::KemError(e.into_any_error()))?;
 
-        let enc = (&ct1.enc, &ct2.enc)
-            .mls_encode_to_vec()
-            .map_err(|e| Error::KemError(e.into_any_error()))?;
+        let enc = [&ct1.enc[..], &ct2.enc].concat();
 
         let ss_details1 = SharedSecretDetails::new(&ct1.shared_secret, &ct1.enc, &pk1);
         let ss_details2 = SharedSecretDetails::new(&ct2.shared_secret, &ct2.enc, &pk2);
@@ -237,9 +218,14 @@ where
         secret_key: &HpkeSecretKey,
         local_public: &HpkePublicKey,
     ) -> Result<Vec<u8>, Self::Error> {
-        let (enc1, enc2) = <(Vec<u8>, Vec<u8>)>::mls_decode(&mut &*enc)?;
-        let (sk1, sk2) = <(HpkeSecretKey, HpkeSecretKey)>::mls_decode(&mut secret_key.as_ref())?;
-        let (pk1, pk2) = <(HpkePublicKey, HpkePublicKey)>::mls_decode(&mut local_public.as_ref())?;
+        let (pk1, pk2) = self.parse_key(local_public, self.kem1.public_key_size())?;
+        let (sk1, sk2) = self.parse_key(secret_key, self.kem1.secret_key_size())?;
+        let (enc1, enc2) = self.parse_key(enc, self.enc_size())?;
+
+        let pk1 = pk1.into();
+        let pk2 = pk2.into();
+        let sk1 = sk1.into();
+        let sk2 = sk2.into();
 
         let shared_secret1 = self
             .kem1
@@ -287,13 +273,80 @@ where
             .await
             .map_err(|e| Error::KemError(e.into_any_error()))?;
 
-        let sk = (sk1, sk2).mls_encode_to_vec()?;
-        let pk = (pk1, pk2).mls_encode_to_vec()?;
+        let sk = [sk1.as_ref(), &sk2].concat();
+        let pk = [pk1.as_ref(), &pk2].concat();
 
         Ok((sk.into(), pk.into()))
     }
 
     fn seed_length_for_derive(&self) -> usize {
         self.kem1.seed_length_for_derive() + self.kem2.seed_length_for_derive()
+    }
+
+    fn public_key_size(&self) -> usize {
+        self.kem1.public_key_size() + self.kem2.public_key_size()
+    }
+
+    fn secret_key_size(&self) -> usize {
+        self.kem1.secret_key_size() + self.kem1.secret_key_size()
+    }
+}
+
+impl<KEM1, KEM2, H, VH, F> CombinedKem<KEM1, KEM2, H, VH, F>
+where
+    KEM1: KemType,
+    KEM2: KemType,
+    H: Hash,
+    VH: VariableLengthHash,
+    F: SharedSecretHashInput,
+{
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn generate_deterministic(
+        &self,
+        ikm: &[u8],
+    ) -> Result<(HpkeSecretKey, HpkePublicKey), Error> {
+        let ikm = self
+            .variable_length_hash
+            .hash(ikm, self.seed_length_for_derive())
+            .map_err(|e| Error::KemError(e.into_any_error()))?;
+
+        let (ikm1, ikm2) = ikm.split_at(self.kem1.seed_length_for_derive());
+
+        self.generate_key_pair_derand(ikm1, ikm2).await
+    }
+
+    // The funciton is useful for X-Wing RFC test.
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn generate_key_pair_derand(
+        &self,
+        ikm1: &[u8],
+        ikm2: &[u8],
+    ) -> Result<(HpkeSecretKey, HpkePublicKey), Error> {
+        let (sk1, pk1) = self
+            .kem1
+            .generate_deterministic(ikm1)
+            .await
+            .map_err(|e| Error::KemError(e.into_any_error()))?;
+
+        let (sk2, pk2) = self
+            .kem2
+            .generate_deterministic(ikm2)
+            .await
+            .map_err(|e| Error::KemError(e.into_any_error()))?;
+
+        let sk = [sk1.as_ref(), &sk2].concat();
+        let pk = [pk1.as_ref(), &pk2].concat();
+
+        Ok((sk.into(), pk.into()))
+    }
+
+    fn parse_key(&self, key: &[u8], size: usize) -> Result<(Vec<u8>, Vec<u8>), Error> {
+        (key.len() >= size)
+            .then_some(())
+            .ok_or(Error::InvalidKeyData)?;
+
+        let (key1, key2) = key.split_at(size);
+
+        Ok((key1.to_vec(), key2.to_vec()))
     }
 }

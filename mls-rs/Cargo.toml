@@ -161,6 +161,3 @@ required-features = ["benchmark_util"]
 [[test]]
 name = "client_tests"
 required-features = ["test_util"]
-
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(mls_build_async)', 'cfg(coverage_nightly)', 'cfg(awslc)', 'cfg(rustcrypto)'] }

@@ -210,8 +210,14 @@ where
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn derive(&self, ikm: &[u8]) -> Result<(HpkeSecretKey, HpkePublicKey), HpkeError> {
+        let dkp_prk = self
+            .kdf
+            .labeled_extract(&[], b"dkp_prk", ikm)
+            .await
+            .map_err(|e| HpkeError::KdfError(e.into_any_error()))?;
+
         self.kem
-            .derive(ikm)
+            .generate_deterministic(&dkp_prk)
             .await
             .map_err(|e| HpkeError::KemError(e.into_any_error()))
     }

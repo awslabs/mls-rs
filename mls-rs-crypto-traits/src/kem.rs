@@ -27,7 +27,11 @@ pub trait KemType: Send + Sync + Sized {
     /// KEM Id, as specified in RFC 9180, Section 5.1 and Table 2.
     fn kem_id(&self) -> u16;
 
-    async fn derive(&self, ikm: &[u8]) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error>;
+    async fn generate_deterministic(
+        &self,
+        seed: &[u8],
+    ) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error>;
+
     async fn generate(&self) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error>;
     fn public_key_validate(&self, key: &HpkePublicKey) -> Result<(), Self::Error>;
 
@@ -41,6 +45,12 @@ pub trait KemType: Send + Sync + Sized {
     ) -> Result<Vec<u8>, Self::Error>;
 
     fn seed_length_for_derive(&self) -> usize;
+    fn public_key_size(&self) -> usize;
+    fn secret_key_size(&self) -> usize;
+
+    fn enc_size(&self) -> usize {
+        self.public_key_size()
+    }
 }
 
 /// Struct to represent the output of the kem [encap](KemType::encap) function

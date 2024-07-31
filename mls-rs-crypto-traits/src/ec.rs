@@ -4,6 +4,8 @@
 
 use mls_rs_core::crypto::CipherSuite;
 
+use crate::SamplingMethod;
+
 /// Elliptic curve types
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
@@ -51,14 +53,9 @@ impl Curve {
     pub fn from_ciphersuite(cipher_suite: CipherSuite, for_sig: bool) -> Option<Self> {
         match cipher_suite {
             CipherSuite::P256_AES128 => Some(Curve::P256),
-            CipherSuite::P384_AES256 | CipherSuite::KYBER1024 => Some(Curve::P384),
+            CipherSuite::P384_AES256 => Some(Curve::P384),
             CipherSuite::P521_AES256 => Some(Curve::P521),
-            CipherSuite::CURVE25519_AES128
-            | CipherSuite::CURVE25519_CHACHA
-            | CipherSuite::KYBER512
-            | CipherSuite::KYBER768
-                if for_sig =>
-            {
+            CipherSuite::CURVE25519_AES128 | CipherSuite::CURVE25519_CHACHA if for_sig => {
                 Some(Curve::Ed25519)
             }
             CipherSuite::CURVE25519_AES128 | CipherSuite::CURVE25519_CHACHA => Some(Curve::X25519),
@@ -71,11 +68,11 @@ impl Curve {
     }
 
     #[inline(always)]
-    pub fn curve_bitmask(&self) -> Option<u8> {
+    pub fn hpke_sampling_method(&self) -> SamplingMethod {
         match self {
-            Curve::P256 | Curve::P384 => Some(0xFF),
-            Curve::P521 => Some(0x01),
-            _ => None,
+            Curve::P256 | Curve::P384 => SamplingMethod::HpkeWithBitmask(0xFF),
+            Curve::P521 => SamplingMethod::HpkeWithBitmask(0x01),
+            _ => SamplingMethod::HpkeWithoutBitmask,
         }
     }
 }

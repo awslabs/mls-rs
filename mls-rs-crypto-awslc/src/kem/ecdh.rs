@@ -3,7 +3,7 @@ use std::os::raw::c_void;
 use aws_lc_rs::error::Unspecified;
 use aws_lc_sys::{ECDH_compute_key, X25519_keypair, X25519_public_from_private, X25519};
 use mls_rs_core::crypto::{CipherSuite, HpkePublicKey, HpkeSecretKey};
-use mls_rs_crypto_traits::Curve;
+use mls_rs_crypto_traits::{Curve, SamplingMethod};
 
 use crate::{
     ec::{ec_generate, ec_public_key, EcPrivateKey, EcPublicKey, SUPPORTED_NIST_CURVES},
@@ -11,13 +11,26 @@ use crate::{
 };
 
 #[derive(Clone, Copy)]
-pub struct Ecdh(Curve);
+pub struct Ecdh {
+    curve: Curve,
+    sampling_method: SamplingMethod,
+}
 
 impl Ecdh {
     pub fn new(cipher_suite: CipherSuite) -> Option<Self> {
         let curve = Curve::from_ciphersuite(cipher_suite, false)?;
 
-        (SUPPORTED_NIST_CURVES.contains(&curve) || curve == Curve::X25519).then_some(Self(curve))
+        (SUPPORTED_NIST_CURVES.contains(&curve) || curve == Curve::X25519).then_some(Self {
+            curve,
+            sampling_method: curve.hpke_sampling_method(),
+        })
+    }
+
+    pub fn with_sampling_method(self, sampling_method: SamplingMethod) -> Self {
+        Self {
+            sampling_method,
+            ..self
+        }
     }
 }
 
@@ -35,47 +48,51 @@ impl mls_rs_crypto_traits::DhType for Ecdh {
         secret_key: &HpkeSecretKey,
         public_key: &HpkePublicKey,
     ) -> Result<Vec<u8>, Self::Error> {
-        if self.0 == Curve::X25519 {
+        if self.curve == Curve::X25519 {
             x25519(secret_key, public_key)
         } else {
-            ecdh(self.0, secret_key, public_key)
+            ecdh(self.curve, secret_key, public_key)
         }
     }
 
     async fn generate(&self) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
-        let (secret, public) = if self.0 == Curve::X25519 {
+        let (secret, public) = if self.curve == Curve::X25519 {
             x25519_generate()
         } else {
-            ec_generate(self.0)
+            ec_generate(self.curve)
         }?;
 
         Ok((secret.into(), public.into()))
     }
 
     async fn to_public(&self, secret_key: &HpkeSecretKey) -> Result<HpkePublicKey, Self::Error> {
-        let public = if self.0 == Curve::X25519 {
+        let public = if self.curve == Curve::X25519 {
             x25519_public_key(secret_key)
         } else {
-            ec_public_key(self.0, secret_key)
+            ec_public_key(self.curve, secret_key)
         }?;
 
         Ok(public.into())
     }
 
-    fn bitmask_for_rejection_sampling(&self) -> Option<u8> {
-        self.0.curve_bitmask()
+    fn bitmask_for_rejection_sampling(&self) -> SamplingMethod {
+        self.sampling_method
     }
 
     fn secret_key_size(&self) -> usize {
-        self.0.secret_key_size()
+        self.curve.secret_key_size()
     }
 
     fn public_key_validate(&self, key: &HpkePublicKey) -> Result<(), Self::Error> {
-        if self.0 != Curve::X25519 {
-            EcPublicKey::from_bytes(key, self.0)?;
+        if self.curve != Curve::X25519 {
+            EcPublicKey::from_bytes(key, self.curve)?;
         }
 
         Ok(())
+    }
+
+    fn public_key_size(&self) -> usize {
+        self.curve.public_key_size()
     }
 }
 
