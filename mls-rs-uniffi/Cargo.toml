@@ -29,3 +29,6 @@ tokio = { version = "1.36.0", features = ["sync"] }
 [dev-dependencies]
 uniffi_bindgen = { git = "https://github.com/mozilla/uniffi-rs/", rev = "eeb785c", version = "0.27.0" }
 anyhow = "1"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(mls_build_async)'] }

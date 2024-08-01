@@ -14,7 +14,7 @@
 //! ## MLS Protocol Features
 //!
 //! - Multi-party E2EE [group evolution](https://www.rfc-editor.org/rfc/rfc9420.html#name-cryptographic-state-and-evo)
-//! via a propose-then-commit mechanism.
+//!   via a propose-then-commit mechanism.
 //! - Asynchronous by design with pre-computed [key packages](https://www.rfc-editor.org/rfc/rfc9420.html#name-key-packages),
 //!   allowing members to be added to a group while offline.
 //! - Customizable credential system with built in support for X.509 certificates.

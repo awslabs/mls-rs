@@ -4206,23 +4206,25 @@ mod tests {
     #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn commit_required_is_true_when_proposals_pending() {
-        let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).group;
+        let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
+            .await
+            .group;
 
         assert!(!group.commit_required());
 
         group
             .propose_group_context_extensions(ExtensionList::new(), vec![])
+            .await
             .unwrap();
 
         assert!(group.commit_required());
 
-        assert_matches!(
-            group.encrypt_application_message(&[0u8; 32], vec![]),
-            Err(MlsError::CommitRequired)
-        );
+        let res = group.encrypt_application_message(&[0u8; 32], vec![]).await;
 
-        group.commit(vec![]).unwrap();
-        group.apply_pending_commit().unwrap();
+        assert_matches!(res, Err(MlsError::CommitRequired));
+
+        group.commit(vec![]).await.unwrap();
+        group.apply_pending_commit().await.unwrap();
 
         assert!(!group.commit_required());
     }

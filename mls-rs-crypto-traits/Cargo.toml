@@ -20,3 +20,6 @@ maybe-async = "0.2.10"
 
 [target.'cfg(mls_build_async)'.dependencies]
 async-trait = "0.1.74"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(mls_build_async)'] }

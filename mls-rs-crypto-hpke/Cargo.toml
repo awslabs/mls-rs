@@ -39,3 +39,6 @@ async-trait = "0.1.74"
 
 [target.'cfg(mls_build_async)'.dev-dependencies]
 futures-test = "0.3.25"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(mls_build_async)'] }

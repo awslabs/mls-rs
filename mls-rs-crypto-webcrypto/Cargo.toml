@@ -32,3 +32,5 @@ futures-test = "0.3.25"
 serde_json = "^1.0"
 hex = { version = "^0.4.3", features = ["serde"] }
 
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(mls_build_async)'] }
