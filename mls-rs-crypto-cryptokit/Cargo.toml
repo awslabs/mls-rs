@@ -8,6 +8,10 @@ repository = "https://github.com/awslabs/mls-rs"
 keywords = ["mls", "mls-rs", "CryptoKit"]
 license = "Apache-2.0 OR MIT"
 
+[features]
+default = ["std"]
+std = ["dep:thiserror", "mls-rs-core/std", "mls-rs-crypto-traits/std"]
+
 [build-dependencies]
 # For parsing Swift outputs to build and link the bridge library
 serde = { version = "1.0", features = ["derive"] }
@@ -22,6 +26,7 @@ mls-rs-core = { path = "../mls-rs-core", version = "0.19.0", features = ["test_s
 maybe-async = "0.2.10"
 mls-rs-core = { path = "../mls-rs-core", default-features = false, version = "0.19.0" }
 mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", default-features = false, version = "0.11.0" }
+thiserror = { version = "1.0.63", optional = true }
 zeroize = { version = "1", default-features = false, features = ["alloc", "zeroize_derive"] }
 
 [target.'cfg(mls_build_async)'.dependencies]
