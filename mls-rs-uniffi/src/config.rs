@@ -9,7 +9,7 @@ use mls_rs::{
 use mls_rs_crypto_openssl::OpensslCryptoProvider;
 
 use self::group_state::{GroupStateStorage, GroupStateStorageAdapter};
-use crate::Error;
+use crate::{Error, GroupId};
 
 pub mod group_state;
 
@@ -28,11 +28,11 @@ impl mls_rs_core::group::GroupStateStorage for ClientGroupStorage {
     type Error = Error;
 
     async fn state(&self, group_id: &[u8]) -> Result<Option<Vec<u8>>, Self::Error> {
-        self.0.state(group_id.to_vec()).await
+        self.0.state(GroupId::from(group_id)).await
     }
 
     async fn epoch(&self, group_id: &[u8], epoch_id: u64) -> Result<Option<Vec<u8>>, Self::Error> {
-        self.0.epoch(group_id.to_vec(), epoch_id).await
+        self.0.epoch(GroupId::from(group_id), epoch_id).await
     }
 
     async fn write(
@@ -43,7 +43,7 @@ impl mls_rs_core::group::GroupStateStorage for ClientGroupStorage {
     ) -> Result<(), Self::Error> {
         self.0
             .write(
-                state.id,
+                GroupId::new(state.id),
                 state.data,
                 inserts.into_iter().map(Into::into).collect(),
                 updates.into_iter().map(Into::into).collect(),
@@ -52,7 +52,7 @@ impl mls_rs_core::group::GroupStateStorage for ClientGroupStorage {
     }
 
     async fn max_epoch_id(&self, group_id: &[u8]) -> Result<Option<u64>, Self::Error> {
-        self.0.max_epoch_id(group_id.to_vec()).await
+        self.0.max_epoch_id(GroupId::from(group_id)).await
     }
 }
 
