@@ -1273,6 +1273,14 @@ where
         self.pending_commit = None
     }
 
+    /// Returns true if the client has received or issued a proposal
+    /// that needs to be committed to with [`Group::commit`] before encrypting an
+    /// application message.
+    #[cfg(feature = "by_ref_proposal")]
+    pub fn commit_required(&self) -> bool {
+        !self.state.proposals.is_empty()
+    }
+
     /// Process an inbound message for this group.
     ///
     /// # Warning
@@ -4193,5 +4201,29 @@ mod tests {
 
         assert!(groups[0].group.state.proposals.proposals.is_empty());
         assert!(groups[0].group.state.proposals.own_proposals.is_empty());
+    }
+
+    #[cfg(feature = "by_ref_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn commit_required_is_true_when_proposals_pending() {
+        let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).group;
+
+        assert!(!group.commit_required());
+
+        group
+            .propose_group_context_extensions(ExtensionList::new(), vec![])
+            .unwrap();
+
+        assert!(group.commit_required());
+
+        assert_matches!(
+            group.encrypt_application_message(&[0u8; 32], vec![]),
+            Err(MlsError::CommitRequired)
+        );
+
+        group.commit(vec![]).unwrap();
+        group.apply_pending_commit().unwrap();
+
+        assert!(!group.commit_required());
     }
 }
