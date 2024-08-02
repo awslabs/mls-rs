@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1721848811659,
+  "lastUpdate": 1722580903542,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -15647,6 +15647,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 130155,
             "range": "± 1230",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "tomleavy@amazon.com",
+            "name": "Tom Leavy",
+            "username": "tomleavy"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7ccb9d89ec66a4185b5bd71595cc88e5b66aa5d4",
+          "message": "Add commit_required function on Group (#179)\n\n* Add commit_required function on Group\r\n\r\n* Fix rust 1.80 clippy warnings\r\n\r\n* Fix additional clippy warnings\r\n\r\n* fix feature flag build for by_ref_proposal",
+          "timestamp": "2024-08-02T08:37:03+02:00",
+          "tree_id": "8e314ce9eb50e41f0580612df66e8bc63f15b2a9",
+          "url": "https://github.com/awslabs/mls-rs/commit/7ccb9d89ec66a4185b5bd71595cc88e5b66aa5d4"
+        },
+        "date": 1722580902892,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 508458,
+            "range": "± 8902",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 516571,
+            "range": "± 9861",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 577839,
+            "range": "± 48796",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1253527,
+            "range": "± 35989",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7698828,
+            "range": "± 53268",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1117981,
+            "range": "± 63540",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1193792,
+            "range": "± 50674",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1308986,
+            "range": "± 48927",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 737053,
+            "range": "± 18380",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 818181,
+            "range": "± 9548",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 906778,
+            "range": "± 7987",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 20815,
+            "range": "± 281",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 67916,
+            "range": "± 1244",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 131052,
+            "range": "± 2164",
             "unit": "ns/iter"
           }
         ]
