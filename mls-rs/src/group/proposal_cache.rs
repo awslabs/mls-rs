@@ -110,7 +110,7 @@ impl ProposalCache {
         self.own_proposals.clear();
     }
 
-    #[cfg(feature = "private_message")]
+    #[cfg(feature = "by_ref_proposal")]
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.proposals.is_empty()

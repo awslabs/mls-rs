@@ -1,6 +1,6 @@
 [package]
 name = "mls-rs"
-version = "0.41.0"
+version = "0.41.1"
 edition = "2021"
 description = "An implementation of Messaging Layer Security (RFC 9420)"
 homepage = "https://github.com/awslabs/mls-rs"
@@ -156,3 +156,6 @@ required-features = ["benchmark_util"]
 [[test]]
 name = "client_tests"
 required-features = ["test_util"]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(mls_build_async)', 'cfg(coverage_nightly)', 'cfg(awslc)', 'cfg(rustcrypto)'] }
