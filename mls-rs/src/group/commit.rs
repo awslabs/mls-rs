@@ -80,12 +80,12 @@ pub(crate) struct CommitGeneration {
 pub struct CommitSecrets(pub(crate) CommitGeneration);
 
 impl CommitSecrets {
-    /// Serialize the commit secrets to bytes
+    /// Deserialize the commit secrets from bytes
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, MlsError> {
         Ok(CommitGeneration::mls_decode(&mut &*bytes).map(Self)?)
     }
 
-    /// Deserialize the commit secrets from bytes
+    /// Serialize the commit secrets to bytes
     pub fn to_bytes(&self) -> Result<Vec<u8>, MlsError> {
         Ok(self.0.mls_encode_to_vec()?)
     }
@@ -353,7 +353,7 @@ where
     }
 
     /// The same function as `GroupBuilder::build` except the secrets generated
-    /// for the commit outputted instead of being cached internally.
+    /// for the commit are outputted instead of being cached internally.
     ///
     /// A detached commit can be applied using `Group::apply_detached_commit`.
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -427,7 +427,7 @@ where
     }
 
     /// The same function as `Group::commit` except the secrets generated
-    /// for the commit outputted instead of being cached internally.
+    /// for the commit are outputted instead of being cached internally.
     ///
     /// A detached commit can be applied using `Group::apply_detached_commit`.
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
