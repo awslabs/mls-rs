@@ -218,13 +218,18 @@ pub struct NewMemberInfo {
     /// Group info extensions found within the Welcome message used to join
     /// the group.
     pub group_info_extensions: ExtensionList,
+    /// The group member who generated the Commit adding the joiner to the
+    /// group. This may not be the party who generated the corresponding
+    /// add proposal
+    pub sender: u32,
 }
 
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl NewMemberInfo {
-    pub(crate) fn new(group_info_extensions: ExtensionList) -> Self {
+    pub(crate) fn new(group_info_extensions: ExtensionList, sender: u32) -> Self {
         let mut new_member_info = Self {
             group_info_extensions,
+            sender,
         };
 
         new_member_info.ungrease();
@@ -629,7 +634,10 @@ where
             signer,
         };
 
-        Ok((group, NewMemberInfo::new(group_info.extensions)))
+        Ok((
+            group,
+            NewMemberInfo::new(group_info.extensions, *group_info.signer),
+        ))
     }
 
     #[inline(always)]
