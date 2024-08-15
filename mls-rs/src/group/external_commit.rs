@@ -246,7 +246,7 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
             }));
         }
 
-        let commit_output = group
+        let (commit_output, pending_commit) = group
             .commit_internal(
                 proposals,
                 Some(&leaf_node),
@@ -257,6 +257,7 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
             )
             .await?;
 
+        group.pending_commit = Some(pending_commit);
         group.apply_pending_commit().await?;
 
         Ok((group, commit_output.commit_message))

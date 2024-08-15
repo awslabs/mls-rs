@@ -65,11 +65,30 @@ pub(crate) struct Commit {
 
 #[derive(Clone, PartialEq, Debug, MlsEncode, MlsDecode, MlsSize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub(super) struct CommitGeneration {
+pub(crate) struct CommitGeneration {
     pub content: AuthenticatedContent,
     pub pending_private_tree: TreeKemPrivate,
     pub pending_commit_secret: PathSecret,
     pub commit_message_hash: MessageHash,
+}
+
+#[cfg_attr(
+    all(feature = "ffi", not(test)),
+    safer_ffi_gen::ffi_type(clone, opaque)
+)]
+#[derive(Clone)]
+pub struct CommitSecrets(pub(crate) CommitGeneration);
+
+impl CommitSecrets {
+    /// Deserialize the commit secrets from bytes
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, MlsError> {
+        Ok(CommitGeneration::mls_decode(&mut &*bytes).map(Self)?)
+    }
+
+    /// Serialize the commit secrets to bytes
+    pub fn to_bytes(&self) -> Result<Vec<u8>, MlsError> {
+        Ok(self.0.mls_encode_to_vec()?)
+    }
 }
 
 #[cfg_attr(
@@ -316,7 +335,8 @@ where
     /// [proposal rules](crate::client_builder::ClientBuilder::mls_rules).
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn build(self) -> Result<CommitOutput, MlsError> {
-        self.group
+        let (output, pending_commit) = self
+            .group
             .commit_internal(
                 self.proposals,
                 None,
@@ -325,7 +345,32 @@ where
                 self.new_signer,
                 self.new_signing_identity,
             )
-            .await
+            .await?;
+
+        self.group.pending_commit = Some(pending_commit);
+
+        Ok(output)
+    }
+
+    /// The same function as `GroupBuilder::build` except the secrets generated
+    /// for the commit are outputted instead of being cached internally.
+    ///
+    /// A detached commit can be applied using `Group::apply_detached_commit`.
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn build_detached(self) -> Result<(CommitOutput, CommitSecrets), MlsError> {
+        let (output, pending_commit) = self
+            .group
+            .commit_internal(
+                self.proposals,
+                None,
+                self.authenticated_data,
+                self.group_info_extensions,
+                self.new_signer,
+                self.new_signing_identity,
+            )
+            .await?;
+
+        Ok((output, CommitSecrets(pending_commit)))
     }
 }
 
@@ -375,15 +420,25 @@ where
     /// or [`ReInit`](crate::group::proposal::Proposal::ReInit) are part of the commit.
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn commit(&mut self, authenticated_data: Vec<u8>) -> Result<CommitOutput, MlsError> {
-        self.commit_internal(
-            vec![],
-            None,
-            authenticated_data,
-            Default::default(),
-            None,
-            None,
-        )
-        .await
+        self.commit_builder()
+            .authenticated_data(authenticated_data)
+            .build()
+            .await
+    }
+
+    /// The same function as `Group::commit` except the secrets generated
+    /// for the commit are outputted instead of being cached internally.
+    ///
+    /// A detached commit can be applied using `Group::apply_detached_commit`.
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn commit_detached(
+        &mut self,
+        authenticated_data: Vec<u8>,
+    ) -> Result<(CommitOutput, CommitSecrets), MlsError> {
+        self.commit_builder()
+            .authenticated_data(authenticated_data)
+            .build_detached()
+            .await
     }
 
     /// Create a new commit builder that can include proposals
@@ -401,7 +456,6 @@ where
 
     /// Returns commit and optional [`MlsMessage`] containing a welcome message
     /// for newly added members.
-    #[allow(clippy::too_many_arguments)]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(super) async fn commit_internal(
         &mut self,
@@ -411,7 +465,7 @@ where
         mut welcome_group_info_extensions: ExtensionList,
         new_signer: Option<SignatureSecretKey>,
         new_signing_identity: Option<SigningIdentity>,
-    ) -> Result<CommitOutput, MlsError> {
+    ) -> Result<(CommitOutput, CommitGeneration), MlsError> {
         if self.pending_commit.is_some() {
             return Err(MlsError::ExistingPendingCommit);
         }
@@ -733,8 +787,6 @@ where
                 .await?,
         };
 
-        self.pending_commit = Some(pending_commit);
-
         let ratchet_tree = (!commit_options.ratchet_tree_extension)
             .then(|| ExportedTree::new(provisional_state.public_tree.nodes));
 
@@ -742,14 +794,16 @@ where
             self.signer = signer;
         }
 
-        Ok(CommitOutput {
+        let output = CommitOutput {
             commit_message,
             welcome_messages,
             ratchet_tree,
             external_commit_group_info,
             #[cfg(feature = "by_ref_proposal")]
             unused_proposals: provisional_state.unused_proposals,
-        })
+        };
+
+        Ok((output, pending_commit))
     }
 
     // Construct a GroupInfo reflecting the new state
@@ -836,7 +890,10 @@ mod tests {
 
     use crate::{
         crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider},
-        group::{mls_rules::DefaultMlsRules, test_utils::test_group_custom},
+        group::{
+            mls_rules::DefaultMlsRules,
+            test_utils::{test_group, test_group_custom},
+        },
         mls_rules::CommitOptions,
         Client,
     };
@@ -1566,5 +1623,17 @@ mod tests {
             .identity_provider(IdentityProviderWithExtension(BasicIdentityProvider::new()))
             .signing_identity(identity, secret_key, TEST_CIPHER_SUITE)
             .build()
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn detached_commit() {
+        let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
+            .await
+            .group;
+
+        let (_commit, secrets) = group.commit_builder().build_detached().await.unwrap();
+        assert!(group.pending_commit.is_none());
+        group.apply_detached_commit(secrets).await.unwrap();
+        assert_eq!(group.context().epoch, 1);
     }
 }

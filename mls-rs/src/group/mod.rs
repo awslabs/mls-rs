@@ -270,7 +270,7 @@ where
     key_schedule: KeySchedule,
     #[cfg(feature = "by_ref_proposal")]
     pending_updates:
-        crate::map::SmallMap<HpkePublicKey, (HpkeSecretKey, Option<SignatureSecretKey>)>, // Hash of leaf node hpke public key to secret key
+        crate::map::SmallMap<HpkePublicKey, (HpkeSecretKey, Option<SignatureSecretKey>)>,
     pending_commit: Option<CommitGeneration>,
     #[cfg(feature = "psk")]
     previous_psk: Option<PskSecretInput>,
@@ -1258,12 +1258,25 @@ where
     /// [`CommitBuilder::build`].
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn apply_pending_commit(&mut self) -> Result<CommitMessageDescription, MlsError> {
-        let pending_commit = self
+        let content = self
             .pending_commit
-            .clone()
-            .ok_or(MlsError::PendingCommitNotFound)?;
+            .as_ref()
+            .ok_or(MlsError::PendingCommitNotFound)?
+            .content
+            .clone();
 
-        self.process_commit(pending_commit.content, None).await
+        self.process_commit(content, None).await
+    }
+
+    /// Apply a detached commit that was created by [`Group::commit_detached`] or
+    /// [`CommitBuilder::build_detached`].
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn apply_detached_commit(
+        &mut self,
+        commit_secrets: CommitSecrets,
+    ) -> Result<CommitMessageDescription, MlsError> {
+        self.pending_commit = Some(commit_secrets.0);
+        self.apply_pending_commit().await
     }
 
     /// Returns true if a commit has been created but not yet applied
