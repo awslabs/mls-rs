@@ -268,25 +268,25 @@ mod tests {
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn snapshot_restore(group: TestGroup) {
-        let snapshot = group.group.snapshot();
+        let snapshot = group.snapshot();
 
-        let group_restored = Group::from_snapshot(group.group.config.clone(), snapshot)
+        let group_restored = Group::from_snapshot(group.config.clone(), snapshot)
             .await
             .unwrap();
 
-        assert!(Group::equal_group_state(&group.group, &group_restored));
+        assert!(Group::equal_group_state(&group, &group_restored));
 
         #[cfg(feature = "tree_index")]
         assert!(group_restored
             .state
             .public_tree
-            .equal_internals(&group.group.state.public_tree))
+            .equal_internals(&group.state.public_tree))
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn snapshot_with_pending_commit_can_be_serialized_to_json() {
         let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
-        group.group.commit(vec![]).await.unwrap();
+        group.commit(vec![]).await.unwrap();
 
         snapshot_restore(group).await
     }
@@ -300,7 +300,7 @@ mod tests {
         let update_proposal = group.update_proposal().await;
 
         // This will insert the proposal into the internal proposal cache
-        let _ = group.group.proposal_message(update_proposal, vec![]).await;
+        let _ = group.proposal_message(update_proposal, vec![]).await;
 
         snapshot_restore(group).await
     }

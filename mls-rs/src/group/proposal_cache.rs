@@ -1374,7 +1374,7 @@ mod tests {
 
         let kem_output = vec![0; cipher_suite_provider.kdf_extract_size()];
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
-        let public_tree = &group.group.state.public_tree;
+        let public_tree = &group.state.public_tree;
 
         let res = cache
             .resolve_for_commit_default(
@@ -1383,7 +1383,7 @@ mod tests {
                     ExternalInit { kem_output },
                 )))],
                 None,
-                &group.group.context().extensions,
+                &group.context().extensions,
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 public_tree,
@@ -1414,14 +1414,14 @@ mod tests {
         );
 
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
-        let public_tree = &group.group.state.public_tree;
+        let public_tree = &group.state.public_tree;
 
         let res = cache
             .resolve_for_commit_default(
                 Sender::NewMemberCommit,
                 vec![ProposalOrRef::Reference(proposal_ref)],
                 Some(&test_node().await),
-                &group.group.context().extensions,
+                &group.context().extensions,
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 public_tree,
@@ -1439,7 +1439,7 @@ mod tests {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let kem_output = vec![0; cipher_suite_provider.kdf_extract_size()];
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
-        let public_tree = &group.group.state.public_tree;
+        let public_tree = &group.state.public_tree;
 
         let res = cache
             .resolve_for_commit_default(
@@ -1454,7 +1454,7 @@ mod tests {
                 .map(|p| ProposalOrRef::Proposal(Box::new(p)))
                 .collect(),
                 Some(&test_node().await),
-                &group.group.context().extensions,
+                &group.context().extensions,
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 public_tree,
@@ -1475,7 +1475,7 @@ mod tests {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let kem_output = vec![0; cipher_suite_provider.kdf_extract_size()];
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
-        let public_tree = &group.group.state.public_tree;
+        let public_tree = &group.state.public_tree;
 
         cache
             .resolve_for_commit_default(
@@ -1488,7 +1488,7 @@ mod tests {
                 .map(|p| ProposalOrRef::Proposal(Box::new(p)))
                 .collect(),
                 Some(&test_node().await),
-                &group.group.context().extensions,
+                &group.context().extensions,
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 public_tree,
@@ -1519,7 +1519,7 @@ mod tests {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let kem_output = vec![0; cipher_suite_provider.kdf_extract_size()];
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
-        let group_extensions = group.group.context().extensions.clone();
+        let group_extensions = group.context().extensions.clone();
         let mut public_tree = group.group.state.public_tree;
 
         let foo = get_basic_test_node(TEST_CIPHER_SUITE, "foo").await;
@@ -1573,7 +1573,7 @@ mod tests {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let kem_output = vec![0; cipher_suite_provider.kdf_extract_size()];
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
-        let group_extensions = group.group.context().extensions.clone();
+        let group_extensions = group.context().extensions.clone();
         let mut public_tree = group.group.state.public_tree;
 
         let node = get_basic_test_node(TEST_CIPHER_SUITE, "bar").await;
@@ -1622,7 +1622,7 @@ mod tests {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let kem_output = vec![0; cipher_suite_provider.kdf_extract_size()];
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
-        let group_extensions = group.group.context().extensions.clone();
+        let group_extensions = group.context().extensions.clone();
         let mut public_tree = group.group.state.public_tree;
 
         let node = get_basic_test_node(TEST_CIPHER_SUITE, "foo").await;
@@ -1717,14 +1717,14 @@ mod tests {
         let cache = make_proposal_cache();
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
-        let public_tree = &group.group.state.public_tree;
+        let public_tree = &group.state.public_tree;
 
         let res = cache
             .resolve_for_commit_default(
                 Sender::NewMemberCommit,
                 Vec::new(),
                 Some(&test_node().await),
-                &group.group.context().extensions,
+                &group.context().extensions,
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 public_tree,
