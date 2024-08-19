@@ -7,25 +7,22 @@ use alloc::vec::Vec;
 use mls_rs_codec::{MlsDecode, MlsEncode};
 use mls_rs_core::crypto::{CipherSuite, CipherSuiteProvider, SignaturePublicKey};
 
-use crate::{
-    client::test_utils::{TestClientConfig, TEST_PROTOCOL_VERSION},
-    crypto::test_utils::{test_cipher_suite_provider, try_test_cipher_suite_provider},
-    group::{
-        confirmation_tag::ConfirmationTag,
-        epoch::EpochSecrets,
-        framing::{Content, WireFormat},
-        message_processor::{EventOrContent, MessageProcessor},
-        mls_rules::EncryptionOptions,
-        padding::PaddingMode,
-        proposal::{Proposal, RemoveProposal},
-        secret_tree::test_utils::get_test_tree,
-        test_utils::{random_bytes, test_group_custom_config},
-        AuthenticatedContent, Commit, Group, GroupContext, MlsMessage, Sender,
-    },
-    mls_rules::DefaultMlsRules,
-    test_utils::is_edwards,
-    tree_kem::{leaf_node::test_utils::get_basic_test_node, node::LeafIndex},
-};
+use crate::client::test_utils::{TestClientConfig, TEST_PROTOCOL_VERSION};
+use crate::crypto::test_utils::{test_cipher_suite_provider, try_test_cipher_suite_provider};
+use crate::group::confirmation_tag::ConfirmationTag;
+use crate::group::epoch::EpochSecrets;
+use crate::group::framing::{Content, WireFormat};
+use crate::group::message_processor::{EventOrContent, MessageProcessor};
+use crate::group::mls_rules::EncryptionOptions;
+use crate::group::padding::PaddingMode;
+use crate::group::proposal::{Proposal, RemoveProposal};
+use crate::group::secret_tree::test_utils::get_test_tree;
+use crate::group::test_utils::{random_bytes, test_group_custom_config};
+use crate::group::{AuthenticatedContent, Commit, Group, GroupContext, MlsMessage, Sender};
+use crate::mls_rules::DefaultMlsRules;
+use crate::test_utils::is_edwards;
+use crate::tree_kem::leaf_node::test_utils::get_basic_test_node;
+use crate::tree_kem::node::LeafIndex;
 
 const FRAMING_N_LEAVES: u32 = 2;
 

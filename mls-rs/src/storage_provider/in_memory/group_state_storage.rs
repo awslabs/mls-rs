@@ -10,18 +10,14 @@ use alloc::sync::Arc;
 #[cfg(mls_build_async)]
 use alloc::boxed::Box;
 use alloc::vec::Vec;
-use core::{
-    convert::Infallible,
-    fmt::{self, Debug},
-};
+use core::convert::Infallible;
+use core::fmt::{self, Debug};
 use mls_rs_core::group::{EpochRecord, GroupState, GroupStateStorage};
 #[cfg(not(target_has_atomic = "ptr"))]
 use portable_atomic_util::Arc;
 
-use crate::{
-    client::MlsError,
-    map::{LargeMap, LargeMapEntry},
-};
+use crate::client::MlsError;
+use crate::map::{LargeMap, LargeMapEntry};
 
 #[cfg(feature = "std")]
 use std::sync::{Mutex, MutexGuard};
@@ -226,11 +222,13 @@ impl GroupStateStorage for InMemoryGroupStateStorage {
 
 #[cfg(all(test, feature = "prior_epoch"))]
 mod tests {
-    use alloc::{format, vec, vec::Vec};
+    use alloc::vec::Vec;
+    use alloc::{format, vec};
     use assert_matches::assert_matches;
 
     use super::{InMemoryGroupData, InMemoryGroupStateStorage};
-    use crate::{client::MlsError, group::test_utils::TEST_GROUP};
+    use crate::client::MlsError;
+    use crate::group::test_utils::TEST_GROUP;
 
     use mls_rs_core::group::{EpochRecord, GroupState, GroupStateStorage};
 

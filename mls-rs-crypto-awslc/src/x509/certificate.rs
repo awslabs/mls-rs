@@ -2,12 +2,10 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use std::{
-    ffi::{c_long, c_void},
-    mem,
-    ptr::null_mut,
-    time::Duration,
-};
+use std::ffi::{c_long, c_void};
+use std::mem;
+use std::ptr::null_mut;
+use std::time::Duration;
 
 use aws_lc_sys::{
     d2i_X509, i2d_X509, i2d_X509_NAME, ASN1_INTEGER_free, ASN1_INTEGER_to_BN, ASN1_TIME_free,
@@ -20,24 +18,18 @@ use aws_lc_sys::{
     X509_set_issuer_name, X509_set_notAfter, X509_set_notBefore, X509_set_pubkey,
     X509_set_serialNumber, X509_set_subject_name, X509_set_version, X509_sign, ASN1_TIME, X509,
 };
-use mls_rs_core::{
-    crypto::{CipherSuite, SignaturePublicKey, SignatureSecretKey},
-    time::MlsTime,
-};
+use mls_rs_core::crypto::{CipherSuite, SignaturePublicKey, SignatureSecretKey};
+use mls_rs_core::time::MlsTime;
 use mls_rs_identity_x509::{DerCertificate, SubjectAltName, SubjectComponent};
 
-use crate::{
-    check_int_return, check_non_null, check_non_null_const, check_res, ecdsa::AwsLcEcdsa,
-    AwsLcCryptoError,
-};
+use crate::ecdsa::AwsLcEcdsa;
+use crate::{check_int_return, check_non_null, check_non_null_const, check_res, AwsLcCryptoError};
 
-use super::{
-    component::{
-        components_from_name, GeneralName, Stack, StackItem, X509Extension, X509ExtensionContext,
-        X509Name,
-    },
-    request::digest_for_curve,
+use super::component::{
+    components_from_name, GeneralName, Stack, StackItem, X509Extension, X509ExtensionContext,
+    X509Name,
 };
+use super::request::digest_for_curve;
 
 pub struct Certificate(*mut X509);
 
@@ -346,19 +338,16 @@ unsafe fn posix_to_asn1_time(time: MlsTime) -> Result<*mut ASN1_TIME, AwsLcCrypt
 
 #[cfg(test)]
 mod tests {
-    use mls_rs_core::{crypto::CipherSuite, time::MlsTime};
+    use mls_rs_core::crypto::CipherSuite;
+    use mls_rs_core::time::MlsTime;
     use mls_rs_identity_x509::{
         CertificateChain, SubjectAltName, SubjectComponent, X509CredentialValidator,
     };
 
-    use crate::{
-        ecdsa::AwsLcEcdsa,
-        x509::{
-            component::{KeyUsage, X509Extension},
-            test_utils::{test_root_ca, test_root_ca_key},
-            CertificateValidator,
-        },
-    };
+    use crate::ecdsa::AwsLcEcdsa;
+    use crate::x509::component::{KeyUsage, X509Extension};
+    use crate::x509::test_utils::{test_root_ca, test_root_ca_key};
+    use crate::x509::CertificateValidator;
 
     use super::Certificate;
 

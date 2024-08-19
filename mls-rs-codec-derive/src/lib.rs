@@ -4,10 +4,8 @@
 
 use std::str::FromStr;
 
-use darling::{
-    ast::{self, Fields},
-    FromDeriveInput, FromField, FromVariant,
-};
+use darling::ast::{self, Fields};
+use darling::{FromDeriveInput, FromField, FromVariant};
 use proc_macro2::{Literal, TokenStream};
 use quote::quote;
 use syn::{

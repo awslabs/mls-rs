@@ -3,15 +3,11 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use criterion::{BatchSize, BenchmarkId, Criterion};
-use mls_rs::{
-    client_builder::MlsConfig,
-    identity::{
-        basic::{BasicCredential, BasicIdentityProvider},
-        SigningIdentity,
-    },
-    mls_rules::{CommitOptions, DefaultMlsRules},
-    CipherSuite, CipherSuiteProvider, Client, CryptoProvider,
-};
+use mls_rs::client_builder::MlsConfig;
+use mls_rs::identity::basic::{BasicCredential, BasicIdentityProvider};
+use mls_rs::identity::SigningIdentity;
+use mls_rs::mls_rules::{CommitOptions, DefaultMlsRules};
+use mls_rs::{CipherSuite, CipherSuiteProvider, Client, CryptoProvider};
 use mls_rs_crypto_openssl::OpensslCryptoProvider;
 
 fn bench(c: &mut Criterion) {

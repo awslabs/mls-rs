@@ -4,14 +4,12 @@
 
 use mls_rs_core::group::Member;
 
-use super::{
-    confirmation_tag::ConfirmationTag, member_from_leaf_node, proposal::ReInitProposal,
-    transcript_hash::InterimTranscriptHash,
-};
-use crate::{
-    group::{GroupContext, TreeKemPublic},
-    tree_kem::node::LeafIndex,
-};
+use super::confirmation_tag::ConfirmationTag;
+use super::member_from_leaf_node;
+use super::proposal::ReInitProposal;
+use super::transcript_hash::InterimTranscriptHash;
+use crate::group::{GroupContext, TreeKemPublic};
+use crate::tree_kem::node::LeafIndex;
 
 #[cfg_attr(
     all(feature = "ffi", not(test)),

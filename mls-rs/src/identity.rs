@@ -20,13 +20,11 @@ pub(crate) mod test_utils {
     use alloc::boxed::Box;
     use alloc::vec;
     use alloc::vec::Vec;
-    use mls_rs_core::{
-        crypto::{CipherSuite, CipherSuiteProvider, SignatureSecretKey},
-        error::IntoAnyError,
-        extension::ExtensionList,
-        identity::{Credential, CredentialType, IdentityProvider, SigningIdentity},
-        time::MlsTime,
-    };
+    use mls_rs_core::crypto::{CipherSuite, CipherSuiteProvider, SignatureSecretKey};
+    use mls_rs_core::error::IntoAnyError;
+    use mls_rs_core::extension::ExtensionList;
+    use mls_rs_core::identity::{Credential, CredentialType, IdentityProvider, SigningIdentity};
+    use mls_rs_core::time::MlsTime;
 
     use crate::crypto::test_utils::test_cipher_suite_provider;
 

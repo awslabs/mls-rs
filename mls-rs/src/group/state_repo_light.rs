@@ -7,11 +7,9 @@ use crate::key_package::KeyPackageRef;
 
 use alloc::vec::Vec;
 use mls_rs_codec::MlsEncode;
-use mls_rs_core::{
-    error::IntoAnyError,
-    group::{GroupState, GroupStateStorage},
-    key_package::KeyPackageStorage,
-};
+use mls_rs_core::error::IntoAnyError;
+use mls_rs_core::group::{GroupState, GroupStateStorage};
+use mls_rs_core::key_package::KeyPackageStorage;
 
 use super::snapshot::Snapshot;
 
@@ -69,13 +67,12 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
-        group::{
-            snapshot::{test_utils::get_test_snapshot, Snapshot},
-            test_utils::{test_member, TEST_GROUP},
-        },
-        storage_provider::in_memory::{InMemoryGroupStateStorage, InMemoryKeyPackageStorage},
+    use crate::client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION};
+    use crate::group::snapshot::test_utils::get_test_snapshot;
+    use crate::group::snapshot::Snapshot;
+    use crate::group::test_utils::{test_member, TEST_GROUP};
+    use crate::storage_provider::in_memory::{
+        InMemoryGroupStateStorage, InMemoryKeyPackageStorage,
     };
 
     use alloc::vec;

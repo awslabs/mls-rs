@@ -7,13 +7,14 @@ use crate::client_builder::{recreate_config, BaseConfig, ClientBuilder, MakeConf
 use crate::client_config::ClientConfig;
 use crate::group::framing::MlsMessage;
 
+use crate::group::snapshot::Snapshot;
 #[cfg(feature = "by_ref_proposal")]
 use crate::group::{
     framing::{Content, MlsMessagePayload, PublicMessage, Sender, WireFormat},
     message_signature::AuthenticatedContent,
     proposal::{AddProposal, Proposal},
 };
-use crate::group::{snapshot::Snapshot, ExportedTree, Group, NewMemberInfo};
+use crate::group::{ExportedTree, Group, NewMemberInfo};
 use crate::identity::SigningIdentity;
 use crate::key_package::{KeyPackageGeneration, KeyPackageGenerator};
 use crate::protocol_version::ProtocolVersion;
@@ -784,22 +785,16 @@ mod tests {
     use super::test_utils::*;
 
     use super::*;
-    use crate::{
-        crypto::test_utils::TestCryptoProvider,
-        identity::test_utils::{get_test_basic_credential, get_test_signing_identity},
-        tree_kem::leaf_node::LeafNodeSource,
-    };
+    use crate::crypto::test_utils::TestCryptoProvider;
+    use crate::identity::test_utils::{get_test_basic_credential, get_test_signing_identity};
+    use crate::tree_kem::leaf_node::LeafNodeSource;
     use assert_matches::assert_matches;
 
-    use crate::{
-        group::{
-            message_processor::ProposalMessageDescription,
-            proposal::Proposal,
-            test_utils::{test_group, test_group_custom_config},
-            ReceivedMessage,
-        },
-        psk::{ExternalPskId, PreSharedKey},
-    };
+    use crate::group::message_processor::ProposalMessageDescription;
+    use crate::group::proposal::Proposal;
+    use crate::group::test_utils::{test_group, test_group_custom_config};
+    use crate::group::ReceivedMessage;
+    use crate::psk::{ExternalPskId, PreSharedKey};
 
     use alloc::vec;
 
@@ -893,7 +888,8 @@ mod tests {
         // interim_transcript_hash to be computed from the confirmed_transcript_hash and
         // confirmation_tag, which is not the case for the initial interim_transcript_hash.
 
-        use crate::group::{message_processor::CommitEffect, CommitMessageDescription};
+        use crate::group::message_processor::CommitEffect;
+        use crate::group::CommitMessageDescription;
 
         let psk = PreSharedKey::from(b"psk".to_vec());
         let psk_id = ExternalPskId::new(b"psk id".to_vec());

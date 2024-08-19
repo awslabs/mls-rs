@@ -12,20 +12,20 @@ use by_ref_proposal::ByRefProposalSender;
 
 mod branch_reinit;
 
+use mls_rs::client_builder::{
+    BaseInMemoryConfig, ClientBuilder, WithCryptoProvider, WithIdentityProvider, WithMlsRules,
+};
+use mls_rs::crypto::SignatureSecretKey;
+use mls_rs::external_client::ExternalClient;
+use mls_rs::group::{CommitEffect, ExportedTree, Member, ReceivedMessage, Roster};
+use mls_rs::identity::basic::{BasicCredential, BasicIdentityProvider};
+use mls_rs::identity::{Credential, SigningIdentity};
+use mls_rs::mls_rules::{
+    CommitDirection, CommitOptions, CommitSource, EncryptionOptions, ProposalBundle,
+};
+use mls_rs::psk::ExternalPskId;
+use mls_rs::storage_provider::in_memory::{InMemoryKeyPackageStorage, InMemoryPreSharedKeyStorage};
 use mls_rs::{
-    client_builder::{
-        BaseInMemoryConfig, ClientBuilder, WithCryptoProvider, WithIdentityProvider, WithMlsRules,
-    },
-    crypto::SignatureSecretKey,
-    external_client::ExternalClient,
-    group::{CommitEffect, ExportedTree, Member, ReceivedMessage, Roster},
-    identity::{
-        basic::{BasicCredential, BasicIdentityProvider},
-        Credential, SigningIdentity,
-    },
-    mls_rules::{CommitDirection, CommitOptions, CommitSource, EncryptionOptions, ProposalBundle},
-    psk::ExternalPskId,
-    storage_provider::in_memory::{InMemoryKeyPackageStorage, InMemoryPreSharedKeyStorage},
     CipherSuite, CipherSuiteProvider, Client, CryptoProvider, Extension, ExtensionList, Group,
     MlsMessage, MlsRules,
 };
@@ -36,9 +36,13 @@ use mls_rs::external_client::builder::ExternalBaseConfig;
 use mls_rs_crypto_openssl::OpensslCryptoProvider;
 
 use clap::Parser;
-use std::{collections::HashMap, convert::Infallible, net::IpAddr, sync::Arc};
+use std::collections::HashMap;
+use std::convert::Infallible;
+use std::net::IpAddr;
+use std::sync::Arc;
 use tokio::sync::Mutex;
-use tonic::{transport::Server, Request, Response, Status};
+use tonic::transport::Server;
+use tonic::{Request, Response, Status};
 
 use mls_client::mls_client_server::{MlsClient, MlsClientServer};
 

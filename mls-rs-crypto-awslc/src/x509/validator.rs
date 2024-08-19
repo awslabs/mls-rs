@@ -11,12 +11,14 @@ use aws_lc_sys::{
     X509_VERIFY_PARAM_set_time, X509_verify_cert, X509_verify_cert_error_string, X509_VERIFY_PARAM,
     X509_V_FLAG_NO_CHECK_TIME, X509_V_OK,
 };
-use mls_rs_core::{crypto::SignaturePublicKey, time::MlsTime};
+use mls_rs_core::crypto::SignaturePublicKey;
+use mls_rs_core::time::MlsTime;
 use mls_rs_identity_x509::{CertificateChain, DerCertificate, X509CredentialValidator};
 
 use crate::{check_non_null, check_res, AwsLcCryptoError};
 
-use super::{certificate::Certificate, component::Stack};
+use super::certificate::Certificate;
+use super::component::Stack;
 
 pub struct CertificateValidator {
     ca_certs: Stack<Certificate>,
@@ -136,16 +138,11 @@ mod tests {
     use mls_rs_core::time::MlsTime;
     use mls_rs_identity_x509::{CertificateChain, DerCertificate, X509CredentialValidator};
 
-    use crate::{
-        x509::{
-            test_utils::{
-                load_test_ca, load_test_cert_chain, load_test_invalid_ca_chain,
-                load_test_invalid_chain,
-            },
-            CertificateValidator,
-        },
-        AwsLcCryptoError,
+    use crate::x509::test_utils::{
+        load_test_ca, load_test_cert_chain, load_test_invalid_ca_chain, load_test_invalid_chain,
     };
+    use crate::x509::CertificateValidator;
+    use crate::AwsLcCryptoError;
 
     pub fn load_another_ca() -> DerCertificate {
         DerCertificate::from(include_bytes!("../../test_data/x509/another_ca.der").to_vec())

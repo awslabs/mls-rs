@@ -6,10 +6,8 @@ use crate::error::IntoAnyError;
 #[cfg(mls_build_async)]
 use alloc::boxed::Box;
 use alloc::vec::Vec;
-use core::{
-    fmt::{self, Debug},
-    ops::Deref,
-};
+use core::fmt::{self, Debug};
+use core::ops::Deref;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use zeroize::Zeroizing;
 

@@ -303,10 +303,8 @@ struct TypeCounter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        client::test_utils::TEST_CIPHER_SUITE,
-        tree_kem::leaf_node::test_utils::{get_basic_test_node, get_test_client_identity},
-    };
+    use crate::client::test_utils::TEST_CIPHER_SUITE;
+    use crate::tree_kem::leaf_node::test_utils::{get_basic_test_node, get_test_client_identity};
     use alloc::format;
     use assert_matches::assert_matches;
 

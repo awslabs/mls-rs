@@ -2,7 +2,8 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use crate::group::{proposal_filter::ProposalBundle, Roster};
+use crate::group::proposal_filter::ProposalBundle;
+use crate::group::Roster;
 
 #[cfg(feature = "private_message")]
 use crate::{
@@ -12,9 +13,10 @@ use crate::{
 
 use alloc::boxed::Box;
 use core::convert::Infallible;
-use mls_rs_core::{
-    error::IntoAnyError, extension::ExtensionList, group::Member, identity::SigningIdentity,
-};
+use mls_rs_core::error::IntoAnyError;
+use mls_rs_core::extension::ExtensionList;
+use mls_rs_core::group::Member;
+use mls_rs_core::identity::SigningIdentity;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum CommitDirection {

@@ -24,29 +24,26 @@
 /// * Proposal validation rules that enforce 1. above.
 ///
 use assert_matches::assert_matches;
+use mls_rs::client_builder::{MlsConfig, PaddingMode};
+use mls_rs::error::MlsError;
+use mls_rs::group::proposal::{MlsCustomProposal, Proposal};
+use mls_rs::group::{Roster, Sender};
+use mls_rs::mls_rules::{
+    CommitDirection, CommitOptions, CommitSource, EncryptionOptions, ProposalBundle, ProposalSource,
+};
 use mls_rs::{
-    client_builder::{MlsConfig, PaddingMode},
-    error::MlsError,
-    group::{
-        proposal::{MlsCustomProposal, Proposal},
-        Roster, Sender,
-    },
-    mls_rules::{
-        CommitDirection, CommitOptions, CommitSource, EncryptionOptions, ProposalBundle,
-        ProposalSource,
-    },
     CipherSuite, CipherSuiteProvider, Client, CryptoProvider, ExtensionList, IdentityProvider,
     MlsRules,
 };
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
-use mls_rs_core::{
-    crypto::{SignaturePublicKey, SignatureSecretKey},
-    error::IntoAnyError,
-    extension::{ExtensionError, ExtensionType, MlsCodecExtension},
-    group::ProposalType,
-    identity::{Credential, CredentialType, CustomCredential, MlsCredential, SigningIdentity},
-    time::MlsTime,
+use mls_rs_core::crypto::{SignaturePublicKey, SignatureSecretKey};
+use mls_rs_core::error::IntoAnyError;
+use mls_rs_core::extension::{ExtensionError, ExtensionType, MlsCodecExtension};
+use mls_rs_core::group::ProposalType;
+use mls_rs_core::identity::{
+    Credential, CredentialType, CustomCredential, MlsCredential, SigningIdentity,
 };
+use mls_rs_core::time::MlsTime;
 
 use std::fmt::Display;
 

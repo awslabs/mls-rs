@@ -6,25 +6,20 @@
 //!
 //! See [`ClientBuilder`].
 
-use crate::{
-    cipher_suite::CipherSuite,
-    client::Client,
-    client_config::ClientConfig,
-    extension::{ExtensionType, MlsExtension},
-    group::{
-        mls_rules::{DefaultMlsRules, MlsRules},
-        proposal::ProposalType,
-    },
-    identity::CredentialType,
-    identity::SigningIdentity,
-    protocol_version::ProtocolVersion,
-    psk::{ExternalPskId, PreSharedKey},
-    storage_provider::in_memory::{
-        InMemoryGroupStateStorage, InMemoryKeyPackageStorage, InMemoryPreSharedKeyStorage,
-    },
-    tree_kem::{Capabilities, Lifetime},
-    Sealed,
+use crate::cipher_suite::CipherSuite;
+use crate::client::Client;
+use crate::client_config::ClientConfig;
+use crate::extension::{ExtensionType, MlsExtension};
+use crate::group::mls_rules::{DefaultMlsRules, MlsRules};
+use crate::group::proposal::ProposalType;
+use crate::identity::{CredentialType, SigningIdentity};
+use crate::protocol_version::ProtocolVersion;
+use crate::psk::{ExternalPskId, PreSharedKey};
+use crate::storage_provider::in_memory::{
+    InMemoryGroupStateStorage, InMemoryKeyPackageStorage, InMemoryPreSharedKeyStorage,
 };
+use crate::tree_kem::{Capabilities, Lifetime};
+use crate::Sealed;
 
 #[cfg(feature = "std")]
 use crate::time::MlsTime;
@@ -927,11 +922,9 @@ pub(crate) fn recreate_config<T: ClientConfig>(
 /// Definitions meant to be private that are inaccessible outside this crate. They need to be marked
 /// `pub` because they appear in public definitions.
 mod private {
-    use mls_rs_core::{
-        crypto::{CipherSuite, SignatureSecretKey},
-        identity::SigningIdentity,
-        protocol_version::ProtocolVersion,
-    };
+    use mls_rs_core::crypto::{CipherSuite, SignatureSecretKey};
+    use mls_rs_core::identity::SigningIdentity;
+    use mls_rs_core::protocol_version::ProtocolVersion;
 
     use crate::client_builder::{IntoConfigOutput, Settings};
 
@@ -977,27 +970,21 @@ mod private {
     }
 }
 
-use mls_rs_core::{
-    crypto::{CryptoProvider, SignatureSecretKey},
-    extension::{ExtensionError, ExtensionList},
-    group::GroupStateStorage,
-    identity::IdentityProvider,
-    key_package::KeyPackageStorage,
-    psk::PreSharedKeyStorage,
-};
+use mls_rs_core::crypto::{CryptoProvider, SignatureSecretKey};
+use mls_rs_core::extension::{ExtensionError, ExtensionList};
+use mls_rs_core::group::GroupStateStorage;
+use mls_rs_core::identity::IdentityProvider;
+use mls_rs_core::key_package::KeyPackageStorage;
+use mls_rs_core::psk::PreSharedKeyStorage;
 use private::{Config, ConfigInner, IntoConfig};
 
 #[cfg(test)]
 pub(crate) mod test_utils {
-    use crate::{
-        client_builder::{BaseConfig, ClientBuilder, WithIdentityProvider},
-        crypto::test_utils::TestCryptoProvider,
-        identity::{
-            basic::BasicIdentityProvider,
-            test_utils::{get_test_signing_identity, BasicWithCustomProvider},
-        },
-        CipherSuite,
-    };
+    use crate::client_builder::{BaseConfig, ClientBuilder, WithIdentityProvider};
+    use crate::crypto::test_utils::TestCryptoProvider;
+    use crate::identity::basic::BasicIdentityProvider;
+    use crate::identity::test_utils::{get_test_signing_identity, BasicWithCustomProvider};
+    use crate::CipherSuite;
 
     use super::WithCryptoProvider;
 

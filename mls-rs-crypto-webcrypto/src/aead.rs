@@ -8,7 +8,8 @@ use mls_rs_crypto_traits::{AeadId, AeadType};
 use wasm_bindgen_futures::JsFuture;
 use web_sys::AesGcmParams;
 
-use crate::{get_crypto, key_type::KeyType, CryptoError};
+use crate::key_type::KeyType;
+use crate::{get_crypto, CryptoError};
 
 #[derive(Clone)]
 pub struct Aead {

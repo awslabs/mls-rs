@@ -2,10 +2,8 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use std::{
-    ffi::c_long,
-    ptr::{null, null_mut},
-};
+use std::ffi::c_long;
+use std::ptr::{null, null_mut};
 
 use aws_lc_sys::{
     i2d_X509_REQ, EVP_sha256, EVP_sha384, EVP_sha512, X509_REQ_add_extensions, X509_REQ_free,
@@ -15,9 +13,9 @@ use aws_lc_sys::{
 use mls_rs_core::crypto::SignatureSecretKey;
 use mls_rs_crypto_traits::Curve;
 
-use crate::{
-    check_int_return, check_non_null, check_res, ec::EvpPkey, ecdsa::AwsLcEcdsa, AwsLcCryptoError,
-};
+use crate::ec::EvpPkey;
+use crate::ecdsa::AwsLcEcdsa;
+use crate::{check_int_return, check_non_null, check_res, AwsLcCryptoError};
 
 use super::component::{Stack, X509Extension, X509Name};
 

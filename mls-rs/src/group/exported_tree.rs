@@ -2,10 +2,12 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use alloc::{borrow::Cow, vec::Vec};
+use alloc::borrow::Cow;
+use alloc::vec::Vec;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 
-use crate::{client::MlsError, tree_kem::node::NodeVec};
+use crate::client::MlsError;
+use crate::tree_kem::node::NodeVec;
 
 #[cfg_attr(
     all(feature = "ffi", not(test)),

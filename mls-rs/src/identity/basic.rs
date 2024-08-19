@@ -2,11 +2,14 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use crate::{identity::CredentialType, identity::SigningIdentity, time::MlsTime};
+use crate::identity::{CredentialType, SigningIdentity};
+use crate::time::MlsTime;
 use alloc::vec;
 use alloc::vec::Vec;
+use mls_rs_core::error::IntoAnyError;
+use mls_rs_core::extension::ExtensionList;
 pub use mls_rs_core::identity::BasicCredential;
-use mls_rs_core::{error::IntoAnyError, extension::ExtensionList, identity::IdentityProvider};
+use mls_rs_core::identity::IdentityProvider;
 
 #[derive(Debug)]
 #[cfg_attr(feature = "std", derive(thiserror::Error))]

@@ -10,11 +10,9 @@ use mls_rs::group::proposal::Proposal;
 use mls_rs::group::ReceivedMessage;
 use mls_rs::identity::SigningIdentity;
 use mls_rs::mls_rules::CommitOptions;
-use mls_rs::ExtensionList;
-use mls_rs::MlsMessage;
-use mls_rs::ProtocolVersion;
-use mls_rs::{CipherSuite, Group};
-use mls_rs::{Client, CryptoProvider};
+use mls_rs::{
+    CipherSuite, Client, CryptoProvider, ExtensionList, Group, MlsMessage, ProtocolVersion,
+};
 use mls_rs_core::crypto::CipherSuiteProvider;
 use rand::prelude::SliceRandom;
 use rand::RngCore;

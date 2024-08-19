@@ -6,7 +6,8 @@
 use mockall::automock;
 
 use alloc::vec::Vec;
-use mls_rs_core::{crypto::CipherSuite, error::IntoAnyError};
+use mls_rs_core::crypto::CipherSuite;
+use mls_rs_core::error::IntoAnyError;
 
 /// A trait that provides the required KDF functions
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]

@@ -64,7 +64,8 @@ where
 #[cfg(test)]
 mod tests {
     use crate::{Error, MlsDecode, MlsEncode};
-    use alloc::{vec, vec::Vec};
+    use alloc::vec;
+    use alloc::vec::Vec;
     use assert_matches::assert_matches;
 
     #[cfg(target_arch = "wasm32")]

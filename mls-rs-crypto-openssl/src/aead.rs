@@ -2,9 +2,11 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use std::{fmt::Debug, ops::Deref};
+use std::fmt::Debug;
+use std::ops::Deref;
 
-use mls_rs_core::{crypto::CipherSuite, error::IntoAnyError};
+use mls_rs_core::crypto::CipherSuite;
+use mls_rs_core::error::IntoAnyError;
 use mls_rs_crypto_traits::{AeadId, AeadType, AES_TAG_LEN};
 use openssl::symm::{decrypt_aead, encrypt_aead, Cipher};
 use thiserror::Error;

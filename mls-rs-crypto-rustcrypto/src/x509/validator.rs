@@ -2,19 +2,16 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use mls_rs_core::{crypto::SignaturePublicKey, time::MlsTime};
+use mls_rs_core::crypto::SignaturePublicKey;
+use mls_rs_core::time::MlsTime;
 use mls_rs_identity_x509::{CertificateChain, DerCertificate, X509CredentialValidator};
 use spki::der::{Decode, Encode};
-use std::{
-    collections::HashMap,
-    fmt::{self, Debug},
-};
+use std::collections::HashMap;
+use std::fmt::{self, Debug};
 use x509_cert::Certificate;
 
-use crate::{
-    ec::pub_key_to_uncompressed,
-    ec_for_x509::{pub_key_from_spki, signer_from_algorithm},
-};
+use crate::ec::pub_key_to_uncompressed;
+use crate::ec_for_x509::{pub_key_from_spki, signer_from_algorithm};
 
 use super::X509Error;
 
@@ -222,16 +219,12 @@ mod tests {
     use spki::der::Decode;
     use x509_cert::Certificate;
 
-    use crate::{
-        ec_signer::EcSignerError,
-        x509::{
-            util::test_utils::{
-                load_another_ca, load_test_ca, load_test_cert_chain, load_test_invalid_ca_chain,
-                load_test_invalid_chain,
-            },
-            X509Error,
-        },
+    use crate::ec_signer::EcSignerError;
+    use crate::x509::util::test_utils::{
+        load_another_ca, load_test_ca, load_test_cert_chain, load_test_invalid_ca_chain,
+        load_test_invalid_chain,
     };
+    use crate::x509::X509Error;
 
     use super::X509Validator;
 

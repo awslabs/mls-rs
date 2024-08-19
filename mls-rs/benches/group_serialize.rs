@@ -2,7 +2,8 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use mls_rs::{test_utils::benchmarks::load_group_states, CipherSuite};
+use mls_rs::test_utils::benchmarks::load_group_states;
+use mls_rs::CipherSuite;
 
 use criterion::{BenchmarkId, Criterion};
 

@@ -9,7 +9,8 @@ use core::borrow::BorrowMut;
 use debug_tree::TreeBuilder;
 
 use super::node::{NodeIndex, NodeVec};
-use crate::{client::MlsError, tree_kem::math::TreeIndex};
+use crate::client::MlsError;
+use crate::tree_kem::math::TreeIndex;
 
 pub(crate) fn build_tree(
     tree: &mut TreeBuilder,
@@ -73,16 +74,12 @@ pub(crate) fn build_ascii_tree(nodes: &NodeVec) -> String {
 mod tests {
     use alloc::vec;
 
-    use crate::{
-        client::test_utils::TEST_CIPHER_SUITE,
-        crypto::test_utils::test_cipher_suite_provider,
-        identity::basic::BasicIdentityProvider,
-        tree_kem::{
-            node::Parent,
-            parent_hash::ParentHash,
-            test_utils::{get_test_leaf_nodes, get_test_tree},
-        },
-    };
+    use crate::client::test_utils::TEST_CIPHER_SUITE;
+    use crate::crypto::test_utils::test_cipher_suite_provider;
+    use crate::identity::basic::BasicIdentityProvider;
+    use crate::tree_kem::node::Parent;
+    use crate::tree_kem::parent_hash::ParentHash;
+    use crate::tree_kem::test_utils::{get_test_leaf_nodes, get_test_tree};
 
     use super::build_ascii_tree;
 

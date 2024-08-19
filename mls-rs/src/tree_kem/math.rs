@@ -3,7 +3,8 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use alloc::vec::Vec;
-use core::{fmt::Debug, hash::Hash};
+use core::fmt::Debug;
+use core::hash::Hash;
 use mls_rs_codec::{MlsDecode, MlsEncode};
 
 use super::node::LeafIndex;

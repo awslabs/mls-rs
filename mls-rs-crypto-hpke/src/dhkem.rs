@@ -4,10 +4,8 @@
 
 use mls_rs_crypto_traits::{DhType, KdfType, KemResult, KemType};
 
-use mls_rs_core::{
-    crypto::{HpkePublicKey, HpkeSecretKey},
-    error::{AnyError, IntoAnyError},
-};
+use mls_rs_core::crypto::{HpkePublicKey, HpkeSecretKey};
+use mls_rs_core::error::{AnyError, IntoAnyError};
 use zeroize::Zeroizing;
 
 use crate::kdf::HpkeKdf;

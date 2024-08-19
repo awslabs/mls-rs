@@ -2,41 +2,36 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
+use super::confirmation_tag::ConfirmationTag;
+use super::framing::{
+    ApplicationData, Content, ContentType, MlsMessage, MlsMessagePayload, PublicMessage, Sender,
+};
+use super::message_signature::AuthenticatedContent;
+use super::mls_rules::{CommitDirection, MlsRules};
+use super::proposal_filter::ProposalBundle;
+use super::state::GroupState;
+use super::transcript_hash::InterimTranscriptHash;
 use super::{
-    commit_sender,
-    confirmation_tag::ConfirmationTag,
-    framing::{
-        ApplicationData, Content, ContentType, MlsMessage, MlsMessagePayload, PublicMessage, Sender,
-    },
-    message_signature::AuthenticatedContent,
-    mls_rules::{CommitDirection, MlsRules},
-    proposal_filter::ProposalBundle,
-    state::GroupState,
-    transcript_hash::InterimTranscriptHash,
-    transcript_hashes, validate_group_info_member, GroupContext, GroupInfo, ReInitProposal,
-    RemoveProposal, Welcome,
+    commit_sender, transcript_hashes, validate_group_info_member, GroupContext, GroupInfo,
+    ReInitProposal, RemoveProposal, Welcome,
 };
-use crate::{
-    client::MlsError,
-    key_package::validate_key_package_properties,
-    time::MlsTime,
-    tree_kem::{
-        leaf_node_validator::{LeafNodeValidator, ValidationContext},
-        node::LeafIndex,
-        path_secret::PathSecret,
-        validate_update_path, TreeKemPrivate, TreeKemPublic, ValidatedUpdatePath,
-    },
-    CipherSuiteProvider, KeyPackage,
-};
+use crate::client::MlsError;
+use crate::key_package::validate_key_package_properties;
+use crate::time::MlsTime;
+use crate::tree_kem::leaf_node_validator::{LeafNodeValidator, ValidationContext};
+use crate::tree_kem::node::LeafIndex;
+use crate::tree_kem::path_secret::PathSecret;
+use crate::tree_kem::{validate_update_path, TreeKemPrivate, TreeKemPublic, ValidatedUpdatePath};
+use crate::{CipherSuiteProvider, KeyPackage};
 use itertools::Itertools;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::fmt::{self, Debug};
-use mls_rs_core::{
-    identity::IdentityProvider, protocol_version::ProtocolVersion, psk::PreSharedKeyStorage,
-};
+use mls_rs_core::identity::IdentityProvider;
+use mls_rs_core::protocol_version::ProtocolVersion;
+use mls_rs_core::psk::PreSharedKeyStorage;
 
 #[cfg(feature = "by_ref_proposal")]
 use super::proposal_ref::ProposalRef;

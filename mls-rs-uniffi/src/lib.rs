@@ -30,10 +30,8 @@ use std::sync::Mutex;
 use tokio::sync::Mutex;
 
 use mls_rs::error::{IntoAnyError, MlsError};
-use mls_rs::group;
 use mls_rs::identity::basic;
-use mls_rs::mls_rules;
-use mls_rs::{CipherSuiteProvider, CryptoProvider};
+use mls_rs::{group, mls_rules, CipherSuiteProvider, CryptoProvider};
 use mls_rs_core::identity;
 use mls_rs_core::identity::{BasicCredential, IdentityProvider};
 use mls_rs_crypto_openssl::OpensslCryptoProvider;

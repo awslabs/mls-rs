@@ -1,19 +1,19 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
-use alloc::{vec, vec::Vec};
+use alloc::vec;
+use alloc::vec::Vec;
 
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::crypto::HpkeSecretKey;
 
-use crate::{client::MlsError, crypto::CipherSuiteProvider};
+use crate::client::MlsError;
+use crate::crypto::CipherSuiteProvider;
 
-use super::{
-    math::leaf_lca_level,
-    node::LeafIndex,
-    path_secret::{PathSecret, PathSecretGenerator},
-    TreeKemPublic,
-};
+use super::math::leaf_lca_level;
+use super::node::LeafIndex;
+use super::path_secret::{PathSecret, PathSecretGenerator};
+use super::TreeKemPublic;
 
 #[derive(Clone, Debug, MlsEncode, MlsDecode, MlsSize, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -111,21 +111,17 @@ impl TreeKemPrivate {
 mod tests {
     use assert_matches::assert_matches;
 
-    use crate::{
-        cipher_suite::CipherSuite,
-        client::test_utils::TEST_CIPHER_SUITE,
-        crypto::test_utils::test_cipher_suite_provider,
-        group::test_utils::{get_test_group_context, random_bytes},
-        identity::basic::BasicIdentityProvider,
-        tree_kem::{
-            kem::TreeKem,
-            leaf_node::test_utils::{
-                default_properties, get_basic_test_node, get_basic_test_node_sig_key,
-            },
-            math::TreeIndex,
-            node::LeafIndex,
-        },
+    use crate::cipher_suite::CipherSuite;
+    use crate::client::test_utils::TEST_CIPHER_SUITE;
+    use crate::crypto::test_utils::test_cipher_suite_provider;
+    use crate::group::test_utils::{get_test_group_context, random_bytes};
+    use crate::identity::basic::BasicIdentityProvider;
+    use crate::tree_kem::kem::TreeKem;
+    use crate::tree_kem::leaf_node::test_utils::{
+        default_properties, get_basic_test_node, get_basic_test_node_sig_key,
     };
+    use crate::tree_kem::math::TreeIndex;
+    use crate::tree_kem::node::LeafIndex;
 
     use super::*;
 

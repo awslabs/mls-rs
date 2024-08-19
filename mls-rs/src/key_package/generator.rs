@@ -5,21 +5,18 @@
 use alloc::vec;
 use alloc::vec::Vec;
 use mls_rs_codec::{MlsDecode, MlsEncode};
-use mls_rs_core::{error::IntoAnyError, key_package::KeyPackageData};
+use mls_rs_core::error::IntoAnyError;
+use mls_rs_core::key_package::KeyPackageData;
 
 use crate::client::MlsError;
-use crate::{
-    crypto::{HpkeSecretKey, SignatureSecretKey},
-    group::framing::MlsMessagePayload,
-    identity::SigningIdentity,
-    protocol_version::ProtocolVersion,
-    signer::Signable,
-    tree_kem::{
-        leaf_node::{ConfigProperties, LeafNode},
-        Capabilities, Lifetime,
-    },
-    CipherSuiteProvider, ExtensionList, MlsMessage,
-};
+use crate::crypto::{HpkeSecretKey, SignatureSecretKey};
+use crate::group::framing::MlsMessagePayload;
+use crate::identity::SigningIdentity;
+use crate::protocol_version::ProtocolVersion;
+use crate::signer::Signable;
+use crate::tree_kem::leaf_node::{ConfigProperties, LeafNode};
+use crate::tree_kem::{Capabilities, Lifetime};
+use crate::{CipherSuiteProvider, ExtensionList, MlsMessage};
 
 use super::{KeyPackage, KeyPackageRef};
 
@@ -141,21 +138,18 @@ mod tests {
     use assert_matches::assert_matches;
     use mls_rs_core::crypto::CipherSuiteProvider;
 
-    use crate::{
-        crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider},
-        extension::test_utils::TestExtension,
-        group::test_utils::random_bytes,
-        identity::basic::BasicIdentityProvider,
-        identity::test_utils::get_test_signing_identity,
-        key_package::validate_key_package_properties,
-        protocol_version::ProtocolVersion,
-        tree_kem::{
-            leaf_node::{test_utils::get_test_capabilities, LeafNodeSource},
-            leaf_node_validator::{LeafNodeValidator, ValidationContext},
-            Lifetime,
-        },
-        ExtensionList,
-    };
+    use crate::crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider};
+    use crate::extension::test_utils::TestExtension;
+    use crate::group::test_utils::random_bytes;
+    use crate::identity::basic::BasicIdentityProvider;
+    use crate::identity::test_utils::get_test_signing_identity;
+    use crate::key_package::validate_key_package_properties;
+    use crate::protocol_version::ProtocolVersion;
+    use crate::tree_kem::leaf_node::test_utils::get_test_capabilities;
+    use crate::tree_kem::leaf_node::LeafNodeSource;
+    use crate::tree_kem::leaf_node_validator::{LeafNodeValidator, ValidationContext};
+    use crate::tree_kem::Lifetime;
+    use crate::ExtensionList;
 
     use super::KeyPackageGenerator;
 

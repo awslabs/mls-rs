@@ -7,7 +7,8 @@ use core::fmt::{self, Debug};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::extension::ExtensionList;
 
-use crate::{signer::Signable, tree_kem::node::LeafIndex};
+use crate::signer::Signable;
+use crate::tree_kem::node::LeafIndex;
 
 use super::{ConfirmationTag, GroupContext};
 

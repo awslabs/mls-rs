@@ -5,7 +5,8 @@
 use alloc::vec::Vec;
 use zeroize::Zeroizing;
 
-use crate::{crypto::CipherSuiteProvider, group::secret_tree::MessageKeyData};
+use crate::crypto::CipherSuiteProvider;
+use crate::group::secret_tree::MessageKeyData;
 
 use super::reuse_guard::ReuseGuard;
 

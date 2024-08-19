@@ -2,13 +2,12 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use mls_rs_core::{
-    crypto::{HpkeContextR, HpkeContextS},
-    error::IntoAnyError,
-};
+use mls_rs_core::crypto::{HpkeContextR, HpkeContextS};
+use mls_rs_core::error::IntoAnyError;
 use mls_rs_crypto_traits::{AeadType, KdfType};
 
-use crate::{hpke::HpkeError, kdf::HpkeKdf};
+use crate::hpke::HpkeError;
+use crate::kdf::HpkeKdf;
 
 use alloc::vec::Vec;
 use core::fmt::{self, Debug};

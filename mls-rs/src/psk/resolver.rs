@@ -3,21 +3,20 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use alloc::vec::Vec;
-use mls_rs_core::{
-    crypto::CipherSuiteProvider,
-    error::IntoAnyError,
-    group::GroupStateStorage,
-    key_package::KeyPackageStorage,
-    psk::{ExternalPskId, PreSharedKey, PreSharedKeyStorage},
-};
+use mls_rs_core::crypto::CipherSuiteProvider;
+use mls_rs_core::error::IntoAnyError;
+use mls_rs_core::group::GroupStateStorage;
+use mls_rs_core::key_package::KeyPackageStorage;
+use mls_rs_core::psk::{ExternalPskId, PreSharedKey, PreSharedKeyStorage};
 
-use crate::{
-    client::MlsError,
-    group::{epoch::EpochSecrets, state_repo::GroupStateRepository, GroupContext},
-    psk::secret::PskSecret,
-};
+use crate::client::MlsError;
+use crate::group::epoch::EpochSecrets;
+use crate::group::state_repo::GroupStateRepository;
+use crate::group::GroupContext;
+use crate::psk::secret::PskSecret;
 
-use super::{secret::PskSecretInput, JustPreSharedKeyID, PreSharedKeyID, ResumptionPsk};
+use super::secret::PskSecretInput;
+use super::{JustPreSharedKeyID, PreSharedKeyID, ResumptionPsk};
 
 pub(crate) struct PskResolver<'a, GS, K, PS>
 where

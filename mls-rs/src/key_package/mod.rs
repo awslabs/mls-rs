@@ -12,13 +12,9 @@ use crate::signer::Signable;
 use crate::tree_kem::leaf_node::{LeafNode, LeafNodeSource};
 use crate::CipherSuiteProvider;
 use alloc::vec::Vec;
-use core::{
-    fmt::{self, Debug},
-    ops::Deref,
-};
-use mls_rs_codec::MlsDecode;
-use mls_rs_codec::MlsEncode;
-use mls_rs_codec::MlsSize;
+use core::fmt::{self, Debug};
+use core::ops::Deref;
+use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::extension::ExtensionList;
 
 mod validator;
@@ -170,13 +166,12 @@ impl<'a> Signable<'a> for KeyPackage {
 #[cfg(test)]
 pub(crate) mod test_utils {
     use super::*;
-    use crate::{
-        crypto::test_utils::test_cipher_suite_provider,
-        group::framing::MlsMessagePayload,
-        identity::test_utils::get_test_signing_identity,
-        tree_kem::{leaf_node::test_utils::get_test_capabilities, Lifetime},
-        MlsMessage,
-    };
+    use crate::crypto::test_utils::test_cipher_suite_provider;
+    use crate::group::framing::MlsMessagePayload;
+    use crate::identity::test_utils::get_test_signing_identity;
+    use crate::tree_kem::leaf_node::test_utils::get_test_capabilities;
+    use crate::tree_kem::Lifetime;
+    use crate::MlsMessage;
 
     use mls_rs_core::crypto::SignatureSecretKey;
 
@@ -238,12 +233,11 @@ pub(crate) mod test_utils {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
-        crypto::test_utils::{test_cipher_suite_provider, try_test_cipher_suite_provider},
-    };
+    use crate::client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION};
+    use crate::crypto::test_utils::{test_cipher_suite_provider, try_test_cipher_suite_provider};
 
-    use super::{test_utils::test_key_package, *};
+    use super::test_utils::test_key_package;
+    use super::*;
     use alloc::format;
     use assert_matches::assert_matches;
 

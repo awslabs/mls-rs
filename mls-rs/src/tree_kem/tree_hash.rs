@@ -7,9 +7,8 @@ use super::node::{LeafIndex, NodeVec};
 use super::tree_math::BfsIterTopDown;
 use crate::client::MlsError;
 use crate::crypto::CipherSuiteProvider;
-use crate::tree_kem::math as tree_math;
 use crate::tree_kem::node::Parent;
-use crate::tree_kem::TreeKemPublic;
+use crate::tree_kem::{math as tree_math, TreeKemPublic};
 use alloc::collections::VecDeque;
 use alloc::vec;
 use alloc::vec::Vec;
@@ -361,12 +360,11 @@ async fn hash_for_parent<P: CipherSuiteProvider>(
 mod tests {
     use mls_rs_codec::MlsDecode;
 
-    use crate::{
-        cipher_suite::CipherSuite,
-        crypto::test_utils::{test_cipher_suite_provider, try_test_cipher_suite_provider},
-        identity::basic::BasicIdentityProvider,
-        tree_kem::{node::NodeVec, parent_hash::test_utils::get_test_tree_fig_12},
-    };
+    use crate::cipher_suite::CipherSuite;
+    use crate::crypto::test_utils::{test_cipher_suite_provider, try_test_cipher_suite_provider};
+    use crate::identity::basic::BasicIdentityProvider;
+    use crate::tree_kem::node::NodeVec;
+    use crate::tree_kem::parent_hash::test_utils::get_test_tree_fig_12;
 
     use super::*;
 

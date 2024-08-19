@@ -9,7 +9,8 @@ use js_sys::Uint8Array;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::SubtleCrypto;
 
-use crate::{get_crypto, key_type::KeyType, CryptoError};
+use crate::key_type::KeyType;
+use crate::{get_crypto, CryptoError};
 
 #[derive(Clone)]
 pub struct Hkdf {

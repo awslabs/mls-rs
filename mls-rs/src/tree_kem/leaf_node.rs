@@ -2,10 +2,13 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use super::{parent_hash::ParentHash, Capabilities, Lifetime};
+use super::parent_hash::ParentHash;
+use super::{Capabilities, Lifetime};
 use crate::client::MlsError;
 use crate::crypto::{CipherSuiteProvider, HpkePublicKey, HpkeSecretKey, SignatureSecretKey};
-use crate::{identity::SigningIdentity, signer::Signable, ExtensionList};
+use crate::identity::SigningIdentity;
+use crate::signer::Signable;
+use crate::ExtensionList;
 use alloc::vec::Vec;
 use core::fmt::{self, Debug};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
@@ -264,11 +267,9 @@ pub(crate) mod test_utils {
     use alloc::vec;
     use mls_rs_core::identity::{BasicCredential, CredentialType};
 
-    use crate::{
-        cipher_suite::CipherSuite,
-        crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider},
-        identity::test_utils::{get_test_signing_identity, BasicWithCustomProvider},
-    };
+    use crate::cipher_suite::CipherSuite;
+    use crate::crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider};
+    use crate::identity::test_utils::{get_test_signing_identity, BasicWithCustomProvider};
 
     use crate::extension::ApplicationIdExt;
 
@@ -404,8 +405,7 @@ mod tests {
     use super::*;
 
     use crate::client::test_utils::TEST_CIPHER_SUITE;
-    use crate::crypto::test_utils::test_cipher_suite_provider;
-    use crate::crypto::test_utils::TestCryptoProvider;
+    use crate::crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider};
     use crate::group::test_utils::random_bytes;
     use crate::identity::test_utils::get_test_signing_identity;
     use assert_matches::assert_matches;

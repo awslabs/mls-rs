@@ -8,10 +8,8 @@ use alloc::sync::Arc;
 #[cfg(not(target_has_atomic = "ptr"))]
 use portable_atomic_util::Arc;
 
-use core::{
-    convert::Infallible,
-    fmt::{self, Debug},
-};
+use core::convert::Infallible;
+use core::fmt::{self, Debug};
 
 use alloc::vec::Vec;
 use mls_rs_core::key_package::{KeyPackageData, KeyPackageStorage};

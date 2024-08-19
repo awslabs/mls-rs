@@ -3,7 +3,8 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use criterion::{BatchSize, BenchmarkId, Criterion};
-use mls_rs::{test_utils::benchmarks::load_group_states, CipherSuite};
+use mls_rs::test_utils::benchmarks::load_group_states;
+use mls_rs::CipherSuite;
 
 fn bench(c: &mut Criterion) {
     let cipher_suite = CipherSuite::CURVE25519_AES128;

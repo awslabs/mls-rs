@@ -6,38 +6,26 @@ use mls_rs_core::crypto::CipherSuite;
 use mls_rs_identity_x509::{
     CertificateRequestParameters, SubjectAltName as MlsSubjectAltName, SubjectComponent,
 };
-use std::{net::IpAddr, str::FromStr};
+use std::net::IpAddr;
+use std::str::FromStr;
 
-use spki::{
-    der::{
-        asn1::{Ia5String, OctetString, PrintableString, PrintableStringRef},
-        oid::db::{rfc3280, rfc4519, rfc5912::ECDSA_WITH_SHA_256},
-        Tag, Tagged,
-    },
-    ObjectIdentifier,
-};
+use spki::der::asn1::{Ia5String, OctetString, PrintableString, PrintableStringRef};
+use spki::der::oid::db::rfc5912::ECDSA_WITH_SHA_256;
+use spki::der::oid::db::{rfc3280, rfc4519};
+use spki::der::{Tag, Tagged};
+use spki::ObjectIdentifier;
 
-use x509_cert::{
-    attr::{Attribute, AttributeTypeAndValue},
-    ext::{
-        pkix::{
-            name::{GeneralName, GeneralNames},
-            BasicConstraints, KeyUsage, KeyUsages,
-        },
-        Extension,
-    },
-    name::{RdnSequence, RelativeDistinguishedName},
-    request::ExtensionReq,
-};
+use x509_cert::attr::{Attribute, AttributeTypeAndValue};
+use x509_cert::ext::pkix::name::{GeneralName, GeneralNames};
+use x509_cert::ext::pkix::{BasicConstraints, KeyUsage, KeyUsages};
+use x509_cert::ext::Extension;
+use x509_cert::name::{RdnSequence, RelativeDistinguishedName};
+use x509_cert::request::ExtensionReq;
 
-use x509_cert::{
-    der::{
-        asn1::{Any, Ia5StringRef, SetOfVec, Utf8StringRef},
-        oid::AssociatedOid,
-        Decode, Encode,
-    },
-    ext::pkix::SubjectAltName,
-};
+use x509_cert::der::asn1::{Any, Ia5StringRef, SetOfVec, Utf8StringRef};
+use x509_cert::der::oid::AssociatedOid;
+use x509_cert::der::{Decode, Encode};
+use x509_cert::ext::pkix::SubjectAltName;
 
 use crate::ec_for_x509::ED25519_OID;
 

@@ -7,7 +7,9 @@ use alloc::vec::Vec;
 use core::fmt::{self, Debug};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 
-use crate::{cipher_suite::CipherSuite, protocol_version::ProtocolVersion, ExtensionList};
+use crate::cipher_suite::CipherSuite;
+use crate::protocol_version::ProtocolVersion;
+use crate::ExtensionList;
 
 use super::ConfirmedTranscriptHash;
 

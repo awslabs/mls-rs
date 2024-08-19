@@ -7,12 +7,11 @@ use mls_rs_identity_x509::{
     CertificateRequestParameters, DerCertificateRequest, X509RequestWriter,
 };
 
-use crate::{ecdsa::AwsLcEcdsa, AwsLcCryptoError};
+use crate::ecdsa::AwsLcEcdsa;
+use crate::AwsLcCryptoError;
 
-use super::{
-    component::{KeyUsage, Stack, X509Extension, X509Name},
-    request::{self, X509Request},
-};
+use super::component::{KeyUsage, Stack, X509Extension, X509Name};
+use super::request::{self, X509Request};
 
 pub struct CertificateRequestWriter {
     signer: AwsLcEcdsa,
@@ -77,13 +76,9 @@ mod tests {
         X509RequestWriter,
     };
 
-    use crate::{
-        x509::{
-            test_utils::{csr_pem_to_der, ec_key_from_pem},
-            CertificateRequestWriter,
-        },
-        AwsLcCryptoProvider,
-    };
+    use crate::x509::test_utils::{csr_pem_to_der, ec_key_from_pem};
+    use crate::x509::CertificateRequestWriter;
+    use crate::AwsLcCryptoProvider;
 
     fn test_writing_csr(ca: bool) {
         let subject_seckey = if ca {

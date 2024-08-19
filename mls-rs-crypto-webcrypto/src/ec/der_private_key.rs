@@ -2,16 +2,15 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use der::{
-    asn1::{BitString, ContextSpecific, OctetString, Uint},
-    oid::ObjectIdentifier,
-    Any, Decode, Encode, Sequence,
-};
+use der::asn1::{BitString, ContextSpecific, OctetString, Uint};
+use der::oid::ObjectIdentifier;
+use der::{Any, Decode, Encode, Sequence};
 use js_sys::Array;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{CryptoKeyPair, EcKeyGenParams};
 
-use crate::{get_crypto, key_type::KeyType, CryptoError};
+use crate::key_type::KeyType;
+use crate::{get_crypto, CryptoError};
 
 /// Generate private / public key pair.
 pub(crate) async fn generate(curve: &'static str) -> Result<(Vec<u8>, Vec<u8>), CryptoError> {

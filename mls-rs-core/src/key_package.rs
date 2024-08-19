@@ -8,7 +8,8 @@ use alloc::vec::Vec;
 use core::fmt::{self, Debug};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 
-use crate::{crypto::HpkeSecretKey, error::IntoAnyError};
+use crate::crypto::HpkeSecretKey;
+use crate::error::IntoAnyError;
 
 #[derive(Clone, PartialEq, Eq, MlsEncode, MlsDecode, MlsSize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

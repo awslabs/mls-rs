@@ -12,7 +12,8 @@ fn main() {
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 mod swift {
     use serde::Deserialize;
-    use std::{env, process::Command};
+    use std::env;
+    use std::process::Command;
 
     #[derive(Debug, Deserialize)]
     struct SwiftTargetInfo {

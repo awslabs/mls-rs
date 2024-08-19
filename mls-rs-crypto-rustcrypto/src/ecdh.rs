@@ -8,10 +8,8 @@ use alloc::vec::Vec;
 
 use mls_rs_crypto_traits::{Curve, DhType};
 
-use mls_rs_core::{
-    crypto::{CipherSuite, HpkePublicKey, HpkeSecretKey},
-    error::IntoAnyError,
-};
+use mls_rs_core::crypto::{CipherSuite, HpkePublicKey, HpkeSecretKey};
+use mls_rs_core::error::IntoAnyError;
 
 use crate::ec::{
     generate_keypair, private_key_bytes_to_public, private_key_ecdh, private_key_from_bytes,

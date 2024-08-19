@@ -8,10 +8,8 @@ use core::ops::Deref;
 
 use alloc::vec::Vec;
 
-use mls_rs_core::{
-    crypto::{self, CipherSuite, HpkePublicKey, HpkeSecretKey},
-    error::IntoAnyError,
-};
+use mls_rs_core::crypto::{self, CipherSuite, HpkePublicKey, HpkeSecretKey};
+use mls_rs_core::error::IntoAnyError;
 
 #[derive(Debug)]
 #[cfg_attr(feature = "std", derive(thiserror::Error))]

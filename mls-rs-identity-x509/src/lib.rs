@@ -61,7 +61,9 @@ impl AsRef<[u8]> for DerCertificateRequest {
 pub(crate) mod test_utils {
 
     use alloc::vec;
-    use mls_rs_core::{crypto::SignaturePublicKey, error::IntoAnyError, identity::SigningIdentity};
+    use mls_rs_core::crypto::SignaturePublicKey;
+    use mls_rs_core::error::IntoAnyError;
+    use mls_rs_core::identity::SigningIdentity;
     use rand::{thread_rng, Rng};
 
     use crate::{CertificateChain, DerCertificate};

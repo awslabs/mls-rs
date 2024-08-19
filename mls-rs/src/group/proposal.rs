@@ -2,18 +2,19 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use alloc::{boxed::Box, vec::Vec};
+use alloc::boxed::Box;
+use alloc::vec::Vec;
 
 #[cfg(feature = "by_ref_proposal")]
 use crate::tree_kem::leaf_node::LeafNode;
 
-use crate::{
-    client::MlsError, tree_kem::node::LeafIndex, CipherSuite, KeyPackage, MlsMessage,
-    ProtocolVersion,
-};
+use crate::client::MlsError;
+use crate::tree_kem::node::LeafIndex;
+use crate::{CipherSuite, KeyPackage, MlsMessage, ProtocolVersion};
 use core::fmt::{self, Debug};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
-use mls_rs_core::{group::Capabilities, identity::SigningIdentity};
+use mls_rs_core::group::Capabilities;
+use mls_rs_core::identity::SigningIdentity;
 
 #[cfg(feature = "by_ref_proposal")]
 use crate::group::proposal_ref::ProposalRef;

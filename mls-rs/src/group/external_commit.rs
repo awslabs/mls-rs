@@ -2,19 +2,18 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use mls_rs_core::{crypto::SignatureSecretKey, identity::SigningIdentity};
+use mls_rs_core::crypto::SignatureSecretKey;
+use mls_rs_core::identity::SigningIdentity;
 
-use crate::{
-    client_config::ClientConfig,
-    group::{
-        cipher_suite_provider,
-        epoch::SenderDataSecret,
-        key_schedule::{InitSecret, KeySchedule},
-        proposal::{ExternalInit, Proposal, RemoveProposal},
-        EpochSecrets, ExternalPubExt, LeafIndex, LeafNode, MlsError, TreeKemPrivate,
-    },
-    Group, MlsMessage,
+use crate::client_config::ClientConfig;
+use crate::group::epoch::SenderDataSecret;
+use crate::group::key_schedule::{InitSecret, KeySchedule};
+use crate::group::proposal::{ExternalInit, Proposal, RemoveProposal};
+use crate::group::{
+    cipher_suite_provider, EpochSecrets, ExternalPubExt, LeafIndex, LeafNode, MlsError,
+    TreeKemPrivate,
 };
+use crate::{Group, MlsMessage};
 
 #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
 use crate::group::secret_tree::SecretTree;

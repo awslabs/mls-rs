@@ -3,10 +3,8 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use alloc::vec::Vec;
-use core::{
-    fmt::{self, Debug},
-    ops::{Deref, DerefMut},
-};
+use core::fmt::{self, Debug};
+use core::ops::{Deref, DerefMut};
 use zeroize::Zeroizing;
 
 #[cfg_attr(

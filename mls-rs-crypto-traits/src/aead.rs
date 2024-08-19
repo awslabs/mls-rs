@@ -6,7 +6,8 @@
 use mockall::automock;
 
 use alloc::vec::Vec;
-use mls_rs_core::{crypto::CipherSuite, error::IntoAnyError};
+use mls_rs_core::crypto::CipherSuite;
+use mls_rs_core::error::IntoAnyError;
 
 pub const AEAD_ID_EXPORT_ONLY: u16 = 0xFFFF;
 pub const AES_TAG_LEN: usize = 16;

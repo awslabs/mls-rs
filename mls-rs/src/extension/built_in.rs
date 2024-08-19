@@ -7,7 +7,8 @@ use core::fmt::{self, Debug};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::extension::{ExtensionType, MlsCodecExtension};
 
-use mls_rs_core::{group::ProposalType, identity::CredentialType};
+use mls_rs_core::group::ProposalType;
+use mls_rs_core::identity::CredentialType;
 
 #[cfg(feature = "by_ref_proposal")]
 use mls_rs_core::{

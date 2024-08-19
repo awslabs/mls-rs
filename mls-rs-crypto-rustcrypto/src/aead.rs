@@ -8,9 +8,11 @@ use core::fmt::Debug;
 
 use aes_gcm::{Aes128Gcm, Aes256Gcm, KeyInit};
 use chacha20poly1305::ChaCha20Poly1305;
-use mls_rs_core::{crypto::CipherSuite, error::IntoAnyError};
+use mls_rs_core::crypto::CipherSuite;
+use mls_rs_core::error::IntoAnyError;
 use mls_rs_crypto_traits::{AeadId, AeadType, AES_TAG_LEN};
-use rc_aead::{generic_array::GenericArray, Payload};
+use rc_aead::generic_array::GenericArray;
+use rc_aead::Payload;
 
 use alloc::vec::Vec;
 

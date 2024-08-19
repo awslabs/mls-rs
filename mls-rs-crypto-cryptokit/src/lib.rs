@@ -11,13 +11,11 @@ use kdf::{Kdf, KdfError};
 use kem::{Kem, KemError};
 use sig::{Signature, SignatureError};
 
-use mls_rs_core::{
-    crypto::{
-        CipherSuite, CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkeContextR,
-        HpkeContextS, HpkePublicKey, HpkeSecretKey, SignaturePublicKey, SignatureSecretKey,
-    },
-    error::IntoAnyError,
+use mls_rs_core::crypto::{
+    CipherSuite, CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkeContextR, HpkeContextS,
+    HpkePublicKey, HpkeSecretKey, SignaturePublicKey, SignatureSecretKey,
 };
+use mls_rs_core::error::IntoAnyError;
 use mls_rs_crypto_traits::{AeadType, KdfType};
 use zeroize::Zeroizing;
 

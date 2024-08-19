@@ -2,23 +2,17 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use crate::{
-    client::MlsError,
-    group::{
-        proposal::ReInitProposal,
-        proposal_filter::{ProposalBundle, ProposalInfo},
-        AddProposal, ProposalType, RemoveProposal, Sender, UpdateProposal,
-    },
-    iter::wrap_iter,
-    protocol_version::ProtocolVersion,
-    time::MlsTime,
-    tree_kem::{
-        leaf_node_validator::{LeafNodeValidator, ValidationContext},
-        node::LeafIndex,
-        TreeKemPublic,
-    },
-    CipherSuiteProvider, ExtensionList,
-};
+use crate::client::MlsError;
+use crate::group::proposal::ReInitProposal;
+use crate::group::proposal_filter::{ProposalBundle, ProposalInfo};
+use crate::group::{AddProposal, ProposalType, RemoveProposal, Sender, UpdateProposal};
+use crate::iter::wrap_iter;
+use crate::protocol_version::ProtocolVersion;
+use crate::time::MlsTime;
+use crate::tree_kem::leaf_node_validator::{LeafNodeValidator, ValidationContext};
+use crate::tree_kem::node::LeafIndex;
+use crate::tree_kem::TreeKemPublic;
+use crate::{CipherSuiteProvider, ExtensionList};
 
 use super::filtering_common::{filter_out_invalid_psks, ApplyProposalsOutput, ProposalApplier};
 
@@ -26,7 +20,9 @@ use super::filtering_common::{filter_out_invalid_psks, ApplyProposalsOutput, Pro
 use crate::extension::ExternalSendersExt;
 
 use alloc::vec::Vec;
-use mls_rs_core::{error::IntoAnyError, identity::IdentityProvider, psk::PreSharedKeyStorage};
+use mls_rs_core::error::IntoAnyError;
+use mls_rs_core::identity::IdentityProvider;
+use mls_rs_core::psk::PreSharedKeyStorage;
 
 #[cfg(any(
     feature = "custom_proposal",

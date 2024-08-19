@@ -4,9 +4,9 @@
 
 #[cfg(all(not(mls_build_async), feature = "rayon"))]
 mod sync_rayon {
-    use rayon::{
-        iter::IterBridge,
-        prelude::{FromParallelIterator, IntoParallelIterator, ParallelBridge, ParallelIterator},
+    use rayon::iter::IterBridge;
+    use rayon::prelude::{
+        FromParallelIterator, IntoParallelIterator, ParallelBridge, ParallelIterator,
     };
 
     pub fn wrap_iter<I>(it: I) -> I::Iter

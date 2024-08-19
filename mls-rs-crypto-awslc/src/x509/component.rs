@@ -3,12 +3,10 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use core::slice;
-use std::{
-    ffi::{c_int, c_void, CString},
-    marker::PhantomData,
-    net::IpAddr,
-    ptr::null_mut,
-};
+use std::ffi::{c_int, c_void, CString};
+use std::marker::PhantomData;
+use std::net::IpAddr;
+use std::ptr::null_mut;
 
 use aws_lc_sys::{
     stack_st, ASN1_STRING_data, ASN1_STRING_free, ASN1_STRING_get0_data, ASN1_STRING_length,

@@ -4,15 +4,14 @@
 
 use mls_rs_core::identity::IdentityProvider;
 
-use crate::{
-    crypto::SignaturePublicKey,
-    extension::ExtensionType,
-    group::{mls_rules::MlsRules, proposal::ProposalType},
-    identity::CredentialType,
-    protocol_version::ProtocolVersion,
-    tree_kem::Capabilities,
-    CryptoProvider,
-};
+use crate::crypto::SignaturePublicKey;
+use crate::extension::ExtensionType;
+use crate::group::mls_rules::MlsRules;
+use crate::group::proposal::ProposalType;
+use crate::identity::CredentialType;
+use crate::protocol_version::ProtocolVersion;
+use crate::tree_kem::Capabilities;
+use crate::CryptoProvider;
 
 pub trait ExternalClientConfig: Send + Sync + Clone {
     type IdentityProvider: IdentityProvider + Clone;

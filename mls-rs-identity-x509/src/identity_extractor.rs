@@ -3,7 +3,8 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use alloc::vec::Vec;
-use mls_rs_core::{error::IntoAnyError, identity::CertificateChain};
+use mls_rs_core::error::IntoAnyError;
+use mls_rs_core::identity::CertificateChain;
 
 use crate::{
     DerCertificate, SubjectComponent, X509CertificateReader, X509IdentityError,
@@ -126,9 +127,9 @@ fn get_certificate(
 
 #[cfg(all(test, feature = "std"))]
 mod tests {
+    use crate::test_utils::test_certificate_chain;
     use crate::{
-        test_utils::test_certificate_chain, MockX509CertificateReader, SubjectComponent,
-        SubjectIdentityExtractor, X509IdentityError,
+        MockX509CertificateReader, SubjectComponent, SubjectIdentityExtractor, X509IdentityError,
     };
 
     use alloc::vec;

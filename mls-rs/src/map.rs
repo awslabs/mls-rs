@@ -3,10 +3,8 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use alloc::vec::Vec;
-use core::{
-    hash::Hash,
-    ops::{Deref, DerefMut},
-};
+use core::hash::Hash;
+use core::ops::{Deref, DerefMut};
 
 use map_impl::SmallMapInner;
 pub use map_impl::{LargeMap, LargeMapEntry, SmallMap};
@@ -15,7 +13,8 @@ use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 #[cfg(feature = "std")]
 mod map_impl {
     use core::hash::Hash;
-    use std::collections::{hash_map::Entry, HashMap};
+    use std::collections::hash_map::Entry;
+    use std::collections::HashMap;
 
     #[derive(Clone, Debug, PartialEq, Eq)]
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -30,10 +29,9 @@ mod map_impl {
 mod map_impl {
     use core::hash::Hash;
 
-    use alloc::{
-        collections::{btree_map::Entry, BTreeMap},
-        vec::Vec,
-    };
+    use alloc::collections::btree_map::Entry;
+    use alloc::collections::BTreeMap;
+    use alloc::vec::Vec;
     #[cfg(feature = "by_ref_proposal")]
     use itertools::Itertools;
 

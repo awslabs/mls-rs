@@ -2,15 +2,11 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use mls_rs::{
-    client_builder::MlsConfig,
-    error::MlsError,
-    identity::{
-        basic::{BasicCredential, BasicIdentityProvider},
-        SigningIdentity,
-    },
-    CipherSuite, CipherSuiteProvider, Client, CryptoProvider, ExtensionList,
-};
+use mls_rs::client_builder::MlsConfig;
+use mls_rs::error::MlsError;
+use mls_rs::identity::basic::{BasicCredential, BasicIdentityProvider};
+use mls_rs::identity::SigningIdentity;
+use mls_rs::{CipherSuite, CipherSuiteProvider, Client, CryptoProvider, ExtensionList};
 
 const CIPHERSUITE: CipherSuite = CipherSuite::CURVE25519_AES128;
 

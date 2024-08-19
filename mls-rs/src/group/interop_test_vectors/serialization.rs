@@ -7,17 +7,12 @@ use mls_rs_codec::{MlsDecode, MlsEncode};
 
 use mls_rs_core::extension::ExtensionList;
 
-use crate::{
-    group::{
-        framing::ContentType,
-        proposal::{
-            AddProposal, ExternalInit, PreSharedKeyProposal, ReInitProposal, RemoveProposal,
-            UpdateProposal,
-        },
-        Commit, GroupSecrets, MlsMessage,
-    },
-    tree_kem::node::NodeVec,
+use crate::group::framing::ContentType;
+use crate::group::proposal::{
+    AddProposal, ExternalInit, PreSharedKeyProposal, ReInitProposal, RemoveProposal, UpdateProposal,
 };
+use crate::group::{Commit, GroupSecrets, MlsMessage};
+use crate::tree_kem::node::NodeVec;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Default, Clone)]
 struct TestCase {

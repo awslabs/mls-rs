@@ -509,7 +509,8 @@ pub(crate) mod test_utils {
     use mls_rs_core::crypto::CipherSuiteProvider;
     use zeroize::Zeroizing;
 
-    use crate::{cipher_suite::CipherSuite, crypto::test_utils::test_cipher_suite_provider};
+    use crate::cipher_suite::CipherSuite;
+    use crate::crypto::test_utils::test_cipher_suite_provider;
 
     use super::{InitSecret, JoinerSecret, KeySchedule};
 

@@ -11,7 +11,8 @@ use wasm_bindgen_futures::JsFuture;
 use web_sys::{CryptoKey, EcdhKeyDeriveParams, SubtleCrypto};
 
 use super::der_private_key::{generate, DerPrivateKey};
-use crate::{get_crypto, key_type::KeyType, CryptoError};
+use crate::key_type::KeyType;
+use crate::{get_crypto, CryptoError};
 
 use const_oid::db::rfc5912::{SECP_256_R_1, SECP_384_R_1, SECP_521_R_1};
 

@@ -8,22 +8,20 @@ use alloc::vec::Vec;
 use mls_rs_codec::{MlsDecode, MlsEncode};
 use mls_rs_core::crypto::CipherSuite;
 
-use crate::{
-    client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
-    crypto::test_utils::{test_cipher_suite_provider, try_test_cipher_suite_provider},
-    group::{
-        proposal::{AddProposal, Proposal, ProposalOrRef, RemoveProposal, UpdateProposal},
-        proposal_cache::test_utils::CommitReceiver,
-        proposal_ref::ProposalRef,
-        test_utils::TEST_GROUP,
-        LeafIndex, Sender, TreeKemPublic,
-    },
-    identity::basic::BasicIdentityProvider,
-    key_package::test_utils::test_key_package,
-    tree_kem::{
-        leaf_node::test_utils::default_properties, node::NodeVec, test_utils::TreeWithSigners,
-    },
+use crate::client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION};
+use crate::crypto::test_utils::{test_cipher_suite_provider, try_test_cipher_suite_provider};
+use crate::group::proposal::{
+    AddProposal, Proposal, ProposalOrRef, RemoveProposal, UpdateProposal,
 };
+use crate::group::proposal_cache::test_utils::CommitReceiver;
+use crate::group::proposal_ref::ProposalRef;
+use crate::group::test_utils::TEST_GROUP;
+use crate::group::{LeafIndex, Sender, TreeKemPublic};
+use crate::identity::basic::BasicIdentityProvider;
+use crate::key_package::test_utils::test_key_package;
+use crate::tree_kem::leaf_node::test_utils::default_properties;
+use crate::tree_kem::node::NodeVec;
+use crate::tree_kem::test_utils::TreeWithSigners;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Default, Clone)]
 struct TreeModsTestCase {

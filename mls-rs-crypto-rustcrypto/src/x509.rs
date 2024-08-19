@@ -4,11 +4,15 @@
 
 use std::net::AddrParseError;
 
-use mls_rs_core::{crypto::CipherSuite, error::IntoAnyError};
+use mls_rs_core::crypto::CipherSuite;
+use mls_rs_core::error::IntoAnyError;
 use mls_rs_identity_x509::SubjectAltName;
-use spki::{der::Tag, ObjectIdentifier};
+use spki::der::Tag;
+use spki::ObjectIdentifier;
 
-use crate::{ec::EcError, ec_for_x509::EcX509Error, ec_signer::EcSignerError};
+use crate::ec::EcError;
+use crate::ec_for_x509::EcX509Error;
+use crate::ec_signer::EcSignerError;
 
 mod reader;
 mod util;

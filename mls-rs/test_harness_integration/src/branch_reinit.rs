@@ -1,21 +1,19 @@
 #[cfg(feature = "psk")]
 pub(crate) mod inner {
-    use mls_rs::{
-        group::CommitEffect, identity::SigningIdentity, mls_rs_codec::MlsEncode,
-        mls_rules::ProposalInfo, CipherSuiteProvider, CryptoProvider, MlsMessage,
-    };
+    use mls_rs::group::CommitEffect;
+    use mls_rs::identity::SigningIdentity;
+    use mls_rs::mls_rs_codec::MlsEncode;
+    use mls_rs::mls_rules::ProposalInfo;
+    use mls_rs::{CipherSuiteProvider, CryptoProvider, MlsMessage};
     use mls_rs_crypto_openssl::OpensslCryptoProvider;
     use tonic::{Request, Response, Status};
 
-    use crate::{
-        abort, get_tree,
-        mls_client::{
-            CreateSubgroupResponse, HandleBranchRequest, HandleBranchResponse,
-            HandleCommitResponse, HandlePendingCommitRequest, HandleReInitCommitResponse,
-            HandleReInitWelcomeRequest, JoinGroupResponse,
-        },
-        MlsClientImpl,
+    use crate::mls_client::{
+        CreateSubgroupResponse, HandleBranchRequest, HandleBranchResponse, HandleCommitResponse,
+        HandlePendingCommitRequest, HandleReInitCommitResponse, HandleReInitWelcomeRequest,
+        JoinGroupResponse,
     };
+    use crate::{abort, get_tree, MlsClientImpl};
 
     impl MlsClientImpl {
         pub(crate) async fn handle_pending_re_init_commit(
@@ -268,14 +266,12 @@ pub(crate) mod inner {
 
     use mls_rs::group::CommitEffect;
 
-    use crate::{
-        mls_client::{
-            CreateSubgroupResponse, HandleBranchRequest, HandleBranchResponse,
-            HandleCommitResponse, HandlePendingCommitRequest, HandleReInitCommitResponse,
-            HandleReInitWelcomeRequest, JoinGroupResponse,
-        },
-        MlsClientImpl,
+    use crate::mls_client::{
+        CreateSubgroupResponse, HandleBranchRequest, HandleBranchResponse, HandleCommitResponse,
+        HandlePendingCommitRequest, HandleReInitCommitResponse, HandleReInitWelcomeRequest,
+        JoinGroupResponse,
     };
+    use crate::MlsClientImpl;
 
     impl MlsClientImpl {
         pub(crate) async fn handle_pending_re_init_commit(

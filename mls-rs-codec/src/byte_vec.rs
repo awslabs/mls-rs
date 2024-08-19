@@ -2,7 +2,8 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use crate::{iter::mls_decode_split_on_collection, Error, MlsEncode, MlsSize, VarInt};
+use crate::iter::mls_decode_split_on_collection;
+use crate::{Error, MlsEncode, MlsSize, VarInt};
 
 use alloc::vec::Vec;
 

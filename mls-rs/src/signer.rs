@@ -95,8 +95,9 @@ pub(crate) trait Signable<'a> {
 
 #[cfg(test)]
 pub(crate) mod test_utils {
+    use alloc::string::String;
     use alloc::vec;
-    use alloc::{string::String, vec::Vec};
+    use alloc::vec::Vec;
     use mls_rs_core::crypto::CipherSuiteProvider;
 
     use crate::crypto::test_utils::try_test_cipher_suite_provider;
@@ -177,14 +178,13 @@ pub(crate) mod test_utils {
 
 #[cfg(test)]
 mod tests {
-    use super::{test_utils::TestSignable, *};
-    use crate::{
-        client::test_utils::TEST_CIPHER_SUITE,
-        crypto::test_utils::{
-            test_cipher_suite_provider, try_test_cipher_suite_provider, TestCryptoProvider,
-        },
-        group::test_utils::random_bytes,
+    use super::test_utils::TestSignable;
+    use super::*;
+    use crate::client::test_utils::TEST_CIPHER_SUITE;
+    use crate::crypto::test_utils::{
+        test_cipher_suite_provider, try_test_cipher_suite_provider, TestCryptoProvider,
     };
+    use crate::group::test_utils::random_bytes;
     use alloc::vec;
     use assert_matches::assert_matches;
 

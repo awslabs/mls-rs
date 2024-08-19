@@ -6,19 +6,15 @@ use std::fmt::Debug;
 
 use mls_rs_crypto_traits::Curve;
 use p256::pkcs8::EncodePublicKey;
+use spki::der::asn1::{BitString, BitStringRef};
+use spki::der::{Any, AnyRef};
 use spki::{
-    der::{
-        asn1::{BitString, BitStringRef},
-        Any, AnyRef,
-    },
     AlgorithmIdentifier, AlgorithmIdentifierRef, ObjectIdentifier, SubjectPublicKeyInfo,
     SubjectPublicKeyInfoRef,
 };
 
-use crate::{
-    ec::{pub_key_from_uncompressed, EcError, EcPublicKey},
-    ec_signer::EcSigner,
-};
+use crate::ec::{pub_key_from_uncompressed, EcError, EcPublicKey};
+use crate::ec_signer::EcSigner;
 pub const X25519_OID: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.3.101.110");
 pub const ED25519_OID: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.3.101.112");
 pub const P256_OID: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.3.1.7");

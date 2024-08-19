@@ -2,13 +2,12 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
+use crate::client::MlsError;
+use crate::group::transcript_hash::ConfirmedTranscriptHash;
 use crate::CipherSuiteProvider;
-use crate::{client::MlsError, group::transcript_hash::ConfirmedTranscriptHash};
 use alloc::vec::Vec;
-use core::{
-    fmt::{self, Debug},
-    ops::Deref,
-};
+use core::fmt::{self, Debug};
+use core::ops::Deref;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
 
