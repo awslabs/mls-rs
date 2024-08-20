@@ -1245,19 +1245,11 @@ mod tests {
         let (bob, bob_kp) =
             test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "b").await;
 
-        group
-            .group
-            .propose_add(alice_kp.clone(), vec![])
-            .await
-            .unwrap();
+        group.propose_add(alice_kp.clone(), vec![]).await.unwrap();
 
-        group
-            .group
-            .propose_add(bob_kp.clone(), vec![])
-            .await
-            .unwrap();
+        group.propose_add(bob_kp.clone(), vec![]).await.unwrap();
 
-        let output = group.group.commit(Vec::new()).await.unwrap();
+        let output = group.commit(Vec::new()).await.unwrap();
         let welcomes = output.welcome_messages;
 
         let cs = test_cipher_suite_provider(TEST_CIPHER_SUITE);
@@ -1283,7 +1275,6 @@ mod tests {
         let (identity, secret_key) = get_test_signing_identity(cs, b"member").await;
 
         let commit_output = groups[0]
-            .group
             .commit_builder()
             .set_new_signing_identity(secret_key, identity.clone())
             .build()
@@ -1292,7 +1283,7 @@ mod tests {
 
         // Check that the credential was updated by in the committer's state.
         groups[0].process_pending_commit().await.unwrap();
-        let new_member = groups[0].group.roster().member_with_index(0).unwrap();
+        let new_member = groups[0].roster().member_with_index(0).unwrap();
 
         assert_eq!(
             new_member.signing_identity.credential,
@@ -1310,7 +1301,7 @@ mod tests {
             .await
             .unwrap();
 
-        let new_member = groups[1].group.roster().member_with_index(0).unwrap();
+        let new_member = groups[1].roster().member_with_index(0).unwrap();
 
         assert_eq!(
             new_member.signing_identity.credential,
@@ -1332,8 +1323,7 @@ mod tests {
             None,
             Some(CommitOptions::new().with_ratchet_tree_extension(false)),
         )
-        .await
-        .group;
+        .await;
 
         let commit = group.commit(vec![]).await.unwrap();
 
@@ -1353,8 +1343,7 @@ mod tests {
             None,
             Some(CommitOptions::new().with_ratchet_tree_extension(true)),
         )
-        .await
-        .group;
+        .await;
 
         let commit = group.commit(vec![]).await.unwrap();
 
@@ -1374,8 +1363,7 @@ mod tests {
                     .with_ratchet_tree_extension(false),
             ),
         )
-        .await
-        .group;
+        .await;
 
         let commit = group.commit(vec![]).await.unwrap();
 
@@ -1402,8 +1390,7 @@ mod tests {
                     .with_ratchet_tree_extension(true),
             ),
         )
-        .await
-        .group;
+        .await;
 
         let commit = group.commit(vec![]).await.unwrap();
 
@@ -1426,8 +1413,7 @@ mod tests {
             None,
             Some(CommitOptions::new().with_allow_external_commit(false)),
         )
-        .await
-        .group;
+        .await;
 
         let commit = group.commit(vec![]).await.unwrap();
 
@@ -1627,9 +1613,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn detached_commit() {
-        let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
-            .await
-            .group;
+        let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
         let (_commit, secrets) = group.commit_builder().build_detached().await.unwrap();
         assert!(group.pending_commit.is_none());
