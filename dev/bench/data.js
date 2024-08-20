@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1724177689030,
+  "lastUpdate": 1724177693055,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -16079,6 +16079,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 131040,
             "range": "± 1059",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mgeisler@google.com",
+            "name": "Martin Geisler",
+            "username": "mgeisler"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a7f49ecdb103069387ed6d513b42bacf6b948ee1",
+          "message": "Let `TestGroup` deref to `Group` (#183)\n\nThis lets us treat a `TestGroup` as a `Group` in most places and thus\r\nturn a lot of `alice_group.group` lines into just `alice_group`.",
+          "timestamp": "2024-08-20T20:10:04+02:00",
+          "tree_id": "ca829476aae0a404d9bbb14ace1cd6c308961190",
+          "url": "https://github.com/awslabs/mls-rs/commit/a7f49ecdb103069387ed6d513b42bacf6b948ee1"
+        },
+        "date": 1724177691845,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 511231,
+            "range": "± 11184",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 520192,
+            "range": "± 13720",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 580504,
+            "range": "± 18506",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1241159,
+            "range": "± 35971",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7860729,
+            "range": "± 29381",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1087602,
+            "range": "± 55795",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1201662,
+            "range": "± 57869",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1272856,
+            "range": "± 56298",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 747378,
+            "range": "± 43027",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 822258,
+            "range": "± 12162",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 913471,
+            "range": "± 7656",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 20772,
+            "range": "± 828",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 68173,
+            "range": "± 1830",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 131270,
+            "range": "± 1593",
             "unit": "ns/iter"
           }
         ]
