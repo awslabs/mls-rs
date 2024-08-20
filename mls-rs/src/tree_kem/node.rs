@@ -414,9 +414,8 @@ impl NodeVec {
 #[cfg(test)]
 pub(crate) mod test_utils {
     use super::*;
-    use crate::{
-        client::test_utils::TEST_CIPHER_SUITE, tree_kem::leaf_node::test_utils::get_basic_test_node,
-    };
+    use crate::client::test_utils::TEST_CIPHER_SUITE;
+    use crate::tree_kem::leaf_node::test_utils::get_basic_test_node;
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn get_test_node_vec() -> NodeVec {
@@ -441,12 +440,9 @@ pub(crate) mod test_utils {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        client::test_utils::TEST_CIPHER_SUITE,
-        tree_kem::{
-            leaf_node::test_utils::get_basic_test_node, node::test_utils::get_test_node_vec,
-        },
-    };
+    use crate::client::test_utils::TEST_CIPHER_SUITE;
+    use crate::tree_kem::leaf_node::test_utils::get_basic_test_node;
+    use crate::tree_kem::node::test_utils::get_test_node_vec;
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn node_key_getters() {

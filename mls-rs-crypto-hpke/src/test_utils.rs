@@ -6,11 +6,9 @@
 
 use alloc::vec::Vec;
 
-use crate::{
-    context::{Context, ContextR, ContextS, EncryptionContext},
-    dhkem::DhKem,
-    hpke::Hpke,
-};
+use crate::context::{Context, ContextR, ContextS, EncryptionContext};
+use crate::dhkem::DhKem;
+use crate::hpke::Hpke;
 
 use mls_rs_core::crypto::test_suite::{EncapOutput, TestHpke};
 use mls_rs_crypto_traits::{AeadType, DhType, KdfType, KemResult, KemType};

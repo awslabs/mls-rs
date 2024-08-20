@@ -1,7 +1,5 @@
-use alloc::{
-    borrow::{Cow, ToOwned},
-    vec::Vec,
-};
+use alloc::borrow::{Cow, ToOwned};
+use alloc::vec::Vec;
 
 use crate::{Error, MlsDecode, MlsEncode, MlsSize};
 

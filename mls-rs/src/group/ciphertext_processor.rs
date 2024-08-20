@@ -2,26 +2,21 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use self::{
-    message_key::MessageKey,
-    reuse_guard::ReuseGuard,
-    sender_data_key::{SenderData, SenderDataAAD, SenderDataKey},
-};
+use self::message_key::MessageKey;
+use self::reuse_guard::ReuseGuard;
+use self::sender_data_key::{SenderData, SenderDataAAD, SenderDataKey};
 
-use super::{
-    epoch::EpochSecrets,
-    framing::{ContentType, FramedContent, Sender, WireFormat},
-    message_signature::AuthenticatedContent,
-    padding::PaddingMode,
-    secret_tree::{KeyType, MessageKeyData},
-    GroupContext,
-};
-use crate::{
-    client::MlsError,
-    tree_kem::node::{LeafIndex, NodeIndex},
-};
+use super::epoch::EpochSecrets;
+use super::framing::{ContentType, FramedContent, Sender, WireFormat};
+use super::message_signature::AuthenticatedContent;
+use super::padding::PaddingMode;
+use super::secret_tree::{KeyType, MessageKeyData};
+use super::GroupContext;
+use crate::client::MlsError;
+use crate::tree_kem::node::{LeafIndex, NodeIndex};
 use mls_rs_codec::MlsEncode;
-use mls_rs_core::{crypto::CipherSuiteProvider, error::IntoAnyError};
+use mls_rs_core::crypto::CipherSuiteProvider;
+use mls_rs_core::error::IntoAnyError;
 use zeroize::Zeroizing;
 
 mod message_key;
@@ -264,21 +259,15 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        cipher_suite::CipherSuite,
-        client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
-        crypto::{
-            test_utils::{test_cipher_suite_provider, TestCryptoProvider},
-            CipherSuiteProvider,
-        },
-        group::{
-            framing::{ApplicationData, Content, Sender, WireFormat},
-            message_signature::AuthenticatedContent,
-            padding::PaddingMode,
-            test_utils::{random_bytes, test_group, TestGroup},
-        },
-        tree_kem::node::LeafIndex,
-    };
+    use crate::cipher_suite::CipherSuite;
+    use crate::client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION};
+    use crate::crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider};
+    use crate::crypto::CipherSuiteProvider;
+    use crate::group::framing::{ApplicationData, Content, Sender, WireFormat};
+    use crate::group::message_signature::AuthenticatedContent;
+    use crate::group::padding::PaddingMode;
+    use crate::group::test_utils::{random_bytes, test_group, TestGroup};
+    use crate::tree_kem::node::LeafIndex;
 
     use super::{CiphertextProcessor, GroupStateProvider, MlsError};
 

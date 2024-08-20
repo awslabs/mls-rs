@@ -5,7 +5,9 @@ use core::fmt::Debug;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::crypto::CipherSuiteProvider;
 
-use crate::{client::MlsError, error::IntoAnyError, MlsMessage};
+use crate::client::MlsError;
+use crate::error::IntoAnyError;
+use crate::MlsMessage;
 
 #[derive(Clone, PartialEq, Eq, MlsEncode, MlsDecode, MlsSize, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

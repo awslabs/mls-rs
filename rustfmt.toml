@@ -1,1 +1,5 @@
 edition = "2021"
+
+# Run `cargo +nightly fmt` occasionaly to activate this unstable
+# option:
+imports_granularity = "Module"

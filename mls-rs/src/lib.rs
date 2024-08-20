@@ -156,22 +156,18 @@ mod signer;
 /// [`ClientBuilder`](client_builder::ClientBuilder).
 pub mod storage_provider;
 
-pub use mls_rs_core::{
-    crypto::{CipherSuiteProvider, CryptoProvider},
-    group::GroupStateStorage,
-    identity::IdentityProvider,
-    key_package::KeyPackageStorage,
-    psk::PreSharedKeyStorage,
-};
+pub use mls_rs_core::crypto::{CipherSuiteProvider, CryptoProvider};
+pub use mls_rs_core::group::GroupStateStorage;
+pub use mls_rs_core::identity::IdentityProvider;
+pub use mls_rs_core::key_package::KeyPackageStorage;
+pub use mls_rs_core::psk::PreSharedKeyStorage;
 
 /// Dependencies of [`MlsRules`].
 pub mod mls_rules {
-    pub use crate::group::{
-        mls_rules::{
-            CommitDirection, CommitOptions, CommitSource, DefaultMlsRules, EncryptionOptions,
-        },
-        proposal_filter::{ProposalBundle, ProposalInfo, ProposalSource},
+    pub use crate::group::mls_rules::{
+        CommitDirection, CommitOptions, CommitSource, DefaultMlsRules, EncryptionOptions,
     };
+    pub use crate::group::proposal_filter::{ProposalBundle, ProposalInfo, ProposalSource};
 
     #[cfg(feature = "by_ref_proposal")]
     pub use crate::group::proposal_ref::ProposalRef;
@@ -179,15 +175,11 @@ pub mod mls_rules {
 
 pub use mls_rs_core::extension::{Extension, ExtensionList};
 
-pub use crate::{
-    client::Client,
-    group::{
-        framing::{MlsMessage, WireFormat},
-        mls_rules::MlsRules,
-        Group,
-    },
-    key_package::{KeyPackage, KeyPackageRef},
-};
+pub use crate::client::Client;
+pub use crate::group::framing::{MlsMessage, WireFormat};
+pub use crate::group::mls_rules::MlsRules;
+pub use crate::group::Group;
+pub use crate::key_package::{KeyPackage, KeyPackageRef};
 
 /// Error types.
 pub mod error {

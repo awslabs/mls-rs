@@ -2,16 +2,16 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use crate::{
-    client::MlsError,
-    client_config::ClientConfig,
-    group::{
-        cipher_suite_provider, epoch::EpochSecrets, key_schedule::KeySchedule,
-        state_repo::GroupStateRepository, CommitGeneration, ConfirmationTag, Group, GroupContext,
-        GroupState, InterimTranscriptHash, ReInitProposal, TreeKemPublic,
-    },
-    tree_kem::TreeKemPrivate,
+use crate::client::MlsError;
+use crate::client_config::ClientConfig;
+use crate::group::epoch::EpochSecrets;
+use crate::group::key_schedule::KeySchedule;
+use crate::group::state_repo::GroupStateRepository;
+use crate::group::{
+    cipher_suite_provider, CommitGeneration, ConfirmationTag, Group, GroupContext, GroupState,
+    InterimTranscriptHash, ReInitProposal, TreeKemPublic,
 };
+use crate::tree_kem::TreeKemPrivate;
 
 #[cfg(feature = "by_ref_proposal")]
 use crate::{
@@ -214,16 +214,15 @@ where
 pub(crate) mod test_utils {
     use alloc::vec;
 
-    use crate::{
-        cipher_suite::CipherSuite,
-        crypto::test_utils::test_cipher_suite_provider,
-        group::{
-            confirmation_tag::ConfirmationTag, epoch::test_utils::get_test_epoch_secrets,
-            key_schedule::test_utils::get_test_key_schedule, test_utils::get_test_group_context,
-            transcript_hash::InterimTranscriptHash,
-        },
-        tree_kem::{node::LeafIndex, TreeKemPrivate},
-    };
+    use crate::cipher_suite::CipherSuite;
+    use crate::crypto::test_utils::test_cipher_suite_provider;
+    use crate::group::confirmation_tag::ConfirmationTag;
+    use crate::group::epoch::test_utils::get_test_epoch_secrets;
+    use crate::group::key_schedule::test_utils::get_test_key_schedule;
+    use crate::group::test_utils::get_test_group_context;
+    use crate::group::transcript_hash::InterimTranscriptHash;
+    use crate::tree_kem::node::LeafIndex;
+    use crate::tree_kem::TreeKemPrivate;
 
     use super::{RawGroupState, Snapshot};
 
@@ -258,13 +257,9 @@ pub(crate) mod test_utils {
 mod tests {
     use alloc::vec;
 
-    use crate::{
-        client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
-        group::{
-            test_utils::{test_group, TestGroup},
-            Group,
-        },
-    };
+    use crate::client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION};
+    use crate::group::test_utils::{test_group, TestGroup};
+    use crate::group::Group;
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn snapshot_restore(group: TestGroup) {

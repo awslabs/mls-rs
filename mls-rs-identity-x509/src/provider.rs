@@ -2,16 +2,15 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use crate::{util::credential_to_chain, CertificateChain, X509IdentityError};
+use crate::util::credential_to_chain;
+use crate::{CertificateChain, X509IdentityError};
 use alloc::vec;
 use alloc::vec::Vec;
-use mls_rs_core::{
-    crypto::SignaturePublicKey,
-    error::IntoAnyError,
-    extension::ExtensionList,
-    identity::{CredentialType, IdentityProvider},
-    time::MlsTime,
-};
+use mls_rs_core::crypto::SignaturePublicKey;
+use mls_rs_core::error::IntoAnyError;
+use mls_rs_core::extension::ExtensionList;
+use mls_rs_core::identity::{CredentialType, IdentityProvider};
+use mls_rs_core::time::MlsTime;
 
 #[cfg(not(feature = "std"))]
 use alloc::boxed::Box;
@@ -185,13 +184,14 @@ where
 
 #[cfg(all(test, feature = "std"))]
 mod tests {
-    use mls_rs_core::{crypto::SignaturePublicKey, identity::CredentialType, time::MlsTime};
+    use mls_rs_core::crypto::SignaturePublicKey;
+    use mls_rs_core::identity::CredentialType;
+    use mls_rs_core::time::MlsTime;
 
+    use crate::test_utils::{
+        test_certificate_chain, test_signing_identity, test_signing_identity_with_chain, TestError,
+    };
     use crate::{
-        test_utils::{
-            test_certificate_chain, test_signing_identity, test_signing_identity_with_chain,
-            TestError,
-        },
         MockX509CredentialValidator, MockX509IdentityExtractor, X509IdentityError,
         X509IdentityProvider,
     };

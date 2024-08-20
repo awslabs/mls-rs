@@ -5,11 +5,9 @@
 use std::ops::Deref;
 
 use mls_rs_core::crypto::CipherSuite;
-use openssl::{
-    hash::{hash, MessageDigest},
-    pkey::PKey,
-    sign::Signer,
-};
+use openssl::hash::{hash, MessageDigest};
+use openssl::pkey::PKey;
+use openssl::sign::Signer;
 use thiserror::Error;
 
 #[derive(Debug, Error)]

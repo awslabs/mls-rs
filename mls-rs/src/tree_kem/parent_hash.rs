@@ -4,14 +4,11 @@
 
 use crate::client::MlsError;
 use crate::crypto::{CipherSuiteProvider, HpkePublicKey};
-use crate::tree_kem::math as tree_math;
 use crate::tree_kem::node::{LeafIndex, Node, NodeIndex};
-use crate::tree_kem::TreeKemPublic;
+use crate::tree_kem::{math as tree_math, TreeKemPublic};
 use alloc::vec::Vec;
-use core::{
-    fmt::{self, Debug},
-    ops::Deref,
-};
+use core::fmt::{self, Debug};
+use core::ops::Deref;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
 use tree_math::TreeIndex;
@@ -284,12 +281,11 @@ impl TreeKemPublic {
 pub(crate) mod test_utils {
 
     use super::*;
-    use crate::{
-        cipher_suite::CipherSuite,
-        crypto::test_utils::test_cipher_suite_provider,
-        identity::basic::BasicIdentityProvider,
-        tree_kem::{leaf_node::test_utils::get_basic_test_node, node::Parent},
-    };
+    use crate::cipher_suite::CipherSuite;
+    use crate::crypto::test_utils::test_cipher_suite_provider;
+    use crate::identity::basic::BasicIdentityProvider;
+    use crate::tree_kem::leaf_node::test_utils::get_basic_test_node;
+    use crate::tree_kem::node::Parent;
 
     use alloc::vec;
 

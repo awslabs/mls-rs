@@ -2,7 +2,8 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use alloc::{collections::BTreeMap, vec::Vec};
+use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
 
 #[cfg(feature = "std")]
 use std::{collections::HashMap, hash::Hash};

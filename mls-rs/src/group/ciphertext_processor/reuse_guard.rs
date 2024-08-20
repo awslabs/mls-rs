@@ -68,9 +68,8 @@ mod tests {
     use alloc::vec::Vec;
     use mls_rs_core::crypto::CipherSuiteProvider;
 
-    use crate::{
-        client::test_utils::TEST_CIPHER_SUITE, crypto::test_utils::test_cipher_suite_provider,
-    };
+    use crate::client::test_utils::TEST_CIPHER_SUITE;
+    use crate::crypto::test_utils::test_cipher_suite_provider;
 
     use super::{ReuseGuard, REUSE_GUARD_SIZE};
 

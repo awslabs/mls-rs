@@ -3,38 +3,37 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
-use mls_rs_core::{
-    crypto::SignatureSecretKey, error::IntoAnyError, extension::ExtensionList, group::Member,
-    identity::IdentityProvider,
-};
+use mls_rs_core::crypto::SignatureSecretKey;
+use mls_rs_core::error::IntoAnyError;
+use mls_rs_core::extension::ExtensionList;
+use mls_rs_core::group::Member;
+use mls_rs_core::identity::IdentityProvider;
 
-use crate::{
-    cipher_suite::CipherSuite,
-    client::MlsError,
-    external_client::ExternalClientConfig,
-    group::{
-        cipher_suite_provider,
-        confirmation_tag::ConfirmationTag,
-        framing::PublicMessage,
-        member_from_leaf_node,
-        message_processor::{
-            ApplicationMessageDescription, CommitMessageDescription, EventOrContent,
-            MessageProcessor, ProposalMessageDescription, ProvisionalState,
-        },
-        proposal::RemoveProposal,
-        proposal_filter::ProposalInfo,
-        snapshot::RawGroupState,
-        state::GroupState,
-        transcript_hash::InterimTranscriptHash,
-        validate_group_info_joiner, ContentType, ExportedTree, GroupContext, GroupInfo, Roster,
-        Welcome,
-    },
-    identity::SigningIdentity,
-    protocol_version::ProtocolVersion,
-    psk::AlwaysFoundPskStorage,
-    tree_kem::{node::LeafIndex, path_secret::PathSecret, TreeKemPrivate},
-    CryptoProvider, KeyPackage, MlsMessage,
+use crate::cipher_suite::CipherSuite;
+use crate::client::MlsError;
+use crate::external_client::ExternalClientConfig;
+use crate::group::confirmation_tag::ConfirmationTag;
+use crate::group::framing::PublicMessage;
+use crate::group::message_processor::{
+    ApplicationMessageDescription, CommitMessageDescription, EventOrContent, MessageProcessor,
+    ProposalMessageDescription, ProvisionalState,
 };
+use crate::group::proposal::RemoveProposal;
+use crate::group::proposal_filter::ProposalInfo;
+use crate::group::snapshot::RawGroupState;
+use crate::group::state::GroupState;
+use crate::group::transcript_hash::InterimTranscriptHash;
+use crate::group::{
+    cipher_suite_provider, member_from_leaf_node, validate_group_info_joiner, ContentType,
+    ExportedTree, GroupContext, GroupInfo, Roster, Welcome,
+};
+use crate::identity::SigningIdentity;
+use crate::protocol_version::ProtocolVersion;
+use crate::psk::AlwaysFoundPskStorage;
+use crate::tree_kem::node::LeafIndex;
+use crate::tree_kem::path_secret::PathSecret;
+use crate::tree_kem::TreeKemPrivate;
+use crate::{CryptoProvider, KeyPackage, MlsMessage};
 
 #[cfg(feature = "by_ref_proposal")]
 use crate::{
@@ -760,10 +759,10 @@ impl From<KeyPackage> for ExternalReceivedMessage {
 
 #[cfg(test)]
 pub(crate) mod test_utils {
-    use crate::{
-        external_client::tests_utils::{TestExternalClientBuilder, TestExternalClientConfig},
-        group::test_utils::TestGroup,
+    use crate::external_client::tests_utils::{
+        TestExternalClientBuilder, TestExternalClientConfig,
     };
+    use crate::group::test_utils::TestGroup;
 
     use super::ExternalGroup;
 
@@ -801,32 +800,28 @@ pub(crate) mod test_utils {
 #[cfg(test)]
 mod tests {
     use super::test_utils::make_external_group;
-    use crate::{
-        cipher_suite::CipherSuite,
-        client::{
-            test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
-            MlsError,
-        },
-        crypto::{test_utils::TestCryptoProvider, SignatureSecretKey},
-        extension::ExternalSendersExt,
-        external_client::{
-            group::test_utils::make_external_group_with_config,
-            tests_utils::{TestExternalClientBuilder, TestExternalClientConfig},
-            ExternalGroup, ExternalReceivedMessage, ExternalSnapshot,
-        },
-        group::{
-            framing::{Content, MlsMessagePayload},
-            message_processor::CommitEffect,
-            proposal::{AddProposal, Proposal, ProposalOrRef},
-            proposal_ref::ProposalRef,
-            test_utils::{test_group, TestGroup},
-            CommitMessageDescription, ProposalMessageDescription,
-        },
-        identity::{test_utils::get_test_signing_identity, SigningIdentity},
-        key_package::test_utils::{test_key_package, test_key_package_message},
-        protocol_version::ProtocolVersion,
-        ExtensionList, MlsMessage,
+    use crate::cipher_suite::CipherSuite;
+    use crate::client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION};
+    use crate::client::MlsError;
+    use crate::crypto::test_utils::TestCryptoProvider;
+    use crate::crypto::SignatureSecretKey;
+    use crate::extension::ExternalSendersExt;
+    use crate::external_client::group::test_utils::make_external_group_with_config;
+    use crate::external_client::tests_utils::{
+        TestExternalClientBuilder, TestExternalClientConfig,
     };
+    use crate::external_client::{ExternalGroup, ExternalReceivedMessage, ExternalSnapshot};
+    use crate::group::framing::{Content, MlsMessagePayload};
+    use crate::group::message_processor::CommitEffect;
+    use crate::group::proposal::{AddProposal, Proposal, ProposalOrRef};
+    use crate::group::proposal_ref::ProposalRef;
+    use crate::group::test_utils::{test_group, TestGroup};
+    use crate::group::{CommitMessageDescription, ProposalMessageDescription};
+    use crate::identity::test_utils::get_test_signing_identity;
+    use crate::identity::SigningIdentity;
+    use crate::key_package::test_utils::{test_key_package, test_key_package_message};
+    use crate::protocol_version::ProtocolVersion;
+    use crate::{ExtensionList, MlsMessage};
     use assert_matches::assert_matches;
     use mls_rs_codec::{MlsDecode, MlsEncode};
 

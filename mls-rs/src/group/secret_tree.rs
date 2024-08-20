@@ -3,14 +3,15 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use alloc::vec::Vec;
-use core::{
-    fmt::{self, Debug},
-    ops::{Deref, DerefMut},
-};
+use core::fmt::{self, Debug};
+use core::ops::{Deref, DerefMut};
 
 use zeroize::Zeroizing;
 
-use crate::{client::MlsError, map::LargeMap, tree_kem::math::TreeIndex, CipherSuiteProvider};
+use crate::client::MlsError;
+use crate::map::LargeMap;
+use crate::tree_kem::math::TreeIndex;
+use crate::CipherSuiteProvider;
 
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
@@ -507,11 +508,13 @@ impl SecretKeyRatchet {
 
 #[cfg(test)]
 pub(crate) mod test_utils {
-    use alloc::{string::String, vec::Vec};
+    use alloc::string::String;
+    use alloc::vec::Vec;
     use mls_rs_core::crypto::CipherSuiteProvider;
     use zeroize::Zeroizing;
 
-    use crate::{crypto::test_utils::try_test_cipher_suite_provider, tree_kem::math::TreeIndex};
+    use crate::crypto::test_utils::try_test_cipher_suite_provider;
+    use crate::tree_kem::math::TreeIndex;
 
     use super::{KeyType, SecretKeyRatchet, SecretTree};
 
@@ -584,19 +587,18 @@ pub(crate) mod test_utils {
 mod tests {
     use alloc::vec;
 
-    use crate::{
-        cipher_suite::CipherSuite,
-        client::test_utils::TEST_CIPHER_SUITE,
-        crypto::test_utils::{
-            test_cipher_suite_provider, try_test_cipher_suite_provider, TestCryptoProvider,
-        },
-        tree_kem::node::NodeIndex,
+    use crate::cipher_suite::CipherSuite;
+    use crate::client::test_utils::TEST_CIPHER_SUITE;
+    use crate::crypto::test_utils::{
+        test_cipher_suite_provider, try_test_cipher_suite_provider, TestCryptoProvider,
     };
+    use crate::tree_kem::node::NodeIndex;
 
     #[cfg(not(mls_build_async))]
     use crate::group::test_utils::random_bytes;
 
-    use super::{test_utils::get_test_tree, *};
+    use super::test_utils::get_test_tree;
+    use super::*;
 
     use assert_matches::assert_matches;
 
@@ -921,10 +923,9 @@ mod interop_tests {
     use mls_rs_core::crypto::{CipherSuite, CipherSuiteProvider};
     use zeroize::Zeroizing;
 
-    use crate::{
-        crypto::test_utils::try_test_cipher_suite_provider,
-        group::{ciphertext_processor::InteropSenderData, secret_tree::KeyType},
-    };
+    use crate::crypto::test_utils::try_test_cipher_suite_provider;
+    use crate::group::ciphertext_processor::InteropSenderData;
+    use crate::group::secret_tree::KeyType;
 
     use super::SecretTree;
 

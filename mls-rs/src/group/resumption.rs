@@ -4,18 +4,18 @@
 
 use alloc::vec::Vec;
 
-use mls_rs_core::{
-    crypto::{CipherSuite, SignatureSecretKey},
-    extension::ExtensionList,
-    identity::SigningIdentity,
-    protocol_version::ProtocolVersion,
-};
+use mls_rs_core::crypto::{CipherSuite, SignatureSecretKey};
+use mls_rs_core::extension::ExtensionList;
+use mls_rs_core::identity::SigningIdentity;
+use mls_rs_core::protocol_version::ProtocolVersion;
 
-use crate::{client::MlsError, Client, Group, MlsMessage};
+use crate::client::MlsError;
+use crate::{Client, Group, MlsMessage};
 
+use super::proposal::ReInitProposal;
 use super::{
-    proposal::ReInitProposal, ClientConfig, ExportedTree, JustPreSharedKeyID, MessageProcessor,
-    NewMemberInfo, PreSharedKeyID, PskGroupId, PskSecretInput, ResumptionPSKUsage, ResumptionPsk,
+    ClientConfig, ExportedTree, JustPreSharedKeyID, MessageProcessor, NewMemberInfo,
+    PreSharedKeyID, PskGroupId, PskSecretInput, ResumptionPSKUsage, ResumptionPsk,
 };
 
 struct ResumptionGroupParameters<'a> {

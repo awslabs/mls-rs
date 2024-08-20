@@ -2,20 +2,14 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use mls_rs::{
-    client_builder::MlsConfig,
-    error::MlsError,
-    external_client::{
-        builder::MlsConfig as ExternalMlsConfig, ExternalClient, ExternalReceivedMessage,
-        ExternalSnapshot,
-    },
-    group::{CachedProposal, ReceivedMessage},
-    identity::{
-        basic::{BasicCredential, BasicIdentityProvider},
-        SigningIdentity,
-    },
-    CipherSuite, CipherSuiteProvider, Client, CryptoProvider, ExtensionList, MlsMessage,
-};
+use mls_rs::client_builder::MlsConfig;
+use mls_rs::error::MlsError;
+use mls_rs::external_client::builder::MlsConfig as ExternalMlsConfig;
+use mls_rs::external_client::{ExternalClient, ExternalReceivedMessage, ExternalSnapshot};
+use mls_rs::group::{CachedProposal, ReceivedMessage};
+use mls_rs::identity::basic::{BasicCredential, BasicIdentityProvider};
+use mls_rs::identity::SigningIdentity;
+use mls_rs::{CipherSuite, CipherSuiteProvider, Client, CryptoProvider, ExtensionList, MlsMessage};
 use mls_rs_core::crypto::SignatureSecretKey;
 
 const CIPHERSUITE: CipherSuite = CipherSuite::CURVE25519_AES128;

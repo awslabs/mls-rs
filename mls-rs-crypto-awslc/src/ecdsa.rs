@@ -2,13 +2,14 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use std::{ffi::c_void, mem::MaybeUninit, ops::Deref, ptr::null_mut};
+use std::ffi::c_void;
+use std::mem::MaybeUninit;
+use std::ops::Deref;
+use std::ptr::null_mut;
 
-use aws_lc_rs::{
-    digest,
-    error::Unspecified,
-    signature::{self, UnparsedPublicKey, ED25519_PUBLIC_KEY_LEN},
-};
+use aws_lc_rs::digest;
+use aws_lc_rs::error::Unspecified;
+use aws_lc_rs::signature::{self, UnparsedPublicKey, ED25519_PUBLIC_KEY_LEN};
 
 use aws_lc_sys::{
     ECDSA_SIG_free, ECDSA_SIG_to_bytes, ECDSA_do_sign, ED25519_keypair, ED25519_sign,
@@ -18,11 +19,10 @@ use aws_lc_sys::{
 use mls_rs_core::crypto::{CipherSuite, SignaturePublicKey, SignatureSecretKey};
 use mls_rs_crypto_traits::Curve;
 
-use crate::{
-    check_non_null,
-    ec::{ec_generate, ec_public_key, EcPrivateKey, EcPublicKey, EvpPkey, SUPPORTED_NIST_CURVES},
-    AwsLcCryptoError,
+use crate::ec::{
+    ec_generate, ec_public_key, EcPrivateKey, EcPublicKey, EvpPkey, SUPPORTED_NIST_CURVES,
 };
+use crate::{check_non_null, AwsLcCryptoError};
 
 #[derive(Clone)]
 pub struct AwsLcEcdsa(Curve);

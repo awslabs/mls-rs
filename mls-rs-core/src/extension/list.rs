@@ -173,9 +173,8 @@ mod tests {
     use assert_matches::assert_matches;
     use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 
-    use crate::extension::{
-        list::ExtensionList, Extension, ExtensionType, MlsCodecExtension, MlsExtension,
-    };
+    use crate::extension::list::ExtensionList;
+    use crate::extension::{Extension, ExtensionType, MlsCodecExtension, MlsExtension};
 
     #[derive(Debug, Clone, MlsSize, MlsEncode, MlsDecode, PartialEq, Eq)]
     struct TestExtensionA(u32);

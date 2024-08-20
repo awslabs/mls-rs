@@ -4,10 +4,8 @@
 
 use alloc::vec;
 use alloc::vec::Vec;
-use core::{
-    fmt::{self, Debug},
-    ops::Deref,
-};
+use core::fmt::{self, Debug};
+use core::ops::Deref;
 use mls_rs_core::crypto::CipherSuiteProvider;
 use zeroize::Zeroizing;
 
@@ -116,12 +114,9 @@ mod tests {
     use core::iter;
     use serde::{Deserialize, Serialize};
 
-    use crate::{
-        crypto::test_utils::try_test_cipher_suite_provider,
-        psk::ExternalPskId,
-        psk::{JustPreSharedKeyID, PreSharedKeyID, PskNonce},
-        CipherSuiteProvider,
-    };
+    use crate::crypto::test_utils::try_test_cipher_suite_provider;
+    use crate::psk::{ExternalPskId, JustPreSharedKeyID, PreSharedKeyID, PskNonce};
+    use crate::CipherSuiteProvider;
 
     #[cfg(not(mls_build_async))]
     use crate::{

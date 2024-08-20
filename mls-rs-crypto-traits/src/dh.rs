@@ -2,10 +2,8 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use mls_rs_core::{
-    crypto::{HpkePublicKey, HpkeSecretKey},
-    error::IntoAnyError,
-};
+use mls_rs_core::crypto::{HpkePublicKey, HpkeSecretKey};
+use mls_rs_core::error::IntoAnyError;
 
 use alloc::vec::Vec;
 

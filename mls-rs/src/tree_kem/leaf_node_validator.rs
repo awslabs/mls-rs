@@ -4,9 +4,12 @@
 
 use super::leaf_node::{LeafNode, LeafNodeSigningContext, LeafNodeSource};
 use crate::client::MlsError;
+use crate::signer::Signable;
+use crate::time::MlsTime;
 use crate::CipherSuiteProvider;
-use crate::{signer::Signable, time::MlsTime};
-use mls_rs_core::{error::IntoAnyError, extension::ExtensionList, identity::IdentityProvider};
+use mls_rs_core::error::IntoAnyError;
+use mls_rs_core::extension::ExtensionList;
+use mls_rs_core::identity::IdentityProvider;
 
 use crate::extension::RequiredCapabilitiesExt;
 
@@ -242,13 +245,11 @@ mod tests {
     use super::*;
 
     use crate::client::test_utils::TEST_CIPHER_SUITE;
-    use crate::crypto::test_utils::test_cipher_suite_provider;
-    use crate::crypto::test_utils::TestCryptoProvider;
+    use crate::crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider};
     use crate::crypto::SignatureSecretKey;
     use crate::extension::test_utils::TestExtension;
     use crate::group::test_utils::random_bytes;
-    use crate::identity::basic::BasicCredential;
-    use crate::identity::basic::BasicIdentityProvider;
+    use crate::identity::basic::{BasicCredential, BasicIdentityProvider};
     use crate::identity::test_utils::get_test_signing_identity;
     use crate::tree_kem::leaf_node::test_utils::*;
     use crate::tree_kem::leaf_node_validator::test_utils::FailureIdentityProvider;
@@ -625,16 +626,16 @@ mod tests {
 
 #[cfg(test)]
 pub(crate) mod test_utils {
+    use alloc::boxed::Box;
     use alloc::vec;
-    use alloc::{boxed::Box, vec::Vec};
+    use alloc::vec::Vec;
     use mls_rs_codec::MlsEncode;
-    use mls_rs_core::{
-        error::IntoAnyError,
-        extension::ExtensionList,
-        identity::{BasicCredential, IdentityProvider},
-    };
+    use mls_rs_core::error::IntoAnyError;
+    use mls_rs_core::extension::ExtensionList;
+    use mls_rs_core::identity::{BasicCredential, IdentityProvider};
 
-    use crate::{identity::SigningIdentity, time::MlsTime};
+    use crate::identity::SigningIdentity;
+    use crate::time::MlsTime;
 
     #[derive(Clone, Debug, Default)]
     pub struct FailureIdentityProvider;

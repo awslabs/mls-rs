@@ -5,10 +5,8 @@
 use crate::error::IntoAnyError;
 use alloc::vec;
 use alloc::vec::Vec;
-use core::{
-    fmt::{self, Debug},
-    ops::Deref,
-};
+use core::fmt::{self, Debug};
+use core::ops::Deref;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use zeroize::{ZeroizeOnDrop, Zeroizing};
 

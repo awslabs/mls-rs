@@ -6,21 +6,21 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt::Debug;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
-use mls_rs_core::{crypto::SignatureSecretKey, error::IntoAnyError};
+use mls_rs_core::crypto::SignatureSecretKey;
+use mls_rs_core::error::IntoAnyError;
 
-use crate::{
-    cipher_suite::CipherSuite,
-    client::MlsError,
-    client_config::ClientConfig,
-    extension::RatchetTreeExt,
-    identity::SigningIdentity,
-    protocol_version::ProtocolVersion,
-    signer::Signable,
-    tree_kem::{
-        kem::TreeKem, node::LeafIndex, path_secret::PathSecret, TreeKemPrivate, UpdatePath,
-    },
-    ExtensionList, MlsRules,
-};
+use crate::cipher_suite::CipherSuite;
+use crate::client::MlsError;
+use crate::client_config::ClientConfig;
+use crate::extension::RatchetTreeExt;
+use crate::identity::SigningIdentity;
+use crate::protocol_version::ProtocolVersion;
+use crate::signer::Signable;
+use crate::tree_kem::kem::TreeKem;
+use crate::tree_kem::node::LeafIndex;
+use crate::tree_kem::path_secret::PathSecret;
+use crate::tree_kem::{TreeKemPrivate, UpdatePath};
+use crate::{ExtensionList, MlsRules};
 
 #[cfg(all(not(mls_build_async), feature = "rayon"))]
 use {crate::iter::ParallelIteratorExt, rayon::prelude::*};
@@ -36,15 +36,15 @@ use crate::{
     psk::ExternalPskId,
 };
 
+use super::confirmation_tag::ConfirmationTag;
+use super::framing::{Content, MlsMessage, MlsMessagePayload, Sender};
+use super::key_schedule::{KeySchedule, WelcomeSecret};
+use super::message_hash::MessageHash;
+use super::message_processor::{path_update_required, MessageProcessor};
+use super::message_signature::AuthenticatedContent;
+use super::mls_rules::CommitDirection;
+use super::proposal::{Proposal, ProposalOrRef};
 use super::{
-    confirmation_tag::ConfirmationTag,
-    framing::{Content, MlsMessage, MlsMessagePayload, Sender},
-    key_schedule::{KeySchedule, WelcomeSecret},
-    message_hash::MessageHash,
-    message_processor::{path_update_required, MessageProcessor},
-    message_signature::AuthenticatedContent,
-    mls_rules::CommitDirection,
-    proposal::{Proposal, ProposalOrRef},
     ConfirmedTranscriptHash, EncryptedGroupSecrets, ExportedTree, Group, GroupContext, GroupInfo,
     Welcome,
 };
@@ -854,10 +854,9 @@ where
 pub(crate) mod test_utils {
     use alloc::vec::Vec;
 
-    use crate::{
-        crypto::SignatureSecretKey,
-        tree_kem::{leaf_node::LeafNode, TreeKemPublic, UpdatePathNode},
-    };
+    use crate::crypto::SignatureSecretKey;
+    use crate::tree_kem::leaf_node::LeafNode;
+    use crate::tree_kem::{TreeKemPublic, UpdatePathNode};
 
     #[derive(Copy, Clone, Debug)]
     pub struct CommitModifiers {
@@ -881,42 +880,34 @@ pub(crate) mod test_utils {
 mod tests {
     use alloc::boxed::Box;
 
-    use mls_rs_core::{
-        error::IntoAnyError,
-        extension::ExtensionType,
-        identity::{CredentialType, IdentityProvider},
-        time::MlsTime,
-    };
+    use mls_rs_core::error::IntoAnyError;
+    use mls_rs_core::extension::ExtensionType;
+    use mls_rs_core::identity::{CredentialType, IdentityProvider};
+    use mls_rs_core::time::MlsTime;
 
-    use crate::{
-        crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider},
-        group::{
-            mls_rules::DefaultMlsRules,
-            test_utils::{test_group, test_group_custom},
-        },
-        mls_rules::CommitOptions,
-        Client,
-    };
+    use crate::crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider};
+    use crate::group::mls_rules::DefaultMlsRules;
+    use crate::group::test_utils::{test_group, test_group_custom};
+    use crate::mls_rules::CommitOptions;
+    use crate::Client;
 
     #[cfg(feature = "by_ref_proposal")]
     use crate::extension::ExternalSendersExt;
 
-    use crate::{
-        client::test_utils::{test_client_with_key_pkg, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
-        client_builder::{
-            test_utils::TestClientConfig, BaseConfig, ClientBuilder, WithCryptoProvider,
-            WithIdentityProvider,
-        },
-        client_config::ClientConfig,
-        extension::test_utils::{TestExtension, TEST_EXTENSION_TYPE},
-        group::{
-            proposal::ProposalType,
-            test_utils::{test_group_custom_config, test_n_member_group},
-        },
-        identity::test_utils::get_test_signing_identity,
-        identity::{basic::BasicIdentityProvider, test_utils::get_test_basic_credential},
-        key_package::test_utils::test_key_package_message,
+    use crate::client::test_utils::{
+        test_client_with_key_pkg, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION,
     };
+    use crate::client_builder::test_utils::TestClientConfig;
+    use crate::client_builder::{
+        BaseConfig, ClientBuilder, WithCryptoProvider, WithIdentityProvider,
+    };
+    use crate::client_config::ClientConfig;
+    use crate::extension::test_utils::{TestExtension, TEST_EXTENSION_TYPE};
+    use crate::group::proposal::ProposalType;
+    use crate::group::test_utils::{test_group_custom_config, test_n_member_group};
+    use crate::identity::basic::BasicIdentityProvider;
+    use crate::identity::test_utils::{get_test_basic_credential, get_test_signing_identity};
+    use crate::key_package::test_utils::test_key_package_message;
 
     use crate::extension::RequiredCapabilitiesExt;
 

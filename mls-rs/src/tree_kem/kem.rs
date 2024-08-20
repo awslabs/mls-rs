@@ -25,12 +25,9 @@ use std::collections::HashSet;
 
 use super::hpke_encryption::HpkeEncryptable;
 use super::leaf_node::ConfigProperties;
-use super::node::NodeTypeResolver;
-use super::{
-    node::{LeafIndex, NodeIndex},
-    path_secret::{PathSecret, PathSecretGenerator},
-    TreeKemPrivate, TreeKemPublic, UpdatePath, UpdatePathNode, ValidatedUpdatePath,
-};
+use super::node::{LeafIndex, NodeIndex, NodeTypeResolver};
+use super::path_secret::{PathSecret, PathSecretGenerator};
+use super::{TreeKemPrivate, TreeKemPublic, UpdatePath, UpdatePathNode, ValidatedUpdatePath};
 
 #[cfg(test)]
 use crate::{group::CommitModifiers, signer::Signable};
@@ -412,24 +409,23 @@ impl<'a> TreeKem<'a> {
 #[cfg(test)]
 mod tests {
     use super::{tree_math, TreeKem};
-    use crate::{
-        cipher_suite::CipherSuite,
-        client::test_utils::TEST_CIPHER_SUITE,
-        crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider},
-        extension::test_utils::TestExtension,
-        group::test_utils::{get_test_group_context, random_bytes},
-        identity::basic::BasicIdentityProvider,
-        tree_kem::{
-            leaf_node::{
-                test_utils::{get_basic_test_node_sig_key, get_test_capabilities},
-                ConfigProperties,
-            },
-            node::LeafIndex,
-            Capabilities, TreeKemPrivate, TreeKemPublic, UpdatePath, ValidatedUpdatePath,
-        },
-        ExtensionList,
+    use crate::cipher_suite::CipherSuite;
+    use crate::client::test_utils::TEST_CIPHER_SUITE;
+    use crate::crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider};
+    use crate::extension::test_utils::TestExtension;
+    use crate::group::test_utils::{get_test_group_context, random_bytes};
+    use crate::identity::basic::BasicIdentityProvider;
+    use crate::tree_kem::leaf_node::test_utils::{
+        get_basic_test_node_sig_key, get_test_capabilities,
     };
-    use alloc::{format, vec, vec::Vec};
+    use crate::tree_kem::leaf_node::ConfigProperties;
+    use crate::tree_kem::node::LeafIndex;
+    use crate::tree_kem::{
+        Capabilities, TreeKemPrivate, TreeKemPublic, UpdatePath, ValidatedUpdatePath,
+    };
+    use crate::ExtensionList;
+    use alloc::vec::Vec;
+    use alloc::{format, vec};
     use mls_rs_codec::MlsEncode;
     use mls_rs_core::crypto::CipherSuiteProvider;
     use tree_math::TreeIndex;

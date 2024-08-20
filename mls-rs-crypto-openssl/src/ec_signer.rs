@@ -149,13 +149,11 @@ impl EcSigner {
 mod test {
     use mls_rs_crypto_traits::Curve;
 
-    use crate::{
-        ec::test_utils::{
-            get_test_public_keys, get_test_public_keys_der, get_test_secret_keys,
-            get_test_secret_keys_der, TestKeys,
-        },
-        ec_signer::EcSigner,
+    use crate::ec::test_utils::{
+        get_test_public_keys, get_test_public_keys_der, get_test_secret_keys,
+        get_test_secret_keys_der, TestKeys,
     };
+    use crate::ec_signer::EcSigner;
 
     #[test]
     fn import_der_public() {

@@ -126,9 +126,9 @@ mod tests {
     use tempfile::NamedTempFile;
 
     use crate::cipher::SqlCipherConfig;
-    use crate::connection_strategy::{ConnectionStrategy, MemoryStrategy};
+    use crate::connection_strategy::{ConnectionStrategy, FileConnectionStrategy, MemoryStrategy};
     use crate::test_utils::gen_rand_bytes;
-    use crate::{connection_strategy::FileConnectionStrategy, SqLiteDataStorageError};
+    use crate::SqLiteDataStorageError;
 
     use super::{CipheredConnectionStrategy, SqlCipherKey};
 

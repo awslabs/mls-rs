@@ -8,22 +8,19 @@ use alloc::format;
 use rand::RngCore;
 
 use super::*;
-use crate::{
-    client::{
-        test_utils::{
-            test_client_with_key_pkg, test_client_with_key_pkg_custom, TEST_CIPHER_SUITE,
-            TEST_PROTOCOL_VERSION,
-        },
-        MlsError,
-    },
-    client_builder::test_utils::{TestClientBuilder, TestClientConfig},
-    crypto::test_utils::test_cipher_suite_provider,
-    extension::ExtensionType,
-    identity::test_utils::get_test_signing_identity,
-    key_package::{KeyPackageGeneration, KeyPackageGenerator},
-    mls_rules::{CommitOptions, DefaultMlsRules},
-    tree_kem::{leaf_node::test_utils::get_test_capabilities, Lifetime},
+use crate::client::test_utils::{
+    test_client_with_key_pkg, test_client_with_key_pkg_custom, TEST_CIPHER_SUITE,
+    TEST_PROTOCOL_VERSION,
 };
+use crate::client::MlsError;
+use crate::client_builder::test_utils::{TestClientBuilder, TestClientConfig};
+use crate::crypto::test_utils::test_cipher_suite_provider;
+use crate::extension::ExtensionType;
+use crate::identity::test_utils::get_test_signing_identity;
+use crate::key_package::{KeyPackageGeneration, KeyPackageGenerator};
+use crate::mls_rules::{CommitOptions, DefaultMlsRules};
+use crate::tree_kem::leaf_node::test_utils::get_test_capabilities;
+use crate::tree_kem::Lifetime;
 
 use crate::extension::RequiredCapabilitiesExt;
 

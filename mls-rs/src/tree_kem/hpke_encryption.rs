@@ -5,10 +5,8 @@
 use alloc::vec::Vec;
 use core::fmt::{self, Debug};
 use mls_rs_codec::{MlsEncode, MlsSize};
-use mls_rs_core::{
-    crypto::{CipherSuiteProvider, HpkeCiphertext, HpkePublicKey, HpkeSecretKey},
-    error::IntoAnyError,
-};
+use mls_rs_core::crypto::{CipherSuiteProvider, HpkeCiphertext, HpkePublicKey, HpkeSecretKey};
+use mls_rs_core::error::IntoAnyError;
 use zeroize::Zeroizing;
 
 use crate::client::MlsError;
@@ -90,11 +88,13 @@ pub(crate) trait HpkeEncryptable: Sized {
 
 #[cfg(test)]
 pub(crate) mod test_utils {
-    use alloc::{string::String, vec::Vec};
+    use alloc::string::String;
+    use alloc::vec::Vec;
     use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
     use mls_rs_core::crypto::{CipherSuiteProvider, HpkeCiphertext};
 
-    use crate::{client::MlsError, crypto::test_utils::try_test_cipher_suite_provider};
+    use crate::client::MlsError;
+    use crate::crypto::test_utils::try_test_cipher_suite_provider;
 
     use super::HpkeEncryptable;
 

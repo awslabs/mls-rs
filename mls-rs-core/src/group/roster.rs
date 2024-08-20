@@ -6,12 +6,10 @@ use alloc::vec;
 use alloc::vec::Vec;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 
-use crate::{
-    crypto::CipherSuite,
-    extension::{ExtensionList, ExtensionType},
-    identity::{CredentialType, SigningIdentity},
-    protocol_version::ProtocolVersion,
-};
+use crate::crypto::CipherSuite;
+use crate::extension::{ExtensionList, ExtensionType};
+use crate::identity::{CredentialType, SigningIdentity};
+use crate::protocol_version::ProtocolVersion;
 
 use super::ProposalType;
 

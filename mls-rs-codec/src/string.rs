@@ -1,5 +1,6 @@
 use crate::{MlsDecode, MlsEncode, MlsSize};
-use alloc::{string::String, vec::Vec};
+use alloc::string::String;
+use alloc::vec::Vec;
 
 impl MlsSize for str {
     fn mls_encoded_len(&self) -> usize {

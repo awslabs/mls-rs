@@ -2,29 +2,28 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use mls_rs_core::{
-    error::IntoAnyError, identity::IdentityProvider, key_package::KeyPackageStorage,
-};
+use mls_rs_core::error::IntoAnyError;
+use mls_rs_core::identity::IdentityProvider;
+use mls_rs_core::key_package::KeyPackageStorage;
 
-use crate::{
-    cipher_suite::CipherSuite,
-    client::MlsError,
-    extension::RatchetTreeExt,
-    key_package::KeyPackageGeneration,
-    protocol_version::ProtocolVersion,
-    signer::Signable,
-    tree_kem::{node::LeafIndex, tree_validator::TreeValidator, TreeKemPublic},
-    CipherSuiteProvider, CryptoProvider,
-};
+use crate::cipher_suite::CipherSuite;
+use crate::client::MlsError;
+use crate::extension::RatchetTreeExt;
+use crate::key_package::KeyPackageGeneration;
+use crate::protocol_version::ProtocolVersion;
+use crate::signer::Signable;
+use crate::tree_kem::node::LeafIndex;
+use crate::tree_kem::tree_validator::TreeValidator;
+use crate::tree_kem::TreeKemPublic;
+use crate::{CipherSuiteProvider, CryptoProvider};
 
 #[cfg(feature = "by_ref_proposal")]
 use crate::extension::ExternalSendersExt;
 
-use super::{
-    framing::Sender, message_signature::AuthenticatedContent,
-    transcript_hash::InterimTranscriptHash, ConfirmedTranscriptHash, EncryptedGroupSecrets,
-    ExportedTree, GroupInfo, GroupState,
-};
+use super::framing::Sender;
+use super::message_signature::AuthenticatedContent;
+use super::transcript_hash::InterimTranscriptHash;
+use super::{ConfirmedTranscriptHash, EncryptedGroupSecrets, ExportedTree, GroupInfo, GroupState};
 
 use super::message_processor::ProvisionalState;
 

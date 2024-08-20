@@ -2,10 +2,8 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use std::{
-    fmt::{self, Debug},
-    sync::{Arc, Mutex},
-};
+use std::fmt::{self, Debug};
+use std::sync::{Arc, Mutex};
 
 use rusqlite::{params, Connection, OptionalExtension};
 
@@ -153,10 +151,10 @@ impl Item {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        application::Item, connection_strategy::MemoryStrategy, test_utils::gen_rand_bytes,
-        SqLiteDataStorageEngine,
-    };
+    use crate::application::Item;
+    use crate::connection_strategy::MemoryStrategy;
+    use crate::test_utils::gen_rand_bytes;
+    use crate::SqLiteDataStorageEngine;
 
     use super::SqLiteApplicationStorage;
 

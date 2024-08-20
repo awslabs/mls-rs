@@ -2,21 +2,19 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use crate::{
-    client::MlsError,
-    group::{framing::MlsMessage, message_processor::validate_key_package, ExportedTree},
-    KeyPackage,
-};
+use crate::client::MlsError;
+use crate::group::framing::MlsMessage;
+use crate::group::message_processor::validate_key_package;
+use crate::group::ExportedTree;
+use crate::KeyPackage;
 
 pub mod builder;
 mod config;
 mod group;
 
 pub(crate) use config::ExternalClientConfig;
-use mls_rs_core::{
-    crypto::{CryptoProvider, SignatureSecretKey},
-    identity::SigningIdentity,
-};
+use mls_rs_core::crypto::{CryptoProvider, SignatureSecretKey};
+use mls_rs_core::identity::SigningIdentity;
 
 use builder::{ExternalBaseConfig, ExternalClientBuilder};
 
@@ -129,10 +127,8 @@ where
 
 #[cfg(test)]
 pub(crate) mod tests_utils {
-    use crate::{
-        client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
-        key_package::test_utils::test_key_package_message,
-    };
+    use crate::client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION};
+    use crate::key_package::test_utils::test_key_package_message;
 
     pub use super::builder::test_utils::*;
 

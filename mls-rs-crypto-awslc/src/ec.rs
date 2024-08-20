@@ -2,7 +2,8 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use std::{os::raw::c_void, ptr::null_mut};
+use std::os::raw::c_void;
+use std::ptr::null_mut;
 
 use aws_lc_rs::error::Unspecified;
 use aws_lc_sys::{

@@ -9,10 +9,8 @@ use crate::tree_kem::node::NodeIndex;
 #[cfg(feature = "prior_epoch")]
 use crate::{crypto::SignaturePublicKey, group::GroupContext, tree_kem::node::LeafIndex};
 use alloc::vec::Vec;
-use core::{
-    fmt::{self, Debug},
-    ops::Deref,
-};
+use core::fmt::{self, Debug};
+use core::ops::Deref;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use zeroize::Zeroizing;
 

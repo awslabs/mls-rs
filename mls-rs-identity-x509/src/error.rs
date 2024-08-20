@@ -2,7 +2,8 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use mls_rs_core::{error::AnyError, identity::CredentialType};
+use mls_rs_core::error::AnyError;
+use mls_rs_core::identity::CredentialType;
 
 #[derive(Debug)]
 #[cfg_attr(feature = "std", derive(thiserror::Error))]

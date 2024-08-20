@@ -8,12 +8,12 @@ use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
 use zeroize::Zeroizing;
 
-use crate::{
-    client::MlsError,
-    crypto::CipherSuiteProvider,
-    group::{epoch::SenderDataSecret, framing::ContentType, key_schedule::kdf_expand_with_label},
-    tree_kem::node::LeafIndex,
-};
+use crate::client::MlsError;
+use crate::crypto::CipherSuiteProvider;
+use crate::group::epoch::SenderDataSecret;
+use crate::group::framing::ContentType;
+use crate::group::key_schedule::kdf_expand_with_label;
+use crate::tree_kem::node::LeafIndex;
 
 use super::ReuseGuard;
 
@@ -193,11 +193,10 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    use crate::{
-        crypto::test_utils::try_test_cipher_suite_provider,
-        group::{ciphertext_processor::reuse_guard::ReuseGuard, framing::ContentType},
-        tree_kem::node::LeafIndex,
-    };
+    use crate::crypto::test_utils::try_test_cipher_suite_provider;
+    use crate::group::ciphertext_processor::reuse_guard::ReuseGuard;
+    use crate::group::framing::ContentType;
+    use crate::tree_kem::node::LeafIndex;
 
     use super::{SenderData, SenderDataAAD, SenderDataKey};
 

@@ -4,10 +4,8 @@
 
 use mls_rs_core::group::{EpochRecord, GroupState, GroupStateStorage};
 use rusqlite::{params, Connection, OptionalExtension};
-use std::{
-    fmt::Debug,
-    sync::{Arc, Mutex},
-};
+use std::fmt::Debug;
+use std::sync::{Arc, Mutex};
 
 use crate::SqLiteDataStorageError;
 
@@ -214,10 +212,9 @@ impl GroupStateStorage for SqLiteGroupStateStorage {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        SqLiteDataStorageEngine,
-        {connection_strategy::MemoryStrategy, test_utils::gen_rand_bytes},
-    };
+    use crate::connection_strategy::MemoryStrategy;
+    use crate::test_utils::gen_rand_bytes;
+    use crate::SqLiteDataStorageEngine;
 
     use super::*;
 

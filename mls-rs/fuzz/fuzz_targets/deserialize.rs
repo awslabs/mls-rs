@@ -6,7 +6,8 @@
 
 mod deserialize {
     use libfuzzer_sys::fuzz_target;
-    use mls_rs::{mls_rs_codec::MlsDecode, MlsMessage};
+    use mls_rs::mls_rs_codec::MlsDecode;
+    use mls_rs::MlsMessage;
 
     fuzz_target!(|data: &[u8]| {
         let _ = MlsMessage::mls_decode(&mut &*data);

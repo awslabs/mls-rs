@@ -5,23 +5,20 @@
 #[cfg(feature = "by_ref_proposal")]
 use alloc::{vec, vec::Vec};
 
-use crate::{
-    client::MlsError,
-    crypto::SignaturePublicKey,
-    group::{GroupContext, PublicMessage, Sender},
-    signer::Signable,
-    tree_kem::{node::LeafIndex, TreeKemPublic},
-    CipherSuiteProvider,
-};
+use crate::client::MlsError;
+use crate::crypto::SignaturePublicKey;
+use crate::group::{GroupContext, PublicMessage, Sender};
+use crate::signer::Signable;
+use crate::tree_kem::node::LeafIndex;
+use crate::tree_kem::TreeKemPublic;
+use crate::CipherSuiteProvider;
 
 #[cfg(feature = "by_ref_proposal")]
 use crate::{extension::ExternalSendersExt, identity::SigningIdentity};
 
-use super::{
-    key_schedule::KeySchedule,
-    message_signature::{AuthenticatedContent, MessageSigningContext},
-    state::GroupState,
-};
+use super::key_schedule::KeySchedule;
+use super::message_signature::{AuthenticatedContent, MessageSigningContext};
+use super::state::GroupState;
 
 #[cfg(feature = "by_ref_proposal")]
 use super::proposal::Proposal;
@@ -213,21 +210,17 @@ fn signing_identity_for_new_member_proposal(
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        client::{
-            test_utils::{test_client_with_key_pkg, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
-            MlsError,
-        },
-        client_builder::test_utils::TestClientConfig,
-        crypto::test_utils::test_cipher_suite_provider,
-        group::{
-            membership_tag::MembershipTag,
-            message_signature::{AuthenticatedContent, MessageSignature},
-            test_utils::{test_group_custom, TestGroup},
-            Group, PublicMessage,
-        },
-        tree_kem::node::LeafIndex,
+    use crate::client::test_utils::{
+        test_client_with_key_pkg, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION,
     };
+    use crate::client::MlsError;
+    use crate::client_builder::test_utils::TestClientConfig;
+    use crate::crypto::test_utils::test_cipher_suite_provider;
+    use crate::group::membership_tag::MembershipTag;
+    use crate::group::message_signature::{AuthenticatedContent, MessageSignature};
+    use crate::group::test_utils::{test_group_custom, TestGroup};
+    use crate::group::{Group, PublicMessage};
+    use crate::tree_kem::node::LeafIndex;
     use alloc::vec;
     use assert_matches::assert_matches;
 
@@ -250,10 +243,8 @@ mod tests {
     #[cfg(feature = "by_ref_proposal")]
     use alloc::boxed::Box;
 
-    use crate::group::{
-        test_utils::{test_group, test_member},
-        Sender,
-    };
+    use crate::group::test_utils::{test_group, test_member};
+    use crate::group::Sender;
 
     #[cfg(feature = "by_ref_proposal")]
     use crate::identity::test_utils::get_test_signing_identity;

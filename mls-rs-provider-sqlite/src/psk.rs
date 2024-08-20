@@ -5,10 +5,8 @@
 use crate::SqLiteDataStorageError;
 use mls_rs_core::psk::{ExternalPskId, PreSharedKey, PreSharedKeyStorage};
 use rusqlite::{params, Connection, OptionalExtension};
-use std::{
-    ops::Deref,
-    sync::{Arc, Mutex},
-};
+use std::ops::Deref;
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone)]
 /// SQLite storage for MLS pre-shared keys.
@@ -77,10 +75,9 @@ impl PreSharedKeyStorage for SqLitePreSharedKeyStorage {
 mod tests {
     use mls_rs_core::psk::PreSharedKey;
 
-    use crate::{
-        SqLiteDataStorageEngine,
-        {connection_strategy::MemoryStrategy, test_utils::gen_rand_bytes},
-    };
+    use crate::connection_strategy::MemoryStrategy;
+    use crate::test_utils::gen_rand_bytes;
+    use crate::SqLiteDataStorageEngine;
 
     use super::SqLitePreSharedKeyStorage;
 

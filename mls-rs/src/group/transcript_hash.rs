@@ -3,19 +3,17 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use alloc::vec::Vec;
-use core::{
-    fmt::{self, Debug},
-    ops::Deref,
-};
+use core::fmt::{self, Debug};
+use core::ops::Deref;
 
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
-use mls_rs_core::{crypto::CipherSuiteProvider, error::IntoAnyError};
+use mls_rs_core::crypto::CipherSuiteProvider;
+use mls_rs_core::error::IntoAnyError;
 
-use crate::{
-    client::MlsError,
-    group::{framing::FramedContent, MessageSignature},
-    WireFormat,
-};
+use crate::client::MlsError;
+use crate::group::framing::FramedContent;
+use crate::group::MessageSignature;
+use crate::WireFormat;
 
 use super::{AuthenticatedContent, ConfirmationTag};
 
@@ -144,10 +142,10 @@ mod tests {
 
     use mls_rs_codec::MlsDecode;
 
-    use crate::{
-        crypto::test_utils::try_test_cipher_suite_provider,
-        group::{framing::ContentType, message_signature::AuthenticatedContent, transcript_hashes},
-    };
+    use crate::crypto::test_utils::try_test_cipher_suite_provider;
+    use crate::group::framing::ContentType;
+    use crate::group::message_signature::AuthenticatedContent;
+    use crate::group::transcript_hashes;
 
     #[cfg(not(mls_build_async))]
     use alloc::{boxed::Box, vec};

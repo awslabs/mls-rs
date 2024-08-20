@@ -2,14 +2,14 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use mls_rs_core::{crypto::CipherSuiteProvider, extension::ExtensionList, group::Capabilities};
+use mls_rs_core::crypto::CipherSuiteProvider;
+use mls_rs_core::extension::ExtensionList;
+use mls_rs_core::group::Capabilities;
 
-use crate::{
-    client::MlsError,
-    group::{GroupInfo, NewMemberInfo},
-    key_package::KeyPackage,
-    tree_kem::leaf_node::LeafNode,
-};
+use crate::client::MlsError;
+use crate::group::{GroupInfo, NewMemberInfo};
+use crate::key_package::KeyPackage;
+use crate::tree_kem::leaf_node::LeafNode;
 
 impl LeafNode {
     pub fn ungreased_capabilities(&self) -> Capabilities {
@@ -67,11 +67,9 @@ impl NewMemberInfo {
 mod grease_functions {
     use core::ops::Deref;
 
-    use mls_rs_core::{
-        crypto::CipherSuiteProvider,
-        error::IntoAnyError,
-        extension::{Extension, ExtensionList, ExtensionType},
-    };
+    use mls_rs_core::crypto::CipherSuiteProvider;
+    use mls_rs_core::error::IntoAnyError;
+    use mls_rs_core::extension::{Extension, ExtensionList, ExtensionType};
 
     use super::MlsError;
 
@@ -122,10 +120,8 @@ mod grease_functions {
 
     use alloc::vec::Vec;
 
-    use mls_rs_core::{
-        crypto::CipherSuiteProvider,
-        extension::{ExtensionList, ExtensionType},
-    };
+    use mls_rs_core::crypto::CipherSuiteProvider;
+    use mls_rs_core::extension::{ExtensionList, ExtensionType};
 
     use super::MlsError;
 
@@ -157,10 +153,10 @@ mod tests {
 
     use mls_rs_core::extension::ExtensionList;
 
-    use crate::{
-        client::test_utils::{test_client_with_key_pkg, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
-        group::test_utils::test_group,
+    use crate::client::test_utils::{
+        test_client_with_key_pkg, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION,
     };
+    use crate::group::test_utils::test_group;
 
     use super::grease_functions::GREASE_VALUES;
 

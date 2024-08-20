@@ -8,21 +8,21 @@ use mls_rs_identity_x509::{
     CertificateRequestParameters, DerCertificateRequest, X509RequestWriter,
 };
 
-use spki::{
-    der::{asn1::BitString, Decode},
-    AlgorithmIdentifier, SubjectPublicKeyInfo,
-};
+use spki::der::asn1::BitString;
+use spki::der::Decode;
+use spki::{AlgorithmIdentifier, SubjectPublicKeyInfo};
 
-use x509_cert::{attr::Attributes, der::Encode};
+use x509_cert::attr::Attributes;
+use x509_cert::der::Encode;
 
 use x509_cert::request::{CertReq, CertReqInfo};
 
-use crate::{ec::pub_key_from_uncompressed, ec_for_x509::pub_key_to_spki, ec_signer::EcSigner};
+use crate::ec::pub_key_from_uncompressed;
+use crate::ec_for_x509::pub_key_to_spki;
+use crate::ec_signer::EcSigner;
 
-use super::{
-    util::{build_x509_name, extension_req, object_id_for_ciphersuite, request_extensions},
-    X509Error,
-};
+use super::util::{build_x509_name, extension_req, object_id_for_ciphersuite, request_extensions};
+use super::X509Error;
 
 #[derive(Debug, Clone)]
 pub struct CertificateRequestWriter {
@@ -119,7 +119,8 @@ mod tests {
         CertificateRequestParameters, SubjectAltName, SubjectComponent, X509RequestWriter,
     };
 
-    use crate::{ec::test_utils::ed25519_seed_to_private_key, x509::CertificateRequestWriter};
+    use crate::ec::test_utils::ed25519_seed_to_private_key;
+    use crate::x509::CertificateRequestWriter;
 
     #[test]
     fn writing_ca_csr() {

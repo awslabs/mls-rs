@@ -2,7 +2,8 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use crate::{client::MlsError, time::MlsTime};
+use crate::client::MlsError;
+use crate::time::MlsTime;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 
 #[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode, Default)]

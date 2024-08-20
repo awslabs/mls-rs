@@ -25,12 +25,10 @@ pub mod connection_strategy;
 
 /// SQLite storage components.
 pub mod storage {
-    pub use {
-        crate::application::{Item, SqLiteApplicationStorage},
-        crate::group_state::SqLiteGroupStateStorage,
-        crate::key_package::SqLiteKeyPackageStorage,
-        crate::psk::SqLitePreSharedKeyStorage,
-    };
+    pub use crate::application::{Item, SqLiteApplicationStorage};
+    pub use crate::group_state::SqLiteGroupStateStorage;
+    pub use crate::key_package::SqLiteKeyPackageStorage;
+    pub use crate::psk::SqLitePreSharedKeyStorage;
 }
 
 #[derive(Debug, Error)]
@@ -152,7 +150,8 @@ fn create_tables_v1(connection: &Connection) -> Result<(), SqLiteDataStorageErro
 
 #[cfg(test)]
 mod tests {
-    use crate::{connection_strategy::MemoryStrategy, SqLiteDataStorageEngine};
+    use crate::connection_strategy::MemoryStrategy;
+    use crate::SqLiteDataStorageEngine;
 
     #[test]
     pub fn user_version_test() {

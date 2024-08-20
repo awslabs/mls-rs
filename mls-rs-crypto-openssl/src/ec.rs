@@ -6,14 +6,12 @@ use core::fmt::{self, Debug};
 use mls_rs_crypto_traits::Curve;
 use thiserror::Error;
 
-use openssl::{
-    bn::{BigNum, BigNumContext},
-    derive::Deriver,
-    ec::{EcGroup, EcKey, EcPoint, PointConversionForm},
-    error::ErrorStack,
-    nid::Nid,
-    pkey::{HasParams, Id, PKey, Private, Public},
-};
+use openssl::bn::{BigNum, BigNumContext};
+use openssl::derive::Deriver;
+use openssl::ec::{EcGroup, EcKey, EcPoint, PointConversionForm};
+use openssl::error::ErrorStack;
+use openssl::nid::Nid;
+use openssl::pkey::{HasParams, Id, PKey, Private, Public};
 
 pub type EcPublicKey = PKey<Public>;
 pub type EcPrivateKey = PKey<Private>;
@@ -357,12 +355,11 @@ pub(crate) mod test_utils {
 mod tests {
     use assert_matches::assert_matches;
 
+    use super::test_utils::{byte_equal, get_test_public_keys, get_test_secret_keys};
     use super::{
         generate_keypair, generate_private_key, private_key_bytes_to_public,
         private_key_from_bytes, private_key_to_bytes, pub_key_from_uncompressed,
-        pub_key_to_uncompressed,
-        test_utils::{byte_equal, get_test_public_keys, get_test_secret_keys},
-        Curve, EcError,
+        pub_key_to_uncompressed, Curve, EcError,
     };
 
     const SUPPORTED_CURVES: [Curve; 7] = [

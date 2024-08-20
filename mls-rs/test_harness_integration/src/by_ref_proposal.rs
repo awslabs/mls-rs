@@ -9,25 +9,23 @@ pub(crate) trait ByRefProposalSender<T> {
 
 #[cfg(feature = "by_ref_proposal")]
 pub(crate) mod inner {
-    use mls_rs::{
-        extension::built_in::ExternalSendersExt,
-        identity::{basic::BasicCredential, Credential, SigningIdentity},
-        mls_rs_codec::MlsDecode,
-        psk::ExternalPskId,
-        Group, MlsMessage, ProtocolVersion,
-    };
+    use mls_rs::extension::built_in::ExternalSendersExt;
+    use mls_rs::identity::basic::BasicCredential;
+    use mls_rs::identity::{Credential, SigningIdentity};
+    use mls_rs::mls_rs_codec::MlsDecode;
+    use mls_rs::psk::ExternalPskId;
+    use mls_rs::{Group, MlsMessage, ProtocolVersion};
     use tonic::{Request, Response, Status};
 
+    use crate::mls_client::{
+        AddExternalSignerRequest, AddProposalRequest, ExternalPskProposalRequest,
+        ExternalSignerProposalRequest, GroupContextExtensionsProposalRequest, ProposalResponse,
+        ReInitProposalRequest, RemoveProposalRequest, ResumptionPskProposalRequest,
+        UpdateProposalRequest,
+    };
     use crate::{
-        abort, find_member, get_tree,
-        mls_client::{
-            AddExternalSignerRequest, AddProposalRequest, ExternalPskProposalRequest,
-            ExternalSignerProposalRequest, GroupContextExtensionsProposalRequest, ProposalResponse,
-            ReInitProposalRequest, RemoveProposalRequest, ResumptionPskProposalRequest,
-            UpdateProposalRequest,
-        },
-        parse_extensions, MlsClientImpl, TestClientConfig, PROPOSAL_DESC_ADD, PROPOSAL_DESC_GCE,
-        PROPOSAL_DESC_REMOVE,
+        abort, find_member, get_tree, parse_extensions, MlsClientImpl, TestClientConfig,
+        PROPOSAL_DESC_ADD, PROPOSAL_DESC_GCE, PROPOSAL_DESC_REMOVE,
     };
 
     #[cfg(feature = "psk")]
@@ -333,24 +331,17 @@ pub(crate) mod external_proposal {
     use mls_rs_crypto_openssl::OpensslCryptoProvider;
     use tonic::{Request, Response, Status};
 
-    use mls_rs::{
-        external_client::builder::ExternalClientBuilder,
-        identity::{
-            basic::{BasicCredential, BasicIdentityProvider},
-            SigningIdentity,
-        },
-        mls_rs_codec::MlsEncode,
-        CipherSuiteProvider, CryptoProvider, MlsMessage,
-    };
+    use mls_rs::external_client::builder::ExternalClientBuilder;
+    use mls_rs::identity::basic::{BasicCredential, BasicIdentityProvider};
+    use mls_rs::identity::SigningIdentity;
+    use mls_rs::mls_rs_codec::MlsEncode;
+    use mls_rs::{CipherSuiteProvider, CryptoProvider, MlsMessage};
 
-    use crate::{
-        abort, create_client,
-        mls_client::{
-            CreateExternalSignerRequest, CreateExternalSignerResponse, NewMemberAddProposalRequest,
-            NewMemberAddProposalResponse,
-        },
-        ExternalClientDetails,
+    use crate::mls_client::{
+        CreateExternalSignerRequest, CreateExternalSignerResponse, NewMemberAddProposalRequest,
+        NewMemberAddProposalResponse,
     };
+    use crate::{abort, create_client, ExternalClientDetails};
 
     use crate::MlsClientImpl;
 

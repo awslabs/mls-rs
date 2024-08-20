@@ -5,10 +5,8 @@
 #[cfg(all(feature = "openssl", feature = "sqlite", feature = "x509"))]
 mod openssl_sqlite {
     use mls_rs::client_builder::{BaseConfig, WithCryptoProvider, WithIdentityProvider};
-    use mls_rs_crypto_openssl::{
-        x509::{X509Reader, X509Validator},
-        OpensslCryptoProvider,
-    };
+    use mls_rs_crypto_openssl::x509::{X509Reader, X509Validator};
+    use mls_rs_crypto_openssl::OpensslCryptoProvider;
     use mls_rs_identity_x509::{SubjectIdentityExtractor, X509IdentityProvider};
 
     pub type OpensslSqlMlsConfig = WithIdentityProvider<

@@ -59,12 +59,10 @@ mod tests {
     use mls_rs_core::crypto::CipherSuite;
     use mls_rs_identity_x509::{SubjectAltName, SubjectComponent, X509CertificateReader};
 
-    use crate::{
-        ecdsa::AwsLcEcdsa,
-        x509::{
-            component::X509Name,
-            test_utils::{load_github_leaf, load_ip_cert, load_test_ca, test_leaf, test_leaf_key},
-        },
+    use crate::ecdsa::AwsLcEcdsa;
+    use crate::x509::component::X509Name;
+    use crate::x509::test_utils::{
+        load_github_leaf, load_ip_cert, load_test_ca, test_leaf, test_leaf_key,
     };
 
     use super::CertificateParser;

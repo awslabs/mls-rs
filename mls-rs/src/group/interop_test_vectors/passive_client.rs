@@ -6,30 +6,27 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use itertools::Itertools;
-use mls_rs_core::{
-    crypto::{CipherSuite, CipherSuiteProvider, CryptoProvider},
-    identity::SigningIdentity,
-    protocol_version::ProtocolVersion,
-    psk::ExternalPskId,
-    time::MlsTime,
-};
-use rand::{seq::IteratorRandom, Rng, SeedableRng};
+use mls_rs_core::crypto::{CipherSuite, CipherSuiteProvider, CryptoProvider};
+use mls_rs_core::identity::SigningIdentity;
+use mls_rs_core::protocol_version::ProtocolVersion;
+use mls_rs_core::psk::ExternalPskId;
+use mls_rs_core::time::MlsTime;
+use rand::seq::IteratorRandom;
+use rand::{Rng, SeedableRng};
 
-use crate::{
-    client_builder::{ClientBuilder, MlsConfig},
-    crypto::test_utils::TestCryptoProvider,
-    group::{ClientConfig, CommitBuilder, ExportedTree},
-    identity::basic::BasicIdentityProvider,
-    key_package::KeyPackageGeneration,
-    mls_rules::CommitOptions,
-    storage_provider::in_memory::InMemoryKeyPackageStorage,
-    test_utils::{
-        all_process_message, generate_basic_client, get_test_basic_credential, get_test_groups,
-        make_test_ext_psk, TEST_EXT_PSK_ID,
-    },
-    tree_kem::Lifetime,
-    Client, Group, MlsMessage,
+use crate::client_builder::{ClientBuilder, MlsConfig};
+use crate::crypto::test_utils::TestCryptoProvider;
+use crate::group::{ClientConfig, CommitBuilder, ExportedTree};
+use crate::identity::basic::BasicIdentityProvider;
+use crate::key_package::KeyPackageGeneration;
+use crate::mls_rules::CommitOptions;
+use crate::storage_provider::in_memory::InMemoryKeyPackageStorage;
+use crate::test_utils::{
+    all_process_message, generate_basic_client, get_test_basic_credential, get_test_groups,
+    make_test_ext_psk, TEST_EXT_PSK_ID,
 };
+use crate::tree_kem::Lifetime;
+use crate::{Client, Group, MlsMessage};
 
 const VERSION: ProtocolVersion = ProtocolVersion::MLS_10;
 

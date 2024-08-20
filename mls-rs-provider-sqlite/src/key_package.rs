@@ -2,11 +2,9 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use mls_rs_core::{
-    key_package::{KeyPackageData, KeyPackageStorage},
-    mls_rs_codec::{MlsDecode, MlsEncode},
-    time::MlsTime,
-};
+use mls_rs_core::key_package::{KeyPackageData, KeyPackageStorage};
+use mls_rs_core::mls_rs_codec::{MlsDecode, MlsEncode};
+use mls_rs_core::time::MlsTime;
 use rusqlite::{params, Connection, OptionalExtension};
 use std::sync::{Arc, Mutex};
 
@@ -123,12 +121,12 @@ impl KeyPackageStorage for SqLiteKeyPackageStorage {
 #[cfg(test)]
 mod tests {
     use super::SqLiteKeyPackageStorage;
-    use crate::{
-        SqLiteDataStorageEngine, SqLiteDataStorageError,
-        {connection_strategy::MemoryStrategy, test_utils::gen_rand_bytes},
-    };
+    use crate::connection_strategy::MemoryStrategy;
+    use crate::test_utils::gen_rand_bytes;
+    use crate::{SqLiteDataStorageEngine, SqLiteDataStorageError};
     use assert_matches::assert_matches;
-    use mls_rs_core::{crypto::HpkeSecretKey, key_package::KeyPackageData};
+    use mls_rs_core::crypto::HpkeSecretKey;
+    use mls_rs_core::key_package::KeyPackageData;
 
     fn test_storage() -> SqLiteKeyPackageStorage {
         SqLiteDataStorageEngine::new(MemoryStrategy)

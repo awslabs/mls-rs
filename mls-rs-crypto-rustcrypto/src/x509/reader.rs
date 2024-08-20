@@ -5,18 +5,17 @@
 use mls_rs_identity_x509::{
     DerCertificate, SubjectAltName as MlsSubjectAltName, SubjectComponent, X509CertificateReader,
 };
-use spki::der::{oid::AssociatedOid, Decode, Encode};
-use x509_cert::{
-    ext::pkix::{name::GeneralNames, SubjectAltName},
-    Certificate,
-};
+use spki::der::oid::AssociatedOid;
+use spki::der::{Decode, Encode};
+use x509_cert::ext::pkix::name::GeneralNames;
+use x509_cert::ext::pkix::SubjectAltName;
+use x509_cert::Certificate;
 
-use crate::{ec::pub_key_to_uncompressed, ec_for_x509::pub_key_from_spki};
+use crate::ec::pub_key_to_uncompressed;
+use crate::ec_for_x509::pub_key_from_spki;
 
-use super::{
-    util::{general_names_to_alt_names, parse_x509_name},
-    X509Error,
-};
+use super::util::{general_names_to_alt_names, parse_x509_name};
+use super::X509Error;
 
 #[derive(Debug, Clone, Default)]
 #[non_exhaustive]
@@ -84,17 +83,14 @@ impl X509CertificateReader for X509Reader {
 #[cfg(test)]
 mod tests {
     use mls_rs_identity_x509::{SubjectAltName, SubjectComponent, X509CertificateReader};
-    use spki::der::{
-        asn1::{SetOfVec, Utf8StringRef},
-        oid::db::rfc4519,
-        Any, Encode,
-    };
-    use x509_cert::{attr::AttributeTypeAndValue, name::RelativeDistinguishedName};
+    use spki::der::asn1::{SetOfVec, Utf8StringRef};
+    use spki::der::oid::db::rfc4519;
+    use spki::der::{Any, Encode};
+    use x509_cert::attr::AttributeTypeAndValue;
+    use x509_cert::name::RelativeDistinguishedName;
 
-    use crate::x509::{
-        util::test_utils::{load_github_leaf, load_ip_cert, load_test_ca},
-        X509Reader,
-    };
+    use crate::x509::util::test_utils::{load_github_leaf, load_ip_cert, load_test_ca};
+    use crate::x509::X509Reader;
 
     #[test]
     fn subject_parser_bytes() {

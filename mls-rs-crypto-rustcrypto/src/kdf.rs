@@ -5,7 +5,8 @@
 use core::fmt::Debug;
 
 use hkdf::SimpleHkdf;
-use mls_rs_core::{crypto::CipherSuite, error::IntoAnyError};
+use mls_rs_core::crypto::CipherSuite;
+use mls_rs_core::error::IntoAnyError;
 use mls_rs_crypto_traits::{KdfId, KdfType};
 use sha2::{Sha256, Sha384, Sha512};
 

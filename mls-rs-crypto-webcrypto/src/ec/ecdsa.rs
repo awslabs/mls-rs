@@ -1,11 +1,13 @@
-use der::{asn1::Uint, Decode, Encode, Sequence};
+use der::asn1::Uint;
+use der::{Decode, Encode, Sequence};
 use js_sys::{Boolean, Uint8Array};
 use mls_rs_core::crypto::{CipherSuite, SignaturePublicKey, SignatureSecretKey};
 use wasm_bindgen_futures::JsFuture;
 use web_sys::EcdsaParams;
 
 use super::der_private_key::{generate, DerPrivateKey};
-use crate::{get_crypto, key_type::KeyType, CryptoError};
+use crate::key_type::KeyType;
+use crate::{get_crypto, CryptoError};
 
 #[derive(Sequence)]
 struct DerSignature {

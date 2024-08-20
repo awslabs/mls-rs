@@ -2,15 +2,15 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use std::{fmt::Debug, ops::Deref};
+use std::fmt::Debug;
+use std::ops::Deref;
 
-use mls_rs_core::{crypto::CipherSuite, error::IntoAnyError};
+use mls_rs_core::crypto::CipherSuite;
+use mls_rs_core::error::IntoAnyError;
 use mls_rs_crypto_traits::{KdfId, KdfType};
-use openssl::{
-    md::{Md, MdRef},
-    pkey::Id,
-    pkey_ctx::{HkdfMode, PkeyCtx},
-};
+use openssl::md::{Md, MdRef};
+use openssl::pkey::Id;
+use openssl::pkey_ctx::{HkdfMode, PkeyCtx};
 use thiserror::Error;
 
 #[derive(Debug, Error)]

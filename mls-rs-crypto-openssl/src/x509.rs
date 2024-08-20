@@ -2,33 +2,30 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use std::{net::IpAddr, ops::Deref};
+use std::net::IpAddr;
+use std::ops::Deref;
 
-use mls_rs_core::{
-    crypto::{CipherSuite, SignaturePublicKey, SignatureSecretKey},
-    error::IntoAnyError,
-    identity::{CertificateChain, SigningIdentity},
-};
+use mls_rs_core::crypto::{CipherSuite, SignaturePublicKey, SignatureSecretKey};
+use mls_rs_core::error::IntoAnyError;
+use mls_rs_core::identity::{CertificateChain, SigningIdentity};
 use mls_rs_identity_x509::{
     CertificateRequestParameters, DerCertificate, DerCertificateRequest, SubjectAltName,
     SubjectComponent, SubjectIdentityExtractor, X509CredentialValidator, X509IdentityProvider,
     X509RequestWriter,
 };
-use openssl::{
-    bn::BigNumContext,
-    ec::PointConversionForm,
-    error::ErrorStack,
-    hash::MessageDigest,
-    nid::Nid,
-    pkey::{PKey, PKeyRef, Private, Public},
-    stack::Stack,
-    x509::{
-        extension::{BasicConstraints, KeyUsage, SubjectAlternativeName},
-        store::{X509Store, X509StoreBuilder},
-        verify::{X509VerifyFlags, X509VerifyParam},
-        X509Builder, X509Extension, X509Name, X509NameBuilder, X509ReqBuilder, X509StoreContext,
-        X509VerifyResult, X509v3Context, X509,
-    },
+use openssl::bn::BigNumContext;
+use openssl::ec::PointConversionForm;
+use openssl::error::ErrorStack;
+use openssl::hash::MessageDigest;
+use openssl::nid::Nid;
+use openssl::pkey::{PKey, PKeyRef, Private, Public};
+use openssl::stack::Stack;
+use openssl::x509::extension::{BasicConstraints, KeyUsage, SubjectAlternativeName};
+use openssl::x509::store::{X509Store, X509StoreBuilder};
+use openssl::x509::verify::{X509VerifyFlags, X509VerifyParam};
+use openssl::x509::{
+    X509Builder, X509Extension, X509Name, X509NameBuilder, X509ReqBuilder, X509StoreContext,
+    X509VerifyResult, X509v3Context, X509,
 };
 use thiserror::Error;
 
@@ -571,35 +568,26 @@ mod tests {
     use std::time::Duration;
 
     use assert_matches::assert_matches;
-    use mls_rs_core::{
-        crypto::{CipherSuite, SignaturePublicKey, SignatureSecretKey},
-        time::MlsTime,
-    };
+    use mls_rs_core::crypto::{CipherSuite, SignaturePublicKey, SignatureSecretKey};
+    use mls_rs_core::time::MlsTime;
     use mls_rs_identity_x509::{
         CertificateChain, CertificateRequestParameters, DerCertificateRequest, SubjectAltName,
         SubjectComponent, X509CertificateReader, X509RequestWriter,
     };
-    use openssl::{
-        pkey::PKey,
-        x509::{X509Name, X509Req, X509},
-    };
+    use openssl::pkey::PKey;
+    use openssl::x509::{X509Name, X509Req, X509};
 
-    use crate::{
-        ec::private_key_to_bytes,
-        x509::{
-            test_utils::{load_another_ca, load_test_invalid_ca_chain, load_test_invalid_chain},
-            CertificateRequestWriter,
-        },
+    use crate::ec::private_key_to_bytes;
+    use crate::x509::test_utils::{
+        load_another_ca, load_test_invalid_ca_chain, load_test_invalid_chain,
     };
+    use crate::x509::CertificateRequestWriter;
 
-    use super::{
-        pub_key_to_uncompressed,
-        test_utils::{
-            load_github_leaf, load_ip_cert, load_test_ca, load_test_cert_chain,
-            load_test_system_cert_chain,
-        },
-        X509Error, X509Reader, X509Validator,
+    use super::test_utils::{
+        load_github_leaf, load_ip_cert, load_test_ca, load_test_cert_chain,
+        load_test_system_cert_chain,
     };
+    use super::{pub_key_to_uncompressed, X509Error, X509Reader, X509Validator};
 
     #[test]
     fn can_detect_invalid_ca_certificates() {

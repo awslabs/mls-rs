@@ -5,7 +5,8 @@
 use crate::{DerCertificate, DerCertificateRequest};
 
 use alloc::vec::Vec;
-use mls_rs_core::{crypto::SignaturePublicKey, error::IntoAnyError};
+use mls_rs_core::crypto::SignaturePublicKey;
+use mls_rs_core::error::IntoAnyError;
 
 #[cfg(all(test, feature = "std"))]
 use mockall::automock;

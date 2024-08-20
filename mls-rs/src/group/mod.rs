@@ -23,15 +23,12 @@ use crate::psk::PreSharedKeyID;
 use crate::signer::Signable;
 use crate::tree_kem::hpke_encryption::HpkeEncryptable;
 use crate::tree_kem::kem::TreeKem;
+use crate::tree_kem::leaf_node::LeafNode;
+use crate::tree_kem::leaf_node_validator::{LeafNodeValidator, ValidationContext};
 use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::path_secret::PathSecret;
 pub use crate::tree_kem::Capabilities;
-use crate::tree_kem::{
-    leaf_node::LeafNode,
-    leaf_node_validator::{LeafNodeValidator, ValidationContext},
-};
-use crate::tree_kem::{math as tree_math, ValidatedUpdatePath};
-use crate::tree_kem::{TreeKemPrivate, TreeKemPublic};
+use crate::tree_kem::{math as tree_math, TreeKemPrivate, TreeKemPublic, ValidatedUpdatePath};
 use crate::{CipherSuiteProvider, CryptoProvider};
 pub use state::GroupState;
 
@@ -1885,28 +1882,22 @@ pub(crate) mod test_utils;
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        client::test_utils::{
-            test_client_with_key_pkg, test_client_with_key_pkg_custom, TestClientBuilder,
-            TEST_CIPHER_SUITE, TEST_CUSTOM_PROPOSAL_TYPE, TEST_PROTOCOL_VERSION,
-        },
-        client_builder::{test_utils::TestClientConfig, ClientBuilder, MlsConfig},
-        crypto::test_utils::TestCryptoProvider,
-        group::{
-            mls_rules::{CommitDirection, CommitSource},
-            proposal_filter::{ProposalBundle, ProposalInfo},
-        },
-        identity::{
-            basic::BasicIdentityProvider,
-            test_utils::{get_test_signing_identity, BasicWithCustomProvider},
-        },
-        key_package::test_utils::test_key_package_message,
-        mls_rules::CommitOptions,
-        tree_kem::{
-            leaf_node::{test_utils::get_test_capabilities, LeafNodeSource},
-            UpdatePathNode,
-        },
+    use crate::client::test_utils::{
+        test_client_with_key_pkg, test_client_with_key_pkg_custom, TestClientBuilder,
+        TEST_CIPHER_SUITE, TEST_CUSTOM_PROPOSAL_TYPE, TEST_PROTOCOL_VERSION,
     };
+    use crate::client_builder::test_utils::TestClientConfig;
+    use crate::client_builder::{ClientBuilder, MlsConfig};
+    use crate::crypto::test_utils::TestCryptoProvider;
+    use crate::group::mls_rules::{CommitDirection, CommitSource};
+    use crate::group::proposal_filter::{ProposalBundle, ProposalInfo};
+    use crate::identity::basic::BasicIdentityProvider;
+    use crate::identity::test_utils::{get_test_signing_identity, BasicWithCustomProvider};
+    use crate::key_package::test_utils::test_key_package_message;
+    use crate::mls_rules::CommitOptions;
+    use crate::tree_kem::leaf_node::test_utils::get_test_capabilities;
+    use crate::tree_kem::leaf_node::LeafNodeSource;
+    use crate::tree_kem::UpdatePathNode;
 
     #[cfg(any(feature = "private_message", feature = "custom_proposal"))]
     use crate::group::mls_rules::DefaultMlsRules;
@@ -1914,7 +1905,8 @@ mod tests {
     #[cfg(feature = "prior_epoch")]
     use crate::group::padding::PaddingMode;
 
-    use crate::{extension::RequiredCapabilitiesExt, key_package::test_utils::test_key_package};
+    use crate::extension::RequiredCapabilitiesExt;
+    use crate::key_package::test_utils::test_key_package;
 
     #[cfg(all(feature = "by_ref_proposal", feature = "custom_proposal"))]
     use super::test_utils::test_group_custom_config;
@@ -1931,13 +1923,11 @@ mod tests {
         time::MlsTime,
     };
 
-    use super::{
-        test_utils::{
-            get_test_25519_key, get_test_groups_with_features, group_extensions, process_commit,
-            test_group, test_group_custom, test_n_member_group, TestGroup, TEST_GROUP,
-        },
-        *,
+    use super::test_utils::{
+        get_test_25519_key, get_test_groups_with_features, group_extensions, process_commit,
+        test_group, test_group_custom, test_n_member_group, TestGroup, TEST_GROUP,
     };
+    use super::*;
 
     use assert_matches::assert_matches;
 

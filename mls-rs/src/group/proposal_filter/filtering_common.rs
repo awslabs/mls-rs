@@ -2,19 +2,16 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use crate::{
-    client::MlsError,
-    group::{proposal_filter::ProposalBundle, Sender},
-    key_package::{validate_key_package_properties, KeyPackage},
-    protocol_version::ProtocolVersion,
-    time::MlsTime,
-    tree_kem::{
-        leaf_node_validator::{LeafNodeValidator, ValidationContext},
-        node::LeafIndex,
-        TreeKemPublic,
-    },
-    CipherSuiteProvider, ExtensionList,
-};
+use crate::client::MlsError;
+use crate::group::proposal_filter::ProposalBundle;
+use crate::group::Sender;
+use crate::key_package::{validate_key_package_properties, KeyPackage};
+use crate::protocol_version::ProtocolVersion;
+use crate::time::MlsTime;
+use crate::tree_kem::leaf_node_validator::{LeafNodeValidator, ValidationContext};
+use crate::tree_kem::node::LeafIndex;
+use crate::tree_kem::TreeKemPublic;
+use crate::{CipherSuiteProvider, ExtensionList};
 
 use crate::tree_kem::leaf_node::LeafNode;
 
@@ -28,7 +25,8 @@ use crate::extension::ExternalSendersExt;
 use mls_rs_core::error::IntoAnyError;
 
 use alloc::vec::Vec;
-use mls_rs_core::{identity::IdentityProvider, psk::PreSharedKeyStorage};
+use mls_rs_core::identity::IdentityProvider;
+use mls_rs_core::psk::PreSharedKeyStorage;
 
 use crate::group::{ExternalInit, ProposalType, RemoveProposal};
 

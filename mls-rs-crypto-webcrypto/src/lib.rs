@@ -9,19 +9,15 @@ mod ec;
 mod hkdf;
 mod key_type;
 
-use mls_rs_core::{
-    crypto::{
-        CipherSuite, CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkePublicKey,
-        HpkeSecretKey, SignaturePublicKey, SignatureSecretKey,
-    },
-    error::{AnyError, IntoAnyError},
+use mls_rs_core::crypto::{
+    CipherSuite, CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkePublicKey, HpkeSecretKey,
+    SignaturePublicKey, SignatureSecretKey,
 };
+use mls_rs_core::error::{AnyError, IntoAnyError};
 
-use mls_rs_crypto_hpke::{
-    context::{ContextR, ContextS},
-    dhkem::DhKem,
-    hpke::Hpke,
-};
+use mls_rs_crypto_hpke::context::{ContextR, ContextS};
+use mls_rs_crypto_hpke::dhkem::DhKem;
+use mls_rs_crypto_hpke::hpke::Hpke;
 
 use mls_rs_crypto_traits::{AeadType, KdfType, KemId};
 
@@ -29,11 +25,9 @@ use wasm_bindgen::JsValue;
 use web_sys::SubtleCrypto;
 use zeroize::Zeroizing;
 
-use crate::{
-    aead::Aead,
-    ec::{EcSigner, Ecdh},
-    hkdf::Hkdf,
-};
+use crate::aead::Aead;
+use crate::ec::{EcSigner, Ecdh};
+use crate::hkdf::Hkdf;
 
 #[derive(Debug, thiserror::Error)]
 pub enum CryptoError {

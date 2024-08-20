@@ -7,10 +7,8 @@ use crate::crypto::CipherSuiteProvider;
 use crate::group::message_signature::{AuthenticatedContentTBS, FramedContentAuthData};
 use crate::group::GroupContext;
 use alloc::vec::Vec;
-use core::{
-    fmt::{self, Debug},
-    ops::Deref,
-};
+use core::fmt::{self, Debug};
+use core::ops::Deref;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
 
@@ -92,9 +90,8 @@ impl MembershipTag {
 mod tests {
     use super::*;
     use crate::crypto::test_utils::{test_cipher_suite_provider, try_test_cipher_suite_provider};
-    use crate::group::{
-        framing::test_utils::get_test_auth_content, test_utils::get_test_group_context,
-    };
+    use crate::group::framing::test_utils::get_test_auth_content;
+    use crate::group::test_utils::get_test_group_context;
 
     #[cfg(not(mls_build_async))]
     use crate::crypto::test_utils::TestCryptoProvider;

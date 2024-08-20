@@ -8,13 +8,11 @@ use alloc::vec::Vec;
 #[cfg(feature = "custom_proposal")]
 use itertools::Itertools;
 
-use crate::{
-    group::{
-        AddProposal, BorrowedProposal, Proposal, ProposalOrRef, ProposalType, ReInitProposal,
-        RemoveProposal, Sender,
-    },
-    ExtensionList,
+use crate::group::{
+    AddProposal, BorrowedProposal, Proposal, ProposalOrRef, ProposalType, ReInitProposal,
+    RemoveProposal, Sender,
 };
+use crate::ExtensionList;
 
 #[cfg(feature = "by_ref_proposal")]
 use crate::group::{proposal_cache::CachedProposal, LeafIndex, ProposalRef, UpdateProposal};

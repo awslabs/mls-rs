@@ -7,10 +7,8 @@ use crate::crypto::{CipherSuiteProvider, HpkePublicKey, HpkeSecretKey};
 use crate::group::key_schedule::kdf_derive_secret;
 use alloc::vec;
 use alloc::vec::Vec;
-use core::{
-    fmt::{self, Debug},
-    ops::Deref,
-};
+use core::fmt::{self, Debug};
+use core::ops::Deref;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
 use zeroize::Zeroizing;
@@ -138,12 +136,10 @@ impl<'a, P: CipherSuiteProvider> PathSecretGenerator<'a, P> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        cipher_suite::CipherSuite,
-        client::test_utils::TEST_CIPHER_SUITE,
-        crypto::test_utils::{
-            test_cipher_suite_provider, try_test_cipher_suite_provider, TestCryptoProvider,
-        },
+    use crate::cipher_suite::CipherSuite;
+    use crate::client::test_utils::TEST_CIPHER_SUITE;
+    use crate::crypto::test_utils::{
+        test_cipher_suite_provider, try_test_cipher_suite_provider, TestCryptoProvider,
     };
 
     use super::*;

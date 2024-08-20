@@ -8,25 +8,22 @@ pub mod benchmarks;
 #[cfg(all(feature = "fuzz_util", not(mls_build_async)))]
 pub mod fuzz_tests;
 
-use mls_rs_core::{
-    crypto::{CipherSuite, CipherSuiteProvider, CryptoProvider},
-    identity::{BasicCredential, Credential, SigningIdentity},
-    protocol_version::ProtocolVersion,
-    psk::ExternalPskId,
-};
+use mls_rs_core::crypto::{CipherSuite, CipherSuiteProvider, CryptoProvider};
+use mls_rs_core::identity::{BasicCredential, Credential, SigningIdentity};
+use mls_rs_core::protocol_version::ProtocolVersion;
+use mls_rs_core::psk::ExternalPskId;
 
-use crate::{
-    client_builder::{ClientBuilder, MlsConfig},
-    identity::basic::BasicIdentityProvider,
-    mls_rules::{CommitOptions, DefaultMlsRules},
-    tree_kem::Lifetime,
-    Client, Group, MlsMessage,
-};
+use crate::client_builder::{ClientBuilder, MlsConfig};
+use crate::identity::basic::BasicIdentityProvider;
+use crate::mls_rules::{CommitOptions, DefaultMlsRules};
+use crate::tree_kem::Lifetime;
+use crate::{Client, Group, MlsMessage};
 
 #[cfg(feature = "private_message")]
 use crate::group::{mls_rules::EncryptionOptions, padding::PaddingMode};
 
-use alloc::{vec, vec::Vec};
+use alloc::vec;
+use alloc::vec::Vec;
 
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn get_test_basic_credential(identity: Vec<u8>) -> Credential {

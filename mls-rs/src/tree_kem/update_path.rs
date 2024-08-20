@@ -2,20 +2,19 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use alloc::{vec, vec::Vec};
+use alloc::vec;
+use alloc::vec::Vec;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
-use mls_rs_core::{error::IntoAnyError, identity::IdentityProvider};
+use mls_rs_core::error::IntoAnyError;
+use mls_rs_core::identity::IdentityProvider;
 
-use super::{
-    leaf_node::LeafNode,
-    leaf_node_validator::{LeafNodeValidator, ValidationContext},
-    node::LeafIndex,
-};
-use crate::{
-    client::MlsError,
-    crypto::{CipherSuiteProvider, HpkeCiphertext, HpkePublicKey},
-};
-use crate::{group::message_processor::ProvisionalState, time::MlsTime};
+use super::leaf_node::LeafNode;
+use super::leaf_node_validator::{LeafNodeValidator, ValidationContext};
+use super::node::LeafIndex;
+use crate::client::MlsError;
+use crate::crypto::{CipherSuiteProvider, HpkeCiphertext, HpkePublicKey};
+use crate::group::message_processor::ProvisionalState;
+use crate::time::MlsTime;
 
 #[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -117,8 +116,7 @@ mod tests {
     use crate::group::message_processor::ProvisionalState;
     use crate::group::test_utils::{get_test_group_context, random_bytes, TEST_GROUP};
     use crate::identity::basic::BasicIdentityProvider;
-    use crate::tree_kem::leaf_node::test_utils::default_properties;
-    use crate::tree_kem::leaf_node::test_utils::get_basic_test_node_sig_key;
+    use crate::tree_kem::leaf_node::test_utils::{default_properties, get_basic_test_node_sig_key};
     use crate::tree_kem::leaf_node::LeafNodeSource;
     use crate::tree_kem::node::LeafIndex;
     use crate::tree_kem::parent_hash::ParentHash;
@@ -126,7 +124,8 @@ mod tests {
     use crate::tree_kem::validate_update_path;
 
     use super::{UpdatePath, UpdatePathNode};
-    use crate::{cipher_suite::CipherSuite, tree_kem::MlsError};
+    use crate::cipher_suite::CipherSuite;
+    use crate::tree_kem::MlsError;
 
     use alloc::vec::Vec;
 

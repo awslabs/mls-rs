@@ -4,7 +4,9 @@
 
 use core::ops::Deref;
 
-use crate::{client::MlsError, tree_kem::node::LeafIndex, KeyPackage, KeyPackageRef};
+use crate::client::MlsError;
+use crate::tree_kem::node::LeafIndex;
+use crate::{KeyPackage, KeyPackageRef};
 
 use super::{Commit, FramedContentAuthData, GroupInfo, MembershipTag, Welcome};
 
@@ -14,10 +16,8 @@ use crate::{group::Proposal, mls_rules::ProposalRef};
 use alloc::vec::Vec;
 use core::fmt::{self, Debug};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
-use mls_rs_core::{
-    crypto::{CipherSuite, CipherSuiteProvider},
-    protocol_version::ProtocolVersion,
-};
+use mls_rs_core::crypto::{CipherSuite, CipherSuiteProvider};
+use mls_rs_core::protocol_version::ProtocolVersion;
 use zeroize::ZeroizeOnDrop;
 
 #[cfg(feature = "private_message")]
@@ -670,14 +670,11 @@ pub(crate) mod test_utils {
 mod tests {
     use assert_matches::assert_matches;
 
-    use crate::{
-        client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
-        crypto::test_utils::test_cipher_suite_provider,
-        group::{
-            framing::test_utils::get_test_ciphertext_content,
-            proposal_ref::test_utils::auth_content_from_proposal, RemoveProposal,
-        },
-    };
+    use crate::client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION};
+    use crate::crypto::test_utils::test_cipher_suite_provider;
+    use crate::group::framing::test_utils::get_test_ciphertext_content;
+    use crate::group::proposal_ref::test_utils::auth_content_from_proposal;
+    use crate::group::RemoveProposal;
 
     use super::*;
 

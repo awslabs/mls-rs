@@ -9,13 +9,13 @@ use mls_rs_core::crypto::{CipherSuite, CipherSuiteProvider};
 
 use itertools::Itertools;
 
-use crate::{
-    crypto::test_utils::try_test_cipher_suite_provider, identity::basic::BasicIdentityProvider,
-};
+use crate::crypto::test_utils::try_test_cipher_suite_provider;
+use crate::identity::basic::BasicIdentityProvider;
 
-use super::{
-    node::NodeVec, test_utils::TreeWithSigners, tree_validator::TreeValidator, TreeKemPublic,
-};
+use super::node::NodeVec;
+use super::test_utils::TreeWithSigners;
+use super::tree_validator::TreeValidator;
+use super::TreeKemPublic;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Default, Clone)]
 struct ValidationTestCase {

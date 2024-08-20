@@ -1,13 +1,12 @@
 use mls_rs_codec::MlsEncode;
 use mls_rs_core::protocol_version::ProtocolVersion;
 
-use crate::{
-    cipher_suite::CipherSuite,
-    client_builder::{BaseConfig, MlsConfig, WithCryptoProvider, WithIdentityProvider},
-    group::{framing::MlsMessage, Group},
-    identity::basic::BasicIdentityProvider,
-    test_utils::{generate_basic_client, get_test_groups},
-};
+use crate::cipher_suite::CipherSuite;
+use crate::client_builder::{BaseConfig, MlsConfig, WithCryptoProvider, WithIdentityProvider};
+use crate::group::framing::MlsMessage;
+use crate::group::Group;
+use crate::identity::basic::BasicIdentityProvider;
+use crate::test_utils::{generate_basic_client, get_test_groups};
 
 pub use mls_rs_crypto_openssl::OpensslCryptoProvider as MlsCryptoProvider;
 

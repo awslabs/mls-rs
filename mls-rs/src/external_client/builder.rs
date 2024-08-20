@@ -6,23 +6,17 @@
 //!
 //! See [`ExternalClientBuilder`].
 
-use crate::{
-    crypto::SignaturePublicKey,
-    extension::ExtensionType,
-    external_client::{ExternalClient, ExternalClientConfig},
-    group::{
-        mls_rules::{DefaultMlsRules, MlsRules},
-        proposal::ProposalType,
-    },
-    identity::CredentialType,
-    protocol_version::ProtocolVersion,
-    tree_kem::Capabilities,
-    CryptoProvider, Sealed,
-};
-use std::{
-    collections::HashMap,
-    fmt::{self, Debug},
-};
+use crate::crypto::SignaturePublicKey;
+use crate::extension::ExtensionType;
+use crate::external_client::{ExternalClient, ExternalClientConfig};
+use crate::group::mls_rules::{DefaultMlsRules, MlsRules};
+use crate::group::proposal::ProposalType;
+use crate::identity::CredentialType;
+use crate::protocol_version::ProtocolVersion;
+use crate::tree_kem::Capabilities;
+use crate::{CryptoProvider, Sealed};
+use std::collections::HashMap;
+use std::fmt::{self, Debug};
 
 /// Base client configuration type when instantiating `ExternalClientBuilder`
 pub type ExternalBaseConfig = Config<Missing, DefaultMlsRules, Missing>;
@@ -520,7 +514,8 @@ impl Default for Settings {
 /// Definitions meant to be private that are inaccessible outside this crate. They need to be marked
 /// `pub` because they appear in public definitions.
 mod private {
-    use mls_rs_core::{crypto::SignatureSecretKey, identity::SigningIdentity};
+    use mls_rs_core::crypto::SignatureSecretKey;
+    use mls_rs_core::identity::SigningIdentity;
 
     use super::{IntoConfigOutput, Settings};
 
@@ -555,18 +550,15 @@ mod private {
     }
 }
 
-use mls_rs_core::{
-    crypto::SignatureSecretKey,
-    identity::{IdentityProvider, SigningIdentity},
-};
+use mls_rs_core::crypto::SignatureSecretKey;
+use mls_rs_core::identity::{IdentityProvider, SigningIdentity};
 use private::{Config, ConfigInner, IntoConfig};
 
 #[cfg(test)]
 pub(crate) mod test_utils {
-    use crate::{
-        cipher_suite::CipherSuite, crypto::test_utils::TestCryptoProvider,
-        identity::basic::BasicIdentityProvider,
-    };
+    use crate::cipher_suite::CipherSuite;
+    use crate::crypto::test_utils::TestCryptoProvider;
+    use crate::identity::basic::BasicIdentityProvider;
 
     use super::{
         ExternalBaseConfig, ExternalClientBuilder, WithCryptoProvider, WithIdentityProvider,

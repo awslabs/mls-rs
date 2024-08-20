@@ -2,11 +2,9 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use core::{
-    convert::Infallible,
-    fmt::{self, Debug},
-    ops::{Deref, DerefMut},
-};
+use core::convert::Infallible;
+use core::fmt::{self, Debug};
+use core::ops::{Deref, DerefMut};
 
 use alloc::vec::Vec;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};

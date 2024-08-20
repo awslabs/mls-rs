@@ -1,25 +1,20 @@
 use std::sync::Mutex;
 
-use mls_rs_core::{
-    crypto::{CipherSuiteProvider, CryptoProvider, SignatureSecretKey},
-    identity::BasicCredential,
-};
+use mls_rs_core::crypto::{CipherSuiteProvider, CryptoProvider, SignatureSecretKey};
+use mls_rs_core::identity::BasicCredential;
 
 use once_cell::sync::Lazy;
 
-use crate::{
-    cipher_suite::CipherSuite,
-    client::MlsError,
-    client_builder::{BaseConfig, WithCryptoProvider, WithIdentityProvider},
-    group::{
-        framing::{Content, MlsMessage, Sender, WireFormat},
-        message_processor::MessageProcessor,
-        message_signature::AuthenticatedContent,
-        Commit, Group,
-    },
-    identity::{basic::BasicIdentityProvider, SigningIdentity},
-    Client, ExtensionList,
-};
+use crate::cipher_suite::CipherSuite;
+use crate::client::MlsError;
+use crate::client_builder::{BaseConfig, WithCryptoProvider, WithIdentityProvider};
+use crate::group::framing::{Content, MlsMessage, Sender, WireFormat};
+use crate::group::message_processor::MessageProcessor;
+use crate::group::message_signature::AuthenticatedContent;
+use crate::group::{Commit, Group};
+use crate::identity::basic::BasicIdentityProvider;
+use crate::identity::SigningIdentity;
+use crate::{Client, ExtensionList};
 
 #[cfg(awslc)]
 pub use mls_rs_crypto_awslc::AwsLcCryptoProvider as MlsCryptoProvider;

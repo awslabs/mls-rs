@@ -7,7 +7,8 @@ extern crate alloc;
 use alloc::vec::Vec;
 use core::fmt::Debug;
 
-use mls_rs_core::{crypto::CipherSuite, error::IntoAnyError};
+use mls_rs_core::crypto::CipherSuite;
+use mls_rs_core::error::IntoAnyError;
 use mls_rs_crypto_traits::{AeadId, AeadType, AES_TAG_LEN};
 
 #[derive(Debug)]

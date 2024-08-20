@@ -1,11 +1,9 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use mls_rs::{
-    client_builder::{self, WithGroupStateStorage},
-    identity::basic,
-    storage_provider::in_memory::InMemoryGroupStateStorage,
-};
+use mls_rs::client_builder::{self, WithGroupStateStorage};
+use mls_rs::identity::basic;
+use mls_rs::storage_provider::in_memory::InMemoryGroupStateStorage;
 use mls_rs_crypto_openssl::OpensslCryptoProvider;
 
 use self::group_state::{GroupStateStorage, GroupStateStorageAdapter};

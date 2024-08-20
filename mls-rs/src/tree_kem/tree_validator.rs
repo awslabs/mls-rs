@@ -14,8 +14,8 @@ use crate::client::MlsError;
 use crate::crypto::CipherSuiteProvider;
 use crate::group::GroupContext;
 use crate::iter::wrap_impl_iter;
-use crate::tree_kem::math as tree_math;
-use crate::tree_kem::{leaf_node_validator::LeafNodeValidator, TreeKemPublic};
+use crate::tree_kem::leaf_node_validator::LeafNodeValidator;
+use crate::tree_kem::{math as tree_math, TreeKemPublic};
 use mls_rs_core::identity::IdentityProvider;
 
 #[cfg(all(not(mls_build_async), feature = "rayon"))]
@@ -161,21 +161,17 @@ mod tests {
     use assert_matches::assert_matches;
 
     use super::*;
-    use crate::{
-        cipher_suite::CipherSuite,
-        client::test_utils::TEST_CIPHER_SUITE,
-        crypto::test_utils::test_cipher_suite_provider,
-        crypto::test_utils::TestCryptoProvider,
-        group::test_utils::{get_test_group_context, random_bytes},
-        identity::basic::BasicIdentityProvider,
-        tree_kem::{
-            kem::TreeKem,
-            leaf_node::test_utils::{default_properties, get_basic_test_node},
-            node::{LeafIndex, Node, Parent},
-            parent_hash::{test_utils::get_test_tree_fig_12, ParentHash},
-            test_utils::get_test_tree,
-        },
-    };
+    use crate::cipher_suite::CipherSuite;
+    use crate::client::test_utils::TEST_CIPHER_SUITE;
+    use crate::crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider};
+    use crate::group::test_utils::{get_test_group_context, random_bytes};
+    use crate::identity::basic::BasicIdentityProvider;
+    use crate::tree_kem::kem::TreeKem;
+    use crate::tree_kem::leaf_node::test_utils::{default_properties, get_basic_test_node};
+    use crate::tree_kem::node::{LeafIndex, Node, Parent};
+    use crate::tree_kem::parent_hash::test_utils::get_test_tree_fig_12;
+    use crate::tree_kem::parent_hash::ParentHash;
+    use crate::tree_kem::test_utils::get_test_tree;
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn test_parent_node(cipher_suite: CipherSuite) -> Parent {

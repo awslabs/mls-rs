@@ -3,14 +3,16 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use crate::client::MlsError;
-use crate::{group::PriorEpoch, key_package::KeyPackageRef};
+use crate::group::PriorEpoch;
+use crate::key_package::KeyPackageRef;
 
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 use core::fmt::{self, Debug};
 use mls_rs_codec::{MlsDecode, MlsEncode};
-use mls_rs_core::group::{EpochRecord, GroupState};
-use mls_rs_core::{error::IntoAnyError, group::GroupStateStorage, key_package::KeyPackageStorage};
+use mls_rs_core::error::IntoAnyError;
+use mls_rs_core::group::{EpochRecord, GroupState, GroupStateStorage};
+use mls_rs_core::key_package::KeyPackageStorage;
 
 use super::snapshot::Snapshot;
 
@@ -244,14 +246,13 @@ mod tests {
     use alloc::vec;
     use mls_rs_codec::MlsEncode;
 
-    use crate::{
-        client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
-        group::{
-            epoch::{test_utils::get_test_epoch_with_id, SenderDataSecret},
-            test_utils::{random_bytes, test_member, TEST_GROUP},
-            PskGroupId, ResumptionPSKUsage,
-        },
-        storage_provider::in_memory::{InMemoryGroupStateStorage, InMemoryKeyPackageStorage},
+    use crate::client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION};
+    use crate::group::epoch::test_utils::get_test_epoch_with_id;
+    use crate::group::epoch::SenderDataSecret;
+    use crate::group::test_utils::{random_bytes, test_member, TEST_GROUP};
+    use crate::group::{PskGroupId, ResumptionPSKUsage};
+    use crate::storage_provider::in_memory::{
+        InMemoryGroupStateStorage, InMemoryKeyPackageStorage,
     };
 
     use super::*;

@@ -2,25 +2,23 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use crate::{
-    client::test_utils::TEST_PROTOCOL_VERSION,
-    crypto::test_utils::try_test_cipher_suite_provider,
-    group::{
-        confirmation_tag::ConfirmationTag, framing::Content, message_processor::MessageProcessor,
-        message_signature::AuthenticatedContent, test_utils::GroupWithoutKeySchedule, Commit,
-        GroupContext, PathSecret, Sender,
-    },
-    identity::basic::BasicIdentityProvider,
-    tree_kem::{
-        node::{LeafIndex, NodeVec},
-        TreeKemPrivate, TreeKemPublic, UpdatePath,
-    },
-    WireFormat,
-};
+use crate::client::test_utils::TEST_PROTOCOL_VERSION;
+use crate::crypto::test_utils::try_test_cipher_suite_provider;
+use crate::group::confirmation_tag::ConfirmationTag;
+use crate::group::framing::Content;
+use crate::group::message_processor::MessageProcessor;
+use crate::group::message_signature::AuthenticatedContent;
+use crate::group::test_utils::GroupWithoutKeySchedule;
+use crate::group::{Commit, GroupContext, PathSecret, Sender};
+use crate::identity::basic::BasicIdentityProvider;
+use crate::tree_kem::node::{LeafIndex, NodeVec};
+use crate::tree_kem::{TreeKemPrivate, TreeKemPublic, UpdatePath};
+use crate::WireFormat;
 use alloc::vec;
 use alloc::vec::Vec;
 use mls_rs_codec::MlsDecode;
-use mls_rs_core::{crypto::CipherSuiteProvider, extension::ExtensionList};
+use mls_rs_core::crypto::CipherSuiteProvider;
+use mls_rs_core::extension::ExtensionList;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Default, Clone)]
 struct TreeKemTestCase {

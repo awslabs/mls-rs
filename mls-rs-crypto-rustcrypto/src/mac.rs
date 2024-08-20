@@ -2,10 +2,9 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use hmac::{
-    digest::{crypto_common::BlockSizeUser, FixedOutputReset},
-    Mac, SimpleHmac,
-};
+use hmac::digest::crypto_common::BlockSizeUser;
+use hmac::digest::FixedOutputReset;
+use hmac::{Mac, SimpleHmac};
 use mls_rs_core::crypto::CipherSuite;
 use sha2::{Digest, Sha256, Sha384, Sha512};
 

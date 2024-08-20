@@ -10,7 +10,8 @@ use itertools::Itertools;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::extension::ExtensionList;
 
-use mls_rs_core::{error::IntoAnyError, identity::IdentityProvider};
+use mls_rs_core::error::IntoAnyError;
+use mls_rs_core::identity::IdentityProvider;
 
 #[cfg(feature = "tree_index")]
 use mls_rs_core::identity::SigningIdentity;
@@ -723,21 +724,16 @@ pub(crate) mod test_utils {
     use mls_rs_core::group::Capabilities;
     use mls_rs_core::identity::BasicCredential;
 
+    use crate::cipher_suite::CipherSuite;
+    use crate::crypto::{HpkeSecretKey, SignatureSecretKey};
+    use crate::identity::basic::BasicIdentityProvider;
     use crate::identity::test_utils::get_test_signing_identity;
-    use crate::{
-        cipher_suite::CipherSuite,
-        crypto::{HpkeSecretKey, SignatureSecretKey},
-        identity::basic::BasicIdentityProvider,
-        tree_kem::leaf_node::test_utils::get_basic_test_node_sig_key,
-    };
+    use crate::tree_kem::leaf_node::test_utils::get_basic_test_node_sig_key;
 
-    use super::leaf_node::{ConfigProperties, LeafNodeSigningContext};
+    use super::leaf_node::test_utils::get_basic_test_node;
+    use super::leaf_node::{ConfigProperties, LeafNode, LeafNodeSigningContext};
     use super::node::LeafIndex;
-    use super::Lifetime;
-    use super::{
-        leaf_node::{test_utils::get_basic_test_node, LeafNode},
-        TreeKemPrivate, TreeKemPublic,
-    };
+    use super::{Lifetime, TreeKemPrivate, TreeKemPublic};
 
     #[derive(Debug)]
     pub(crate) struct TestTree {
