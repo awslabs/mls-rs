@@ -7,6 +7,8 @@ use alloc::vec::Vec;
 use core::fmt::{self, Debug};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
+#[cfg(feature = "last_resort_key_package_ext")]
+use mls_rs_core::extension::MlsExtension;
 use mls_rs_core::secret::Secret;
 use mls_rs_core::time::MlsTime;
 
@@ -14,6 +16,8 @@ use crate::cipher_suite::CipherSuite;
 use crate::client::MlsError;
 use crate::client_config::ClientConfig;
 use crate::crypto::{HpkeCiphertext, SignatureSecretKey};
+#[cfg(feature = "last_resort_key_package_ext")]
+use crate::extension::LastResortKeyPackageExt;
 use crate::extension::RatchetTreeExt;
 use crate::identity::SigningIdentity;
 use crate::key_package::{KeyPackage, KeyPackageRef};
@@ -431,9 +435,9 @@ where
         let (encrypted_group_secrets, key_package_generation) =
             find_key_package_generation(&config.key_package_repo(), &welcome.secrets).await?;
 
-        let key_package_version = key_package_generation.key_package.version;
+        let key_package = &key_package_generation.key_package;
 
-        if key_package_version != protocol_version {
+        if key_package.version != protocol_version {
             return Err(MlsError::ProtocolVersionMismatch);
         }
 
@@ -444,7 +448,7 @@ where
         let group_secrets = GroupSecrets::decrypt(
             &cipher_suite_provider,
             &key_package_generation.init_secret_key,
-            &key_package_generation.key_package.hpke_init_key,
+            &key_package.hpke_init_key,
             &welcome.encrypted_group_info,
             &encrypted_group_secrets.encrypted_group_secrets,
         )
@@ -516,10 +520,17 @@ where
         // index represent the index of this node among the leaves in the tree, namely the index of
         // the node in the tree array divided by two.
         let self_index = public_tree
-            .find_leaf_node(&key_package_generation.key_package.leaf_node)
+            .find_leaf_node(&key_package.leaf_node)
             .ok_or(MlsError::WelcomeKeyPackageNotFound)?;
 
-        let used_key_package_ref = key_package_generation.reference;
+        #[cfg(not(feature = "last_resort_key_package_ext"))]
+        let is_last_resort = false;
+        #[cfg(feature = "last_resort_key_package_ext")]
+        let is_last_resort = key_package
+            .extensions
+            .has_extension(LastResortKeyPackageExt::extension_type());
+        // Delete the key just used if this is not a last-resort key package.
+        let used_key_package_ref = (!is_last_resort).then_some(key_package_generation.reference);
 
         let mut private_tree =
             TreeKemPrivate::new_self_leaf(self_index, key_package_generation.leaf_node_secret_key);
@@ -569,7 +580,7 @@ where
             key_schedule_result.key_schedule,
             key_schedule_result.epoch_secrets,
             private_tree,
-            Some(used_key_package_ref),
+            used_key_package_ref,
             signer,
         )
         .await
@@ -2216,6 +2227,96 @@ mod tests {
         .map(|_| ());
 
         assert_matches!(bob_group, Err(MlsError::RatchetTreeNotFound));
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_reused_key_package() -> Result<(), MlsError> {
+        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (bob_client, bob_key_package) =
+            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
+        let mut carla_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+
+        // Alice adds Bob to her group.
+        let commit_output = alice_group
+            .group
+            .commit_builder()
+            .add_member(bob_key_package.clone())?
+            .build()
+            .await?;
+
+        // Bob joins group.
+        let (mut bob_group, _) = bob_client
+            .join_group(None, &commit_output.welcome_messages[0])
+            .await?;
+        // This deletes the key package used to join the group.
+        bob_group.write_to_storage().await?;
+
+        // Carla adds Bob, reusing the same key package.
+        let commit_output = carla_group
+            .group
+            .commit_builder()
+            .add_member(bob_key_package.clone())?
+            .build()
+            .await?;
+
+        // Bob cannot join Carla's group.
+        let bob_group = bob_client
+            .join_group(None, &commit_output.welcome_messages[0])
+            .await
+            .map(|_| ());
+        assert_matches!(bob_group, Err(MlsError::WelcomeKeyPackageNotFound));
+
+        Ok(())
+    }
+
+    #[cfg(feature = "last_resort_key_package_ext")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_last_resort_key_package() -> Result<(), MlsError> {
+        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (bob_client, bob_key_package) = test_client_with_key_pkg_custom(
+            TEST_PROTOCOL_VERSION,
+            TEST_CIPHER_SUITE,
+            "bob",
+            |config| {
+                config
+                    .0
+                    .settings
+                    .key_package_extensions
+                    .set(LastResortKeyPackageExt.into_extension().unwrap())
+            },
+        )
+        .await;
+        let mut carla_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+
+        // Alice adds Bob to her group.
+        let commit_output = alice_group
+            .group
+            .commit_builder()
+            .add_member(bob_key_package.clone())?
+            .build()
+            .await?;
+
+        // Bob joins group.
+        let (mut bob_group, _) = bob_client
+            .join_group(None, &commit_output.welcome_messages[0])
+            .await?;
+        // This no longer deletes the key package
+        bob_group.write_to_storage()?;
+
+        // Carla adds Bob, reusing the same key package.
+        let commit_output = carla_group
+            .group
+            .commit_builder()
+            .add_member(bob_key_package.clone())?
+            .build()
+            .await?;
+
+        // Bob can join Carla's group.
+        bob_client
+            .join_group(None, &commit_output.welcome_messages[0])
+            .await?;
+
+        Ok(())
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
