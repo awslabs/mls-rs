@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1724177693055,
+  "lastUpdate": 1724177707870,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -16187,6 +16187,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 131270,
             "range": "± 1593",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mgeisler@google.com",
+            "name": "Martin Geisler",
+            "username": "mgeisler"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "908d718d59b1b62b16d3ea13750f239f83a14789",
+          "message": "Fix unused imports for `--no-default-features` (#185)\n\nI noticed that I got a lot of warnings when I tried running\r\n\r\n    cargo test --no-default-features\r\n\r\nThis fixes the warnings related to imports. There are some other\r\nwarnings related to fields never being read (tested), but they can be\r\nfixed in other PRs.",
+          "timestamp": "2024-08-20T20:10:40+02:00",
+          "tree_id": "e3ab4aa72e0aad22fd1485fa8c9824f4dcd74eda",
+          "url": "https://github.com/awslabs/mls-rs/commit/908d718d59b1b62b16d3ea13750f239f83a14789"
+        },
+        "date": 1724177707264,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 513180,
+            "range": "± 15248",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 527179,
+            "range": "± 17149",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 592054,
+            "range": "± 41530",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1251344,
+            "range": "± 19360",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 8669916,
+            "range": "± 42541",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1126813,
+            "range": "± 95556",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1220873,
+            "range": "± 47962",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1320167,
+            "range": "± 46073",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 751846,
+            "range": "± 51150",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 822750,
+            "range": "± 10073",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 918968,
+            "range": "± 11139",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 20794,
+            "range": "± 293",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 68161,
+            "range": "± 1528",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 131737,
+            "range": "± 1426",
             "unit": "ns/iter"
           }
         ]
