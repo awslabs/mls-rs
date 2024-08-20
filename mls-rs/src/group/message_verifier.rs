@@ -213,6 +213,7 @@ fn signing_identity_for_new_member_proposal(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::{
         client::{
             test_utils::{test_client_with_key_pkg, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
@@ -226,7 +227,6 @@ mod tests {
             test_utils::{test_group_custom, TestGroup},
             Group, PublicMessage,
         },
-        tree_kem::node::LeafIndex,
     };
     use alloc::vec;
     use assert_matches::assert_matches;
@@ -250,6 +250,7 @@ mod tests {
     #[cfg(feature = "by_ref_proposal")]
     use alloc::boxed::Box;
 
+    #[cfg(feature = "by_ref_proposal")]
     use crate::group::{
         test_utils::{test_group, test_member},
         Sender,
@@ -257,8 +258,6 @@ mod tests {
 
     #[cfg(feature = "by_ref_proposal")]
     use crate::identity::test_utils::get_test_signing_identity;
-
-    use super::{verify_auth_content_signature, verify_plaintext_authentication};
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn make_signed_plaintext(group: &mut Group<TestClientConfig>) -> PublicMessage {

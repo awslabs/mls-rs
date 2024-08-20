@@ -791,16 +791,17 @@ mod tests {
     };
     use assert_matches::assert_matches;
 
-    use crate::{
-        group::{
-            message_processor::ProposalMessageDescription,
-            proposal::Proposal,
-            test_utils::{test_group, test_group_custom_config},
-            ReceivedMessage,
-        },
-        psk::{ExternalPskId, PreSharedKey},
-    };
-
+    #[cfg(feature = "by_ref_proposal")]
+    use crate::group::message_processor::ProposalMessageDescription;
+    #[cfg(feature = "by_ref_proposal")]
+    use crate::group::proposal::Proposal;
+    use crate::group::test_utils::test_group;
+    #[cfg(feature = "psk")]
+    use crate::group::test_utils::test_group_custom_config;
+    #[cfg(feature = "by_ref_proposal")]
+    use crate::group::ReceivedMessage;
+    #[cfg(feature = "psk")]
+    use crate::psk::{ExternalPskId, PreSharedKey};
     use alloc::vec;
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]

@@ -2,6 +2,7 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
+use alloc::boxed::Box;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt::Debug;
@@ -614,7 +615,7 @@ where
             &self.cipher_suite_provider,
             self.context(),
             sender,
-            Content::Commit(alloc::boxed::Box::new(commit)),
+            Content::Commit(Box::new(commit)),
             old_signer,
             #[cfg(feature = "private_message")]
             self.encryption_options()?.control_wire_format(sender),
@@ -879,8 +880,6 @@ pub(crate) mod test_utils {
 
 #[cfg(test)]
 mod tests {
-    use alloc::boxed::Box;
-
     use mls_rs_core::{
         error::IntoAnyError,
         extension::ExtensionType,
@@ -888,19 +887,7 @@ mod tests {
         time::MlsTime,
     };
 
-    use crate::{
-        crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider},
-        group::{
-            mls_rules::DefaultMlsRules,
-            test_utils::{test_group, test_group_custom},
-        },
-        mls_rules::CommitOptions,
-        Client,
-    };
-
-    #[cfg(feature = "by_ref_proposal")]
-    use crate::extension::ExternalSendersExt;
-
+    use crate::extension::RequiredCapabilitiesExt;
     use crate::{
         client::test_utils::{test_client_with_key_pkg, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         client_builder::{
@@ -908,7 +895,9 @@ mod tests {
             WithIdentityProvider,
         },
         client_config::ClientConfig,
+        crypto::test_utils::TestCryptoProvider,
         extension::test_utils::{TestExtension, TEST_EXTENSION_TYPE},
+        group::test_utils::{test_group, test_group_custom},
         group::{
             proposal::ProposalType,
             test_utils::{test_group_custom_config, test_n_member_group},
@@ -916,9 +905,16 @@ mod tests {
         identity::test_utils::get_test_signing_identity,
         identity::{basic::BasicIdentityProvider, test_utils::get_test_basic_credential},
         key_package::test_utils::test_key_package_message,
+        mls_rules::CommitOptions,
+        Client,
     };
 
-    use crate::extension::RequiredCapabilitiesExt;
+    #[cfg(feature = "by_ref_proposal")]
+    use crate::crypto::test_utils::test_cipher_suite_provider;
+    #[cfg(feature = "by_ref_proposal")]
+    use crate::extension::ExternalSendersExt;
+    #[cfg(feature = "by_ref_proposal")]
+    use crate::group::mls_rules::DefaultMlsRules;
 
     #[cfg(feature = "psk")]
     use crate::{

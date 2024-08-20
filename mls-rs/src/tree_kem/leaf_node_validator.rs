@@ -625,8 +625,10 @@ mod tests {
 
 #[cfg(test)]
 pub(crate) mod test_utils {
+    #[cfg(feature = "std")]
+    use alloc::boxed::Box;
     use alloc::vec;
-    use alloc::{boxed::Box, vec::Vec};
+    use alloc::vec::Vec;
     use mls_rs_codec::MlsEncode;
     use mls_rs_core::{
         error::IntoAnyError,

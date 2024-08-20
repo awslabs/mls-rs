@@ -17,6 +17,7 @@ pub use mls_rs_core::identity::{
 
 #[cfg(test)]
 pub(crate) mod test_utils {
+    #[cfg(feature = "std")]
     use alloc::boxed::Box;
     use alloc::vec;
     use alloc::vec::Vec;

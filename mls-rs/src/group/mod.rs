@@ -1898,25 +1898,30 @@ pub(crate) mod test_utils;
 mod tests {
     use crate::{
         client::test_utils::{
-            test_client_with_key_pkg, test_client_with_key_pkg_custom, TestClientBuilder,
-            TEST_CIPHER_SUITE, TEST_CUSTOM_PROPOSAL_TYPE, TEST_PROTOCOL_VERSION,
+            test_client_with_key_pkg, TestClientBuilder, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION,
         },
-        client_builder::{test_utils::TestClientConfig, ClientBuilder, MlsConfig},
+        client_builder::test_utils::TestClientConfig,
         crypto::test_utils::TestCryptoProvider,
-        group::{
-            mls_rules::{CommitDirection, CommitSource},
-            proposal_filter::{ProposalBundle, ProposalInfo},
-        },
-        identity::{
-            basic::BasicIdentityProvider,
-            test_utils::{get_test_signing_identity, BasicWithCustomProvider},
-        },
+        group::proposal_filter::ProposalInfo,
+        identity::test_utils::get_test_signing_identity,
         key_package::test_utils::test_key_package_message,
         mls_rules::CommitOptions,
         tree_kem::{
             leaf_node::{test_utils::get_test_capabilities, LeafNodeSource},
             UpdatePathNode,
         },
+    };
+
+    #[cfg(feature = "by_ref_proposal")]
+    use crate::{
+        client::test_utils::{test_client_with_key_pkg_custom, TEST_CUSTOM_PROPOSAL_TYPE},
+        client_builder::{ClientBuilder, MlsConfig},
+        group::{
+            mls_rules::{CommitDirection, CommitSource},
+            proposal_filter::ProposalBundle,
+        },
+        identity::basic::BasicIdentityProvider,
+        identity::test_utils::BasicWithCustomProvider,
     };
 
     #[cfg(any(feature = "private_message", feature = "custom_proposal"))]
