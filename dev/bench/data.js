@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1723746766536,
+  "lastUpdate": 1724177689030,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -15971,6 +15971,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 129991,
             "range": "± 2202",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mgeisler@google.com",
+            "name": "Martin Geisler",
+            "username": "mgeisler"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e6e02a3f1b5f481b0ac53e11cd562cbee7df7de9",
+          "message": "Add support for last resort key packages (#184)\n\nThis introduces a `LastResortKeyPackageExt` extension which\r\ncorresponds to the last resort key package extension described here:\r\n\r\n  https://datatracker.ietf.org/doc/html/draft-ietf-mls-extensions-04#name-last-resort-keypackages\r\n\r\nThe new code is hidden behind a `last_resort_key_package_ext` Cargo\r\nfeature.\r\n\r\nThere is not yet a super convenient way to set the extension on a\r\nsingle key package: the key package extensions are fixed when the\r\nclient is created, so one has to create a temporary throw-away client\r\nfor this. This can be addressed in a future PR, if needed.",
+          "timestamp": "2024-08-20T20:10:22+02:00",
+          "tree_id": "6132f85adf239b37121c653cfd199cf7e2874219",
+          "url": "https://github.com/awslabs/mls-rs/commit/e6e02a3f1b5f481b0ac53e11cd562cbee7df7de9"
+        },
+        "date": 1724177688290,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 514416,
+            "range": "± 15710",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 526717,
+            "range": "± 16290",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 589289,
+            "range": "± 16794",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1266522,
+            "range": "± 28224",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 8215590,
+            "range": "± 31507",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1184453,
+            "range": "± 49638",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1203854,
+            "range": "± 63281",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1394543,
+            "range": "± 71442",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 738035,
+            "range": "± 8884",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 820044,
+            "range": "± 10295",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 907965,
+            "range": "± 6599",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 20760,
+            "range": "± 604",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 68202,
+            "range": "± 795",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 131040,
+            "range": "± 1059",
             "unit": "ns/iter"
           }
         ]
