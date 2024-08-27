@@ -26,7 +26,7 @@ use crate::{
         snapshot::RawGroupState,
         state::GroupState,
         transcript_hash::InterimTranscriptHash,
-        validate_group_info_joiner, ContentType, ExportedTree, GroupContext, GroupInfo, Roster,
+        validate_tree_and_info_joiner, ContentType, ExportedTree, GroupContext, GroupInfo, Roster,
         Welcome,
     },
     identity::SigningIdentity,
@@ -129,7 +129,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             group_info.group_context.cipher_suite,
         )?;
 
-        let public_tree = validate_group_info_joiner(
+        let public_tree = validate_tree_and_info_joiner(
             protocol_version,
             &group_info,
             tree_data,

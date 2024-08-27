@@ -39,7 +39,7 @@ use crate::group::{
     PreSharedKeyProposal, {JustPreSharedKeyID, PreSharedKeyID},
 };
 
-use super::{validate_group_info_joiner, ExportedTree};
+use super::{validate_tree_and_info_joiner, ExportedTree};
 
 /// A builder that aids with the construction of an external commit.
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::ffi_type(opaque))]
@@ -163,7 +163,7 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
             .get_as::<ExternalPubExt>()?
             .ok_or(MlsError::MissingExternalPubExtension)?;
 
-        let public_tree = validate_group_info_joiner(
+        let public_tree = validate_tree_and_info_joiner(
             protocol_version,
             &group_info,
             self.tree_data,
