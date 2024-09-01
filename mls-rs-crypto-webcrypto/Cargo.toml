@@ -8,7 +8,13 @@ repository = "https://github.com/awslabs/mls-rs"
 keywords = ["mls", "mls-rs"]
 license = "Apache-2.0 OR MIT"
 
+[features]
+web = []
+node = []
+default = ["web"]
+
 [dependencies]
+cfg-if = "1.0.0"
 mls-rs-core = { path = "../mls-rs-core", default-features = false, features = ["std"], version = "0.19.0" }
 mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", default-features = false, features = ["std"], version = "0.10.0" }
 mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", default-features = false, features = ["std"], version = "0.11.0" }

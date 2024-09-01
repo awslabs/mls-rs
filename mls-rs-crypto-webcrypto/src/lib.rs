@@ -26,8 +26,10 @@ use mls_rs_crypto_hpke::{
 use mls_rs_crypto_traits::{AeadType, KdfType, KemId};
 
 use wasm_bindgen::JsValue;
+use wasm_bindgen::prelude::*;
 use web_sys::SubtleCrypto;
 use zeroize::Zeroizing;
+use cfg_if::cfg_if;
 
 use crate::{
     aead::Aead,
@@ -61,13 +63,32 @@ impl From<JsValue> for CryptoError {
     }
 }
 
-#[inline]
-pub(crate) fn get_crypto() -> Result<SubtleCrypto, CryptoError> {
-    Ok(web_sys::window()
-        .ok_or(CryptoError::WindowNotFound)?
-        .crypto()?
-        .subtle())
+cfg_if! {
+    if #[cfg(feature = "web")] {
+        #[inline]
+        pub(crate) fn get_crypto() -> Result<SubtleCrypto, CryptoError> {
+            Ok(web_sys::window()
+                .ok_or(CryptoError::WindowNotFound)?
+                .crypto()?
+                .subtle())
+        }
+    } else {
+        use web_sys::Crypto;
+
+        #[wasm_bindgen(module = "/js/node-crypto.js")]
+        extern "C" {
+            #[wasm_bindgen]
+            fn node_crypto() -> Crypto;
+        }
+
+        #[inline]
+        pub(crate) fn get_crypto() -> Result<SubtleCrypto, CryptoError> {
+            Ok(node_crypto()
+                .subtle())
+        }
+    }
 }
+
 
 #[derive(Clone, Default, Debug)]
 pub struct WebCryptoProvider;
