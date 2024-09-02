@@ -48,7 +48,6 @@ impl From<u64> for MlsTime {
     }
 }
 
-
 #[cfg(all(target_arch = "wasm32", feature = "web"))]
 #[wasm_bindgen(inline_js = r#"
 export function date_now() {

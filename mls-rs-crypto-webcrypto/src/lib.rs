@@ -11,7 +11,8 @@ mod key_type;
 
 use mls_rs_core::{
     crypto::{
-        self, CipherSuite, CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkePublicKey, HpkeSecretKey, SignaturePublicKey, SignatureSecretKey
+        self, CipherSuite, CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkePublicKey,
+        HpkeSecretKey, SignaturePublicKey, SignatureSecretKey,
     },
     error::{AnyError, IntoAnyError},
 };
@@ -24,17 +25,18 @@ use mls_rs_crypto_hpke::{
 
 use mls_rs_crypto_traits::{AeadType, KdfType, KemId};
 
-use wasm_bindgen::JsValue;
+use cfg_if::cfg_if;
 use wasm_bindgen::prelude::*;
+use wasm_bindgen::JsValue;
 use web_sys::SubtleCrypto;
 use zeroize::Zeroizing;
-use cfg_if::cfg_if;
 
 use crate::{
     aead::Aead,
     ec::{EcSigner, Ecdh},
     hkdf::Hkdf,
 };
+use web_sys::Crypto;
 
 #[derive(Debug, thiserror::Error)]
 pub enum CryptoError {
@@ -76,8 +78,6 @@ cfg_if! {
             crypto().map(|c| c.subtle())
         }
     } else {
-        use web_sys::Crypto;
-
         #[wasm_bindgen(module = "/js/node-crypto.js")]
         extern "C" {
             #[wasm_bindgen]
@@ -96,7 +96,6 @@ cfg_if! {
         }
     }
 }
-
 
 #[derive(Clone, Default, Debug)]
 pub struct WebCryptoProvider;
@@ -300,8 +299,7 @@ impl CipherSuiteProvider for WebCryptoCipherSuite {
     }
 
     fn random_bytes(&self, out: &mut [u8]) -> Result<(), Self::Error> {
-        crypto()?
-            .get_random_values_with_u8_array(out)?;
+        crypto()?.get_random_values_with_u8_array(out)?;
 
         Ok(())
     }
