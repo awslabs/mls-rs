@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use core::time::Duration;
+use cfg_if::cfg_if;
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
@@ -48,11 +49,21 @@ impl From<u64> for MlsTime {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
+
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
 #[wasm_bindgen(inline_js = r#"
 export function date_now() {
   return Date.now();
 }"#)]
+extern "C" {
+    fn date_now() -> f64;
+}
+
+#[cfg(all(target_arch = "wasm32", feature = "node"))]
+#[wasm_bindgen(inline_js = r#"
+module.exports.date_now = function() {
+    return Date.now();
+};"#)]
 extern "C" {
     fn date_now() -> f64;
 }
