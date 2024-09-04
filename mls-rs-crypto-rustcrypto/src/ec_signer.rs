@@ -4,8 +4,8 @@
 
 use crate::ec::{
     generate_keypair, private_key_bytes_to_public, private_key_from_bytes,
-    pub_key_from_uncompressed, sign_ed25519, sign_p256, verify_ed25519, verify_p256, EcError,
-    EcPrivateKey, EcPublicKey,
+    pub_key_from_uncompressed, sign_ed25519, sign_p256, sign_p384, verify_ed25519, verify_p256,
+    verify_p384, EcError, EcPrivateKey, EcPublicKey,
 };
 use alloc::vec::Vec;
 use core::ops::Deref;
@@ -74,6 +74,7 @@ impl EcSigner {
             EcPrivateKey::X25519(_) => Err(EcSignerError::EcKeyNotSignature),
             EcPrivateKey::Ed25519(private_key) => Ok(sign_ed25519(&private_key, data)?),
             EcPrivateKey::P256(private_key) => Ok(sign_p256(&private_key, data)?),
+            EcPrivateKey::P384(private_key) => Ok(sign_p384(&private_key, data)?),
         }
     }
 
@@ -89,6 +90,7 @@ impl EcSigner {
             EcPublicKey::X25519(_) => Err(EcSignerError::EcKeyNotSignature),
             EcPublicKey::Ed25519(key) => Ok(verify_ed25519(&key, signature, data)?),
             EcPublicKey::P256(key) => Ok(verify_p256(&key, signature, data)?),
+            EcPublicKey::P384(key) => Ok(verify_p384(&key, signature, data)?),
         }?;
 
         ver.then_some(()).ok_or(EcSignerError::InvalidSignature)

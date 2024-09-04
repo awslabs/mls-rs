@@ -98,6 +98,10 @@ pub fn pub_key_to_spki(key: &EcPublicKey) -> Result<Vec<u8>, EcX509Error> {
             .to_public_key_der()
             .map_err(|_| EcX509Error::NistSpkiError)?
             .to_vec()),
+        EcPublicKey::P384(key) => Ok(key
+            .to_public_key_der()
+            .map_err(|_| EcX509Error::NistSpkiError)?
+            .to_vec()),
     }
 }
 

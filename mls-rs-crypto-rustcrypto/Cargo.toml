@@ -53,6 +53,7 @@ hkdf = { version = "0.12", default-features = false }
 
 # KEM
 p256 = { version = "0.13", default-features = false, features = ["alloc", "ecdh", "ecdsa", "pem"] }
+p384 = { version = "0.13", default-features = false, features = ["alloc", "ecdh", "ecdsa", "pem"] }
 x25519-dalek = { version = "2", default-features = false, features = ["alloc", "static_secrets"] }
 ed25519-dalek = { version = "2", default-features = false, features = ["alloc", "rand_core"] }
 sec1 = { version = "0.7", default-features = false, features = ["alloc"] }

@@ -24,12 +24,14 @@ pub enum EcPublicKey {
     X25519(x25519_dalek::PublicKey),
     Ed25519(ed25519_dalek::VerifyingKey),
     P256(p256::PublicKey),
+    P384(p384::PublicKey),
 }
 
 pub enum EcPrivateKey {
     X25519(x25519_dalek::StaticSecret),
     Ed25519(ed25519_dalek::SigningKey),
     P256(p256::SecretKey),
+    P384(p384::SecretKey),
 }
 
 #[derive(Debug)]
@@ -85,6 +87,7 @@ impl core::fmt::Debug for EcPrivateKey {
             Self::X25519(_) => f.write_str("X25519 Secret Key"),
             Self::Ed25519(_) => f.write_str("Ed25519 Secret Key"),
             Self::P256(_) => f.write_str("P256 Secret Key"),
+            Self::P384(_) => f.write_str("P384 Secret Key"),
         }
     }
 }
@@ -109,6 +112,17 @@ pub fn pub_key_from_uncompressed(bytes: &[u8], curve: Curve) -> Result<EcPublicK
         Curve::Ed25519 => Ok(EcPublicKey::Ed25519(
             ed25519_dalek::VerifyingKey::from_bytes(bytes.try_into()?)?,
         )),
+        Curve::P384 => {
+            let encoded_point =
+                p384::EncodedPoint::from_bytes(bytes).map_err(|_| EcError::EcKeyInvalidKeyData)?;
+
+            let key_option: Option<p384::PublicKey> =
+                p384::PublicKey::from_encoded_point(&encoded_point).into();
+
+            let key = key_option.ok_or_else(|| EcError::EcKeyInvalidKeyData)?;
+
+            Ok(EcPublicKey::P384(key))
+        }
         _ => Err(EcError::UnsupportedCurve),
     }
 }
@@ -118,6 +132,7 @@ pub fn pub_key_to_uncompressed(key: &EcPublicKey) -> Result<Vec<u8>, EcError> {
         EcPublicKey::X25519(key) => Ok(key.to_bytes().to_vec()),
         EcPublicKey::Ed25519(key) => Ok(key.to_bytes().to_vec()),
         EcPublicKey::P256(key) => Ok(key.as_affine().to_encoded_point(false).as_bytes().to_vec()),
+        EcPublicKey::P384(key) => Ok(key.as_affine().to_encoded_point(false).as_bytes().to_vec()),
     }
 }
 
@@ -130,6 +145,7 @@ pub fn generate_private_key(curve: Curve) -> Result<EcPrivateKey, EcError> {
         Curve::Ed25519 => Ok(EcPrivateKey::Ed25519(ed25519_dalek::SigningKey::generate(
             &mut OsRng,
         ))),
+        Curve::P384 => Ok(EcPrivateKey::P384(p384::SecretKey::random(&mut OsRng))),
         _ => Err(EcError::UnsupportedCurve),
     }
 }
@@ -144,6 +160,9 @@ pub fn private_key_from_bytes(bytes: &[u8], curve: Curve) -> Result<EcPrivateKey
             .map_err(|_| EcError::EcKeyInvalidKeyData)
             .map(|bytes: &[u8; 32]| EcPrivateKey::X25519(x25519_dalek::StaticSecret::from(*bytes))),
         Curve::Ed25519 => ed25519_private_from_bytes(bytes),
+        Curve::P384 => p384::SecretKey::from_slice(bytes)
+            .map_err(|_| EcError::EcKeyInvalidKeyData)
+            .map(EcPrivateKey::P384),
         _ => Err(EcError::UnsupportedCurve),
     }
 }
@@ -158,6 +177,7 @@ pub fn private_key_to_bytes(key: &EcPrivateKey) -> Result<Vec<u8>, EcError> {
         EcPrivateKey::X25519(key) => Ok(key.to_bytes().to_vec()),
         EcPrivateKey::Ed25519(key) => Ok(key.to_keypair_bytes().to_vec()),
         EcPrivateKey::P256(key) => Ok(key.to_bytes().to_vec()),
+        EcPrivateKey::P384(key) => Ok(key.to_bytes().to_vec()),
     }
 }
 
@@ -166,6 +186,7 @@ pub fn private_key_to_public(private_key: &EcPrivateKey) -> Result<EcPublicKey, 
         EcPrivateKey::X25519(key) => Ok(EcPublicKey::X25519(x25519_dalek::PublicKey::from(key))),
         EcPrivateKey::Ed25519(key) => Ok(EcPublicKey::Ed25519(key.verifying_key())),
         EcPrivateKey::P256(key) => Ok(EcPublicKey::P256(key.public_key())),
+        EcPrivateKey::P384(key) => Ok(EcPublicKey::P384(key.public_key())),
     }
 }
 
@@ -174,6 +195,18 @@ fn ecdh_p256(
     public_key: &p256::PublicKey,
 ) -> Result<Vec<u8>, EcError> {
     let shared_secret = p256::elliptic_curve::ecdh::diffie_hellman(
+        private_key.to_nonzero_scalar(),
+        public_key.as_affine(),
+    );
+
+    Ok(shared_secret.raw_secret_bytes().to_vec())
+}
+
+fn ecdh_p384(
+    private_key: &p384::SecretKey,
+    public_key: &p384::PublicKey,
+) -> Result<Vec<u8>, EcError> {
+    let shared_secret = p384::elliptic_curve::ecdh::diffie_hellman(
         private_key.to_nonzero_scalar(),
         public_key.as_affine(),
     );
@@ -208,6 +241,13 @@ pub fn private_key_ecdh(
                 Err(EcError::EcdhKeyTypeMismatch)
             }
         }
+        EcPrivateKey::P384(private_key) => {
+            if let EcPublicKey::P384(remote_public) = remote_public {
+                ecdh_p384(private_key, remote_public)
+            } else {
+                Err(EcError::EcdhKeyTypeMismatch)
+            }
+        }
     }?;
 
     Ok(shared_secret)
@@ -218,6 +258,15 @@ pub fn sign_p256(private_key: &p256::SecretKey, data: &[u8]) -> Result<Vec<u8>, 
 
     let signature: p256::ecdsa::Signature =
         p256::ecdsa::signature::Signer::sign(&signing_key, data);
+
+    Ok(signature.to_der().to_bytes().to_vec())
+}
+
+pub fn sign_p384(private_key: &p384::SecretKey, data: &[u8]) -> Result<Vec<u8>, EcError> {
+    let signing_key = p384::ecdsa::SigningKey::from(private_key);
+
+    let signature: p384::ecdsa::Signature =
+        p384::ecdsa::signature::Signer::sign(&signing_key, data);
 
     Ok(signature.to_der().to_bytes().to_vec())
 }
@@ -236,6 +285,20 @@ pub fn verify_p256(
 
     let is_valid =
         p256::ecdsa::signature::Verifier::verify(&verifying_key, data, &signature).is_ok();
+
+    Ok(is_valid)
+}
+
+pub fn verify_p384(
+    public_key: &p384::PublicKey,
+    signature: &[u8],
+    data: &[u8],
+) -> Result<bool, EcError> {
+    let verifying_key = p384::ecdsa::VerifyingKey::from(public_key);
+    let signature = p384::ecdsa::Signature::from_der(signature)?;
+
+    let is_valid =
+        p384::ecdsa::signature::Verifier::verify(&verifying_key, data, &signature).is_ok();
 
     Ok(is_valid)
 }
