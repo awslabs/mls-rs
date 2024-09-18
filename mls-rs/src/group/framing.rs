@@ -410,6 +410,13 @@ impl MlsMessage {
         }
     }
 
+    pub fn as_key_package(&self) -> Option<&KeyPackage> {
+        match &self.payload {
+            MlsMessagePayload::KeyPackage(kp) => Some(kp),
+            _ => None,
+        }
+    }
+
     /// The wire format value describing the contents of this message.
     pub fn wire_format(&self) -> WireFormat {
         match self.payload {
