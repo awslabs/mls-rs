@@ -7,13 +7,16 @@ use crate::client_builder::{recreate_config, BaseConfig, ClientBuilder, MakeConf
 use crate::client_config::ClientConfig;
 use crate::group::framing::MlsMessage;
 
+use crate::group::{cipher_suite_provider, validate_group_info_joiner, GroupInfo};
+use crate::group::{
+    framing::MlsMessagePayload, snapshot::Snapshot, ExportedTree, Group, NewMemberInfo,
+};
 #[cfg(feature = "by_ref_proposal")]
 use crate::group::{
-    framing::{Content, MlsMessagePayload, PublicMessage, Sender, WireFormat},
+    framing::{Content, PublicMessage, Sender, WireFormat},
     message_signature::AuthenticatedContent,
     proposal::{AddProposal, Proposal},
 };
-use crate::group::{snapshot::Snapshot, ExportedTree, Group, NewMemberInfo};
 use crate::identity::SigningIdentity;
 use crate::key_package::{KeyPackageGeneration, KeyPackageGenerator};
 use crate::protocol_version::ProtocolVersion;
@@ -24,7 +27,7 @@ use mls_rs_core::crypto::{CryptoProvider, SignatureSecretKey};
 use mls_rs_core::error::{AnyError, IntoAnyError};
 use mls_rs_core::extension::{ExtensionError, ExtensionList, ExtensionType};
 use mls_rs_core::group::{GroupStateStorage, ProposalType};
-use mls_rs_core::identity::CredentialType;
+use mls_rs_core::identity::{CredentialType, IdentityProvider};
 use mls_rs_core::key_package::KeyPackageStorage;
 
 use crate::group::external_commit::ExternalCommitBuilder;
@@ -546,6 +549,46 @@ where
         .await
     }
 
+    /// Decrypt GroupInfo encrypted in the Welcome message without actually joining
+    /// the group. The ratchet tree is not needed.
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn examine_welcome_message(
+        &self,
+        welcome_message: &MlsMessage,
+    ) -> Result<GroupInfo, MlsError> {
+        Group::decrypt_group_info(welcome_message, &self.config).await
+    }
+
+    /// Validate GroupInfo message. This does NOT validate the ratchet tree in case
+    /// it is provided in the extension. It validates the signature, identity of the
+    /// signer, identities of external senders and cipher suite.
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn validate_group_info(
+        &self,
+        group_info_message: &MlsMessage,
+        signer: &SigningIdentity,
+    ) -> Result<(), MlsError> {
+        let MlsMessagePayload::GroupInfo(group_info) = &group_info_message.payload else {
+            return Err(MlsError::UnexpectedMessageType);
+        };
+
+        let cs = cipher_suite_provider(
+            self.config.crypto_provider(),
+            group_info.group_context.cipher_suite,
+        )?;
+
+        let id = self.config.identity_provider();
+
+        validate_group_info_joiner(group_info_message.version, group_info, signer, &id, &cs)
+            .await?;
+
+        id.validate_member(signer, None, Some(&group_info.group_context.extensions))
+            .await
+            .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?;
+
+        Ok(())
+    }
+
     /// 0-RTT add to an existing [group](crate::group::Group)
     ///
     /// External commits allow for immediate entry into a
@@ -650,7 +693,7 @@ where
             .cipher_suite_provider(cipher_suite)
             .ok_or(MlsError::UnsupportedCipherSuite(cipher_suite))?;
 
-        crate::group::validate_group_info_joiner(
+        crate::group::validate_tree_and_info_joiner(
             protocol_version,
             group_info,
             tree_data,
@@ -1049,5 +1092,71 @@ mod tests {
             .build();
         let bob = alice.to_builder().extension_type(34.into()).build();
         assert_eq!(bob.config.supported_extensions(), [33, 34].map(Into::into));
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn examine_welcome_message() {
+        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
+            .await
+            .group;
+
+        let (bob, kp) =
+            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
+
+        let commit = alice
+            .commit_builder()
+            .add_member(kp)
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+
+        alice.apply_pending_commit().await.unwrap();
+
+        let mut group_info = bob
+            .examine_welcome_message(&commit.welcome_messages[0])
+            .await
+            .unwrap();
+
+        // signature is random so we won't compare it
+        group_info.signature = vec![];
+        group_info.ungrease();
+
+        let mut expected_group_info = alice
+            .group_info_message(commit.ratchet_tree.is_none())
+            .await
+            .unwrap()
+            .into_group_info()
+            .unwrap();
+
+        expected_group_info.signature = vec![];
+        expected_group_info.ungrease();
+
+        assert_eq!(expected_group_info, group_info);
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn validate_group_info() {
+        let alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
+            .await
+            .group;
+
+        let bob = test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob")
+            .await
+            .0;
+
+        let group_info = alice.group_info_message(false).await.unwrap();
+        let alice_signer = alice.current_member_signing_identity().unwrap().clone();
+
+        bob.validate_group_info(&group_info, &alice_signer)
+            .await
+            .unwrap();
+
+        let other_signer = get_test_signing_identity(TEST_CIPHER_SUITE, b"alice")
+            .await
+            .0;
+
+        let res = bob.validate_group_info(&group_info, &other_signer).await;
+        assert_matches!(res, Err(MlsError::InvalidSignature));
     }
 }

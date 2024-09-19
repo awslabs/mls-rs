@@ -39,7 +39,7 @@ impl MavenArtifact {
         let exit_status = std::process::Command::new("mvn")
             .arg("--no-transfer-progress")
             .arg("dependency:copy")
-            .arg(&format!("-Dartifact={group_id}:{artifact_id}:{version}"))
+            .arg(format!("-Dartifact={group_id}:{artifact_id}:{version}"))
             .arg(format!("-DoutputDirectory={output_dir}"))
             .status()
             .context("running `mvn` failed")?;
