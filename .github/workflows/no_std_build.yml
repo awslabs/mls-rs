@@ -26,4 +26,4 @@ jobs:
     - name: Build MLS Embedded Full RFC Compliance
       run: cargo +nightly build --package mls-rs --lib --no-default-features --features rfc_compliant --target thumbv6m-none-eabi
     - name: Build rust crypto embedded
-      run: cargo +nightly build --package mls-rs-crypto-rustcrypto --no-default-features --target thumbv6m-none-eabi
+      run: cargo +nightly build --package mls-rs-crypto-rustcrypto --no-default-features --features "getrandom/custom" --target thumbv6m-none-eabi
