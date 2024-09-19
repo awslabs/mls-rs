@@ -1,6 +1,6 @@
 [package]
 name = "mls-rs-crypto-rustcrypto"
-version = "0.11.0"
+version = "0.11.1"
 edition = "2021"
 description = "RustCrypto based CryptoProvider for mls-rs"
 homepage = "https://github.com/awslabs/mls-rs"
