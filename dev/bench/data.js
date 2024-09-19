@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1726765782043,
+  "lastUpdate": 1726765797945,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -16727,6 +16727,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 131558,
             "range": "± 2757",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mgeisler@google.com",
+            "name": "Martin Geisler",
+            "username": "mgeisler"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "cb5b9e9df3073b5f2274864ab12c502ab3dcee38",
+          "message": "[crypto-rustcrypto]: remove unused `custom` feature (#161)\n\nThe `custom` feature from `getrandom` is not actually used in normal\r\nbuilds — infact, `getrandom` itself is never used directly.\r\n\r\nHowever, the feature can be used by a binary on an embedded platform\r\nto register a custom random number generator. The final binary should\r\nenable the `custom` feature to do this, see the\r\n`register_custem_genrandom!` macro for more details:\r\n\r\n  https://docs.rs/getrandom/latest/getrandom/macro.register_custom_getrandom.html\r\n\r\nWe emulate this in the CI build by enabling the feature on the command\r\nline.\r\n\r\nCo-authored-by: mulmarta <103590845+mulmarta@users.noreply.github.com>",
+          "timestamp": "2024-09-19T19:05:30+02:00",
+          "tree_id": "b517188828c8d5caf1d08fe23cf7ca268f911322",
+          "url": "https://github.com/awslabs/mls-rs/commit/cb5b9e9df3073b5f2274864ab12c502ab3dcee38"
+        },
+        "date": 1726765797258,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 516469,
+            "range": "± 12469",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 523540,
+            "range": "± 94519",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 587161,
+            "range": "± 13779",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1243832,
+            "range": "± 29569",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7862780,
+            "range": "± 43675",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1161931,
+            "range": "± 37720",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1211119,
+            "range": "± 54806",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1360967,
+            "range": "± 50012",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 746609,
+            "range": "± 31228",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 826371,
+            "range": "± 11262",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 920489,
+            "range": "± 30906",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 20990,
+            "range": "± 393",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 67869,
+            "range": "± 837",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 130986,
+            "range": "± 793",
             "unit": "ns/iter"
           }
         ]
