@@ -677,6 +677,11 @@ impl ExternalSnapshot {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, MlsError> {
         Ok(Self::mls_decode(&mut &*bytes)?)
     }
+
+    /// Group context encoded in the snapshot
+    pub fn context(&self) -> &GroupContext {
+        &self.state.context
+    }
 }
 
 impl<C> ExternalGroup<C>

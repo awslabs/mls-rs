@@ -3020,8 +3020,8 @@ mod tests {
         );
     }
 
-    fn make_extension_list(foo: u8) -> ExtensionList {
-        vec![TestExtension { foo }.into_extension().unwrap()].into()
+    fn make_extension_list(something: u8) -> ExtensionList {
+        vec![TestExtension { foo: something }.into_extension().unwrap()].into()
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
