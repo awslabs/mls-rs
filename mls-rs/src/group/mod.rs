@@ -20,7 +20,7 @@ use crate::crypto::{HpkeCiphertext, SignatureSecretKey};
 use crate::extension::LastResortKeyPackageExt;
 use crate::extension::RatchetTreeExt;
 use crate::identity::SigningIdentity;
-use crate::key_package::{KeyPackage, KeyPackageRef};
+use crate::key_package::{KeyPackage, KeyPackageGeneration, KeyPackageRef};
 use crate::protocol_version::ProtocolVersion;
 use crate::psk::secret::PskSecret;
 use crate::psk::PreSharedKeyID;
@@ -419,101 +419,32 @@ where
         signer: SignatureSecretKey,
         #[cfg(feature = "psk")] additional_psk: Option<PskSecretInput>,
     ) -> Result<(Self, NewMemberInfo), MlsError> {
-        let protocol_version = welcome.version;
-
-        if !config.version_supported(protocol_version) {
-            return Err(MlsError::UnsupportedProtocolVersion(protocol_version));
-        }
-
-        let MlsMessagePayload::Welcome(welcome) = &welcome.payload else {
-            return Err(MlsError::UnexpectedMessageType);
-        };
-
-        let cipher_suite_provider =
-            cipher_suite_provider(config.crypto_provider(), welcome.cipher_suite)?;
-
-        let (encrypted_group_secrets, key_package_generation) =
-            find_key_package_generation(&config.key_package_repo(), &welcome.secrets).await?;
-
-        let key_package = &key_package_generation.key_package;
-
-        if key_package.version != protocol_version {
-            return Err(MlsError::ProtocolVersionMismatch);
-        }
-
-        // Decrypt the encrypted_group_secrets using HPKE with the algorithms indicated by the
-        // cipher suite and the HPKE private key corresponding to the GroupSecrets. If a
-        // PreSharedKeyID is part of the GroupSecrets and the client is not in possession of
-        // the corresponding PSK, return an error
-        let group_secrets = GroupSecrets::decrypt(
-            &cipher_suite_provider,
-            &key_package_generation.init_secret_key,
-            &key_package.hpke_init_key,
-            &welcome.encrypted_group_info,
-            &encrypted_group_secrets.encrypted_group_secrets,
-        )
-        .await?;
-
-        #[cfg(feature = "psk")]
-        let psk_secret = if let Some(psk) = additional_psk {
-            let psk_id = group_secrets
-                .psks
-                .first()
-                .ok_or(MlsError::UnexpectedPskId)?;
-
-            match &psk_id.key_id {
-                JustPreSharedKeyID::Resumption(r) if r.usage != ResumptionPSKUsage::Application => {
-                    Ok(())
-                }
-                _ => Err(MlsError::UnexpectedPskId),
-            }?;
-
-            let mut psk = psk;
-            psk.id.psk_nonce = psk_id.psk_nonce.clone();
-            PskSecret::calculate(&[psk], &cipher_suite_provider).await?
-        } else {
-            PskResolver::<
-                <C as ClientConfig>::GroupStateStorage,
-                <C as ClientConfig>::KeyPackageRepository,
-                <C as ClientConfig>::PskStore,
-            > {
-                group_context: None,
-                current_epoch: None,
-                prior_epochs: None,
-                psk_store: &config.secret_store(),
-            }
-            .resolve_to_secret(&group_secrets.psks, &cipher_suite_provider)
-            .await?
-        };
-
-        #[cfg(not(feature = "psk"))]
-        let psk_secret = PskSecret::new(&cipher_suite_provider);
-
-        // From the joiner_secret in the decrypted GroupSecrets object and the PSKs specified in
-        // the GroupSecrets, derive the welcome_secret and using that the welcome_key and
-        // welcome_nonce.
-        let welcome_secret = WelcomeSecret::from_joiner_secret(
-            &cipher_suite_provider,
-            &group_secrets.joiner_secret,
-            &psk_secret,
-        )
-        .await?;
-
-        // Use the key and nonce to decrypt the encrypted_group_info field.
-        let decrypted_group_info = welcome_secret
-            .decrypt(&welcome.encrypted_group_info)
+        let (group_info, key_package_generation, group_secrets, psk_secret) =
+            Self::decrypt_group_info_internal(
+                welcome,
+                &config,
+                #[cfg(feature = "psk")]
+                additional_psk,
+            )
             .await?;
 
-        let group_info = GroupInfo::mls_decode(&mut &**decrypted_group_info)?;
+        let cipher_suite_provider = cipher_suite_provider(
+            config.crypto_provider(),
+            group_info.group_context.cipher_suite,
+        )?;
 
-        let public_tree = validate_group_info_joiner(
-            protocol_version,
+        let id_provider = config.identity_provider();
+
+        let public_tree = validate_tree_and_info_joiner(
+            welcome.version,
             &group_info,
             tree_data,
-            &config.identity_provider(),
+            &id_provider,
             &cipher_suite_provider,
         )
         .await?;
+
+        let key_package = key_package_generation.key_package;
 
         // Identify a leaf in the tree array (any even-numbered node) whose leaf_node is identical
         // to the leaf_node field of the KeyPackage. If no such field exists, return an error. Let
@@ -1614,6 +1545,145 @@ where
                 generation,
             )
             .await
+    }
+}
+
+impl<C: ClientConfig> Group<C> {
+    #[cfg(feature = "psk")]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn psk_secret<CS: CipherSuiteProvider>(
+        config: &C,
+        cipher_suite_provider: &CS,
+        psks: &[PreSharedKeyID],
+        additional_psk: Option<PskSecretInput>,
+    ) -> Result<PskSecret, MlsError> {
+        if let Some(psk) = additional_psk {
+            let psk_id = psks.first().ok_or(MlsError::UnexpectedPskId)?;
+
+            match &psk_id.key_id {
+                JustPreSharedKeyID::Resumption(r) if r.usage != ResumptionPSKUsage::Application => {
+                    Ok(())
+                }
+                _ => Err(MlsError::UnexpectedPskId),
+            }?;
+
+            let mut psk = psk;
+            psk.id.psk_nonce = psk_id.psk_nonce.clone();
+            PskSecret::calculate(&[psk], cipher_suite_provider).await
+        } else {
+            PskResolver::<
+                <C as ClientConfig>::GroupStateStorage,
+                <C as ClientConfig>::KeyPackageRepository,
+                <C as ClientConfig>::PskStore,
+            > {
+                group_context: None,
+                current_epoch: None,
+                prior_epochs: None,
+                psk_store: &config.secret_store(),
+            }
+            .resolve_to_secret(psks, cipher_suite_provider)
+            .await
+        }
+    }
+
+    #[cfg(not(feature = "psk"))]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn psk_secret<CS: CipherSuiteProvider>(
+        _config: &C,
+        cipher_suite_provider: &CS,
+        _psks: &[PreSharedKeyID],
+    ) -> Result<PskSecret, MlsError> {
+        Ok(PskSecret::new(cipher_suite_provider))
+    }
+
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub(crate) async fn decrypt_group_info(
+        welcome: &MlsMessage,
+        config: &C,
+    ) -> Result<GroupInfo, MlsError> {
+        Self::decrypt_group_info_internal(
+            welcome,
+            config,
+            #[cfg(feature = "psk")]
+            None,
+        )
+        .await
+        .map(|info| info.0)
+    }
+
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn decrypt_group_info_internal(
+        welcome: &MlsMessage,
+        config: &C,
+        #[cfg(feature = "psk")] additional_psk: Option<PskSecretInput>,
+    ) -> Result<(GroupInfo, KeyPackageGeneration, GroupSecrets, PskSecret), MlsError> {
+        let protocol_version = welcome.version;
+
+        if !config.version_supported(protocol_version) {
+            return Err(MlsError::UnsupportedProtocolVersion(protocol_version));
+        }
+
+        let MlsMessagePayload::Welcome(welcome) = &welcome.payload else {
+            return Err(MlsError::UnexpectedMessageType);
+        };
+
+        let cipher_suite_provider =
+            cipher_suite_provider(config.crypto_provider(), welcome.cipher_suite)?;
+
+        let (encrypted_group_secrets, key_package_generation) =
+            find_key_package_generation(&config.key_package_repo(), &welcome.secrets).await?;
+
+        let key_package_version = key_package_generation.key_package.version;
+
+        if key_package_version != protocol_version {
+            return Err(MlsError::ProtocolVersionMismatch);
+        }
+
+        // Decrypt the encrypted_group_secrets using HPKE with the algorithms indicated by the
+        // cipher suite and the HPKE private key corresponding to the GroupSecrets. If a
+        // PreSharedKeyID is part of the GroupSecrets and the client is not in possession of
+        // the corresponding PSK, return an error
+        let group_secrets = GroupSecrets::decrypt(
+            &cipher_suite_provider,
+            &key_package_generation.init_secret_key,
+            &key_package_generation.key_package.hpke_init_key,
+            &welcome.encrypted_group_info,
+            &encrypted_group_secrets.encrypted_group_secrets,
+        )
+        .await?;
+
+        let psk_secret = Self::psk_secret(
+            config,
+            &cipher_suite_provider,
+            &group_secrets.psks,
+            #[cfg(feature = "psk")]
+            additional_psk,
+        )
+        .await?;
+
+        // From the joiner_secret in the decrypted GroupSecrets object and the PSKs specified in
+        // the GroupSecrets, derive the welcome_secret and using that the welcome_key and
+        // welcome_nonce.
+        let welcome_secret = WelcomeSecret::from_joiner_secret(
+            &cipher_suite_provider,
+            &group_secrets.joiner_secret,
+            &psk_secret,
+        )
+        .await?;
+
+        // Use the key and nonce to decrypt the encrypted_group_info field.
+        let decrypted_group_info = welcome_secret
+            .decrypt(&welcome.encrypted_group_info)
+            .await?;
+
+        let group_info = GroupInfo::mls_decode(&mut &**decrypted_group_info)?;
+
+        Ok((
+            group_info,
+            key_package_generation,
+            group_secrets,
+            psk_secret,
+        ))
     }
 }
 
