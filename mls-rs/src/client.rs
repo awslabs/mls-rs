@@ -791,16 +791,17 @@ mod tests {
     };
     use assert_matches::assert_matches;
 
-    use crate::{
-        group::{
-            message_processor::ProposalMessageDescription,
-            proposal::Proposal,
-            test_utils::{test_group, test_group_custom_config},
-            ReceivedMessage,
-        },
-        psk::{ExternalPskId, PreSharedKey},
-    };
-
+    #[cfg(feature = "by_ref_proposal")]
+    use crate::group::message_processor::ProposalMessageDescription;
+    #[cfg(feature = "by_ref_proposal")]
+    use crate::group::proposal::Proposal;
+    use crate::group::test_utils::test_group;
+    #[cfg(feature = "psk")]
+    use crate::group::test_utils::test_group_custom_config;
+    #[cfg(feature = "by_ref_proposal")]
+    use crate::group::ReceivedMessage;
+    #[cfg(feature = "psk")]
+    use crate::psk::{ExternalPskId, PreSharedKey};
     use alloc::vec;
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -855,7 +856,7 @@ mod tests {
 
         let proposal = bob
             .external_add_proposal(
-                &alice_group.group.group_info_message(true).await.unwrap(),
+                &alice_group.group_info_message(true).await.unwrap(),
                 None,
                 vec![],
             )
@@ -863,7 +864,6 @@ mod tests {
             .unwrap();
 
         let message = alice_group
-            .group
             .process_incoming_message(proposal)
             .await
             .unwrap();
@@ -875,12 +875,11 @@ mod tests {
             ) if p.key_package.leaf_node.signing_identity == bob_identity
         );
 
-        alice_group.group.commit(vec![]).await.unwrap();
-        alice_group.group.apply_pending_commit().await.unwrap();
+        alice_group.commit(vec![]).await.unwrap();
+        alice_group.apply_pending_commit().await.unwrap();
 
         // Check that the new member is in the group
         assert!(alice_group
-            .group
             .roster()
             .members_iter()
             .any(|member| member.signing_identity == bob_identity))
@@ -912,7 +911,6 @@ mod tests {
             .unwrap();
 
         let group_info_msg = alice_group
-            .group
             .group_info_message_allowing_ext_commit(true)
             .await
             .unwrap();
@@ -944,26 +942,24 @@ mod tests {
         assert_eq!(new_group.roster().members_iter().count(), num_members);
 
         let _ = alice_group
-            .group
             .process_incoming_message(external_commit.clone())
             .await
             .unwrap();
 
-        let bob_current_epoch = bob_group.group.current_epoch();
+        let bob_current_epoch = bob_group.current_epoch();
 
         let message = bob_group
-            .group
             .process_incoming_message(external_commit)
             .await
             .unwrap();
 
-        assert!(alice_group.group.roster().members_iter().count() == num_members);
+        assert!(alice_group.roster().members_iter().count() == num_members);
 
         if !do_remove {
-            assert!(bob_group.group.roster().members_iter().count() == num_members);
+            assert!(bob_group.roster().members_iter().count() == num_members);
         } else {
             // Bob was removed so his epoch must stay the same
-            assert_eq!(bob_group.group.current_epoch(), bob_current_epoch);
+            assert_eq!(bob_group.current_epoch(), bob_current_epoch);
 
             assert_matches!(
                 message,
@@ -979,7 +975,7 @@ mod tests {
 
         // Comparing epoch authenticators is sufficient to check that members are in sync.
         assert_eq!(
-            alice_group.group.epoch_authenticator().unwrap(),
+            alice_group.epoch_authenticator().unwrap(),
             new_group.epoch_authenticator().unwrap()
         );
 
@@ -1019,11 +1015,10 @@ mod tests {
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let mut bob_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
-        bob_group.group.commit(vec![]).await.unwrap();
-        bob_group.group.apply_pending_commit().await.unwrap();
+        bob_group.commit(vec![]).await.unwrap();
+        bob_group.apply_pending_commit().await.unwrap();
 
         let group_info_msg = bob_group
-            .group
             .group_info_message_allowing_ext_commit(true)
             .await
             .unwrap();
@@ -1043,10 +1038,7 @@ mod tests {
             .unwrap();
 
         // If Carol tries to join Alice's group using the group info from Bob's group, that fails.
-        let res = alice_group
-            .group
-            .process_incoming_message(external_commit)
-            .await;
+        let res = alice_group.process_incoming_message(external_commit).await;
         assert_matches!(res, Err(_));
     }
 

@@ -1,6 +1,6 @@
 [package]
 name = "mls-rs-core"
-version = "0.19.0"
+version = "0.19.1"
 edition = "2021"
 description = "Core components and traits for mls-rs"
 homepage = "https://github.com/awslabs/mls-rs"
@@ -20,6 +20,7 @@ ffi = ["dep:safer-ffi", "dep:safer-ffi-gen"]
 x509 = []
 test_suite = ["serde", "dep:serde_json", "dep:itertools"]
 serde = ["dep:serde", "zeroize/serde", "hex/serde", "dep:serde_bytes"]
+last_resort_key_package_ext = []
 
 [dependencies]
 mls-rs-codec = { version = "0.5.2", path = "../mls-rs-codec", default-features = false}

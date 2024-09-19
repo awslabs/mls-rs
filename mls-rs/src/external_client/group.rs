@@ -677,6 +677,11 @@ impl ExternalSnapshot {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, MlsError> {
         Ok(Self::mls_decode(&mut &*bytes)?)
     }
+
+    /// Group context encoded in the snapshot
+    pub fn context(&self) -> &GroupContext {
+        &self.state.context
+    }
 }
 
 impl<C> ExternalGroup<C>
@@ -787,7 +792,6 @@ pub(crate) mod test_utils {
             config,
             None,
             group
-                .group
                 .group_info_message_allowing_ext_commit(true)
                 .await
                 .unwrap(),
@@ -833,7 +837,7 @@ mod tests {
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn test_group_with_one_commit(v: ProtocolVersion, cs: CipherSuite) -> TestGroup {
         let mut group = test_group(v, cs).await;
-        group.group.commit(Vec::new()).await.unwrap();
+        group.commit(Vec::new()).await.unwrap();
         group.process_pending_commit().await.unwrap();
         group
     }
@@ -848,11 +852,7 @@ mod tests {
 
         let bob_key_package = test_key_package_message(v, cs, "bob").await;
 
-        let mut commit_builder = group
-            .group
-            .commit_builder()
-            .add_member(bob_key_package)
-            .unwrap();
+        let mut commit_builder = group.commit_builder().add_member(bob_key_package).unwrap();
 
         #[cfg(feature = "by_ref_proposal")]
         if let Some(ext_signer) = ext_identity {
@@ -888,15 +888,15 @@ mod tests {
     async fn external_group_can_process_commit() {
         let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let mut server = make_external_group(&alice).await;
-        let commit_output = alice.group.commit(Vec::new()).await.unwrap();
-        alice.group.apply_pending_commit().await.unwrap();
+        let commit_output = alice.commit(Vec::new()).await.unwrap();
+        alice.apply_pending_commit().await.unwrap();
 
         server
             .process_incoming_message(commit_output.commit_message)
             .await
             .unwrap();
 
-        assert_eq!(alice.group.state, server.state);
+        assert_eq!(alice.state, server.state);
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -920,8 +920,8 @@ mod tests {
             ExternalReceivedMessage::Proposal(ProposalMessageDescription { ref proposal, ..}) if proposal == &add_proposal
         );
 
-        let commit_output = alice.group.commit(vec![]).await.unwrap();
-        alice.group.apply_pending_commit().await.unwrap();
+        let commit_output = alice.commit(vec![]).await.unwrap();
+        alice.apply_pending_commit().await.unwrap();
 
         let new_epoch = match server
             .process_incoming_message(commit_output.commit_message)
@@ -942,7 +942,7 @@ mod tests {
             .into_iter()
             .any(|p| p.proposal == add_proposal));
 
-        assert_eq!(alice.group.state, server.state);
+        assert_eq!(alice.state, server.state);
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -972,7 +972,7 @@ mod tests {
 
         assert_eq!(server.state.public_tree.get_leaf_nodes().len(), 2);
 
-        assert_eq!(alice.group.state, server.state);
+        assert_eq!(alice.state, server.state);
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -980,7 +980,7 @@ mod tests {
         let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let mut server = make_external_group(&alice).await;
 
-        let mut commit_output = alice.group.commit(vec![]).await.unwrap();
+        let mut commit_output = alice.commit(vec![]).await.unwrap();
 
         match commit_output.commit_message.payload {
             MlsMessagePayload::Plain(ref mut plain) => plain.content.epoch = 0,
@@ -1004,7 +1004,7 @@ mod tests {
         )
         .await;
 
-        let mut commit_output = alice.group.commit(Vec::new()).await.unwrap();
+        let mut commit_output = alice.commit(Vec::new()).await.unwrap();
 
         match commit_output.commit_message.payload {
             MlsMessagePayload::Plain(ref mut plain) => plain.auth.signature = Vec::new().into(),
@@ -1044,7 +1044,6 @@ mod tests {
             config,
             None,
             alice
-                .group
                 .group_info_message_allowing_ext_commit(true)
                 .await
                 .unwrap(),
@@ -1066,7 +1065,6 @@ mod tests {
         let config = TestExternalClientBuilder::new_for_test().build_config();
 
         let mut group_info = alice
-            .group
             .group_info_message_allowing_ext_commit(true)
             .await
             .unwrap();
@@ -1119,7 +1117,7 @@ mod tests {
         alice.process_message(external_proposal).await.unwrap();
 
         // Alice commits the proposal
-        let commit_output = alice.group.commit(vec![]).await.unwrap();
+        let commit_output = alice.commit(vec![]).await.unwrap();
 
         let commit = match commit_output
             .commit_message
@@ -1145,7 +1143,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(alice.group.state, server.state);
+        assert_eq!(alice.state, server.state);
     }
 
     #[cfg(feature = "by_ref_proposal")]
@@ -1237,12 +1235,11 @@ mod tests {
         .await;
 
         let old_application_msg = alice
-            .group
             .encrypt_application_message(&[], vec![])
             .await
             .unwrap();
 
-        let commit_output = alice.group.commit(vec![]).await.unwrap();
+        let commit_output = alice.commit(vec![]).await.unwrap();
 
         server
             .process_incoming_message(commit_output.commit_message)
@@ -1266,9 +1263,9 @@ mod tests {
         )
         .await;
 
-        let proposal = alice.group.propose_update(vec![]).await.unwrap();
+        let proposal = alice.propose_update(vec![]).await.unwrap();
 
-        let commit_output = alice.group.commit(vec![]).await.unwrap();
+        let commit_output = alice.commit(vec![]).await.unwrap();
 
         server
             .process_incoming_message(proposal.clone())
@@ -1288,7 +1285,6 @@ mod tests {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
         let info = alice
-            .group
             .group_info_message_allowing_ext_commit(true)
             .await
             .unwrap();
@@ -1297,7 +1293,7 @@ mod tests {
         let mut server = ExternalGroup::join(config, None, info, None).await.unwrap();
 
         for _ in 0..2 {
-            let commit = alice.group.commit(vec![]).await.unwrap().commit_message;
+            let commit = alice.commit(vec![]).await.unwrap().commit_message;
             alice.process_pending_commit().await.unwrap();
             server.process_incoming_message(commit).await.unwrap();
         }
@@ -1325,7 +1321,6 @@ mod tests {
         let mut server = make_external_group(&alice).await;
 
         let info = alice
-            .group
             .group_info_message_allowing_ext_commit(false)
             .await
             .unwrap();
@@ -1355,7 +1350,6 @@ mod tests {
         let mut server = make_external_group(&alice).await;
 
         let [welcome] = alice
-            .group
             .commit_builder()
             .add_member(
                 test_key_package_message(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "john").await,

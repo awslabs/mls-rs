@@ -37,11 +37,25 @@ pub(crate) struct TestGroup {
     pub group: Group<TestClientConfig>,
 }
 
+impl Deref for TestGroup {
+    type Target = Group<TestClientConfig>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.group
+    }
+}
+
+impl DerefMut for TestGroup {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.group
+    }
+}
+
 impl TestGroup {
     #[cfg(feature = "external_client")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn propose(&mut self, proposal: Proposal) -> MlsMessage {
-        self.group.proposal_message(proposal, vec![]).await.unwrap()
+        self.proposal_message(proposal, vec![]).await.unwrap()
     }
 
     #[cfg(feature = "by_ref_proposal")]
@@ -62,19 +76,14 @@ impl TestGroup {
     {
         let (mut new_client, new_key_package) = if custom_kp {
             test_client_with_key_pkg_custom(
-                self.group.protocol_version(),
-                self.group.cipher_suite(),
+                self.protocol_version(),
+                self.cipher_suite(),
                 name,
                 &mut config,
             )
             .await
         } else {
-            test_client_with_key_pkg(
-                self.group.protocol_version(),
-                self.group.cipher_suite(),
-                name,
-            )
-            .await
+            test_client_with_key_pkg(self.protocol_version(), self.cipher_suite(), name).await
         };
 
         // Add new member to the group
@@ -84,7 +93,6 @@ impl TestGroup {
             commit_message,
             ..
         } = self
-            .group
             .commit_builder()
             .add_member(new_key_package)
             .unwrap()
@@ -93,7 +101,7 @@ impl TestGroup {
             .unwrap();
 
         // Apply the commit to the original group
-        self.group.apply_pending_commit().await.unwrap();
+        self.apply_pending_commit().await.unwrap();
 
         config(&mut new_client.config);
 
@@ -122,7 +130,7 @@ impl TestGroup {
     pub(crate) async fn process_pending_commit(
         &mut self,
     ) -> Result<CommitMessageDescription, MlsError> {
-        self.group.apply_pending_commit().await
+        self.apply_pending_commit().await
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -130,25 +138,25 @@ impl TestGroup {
         &mut self,
         message: MlsMessage,
     ) -> Result<ReceivedMessage, MlsError> {
-        self.group.process_incoming_message(message).await
+        self.process_incoming_message(message).await
     }
 
     #[cfg(feature = "private_message")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn make_plaintext(&mut self, content: Content) -> MlsMessage {
         let auth_content = AuthenticatedContent::new_signed(
-            &self.group.cipher_suite_provider,
-            &self.group.state.context,
-            Sender::Member(*self.group.private_tree.self_index),
+            &self.cipher_suite_provider,
+            &self.state.context,
+            Sender::Member(*self.private_tree.self_index),
             content,
-            &self.group.signer,
+            &self.signer,
             WireFormat::PublicMessage,
             Vec::new(),
         )
         .await
         .unwrap();
 
-        self.group.format_for_wire(auth_content).await.unwrap()
+        self.format_for_wire(auth_content).await.unwrap()
     }
 }
 
@@ -313,7 +321,7 @@ pub(crate) async fn test_n_member_group(
 pub(crate) async fn process_commit(groups: &mut [TestGroup], commit: MlsMessage, excluded: u32) {
     for g in groups
         .iter_mut()
-        .filter(|g| g.group.current_member_index() != excluded)
+        .filter(|g| g.current_member_index() != excluded)
     {
         g.process_message(commit.clone()).await.unwrap();
     }
