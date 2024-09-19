@@ -111,6 +111,7 @@ impl RustCryptoProvider {
     pub fn all_supported_cipher_suites() -> Vec<CipherSuite> {
         vec![
             CipherSuite::P256_AES128,
+            CipherSuite::P384_AES256,
             CipherSuite::CURVE25519_AES128,
             CipherSuite::CURVE25519_CHACHA,
         ]
