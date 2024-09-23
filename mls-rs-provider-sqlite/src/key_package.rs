@@ -131,7 +131,7 @@ mod tests {
     use mls_rs_core::{crypto::HpkeSecretKey, key_package::KeyPackageData};
 
     fn test_storage() -> SqLiteKeyPackageStorage {
-        SqLiteDataStorageEngine::new(MemoryStrategy)
+        SqLiteDataStorageEngine::new(MemoryStrategy, None)
             .unwrap()
             .key_package_storage()
             .unwrap()

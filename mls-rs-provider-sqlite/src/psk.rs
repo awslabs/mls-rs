@@ -92,7 +92,7 @@ mod tests {
     }
 
     fn test_storage() -> SqLitePreSharedKeyStorage {
-        SqLiteDataStorageEngine::new(MemoryStrategy)
+        SqLiteDataStorageEngine::new(MemoryStrategy, None)
             .unwrap()
             .pre_shared_key_storage()
             .unwrap()

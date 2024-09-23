@@ -168,7 +168,7 @@ mod tests {
     }
 
     fn test_storage() -> SqLiteApplicationStorage {
-        SqLiteDataStorageEngine::new(MemoryStrategy)
+        SqLiteDataStorageEngine::new(MemoryStrategy, None)
             .unwrap()
             .application_data_storage()
             .unwrap()

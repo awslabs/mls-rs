@@ -55,12 +55,38 @@ impl mls_rs_core::error::IntoAnyError for SqLiteDataStorageError {
 }
 
 #[derive(Clone, Debug)]
+pub enum JournalMode {
+    DELETE,
+    TRUNCATE,
+    PERSIST,
+    MEMORY,
+    WAL,
+    OFF
+}
+
+// Note: for in-memory dbs (such as what the tests use), the only available options are MEMORY or OFF
+// Invalid modes do not error, only no-op
+impl JournalMode {
+    fn as_str(&self) -> &'static str {
+        match self {
+            JournalMode::DELETE => "DELETE",
+            JournalMode::TRUNCATE => "TRUNCATE",
+            JournalMode::PERSIST => "PERSIST",
+            JournalMode::MEMORY => "MEMORY",
+            JournalMode::WAL => "WAL",
+            JournalMode::OFF => "OFF",
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 /// SQLite data storage engine.
 pub struct SqLiteDataStorageEngine<CS>
 where
     CS: ConnectionStrategy,
 {
     connection_strategy: CS,
+    journal_mode: Option<JournalMode>,
 }
 
 impl<CS> SqLiteDataStorageEngine<CS>
@@ -69,9 +95,11 @@ where
 {
     pub fn new(
         connection_strategy: CS,
+        journal_mode: Option<JournalMode>,
     ) -> Result<SqLiteDataStorageEngine<CS>, SqLiteDataStorageError> {
         Ok(SqLiteDataStorageEngine {
             connection_strategy,
+            journal_mode,
         })
     }
 
@@ -82,6 +110,12 @@ where
         let current_schema = connection
             .pragma_query_value(None, "user_version", |rows| rows.get::<_, u32>(0))
             .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))?;
+
+        if let Some(journal_mode) = &self.journal_mode {
+            connection
+                .pragma_update(None, "journal_mode", journal_mode.as_str())
+                .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))?;
+        }
 
         if current_schema != 1 {
             create_tables_v1(&connection)?;
@@ -156,7 +190,7 @@ mod tests {
 
     #[test]
     pub fn user_version_test() {
-        let database = SqLiteDataStorageEngine::new(MemoryStrategy).unwrap();
+        let database = SqLiteDataStorageEngine::new(MemoryStrategy, None).unwrap();
 
         let _connection = database.create_connection().unwrap();
 
@@ -169,5 +203,19 @@ mod tests {
             .unwrap();
 
         assert_eq!(current_schema, 1);
+    }
+
+    #[test]
+    pub fn journal_mode_test() {
+        // Connect with journal_mode other than default (OFF)
+        let database = SqLiteDataStorageEngine::new(MemoryStrategy, Some(crate::JournalMode::OFF)).unwrap();
+
+        let connection = database.create_connection().unwrap();
+
+        let journal_mode = connection
+            .pragma_query_value(None, "journal_mode", |rows| rows.get::<_, String>(0))
+            .unwrap();
+
+        assert_eq!(journal_mode, "off");
     }
 }
