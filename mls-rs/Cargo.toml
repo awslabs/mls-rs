@@ -51,7 +51,7 @@ benchmark_util = ["test_util", "default", "dep:mls-rs-crypto-openssl"]
 fuzz_util = ["test_util", "default", "dep:once_cell", "dep:mls-rs-crypto-openssl"]
 
 [dependencies]
-mls-rs-core = { path = "../mls-rs-core", default-features = false, version = "0.19.1"}
+mls-rs-core = { path = "../mls-rs-core", default-features = false, version = "0.19.1" }
 mls-rs-identity-x509 = { path = "../mls-rs-identity-x509", default-features = false, version = "0.12.0", optional = true }
 zeroize = { version = "1", default-features = false, features = ["alloc", "zeroize_derive"] }
 mls-rs-codec = { version = "0.5.2", path = "../mls-rs-codec", default-features = false}

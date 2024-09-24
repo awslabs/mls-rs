@@ -4,7 +4,6 @@
 
 use core::time::Duration;
 
-use cfg_if::cfg_if;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
