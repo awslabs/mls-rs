@@ -57,7 +57,7 @@ extern "C" {
     fn date_now() -> f64;
 }
 
-#[cfg(all(target_arch = "wasm32", feature = "node"))]
+#[cfg(all(target_arch = "wasm32", feature = "node", not(feature = "web")))]
 #[wasm_bindgen(inline_js = r#"
 module.exports.date_now = function() {
     return Date.now();
