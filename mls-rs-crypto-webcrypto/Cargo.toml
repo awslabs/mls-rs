@@ -9,9 +9,7 @@ keywords = ["mls", "mls-rs"]
 license = "Apache-2.0 OR MIT"
 
 [features]
-web = []
 node = []
-default = ["web"]
 
 [dependencies]
 cfg-if = "1.0.0"

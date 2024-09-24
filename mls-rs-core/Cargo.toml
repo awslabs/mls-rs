@@ -11,9 +11,8 @@ exclude = ["test_data"]
 
 
 [features]
-web = []
 node = []
-default = ["std", "rfc_compliant", "fast_serialize", "web"]
+default = ["std", "rfc_compliant", "fast_serialize"]
 arbitrary = ["std", "dep:arbitrary"]
 fast_serialize = ["mls-rs-codec/preallocate"]
 std = ["mls-rs-codec/std", "zeroize/std", "safer-ffi-gen?/std", "dep:thiserror", "serde?/std"]

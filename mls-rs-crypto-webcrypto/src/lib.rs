@@ -65,19 +65,7 @@ impl From<JsValue> for CryptoError {
 }
 
 cfg_if! {
-    if #[cfg(feature = "web")] {
-        #[inline]
-        pub(crate) fn crypto() -> Result<Crypto, CryptoError> {
-            Ok(web_sys::window()
-                .ok_or(CryptoError::WindowNotFound)?
-                .crypto()?)
-        }
-
-        #[inline]
-        pub(crate) fn get_crypto() -> Result<SubtleCrypto, CryptoError> {
-            crypto().map(|c| c.subtle())
-        }
-    } else {
+    if #[cfg(feature = "node")] {
         #[wasm_bindgen(module = "/js/node-crypto.js")]
         extern "C" {
             #[wasm_bindgen]
@@ -93,6 +81,18 @@ cfg_if! {
         pub(crate) fn get_crypto() -> Result<SubtleCrypto, CryptoError> {
             Ok(node_crypto()
                 .subtle())
+        }
+    } else {
+        #[inline]
+        pub(crate) fn crypto() -> Result<Crypto, CryptoError> {
+            Ok(web_sys::window()
+                .ok_or(CryptoError::WindowNotFound)?
+                .crypto()?)
+        }
+
+        #[inline]
+        pub(crate) fn get_crypto() -> Result<SubtleCrypto, CryptoError> {
+            crypto().map(|c| c.subtle())
         }
     }
 }
