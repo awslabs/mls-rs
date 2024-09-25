@@ -222,7 +222,7 @@ mod tests {
     use super::*;
 
     fn get_test_storage() -> SqLiteGroupStateStorage {
-        SqLiteDataStorageEngine::new(MemoryStrategy, None)
+        SqLiteDataStorageEngine::new(MemoryStrategy)
             .unwrap()
             .group_state_storage()
             .unwrap()
