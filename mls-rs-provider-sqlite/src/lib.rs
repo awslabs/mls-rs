@@ -219,11 +219,13 @@ mod tests {
 
     #[test]
     pub fn journal_mode_test() {
-        let db_path = tempdir().unwrap().into_path().join("test_db.sqlite");
+        let temp = tempdir().unwrap();
 
         // Connect with journal_mode other than the default of MEMORY
-        let database =
-            SqLiteDataStorageEngine::new(FileConnectionStrategy::new(db_path.as_path())).unwrap();
+        let database = SqLiteDataStorageEngine::new(FileConnectionStrategy::new(
+            &temp.path().join("test_db.sqlite"),
+        ))
+        .unwrap();
 
         let connection = database
             .with_journal_mode(Some(crate::JournalMode::Truncate))
