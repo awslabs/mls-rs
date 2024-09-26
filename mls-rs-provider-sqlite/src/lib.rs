@@ -193,7 +193,7 @@ fn create_tables_v1(connection: &Connection) -> Result<(), SqLiteDataStorageErro
 
 #[cfg(test)]
 mod tests {
-    use std::env::temp_dir;
+    use tempfile::tempdir;
 
     use crate::{
         connection_strategy::{FileConnectionStrategy, MemoryStrategy},
@@ -219,7 +219,7 @@ mod tests {
 
     #[test]
     pub fn journal_mode_test() {
-        let db_path = temp_dir().join("test_db.sqlite");
+        let db_path = tempdir().unwrap().into_path().join("test_db.sqlite");
 
         // Connect with journal_mode other than the default of MEMORY
         let database =
