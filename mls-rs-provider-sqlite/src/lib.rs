@@ -193,7 +193,7 @@ fn create_tables_v1(connection: &Connection) -> Result<(), SqLiteDataStorageErro
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, path::Path};
+    use std::env::temp_dir;
 
     use crate::{
         connection_strategy::{FileConnectionStrategy, MemoryStrategy},
@@ -219,13 +219,11 @@ mod tests {
 
     #[test]
     pub fn journal_mode_test() {
-        let db_path = Path::new("./test_db.sqlite");
-
-        // This will be generated when the database gets created
-        let db_journal_path = Path::new("./test_db.sqlite-journal");
+        let db_path = temp_dir().join("test_db.sqlite");
 
         // Connect with journal_mode other than the default of MEMORY
-        let database = SqLiteDataStorageEngine::new(FileConnectionStrategy::new(db_path)).unwrap();
+        let database =
+            SqLiteDataStorageEngine::new(FileConnectionStrategy::new(db_path.as_path())).unwrap();
 
         let connection = database
             .with_journal_mode(Some(crate::JournalMode::Truncate))
@@ -235,9 +233,6 @@ mod tests {
         let journal_mode = connection
             .pragma_query_value(None, "journal_mode", |rows| rows.get::<_, String>(0))
             .unwrap();
-
-        fs::remove_file(db_path).unwrap();
-        fs::remove_file(db_journal_path).unwrap();
 
         assert_eq!(journal_mode, "truncate");
     }
