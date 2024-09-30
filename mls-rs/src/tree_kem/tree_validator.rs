@@ -218,7 +218,7 @@ mod tests {
                 &mut get_test_group_context(42, cipher_suite).await,
                 &[LeafIndex(1), LeafIndex(2)],
                 &test_tree.creator_signing_key,
-                default_properties(),
+                Some(default_properties()),
                 None,
                 &cipher_suite_provider,
                 #[cfg(test)]

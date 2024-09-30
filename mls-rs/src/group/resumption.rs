@@ -57,6 +57,7 @@ where
             extensions: &self.group_state().context.extensions,
         };
 
+        let current_leaf_node_extensions = &self.current_user_leaf_node()?.extensions;
         resumption_create_group(
             self.config.clone(),
             new_key_packages,
@@ -64,6 +65,7 @@ where
             // TODO investigate if it's worth updating your own signing identity here
             self.current_member_signing_identity()?.clone(),
             self.signer.clone(),
+            current_leaf_node_extensions,
             #[cfg(any(feature = "private_message", feature = "psk"))]
             self.resumption_psk_input(ResumptionPSKUsage::Branch)?,
         )
@@ -164,7 +166,7 @@ impl<C: ClientConfig + Clone> ReinitClient<C> {
     /// be used in [`ReinitClient::commit`].
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn generate_key_package(&self) -> Result<MlsMessage, MlsError> {
-        self.client.generate_key_package_message().await
+        self.client.generate_key_package_message(Default::default()).await
     }
 
     /// Create the new group using new key packages of all group members, possibly
@@ -186,6 +188,10 @@ impl<C: ClientConfig + Clone> ReinitClient<C> {
             extensions: self.reinit.new_group_context_extensions(),
         };
 
+        // TODO, should these come from the reinit proposal or as an arg instead?
+        let group = self.client.load_group(self.reinit.group_id())?;
+        let current_leaf_node_extensions = &group.current_user_leaf_node()?.extensions;
+
         resumption_create_group(
             self.client.config.clone(),
             new_key_packages,
@@ -193,6 +199,7 @@ impl<C: ClientConfig + Clone> ReinitClient<C> {
             // These private fields are created with `Some(x)` by `get_reinit_client`
             self.client.signing_identity.unwrap().0,
             self.client.signer.unwrap(),
+            current_leaf_node_extensions,
             #[cfg(any(feature = "private_message", feature = "psk"))]
             self.psk_input,
         )
@@ -236,6 +243,7 @@ async fn resumption_create_group<C: ClientConfig + Clone>(
     new_group_params: &ResumptionGroupParameters<'_>,
     signing_identity: SigningIdentity,
     signer: SignatureSecretKey,
+    leaf_node_extensions: &ExtensionList,
     psk_input: PskSecretInput,
 ) -> Result<(Group<C>, Vec<MlsMessage>), MlsError> {
     // Create a new group with new parameters
@@ -246,6 +254,7 @@ async fn resumption_create_group<C: ClientConfig + Clone>(
         new_group_params.version,
         signing_identity,
         new_group_params.extensions.clone(),
+        leaf_node_extensions.clone(),
         signer,
     )
     .await?;

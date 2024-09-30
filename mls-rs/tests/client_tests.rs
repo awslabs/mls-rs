@@ -164,7 +164,7 @@ async fn test_create(
 ) {
     let alice = generate_client(cipher_suite, protocol_version, 0, encrypt_controls).await;
     let bob = generate_client(cipher_suite, protocol_version, 1, encrypt_controls).await;
-    let bob_key_pkg = bob.generate_key_package_message().await.unwrap();
+    let bob_key_pkg = bob.generate_key_package_message(Default::default()).await.unwrap();
 
     // Alice creates a group and adds bob
     let mut alice_group = alice
@@ -602,7 +602,7 @@ async fn reinit_works() {
 
     // Create a group with 2 parties
     let mut alice_group = alice1.create_group(ExtensionList::new()).await.unwrap();
-    let kp = bob1.generate_key_package_message().await.unwrap();
+    let kp = bob1.generate_key_package_message(Default::default()).await.unwrap();
 
     let welcome = &alice_group
         .commit_builder()
@@ -696,7 +696,7 @@ async fn reinit_works() {
     // They can talk
     let carol = generate_client(suite2, version, 3, Default::default()).await;
 
-    let kp = carol.generate_key_package_message().await.unwrap();
+    let kp = carol.generate_key_package_message(Default::default()).await.unwrap();
 
     let commit_output = alice_group
         .commit_builder()
@@ -806,7 +806,7 @@ async fn weird_tree_scenario() {
 async fn fake_key_package(id: usize) -> MlsMessage {
     generate_client(CipherSuite::P256_AES128, ProtocolVersion::MLS_10, id, false)
         .await
-        .generate_key_package_message()
+        .generate_key_package_message(Default::default())
         .await
         .unwrap()
 }

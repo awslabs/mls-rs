@@ -61,7 +61,7 @@ impl TestGroup {
     #[cfg(feature = "by_ref_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn update_proposal(&mut self) -> Proposal {
-        self.group.update_proposal(None, None).await.unwrap()
+        self.group.update_proposal(None, None, None).await.unwrap()
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -246,14 +246,13 @@ pub(crate) async fn test_group_custom(
     let (signing_identity, secret_key) = get_test_signing_identity(cipher_suite, b"member").await;
 
     let group = TestClientBuilder::new_for_test()
-        .leaf_node_extensions(leaf_extensions)
         .mls_rules(DefaultMlsRules::default().with_commit_options(commit_options))
         .extension_types(extension_types)
         .protocol_versions(ProtocolVersion::all())
         .used_protocol_version(protocol_version)
         .signing_identity(signing_identity.clone(), secret_key, cipher_suite)
         .build()
-        .create_group_with_id(TEST_GROUP.to_vec(), group_extensions())
+        .create_group_with_id(TEST_GROUP.to_vec(), group_extensions(), leaf_extensions)
         .await
         .unwrap();
 
@@ -291,7 +290,7 @@ where
     let group = custom(client_builder)
         .signing_identity(signing_identity.clone(), secret_key, cipher_suite)
         .build()
-        .create_group_with_id(TEST_GROUP.to_vec(), group_extensions())
+        .create_group_with_id(TEST_GROUP.to_vec(), group_extensions(), Default::default())
         .await
         .unwrap();
 
@@ -346,21 +345,20 @@ pub(crate) async fn get_test_groups_with_features(
         clients.push(
             TestClientBuilder::new_for_test()
                 .extension_type(999.into())
-                .leaf_node_extensions(leaf_extensions.clone())
                 .signing_identity(identity, secret_key, TEST_CIPHER_SUITE)
                 .build(),
         );
     }
 
     let group = clients[0]
-        .create_group_with_id(b"TEST GROUP".to_vec(), extensions)
+        .create_group_with_id(b"TEST GROUP".to_vec(), extensions, leaf_extensions.clone())
         .await
         .unwrap();
 
     let mut groups = vec![group];
 
     for client in clients.iter().skip(1) {
-        let key_package = client.generate_key_package_message().await.unwrap();
+        let key_package = client.generate_key_package_message(leaf_extensions.clone()).await.unwrap();
 
         let commit_output = groups[0]
             .commit_builder()

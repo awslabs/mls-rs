@@ -296,13 +296,14 @@ where
         protocol_version: ProtocolVersion,
         signing_identity: SigningIdentity,
         group_context_extensions: ExtensionList,
+        leaf_node_extensions: ExtensionList,
         signer: SignatureSecretKey,
     ) -> Result<Self, MlsError> {
         let cipher_suite_provider = cipher_suite_provider(config.crypto_provider(), cipher_suite)?;
 
         let (leaf_node, leaf_node_secret) = LeafNode::generate(
             &cipher_suite_provider,
-            config.leaf_properties(),
+            config.leaf_properties(leaf_node_extensions),
             signing_identity,
             &signer,
             config.lifetime(),
@@ -809,7 +810,7 @@ where
         &mut self,
         authenticated_data: Vec<u8>,
     ) -> Result<MlsMessage, MlsError> {
-        let proposal = self.update_proposal(None, None).await?;
+        let proposal = self.update_proposal(None, None, None).await?;
         self.proposal_message(proposal, authenticated_data).await
     }
 
@@ -839,7 +840,7 @@ where
         authenticated_data: Vec<u8>,
     ) -> Result<MlsMessage, MlsError> {
         let proposal = self
-            .update_proposal(Some(signer), Some(signing_identity))
+            .update_proposal(Some(signer), Some(signing_identity), None)
             .await?;
 
         self.proposal_message(proposal, authenticated_data).await
@@ -851,16 +852,18 @@ where
         &mut self,
         signer: Option<SignatureSecretKey>,
         signing_identity: Option<SigningIdentity>,
+        leaf_node_extensions: Option<ExtensionList>,
     ) -> Result<Proposal, MlsError> {
         // Grab a copy of the current node and update it to have new key material
-        let mut new_leaf_node = self.current_user_leaf_node()?.clone();
+        let mut new_leaf_node: LeafNode = self.current_user_leaf_node()?.clone();
 
+        let new_leaf_node_extensions = leaf_node_extensions.unwrap_or(new_leaf_node.extensions.clone()); 
         let secret_key = new_leaf_node
             .update(
                 &self.cipher_suite_provider,
                 self.group_id(),
                 self.current_member_index(),
-                self.config.leaf_properties(),
+                Some(self.config.leaf_properties(new_leaf_node_extensions)),
                 signing_identity,
                 signer.as_ref().unwrap_or(&self.signer),
             )
@@ -2484,7 +2487,7 @@ mod tests {
         test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "alice")
             .await
             .0
-            .create_group(core::iter::once(required_caps.into_extension().unwrap()).collect())
+            .create_group(core::iter::once(required_caps.into_extension().unwrap()).collect(), Default::default())
             .await
     }
 
@@ -2550,7 +2553,7 @@ mod tests {
             test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "alice")
                 .await
                 .0
-                .create_group(core::iter::once(ext_senders).collect())
+                .create_group(core::iter::once(ext_senders).collect(), Default::default())
                 .await
                 .map(|_| ());
 
@@ -2953,7 +2956,7 @@ mod tests {
             Some((bob_identity, TEST_CIPHER_SUITE)),
             TEST_PROTOCOL_VERSION,
         )
-        .generate_key_package_message()
+        .generate_key_package_message(ExtensionList::default())
         .await
         .unwrap();
 
@@ -3472,7 +3475,7 @@ mod tests {
             .with_random_signing_identity("alice", TEST_CIPHER_SUITE)
             .await
             .build()
-            .create_group(core::iter::once(ext_senders).collect())
+            .create_group(core::iter::once(ext_senders).collect(), Default::default())
             .await
             .unwrap();
 
@@ -3508,7 +3511,7 @@ mod tests {
             .with_random_signing_identity("alice", TEST_CIPHER_SUITE)
             .await
             .build()
-            .create_group(core::iter::once(ext_senders).collect())
+            .create_group(core::iter::once(ext_senders).collect(), Default::default())
             .await
             .unwrap();
 
@@ -3540,7 +3543,7 @@ mod tests {
             .with_random_signing_identity("alice", TEST_CIPHER_SUITE)
             .await
             .build()
-            .create_group(Default::default())
+            .create_group(Default::default(), Default::default())
             .await
             .unwrap();
 
@@ -3891,7 +3894,7 @@ mod tests {
             .await
             .extension_type(EXTENSION_TYPE)
             .build()
-            .create_group(group_extensions.clone())
+            .create_group(group_extensions.clone(), Default::default())
             .await
             .unwrap();
 
@@ -3922,11 +3925,11 @@ mod tests {
         // Alice adds Bob, Carol and Dave to the group. They all support the mandatory extension.
         let commit = alice
             .commit_builder()
-            .add_member(bob_client.generate_key_package_message().await.unwrap())
+            .add_member(bob_client.generate_key_package_message(ExtensionList::default()).await.unwrap())
             .unwrap()
-            .add_member(carol_client.generate_key_package_message().await.unwrap())
+            .add_member(carol_client.generate_key_package_message(ExtensionList::default()).await.unwrap())
             .unwrap()
-            .add_member(dave_client.generate_key_package_message().await.unwrap())
+            .add_member(dave_client.generate_key_package_message(ExtensionList::default()).await.unwrap())
             .unwrap()
             .build()
             .await
@@ -4041,7 +4044,7 @@ mod tests {
 
         let mut alice = client_with_custom_rules(b"alice", mls_rules.clone())
             .await
-            .create_group(Default::default())
+            .create_group(Default::default(), Default::default())
             .await
             .unwrap();
 
@@ -4049,7 +4052,7 @@ mod tests {
 
         let kp = client_with_custom_rules(b"bob", mls_rules)
             .await
-            .generate_key_package_message()
+            .generate_key_package_message(ExtensionList::default())
             .await
             .unwrap();
 
@@ -4095,7 +4098,7 @@ mod tests {
 
         let mut alice = client_with_custom_rules(b"alice", mls_rules.clone())
             .await
-            .create_group(Default::default())
+            .create_group(Default::default(), Default::default())
             .await
             .unwrap();
 
@@ -4130,7 +4133,7 @@ mod tests {
 
         let mut alice = client_with_custom_rules(b"alice", mls_rules.clone())
             .await
-            .create_group(Default::default())
+            .create_group(Default::default(), Default::default())
             .await
             .unwrap();
 
@@ -4281,7 +4284,7 @@ mod tests {
         .await;
 
         let mut alice = TestGroup {
-            group: alice.create_group(Default::default()).await.unwrap(),
+            group: alice.create_group(Default::default(), Default::default()).await.unwrap(),
         };
 
         let mut bob = alice.join("bob").await.0;

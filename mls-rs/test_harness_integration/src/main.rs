@@ -215,7 +215,7 @@ impl MlsClient for MlsClientImpl {
 
         let group = client
             .client
-            .create_group_with_id(request.group_id, ExtensionList::default())
+            .create_group_with_id(request.group_id, ExtensionList::default(), Default::default())
             .map_err(abort)?;
 
         client.group = Some(group);
@@ -236,7 +236,7 @@ impl MlsClient for MlsClientImpl {
 
         let key_package = client
             .client
-            .generate_key_package_message()
+            .generate_key_package_message(Default::default())
             .map_err(abort)?;
 
         let (_, key_pckg_secrets) = client.key_package_repo.key_packages()[0].clone();

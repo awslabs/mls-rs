@@ -309,7 +309,7 @@ mod tests {
                 group_id,
                 0,
                 // TODO remove identity from input
-                default_properties(),
+                Some(default_properties()),
                 None,
                 &secret,
             )
@@ -340,7 +340,7 @@ mod tests {
                 &cipher_suite_provider,
                 group_id,
                 0,
-                default_properties(),
+                Some(default_properties()),
                 None,
                 &secret,
             )
@@ -383,7 +383,7 @@ mod tests {
                 &cipher_suite_provider,
                 b"foo",
                 0,
-                default_properties(),
+                Some(default_properties()),
                 None,
                 &secret,
             )
@@ -409,7 +409,7 @@ mod tests {
                 &cipher_suite_provider,
                 b"foo",
                 0,
-                default_properties(),
+                Some(default_properties()),
                 None,
                 &secret,
             )
