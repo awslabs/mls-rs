@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1726765797945,
+  "lastUpdate": 1727711826072,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -16835,6 +16835,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 130986,
             "range": "± 793",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "52458849+JHabz@users.noreply.github.com",
+            "name": "Jared Habermehl",
+            "username": "JHabz"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1a1fa84850b0f56849abb447ec3630237bd9eb60",
+          "message": "Add support for different SQLite journal modes (#193)",
+          "timestamp": "2024-09-30T11:52:37-04:00",
+          "tree_id": "102796c6465cc2ce8cf9971202c76cda8b3a8c0e",
+          "url": "https://github.com/awslabs/mls-rs/commit/1a1fa84850b0f56849abb447ec3630237bd9eb60"
+        },
+        "date": 1727711825291,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 513360,
+            "range": "± 11803",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 526223,
+            "range": "± 80081",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 588843,
+            "range": "± 15565",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1268977,
+            "range": "± 30382",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7644225,
+            "range": "± 66095",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1165641,
+            "range": "± 66738",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1254252,
+            "range": "± 38030",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1380679,
+            "range": "± 33028",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 743617,
+            "range": "± 18552",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 827527,
+            "range": "± 22141",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 917516,
+            "range": "± 17395",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 21135,
+            "range": "± 563",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 68908,
+            "range": "± 3243",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 131332,
+            "range": "± 1400",
             "unit": "ns/iter"
           }
         ]
