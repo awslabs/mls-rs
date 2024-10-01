@@ -215,7 +215,11 @@ impl MlsClient for MlsClientImpl {
 
         let group = client
             .client
-            .create_group_with_id(request.group_id, ExtensionList::default(), Default::default())
+            .create_group_with_id(
+                request.group_id,
+                ExtensionList::default(),
+                Default::default(),
+            )
             .map_err(abort)?;
 
         client.group = Some(group);

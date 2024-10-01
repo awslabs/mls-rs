@@ -164,7 +164,10 @@ async fn test_create(
 ) {
     let alice = generate_client(cipher_suite, protocol_version, 0, encrypt_controls).await;
     let bob = generate_client(cipher_suite, protocol_version, 1, encrypt_controls).await;
-    let bob_key_pkg = bob.generate_key_package_message(Default::default(), Default::default()).await.unwrap();
+    let bob_key_pkg = bob
+        .generate_key_package_message(Default::default(), Default::default())
+        .await
+        .unwrap();
 
     // Alice creates a group and adds bob
     let mut alice_group = alice
@@ -601,8 +604,14 @@ async fn reinit_works() {
     let bob1 = generate_client(suite1, version, 2, Default::default()).await;
 
     // Create a group with 2 parties
-    let mut alice_group = alice1.create_group(Default::default(), Default::default()).await.unwrap();
-    let kp = bob1.generate_key_package_message(Default::default(), Default::default()).await.unwrap();
+    let mut alice_group = alice1
+        .create_group(Default::default(), Default::default())
+        .await
+        .unwrap();
+    let kp = bob1
+        .generate_key_package_message(Default::default(), Default::default())
+        .await
+        .unwrap();
 
     let welcome = &alice_group
         .commit_builder()
@@ -696,7 +705,10 @@ async fn reinit_works() {
     // They can talk
     let carol = generate_client(suite2, version, 3, Default::default()).await;
 
-    let kp = carol.generate_key_package_message(Default::default(), Default::default()).await.unwrap();
+    let kp = carol
+        .generate_key_package_message(Default::default(), Default::default())
+        .await
+        .unwrap();
 
     let commit_output = alice_group
         .commit_builder()

@@ -360,7 +360,10 @@ pub(crate) async fn get_test_groups_with_features(
     let mut groups = vec![group];
 
     for client in clients.iter().skip(1) {
-        let key_package = client.generate_key_package_message(Default::default(), leaf_extensions.clone()).await.unwrap();
+        let key_package = client
+            .generate_key_package_message(Default::default(), leaf_extensions.clone())
+            .await
+            .unwrap();
 
         let commit_output = groups[0]
             .commit_builder()

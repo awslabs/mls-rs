@@ -858,7 +858,8 @@ where
         // Grab a copy of the current node and update it to have new key material
         let mut new_leaf_node: LeafNode = self.current_user_leaf_node()?.clone();
 
-        let new_leaf_node_extensions = leaf_node_extensions.unwrap_or(new_leaf_node.extensions.clone()); 
+        let new_leaf_node_extensions =
+            leaf_node_extensions.unwrap_or(new_leaf_node.extensions.clone());
         let secret_key = new_leaf_node
             .update(
                 &self.cipher_suite_provider,
@@ -2484,7 +2485,10 @@ mod tests {
         test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "alice")
             .await
             .0
-            .create_group(core::iter::once(required_caps.into_extension().unwrap()).collect(), Default::default())
+            .create_group(
+                core::iter::once(required_caps.into_extension().unwrap()).collect(),
+                Default::default(),
+            )
             .await
     }
 
@@ -3922,11 +3926,26 @@ mod tests {
         // Alice adds Bob, Carol and Dave to the group. They all support the mandatory extension.
         let commit = alice
             .commit_builder()
-            .add_member(bob_client.generate_key_package_message(Default::default(), Default::default()).await.unwrap())
+            .add_member(
+                bob_client
+                    .generate_key_package_message(Default::default(), Default::default())
+                    .await
+                    .unwrap(),
+            )
             .unwrap()
-            .add_member(carol_client.generate_key_package_message(Default::default(), Default::default()).await.unwrap())
+            .add_member(
+                carol_client
+                    .generate_key_package_message(Default::default(), Default::default())
+                    .await
+                    .unwrap(),
+            )
             .unwrap()
-            .add_member(dave_client.generate_key_package_message(Default::default(), Default::default()).await.unwrap())
+            .add_member(
+                dave_client
+                    .generate_key_package_message(Default::default(), Default::default())
+                    .await
+                    .unwrap(),
+            )
             .unwrap()
             .build()
             .await
@@ -4283,7 +4302,10 @@ mod tests {
         .await;
 
         let mut alice = TestGroup {
-            group: alice.create_group(Default::default(), Default::default()).await.unwrap(),
+            group: alice
+                .create_group(Default::default(), Default::default())
+                .await
+                .unwrap(),
         };
 
         let mut bob = alice.join("bob").await.0;

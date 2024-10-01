@@ -2,7 +2,9 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use mls_rs_core::{crypto::SignatureSecretKey, extension::ExtensionList, identity::SigningIdentity};
+use mls_rs_core::{
+    crypto::SignatureSecretKey, extension::ExtensionList, identity::SigningIdentity,
+};
 
 use crate::{
     client_config::ClientConfig,
@@ -143,10 +145,7 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
     }
 
     /// Change the committer's leaf node extensions as part of making this commit.
-    pub fn with_leaf_node_extensions(
-        self,
-        leaf_node_extensions: ExtensionList,
-    ) -> Self {
+    pub fn with_leaf_node_extensions(self, leaf_node_extensions: ExtensionList) -> Self {
         Self {
             leaf_node_extensions,
             ..self

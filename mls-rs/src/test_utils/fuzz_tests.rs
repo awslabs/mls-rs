@@ -38,11 +38,16 @@ pub fn create_group() -> Group<TestClientConfig> {
     let alice = make_client(cipher_suite, "alice");
     let bob = make_client(cipher_suite, "bob");
 
-    let mut alice = alice.create_group(Default::default(), Default::default()).unwrap();
+    let mut alice = alice
+        .create_group(Default::default(), Default::default())
+        .unwrap();
 
     alice
         .commit_builder()
-        .add_member(bob.generate_key_package_message(Default::default(), Default::default()).unwrap())
+        .add_member(
+            bob.generate_key_package_message(Default::default(), Default::default())
+                .unwrap(),
+        )
         .unwrap()
         .build()
         .unwrap();
