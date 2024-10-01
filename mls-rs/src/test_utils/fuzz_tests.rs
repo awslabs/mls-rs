@@ -18,7 +18,7 @@ use crate::{
         Commit, Group,
     },
     identity::{basic::BasicIdentityProvider, SigningIdentity},
-    Client, ExtensionList,
+    Client,
 };
 
 #[cfg(awslc)]
@@ -38,7 +38,7 @@ pub fn create_group() -> Group<TestClientConfig> {
     let alice = make_client(cipher_suite, "alice");
     let bob = make_client(cipher_suite, "bob");
 
-    let mut alice = alice.create_group(ExtensionList::new()).unwrap();
+    let mut alice = alice.create_group(Default::default(), Default::default()).unwrap();
 
     alice
         .commit_builder()

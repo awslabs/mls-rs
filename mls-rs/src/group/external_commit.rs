@@ -148,7 +148,7 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
         leaf_node_extensions: ExtensionList,
     ) -> Self {
         Self {
-            leaf_node_extensions: leaf_node_extensions,
+            leaf_node_extensions,
             ..self
         }
     }

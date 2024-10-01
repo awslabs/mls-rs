@@ -10,7 +10,7 @@ use crate::{
     cipher_suite::CipherSuite,
     client::Client,
     client_config::ClientConfig,
-    extension::{ExtensionType, MlsExtension},
+    extension::ExtensionType,
     group::{
         mls_rules::{DefaultMlsRules, MlsRules},
         proposal::ProposalType,
@@ -907,7 +907,6 @@ mod private {
 
 use mls_rs_core::{
     crypto::{CryptoProvider, SignatureSecretKey},
-    extension::{ExtensionError, ExtensionList},
     group::GroupStateStorage,
     identity::IdentityProvider,
     key_package::KeyPackageStorage,

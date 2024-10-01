@@ -288,6 +288,7 @@ impl<C> Group<C>
 where
     C: ClientConfig + Clone,
 {
+    #[allow(clippy::too_many_arguments)]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn new(
         config: C,
@@ -2355,7 +2356,7 @@ mod tests {
             TEST_PROTOCOL_VERSION,
             TEST_CIPHER_SUITE,
             "bob",
-            LastResortKeyPackageExt.into_extension().unwrap(),
+            vec![LastResortKeyPackageExt.into_extension().unwrap()].into(),
             Default::default(),
             |_| {},
         )

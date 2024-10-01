@@ -475,6 +475,7 @@ where
 
     /// Returns commit and optional [`MlsMessage`] containing a welcome message
     /// for newly added members.
+    #[allow(clippy::too_many_arguments)]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(super) async fn commit_internal(
         &mut self,
