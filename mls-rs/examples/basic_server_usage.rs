@@ -141,7 +141,7 @@ fn main() -> Result<(), MlsError> {
 
     // Alice creates a group with bob
     let mut alice_group = alice.create_group(ExtensionList::default(), Default::default())?;
-    let bob_key_package = bob.generate_key_package_message(Default::default())?;
+    let bob_key_package = bob.generate_key_package_message(Default::default(), Default::default())?;
 
     let welcome = &alice_group
         .commit_builder()

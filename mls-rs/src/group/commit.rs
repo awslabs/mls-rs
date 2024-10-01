@@ -1451,7 +1451,7 @@ mod tests {
         let mut alice = alice.create_group(ExtensionList::new(), Default::default()).await.unwrap();
 
         let bob = client_with_test_extension(b"bob").await;
-        let bob_kp = bob.generate_key_package_message(Default::default()).await.unwrap();
+        let bob_kp = bob.generate_key_package_message(Default::default(), Default::default()).await.unwrap();
 
         let mut extension_list = ExtensionList::new();
         let extension = TestExtension { foo: b'a' };
@@ -1472,7 +1472,7 @@ mod tests {
 
         alice
             .commit_builder()
-            .add_member(alex.generate_key_package_message(Default::default()).await.unwrap())
+            .add_member(alex.generate_key_package_message(Default::default(), Default::default()).await.unwrap())
             .unwrap()
             .set_group_context_ext(extension_list.clone())
             .unwrap()

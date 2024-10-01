@@ -429,12 +429,12 @@ where
     ///
     /// A key package message may only be used once.
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn generate_key_package_message(&self, leaf_node_extensions: ExtensionList) -> Result<MlsMessage, MlsError> {
-        Ok(self.generate_key_package(leaf_node_extensions).await?.key_package_message())
+    pub async fn generate_key_package_message(&self, key_package_extensions: ExtensionList, leaf_node_extensions: ExtensionList) -> Result<MlsMessage, MlsError> {
+        Ok(self.generate_key_package(key_package_extensions, leaf_node_extensions).await?.key_package_message())
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn generate_key_package(&self, leaf_node_extensions: ExtensionList) -> Result<KeyPackageGeneration, MlsError> {
+    async fn generate_key_package(&self, key_package_extensions: ExtensionList, leaf_node_extensions: ExtensionList) -> Result<KeyPackageGeneration, MlsError> {
         let (signing_identity, cipher_suite) = self.signing_identity()?;
 
         let cipher_suite_provider = self
@@ -454,7 +454,7 @@ where
             .generate(
                 self.config.lifetime(),
                 self.config.capabilities(),
-                self.config.key_package_extensions(),
+                key_package_extensions,
                 leaf_node_extensions,
             )
             .await?;
@@ -678,6 +678,7 @@ where
         group_info: &MlsMessage,
         tree_data: Option<crate::group::ExportedTree<'_>>,
         authenticated_data: Vec<u8>,
+        key_package_extensions: ExtensionList,
         leaf_node_extensions: ExtensionList,
     ) -> Result<MlsMessage, MlsError> {
         let protocol_version = group_info.version;
@@ -707,7 +708,7 @@ where
         )
         .await?;
 
-        let key_package = self.generate_key_package(leaf_node_extensions).await?.key_package;
+        let key_package = self.generate_key_package(key_package_extensions, leaf_node_extensions).await?.key_package;
 
         (key_package.cipher_suite == cipher_suite)
             .then_some(())
@@ -748,11 +749,6 @@ where
             .as_ref()
             .map(|(id, cs)| (id, *cs))
             .ok_or(MlsError::SignerNotFound)
-    }
-
-    /// Returns key package extensions used by this client
-    pub fn key_package_extensions(&self) -> ExtensionList {
-        self.config.key_package_extensions()
     }
 
     /// The [KeyPackageStorage] that this client was configured to use.
@@ -798,7 +794,7 @@ pub(crate) mod test_utils {
         cipher_suite: CipherSuite,
         identity: &str,
     ) -> (Client<TestClientConfig>, MlsMessage) {
-        test_client_with_key_pkg_custom(protocol_version, cipher_suite, identity, |_| {}).await
+        test_client_with_key_pkg_custom(protocol_version, cipher_suite, identity, Default::default(), Default::default(), |_| {}).await
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -806,6 +802,8 @@ pub(crate) mod test_utils {
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
         identity: &str,
+        key_package_extensions: ExtensionList,
+        leaf_node_extensions: ExtensionList,
         mut config: F,
     ) -> (Client<TestClientConfig>, MlsMessage)
     where
@@ -821,7 +819,7 @@ pub(crate) mod test_utils {
 
         config(&mut client.config);
 
-        let key_package = client.generate_key_package_message(ExtensionList::default()).await.unwrap();
+        let key_package = client.generate_key_package_message(key_package_extensions, leaf_node_extensions).await.unwrap();
 
         (client, key_package)
     }
@@ -868,7 +866,7 @@ mod tests {
                 .build();
 
             // TODO: Tests around extensions
-            let key_package = client.generate_key_package_message(ExtensionList::default()).await.unwrap();
+            let key_package = client.generate_key_package_message(Default::default(), Default::default()).await.unwrap();
 
             assert_eq!(key_package.version, protocol_version);
 
@@ -907,7 +905,8 @@ mod tests {
                 &alice_group.group_info_message(true).await.unwrap(),
                 None,
                 vec![],
-                ExtensionList::default(),
+                Default::default(),
+                Default::default(),
             )
             .await
             .unwrap();
@@ -1053,7 +1052,7 @@ mod tests {
             .signing_identity(alice_identity.clone(), secret_key, TEST_CIPHER_SUITE)
             .build();
 
-        let msg = alice.generate_key_package_message(ExtensionList::default()).await.unwrap();
+        let msg = alice.generate_key_package_message(Default::default(), Default::default()).await.unwrap();
         let res = alice.commit_external(msg).await.map(|_| ());
 
         assert_matches!(res, Err(MlsError::UnexpectedMessageType));

@@ -37,7 +37,6 @@ pub trait ClientConfig: Send + Sync + Clone {
     fn identity_provider(&self) -> Self::IdentityProvider;
     fn crypto_provider(&self) -> Self::CryptoProvider;
 
-    fn key_package_extensions(&self) -> ExtensionList;
     fn lifetime(&self) -> Lifetime;
 
     fn capabilities(&self) -> Capabilities {

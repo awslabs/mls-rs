@@ -236,7 +236,7 @@ impl MlsClient for MlsClientImpl {
 
         let key_package = client
             .client
-            .generate_key_package_message(Default::default())
+            .generate_key_package_message(Default::default(), Default::default())
             .map_err(abort)?;
 
         let (_, key_pckg_secrets) = client.key_package_repo.key_packages()[0].clone();

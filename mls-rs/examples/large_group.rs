@@ -66,7 +66,7 @@ fn make_groups_best_case<P: CryptoProvider + Clone>(
         let bob_client = make_client(crypto_provider.clone(), &make_name(i + 1))?;
 
         // The new client generates a key package.
-        let bob_kpkg = bob_client.generate_key_package_message(Default::default())?;
+        let bob_kpkg = bob_client.generate_key_package_message(Default::default(), Default::default())?;
 
         // Last group sends a commit adding the new client to the group.
         let commit = groups
@@ -110,7 +110,7 @@ fn make_groups_worst_case<P: CryptoProvider + Clone>(
     let mut commit_builder = alice_group.commit_builder();
 
     for bob_client in &bob_clients {
-        let bob_kpkg = bob_client.generate_key_package_message(Default::default())?;
+        let bob_kpkg = bob_client.generate_key_package_message(Default::default(), Default::default())?;
         commit_builder = commit_builder.add_member(bob_kpkg)?;
     }
 

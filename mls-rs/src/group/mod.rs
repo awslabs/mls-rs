@@ -2355,13 +2355,9 @@ mod tests {
             TEST_PROTOCOL_VERSION,
             TEST_CIPHER_SUITE,
             "bob",
-            |config| {
-                config
-                    .0
-                    .settings
-                    .key_package_extensions
-                    .set(LastResortKeyPackageExt.into_extension().unwrap())
-            },
+            LastResortKeyPackageExt.into_extension().unwrap(),
+            Default::default(),
+            |_| {},
         )
         .await;
         let mut carla_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
@@ -2956,7 +2952,7 @@ mod tests {
             Some((bob_identity, TEST_CIPHER_SUITE)),
             TEST_PROTOCOL_VERSION,
         )
-        .generate_key_package_message(ExtensionList::default())
+        .generate_key_package_message(Default::default(), Default::default())
         .await
         .unwrap();
 
@@ -3925,11 +3921,11 @@ mod tests {
         // Alice adds Bob, Carol and Dave to the group. They all support the mandatory extension.
         let commit = alice
             .commit_builder()
-            .add_member(bob_client.generate_key_package_message(ExtensionList::default()).await.unwrap())
+            .add_member(bob_client.generate_key_package_message(Default::default(), Default::default()).await.unwrap())
             .unwrap()
-            .add_member(carol_client.generate_key_package_message(ExtensionList::default()).await.unwrap())
+            .add_member(carol_client.generate_key_package_message(Default::default(), Default::default()).await.unwrap())
             .unwrap()
-            .add_member(dave_client.generate_key_package_message(ExtensionList::default()).await.unwrap())
+            .add_member(dave_client.generate_key_package_message(Default::default(), Default::default()).await.unwrap())
             .unwrap()
             .build()
             .await
@@ -4052,7 +4048,7 @@ mod tests {
 
         let kp = client_with_custom_rules(b"bob", mls_rules)
             .await
-            .generate_key_package_message(ExtensionList::default())
+            .generate_key_package_message(Default::default(), Default::default())
             .await
             .unwrap();
 
@@ -4279,6 +4275,8 @@ mod tests {
             TEST_PROTOCOL_VERSION,
             TEST_CIPHER_SUITE,
             "alice",
+            Default::default(),
+            Default::default(),
             |c| c.0.mls_rules.encryption_options.encrypt_control_messages = encrypt_proposal,
         )
         .await;

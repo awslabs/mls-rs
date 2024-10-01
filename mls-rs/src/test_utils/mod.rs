@@ -137,7 +137,7 @@ pub async fn get_test_groups<C: CryptoProvider + Clone>(
             None,
         )
         .await;
-        let kp = client.generate_key_package_message(Default::default()).await.unwrap();
+        let kp = client.generate_key_package_message(Default::default(), Default::default()).await.unwrap();
 
         receiver_clients.push(client);
         commit_builder = commit_builder.add_member(kp.clone()).unwrap();

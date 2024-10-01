@@ -42,7 +42,7 @@ pub fn create_group() -> Group<TestClientConfig> {
 
     alice
         .commit_builder()
-        .add_member(bob.generate_key_package_message(Default::default()).unwrap())
+        .add_member(bob.generate_key_package_message(Default::default(), Default::default()).unwrap())
         .unwrap()
         .build()
         .unwrap();

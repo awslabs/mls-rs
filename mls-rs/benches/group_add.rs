@@ -24,7 +24,7 @@ fn bench(c: &mut Criterion) {
     let key_packages = (0..MAX_ADD_COUNT)
         .map(|i| {
             make_client(&format!("bob-{i}"))
-                .generate_key_package_message(Default::default)
+                .generate_key_package_message(Default::default(), Default::default())
                 .unwrap()
         })
         .collect::<Vec<_>>();

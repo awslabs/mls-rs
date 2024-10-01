@@ -250,7 +250,7 @@ async fn invite_passive_client<P: CipherSuiteProvider>(
         .signing_identity(identity.clone(), secret_key.clone(), cs.cipher_suite())
         .build();
 
-    let key_pckg = client.generate_key_package_message(Default::default()).await.unwrap();
+    let key_pckg = client.generate_key_package_message(Default::default(), Default::default()).await.unwrap();
 
     let (_, key_pckg_secrets) = key_package_repo.key_packages()[0].clone();
 
@@ -489,7 +489,7 @@ async fn create_key_package(cs: CipherSuite) -> MlsMessage {
     )
     .await;
 
-    client.generate_key_package_message(Default::default()).await.unwrap()
+    client.generate_key_package_message(Default::default(), Default::default()).await.unwrap()
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -646,7 +646,7 @@ pub async fn add_random_members<C: MlsConfig>(
     let mut key_packages = Vec::new();
 
     for client in &clients {
-        let key_package = client.generate_key_package_message(Default::default()).await.unwrap();
+        let key_package = client.generate_key_package_message(Default::default(), Default::default()).await.unwrap();
         key_packages.push(key_package);
     }
 

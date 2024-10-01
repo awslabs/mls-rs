@@ -166,7 +166,7 @@ impl<C: ClientConfig + Clone> ReinitClient<C> {
     /// be used in [`ReinitClient::commit`].
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn generate_key_package(&self) -> Result<MlsMessage, MlsError> {
-        self.client.generate_key_package_message(Default::default()).await
+        self.client.generate_key_package_message(Default::default(), Default::default()).await
     }
 
     /// Create the new group using new key packages of all group members, possibly
