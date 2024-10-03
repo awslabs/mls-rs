@@ -190,7 +190,6 @@ impl<C: ClientConfig + Clone> ReinitClient<C> {
             extensions: self.reinit.new_group_context_extensions(),
         };
 
-        // TODO, should these come from the reinit proposal or as an arg instead?
         let group = self.client.load_group(self.reinit.group_id())?;
         let current_leaf_node_extensions = &group.current_user_leaf_node()?.extensions;
 
