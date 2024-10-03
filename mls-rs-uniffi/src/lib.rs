@@ -382,7 +382,10 @@ impl Client {
     /// See [`mls_rs::Client::generate_key_package_message`] for
     /// details.
     pub async fn generate_key_package_message(&self) -> Result<Message, Error> {
-        let message = self.inner.generate_key_package_message().await?;
+        let message = self
+            .inner
+            .generate_key_package_message(Default::default(), Default::default())
+            .await?;
         Ok(message.into())
     }
 
@@ -403,10 +406,14 @@ impl Client {
         let inner = match group_id {
             Some(group_id) => {
                 self.inner
-                    .create_group_with_id(group_id, extensions)
+                    .create_group_with_id(group_id, extensions, Default::default())
                     .await?
             }
-            None => self.inner.create_group(extensions).await?,
+            None => {
+                self.inner
+                    .create_group(extensions, Default::default())
+                    .await?
+            }
         };
         Ok(Group {
             inner: Arc::new(Mutex::new(inner)),

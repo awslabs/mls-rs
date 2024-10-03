@@ -371,7 +371,13 @@ pub(crate) mod external_proposal {
 
             let proposal = client
                 .client
-                .external_add_proposal(&group_info, None, vec![])
+                .external_add_proposal(
+                    &group_info,
+                    None,
+                    vec![],
+                    Default::default(),
+                    Default::default(),
+                )
                 .map_err(abort)?
                 .to_bytes()
                 .map_err(abort)?;

@@ -796,7 +796,7 @@ mod tests {
             &test_cipher_suite_provider(TEST_CIPHER_SUITE),
             TEST_GROUP,
             leaf_index,
-            default_properties(),
+            Some(default_properties()),
             None,
             &signer,
         )
@@ -1357,7 +1357,7 @@ mod tests {
                 &test_cipher_suite_provider(TEST_CIPHER_SUITE),
                 TEST_GROUP,
                 0,
-                default_properties(),
+                Some(default_properties()),
                 None,
                 &signer,
             )

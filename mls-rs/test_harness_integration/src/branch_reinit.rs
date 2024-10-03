@@ -174,7 +174,9 @@ pub(crate) mod inner {
                     )
                     .map_err(abort)?;
 
-                client.commit(new_key_pkgs).map_err(abort)?
+                client
+                    .commit(new_key_pkgs, Default::default())
+                    .map_err(abort)?
             };
 
             let welcome = welcome
