@@ -568,12 +568,12 @@ where
             // parent_hash extension.
 
             let new_leaf_node_extensions =
-                new_leaf_node_extensions.or(external_leaf.map(|ln| ln.extensions.clone()));
+                new_leaf_node_extensions.or(external_leaf.map(|ln| ln.ungreased_extensions()));
 
             let new_leaf_node_extensions = match new_leaf_node_extensions {
                 Some(extensions) => extensions,
                 // If we are not setting new extensions and this is not an external leaf then the current node MUST exist.
-                None => self.current_user_leaf_node()?.extensions.clone(),
+                None => self.current_user_leaf_node()?.ungreased_extensions(),
             };
 
             let encap_gen = TreeKem::new(

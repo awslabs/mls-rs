@@ -697,7 +697,7 @@ async fn reinit_works() {
 
     // Bob produces key package, alice commits, bob joins
     let kp = bob2.generate_key_package().await.unwrap();
-    let (mut alice_group, welcome) = alice2.commit(vec![kp]).await.unwrap();
+    let (mut alice_group, welcome) = alice2.commit(vec![kp], Default::default()).await.unwrap();
     let (mut bob_group, _) = bob2.join(&welcome[0], None).await.unwrap();
 
     assert!(bob_group.cipher_suite() == suite2);

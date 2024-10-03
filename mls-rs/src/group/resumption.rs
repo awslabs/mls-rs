@@ -57,7 +57,7 @@ where
             extensions: &self.group_state().context.extensions,
         };
 
-        let current_leaf_node_extensions = &self.current_user_leaf_node()?.extensions;
+        let current_leaf_node_extensions = &self.current_user_leaf_node()?.ungreased_extensions();
         resumption_create_group(
             self.config.clone(),
             new_key_packages,
@@ -182,6 +182,7 @@ impl<C: ClientConfig + Clone> ReinitClient<C> {
     pub async fn commit(
         self,
         new_key_packages: Vec<MlsMessage>,
+        new_leaf_node_extensions: ExtensionList,
     ) -> Result<(Group<C>, Vec<MlsMessage>), MlsError> {
         let new_group_params = ResumptionGroupParameters {
             group_id: self.reinit.group_id(),
@@ -190,9 +191,6 @@ impl<C: ClientConfig + Clone> ReinitClient<C> {
             extensions: self.reinit.new_group_context_extensions(),
         };
 
-        let group = self.client.load_group(self.reinit.group_id())?;
-        let current_leaf_node_extensions = &group.current_user_leaf_node()?.extensions;
-
         resumption_create_group(
             self.client.config.clone(),
             new_key_packages,
@@ -200,7 +198,7 @@ impl<C: ClientConfig + Clone> ReinitClient<C> {
             // These private fields are created with `Some(x)` by `get_reinit_client`
             self.client.signing_identity.unwrap().0,
             self.client.signer.unwrap(),
-            current_leaf_node_extensions,
+            &new_leaf_node_extensions,
             #[cfg(any(feature = "private_message", feature = "psk"))]
             self.psk_input,
         )

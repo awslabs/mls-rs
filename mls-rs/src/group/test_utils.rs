@@ -246,7 +246,6 @@ pub(crate) async fn test_group_custom(
     let commit_options = commit_options.unwrap_or_default();
 
     let (signing_identity, secret_key) = get_test_signing_identity(cipher_suite, b"member").await;
-
     let group = TestClientBuilder::new_for_test()
         .mls_rules(DefaultMlsRules::default().with_commit_options(commit_options))
         .extension_types(extension_types)

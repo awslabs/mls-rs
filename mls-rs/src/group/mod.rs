@@ -859,7 +859,7 @@ where
         let mut new_leaf_node: LeafNode = self.current_user_leaf_node()?.clone();
 
         let new_leaf_node_extensions =
-            leaf_node_extensions.unwrap_or(new_leaf_node.extensions.clone());
+            leaf_node_extensions.unwrap_or(new_leaf_node.ungreased_extensions());
         let secret_key = new_leaf_node
             .update(
                 &self.cipher_suite_provider,
