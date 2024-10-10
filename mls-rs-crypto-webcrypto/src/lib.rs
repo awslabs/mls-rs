@@ -11,7 +11,7 @@ mod key_type;
 
 use mls_rs_core::{
     crypto::{
-        CipherSuite, CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkePublicKey,
+        self, CipherSuite, CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkePublicKey,
         HpkeSecretKey, SignaturePublicKey, SignatureSecretKey,
     },
     error::{AnyError, IntoAnyError},
@@ -25,6 +25,8 @@ use mls_rs_crypto_hpke::{
 
 use mls_rs_crypto_traits::{AeadType, KdfType, KemId};
 
+use cfg_if::cfg_if;
+use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
 use web_sys::SubtleCrypto;
 use zeroize::Zeroizing;
@@ -34,6 +36,7 @@ use crate::{
     ec::{EcSigner, Ecdh},
     hkdf::Hkdf,
 };
+use web_sys::Crypto;
 
 #[derive(Debug, thiserror::Error)]
 pub enum CryptoError {
@@ -61,12 +64,37 @@ impl From<JsValue> for CryptoError {
     }
 }
 
-#[inline]
-pub(crate) fn get_crypto() -> Result<SubtleCrypto, CryptoError> {
-    Ok(web_sys::window()
-        .ok_or(CryptoError::WindowNotFound)?
-        .crypto()?
-        .subtle())
+cfg_if! {
+    if #[cfg(feature = "node")] {
+        #[wasm_bindgen(module = "/js/node-crypto.js")]
+        extern "C" {
+            #[wasm_bindgen]
+            fn node_crypto() -> Crypto;
+        }
+
+        #[inline]
+        pub(crate) fn crypto() -> Result<Crypto, CryptoError> {
+            Ok(node_crypto())
+        }
+
+        #[inline]
+        pub(crate) fn get_crypto() -> Result<SubtleCrypto, CryptoError> {
+            Ok(node_crypto()
+                .subtle())
+        }
+    } else {
+        #[inline]
+        pub(crate) fn crypto() -> Result<Crypto, CryptoError> {
+            Ok(web_sys::window()
+                .ok_or(CryptoError::WindowNotFound)?
+                .crypto()?)
+        }
+
+        #[inline]
+        pub(crate) fn get_crypto() -> Result<SubtleCrypto, CryptoError> {
+            crypto().map(|c| c.subtle())
+        }
+    }
 }
 
 #[derive(Clone, Default, Debug)]
@@ -271,10 +299,7 @@ impl CipherSuiteProvider for WebCryptoCipherSuite {
     }
 
     fn random_bytes(&self, out: &mut [u8]) -> Result<(), Self::Error> {
-        web_sys::window()
-            .ok_or(CryptoError::WindowNotFound)?
-            .crypto()?
-            .get_random_values_with_u8_array(out)?;
+        crypto()?.get_random_values_with_u8_array(out)?;
 
         Ok(())
     }

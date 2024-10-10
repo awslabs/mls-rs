@@ -11,6 +11,7 @@ exclude = ["test_data"]
 
 
 [features]
+node = []
 default = ["std", "rfc_compliant", "fast_serialize"]
 arbitrary = ["std", "dep:arbitrary"]
 fast_serialize = ["mls-rs-codec/preallocate"]
