@@ -2,7 +2,7 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use js_sys::{Array, Reflect, Uint8Array};
+use js_sys::{Array, Reflect, Uint8Array, Promise};
 use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{CryptoKey, CryptoKeyPair, EcKeyImportParams, HmacImportParams, SubtleCrypto};
@@ -54,6 +54,22 @@ impl KeyType {
         }
     }
 
+    #[cfg(not(feature = "node"))]
+    async fn import_with_public_info(&self, crypto: &SubtleCrypto, key: &Uint8Array, params: &EcKeyImportParams, key_usages: &Array) -> Result<Promise, JsValue> {
+        crypto.import_key_with_object(self.format(), &key, &params, true, &key_usages)
+    }
+
+    #[cfg(feature = "node")]
+    async fn import_with_public_info(&self, crypto: &SubtleCrypto, bytes: &Uint8Array, params: &EcKeyImportParams, key_usages: &Array) -> Result<Promise, JsValue> {
+        let crypto_key_promise = crypto.import_key_with_object(self.format(), bytes, params, true, key_usages)?;
+        let crypto_key = JsFuture::from(crypto_key_promise).await?.into();
+        // Export the key to jwk to force the generation of the public key.   
+        let jwk_promise = crypto.export_key(&"jwk", &crypto_key)?;
+        let jwk  = JsFuture::from(jwk_promise).await?;
+        // Re-import into the original requested format with the same usages from jwk.
+        crypto.import_key_with_object("jwk", &jwk.into(), params, true, &key_usages)
+    }
+
     pub(crate) async fn import(
         &self,
         crypto: &SubtleCrypto,
@@ -87,9 +103,8 @@ impl KeyType {
             | KeyType::EcdsaPublic(curve)
             | KeyType::EcdsaSecret(curve) => {
                 let mut params = EcKeyImportParams::new(self.algorithm());
-                params.named_curve(curve);
-
-                crypto.import_key_with_object(self.format(), &key, &params, true, &key_usages)?
+                params.set_named_curve(curve);
+                self.import_with_public_info(&crypto, &key, &params, &key_usages).await?
             }
         };
 
