@@ -25,6 +25,11 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: ilammy/setup-nasm@v1
         if: runner.os == 'Windows'
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '>=1.18'
+      - uses: seanmiddleditch/gha-setup-ninja@master
+        if: runner.os == 'Windows'
       - run: |
           echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
           vcpkg install openssl:x64-windows-static-md sqlite3:x64-windows-static-md
@@ -59,6 +64,11 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: ilammy/setup-nasm@v1
         if: runner.os == 'Windows'
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '>=1.18'
+      - uses: seanmiddleditch/gha-setup-ninja@master
+        if: runner.os == 'Windows'
       - run: |
           echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
           vcpkg install openssl:x64-windows-static-md sqlite3:x64-windows-static-md
@@ -85,6 +95,7 @@ jobs:
       - uses: actions/setup-go@v4
         with:
           go-version: '>=1.18'
+      - uses: seanmiddleditch/gha-setup-ninja@master
       - name: Rust Fmt
         run: cargo fmt --all -- --check
       - name: Clippy Full RFC Compliance
