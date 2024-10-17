@@ -9,16 +9,16 @@ use std::{
     time::Duration,
 };
 
-use aws_lc_sys::{
+use crate::aws_lc_sys::{
     d2i_X509, i2d_X509, i2d_X509_NAME, ASN1_INTEGER_free, ASN1_INTEGER_to_BN, ASN1_TIME_free,
     ASN1_TIME_new, ASN1_TIME_set_posix, ASN1_TIME_to_posix, BN_bin2bn, BN_bn2bin, BN_free,
     BN_num_bytes, BN_to_ASN1_INTEGER, EC_KEY_get0_group, EC_KEY_get0_public_key,
     EC_POINT_point2oct, EVP_PKEY_get0_EC_KEY, EVP_PKEY_get_raw_public_key, NID_subject_alt_name,
     X509V3_set_ctx, X509_EXTENSION_dup, X509_add_ext, X509_free, X509_get0_notAfter,
-    X509_get0_notBefore, X509_get0_pubkey, X509_get_ext, X509_get_ext_count, X509_get_ext_d2i,
-    X509_get_issuer_name, X509_get_serialNumber, X509_get_subject_name, X509_new,
-    X509_set_issuer_name, X509_set_notAfter, X509_set_notBefore, X509_set_pubkey,
-    X509_set_serialNumber, X509_set_subject_name, X509_set_version, X509_sign, ASN1_TIME, X509,
+    X509_get0_notBefore, X509_get_ext, X509_get_ext_count, X509_get_ext_d2i, X509_get_issuer_name,
+    X509_get_pubkey, X509_get_serialNumber, X509_get_subject_name, X509_new, X509_set_issuer_name,
+    X509_set_notAfter, X509_set_notBefore, X509_set_pubkey, X509_set_serialNumber,
+    X509_set_subject_name, X509_set_version, X509_sign, ASN1_TIME, X509,
 };
 use mls_rs_core::{
     crypto::{CipherSuite, SignaturePublicKey, SignatureSecretKey},
@@ -197,7 +197,7 @@ impl Certificate {
 
     pub fn public_key(&self) -> Result<SignaturePublicKey, AwsLcCryptoError> {
         unsafe {
-            let pub_key = X509_get0_pubkey(self.0);
+            let pub_key = X509_get_pubkey(self.0);
             let ec_key = EVP_PKEY_get0_EC_KEY(pub_key);
 
             if !ec_key.is_null() {
@@ -206,7 +206,7 @@ impl Certificate {
                 let len = EC_POINT_point2oct(
                     EC_KEY_get0_group(ec_key),
                     EC_KEY_get0_public_key(ec_key),
-                    aws_lc_sys::point_conversion_form_t::POINT_CONVERSION_UNCOMPRESSED,
+                    crate::aws_lc_sys::point_conversion_form_t::POINT_CONVERSION_UNCOMPRESSED,
                     out_buf.as_mut_ptr(),
                     256,
                     null_mut(),

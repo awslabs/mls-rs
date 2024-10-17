@@ -10,22 +10,21 @@ use std::{
     ptr::null_mut,
 };
 
-use aws_lc_sys::{
-    stack_st, ASN1_STRING_data, ASN1_STRING_free, ASN1_STRING_get0_data, ASN1_STRING_length,
-    ASN1_STRING_set, ASN1_STRING_type_new, BIO_free, BIO_new, BIO_number_written, BIO_read,
-    BIO_s_mem, GENERAL_NAME_free, GENERAL_NAME_get0_value, GENERAL_NAME_new,
-    GENERAL_NAME_set0_value, NID_authority_key_identifier, NID_basic_constraints, NID_commonName,
-    NID_countryName, NID_distinguishedName, NID_domainComponent, NID_generationQualifier,
-    NID_givenName, NID_initials, NID_key_usage, NID_localityName, NID_organizationName,
-    NID_organizationalUnitName, NID_pkcs9_emailAddress, NID_pseudonym, NID_serialNumber,
-    NID_stateOrProvinceName, NID_streetAddress, NID_subject_alt_name, NID_subject_key_identifier,
-    NID_surname, NID_title, NID_userId, OBJ_obj2nid, OPENSSL_sk_free, OPENSSL_sk_new_null,
-    OPENSSL_sk_pop, OPENSSL_sk_push, X509V3_EXT_conf_nid, X509V3_EXT_i2d, X509V3_EXT_print,
-    X509_EXTENSION_free, X509_NAME_ENTRY_get_data, X509_NAME_ENTRY_get_object,
-    X509_NAME_add_entry_by_NID, X509_NAME_entry_count, X509_NAME_free, X509_NAME_get_entry,
-    X509_NAME_new, X509_name_st, ASN1_STRING, GENERAL_NAME, GEN_DNS, GEN_EMAIL, GEN_IPADD, GEN_RID,
-    GEN_URI, MBSTRING_UTF8, V_ASN1_IA5STRING, V_ASN1_OCTET_STRING, X509V3_CTX, X509_EXTENSION,
-    X509_NAME,
+use crate::aws_lc_sys::{
+    sk_free, sk_new_null, sk_pop, sk_push, stack_st, ASN1_STRING_data, ASN1_STRING_free,
+    ASN1_STRING_get0_data, ASN1_STRING_length, ASN1_STRING_set, ASN1_STRING_type_new, BIO_free,
+    BIO_new, BIO_number_written, BIO_read, BIO_s_mem, GENERAL_NAME_free, GENERAL_NAME_get0_value,
+    GENERAL_NAME_new, GENERAL_NAME_set0_value, NID_authority_key_identifier, NID_basic_constraints,
+    NID_commonName, NID_countryName, NID_distinguishedName, NID_domainComponent,
+    NID_generationQualifier, NID_givenName, NID_initials, NID_key_usage, NID_localityName,
+    NID_organizationName, NID_organizationalUnitName, NID_pkcs9_emailAddress, NID_pseudonym,
+    NID_serialNumber, NID_stateOrProvinceName, NID_streetAddress, NID_subject_alt_name,
+    NID_subject_key_identifier, NID_surname, NID_title, NID_userId, OBJ_obj2nid,
+    X509V3_EXT_conf_nid, X509V3_EXT_i2d, X509V3_EXT_print, X509_EXTENSION_free,
+    X509_NAME_ENTRY_get_data, X509_NAME_ENTRY_get_object, X509_NAME_add_entry_by_NID,
+    X509_NAME_entry_count, X509_NAME_free, X509_NAME_get_entry, X509_NAME_new, X509_name_st,
+    ASN1_STRING, GENERAL_NAME, GEN_DNS, GEN_EMAIL, GEN_IPADD, GEN_RID, GEN_URI, MBSTRING_UTF8,
+    V_ASN1_IA5STRING, V_ASN1_OCTET_STRING, X509V3_CTX, X509_EXTENSION, X509_NAME,
 };
 use mls_rs_identity_x509::{SubjectAltName, SubjectComponent};
 
@@ -88,7 +87,7 @@ impl X509Name {
 
     #[cfg(test)]
     pub fn to_der(&self) -> Result<Vec<u8>, AwsLcCryptoError> {
-        use aws_lc_sys::i2d_X509_NAME;
+        use crate::aws_lc_sys::i2d_X509_NAME;
 
         unsafe {
             let len = check_int_return(i2d_X509_NAME(self.0, null_mut()))?;
@@ -263,7 +262,7 @@ where
 {
     pub fn new() -> Result<Self, AwsLcCryptoError> {
         unsafe {
-            check_non_null(OPENSSL_sk_new_null()).map(|v| Self {
+            check_non_null(sk_new_null()).map(|v| Self {
                 inner: v,
                 phantom: Default::default(),
             })
@@ -279,13 +278,13 @@ where
 
     pub fn push(&mut self, val: T) {
         unsafe {
-            OPENSSL_sk_push(self.inner, val.into_raw_pointer());
+            sk_push(self.inner, val.into_raw_pointer());
         }
     }
 
     pub fn pop(&mut self) -> Option<T> {
         unsafe {
-            let val = OPENSSL_sk_pop(self.inner);
+            let val = sk_pop(self.inner);
 
             if val.is_null() {
                 return None;
@@ -317,7 +316,7 @@ where
     fn drop(&mut self) {
         unsafe {
             loop {
-                let val = OPENSSL_sk_pop(self.inner);
+                let val = sk_pop(self.inner);
 
                 if val.is_null() {
                     break;
@@ -326,7 +325,7 @@ where
                 let _ = T::from_raw_pointer(val);
             }
 
-            OPENSSL_sk_free(self.inner)
+            sk_free(self.inner)
         }
     }
 }
