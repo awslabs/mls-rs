@@ -13,12 +13,12 @@ use crate::aws_lc_sys::{
     d2i_X509, i2d_X509, i2d_X509_NAME, ASN1_INTEGER_free, ASN1_INTEGER_to_BN, ASN1_TIME_free,
     ASN1_TIME_new, ASN1_TIME_set_posix, ASN1_TIME_to_posix, BN_bin2bn, BN_bn2bin, BN_free,
     BN_num_bytes, BN_to_ASN1_INTEGER, EC_KEY_get0_group, EC_KEY_get0_public_key,
-    EC_POINT_point2oct, EVP_PKEY_get0_EC_KEY, EVP_PKEY_get_raw_public_key, NID_subject_alt_name,
-    X509V3_set_ctx, X509_EXTENSION_dup, X509_add_ext, X509_free, X509_get0_notAfter,
-    X509_get0_notBefore, X509_get_ext, X509_get_ext_count, X509_get_ext_d2i, X509_get_issuer_name,
-    X509_get_pubkey, X509_get_serialNumber, X509_get_subject_name, X509_new, X509_set_issuer_name,
-    X509_set_notAfter, X509_set_notBefore, X509_set_pubkey, X509_set_serialNumber,
-    X509_set_subject_name, X509_set_version, X509_sign, ASN1_TIME, X509,
+    EC_POINT_point2oct, EVP_PKEY_free, EVP_PKEY_get0_EC_KEY, EVP_PKEY_get_raw_public_key,
+    NID_subject_alt_name, X509V3_set_ctx, X509_EXTENSION_dup, X509_add_ext, X509_free,
+    X509_get0_notAfter, X509_get0_notBefore, X509_get_ext, X509_get_ext_count, X509_get_ext_d2i,
+    X509_get_issuer_name, X509_get_pubkey, X509_get_serialNumber, X509_get_subject_name, X509_new,
+    X509_set_issuer_name, X509_set_notAfter, X509_set_notBefore, X509_set_pubkey,
+    X509_set_serialNumber, X509_set_subject_name, X509_set_version, X509_sign, ASN1_TIME, X509,
 };
 use mls_rs_core::{
     crypto::{CipherSuite, SignaturePublicKey, SignatureSecretKey},
@@ -199,6 +199,7 @@ impl Certificate {
         unsafe {
             let pub_key = X509_get_pubkey(self.0);
             let ec_key = EVP_PKEY_get0_EC_KEY(pub_key);
+            EVP_PKEY_free(pub_key);
 
             if !ec_key.is_null() {
                 let mut out_buf = vec![0u8; 256];
