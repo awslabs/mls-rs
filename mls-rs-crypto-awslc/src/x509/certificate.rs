@@ -9,7 +9,7 @@ use std::{
     time::Duration,
 };
 
-use crate::aws_lc_sys::{
+use crate::aws_lc_sys_impl::{
     d2i_X509, i2d_X509, i2d_X509_NAME, ASN1_INTEGER_free, ASN1_INTEGER_to_BN, ASN1_TIME_free,
     ASN1_TIME_new, ASN1_TIME_set_posix, ASN1_TIME_to_posix, BN_bin2bn, BN_bn2bin, BN_free,
     BN_num_bytes, BN_to_ASN1_INTEGER, EC_KEY_get0_group, EC_KEY_get0_public_key,
@@ -207,7 +207,7 @@ impl Certificate {
                 let len = EC_POINT_point2oct(
                     EC_KEY_get0_group(ec_key),
                     EC_KEY_get0_public_key(ec_key),
-                    crate::aws_lc_sys::point_conversion_form_t::POINT_CONVERSION_UNCOMPRESSED,
+                    crate::aws_lc_sys_impl::point_conversion_form_t::POINT_CONVERSION_UNCOMPRESSED,
                     out_buf.as_mut_ptr(),
                     256,
                     null_mut(),

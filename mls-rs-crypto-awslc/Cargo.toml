@@ -10,7 +10,7 @@ license = "Apache-2.0 OR MIT"
 
 [features]
 fips = ["aws-lc-rs/fips", "dep:aws-lc-fips-sys"]
-default = ["aws-lc-rs/aws-lc-sys"]
+default = ["aws-lc-rs/aws-lc-sys", "dep:aws-lc-sys"]
 
 [dependencies]
 aws-lc-rs = { version = "=1.10.0", default-features = false, features = ["alloc"] }

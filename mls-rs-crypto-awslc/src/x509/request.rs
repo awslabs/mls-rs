@@ -8,7 +8,7 @@ use std::{
 };
 
 use crate::{
-    aws_lc_sys::{
+    aws_lc_sys_impl::{
         i2d_X509_REQ, EVP_sha256, EVP_sha384, EVP_sha512, X509_REQ_add_extensions, X509_REQ_free,
         X509_REQ_new, X509_REQ_set_pubkey, X509_REQ_set_subject_name, X509_REQ_set_version,
         X509_REQ_sign, EVP_MD, X509_REQ,

@@ -10,17 +10,17 @@ mod kdf;
 pub mod x509;
 
 #[cfg(feature = "fips")]
-use aws_lc_fips_sys as aws_lc_sys;
+use aws_lc_fips_sys as aws_lc_sys_impl;
 
 #[cfg(not(feature = "fips"))]
-use aws_lc_sys;
+use aws_lc_sys as aws_lc_sys_impl;
 
-use std::{ffi::c_int, mem::MaybeUninit};
+use std::{ffi::c_int, mem::MaybeUninit, num::TryFromIntError};
 
 use aead::AwsLcAead;
 use aws_lc_rs::{digest, error::Unspecified, hmac};
 
-use crate::aws_lc_sys::SHA256;
+use crate::aws_lc_sys_impl::SHA256;
 use mls_rs_core::{
     crypto::{
         CipherSuite, CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkePublicKey,
@@ -166,6 +166,8 @@ pub enum AwsLcCryptoError {
     UnsupportedCipherSuite,
     #[error("Cert validation error: {0}")]
     CertValidationFailure(String),
+    #[error(transparent)]
+    TryFromIntError(#[from] TryFromIntError),
 }
 
 impl From<Unspecified> for AwsLcCryptoError {
@@ -321,7 +323,7 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
 
     fn random_bytes(&self, out: &mut [u8]) -> Result<(), Self::Error> {
         unsafe {
-            if 1 != crate::aws_lc_sys::RAND_bytes(out.as_mut_ptr(), out.len()) {
+            if 1 != crate::aws_lc_sys_impl::RAND_bytes(out.as_mut_ptr(), out.len()) {
                 return Err(Unspecified.into());
             }
         }
