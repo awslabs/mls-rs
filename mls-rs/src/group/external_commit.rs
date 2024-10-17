@@ -2,7 +2,9 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use mls_rs_core::{crypto::SignatureSecretKey, identity::SigningIdentity};
+use mls_rs_core::{
+    crypto::SignatureSecretKey, extension::ExtensionList, identity::SigningIdentity,
+};
 
 use crate::{
     client_config::ClientConfig,
@@ -46,6 +48,7 @@ use super::{validate_tree_and_info_joiner, ExportedTree};
 pub struct ExternalCommitBuilder<C: ClientConfig> {
     signer: SignatureSecretKey,
     signing_identity: SigningIdentity,
+    leaf_node_extensions: ExtensionList,
     config: C,
     tree_data: Option<ExportedTree<'static>>,
     to_remove: Option<u32>,
@@ -70,6 +73,7 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
             authenticated_data: Vec::new(),
             signer,
             signing_identity,
+            leaf_node_extensions: Default::default(),
             config,
             #[cfg(feature = "psk")]
             external_psks: Vec::new(),
@@ -140,6 +144,14 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
         self
     }
 
+    /// Change the committer's leaf node extensions as part of making this commit.
+    pub fn with_leaf_node_extensions(self, leaf_node_extensions: ExtensionList) -> Self {
+        Self {
+            leaf_node_extensions,
+            ..self
+        }
+    }
+
     /// Build the external commit using a GroupInfo message provided by an existing group member.
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn build(self, group_info: MlsMessage) -> Result<(Group<C>, MlsMessage), MlsError> {
@@ -174,7 +186,7 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
 
         let (leaf_node, _) = LeafNode::generate(
             &cipher_suite,
-            self.config.leaf_properties(),
+            self.config.leaf_properties(self.leaf_node_extensions),
             self.signing_identity,
             &self.signer,
             self.config.lifetime(),
@@ -252,6 +264,7 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
                 Some(&leaf_node),
                 self.authenticated_data,
                 Default::default(),
+                None,
                 None,
                 None,
             )

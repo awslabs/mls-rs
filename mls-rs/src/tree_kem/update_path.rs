@@ -141,7 +141,7 @@ mod tests {
                 &test_cipher_suite_provider(cipher_suite),
                 TEST_GROUP,
                 0,
-                default_properties(),
+                Some(default_properties()),
                 None,
                 &signer,
             )

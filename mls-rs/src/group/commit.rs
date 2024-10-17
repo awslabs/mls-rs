@@ -178,6 +178,7 @@ where
     group_info_extensions: ExtensionList,
     new_signer: Option<SignatureSecretKey>,
     new_signing_identity: Option<SigningIdentity>,
+    new_leaf_node_extensions: Option<ExtensionList>,
 }
 
 impl<'a, C> CommitBuilder<'a, C>
@@ -326,6 +327,14 @@ where
         }
     }
 
+    /// Change the committer's leaf node extensions as part of making this commit.
+    pub fn set_leaf_node_extensions(self, new_leaf_node_extensions: ExtensionList) -> Self {
+        Self {
+            new_leaf_node_extensions: Some(new_leaf_node_extensions),
+            ..self
+        }
+    }
+
     /// Finalize the commit to send.
     ///
     /// # Errors
@@ -345,6 +354,7 @@ where
                 self.group_info_extensions,
                 self.new_signer,
                 self.new_signing_identity,
+                self.new_leaf_node_extensions,
             )
             .await?;
 
@@ -368,6 +378,7 @@ where
                 self.group_info_extensions,
                 self.new_signer,
                 self.new_signing_identity,
+                self.new_leaf_node_extensions,
             )
             .await?;
 
@@ -452,11 +463,13 @@ where
             group_info_extensions: Default::default(),
             new_signer: Default::default(),
             new_signing_identity: Default::default(),
+            new_leaf_node_extensions: Default::default(),
         }
     }
 
     /// Returns commit and optional [`MlsMessage`] containing a welcome message
     /// for newly added members.
+    #[allow(clippy::too_many_arguments)]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(super) async fn commit_internal(
         &mut self,
@@ -466,6 +479,7 @@ where
         mut welcome_group_info_extensions: ExtensionList,
         new_signer: Option<SignatureSecretKey>,
         new_signing_identity: Option<SigningIdentity>,
+        new_leaf_node_extensions: Option<ExtensionList>,
     ) -> Result<(CommitOutput, CommitGeneration), MlsError> {
         if self.pending_commit.is_some() {
             return Err(MlsError::ExistingPendingCommit);
@@ -552,6 +566,16 @@ where
             // group_id, epoch, tree_hash, and confirmed_transcript_hash values in the initial
             // GroupContext object. The leaf_key_package for this UpdatePath must have a
             // parent_hash extension.
+
+            let new_leaf_node_extensions =
+                new_leaf_node_extensions.or(external_leaf.map(|ln| ln.ungreased_extensions()));
+
+            let new_leaf_node_extensions = match new_leaf_node_extensions {
+                Some(extensions) => extensions,
+                // If we are not setting new extensions and this is not an external leaf then the current node MUST exist.
+                None => self.current_user_leaf_node()?.ungreased_extensions(),
+            };
+
             let encap_gen = TreeKem::new(
                 &mut provisional_state.public_tree,
                 &mut provisional_private_tree,
@@ -560,7 +584,7 @@ where
                 &mut provisional_group_context,
                 &provisional_state.indexes_of_added_kpkgs,
                 new_signer_ref,
-                self.config.leaf_properties(),
+                Some(self.config.leaf_properties(new_leaf_node_extensions)),
                 new_signing_identity,
                 &self.cipher_suite_provider,
                 #[cfg(test)]
@@ -1419,10 +1443,16 @@ mod tests {
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn member_identity_is_validated_against_new_extensions() {
         let alice = client_with_test_extension(b"alice").await;
-        let mut alice = alice.create_group(ExtensionList::new()).await.unwrap();
+        let mut alice = alice
+            .create_group(ExtensionList::new(), Default::default())
+            .await
+            .unwrap();
 
         let bob = client_with_test_extension(b"bob").await;
-        let bob_kp = bob.generate_key_package_message().await.unwrap();
+        let bob_kp = bob
+            .generate_key_package_message(Default::default(), Default::default())
+            .await
+            .unwrap();
 
         let mut extension_list = ExtensionList::new();
         let extension = TestExtension { foo: b'a' };
@@ -1443,7 +1473,11 @@ mod tests {
 
         alice
             .commit_builder()
-            .add_member(alex.generate_key_package_message().await.unwrap())
+            .add_member(
+                alex.generate_key_package_message(Default::default(), Default::default())
+                    .await
+                    .unwrap(),
+            )
             .unwrap()
             .set_group_context_ext(extension_list.clone())
             .unwrap()
@@ -1456,7 +1490,10 @@ mod tests {
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn server_identity_is_validated_against_new_extensions() {
         let alice = client_with_test_extension(b"alice").await;
-        let mut alice = alice.create_group(ExtensionList::new()).await.unwrap();
+        let mut alice = alice
+            .create_group(ExtensionList::new(), Default::default())
+            .await
+            .unwrap();
 
         let mut extension_list = ExtensionList::new();
         let extension = TestExtension { foo: b'a' };

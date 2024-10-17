@@ -16,7 +16,7 @@ use mls_rs_crypto_openssl::OpensslCryptoProvider;
 
 fn bench(c: &mut Criterion) {
     let alice = make_client("alice")
-        .create_group(Default::default())
+        .create_group(Default::default(), Default::default())
         .unwrap();
 
     const MAX_ADD_COUNT: usize = 1000;
@@ -24,7 +24,7 @@ fn bench(c: &mut Criterion) {
     let key_packages = (0..MAX_ADD_COUNT)
         .map(|i| {
             make_client(&format!("bob-{i}"))
-                .generate_key_package_message()
+                .generate_key_package_message(Default::default(), Default::default())
                 .unwrap()
         })
         .collect::<Vec<_>>();
