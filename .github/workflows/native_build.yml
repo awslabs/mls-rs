@@ -35,7 +35,7 @@ jobs:
       - name: Test Full RFC Compliance
         run: cargo test --all-features --verbose --workspace
       - name: Test Bare Bones
-        run: cargo test --no-default-features --features std,test_util  --verbose --workspace
+        run: cargo test --no-default-features --features std,test_util,non-fips  --verbose --workspace
       - name: Examples
         working-directory: mls-rs
         run: cargo run --example basic_usage
@@ -87,7 +87,7 @@ jobs:
       - name: Clippy Full RFC Compliance
         run: cargo clippy --all-targets --all-features --workspace -- -D warnings
       - name: Clippy Bare Bones
-        run: cargo clippy --all-targets --no-default-features --features std,test_util --workspace -- -D warnings
+        run: cargo clippy --all-targets --no-default-features --features std,test_util,non-fips --workspace -- -D warnings
   LintAndFormattingMacOS:
     # XXX(RLB): It would be good to just use macos-latest here, but
     # apparently if you do that, sometimes you get an older (not latest)
