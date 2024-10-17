@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1727711826072,
+  "lastUpdate": 1729183350417,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -16943,6 +16943,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 131332,
             "range": "± 1400",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "CaioSym@gmail.com",
+            "name": "Caio Sym",
+            "username": "CaioSym"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c710afa779fbead361d1964b9b8ff22e49cd0901",
+          "message": "Rework leaf node extensions to work via parameters rather than as a c… (#196)\n\n* Rework leaf node extensions to work via parameters rather than as a client configuration\r\n\r\n* Rework key package extensions to work via parameters rather than as a client configuration\r\n\r\n* Address clippy issues\r\n\r\n* Apply formatting changes\r\n\r\n* Remove TODO on Renit Client as WONT DO is the conclusion\r\n\r\n* Fix unit tests breaking due to grease",
+          "timestamp": "2024-10-17T12:37:59-04:00",
+          "tree_id": "6a388f2d5fcc7de04826c6e24aac2565c94d0281",
+          "url": "https://github.com/awslabs/mls-rs/commit/c710afa779fbead361d1964b9b8ff22e49cd0901"
+        },
+        "date": 1729183349195,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 511073,
+            "range": "± 24629",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 552490,
+            "range": "± 19814",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 614962,
+            "range": "± 17122",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1247094,
+            "range": "± 86997",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 8702563,
+            "range": "± 50870",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1099145,
+            "range": "± 47103",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1220955,
+            "range": "± 61745",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1331026,
+            "range": "± 49999",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 754331,
+            "range": "± 17781",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 825239,
+            "range": "± 13272",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 925458,
+            "range": "± 71310",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 20579,
+            "range": "± 349",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 66994,
+            "range": "± 1211",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 127782,
+            "range": "± 801",
             "unit": "ns/iter"
           }
         ]
