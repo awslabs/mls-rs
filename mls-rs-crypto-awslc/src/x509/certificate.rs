@@ -199,12 +199,12 @@ impl Certificate {
         unsafe {
             let pub_key = X509_get_pubkey(self.0);
             let ec_key = EVP_PKEY_get0_EC_KEY(pub_key);
-            EVP_PKEY_free(pub_key);
 
-            if !ec_key.is_null() {
-                let mut out_buf = vec![0u8; 256];
+            let res = || {
+                if !ec_key.is_null() {
+                    let mut out_buf = vec![0u8; 256];
 
-                let len = EC_POINT_point2oct(
+                    let len = EC_POINT_point2oct(
                     EC_KEY_get0_group(ec_key),
                     EC_KEY_get0_public_key(ec_key),
                     crate::aws_lc_sys_impl::point_conversion_form_t::POINT_CONVERSION_UNCOMPRESSED,
@@ -213,28 +213,35 @@ impl Certificate {
                     null_mut(),
                 );
 
-                if len == 0 {
-                    return Err(AwsLcCryptoError::InvalidKeyData);
+                    if len == 0 {
+                        return Err(AwsLcCryptoError::InvalidKeyData);
+                    }
+
+                    out_buf.truncate(len);
+
+                    Ok(out_buf.into())
+                } else {
+                    let mut len = 0;
+
+                    check_res(EVP_PKEY_get_raw_public_key(pub_key, null_mut(), &mut len))?;
+
+                    let mut out = vec![0u8; len];
+
+                    check_res(EVP_PKEY_get_raw_public_key(
+                        pub_key,
+                        out.as_mut_ptr(),
+                        &mut len,
+                    ))?;
+
+                    Ok(out.into())
                 }
+            };
 
-                out_buf.truncate(len);
+            let res = res();
 
-                Ok(out_buf.into())
-            } else {
-                let mut len = 0;
+            EVP_PKEY_free(pub_key);
 
-                check_res(EVP_PKEY_get_raw_public_key(pub_key, null_mut(), &mut len))?;
-
-                let mut out = vec![0u8; len];
-
-                check_res(EVP_PKEY_get_raw_public_key(
-                    pub_key,
-                    out.as_mut_ptr(),
-                    &mut len,
-                ))?;
-
-                Ok(out.into())
-            }
+            res
         }
     }
 
