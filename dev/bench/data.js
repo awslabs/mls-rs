@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1729183350417,
+  "lastUpdate": 1729261690624,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -17051,6 +17051,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 127782,
             "range": "± 801",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "103590845+mulmarta@users.noreply.github.com",
+            "name": "mulmarta",
+            "username": "mulmarta"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2e25a201944bf4504c0a2422e82c950b6de28941",
+          "message": "Support AWS-LC in FIPS mode (#198)\n\n* Support AWS-LC in FIPS mode\r\n\r\n* Fix memory leak\r\n\r\n* Fixup\r\n\r\n* Fixup\r\n\r\n* Add go needed by FIPS to workflow\r\n\r\n* Add ninja needed by FIPS on windows to workflow\r\n\r\n* Skip features build for AWS-LC\r\n\r\n* Fix typo\r\n\r\n* Fixup\r\n\r\n* Free pub key at the end\r\n\r\n---------\r\n\r\nCo-authored-by: Marta Mularczyk <mulmarta@amazon.com>",
+          "timestamp": "2024-10-18T10:23:33-04:00",
+          "tree_id": "0248eaf5602b0442d79e3625d298e95714fb8d78",
+          "url": "https://github.com/awslabs/mls-rs/commit/2e25a201944bf4504c0a2422e82c950b6de28941"
+        },
+        "date": 1729261689791,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 511314,
+            "range": "± 14829",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 521184,
+            "range": "± 16607",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 611338,
+            "range": "± 18433",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1261365,
+            "range": "± 88067",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7573703,
+            "range": "± 16204",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1143192,
+            "range": "± 55701",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1214314,
+            "range": "± 38407",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1366698,
+            "range": "± 71201",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 745288,
+            "range": "± 45456",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 818361,
+            "range": "± 10328",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 916461,
+            "range": "± 10913",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 21131,
+            "range": "± 269",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 68457,
+            "range": "± 6034",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 131722,
+            "range": "± 1436",
             "unit": "ns/iter"
           }
         ]
