@@ -25,6 +25,11 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: ilammy/setup-nasm@v1
         if: runner.os == 'Windows'
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '>=1.18'
+      - uses: seanmiddleditch/gha-setup-ninja@master
+        if: runner.os == 'Windows'
       - run: |
           echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
           vcpkg install openssl:x64-windows-static-md sqlite3:x64-windows-static-md
@@ -35,7 +40,7 @@ jobs:
       - name: Test Full RFC Compliance
         run: cargo test --all-features --verbose --workspace
       - name: Test Bare Bones
-        run: cargo test --no-default-features --features std,test_util  --verbose --workspace
+        run: cargo test --no-default-features --features std,test_util,non-fips  --verbose --workspace
       - name: Examples
         working-directory: mls-rs
         run: cargo run --example basic_usage
@@ -58,6 +63,11 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: ilammy/setup-nasm@v1
+        if: runner.os == 'Windows'
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '>=1.18'
+      - uses: seanmiddleditch/gha-setup-ninja@master
         if: runner.os == 'Windows'
       - run: |
           echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
@@ -82,12 +92,16 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '>=1.18'
+      - uses: seanmiddleditch/gha-setup-ninja@master
       - name: Rust Fmt
         run: cargo fmt --all -- --check
       - name: Clippy Full RFC Compliance
         run: cargo clippy --all-targets --all-features --workspace -- -D warnings
       - name: Clippy Bare Bones
-        run: cargo clippy --all-targets --no-default-features --features std,test_util --workspace -- -D warnings
+        run: cargo clippy --all-targets --no-default-features --features std,test_util,non-fips --workspace -- -D warnings
   LintAndFormattingMacOS:
     # XXX(RLB): It would be good to just use macos-latest here, but
     # apparently if you do that, sometimes you get an older (not latest)

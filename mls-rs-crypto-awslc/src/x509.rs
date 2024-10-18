@@ -15,7 +15,7 @@ pub use writer::CertificateRequestWriter;
 mod test_utils {
     use std::ptr::null_mut;
 
-    use aws_lc_sys::{
+    use crate::aws_lc_sys_impl::{
         i2d_X509_REQ, BIO_free, BIO_new_mem_buf, EVP_PKEY_free, EVP_PKEY_get_raw_private_key,
         EVP_PKEY_get_raw_public_key, PEM_read_bio_PrivateKey, PEM_read_bio_X509_REQ, X509_REQ_free,
     };

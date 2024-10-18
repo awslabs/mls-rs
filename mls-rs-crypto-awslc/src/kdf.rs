@@ -4,8 +4,10 @@
 
 use std::mem::MaybeUninit;
 
+use crate::aws_lc_sys_impl::{
+    EVP_sha256, EVP_sha384, EVP_sha512, HKDF_expand, HKDF_extract, EVP_MD,
+};
 use aws_lc_rs::error::Unspecified;
-use aws_lc_sys::{EVP_sha256, EVP_sha384, EVP_sha512, HKDF_expand, HKDF_extract, EVP_MD};
 use mls_rs_core::crypto::CipherSuite;
 use mls_rs_crypto_traits::KdfId;
 
