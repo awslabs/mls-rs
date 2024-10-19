@@ -48,11 +48,14 @@ impl From<u64> for MlsTime {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen(inline_js = r#"
-export function date_now() {
-  return Date.now();
-}"#)]
+#[cfg_attr(
+    all(target_arch = "wasm32", not(feature = "node")),
+    wasm_bindgen(module = "/js/es-time.js")
+)]
+#[cfg_attr(
+    all(target_arch = "wasm32", feature = "node"),
+    wasm_bindgen(module = "/js/node-time.js")
+)]
 extern "C" {
     fn date_now() -> f64;
 }
