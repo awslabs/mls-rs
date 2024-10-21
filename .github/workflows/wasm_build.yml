@@ -4,6 +4,7 @@ env:
   CARGO_TERM_COLOR: always
   SSH_AUTH_SOCK: /tmp/ssh_agent.sock
   WASM_BINDGEN_TEST_TIMEOUT: 1000
+  RUSTFLAGS: "--cfg mls_build_async"
 jobs:
   BuildAndTest:
     runs-on: [ubuntu-latest]
