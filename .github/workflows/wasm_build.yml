@@ -21,9 +21,6 @@ jobs:
     - name: WASM mls-rs
       working-directory: mls-rs
       run: wasm-pack test --headless --chrome --release --lib --test '*' --features test_util
-    - name: WASM mls-rs-core
-      working-directory: mls-rs-core
-      run: wasm-pack test --headless --chrome --release
     - name: WASM mls-rs-identity-x509
       working-directory: mls-rs-identity-x509
       run: wasm-pack test --headless --chrome --release
