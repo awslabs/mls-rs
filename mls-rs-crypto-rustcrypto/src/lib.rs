@@ -396,5 +396,5 @@ fn mls_core_tests() {
 #[wasm_bindgen_test::wasm_bindgen_test]
 async fn mls_rs_core_test() {
     let provider = RustCryptoProvider::new();
-    mls_rs_core::crypto::test_suite::verify_tests(&provider, true);
+    mls_rs_core::crypto::test_suite::verify_tests(&provider, true).await;
 }
