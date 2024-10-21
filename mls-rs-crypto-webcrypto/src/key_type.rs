@@ -86,8 +86,8 @@ impl KeyType {
             | KeyType::EcdhSecret(curve)
             | KeyType::EcdsaPublic(curve)
             | KeyType::EcdsaSecret(curve) => {
-                let mut params = EcKeyImportParams::new(self.algorithm());
-                params.named_curve(curve);
+                let params = EcKeyImportParams::new(self.algorithm());
+                params.set_named_curve(curve);
 
                 crypto.import_key_with_object(self.format(), &key, &params, true, &key_usages)?
             }

@@ -83,9 +83,9 @@ impl Aead {
             .then_some(())
             .ok_or(CryptoError::WrongKeyLength)?;
 
-        let mut params = AesGcmParams::new(key_type.algorithm(), &Uint8Array::from(nonce));
+        let params = AesGcmParams::new(key_type.algorithm(), &Uint8Array::from(nonce));
         let aad = Uint8Array::from(aad.unwrap_or_default());
-        params.additional_data(&aad);
+        params.set_additional_data(&aad);
         let key = key_type.import(&crypto, key).await?;
 
         let out = match key_type {

@@ -21,6 +21,9 @@ pub use traits::*;
 
 pub use mls_rs_core::identity::{CertificateChain, DerCertificate};
 
+#[cfg(all(test, target_arch = "wasm32"))]
+wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
+
 #[derive(Clone, PartialEq, Eq)]
 /// X.509 certificate request in DER format.
 pub struct DerCertificateRequest(Vec<u8>);
