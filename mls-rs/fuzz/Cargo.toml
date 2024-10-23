@@ -11,7 +11,7 @@ edition = "2021"
 cargo-fuzz = true
 
 [dependencies]
-mls-rs = { version = "0.41.2", path = "..", features = ["arbitrary", "fuzz_util"] }
+mls-rs = { version = "0.42.0", path = "..", features = ["arbitrary", "fuzz_util"] }
 futures = "0.3.25"
 libfuzzer-sys = "0.4"
 once_cell = "1.13.0"
