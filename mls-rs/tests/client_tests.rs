@@ -851,20 +851,23 @@ async fn external_info_from_commit_allows_to_join() {
     alice.process_incoming_message(commit).await.unwrap();
 }
 
-#[test]
-fn can_process_own_removal_if_pending_commit() {
-    let mut groups = get_test_groups(ProtocolVersion::MLS_10, CipherSuite::P256_AES128, 2, false);
+#[maybe_async::test(not(mls_build_async), async(mls_build_async, futures_test))]
+async fn can_process_own_removal_if_pending_commit() {
+    let mut groups =
+        get_test_groups(ProtocolVersion::MLS_10, CipherSuite::P256_AES128, 2, false).await;
 
     let commit = groups[1]
         .commit_builder()
         .remove_member(0)
         .unwrap()
         .build()
+        .await
         .unwrap();
 
-    groups[0].commit(vec![]).unwrap();
+    groups[0].commit(vec![]).await.unwrap();
 
     groups[0]
         .process_incoming_message(commit.commit_message)
+        .await
         .unwrap();
 }
