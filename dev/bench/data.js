@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1729261690624,
+  "lastUpdate": 1729698256713,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -17159,6 +17159,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 131722,
             "range": "± 1436",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "103590845+mulmarta@users.noreply.github.com",
+            "name": "mulmarta",
+            "username": "mulmarta"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "492f03bc9cbf8d2852fcadf0bb12a82ae8230d35",
+          "message": "Fix bug where client crashes if it has a pending commit and processes a commit removing it (#201)\n\n* Fix bug where client crashes if it has a pending commit and proccesses a commit removing it\r\n\r\n* Fixup\r\n\r\n* Bump version\r\n\r\n* Update mls-rs/Cargo.toml\r\n\r\n* Fixup\r\n\r\n---------\r\n\r\nCo-authored-by: Marta Mularczyk <mulmarta@amazon.com>",
+          "timestamp": "2024-10-23T17:39:45+02:00",
+          "tree_id": "33c8e3c67857445fad8505048fe26b1c7d241bb2",
+          "url": "https://github.com/awslabs/mls-rs/commit/492f03bc9cbf8d2852fcadf0bb12a82ae8230d35"
+        },
+        "date": 1729698255522,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 518529,
+            "range": "± 17489",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 521371,
+            "range": "± 16960",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 610590,
+            "range": "± 27442",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1258490,
+            "range": "± 15634",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7626663,
+            "range": "± 540233",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1146370,
+            "range": "± 41262",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1232492,
+            "range": "± 74802",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1327640,
+            "range": "± 51659",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 745426,
+            "range": "± 14090",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 823676,
+            "range": "± 12566",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 921289,
+            "range": "± 13093",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 21180,
+            "range": "± 235",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 68939,
+            "range": "± 1103",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 132764,
+            "range": "± 1582",
             "unit": "ns/iter"
           }
         ]
