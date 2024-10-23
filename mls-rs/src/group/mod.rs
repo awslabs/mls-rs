@@ -1945,9 +1945,9 @@ where
         &self,
         provisional_state: &ProvisionalState,
     ) -> Option<ProposalInfo<RemoveProposal>> {
-        match self.pending_commit {
-            Some(_) => None,
-            None => provisional_state
+        match &self.pending_commit {
+            Some(c) if c.content.content.sender == Sender::NewMemberCommit => None,
+            _ => provisional_state
                 .applied_proposals
                 .removals
                 .iter()

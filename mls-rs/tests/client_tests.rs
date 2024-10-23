@@ -850,3 +850,21 @@ async fn external_info_from_commit_allows_to_join() {
 
     alice.process_incoming_message(commit).await.unwrap();
 }
+
+#[test]
+fn can_process_own_removal_if_pending_commit() {
+    let mut groups = get_test_groups(ProtocolVersion::MLS_10, CipherSuite::P256_AES128, 2, false);
+
+    let commit = groups[1]
+        .commit_builder()
+        .remove_member(0)
+        .unwrap()
+        .build()
+        .unwrap();
+
+    groups[0].commit(vec![]).unwrap();
+
+    groups[0]
+        .process_incoming_message(commit.commit_message)
+        .unwrap();
+}
