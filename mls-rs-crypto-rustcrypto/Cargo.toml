@@ -76,5 +76,8 @@ mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", default-features = false,
 [target.'cfg(mls_build_async)'.dependencies]
 async-trait = "0.1.74"
 
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = { version = "0.3.26", default-features = false }
+
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(mls_build_async)'] }
