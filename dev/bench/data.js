@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1729698430253,
+  "lastUpdate": 1729781407698,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -17375,6 +17375,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 131487,
             "range": "± 1096",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "94983192+stefunctional@users.noreply.github.com",
+            "name": "Stephane Raux",
+            "username": "stefunctional"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6d4a11a4701a55f0f48dd42810bbbffe7c2b0fc4",
+          "message": "Do not enable modern_sqlite feature (#202)\n\n* Do not enable modern_sqlite feature\r\n\r\nThat is a dangerous default as this allows an easy mismatch between headers\r\nbuilt against and the library linked to.\r\n\r\n* Bump version",
+          "timestamp": "2024-10-24T10:45:31-04:00",
+          "tree_id": "33d836fb5124c05b833d77c4e50571e289c74136",
+          "url": "https://github.com/awslabs/mls-rs/commit/6d4a11a4701a55f0f48dd42810bbbffe7c2b0fc4"
+        },
+        "date": 1729781406486,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 513363,
+            "range": "± 17491",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 519402,
+            "range": "± 13064",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 577072,
+            "range": "± 15233",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1258804,
+            "range": "± 31085",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 8068917,
+            "range": "± 95099",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1109566,
+            "range": "± 49628",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1232469,
+            "range": "± 49827",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1355337,
+            "range": "± 46044",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 734691,
+            "range": "± 12550",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 815448,
+            "range": "± 7664",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 908311,
+            "range": "± 7701",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 21045,
+            "range": "± 667",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 68740,
+            "range": "± 2337",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 131786,
+            "range": "± 1968",
             "unit": "ns/iter"
           }
         ]
