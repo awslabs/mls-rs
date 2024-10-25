@@ -9,6 +9,13 @@ use alloc::vec::Vec;
 
 use super::{CredentialType, SigningIdentity};
 
+#[derive(Clone, Debug, Copy)]
+pub struct CurrentEpochInfo<'a> {
+    pub group_id: &'a [u8],
+    pub epoch: u64,
+    pub extensions: &'a ExtensionList,
+}
+
 /// Identity system that can be used to validate a
 /// [`SigningIdentity`](mls-rs-core::identity::SigningIdentity)
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -26,7 +33,8 @@ pub trait IdentityProvider: Send + Sync {
         &self,
         signing_identity: &SigningIdentity,
         timestamp: Option<MlsTime>,
-        extensions: Option<&ExtensionList>,
+        current_epoch: Option<CurrentEpochInfo>,
+        new_extensions: Option<&ExtensionList>,
     ) -> Result<(), Self::Error>;
 
     /// Determine if `signing_identity` is valid for an external sender in

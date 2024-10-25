@@ -95,9 +95,11 @@ where
         .await?;
 
         let proposals = filter_out_extra_group_context_extensions(strategy, proposals)?;
-        let proposals = filter_out_invalid_reinit(strategy, proposals, self.protocol_version)?;
-        let proposals = filter_out_reinit_if_other_proposals(strategy.is_ignore(), proposals)?;
 
+        let proposals =
+            filter_out_invalid_reinit(strategy, proposals, self.original_context.protocol_version)?;
+
+        let proposals = filter_out_reinit_if_other_proposals(strategy.is_ignore(), proposals)?;
         let proposals = filter_out_external_init(strategy, proposals)?;
 
         self.apply_proposal_changes(strategy, proposals, commit_time)
@@ -120,7 +122,7 @@ where
                 self.apply_tree_changes(
                     strategy,
                     proposals,
-                    self.original_group_extensions,
+                    &self.original_context.extensions,
                     commit_time,
                 )
                 .await
@@ -173,10 +175,11 @@ where
         group_extensions_in_use: &ExtensionList,
         commit_time: Option<MlsTime>,
     ) -> Result<ProposalBundle, MlsError> {
-        let leaf_node_validator = &LeafNodeValidator::new(
+        let leaf_node_validator = &LeafNodeValidator::new_for_commit_validation(
             self.cipher_suite_provider,
             self.identity_provider,
-            Some(group_extensions_in_use),
+            Some(self.original_context),
+            group_extensions_in_use,
         );
 
         let bad_indices: Vec<_> = wrap_iter(proposals.update_proposals())
@@ -189,7 +192,11 @@ where
                     let res = leaf_node_validator
                         .check_if_valid(
                             leaf,
-                            ValidationContext::Update((self.group_id, *sender_index, commit_time)),
+                            ValidationContext::Update((
+                                &self.original_context.group_id,
+                                *sender_index,
+                                commit_time,
+                            )),
                         )
                         .await;
 

@@ -4,10 +4,9 @@
 
 use crate::{
     client::MlsError,
-    group::{proposal_filter::ProposalBundle, Sender},
+    group::{proposal_filter::ProposalBundle, GroupContext, Sender},
     key_package::{validate_key_package_properties, KeyPackage},
     mls_rules::CommitDirection,
-    protocol_version::ProtocolVersion,
     time::MlsTime,
     tree_kem::{
         leaf_node_validator::{LeafNodeValidator, ValidationContext},
@@ -51,14 +50,11 @@ use super::filtering::filter_out_unsupported_custom_proposals;
 #[derive(Debug)]
 pub(crate) struct ProposalApplier<'a, C, P, CSP> {
     pub original_tree: &'a TreeKemPublic,
-    pub protocol_version: ProtocolVersion,
     pub cipher_suite_provider: &'a CSP,
-    pub original_group_extensions: &'a ExtensionList,
+    pub original_context: &'a GroupContext,
     pub external_leaf: Option<&'a LeafNode>,
     pub identity_provider: &'a C,
     pub psk_storage: &'a P,
-    #[cfg(feature = "by_ref_proposal")]
-    pub group_id: &'a [u8],
 }
 
 #[derive(Debug)]
@@ -80,24 +76,19 @@ where
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         original_tree: &'a TreeKemPublic,
-        protocol_version: ProtocolVersion,
         cipher_suite_provider: &'a CSP,
-        original_group_extensions: &'a ExtensionList,
+        original_context: &'a GroupContext,
         external_leaf: Option<&'a LeafNode>,
         identity_provider: &'a C,
         psk_storage: &'a P,
-        #[cfg(feature = "by_ref_proposal")] group_id: &'a [u8],
     ) -> Self {
         Self {
             original_tree,
-            protocol_version,
             cipher_suite_provider,
-            original_group_extensions,
+            original_context,
             external_leaf,
             identity_provider,
             psk_storage,
-            #[cfg(feature = "by_ref_proposal")]
-            group_id,
         }
     }
 
@@ -154,7 +145,7 @@ where
             external_leaf,
             self.original_tree,
             self.identity_provider,
-            self.original_group_extensions,
+            &self.original_context.extensions,
         )
         .await?;
 
@@ -190,7 +181,7 @@ where
                 &mut output.new_tree,
                 external_leaf.clone(),
                 self.identity_provider,
-                self.original_group_extensions,
+                &self.original_context.extensions,
             )
             .await?,
         );
@@ -238,10 +229,11 @@ where
                 .has_extension(ExternalSendersExt::extension_type());
 
         let new_capabilities_supported = if must_check {
-            let leaf_validator = LeafNodeValidator::new(
+            let leaf_validator = LeafNodeValidator::new_for_commit_validation(
                 self.cipher_suite_provider,
                 self.identity_provider,
-                Some(&group_context_extensions_proposal.proposal),
+                Some(self.original_context),
+                &group_context_extensions_proposal.proposal,
             );
 
             output
@@ -291,7 +283,7 @@ where
                     self.apply_tree_changes(
                         strategy,
                         proposals_clone,
-                        self.original_group_extensions,
+                        &self.original_context.extensions,
                         commit_time,
                     )
                     .await
@@ -337,7 +329,7 @@ where
             || {
                 validate_key_package_properties(
                     key_package,
-                    self.protocol_version,
+                    self.original_context.protocol_version,
                     self.cipher_suite_provider,
                 )
             },

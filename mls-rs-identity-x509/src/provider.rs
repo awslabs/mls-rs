@@ -9,7 +9,7 @@ use mls_rs_core::{
     crypto::SignaturePublicKey,
     error::IntoAnyError,
     extension::ExtensionList,
-    identity::{CredentialType, IdentityProvider},
+    identity::{CredentialType, CurrentEpochInfo, IdentityProvider},
     time::MlsTime,
 };
 
@@ -147,7 +147,8 @@ where
         &self,
         signing_identity: &mls_rs_core::identity::SigningIdentity,
         timestamp: Option<MlsTime>,
-        _extensions: Option<&ExtensionList>,
+        _: Option<CurrentEpochInfo>,
+        _: Option<&ExtensionList>,
     ) -> Result<(), Self::Error> {
         self.validate(signing_identity, timestamp)
     }

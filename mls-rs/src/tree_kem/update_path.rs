@@ -50,10 +50,11 @@ pub(crate) async fn validate_update_path<C: IdentityProvider, CSP: CipherSuitePr
 ) -> Result<ValidatedUpdatePath, MlsError> {
     let group_context_extensions = &state.group_context.extensions;
 
-    let leaf_validator = LeafNodeValidator::new(
+    let leaf_validator = LeafNodeValidator::new_for_commit_validation(
         cipher_suite_provider,
         identity_provider,
-        Some(group_context_extensions),
+        Some(&state.group_context),
+        &state.group_context.extensions,
     );
 
     leaf_validator

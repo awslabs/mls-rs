@@ -27,13 +27,11 @@ use crate::psk::PreSharedKeyID;
 use crate::signer::Signable;
 use crate::tree_kem::hpke_encryption::HpkeEncryptable;
 use crate::tree_kem::kem::TreeKem;
+use crate::tree_kem::leaf_node::LeafNode;
+use crate::tree_kem::leaf_node_validator::{LeafNodeValidator, ValidationContext};
 use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::path_secret::PathSecret;
 pub use crate::tree_kem::Capabilities;
-use crate::tree_kem::{
-    leaf_node::LeafNode,
-    leaf_node_validator::{LeafNodeValidator, ValidationContext},
-};
 use crate::tree_kem::{math as tree_math, ValidatedUpdatePath};
 use crate::tree_kem::{TreeKemPrivate, TreeKemPublic};
 use crate::{CipherSuiteProvider, CryptoProvider};
@@ -313,10 +311,11 @@ where
 
         let identity_provider = config.identity_provider();
 
-        let leaf_node_validator = LeafNodeValidator::new(
+        let leaf_node_validator = LeafNodeValidator::new_for_commit_validation(
             &cipher_suite_provider,
             &identity_provider,
-            Some(&group_context_extensions),
+            None,
+            &group_context_extensions,
         );
 
         leaf_node_validator
@@ -4216,7 +4215,7 @@ mod tests {
         fn commit_options(
             &self,
             _: &Roster,
-            _: &ExtensionList,
+            _: &GroupContext,
             proposals: &ProposalBundle,
         ) -> Result<CommitOptions, MlsError> {
             Ok(CommitOptions::default().with_path_required(
@@ -4227,7 +4226,7 @@ mod tests {
         fn encryption_options(
             &self,
             _: &Roster,
-            _: &ExtensionList,
+            _: &GroupContext,
         ) -> Result<crate::mls_rules::EncryptionOptions, MlsError> {
             Ok(Default::default())
         }
@@ -4237,7 +4236,7 @@ mod tests {
             _: CommitDirection,
             sender: CommitSource,
             _: &Roster,
-            _: &ExtensionList,
+            _: &GroupContext,
             proposals: ProposalBundle,
         ) -> Result<ProposalBundle, MlsError> {
             let is_external = matches!(sender, CommitSource::NewMember(_));

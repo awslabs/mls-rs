@@ -25,7 +25,9 @@ pub(crate) mod test_utils {
         crypto::{CipherSuite, CipherSuiteProvider, SignatureSecretKey},
         error::IntoAnyError,
         extension::ExtensionList,
-        identity::{Credential, CredentialType, IdentityProvider, SigningIdentity},
+        identity::{
+            Credential, CredentialType, CurrentEpochInfo, IdentityProvider, SigningIdentity,
+        },
         time::MlsTime,
     };
 
@@ -119,7 +121,8 @@ pub(crate) mod test_utils {
             &self,
             _signing_identity: &SigningIdentity,
             _timestamp: Option<MlsTime>,
-            _extensions: Option<&ExtensionList>,
+            _current_epoch: Option<CurrentEpochInfo>,
+            _new_extensions: Option<&ExtensionList>,
         ) -> Result<(), Self::Error> {
             //TODO: Is it actually beneficial to check the key, or does that already happen elsewhere before
             //this point?

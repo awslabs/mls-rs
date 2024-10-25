@@ -6,6 +6,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt::{self, Debug};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
+use mls_rs_core::identity::CurrentEpochInfo;
 
 use crate::{cipher_suite::CipherSuite, protocol_version::ProtocolVersion, ExtensionList};
 
@@ -49,6 +50,16 @@ impl Debug for GroupContext {
             .field("confirmed_transcript_hash", &self.confirmed_transcript_hash)
             .field("extensions", &self.extensions)
             .finish()
+    }
+}
+
+impl<'a> From<&'a GroupContext> for CurrentEpochInfo<'a> {
+    fn from(value: &'a GroupContext) -> Self {
+        Self {
+            group_id: &value.group_id,
+            epoch: value.epoch,
+            extensions: &value.extensions,
+        }
     }
 }
 

@@ -4,9 +4,11 @@
 
 use super::leaf_node::{LeafNode, LeafNodeSigningContext, LeafNodeSource};
 use crate::client::MlsError;
+use crate::group::GroupContext;
 use crate::CipherSuiteProvider;
 use crate::{signer::Signable, time::MlsTime};
-use mls_rs_core::{error::IntoAnyError, extension::ExtensionList, identity::IdentityProvider};
+use mls_rs_core::extension::ExtensionList;
+use mls_rs_core::{error::IntoAnyError, identity::IdentityProvider};
 
 use crate::extension::RequiredCapabilitiesExt;
 
@@ -45,19 +47,35 @@ where
 {
     cipher_suite_provider: &'a CP,
     identity_provider: &'a C,
-    group_context_extensions: Option<&'a ExtensionList>,
+    context: Option<&'a GroupContext>,
+    new_extensions: Option<&'a ExtensionList>,
 }
 
 impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, CP> {
-    pub fn new(
+    pub fn new_for_commit_validation(
         cipher_suite_provider: &'a CP,
         identity_provider: &'a C,
-        group_context_extensions: Option<&'a ExtensionList>,
+        context: Option<&'a GroupContext>,
+        new_extensions: &'a ExtensionList,
     ) -> Self {
         Self {
             cipher_suite_provider,
             identity_provider,
-            group_context_extensions,
+            context,
+            new_extensions: Some(new_extensions),
+        }
+    }
+
+    pub fn new(
+        cipher_suite_provider: &'a CP,
+        identity_provider: &'a C,
+        context: Option<&'a GroupContext>,
+    ) -> Self {
+        Self {
+            cipher_suite_provider,
+            identity_provider,
+            context,
+            new_extensions: None,
         }
     }
 
@@ -116,8 +134,8 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
 
     pub fn validate_required_capabilities(&self, leaf_node: &LeafNode) -> Result<(), MlsError> {
         let Some(required_capabilities) = self
-            .group_context_extensions
-            .and_then(|exts| exts.get_as::<RequiredCapabilitiesExt>().transpose())
+            .new_extensions
+            .and_then(|ext| ext.get_as::<RequiredCapabilitiesExt>().transpose())
             .transpose()?
         else {
             return Ok(());
@@ -150,8 +168,8 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
         leaf_node: &LeafNode,
     ) -> Result<(), MlsError> {
         let Some(ext) = self
-            .group_context_extensions
-            .and_then(|exts| exts.get_as::<ExternalSendersExt>().transpose())
+            .new_extensions
+            .and_then(|ext| ext.get_as::<ExternalSendersExt>().transpose())
             .transpose()?
         else {
             return Ok(());
@@ -182,7 +200,8 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
             .validate_member(
                 &leaf_node.signing_identity,
                 context.generation_time(),
-                self.group_context_extensions,
+                self.context.map(Into::into),
+                self.new_extensions,
             )
             .await
             .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?;
@@ -211,15 +230,17 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
         }
 
         // Verify that group extensions are supported by the leaf
-        self.group_context_extensions
-            .into_iter()
-            .flat_map(|exts| &**exts)
-            .map(|ext| ext.extension_type)
-            .find(|ext_type| {
-                !ext_type.is_default() && !leaf_node.capabilities.extensions.contains(ext_type)
-            })
-            .map(MlsError::UnsupportedGroupExtension)
-            .map_or(Ok(()), Err)?;
+        if let Some(context) = self.context {
+            context
+                .extensions
+                .iter()
+                .map(|ext| ext.extension_type)
+                .find(|ext_type| {
+                    !ext_type.is_default() && !leaf_node.capabilities.extensions.contains(ext_type)
+                })
+                .map(MlsError::UnsupportedGroupExtension)
+                .map_or(Ok(()), Err)?;
+        }
 
         #[cfg(feature = "by_ref_proposal")]
         self.validate_external_senders_ext_credentials(leaf_node)?;
@@ -518,10 +539,11 @@ mod tests {
         let group_context_extensions =
             core::iter::once(required_capabilities.into_extension().unwrap()).collect();
 
-        let test_validator = LeafNodeValidator::new(
+        let test_validator = LeafNodeValidator::new_for_commit_validation(
             &cipher_suite_provider,
             &BasicIdentityProvider,
-            Some(&group_context_extensions),
+            None,
+            &group_context_extensions,
         );
 
         let res = test_validator
@@ -548,10 +570,11 @@ mod tests {
         let group_context_extensions =
             core::iter::once(required_capabilities.into_extension().unwrap()).collect();
 
-        let test_validator = LeafNodeValidator::new(
+        let test_validator = LeafNodeValidator::new_for_commit_validation(
             &cipher_suite_provider,
             &BasicIdentityProvider,
-            Some(&group_context_extensions),
+            None,
+            &group_context_extensions,
         );
 
         let res = test_validator
@@ -578,10 +601,11 @@ mod tests {
         let group_context_extensions =
             core::iter::once(required_capabilities.into_extension().unwrap()).collect();
 
-        let test_validator = LeafNodeValidator::new(
+        let test_validator = LeafNodeValidator::new_for_commit_validation(
             &cipher_suite_provider,
             &BasicIdentityProvider,
-            Some(&group_context_extensions),
+            None,
+            &group_context_extensions,
         );
 
         let res = test_validator
@@ -633,7 +657,7 @@ pub(crate) mod test_utils {
     use mls_rs_core::{
         error::IntoAnyError,
         extension::ExtensionList,
-        identity::{BasicCredential, IdentityProvider},
+        identity::{BasicCredential, CurrentEpochInfo, IdentityProvider},
     };
 
     use crate::{identity::SigningIdentity, time::MlsTime};
@@ -669,7 +693,8 @@ pub(crate) mod test_utils {
             &self,
             _signing_identity: &SigningIdentity,
             _timestamp: Option<MlsTime>,
-            _extensions: Option<&ExtensionList>,
+            _current_epoch: Option<CurrentEpochInfo>,
+            _new_extensions: Option<&ExtensionList>,
         ) -> Result<(), Self::Error> {
             Err(TestFailureError)
         }
