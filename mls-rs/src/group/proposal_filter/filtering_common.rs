@@ -308,7 +308,7 @@ where
 
         validate_key_package_properties(
             key_package,
-            self.protocol_version,
+            self.original_context.protocol_version,
             self.cipher_suite_provider,
         )
         .await

@@ -59,7 +59,7 @@ where
         filter_out_invalid_group_extensions(proposals, self.identity_provider, commit_time).await?;
 
         filter_out_extra_group_context_extensions(proposals)?;
-        filter_out_invalid_reinit(proposals, self.protocol_version)?;
+        filter_out_invalid_reinit(proposals, self.original_context.protocol_version)?;
         filter_out_reinit_if_other_proposals(proposals)?;
 
         self.apply_proposal_changes(proposals, commit_time).await
@@ -77,7 +77,7 @@ where
                     .await
             }
             None => {
-                self.apply_tree_changes(proposals, self.original_group_extensions, commit_time)
+                self.apply_tree_changes(proposals, &self.original_context.extensions, commit_time)
                     .await
             }
         }
@@ -124,10 +124,11 @@ where
         group_extensions_in_use: &ExtensionList,
         commit_time: Option<MlsTime>,
     ) -> Result<(), MlsError> {
-        let leaf_node_validator = &LeafNodeValidator::new(
+        let leaf_node_validator = &LeafNodeValidator::new_for_commit_validation(
             self.cipher_suite_provider,
             self.identity_provider,
-            Some(group_extensions_in_use),
+            Some(self.original_context),
+            group_extensions_in_use,
         );
 
         let adds = wrap_iter(proposals.add_proposals());
