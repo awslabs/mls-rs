@@ -1511,7 +1511,7 @@ where
     pub(crate) fn encryption_options(&self) -> Result<EncryptionOptions, MlsError> {
         self.config
             .mls_rules()
-            .encryption_options(&self.roster(), self.group_context().extensions())
+            .encryption_options(&self.roster(), self.group_context())
             .map_err(|e| MlsError::MlsRulesError(e.into_any_error()))
     }
 

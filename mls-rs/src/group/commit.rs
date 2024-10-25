@@ -553,7 +553,7 @@ where
         let commit_options = mls_rules
             .commit_options(
                 &provisional_state.public_tree.roster(),
-                &provisional_group_context.extensions,
+                &provisional_group_context,
                 &provisional_state.applied_proposals,
             )
             .map_err(|e| MlsError::MlsRulesError(e.into_any_error()))?;

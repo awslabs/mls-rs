@@ -287,7 +287,7 @@ impl GroupState {
         prepare_proposals_for_mls_rules(&mut proposals, direction, &self.public_tree)?;
 
         proposals = user_rules
-            .filter_proposals(direction, origin, &roster, group_extensions, proposals)
+            .filter_proposals(direction, origin, &roster, &self.context, proposals)
             .await
             .map_err(|e| MlsError::MlsRulesError(e.into_any_error()))?;
 
