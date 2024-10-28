@@ -96,10 +96,10 @@ pub use group_info::GroupInfo;
 
 pub use self::framing::{ContentType, Sender};
 pub use commit::*;
-pub use context::GroupContext;
+pub use mls_rs_core::context::GroupContext;
 pub use roster::*;
 
-pub(crate) use transcript_hash::ConfirmedTranscriptHash;
+pub(crate) use mls_rs_core::context::ConfirmedTranscriptHash;
 pub(crate) use util::*;
 
 #[cfg(all(feature = "by_ref_proposal", feature = "external_client"))]
@@ -110,7 +110,6 @@ mod ciphertext_processor;
 
 mod commit;
 pub(crate) mod confirmation_tag;
-mod context;
 pub(crate) mod epoch;
 pub(crate) mod framing;
 mod group_info;
@@ -338,13 +337,15 @@ where
                 .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
         })?;
 
-        let context = GroupContext::new_group(
+        let context = GroupContext {
             protocol_version,
             cipher_suite,
             group_id,
+            epoch: 0,
             tree_hash,
-            group_context_extensions,
-        );
+            confirmed_transcript_hash: vec![].into(),
+            extensions: group_context_extensions,
+        };
 
         let state_repo = GroupStateRepository::new(
             #[cfg(feature = "prior_epoch")]

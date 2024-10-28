@@ -30,7 +30,6 @@ pub struct GroupState {
 }
 
 #[cfg(all(feature = "ffi", not(test)))]
-#[safer_ffi_gen::safer_ffi_gen]
 impl GroupState {
     pub fn context(&self) -> &GroupContext {
         &self.context

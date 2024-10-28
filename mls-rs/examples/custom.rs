@@ -44,10 +44,7 @@ use mls_rs_core::{
     error::IntoAnyError,
     extension::{ExtensionError, ExtensionType, MlsCodecExtension},
     group::ProposalType,
-    identity::{
-        Credential, CredentialType, CurrentEpochInfo, CustomCredential, MlsCredential,
-        SigningIdentity,
-    },
+    identity::{Credential, CredentialType, CustomCredential, MlsCredential, SigningIdentity},
     time::MlsTime,
 };
 
@@ -209,7 +206,7 @@ impl IdentityProvider for CustomIdentityProvider {
         &self,
         signing_identity: &SigningIdentity,
         _: Option<MlsTime>,
-        _: Option<CurrentEpochInfo<'_>>,
+        _: Option<&GroupContext>,
         new_extensions: Option<&ExtensionList>,
     ) -> Result<(), Self::Error> {
         let Some(extensions) = new_extensions else {

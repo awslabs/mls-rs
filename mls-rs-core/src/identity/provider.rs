@@ -2,19 +2,12 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use crate::{error::IntoAnyError, extension::ExtensionList, time::MlsTime};
+use crate::{context::GroupContext, error::IntoAnyError, extension::ExtensionList, time::MlsTime};
 #[cfg(mls_build_async)]
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
 use super::{CredentialType, SigningIdentity};
-
-#[derive(Clone, Debug, Copy)]
-pub struct CurrentEpochInfo<'a> {
-    pub group_id: &'a [u8],
-    pub epoch: u64,
-    pub extensions: &'a ExtensionList,
-}
 
 /// Identity system that can be used to validate a
 /// [`SigningIdentity`](mls-rs-core::identity::SigningIdentity)
@@ -33,7 +26,7 @@ pub trait IdentityProvider: Send + Sync {
         &self,
         signing_identity: &SigningIdentity,
         timestamp: Option<MlsTime>,
-        current_epoch: Option<CurrentEpochInfo<'_>>,
+        current_epoch: Option<&GroupContext>,
         new_extensions: Option<&ExtensionList>,
     ) -> Result<(), Self::Error>;
 

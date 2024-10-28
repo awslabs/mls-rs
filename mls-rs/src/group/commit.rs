@@ -46,8 +46,7 @@ use super::{
     message_signature::AuthenticatedContent,
     mls_rules::CommitDirection,
     proposal::{Proposal, ProposalOrRef},
-    ConfirmedTranscriptHash, EncryptedGroupSecrets, ExportedTree, Group, GroupContext, GroupInfo,
-    Welcome,
+    EncryptedGroupSecrets, ExportedTree, Group, GroupContext, GroupInfo, Welcome,
 };
 
 #[cfg(not(feature = "by_ref_proposal"))]
@@ -653,7 +652,7 @@ where
 
         // Use the signature, the commit_secret and the psk_secret to advance the key schedule and
         // compute the confirmation_tag value in the MlsPlaintext.
-        let confirmed_transcript_hash = ConfirmedTranscriptHash::create(
+        let confirmed_transcript_hash = super::transcript_hash::create(
             self.cipher_suite_provider(),
             &self.state.interim_transcript_hash,
             &auth_content,
@@ -910,7 +909,7 @@ mod tests {
     use mls_rs_core::{
         error::IntoAnyError,
         extension::ExtensionType,
-        identity::{CredentialType, CurrentEpochInfo, IdentityProvider},
+        identity::{CredentialType, IdentityProvider},
         time::MlsTime,
     };
 
@@ -1586,7 +1585,7 @@ mod tests {
             &self,
             identity: &SigningIdentity,
             timestamp: Option<MlsTime>,
-            _: Option<CurrentEpochInfo<'_>>,
+            _: Option<&GroupContext>,
             new_extensions: Option<&ExtensionList>,
         ) -> Result<(), Self::Error> {
             self.starts_with_foo(identity, timestamp, new_extensions)

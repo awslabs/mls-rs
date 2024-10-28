@@ -22,12 +22,11 @@ pub(crate) mod test_utils {
     use alloc::vec;
     use alloc::vec::Vec;
     use mls_rs_core::{
+        context::GroupContext,
         crypto::{CipherSuite, CipherSuiteProvider, SignatureSecretKey},
         error::IntoAnyError,
         extension::ExtensionList,
-        identity::{
-            Credential, CredentialType, CurrentEpochInfo, IdentityProvider, SigningIdentity,
-        },
+        identity::{Credential, CredentialType, IdentityProvider, SigningIdentity},
         time::MlsTime,
     };
 
@@ -121,7 +120,7 @@ pub(crate) mod test_utils {
             &self,
             _signing_identity: &SigningIdentity,
             _timestamp: Option<MlsTime>,
-            _current_epoch: Option<CurrentEpochInfo<'_>>,
+            _current_epoch: Option<&GroupContext>,
             _new_extensions: Option<&ExtensionList>,
         ) -> Result<(), Self::Error> {
             //TODO: Is it actually beneficial to check the key, or does that already happen elsewhere before

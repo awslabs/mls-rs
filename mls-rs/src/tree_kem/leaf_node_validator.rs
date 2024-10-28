@@ -200,7 +200,7 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
             .validate_member(
                 &leaf_node.signing_identity,
                 context.generation_time(),
-                self.context.map(Into::into),
+                self.context,
                 self.new_extensions,
             )
             .await
@@ -655,9 +655,10 @@ pub(crate) mod test_utils {
     use alloc::vec::Vec;
     use mls_rs_codec::MlsEncode;
     use mls_rs_core::{
+        context::GroupContext,
         error::IntoAnyError,
         extension::ExtensionList,
-        identity::{BasicCredential, CurrentEpochInfo, IdentityProvider},
+        identity::{BasicCredential, IdentityProvider},
     };
 
     use crate::{identity::SigningIdentity, time::MlsTime};
@@ -693,7 +694,7 @@ pub(crate) mod test_utils {
             &self,
             _signing_identity: &SigningIdentity,
             _timestamp: Option<MlsTime>,
-            _current_epoch: Option<CurrentEpochInfo<'_>>,
+            _current_epoch: Option<&GroupContext>,
             _new_extensions: Option<&ExtensionList>,
         ) -> Result<(), Self::Error> {
             Err(TestFailureError)
