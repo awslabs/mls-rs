@@ -1,6 +1,6 @@
 [package]
 name = "mls-rs-crypto-cryptokit"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "CryptoKit based CryptoProvider for mls-rs"
 homepage = "https://github.com/awslabs/mls-rs"
@@ -20,12 +20,12 @@ serde_json = "1.0"
 [dev-dependencies]
 hex-literal = "0.4.1"
 assert_matches = "1.5.0"
-mls-rs-core = { path = "../mls-rs-core", version = "0.19.0", features = ["test_suite"] }
+mls-rs-core = { path = "../mls-rs-core", version = "0.20.0", features = ["test_suite"] }
 
 [dependencies]
 maybe-async = "0.2.10"
-mls-rs-core = { path = "../mls-rs-core", default-features = false, version = "0.19.0" }
-mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", default-features = false, version = "0.11.0" }
+mls-rs-core = { path = "../mls-rs-core", default-features = false, version = "0.20.0" }
+mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", default-features = false, version = "0.12.0" }
 thiserror = { version = "1.0.63", optional = true }
 zeroize = { version = "1", default-features = false, features = ["alloc", "zeroize_derive"] }
 
