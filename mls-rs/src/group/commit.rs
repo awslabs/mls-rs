@@ -122,6 +122,8 @@ pub struct CommitOutput {
     /// Proposals that were received in the prior epoch but not included in the following commit.
     #[cfg(feature = "by_ref_proposal")]
     pub unused_proposals: Vec<crate::mls_rules::ProposalInfo<Proposal>>,
+    /// Indicator that the commit contains a path update
+    pub contains_update_path: bool,
 }
 
 #[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen)]
@@ -824,6 +826,7 @@ where
             welcome_messages,
             ratchet_tree,
             external_commit_group_info,
+            contains_update_path: perform_path_update,
             #[cfg(feature = "by_ref_proposal")]
             unused_proposals: provisional_state.unused_proposals,
         };
