@@ -33,7 +33,7 @@ pub trait IdentityProvider: Send + Sync {
         &self,
         signing_identity: &SigningIdentity,
         timestamp: Option<MlsTime>,
-        current_epoch: Option<CurrentEpochInfo>,
+        current_epoch: Option<CurrentEpochInfo<'_>>,
         new_extensions: Option<&ExtensionList>,
     ) -> Result<(), Self::Error>;
 

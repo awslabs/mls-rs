@@ -693,7 +693,7 @@ pub(crate) mod test_utils {
             &self,
             _signing_identity: &SigningIdentity,
             _timestamp: Option<MlsTime>,
-            _current_epoch: Option<CurrentEpochInfo>,
+            _current_epoch: Option<CurrentEpochInfo<'_>>,
             _new_extensions: Option<&ExtensionList>,
         ) -> Result<(), Self::Error> {
             Err(TestFailureError)

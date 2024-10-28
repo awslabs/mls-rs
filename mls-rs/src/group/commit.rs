@@ -1586,7 +1586,7 @@ mod tests {
             &self,
             identity: &SigningIdentity,
             timestamp: Option<MlsTime>,
-            _: Option<CurrentEpochInfo>,
+            _: Option<CurrentEpochInfo<'_>>,
             new_extensions: Option<&ExtensionList>,
         ) -> Result<(), Self::Error> {
             self.starts_with_foo(identity, timestamp, new_extensions)

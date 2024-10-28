@@ -209,7 +209,7 @@ impl IdentityProvider for CustomIdentityProvider {
         &self,
         signing_identity: &SigningIdentity,
         _: Option<MlsTime>,
-        _: Option<CurrentEpochInfo>,
+        _: Option<CurrentEpochInfo<'_>>,
         new_extensions: Option<&ExtensionList>,
     ) -> Result<(), Self::Error> {
         let Some(extensions) = new_extensions else {

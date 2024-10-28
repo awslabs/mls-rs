@@ -66,7 +66,7 @@ impl IdentityProvider for BasicIdentityProvider {
         &self,
         signing_identity: &SigningIdentity,
         _timestamp: Option<MlsTime>,
-        _current_epoch: Option<CurrentEpochInfo>,
+        _current_epoch: Option<CurrentEpochInfo<'_>>,
         _extensions: Option<&ExtensionList>,
     ) -> Result<(), Self::Error> {
         resolve_basic_identity(signing_identity).map(|_| ())
