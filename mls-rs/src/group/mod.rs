@@ -308,19 +308,6 @@ where
         )
         .await?;
 
-        let identity_provider = config.identity_provider();
-
-        let leaf_node_validator = LeafNodeValidator::new_for_commit_validation(
-            &cipher_suite_provider,
-            &identity_provider,
-            None,
-            &group_context_extensions,
-        );
-
-        leaf_node_validator
-            .check_if_valid(&leaf_node, ValidationContext::Add(None))
-            .await?;
-
         let (mut public_tree, private_tree) = TreeKemPublic::derive(
             leaf_node,
             leaf_node_secret,
@@ -346,6 +333,22 @@ where
             confirmed_transcript_hash: vec![].into(),
             extensions: group_context_extensions,
         };
+
+        let identity_provider = config.identity_provider();
+
+        let leaf_node_validator = LeafNodeValidator::new_for_commit_validation(
+            &cipher_suite_provider,
+            &identity_provider,
+            Some(&context),
+            &context.extensions,
+        );
+
+        leaf_node_validator
+            .check_if_valid(
+                public_tree.get_leaf_node(LeafIndex(0))?,
+                ValidationContext::Add(None),
+            )
+            .await?;
 
         let state_repo = GroupStateRepository::new(
             #[cfg(feature = "prior_epoch")]
