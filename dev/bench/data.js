@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1729781407698,
+  "lastUpdate": 1730383992529,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -17483,6 +17483,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 131786,
             "range": "± 1968",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "felix.maneville@gmail.com",
+            "name": "Félix Lescaudey de Maneville",
+            "username": "ManevilleF"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "87c5dce2a67b9aff71964bb5d083cb67d2013101",
+          "message": "feat(mls-rs): CommitOutput stores an update path flag (#203)",
+          "timestamp": "2024-10-31T10:08:39-04:00",
+          "tree_id": "ab0f0290ca9808d7b1a5047d055610c7e041df90",
+          "url": "https://github.com/awslabs/mls-rs/commit/87c5dce2a67b9aff71964bb5d083cb67d2013101"
+        },
+        "date": 1730383991717,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 508935,
+            "range": "± 16940",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 517983,
+            "range": "± 10149",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 580679,
+            "range": "± 15414",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1232682,
+            "range": "± 25789",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7586722,
+            "range": "± 79877",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1127719,
+            "range": "± 90722",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1243553,
+            "range": "± 47235",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1337444,
+            "range": "± 49503",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 738817,
+            "range": "± 12129",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 810428,
+            "range": "± 9404",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 905132,
+            "range": "± 6674",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 20812,
+            "range": "± 427",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 67873,
+            "range": "± 692",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 130998,
+            "range": "± 2065",
             "unit": "ns/iter"
           }
         ]
