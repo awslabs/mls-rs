@@ -45,6 +45,7 @@ use std::collections::HashSet;
 #[cfg(feature = "by_ref_proposal")]
 use super::filtering::{apply_strategy, filter_out_invalid_proposers, FilterStrategy};
 
+#[cfg(feature = "custom_proposal")]
 use super::filtering::filter_out_unsupported_custom_proposals;
 
 #[derive(Debug)]
@@ -346,7 +347,7 @@ where
     }
 }
 
-#[cfg(feature = "by_ref_proposal")]
+#[cfg(all(feature = "custom_proposal", feature = "by_ref_proposal"))]
 pub(crate) fn prepare_proposals_for_mls_rules(
     proposals: &mut ProposalBundle,
     direction: CommitDirection,
@@ -355,13 +356,22 @@ pub(crate) fn prepare_proposals_for_mls_rules(
     filter_out_unsupported_custom_proposals(proposals, tree, direction.into())
 }
 
-#[cfg(not(feature = "by_ref_proposal"))]
+#[cfg(all(feature = "custom_proposal", not(feature = "by_ref_proposal")))]
 pub(crate) fn prepare_proposals_for_mls_rules(
     proposals: &mut ProposalBundle,
     _direction: CommitDirection,
     tree: &TreeKemPublic,
 ) -> Result<(), MlsError> {
     filter_out_unsupported_custom_proposals(&proposals, tree)
+}
+
+#[cfg(not(feature = "custom_proposal"))]
+pub(crate) fn prepare_proposals_for_mls_rules(
+    _: &mut ProposalBundle,
+    _: CommitDirection,
+    _: &TreeKemPublic,
+) -> Result<(), MlsError> {
+    Ok(())
 }
 
 #[cfg(feature = "psk")]
