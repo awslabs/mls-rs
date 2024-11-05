@@ -3964,7 +3964,7 @@ mod tests {
     }
 
     struct InjectMlsRules {
-        to_inject: Proposal,
+        to_inject: Vec<Proposal>,
         source: ProposalSource,
     }
 
@@ -3981,11 +3981,10 @@ mod tests {
             _: &ExtensionList,
             mut proposals: ProposalBundle,
         ) -> Result<ProposalBundle, Self::Error> {
-            proposals.add(
-                self.to_inject.clone(),
-                Sender::Member(0),
-                self.source.clone(),
-            );
+            for proposal in self.to_inject.iter().cloned() {
+                proposals.add(proposal, Sender::Member(0), self.source.clone());
+            }
+
             Ok(proposals)
         }
 
@@ -4018,7 +4017,7 @@ mod tests {
         let (committed, _) =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
                 .with_user_rules(InjectMlsRules {
-                    to_inject: test_proposal.clone(),
+                    to_inject: vec![test_proposal.clone()],
                     source: ProposalSource::ByValue,
                 })
                 .send()
@@ -4040,7 +4039,7 @@ mod tests {
         let (committed, _) =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
                 .with_user_rules(InjectMlsRules {
-                    to_inject: test_proposal.clone(),
+                    to_inject: vec![test_proposal.clone()],
                     source: ProposalSource::Local,
                 })
                 .send()
@@ -4060,13 +4059,32 @@ mod tests {
 
         let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
             .with_user_rules(InjectMlsRules {
-                to_inject: test_proposal.clone(),
+                to_inject: vec![test_proposal.clone()],
                 source: ProposalSource::ByValue,
             })
             .send()
             .await;
 
         assert_matches!(res, Err(MlsError::InvalidProposalTypeForSender { .. }))
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn sending_invalid_local_proposal_fails() {
+        let (alice, tree) = new_tree("alice").await;
+        let gce_proposal = Proposal::GroupContextExtensions(Default::default());
+
+        let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+            .with_user_rules(InjectMlsRules {
+                to_inject: vec![gce_proposal.clone(), gce_proposal],
+                source: ProposalSource::Local,
+            })
+            .send()
+            .await;
+
+        assert_matches!(
+            res,
+            Err(MlsError::MoreThanOneGroupContextExtensionsProposal)
+        );
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
