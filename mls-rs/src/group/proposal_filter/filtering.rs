@@ -10,6 +10,7 @@ use crate::{
         AddProposal, ProposalType, RemoveProposal, Sender, UpdateProposal,
     },
     iter::wrap_iter,
+    mls_rules::CommitDirection,
     protocol_version::ProtocolVersion,
     time::MlsTime,
     tree_kem::{
@@ -247,6 +248,15 @@ where
 pub enum FilterStrategy {
     IgnoreByRef,
     IgnoreNone,
+}
+
+impl From<CommitDirection> for FilterStrategy {
+    fn from(value: CommitDirection) -> Self {
+        match value {
+            CommitDirection::Send => FilterStrategy::IgnoreByRef,
+            CommitDirection::Receive => FilterStrategy::IgnoreNone,
+        }
+    }
 }
 
 impl FilterStrategy {

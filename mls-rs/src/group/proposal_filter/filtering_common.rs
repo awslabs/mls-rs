@@ -6,6 +6,7 @@ use crate::{
     client::MlsError,
     group::{proposal_filter::ProposalBundle, Sender},
     key_package::{validate_key_package_properties, KeyPackage},
+    mls_rules::CommitDirection,
     protocol_version::ProtocolVersion,
     time::MlsTime,
     tree_kem::{
@@ -44,7 +45,6 @@ use std::collections::HashSet;
 #[cfg(feature = "by_ref_proposal")]
 use super::filtering::{apply_strategy, filter_out_invalid_proposers, FilterStrategy};
 
-#[cfg(feature = "custom_proposal")]
 use super::filtering::filter_out_unsupported_custom_proposals;
 
 #[derive(Debug)]
@@ -129,19 +129,6 @@ where
             #[cfg(feature = "by_ref_proposal")]
             Sender::NewMemberProposal => Err(MlsError::ExternalSenderCannotCommit),
         }?;
-
-        #[cfg(all(feature = "by_ref_proposal", feature = "custom_proposal"))]
-        let mut output = output;
-
-        #[cfg(all(feature = "by_ref_proposal", feature = "custom_proposal"))]
-        filter_out_unsupported_custom_proposals(
-            &mut output.applied_proposals,
-            &output.new_tree,
-            strategy,
-        )?;
-
-        #[cfg(all(not(feature = "by_ref_proposal"), feature = "custom_proposal"))]
-        filter_out_unsupported_custom_proposals(proposals, &output.new_tree)?;
 
         Ok(output)
     }
@@ -357,6 +344,24 @@ where
         a?;
         b
     }
+}
+
+#[cfg(feature = "by_ref_proposal")]
+pub(crate) fn prepare_proposals_for_mls_rules(
+    proposals: &mut ProposalBundle,
+    direction: CommitDirection,
+    tree: &TreeKemPublic,
+) -> Result<(), MlsError> {
+    filter_out_unsupported_custom_proposals(proposals, tree, direction.into())
+}
+
+#[cfg(not(feature = "by_ref_proposal"))]
+pub(crate) fn prepare_proposals_for_mls_rules(
+    proposals: &mut ProposalBundle,
+    _direction: CommitDirection,
+    tree: &TreeKemPublic,
+) -> Result<(), MlsError> {
+    filter_out_unsupported_custom_proposals(&proposals, tree)
 }
 
 #[cfg(feature = "psk")]

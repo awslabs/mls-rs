@@ -7,6 +7,7 @@ use alloc::vec::Vec;
 use super::{
     message_processor::ProvisionalState,
     mls_rules::{CommitDirection, CommitSource, MlsRules},
+    proposal_filter::prepare_proposals_for_mls_rules,
     GroupState, ProposalOrRef,
 };
 use crate::{
@@ -20,10 +21,7 @@ use crate::{
 
 #[cfg(feature = "by_ref_proposal")]
 use crate::{
-    group::{
-        message_hash::MessageHash, proposal_filter::FilterStrategy, ProposalMessageDescription,
-        ProposalRef, ProtocolVersion,
-    },
+    group::{message_hash::MessageHash, ProposalMessageDescription, ProposalRef, ProtocolVersion},
     MlsMessage,
 };
 
@@ -286,6 +284,8 @@ impl GroupState {
             )),
         }?;
 
+        prepare_proposals_for_mls_rules(&mut proposals, direction, &self.public_tree)?;
+
         proposals = user_rules
             .filter_proposals(direction, origin, &roster, group_extensions, proposals)
             .await
@@ -304,18 +304,9 @@ impl GroupState {
         );
 
         #[cfg(feature = "by_ref_proposal")]
-        let applier_output = match direction {
-            CommitDirection::Send => {
-                applier
-                    .apply_proposals(FilterStrategy::IgnoreByRef, &sender, proposals, commit_time)
-                    .await?
-            }
-            CommitDirection::Receive => {
-                applier
-                    .apply_proposals(FilterStrategy::IgnoreNone, &sender, proposals, commit_time)
-                    .await?
-            }
-        };
+        let applier_output = applier
+            .apply_proposals(direction.into(), &sender, proposals, commit_time)
+            .await?;
 
         #[cfg(not(feature = "by_ref_proposal"))]
         let applier_output = applier
