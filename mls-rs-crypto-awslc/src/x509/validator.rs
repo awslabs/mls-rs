@@ -4,7 +4,7 @@
 
 use std::ffi::{c_long, c_ulong, CStr};
 
-use aws_lc_sys::{
+use crate::aws_lc_sys_impl::{
     time_t, X509_STORE_CTX_free, X509_STORE_CTX_get0_param, X509_STORE_CTX_get_error,
     X509_STORE_CTX_init, X509_STORE_CTX_new, X509_STORE_CTX_set0_trusted_stack, X509_STORE_free,
     X509_STORE_new, X509_VERIFY_PARAM_get_flags, X509_VERIFY_PARAM_set_flags,

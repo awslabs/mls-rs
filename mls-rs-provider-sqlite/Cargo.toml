@@ -1,6 +1,6 @@
 [package]
 name = "mls-rs-provider-sqlite"
-version = "0.13.1"
+version = "0.13.2"
 edition = "2021"
 description = "SQLite based state storage for mls-rs"
 homepage = "https://github.com/awslabs/mls-rs"
@@ -27,7 +27,7 @@ anyhow = "1"
 [features]
 default = ["sqlcipher-bundled"]
 
-sqlite = ["rusqlite/modern_sqlite"]
+sqlite = []
 sqlite-bundled = ["sqlite", "rusqlite/bundled"]
 sqlcipher = ["sqlite", "rusqlite/sqlcipher"]
 sqlcipher-bundled = ["sqlite", "rusqlite/bundled-sqlcipher"]

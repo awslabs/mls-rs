@@ -10,7 +10,7 @@ use aws_lc_rs::{
     signature::{self, UnparsedPublicKey, ED25519_PUBLIC_KEY_LEN},
 };
 
-use aws_lc_sys::{
+use crate::aws_lc_sys_impl::{
     ECDSA_SIG_free, ECDSA_SIG_to_bytes, ECDSA_do_sign, ED25519_keypair, ED25519_sign,
     EVP_PKEY_new_raw_private_key, EVP_PKEY_new_raw_public_key, OPENSSL_free,
     ED25519_PRIVATE_KEY_LEN, ED25519_SIGNATURE_LEN, EVP_PKEY_ED25519,

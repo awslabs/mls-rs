@@ -7,17 +7,18 @@ use std::{
     ptr::{null, null_mut},
 };
 
-use aws_lc_sys::{
-    i2d_X509_REQ, EVP_sha256, EVP_sha384, EVP_sha512, X509_REQ_add_extensions, X509_REQ_free,
-    X509_REQ_new, X509_REQ_set_pubkey, X509_REQ_set_subject_name, X509_REQ_set_version,
-    X509_REQ_sign, EVP_MD, X509_REQ,
+use crate::{
+    aws_lc_sys_impl::{
+        i2d_X509_REQ, EVP_sha256, EVP_sha384, EVP_sha512, X509_REQ_add_extensions, X509_REQ_free,
+        X509_REQ_new, X509_REQ_set_pubkey, X509_REQ_set_subject_name, X509_REQ_set_version,
+        X509_REQ_sign, EVP_MD, X509_REQ,
+    },
+    ec::EvpPkey,
 };
 use mls_rs_core::crypto::SignatureSecretKey;
 use mls_rs_crypto_traits::Curve;
 
-use crate::{
-    check_int_return, check_non_null, check_res, ec::EvpPkey, ecdsa::AwsLcEcdsa, AwsLcCryptoError,
-};
+use crate::{check_int_return, check_non_null, check_res, ecdsa::AwsLcEcdsa, AwsLcCryptoError};
 
 use super::component::{Stack, X509Extension, X509Name};
 

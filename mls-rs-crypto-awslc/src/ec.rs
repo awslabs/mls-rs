@@ -4,8 +4,7 @@
 
 use std::{os::raw::c_void, ptr::null_mut};
 
-use aws_lc_rs::error::Unspecified;
-use aws_lc_sys::{
+use crate::aws_lc_sys_impl::{
     d2i_ECPrivateKey, point_conversion_form_t, BN_bin2bn, BN_bn2bin, BN_free, ECDH_compute_key,
     EC_GROUP_free, EC_GROUP_new_by_curve_name, EC_KEY_free, EC_KEY_generate_key, EC_KEY_get0_group,
     EC_KEY_get0_private_key, EC_KEY_get0_public_key, EC_KEY_new_by_curve_name,
@@ -14,6 +13,7 @@ use aws_lc_sys::{
     EVP_PKEY_set1_EC_KEY, NID_X9_62_prime256v1, NID_secp384r1, NID_secp521r1, X25519_keypair,
     X25519_public_from_private, EC_POINT, EVP_PKEY, X25519,
 };
+use aws_lc_rs::error::Unspecified;
 use mls_rs_core::crypto::{CipherSuite, HpkePublicKey, HpkeSecretKey};
 use mls_rs_crypto_traits::Curve;
 
@@ -172,7 +172,7 @@ pub fn x25519_public_key(secret_key: &[u8]) -> Result<Vec<u8>, AwsLcCryptoError>
 }
 
 pub struct EcPrivateKey {
-    pub(crate) inner: *mut aws_lc_sys::ec_key_st,
+    pub(crate) inner: *mut crate::aws_lc_sys_impl::ec_key_st,
     curve: Curve,
 }
 
@@ -298,7 +298,7 @@ impl EcPrivateKey {
 
 impl Drop for EcPrivateKey {
     fn drop(&mut self) {
-        unsafe { aws_lc_sys::EC_KEY_free(self.inner) }
+        unsafe { crate::aws_lc_sys_impl::EC_KEY_free(self.inner) }
     }
 }
 

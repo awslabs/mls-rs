@@ -19,7 +19,7 @@ std = ["mls-rs/std", "safer-ffi-gen/std"]
 x509 = ["mls-rs-identity-x509"]
 
 [dependencies]
-mls-rs = { path = "../mls-rs", version = "0.41.2", features = ["ffi"] }
+mls-rs = { path = "../mls-rs", version = "0.42.0", features = ["ffi"] }
 mls-rs-crypto-openssl = { path = "../mls-rs-crypto-openssl", version = "0.10.0", optional = true }
 mls-rs-identity-x509 = { path = "../mls-rs-identity-x509", version = "0.12.0", optional = true }
 mls-rs-provider-sqlite = { path = "../mls-rs-provider-sqlite", version = "0.13.1", default-features = false, optional = true }
