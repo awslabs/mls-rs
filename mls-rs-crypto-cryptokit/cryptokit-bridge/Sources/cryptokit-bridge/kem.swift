@@ -3,6 +3,7 @@ import CryptoKit
 
 // The values in this enum MUST match those of the KemId enum in Rust:
 // https://docs.rs/mls-rs-crypto-traits/latest/mls_rs_crypto_traits/enum.KemId.html
+@available(iOS 17.0, macOS 14.0, watchOS 10.0, tvOS 17.0, *)
 enum KemId : UInt16 {
     case DhKemP256Sha256Aes128 = 1
     case DhKemP384Sha384Aes256 = 2
@@ -94,7 +95,7 @@ enum KemId : UInt16 {
         }
     }
 }
-
+@available(iOS 17.0, macOS 14.0, watchOS 10.0, tvOS 17.0, *)
 class SenderWrapper {
     var sender: HPKE.Sender? = nil
 
@@ -103,6 +104,7 @@ class SenderWrapper {
     }
 }
 
+@available(iOS 17.0, macOS 14.0, watchOS 10.0, tvOS 17.0, *)
 class RecipientWrapper {
     var recipient: HPKE.Recipient? = nil
 
@@ -115,6 +117,7 @@ class RecipientWrapper {
 //     &self
 // ) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error>;
 @_cdecl("kem_generate")
+@available(iOS 17.0, macOS 14.0, watchOS 10.0, tvOS 17.0, *)
 public func kem_generate(kemID: UInt16, 
     privPtr: UnsafeMutablePointer<UInt8>, privLen: UnsafeMutablePointer<UInt64>, 
     pubPtr: UnsafeMutablePointer<UInt8>, pubLen: UnsafeMutablePointer<UInt64>
@@ -160,12 +163,14 @@ public func kem_generate(kemID: UInt16,
     return 1
 }
 
+@available(iOS 17.0, macOS 14.0, watchOS 10.0, tvOS 17.0, *)
 func unwrapBytes<B>(_ data: B) -> Data 
 where B: ContiguousBytes
 {
     return data.withUnsafeBytes { buffer in Data(buffer) }
 }
 
+@available(iOS 17.0, macOS 14.0, watchOS 10.0, tvOS 17.0, *)
 func LabeledExtract(kemID: KemId, salt: Data, label: Data, ikm: Data) -> Data {
     // labeled_ikm = concat("HPKE-v1", suite_id, label, ikm)
     var labeledIKM = "HPKE-v1".data(using: .utf8)!
@@ -191,6 +196,7 @@ func LabeledExtract(kemID: KemId, salt: Data, label: Data, ikm: Data) -> Data {
     }
 }
 
+@available(iOS 17.0, macOS 14.0, watchOS 10.0, tvOS 17.0, *)
 func LabeledExpand(kemID: KemId, prk: Data, label: Data, info: Data, len: Int) -> Data {
     // labeled_info = concat(I2OSP(L, 2), "HPKE-v1", suite_id, label, info)
     var labeledInfo = Data([UInt8(len >> 8), UInt8(len)])
@@ -216,6 +222,7 @@ func LabeledExpand(kemID: KemId, prk: Data, label: Data, info: Data, len: Int) -
     }
 }
 
+@available(iOS 17.0, macOS 14.0, watchOS 10.0, tvOS 17.0, *)
 func bigintLessThan(_ a: Data, _ b: Data) -> Bool {
     // For big-endian a, b, a < b iff at the first digit at which a and b
     // differ, the a digit is less than the b digit
@@ -229,6 +236,7 @@ func bigintLessThan(_ a: Data, _ b: Data) -> Bool {
     return da < db
 }
 
+@available(iOS 17.0, macOS 14.0, watchOS 10.0, tvOS 17.0, *)
 func derive_key_pair_nist(kemID: KemId, ikm: Data) -> Data? {
     let prkLabel = "dkp_prk".data(using: .utf8)!
     let candidateLabel = "candidate".data(using: .utf8)!
@@ -260,6 +268,7 @@ func derive_key_pair_nist(kemID: KemId, ikm: Data) -> Data? {
     return nil
 }
 
+@available(iOS 17.0, macOS 14.0, watchOS 10.0, tvOS 17.0, *)
 func derive_key_pair_x25519(kemID: KemId, ikm: Data) -> Data {
     let Nsk = 32
     let prkLabel = "dkp_prk".data(using: .utf8)!
@@ -274,6 +283,7 @@ func derive_key_pair_x25519(kemID: KemId, ikm: Data) -> Data {
 //     ikm: &[u8]
 // ) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error>;
 @_cdecl("kem_derive")
+@available(iOS 17.0, macOS 14.0, watchOS 10.0, tvOS 17.0, *)
 public func kem_derive(kemID: UInt16, 
     ikmPtr: UnsafePointer<UInt8>, ikmLen: UInt64,
     privPtr: UnsafeMutablePointer<UInt8>, privLen: UnsafeMutablePointer<UInt64>, 
@@ -331,6 +341,7 @@ public func kem_derive(kemID: UInt16,
 //     key: &HpkePublicKey
 // ) -> Result<(), Self::Error>;
 @_cdecl("kem_public_key_validate")
+@available(iOS 17.0, macOS 14.0, watchOS 10.0, tvOS 17.0, *)
 public func kem_public_key_validate(kemID: UInt16, 
     pubPtr: UnsafePointer<UInt8>, pubLen: UInt64 
 ) -> UInt64 
@@ -381,6 +392,7 @@ public func kem_public_key_validate(kemID: UInt16,
 //     info: &[u8]
 // ) -> Result<(Vec<u8>, Self::HpkeContextS), Self::Error>;
 @_cdecl("hpke_setup_s")
+@available(iOS 17.0, macOS 14.0, watchOS 10.0, tvOS 17.0, *)
 public func hpke_setup_s(kemID: UInt16, 
     pubPtr: UnsafePointer<UInt8>, pubLen: UInt64,
     infoPtr: UnsafePointer<UInt8>, infoLen: UInt64,
@@ -439,6 +451,7 @@ public func hpke_setup_s(kemID: UInt16,
 //     data: &[u8]
 // ) -> Result<Vec<u8>, Self::Error>;
 @_cdecl("hpke_seal_s")
+@available(iOS 17.0, macOS 14.0, watchOS 10.0, tvOS 17.0, *)
 public func hpke_seal_s(
     senderPtr: UnsafeMutableRawPointer,
     aadPtr: UnsafePointer<UInt8>, aadLen: UInt64,
@@ -465,6 +478,7 @@ public func hpke_seal_s(
 //     len: usize
 // ) -> Result<Vec<u8>, Self::Error>;
 @_cdecl("hpke_export_s")
+@available(iOS 17.0, macOS 14.0, watchOS 10.0, tvOS 17.0, *)
 public func hpke_export_s(
     senderPtr: UnsafeMutableRawPointer,
     ctxPtr: UnsafePointer<UInt8>, ctxLen: UInt64,
@@ -485,6 +499,7 @@ public func hpke_export_s(
 
 // fn hpke_drop_s()
 @_cdecl("hpke_drop_s")
+@available(iOS 17.0, macOS 14.0, watchOS 10.0, tvOS 17.0, *)
 public func hpke_drop_s( 
     senderPtr: UnsafeMutableRawPointer
 )
@@ -500,6 +515,7 @@ public func hpke_drop_s(
 //     info: &[u8]
 // ) -> Result<Self::HpkeContextR, Self::Error>;
 @_cdecl("hpke_setup_r")
+@available(iOS 17.0, macOS 14.0, watchOS 10.0, tvOS 17.0, *)
 public func hpke_setup_r(kemID: UInt16, 
     encPtr: UnsafePointer<UInt8>, encLen: UInt64,
     privPtr: UnsafePointer<UInt8>, privLen: UInt64,
@@ -561,6 +577,7 @@ public func hpke_setup_r(kemID: UInt16,
 //     ciphertext: &[u8]
 // ) -> Result<Vec<u8>, Self::Error>;
 @_cdecl("hpke_open_r")
+@available(iOS 17.0, macOS 14.0, watchOS 10.0, tvOS 17.0, *)
 public func hpke_open_r(
     recipientPtr: UnsafeMutableRawPointer,
     aadPtr: UnsafePointer<UInt8>, aadLen: UInt64,
@@ -587,6 +604,7 @@ public func hpke_open_r(
 //     len: usize
 // ) -> Result<Vec<u8>, Self::Error>;
 @_cdecl("hpke_export_r")
+@available(iOS 17.0, macOS 14.0, watchOS 10.0, tvOS 17.0, *)
 public func hpke_export_r(
     recipientPtr: UnsafeMutableRawPointer,
     ctxPtr: UnsafePointer<UInt8>, ctxLen: UInt64,
@@ -607,6 +625,7 @@ public func hpke_export_r(
 
 // fn hpke_drop_r()
 @_cdecl("hpke_drop_r")
+@available(iOS 17.0, macOS 14.0, watchOS 10.0, tvOS 17.0, *)
 public func hpke_drop_r( 
     recipientPtr: UnsafeMutableRawPointer
 )
