@@ -25,7 +25,7 @@ use crate::extension::{MlsExtension, RequiredCapabilitiesExt};
 #[cfg(feature = "by_ref_proposal")]
 use crate::extension::ExternalSendersExt;
 
-use mls_rs_core::error::IntoAnyError;
+use mls_rs_core::{error::IntoAnyError, identity::MemberValidationContext};
 
 use alloc::vec::Vec;
 use mls_rs_core::{identity::IdentityProvider, psk::PreSharedKeyStorage};
@@ -229,11 +229,15 @@ where
                 .has_extension(ExternalSendersExt::extension_type());
 
         let new_capabilities_supported = if must_check {
-            let leaf_validator = LeafNodeValidator::new_for_commit_validation(
+            let member_validation_context = MemberValidationContext::ForCommit {
+                current_context: self.original_context,
+                new_extensions: &group_context_extensions_proposal.proposal,
+            };
+
+            let leaf_validator = LeafNodeValidator::new_with_context(
                 self.cipher_suite_provider,
                 self.identity_provider,
-                Some(self.original_context),
-                &group_context_extensions_proposal.proposal,
+                member_validation_context,
             );
 
             output

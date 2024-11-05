@@ -909,7 +909,7 @@ mod tests {
     use mls_rs_core::{
         error::IntoAnyError,
         extension::ExtensionType,
-        identity::{CredentialType, IdentityProvider},
+        identity::{CredentialType, IdentityProvider, MemberValidationContext},
         time::MlsTime,
     };
 
@@ -1585,10 +1585,9 @@ mod tests {
             &self,
             identity: &SigningIdentity,
             timestamp: Option<MlsTime>,
-            _: Option<&GroupContext>,
-            new_extensions: Option<&ExtensionList>,
+            context: MemberValidationContext<'_>,
         ) -> Result<(), Self::Error> {
-            self.starts_with_foo(identity, timestamp, new_extensions)
+            self.starts_with_foo(identity, timestamp, context.new_extensions())
                 .await
                 .then_some(())
                 .ok_or(IdentityProviderWithExtensionError {})

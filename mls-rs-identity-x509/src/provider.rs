@@ -6,11 +6,10 @@ use crate::{util::credential_to_chain, CertificateChain, X509IdentityError};
 use alloc::vec;
 use alloc::vec::Vec;
 use mls_rs_core::{
-    context::GroupContext,
     crypto::SignaturePublicKey,
     error::IntoAnyError,
     extension::ExtensionList,
-    identity::{CredentialType, IdentityProvider},
+    identity::{CredentialType, IdentityProvider, MemberValidationContext},
     time::MlsTime,
 };
 
@@ -148,8 +147,7 @@ where
         &self,
         signing_identity: &mls_rs_core::identity::SigningIdentity,
         timestamp: Option<MlsTime>,
-        _: Option<&GroupContext>,
-        _: Option<&ExtensionList>,
+        _: MemberValidationContext<'_>,
     ) -> Result<(), Self::Error> {
         self.validate(signing_identity, timestamp)
     }

@@ -27,7 +27,7 @@ use mls_rs_core::crypto::{CryptoProvider, SignatureSecretKey};
 use mls_rs_core::error::{AnyError, IntoAnyError};
 use mls_rs_core::extension::{ExtensionError, ExtensionList, ExtensionType};
 use mls_rs_core::group::{GroupStateStorage, ProposalType};
-use mls_rs_core::identity::{CredentialType, IdentityProvider};
+use mls_rs_core::identity::{CredentialType, IdentityProvider, MemberValidationContext};
 use mls_rs_core::key_package::KeyPackageStorage;
 
 use crate::group::external_commit::ExternalCommitBuilder;
@@ -597,7 +597,11 @@ where
         validate_group_info_joiner(group_info_message.version, group_info, signer, &id, &cs)
             .await?;
 
-        id.validate_member(signer, None, Some(&group_info.group_context), None)
+        let context = MemberValidationContext::ForNewGroup {
+            current_context: &group_info.group_context,
+        };
+
+        id.validate_member(signer, None, context)
             .await
             .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?;
 

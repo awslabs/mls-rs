@@ -30,7 +30,11 @@ use super::{
 use crate::extension::ExternalSendersExt;
 
 use alloc::vec::Vec;
-use mls_rs_core::{error::IntoAnyError, identity::IdentityProvider, psk::PreSharedKeyStorage};
+use mls_rs_core::{
+    error::IntoAnyError,
+    identity::{IdentityProvider, MemberValidationContext},
+    psk::PreSharedKeyStorage,
+};
 
 #[cfg(any(
     feature = "custom_proposal",
@@ -175,11 +179,15 @@ where
         group_extensions_in_use: &ExtensionList,
         commit_time: Option<MlsTime>,
     ) -> Result<ProposalBundle, MlsError> {
-        let leaf_node_validator = &LeafNodeValidator::new_for_commit_validation(
+        let member_validation_context = MemberValidationContext::ForCommit {
+            current_context: self.original_context,
+            new_extensions: &group_extensions_in_use,
+        };
+
+        let leaf_node_validator = &LeafNodeValidator::new_with_context(
             self.cipher_suite_provider,
             self.identity_provider,
-            Some(self.original_context),
-            group_extensions_in_use,
+            member_validation_context,
         );
 
         let bad_indices: Vec<_> = wrap_iter(proposals.update_proposals())

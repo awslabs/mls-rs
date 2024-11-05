@@ -4,10 +4,9 @@
 
 use super::leaf_node::{LeafNode, LeafNodeSigningContext, LeafNodeSource};
 use crate::client::MlsError;
-use crate::group::GroupContext;
 use crate::CipherSuiteProvider;
 use crate::{signer::Signable, time::MlsTime};
-use mls_rs_core::extension::ExtensionList;
+use mls_rs_core::identity::MemberValidationContext;
 use mls_rs_core::{error::IntoAnyError, identity::IdentityProvider};
 
 use crate::extension::RequiredCapabilitiesExt;
@@ -47,35 +46,19 @@ where
 {
     cipher_suite_provider: &'a CP,
     identity_provider: &'a C,
-    context: Option<&'a GroupContext>,
-    new_extensions: Option<&'a ExtensionList>,
+    context: MemberValidationContext<'a>,
 }
 
 impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, CP> {
-    pub fn new_for_commit_validation(
+    pub fn new_with_context(
         cipher_suite_provider: &'a CP,
         identity_provider: &'a C,
-        context: Option<&'a GroupContext>,
-        new_extensions: &'a ExtensionList,
+        context: MemberValidationContext<'a>,
     ) -> Self {
         Self {
             cipher_suite_provider,
             identity_provider,
             context,
-            new_extensions: Some(new_extensions),
-        }
-    }
-
-    pub fn new(
-        cipher_suite_provider: &'a CP,
-        identity_provider: &'a C,
-        context: Option<&'a GroupContext>,
-    ) -> Self {
-        Self {
-            cipher_suite_provider,
-            identity_provider,
-            context,
-            new_extensions: None,
         }
     }
 
@@ -134,7 +117,8 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
 
     pub fn validate_required_capabilities(&self, leaf_node: &LeafNode) -> Result<(), MlsError> {
         let Some(required_capabilities) = self
-            .new_extensions
+            .context
+            .new_extensions()
             .and_then(|ext| ext.get_as::<RequiredCapabilitiesExt>().transpose())
             .transpose()?
         else {
@@ -168,7 +152,8 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
         leaf_node: &LeafNode,
     ) -> Result<(), MlsError> {
         let Some(ext) = self
-            .new_extensions
+            .context
+            .new_extensions()
             .and_then(|ext| ext.get_as::<ExternalSendersExt>().transpose())
             .transpose()?
         else {
@@ -201,7 +186,6 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
                 &leaf_node.signing_identity,
                 context.generation_time(),
                 self.context,
-                self.new_extensions,
             )
             .await
             .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?;
@@ -230,9 +214,8 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
         }
 
         // Verify that group extensions are supported by the leaf
-        if let Some(context) = self.context {
-            context
-                .extensions
+        if let Some(extensions) = self.context.new_extensions() {
+            extensions
                 .iter()
                 .map(|ext| ext.extension_type)
                 .find(|ext_type| {
@@ -251,12 +234,14 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
 
 #[cfg(test)]
 mod tests {
+    use crate::client::test_utils::TEST_PROTOCOL_VERSION;
     use crate::crypto::test_utils::try_test_cipher_suite_provider;
     use crate::extension::MlsExtension;
     use alloc::vec;
     use assert_matches::assert_matches;
     #[cfg(feature = "std")]
     use core::time::Duration;
+    use mls_rs_core::context::GroupContext;
     use mls_rs_core::crypto::CipherSuite;
     use mls_rs_core::group::ProposalType;
 
@@ -276,6 +261,16 @@ mod tests {
     use crate::tree_kem::Capabilities;
     use crate::ExtensionList;
 
+    impl<'a, P: IdentityProvider, C: CipherSuiteProvider> LeafNodeValidator<'a, P, C> {
+        pub fn new_for_test(cipher_suite_provider: &'a C, identity_provider: &'a P) -> Self {
+            Self {
+                cipher_suite_provider,
+                identity_provider,
+                context: MemberValidationContext::None,
+            }
+        }
+    }
+
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn get_test_add_node() -> (LeafNode, SignatureSecretKey) {
         let (signing_identity, secret) = get_test_signing_identity(TEST_CIPHER_SUITE, b"foo").await;
@@ -293,7 +288,7 @@ mod tests {
         let (leaf_node, _) = get_test_add_node().await;
 
         let test_validator =
-            LeafNodeValidator::new(&cipher_suite_provider, &BasicIdentityProvider, None);
+            LeafNodeValidator::new_for_test(&cipher_suite_provider, &BasicIdentityProvider);
 
         let res = test_validator
             .check_if_valid(&leaf_node, ValidationContext::Add(None))
@@ -308,7 +303,7 @@ mod tests {
         let (leaf_node, _) = get_test_add_node().await;
 
         let fail_test_validator =
-            LeafNodeValidator::new(&cipher_suite_provider, &FailureIdentityProvider, None);
+            LeafNodeValidator::new_for_test(&cipher_suite_provider, &FailureIdentityProvider);
 
         let res = fail_test_validator
             .check_if_valid(&leaf_node, ValidationContext::Add(None))
@@ -338,7 +333,7 @@ mod tests {
             .unwrap();
 
         let test_validator =
-            LeafNodeValidator::new(&cipher_suite_provider, &BasicIdentityProvider, None);
+            LeafNodeValidator::new_for_test(&cipher_suite_provider, &BasicIdentityProvider);
 
         let res = test_validator
             .check_if_valid(&leaf_node, ValidationContext::Update((group_id, 0, None)))
@@ -369,7 +364,7 @@ mod tests {
             .unwrap();
 
         let test_validator =
-            LeafNodeValidator::new(&cipher_suite_provider, &BasicIdentityProvider, None);
+            LeafNodeValidator::new_for_test(&cipher_suite_provider, &BasicIdentityProvider);
 
         let res = test_validator
             .check_if_valid(&leaf_node, ValidationContext::Commit((group_id, 0, None)))
@@ -383,7 +378,7 @@ mod tests {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         let test_validator =
-            LeafNodeValidator::new(&cipher_suite_provider, &BasicIdentityProvider, None);
+            LeafNodeValidator::new_for_test(&cipher_suite_provider, &BasicIdentityProvider);
 
         let (mut leaf_node, secret) = get_test_add_node().await;
 
@@ -463,7 +458,7 @@ mod tests {
             leaf_node.signature = random_bytes(leaf_node.signature.len());
 
             let test_validator =
-                LeafNodeValidator::new(&cipher_suite_provider, &BasicIdentityProvider, None);
+                LeafNodeValidator::new_for_test(&cipher_suite_provider, &BasicIdentityProvider);
 
             let res = test_validator
                 .check_if_valid(&leaf_node, ValidationContext::Add(None))
@@ -498,7 +493,7 @@ mod tests {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         let test_validator =
-            LeafNodeValidator::new(&cipher_suite_provider, &BasicIdentityProvider, None);
+            LeafNodeValidator::new_for_test(&cipher_suite_provider, &BasicIdentityProvider);
 
         let res = test_validator
             .check_if_valid(&leaf_node, ValidationContext::Add(None))
@@ -514,7 +509,7 @@ mod tests {
             if let Some(cs) = try_test_cipher_suite_provider(*another_cipher_suite) {
                 let (leaf_node, _) = get_test_add_node().await;
 
-                let test_validator = LeafNodeValidator::new(&cs, &BasicIdentityProvider, None);
+                let test_validator = LeafNodeValidator::new_for_test(&cs, &BasicIdentityProvider);
 
                 let res = test_validator
                     .check_if_valid(&leaf_node, ValidationContext::Add(None))
@@ -539,11 +534,15 @@ mod tests {
         let group_context_extensions =
             core::iter::once(required_capabilities.into_extension().unwrap()).collect();
 
-        let test_validator = LeafNodeValidator::new_for_commit_validation(
+        let context = MemberValidationContext::ForCommit {
+            current_context: &fake_group_context(),
+            new_extensions: &group_context_extensions,
+        };
+
+        let test_validator = LeafNodeValidator::new_with_context(
             &cipher_suite_provider,
             &BasicIdentityProvider,
-            None,
-            &group_context_extensions,
+            context,
         );
 
         let res = test_validator
@@ -570,11 +569,15 @@ mod tests {
         let group_context_extensions =
             core::iter::once(required_capabilities.into_extension().unwrap()).collect();
 
-        let test_validator = LeafNodeValidator::new_for_commit_validation(
+        let context = MemberValidationContext::ForCommit {
+            current_context: &fake_group_context(),
+            new_extensions: &group_context_extensions,
+        };
+
+        let test_validator = LeafNodeValidator::new_with_context(
             &cipher_suite_provider,
             &BasicIdentityProvider,
-            None,
-            &group_context_extensions,
+            context,
         );
 
         let res = test_validator
@@ -585,6 +588,18 @@ mod tests {
             res,
             Err(MlsError::RequiredProposalNotFound(p)) if p == ProposalType::new(42)
         );
+    }
+
+    fn fake_group_context() -> GroupContext {
+        GroupContext {
+            protocol_version: TEST_PROTOCOL_VERSION,
+            cipher_suite: TEST_CIPHER_SUITE,
+            group_id: b"unused".into(),
+            epoch: 0,
+            tree_hash: b"unused".into(),
+            confirmed_transcript_hash: b"unused".to_vec().into(),
+            extensions: Default::default(),
+        }
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -601,11 +616,15 @@ mod tests {
         let group_context_extensions =
             core::iter::once(required_capabilities.into_extension().unwrap()).collect();
 
-        let test_validator = LeafNodeValidator::new_for_commit_validation(
+        let context = MemberValidationContext::ForCommit {
+            current_context: &fake_group_context(),
+            new_extensions: &group_context_extensions,
+        };
+
+        let test_validator = LeafNodeValidator::new_with_context(
             &cipher_suite_provider,
             &BasicIdentityProvider,
-            None,
-            &group_context_extensions,
+            context,
         );
 
         let res = test_validator
@@ -625,7 +644,7 @@ mod tests {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         let test_validator =
-            LeafNodeValidator::new(&cipher_suite_provider, &BasicIdentityProvider, None);
+            LeafNodeValidator::new_for_test(&cipher_suite_provider, &BasicIdentityProvider);
 
         let good_lifetime = MlsTime::now();
 
@@ -655,10 +674,9 @@ pub(crate) mod test_utils {
     use alloc::vec::Vec;
     use mls_rs_codec::MlsEncode;
     use mls_rs_core::{
-        context::GroupContext,
         error::IntoAnyError,
         extension::ExtensionList,
-        identity::{BasicCredential, IdentityProvider},
+        identity::{BasicCredential, IdentityProvider, MemberValidationContext},
     };
 
     use crate::{identity::SigningIdentity, time::MlsTime};
@@ -694,8 +712,7 @@ pub(crate) mod test_utils {
             &self,
             _signing_identity: &SigningIdentity,
             _timestamp: Option<MlsTime>,
-            _current_epoch: Option<&GroupContext>,
-            _new_extensions: Option<&ExtensionList>,
+            _context: MemberValidationContext<'_>,
         ) -> Result<(), Self::Error> {
             Err(TestFailureError)
         }

@@ -4,7 +4,11 @@
 
 use alloc::{vec, vec::Vec};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
-use mls_rs_core::{error::IntoAnyError, identity::IdentityProvider};
+use mls_rs_core::{
+    context::GroupContext,
+    error::IntoAnyError,
+    identity::{IdentityProvider, MemberValidationContext},
+};
 
 use super::{
     leaf_node::LeafNode,
@@ -47,14 +51,17 @@ pub(crate) async fn validate_update_path<C: IdentityProvider, CSP: CipherSuitePr
     state: &ProvisionalState,
     sender: LeafIndex,
     commit_time: Option<MlsTime>,
+    current_context: &GroupContext,
 ) -> Result<ValidatedUpdatePath, MlsError> {
-    let group_context_extensions = &state.group_context.extensions;
+    let member_validation_context = MemberValidationContext::ForCommit {
+        current_context: current_context,
+        new_extensions: &state.group_context.extensions,
+    };
 
-    let leaf_validator = LeafNodeValidator::new_for_commit_validation(
+    let leaf_validator = LeafNodeValidator::new_with_context(
         cipher_suite_provider,
         identity_provider,
-        Some(&state.group_context),
-        &state.group_context.extensions,
+        member_validation_context,
     );
 
     leaf_validator
@@ -74,7 +81,7 @@ pub(crate) async fn validate_update_path<C: IdentityProvider, CSP: CipherSuitePr
             .valid_successor(
                 &original_leaf_node.signing_identity,
                 &path.leaf_node.signing_identity,
-                group_context_extensions,
+                &state.group_context.extensions,
             )
             .await
             .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?
@@ -190,14 +197,16 @@ mod tests {
     async fn test_valid_leaf_node() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let update_path = test_update_path(TEST_CIPHER_SUITE, "creator").await;
+        let state = test_provisional_state(TEST_CIPHER_SUITE).await;
 
         let validated = validate_update_path(
             &BasicIdentityProvider,
             &cipher_suite_provider,
             update_path.clone(),
-            &test_provisional_state(TEST_CIPHER_SUITE).await,
+            &state,
             LeafIndex(0),
             None,
+            &state.group_context,
         )
         .await
         .unwrap();
@@ -213,14 +222,16 @@ mod tests {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let mut update_path = test_update_path(TEST_CIPHER_SUITE, "creator").await;
         update_path.leaf_node.signature = random_bytes(32);
+        let state = test_provisional_state(TEST_CIPHER_SUITE).await;
 
         let validated = validate_update_path(
             &BasicIdentityProvider,
             &cipher_suite_provider,
             update_path,
-            &test_provisional_state(TEST_CIPHER_SUITE).await,
+            &state,
             LeafIndex(0),
             None,
+            &state.group_context,
         )
         .await;
 
@@ -232,14 +243,16 @@ mod tests {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let cipher_suite = TEST_CIPHER_SUITE;
         let update_path = test_update_path(cipher_suite, "foobar").await;
+        let state = test_provisional_state(TEST_CIPHER_SUITE).await;
 
         let validated = validate_update_path(
             &BasicIdentityProvider,
             &cipher_suite_provider,
             update_path,
-            &test_provisional_state(cipher_suite).await,
+            &state,
             LeafIndex(0),
             None,
+            &state.group_context,
         )
         .await;
 
@@ -266,6 +279,7 @@ mod tests {
             &state,
             LeafIndex(0),
             None,
+            &state.group_context,
         )
         .await;
 

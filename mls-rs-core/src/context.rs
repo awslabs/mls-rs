@@ -41,7 +41,7 @@ impl From<Vec<u8>> for ConfirmedTranscriptHash {
     }
 }
 
-#[derive(Clone, PartialEq, MlsSize, MlsEncode, MlsDecode)]
+#[derive(Clone, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(
     all(feature = "ffi", not(test)),

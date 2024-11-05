@@ -261,7 +261,7 @@ mod tests {
             assert_eq!(opened, test_data);
 
             let validator =
-                LeafNodeValidator::new(&cipher_suite_provider, &BasicIdentityProvider, None);
+                LeafNodeValidator::new_for_test(&cipher_suite_provider, &BasicIdentityProvider);
 
             validator
                 .check_if_valid(

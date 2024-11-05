@@ -9,6 +9,7 @@ use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
 #[cfg(feature = "last_resort_key_package_ext")]
 use mls_rs_core::extension::MlsExtension;
+use mls_rs_core::identity::MemberValidationContext;
 use mls_rs_core::secret::Secret;
 use mls_rs_core::time::MlsTime;
 
@@ -336,11 +337,14 @@ where
 
         let identity_provider = config.identity_provider();
 
-        let leaf_node_validator = LeafNodeValidator::new_for_commit_validation(
+        let member_validation_context = MemberValidationContext::ForNewGroup {
+            current_context: &context,
+        };
+
+        let leaf_node_validator = LeafNodeValidator::new_with_context(
             &cipher_suite_provider,
             &identity_provider,
-            Some(&context),
-            &context.extensions,
+            member_validation_context,
         );
 
         leaf_node_validator

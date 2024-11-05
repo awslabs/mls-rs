@@ -143,7 +143,7 @@ pub trait MlsRules: Send + Sync {
         direction: CommitDirection,
         source: CommitSource,
         current_roster: &Roster,
-        context: &GroupContext,
+        current_context: &GroupContext,
         proposals: ProposalBundle,
     ) -> Result<ProposalBundle, Self::Error>;
 
