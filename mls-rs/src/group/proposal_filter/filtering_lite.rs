@@ -17,7 +17,10 @@ use super::filtering_common::{filter_out_invalid_psks, ApplyProposalsOutput, Pro
 #[cfg(feature = "by_ref_proposal")]
 use {crate::extension::ExternalSendersExt, mls_rs_core::error::IntoAnyError};
 
-use mls_rs_core::{identity::IdentityProvider, psk::PreSharedKeyStorage};
+use mls_rs_core::{
+    identity::{IdentityProvider, MemberValidationContext},
+    psk::PreSharedKeyStorage,
+};
 
 #[cfg(feature = "custom_proposal")]
 use itertools::Itertools;
@@ -124,11 +127,15 @@ where
         group_extensions_in_use: &ExtensionList,
         commit_time: Option<MlsTime>,
     ) -> Result<(), MlsError> {
-        let leaf_node_validator = &LeafNodeValidator::new_for_commit_validation(
+        let member_validation_context = MemberValidationContext::ForCommit {
+            current_context: self.original_context,
+            new_extensions: group_extensions_in_use,
+        };
+
+        let leaf_node_validator = &LeafNodeValidator::new(
             self.cipher_suite_provider,
             self.identity_provider,
-            Some(self.original_context),
-            group_extensions_in_use,
+            member_validation_context,
         );
 
         let adds = wrap_iter(proposals.add_proposals());

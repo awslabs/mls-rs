@@ -50,7 +50,7 @@ where
 }
 
 impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, CP> {
-    pub fn new_with_context(
+    pub fn new(
         cipher_suite_provider: &'a CP,
         identity_provider: &'a C,
         context: MemberValidationContext<'a>,
@@ -539,11 +539,8 @@ mod tests {
             new_extensions: &group_context_extensions,
         };
 
-        let test_validator = LeafNodeValidator::new_with_context(
-            &cipher_suite_provider,
-            &BasicIdentityProvider,
-            context,
-        );
+        let test_validator =
+            LeafNodeValidator::new(&cipher_suite_provider, &BasicIdentityProvider, context);
 
         let res = test_validator
             .check_if_valid(&leaf_node, ValidationContext::Add(None))
@@ -574,11 +571,8 @@ mod tests {
             new_extensions: &group_context_extensions,
         };
 
-        let test_validator = LeafNodeValidator::new_with_context(
-            &cipher_suite_provider,
-            &BasicIdentityProvider,
-            context,
-        );
+        let test_validator =
+            LeafNodeValidator::new(&cipher_suite_provider, &BasicIdentityProvider, context);
 
         let res = test_validator
             .check_if_valid(&leaf_node, ValidationContext::Add(None))
@@ -621,11 +615,8 @@ mod tests {
             new_extensions: &group_context_extensions,
         };
 
-        let test_validator = LeafNodeValidator::new_with_context(
-            &cipher_suite_provider,
-            &BasicIdentityProvider,
-            context,
-        );
+        let test_validator =
+            LeafNodeValidator::new(&cipher_suite_provider, &BasicIdentityProvider, context);
 
         let res = test_validator
             .check_if_valid(&leaf_node, ValidationContext::Add(None))

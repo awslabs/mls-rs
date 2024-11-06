@@ -341,7 +341,7 @@ where
             current_context: &context,
         };
 
-        let leaf_node_validator = LeafNodeValidator::new_with_context(
+        let leaf_node_validator = LeafNodeValidator::new(
             &cipher_suite_provider,
             &identity_provider,
             member_validation_context,

@@ -47,7 +47,7 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> TreeValidator<'a, C, CSP
 
         TreeValidator {
             expected_tree_hash: &context.tree_hash,
-            leaf_node_validator: LeafNodeValidator::new_with_context(
+            leaf_node_validator: LeafNodeValidator::new(
                 cipher_suite_provider,
                 identity_provider,
                 member_validation_context,

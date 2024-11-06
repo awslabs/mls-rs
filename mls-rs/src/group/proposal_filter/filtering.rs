@@ -181,10 +181,10 @@ where
     ) -> Result<ProposalBundle, MlsError> {
         let member_validation_context = MemberValidationContext::ForCommit {
             current_context: self.original_context,
-            new_extensions: &group_extensions_in_use,
+            new_extensions: group_extensions_in_use,
         };
 
-        let leaf_node_validator = &LeafNodeValidator::new_with_context(
+        let leaf_node_validator = &LeafNodeValidator::new(
             self.cipher_suite_provider,
             self.identity_provider,
             member_validation_context,

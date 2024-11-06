@@ -234,7 +234,7 @@ where
                 new_extensions: &group_context_extensions_proposal.proposal,
             };
 
-            let leaf_validator = LeafNodeValidator::new_with_context(
+            let leaf_validator = LeafNodeValidator::new(
                 self.cipher_suite_provider,
                 self.identity_provider,
                 member_validation_context,

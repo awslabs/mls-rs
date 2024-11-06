@@ -903,7 +903,7 @@ pub(crate) async fn validate_key_package<C: CipherSuiteProvider, I: IdentityProv
     cs: &C,
     id: &I,
 ) -> Result<(), MlsError> {
-    let validator = LeafNodeValidator::new_with_context(cs, id, MemberValidationContext::None);
+    let validator = LeafNodeValidator::new(cs, id, MemberValidationContext::None);
 
     #[cfg(feature = "std")]
     let context = Some(MlsTime::now());
