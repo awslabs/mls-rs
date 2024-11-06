@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1730383992529,
+  "lastUpdate": 1730911991220,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -17591,6 +17591,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 130998,
             "range": "± 2065",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "103590845+mulmarta@users.noreply.github.com",
+            "name": "mulmarta",
+            "username": "mulmarta"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "df876074e1afbbbeafc11919de0e2a2529b0de6a",
+          "message": "Improve custom proposal filtering (#205)\n\n* Filter invalid custom proposals before passing them to MlsRules\r\n\r\n* Hard-fail sending invalid local proposals\r\n\r\n* Fixup\r\n\r\n* Bump version\r\n\r\n---------\r\n\r\nCo-authored-by: Marta Mularczyk <mulmarta@amazon.com>",
+          "timestamp": "2024-11-06T17:48:49+01:00",
+          "tree_id": "540ee6d314676bb55e6cdb0e206bcca8abcd9c10",
+          "url": "https://github.com/awslabs/mls-rs/commit/df876074e1afbbbeafc11919de0e2a2529b0de6a"
+        },
+        "date": 1730911990537,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 528241,
+            "range": "± 17593",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 551960,
+            "range": "± 16846",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 614420,
+            "range": "± 22649",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1260100,
+            "range": "± 26724",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 8205979,
+            "range": "± 62410",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1129905,
+            "range": "± 34255",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1207930,
+            "range": "± 55930",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1323489,
+            "range": "± 44317",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 739074,
+            "range": "± 19188",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 817308,
+            "range": "± 44307",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 910332,
+            "range": "± 7167",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 21255,
+            "range": "± 191",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 69363,
+            "range": "± 1183",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 132691,
+            "range": "± 1431",
             "unit": "ns/iter"
           }
         ]
