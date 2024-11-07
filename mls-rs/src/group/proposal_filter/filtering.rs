@@ -139,11 +139,11 @@ where
         &self,
         strategy: FilterStrategy,
         proposals: ProposalBundle,
-        group_extensions_in_use: &ExtensionList,
+        new_extensions: &ExtensionList,
         commit_time: Option<MlsTime>,
     ) -> Result<ApplyProposalsOutput, MlsError> {
         let mut applied_proposals = self
-            .validate_new_nodes(strategy, proposals, group_extensions_in_use, commit_time)
+            .validate_new_nodes(strategy, proposals, new_extensions, commit_time)
             .await?;
 
         let mut new_tree = self.original_tree.clone();
@@ -151,7 +151,7 @@ where
         let added = new_tree
             .batch_edit(
                 &mut applied_proposals,
-                group_extensions_in_use,
+                new_extensions,
                 self.identity_provider,
                 self.cipher_suite_provider,
                 strategy.is_ignore(),
@@ -176,12 +176,12 @@ where
         &self,
         strategy: FilterStrategy,
         mut proposals: ProposalBundle,
-        group_extensions_in_use: &ExtensionList,
+        new_extensions: &ExtensionList,
         commit_time: Option<MlsTime>,
     ) -> Result<ProposalBundle, MlsError> {
         let member_validation_context = MemberValidationContext::ForCommit {
             current_context: self.original_context,
-            new_extensions: group_extensions_in_use,
+            new_extensions,
         };
 
         let leaf_node_validator = &LeafNodeValidator::new(
@@ -218,7 +218,7 @@ where
                         .valid_successor(
                             &old_leaf.signing_identity,
                             &leaf.signing_identity,
-                            group_extensions_in_use,
+                            new_extensions,
                         )
                         .await
                         .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))

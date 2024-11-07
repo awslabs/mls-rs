@@ -2,7 +2,7 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use crate::{context::GroupContext, error::IntoAnyError, extension::ExtensionList, time::MlsTime};
+use crate::{error::IntoAnyError, extension::ExtensionList, group::GroupContext, time::MlsTime};
 #[cfg(mls_build_async)]
 use alloc::boxed::Box;
 use alloc::vec::Vec;

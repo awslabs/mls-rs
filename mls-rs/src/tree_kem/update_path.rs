@@ -5,8 +5,8 @@
 use alloc::{vec, vec::Vec};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::{
-    context::GroupContext,
     error::IntoAnyError,
+    group::GroupContext,
     identity::{IdentityProvider, MemberValidationContext},
 };
 

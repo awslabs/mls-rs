@@ -9,7 +9,6 @@ extern crate alloc;
 #[cfg(all(test, target_arch = "wasm32"))]
 wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
 
-pub mod context;
 pub mod crypto;
 pub mod debug;
 pub mod error;

@@ -90,10 +90,10 @@ where
     pub(super) async fn apply_tree_changes(
         &self,
         proposals: &ProposalBundle,
-        group_extensions_in_use: &ExtensionList,
+        new_extensions: &ExtensionList,
         commit_time: Option<MlsTime>,
     ) -> Result<ApplyProposalsOutput, MlsError> {
-        self.validate_new_nodes(proposals, group_extensions_in_use, commit_time)
+        self.validate_new_nodes(proposals, new_extensions, commit_time)
             .await?;
 
         let mut new_tree = self.original_tree.clone();
@@ -101,7 +101,7 @@ where
         let added = new_tree
             .batch_edit_lite(
                 proposals,
-                group_extensions_in_use,
+                new_extensions,
                 self.identity_provider,
                 self.cipher_suite_provider,
             )
@@ -124,12 +124,12 @@ where
     async fn validate_new_nodes(
         &self,
         proposals: &ProposalBundle,
-        group_extensions_in_use: &ExtensionList,
+        new_extensions: &ExtensionList,
         commit_time: Option<MlsTime>,
     ) -> Result<(), MlsError> {
         let member_validation_context = MemberValidationContext::ForCommit {
             current_context: self.original_context,
-            new_extensions: group_extensions_in_use,
+            new_extensions,
         };
 
         let leaf_node_validator = &LeafNodeValidator::new(

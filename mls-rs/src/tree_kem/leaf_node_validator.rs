@@ -241,8 +241,8 @@ mod tests {
     use assert_matches::assert_matches;
     #[cfg(feature = "std")]
     use core::time::Duration;
-    use mls_rs_core::context::GroupContext;
     use mls_rs_core::crypto::CipherSuite;
+    use mls_rs_core::group::GroupContext;
     use mls_rs_core::group::ProposalType;
 
     use super::*;

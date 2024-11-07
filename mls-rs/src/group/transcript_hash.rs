@@ -10,7 +10,7 @@ use core::{
 
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::{
-    context::ConfirmedTranscriptHash, crypto::CipherSuiteProvider, error::IntoAnyError,
+    crypto::CipherSuiteProvider, error::IntoAnyError, group::ConfirmedTranscriptHash,
 };
 
 use crate::{

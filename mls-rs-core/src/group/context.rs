@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use crate::{crypto::CipherSuite, extension::ExtensionList, protocol_version::ProtocolVersion};
-use alloc::vec::Vec;
+use alloc::{vec, vec::Vec};
 use core::{
     fmt::{self, Debug},
     ops::Deref,
@@ -78,6 +78,25 @@ impl Debug for GroupContext {
 
 #[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen)]
 impl GroupContext {
+    /// Create a group context for a new MLS group.
+    pub fn new(
+        protocol_version: ProtocolVersion,
+        cipher_suite: CipherSuite,
+        group_id: Vec<u8>,
+        tree_hash: Vec<u8>,
+        extensions: ExtensionList,
+    ) -> GroupContext {
+        GroupContext {
+            protocol_version,
+            cipher_suite,
+            group_id,
+            epoch: 0,
+            tree_hash,
+            confirmed_transcript_hash: vec![].into(),
+            extensions,
+        }
+    }
+
     /// Get the current protocol version in use by the group.
     pub fn version(&self) -> ProtocolVersion {
         self.protocol_version

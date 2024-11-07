@@ -97,10 +97,10 @@ pub use group_info::GroupInfo;
 
 pub use self::framing::{ContentType, Sender};
 pub use commit::*;
-pub use mls_rs_core::context::GroupContext;
+pub use mls_rs_core::group::GroupContext;
 pub use roster::*;
 
-pub(crate) use mls_rs_core::context::ConfirmedTranscriptHash;
+pub(crate) use mls_rs_core::group::ConfirmedTranscriptHash;
 pub(crate) use util::*;
 
 #[cfg(all(feature = "by_ref_proposal", feature = "external_client"))]
@@ -325,15 +325,13 @@ where
                 .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
         })?;
 
-        let context = GroupContext {
+        let context = GroupContext::new(
             protocol_version,
             cipher_suite,
             group_id,
-            epoch: 0,
             tree_hash,
-            confirmed_transcript_hash: vec![].into(),
-            extensions: group_context_extensions,
-        };
+            group_context_extensions,
+        );
 
         let identity_provider = config.identity_provider();
 
