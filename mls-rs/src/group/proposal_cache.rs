@@ -4173,17 +4173,27 @@ mod tests {
             #[cfg(feature = "by_ref_proposal")]
             let receiver = receiver.with_extensions(extensions);
 
-            let (receiver, proposals, proposer) = if by_ref {
+            let (receiver, proposals, proposer, source) = if by_ref {
                 let proposal_ref = make_proposal_ref(proposal, proposer).await;
                 let receiver = receiver.cache(proposal_ref.clone(), proposal.clone(), proposer);
-                (receiver, vec![ProposalOrRef::from(proposal_ref)], proposer)
+                (
+                    receiver,
+                    vec![ProposalOrRef::from(proposal_ref.clone())],
+                    proposer,
+                    ProposalSource::ByReference(proposal_ref),
+                )
             } else {
-                (receiver, vec![proposal.clone().into()], committer)
+                (
+                    receiver,
+                    vec![proposal.clone().into()],
+                    committer,
+                    ProposalSource::Local,
+                )
             };
 
             let res = receiver.receive(proposals).await;
 
-            if proposer_can_propose(proposer, proposal.proposal_type(), by_ref).is_err() {
+            if proposer_can_propose(proposer, proposal.proposal_type(), &source).is_err() {
                 assert_matches!(res, Err(MlsError::InvalidProposalTypeForSender));
             } else {
                 let is_self_update = proposal.proposal_type() == ProposalType::UPDATE
