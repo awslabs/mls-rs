@@ -2010,7 +2010,7 @@ mod tests {
     #[cfg(all(feature = "by_ref_proposal", feature = "custom_proposal"))]
     use super::test_utils::test_group_custom_config;
 
-    #[cfg(feature = "psk")]
+    #[cfg(any(feature = "psk", feature = "std"))]
     use crate::{client::Client, psk::PreSharedKey};
 
     #[cfg(any(feature = "by_ref_proposal", feature = "private_message"))]
