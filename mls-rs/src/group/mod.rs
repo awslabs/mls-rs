@@ -2011,7 +2011,10 @@ mod tests {
     use super::test_utils::test_group_custom_config;
 
     #[cfg(any(feature = "psk", feature = "std"))]
-    use crate::{client::Client, psk::PreSharedKey};
+    use crate::client::Client;
+
+    #[cfg(feature = "psk")]
+    use crate::psk::PreSharedKey;
 
     #[cfg(any(feature = "by_ref_proposal", feature = "private_message"))]
     use crate::group::test_utils::random_bytes;
