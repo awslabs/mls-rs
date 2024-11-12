@@ -701,7 +701,7 @@ where
     /// The tree is not included in the state and can be stored
     /// separately by calling [`Group::export_tree`].
     pub fn snapshot_without_ratchet_tree(&mut self) -> ExternalSnapshot {
-        let tree = std::mem::replace(&mut self.state.public_tree.nodes, Default::default());
+        let tree = std::mem::take(&mut self.state.public_tree.nodes);
 
         let snapshot = ExternalSnapshot {
             state: RawGroupState::export(&self.state),
