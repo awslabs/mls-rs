@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1731349622151,
+  "lastUpdate": 1731430893570,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -17915,6 +17915,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 132073,
             "range": "± 1900",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "103590845+mulmarta@users.noreply.github.com",
+            "name": "mulmarta",
+            "username": "mulmarta"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9f4d07f2447ce1190ac4112d7cf76b76769cd1c0",
+          "message": "Add impl From<Vec<u8>> for SignaturePublicKey (#213)\n\nCo-authored-by: Marta Mularczyk <mulmarta@amazon.com>",
+          "timestamp": "2024-11-12T11:56:55-05:00",
+          "tree_id": "274d18513598d5abdab04990ab2d9726b3e4ad28",
+          "url": "https://github.com/awslabs/mls-rs/commit/9f4d07f2447ce1190ac4112d7cf76b76769cd1c0"
+        },
+        "date": 1731430892989,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 511440,
+            "range": "± 10781",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 518041,
+            "range": "± 12081",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 581956,
+            "range": "± 16477",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1243899,
+            "range": "± 37132",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 10386342,
+            "range": "± 97837",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1122091,
+            "range": "± 51127",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1260937,
+            "range": "± 42264",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1360571,
+            "range": "± 72368",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 753000,
+            "range": "± 21510",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 830850,
+            "range": "± 9577",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 926414,
+            "range": "± 11901",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 21389,
+            "range": "± 285",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 69540,
+            "range": "± 1625",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 133349,
+            "range": "± 3746",
             "unit": "ns/iter"
           }
         ]
