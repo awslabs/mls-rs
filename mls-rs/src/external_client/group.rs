@@ -663,7 +663,7 @@ where
 #[derive(Debug, MlsEncode, MlsSize, MlsDecode, PartialEq, Clone)]
 pub struct ExternalSnapshot {
     version: u16,
-    state: RawGroupState,
+    pub(crate) state: RawGroupState,
     signing_data: Option<(SignatureSecretKey, SigningIdentity)>,
 }
 
@@ -695,6 +695,23 @@ where
             version: 1,
             signing_data: self.signing_data.clone(),
         }
+    }
+
+    /// Create a snapshot of this group's current internal state.
+    /// The tree is not included in the state and can be stored
+    /// separately by calling [`Group::export_tree`].
+    pub fn snapshot_without_ratchet_tree(&mut self) -> ExternalSnapshot {
+        let tree = std::mem::take(&mut self.state.public_tree.nodes);
+
+        let snapshot = ExternalSnapshot {
+            state: RawGroupState::export(&self.state),
+            version: 1,
+            signing_data: self.signing_data.clone(),
+        };
+
+        self.state.public_tree.nodes = tree;
+
+        snapshot
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -816,7 +833,7 @@ mod tests {
         external_client::{
             group::test_utils::make_external_group_with_config,
             tests_utils::{TestExternalClientBuilder, TestExternalClientConfig},
-            ExternalGroup, ExternalReceivedMessage, ExternalSnapshot,
+            ExternalClient, ExternalGroup, ExternalReceivedMessage, ExternalSnapshot,
         },
         group::{
             framing::{Content, MlsMessagePayload},
@@ -824,7 +841,7 @@ mod tests {
             proposal::{AddProposal, Proposal, ProposalOrRef},
             proposal_ref::ProposalRef,
             test_utils::{test_group, TestGroup},
-            CommitMessageDescription, ProposalMessageDescription,
+            CommitMessageDescription, ExportedTree, ProposalMessageDescription,
         },
         identity::{test_utils::get_test_signing_identity, SigningIdentity},
         key_package::test_utils::{test_key_package, test_key_package_message},
@@ -1365,5 +1382,38 @@ mod tests {
         let update = server.process_incoming_message(welcome).await.unwrap();
 
         assert_matches!(update, ExternalReceivedMessage::Welcome);
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn external_group_can_be_stored_without_tree() {
+        let mut server =
+            make_external_group(&test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await).await;
+
+        let snapshot_with_tree = server.snapshot().mls_encode_to_vec().unwrap();
+
+        let snapshot_without_tree = server
+            .snapshot_without_ratchet_tree()
+            .mls_encode_to_vec()
+            .unwrap();
+
+        let tree = server.state.public_tree.nodes.mls_encode_to_vec().unwrap();
+        let empty_tree = Vec::<u8>::new().mls_encode_to_vec().unwrap();
+
+        assert_eq!(
+            snapshot_with_tree.len() - snapshot_without_tree.len(),
+            tree.len() - empty_tree.len()
+        );
+
+        let exported_tree = server.export_tree().unwrap();
+
+        let restored = ExternalClient::new(server.config.clone(), None)
+            .load_group_with_ratchet_tree(
+                ExternalSnapshot::from_bytes(&snapshot_without_tree).unwrap(),
+                ExportedTree::from_bytes(&exported_tree).unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(restored.group_state(), server.group_state());
     }
 }

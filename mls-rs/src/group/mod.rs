@@ -2010,8 +2010,11 @@ mod tests {
     #[cfg(all(feature = "by_ref_proposal", feature = "custom_proposal"))]
     use super::test_utils::test_group_custom_config;
 
+    #[cfg(any(feature = "psk", feature = "std"))]
+    use crate::client::Client;
+
     #[cfg(feature = "psk")]
-    use crate::{client::Client, psk::PreSharedKey};
+    use crate::psk::PreSharedKey;
 
     #[cfg(any(feature = "by_ref_proposal", feature = "private_message"))]
     use crate::group::test_utils::random_bytes;
@@ -4369,5 +4372,36 @@ mod tests {
         group.apply_pending_commit().await.unwrap();
 
         assert!(!group.commit_required());
+    }
+
+    // Testing with std is sufficient. Non-std creates incompatible storage and a lot of special cases.
+    #[cfg(feature = "std")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn can_be_stored_without_tree() {
+        let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let storage = group.config.group_state_storage().inner;
+
+        group.write_to_storage().await.unwrap();
+        let snapshot_with_tree = storage.lock().unwrap().drain().next().unwrap().1;
+
+        group.write_to_storage_without_ratchet_tree().await.unwrap();
+        let snapshot_without_tree = storage.lock().unwrap().iter().next().unwrap().1.clone();
+
+        let tree = group.state.public_tree.nodes.mls_encode_to_vec().unwrap();
+        let empty_tree = Vec::<u8>::new().mls_encode_to_vec().unwrap();
+
+        assert_eq!(
+            snapshot_with_tree.state_data.len() - snapshot_without_tree.state_data.len(),
+            tree.len() - empty_tree.len()
+        );
+
+        let exported_tree = group.export_tree();
+
+        let restored = Client::new(group.config.clone(), None, None, TEST_PROTOCOL_VERSION)
+            .load_group_with_ratchet_tree(group.group_id(), exported_tree)
+            .await
+            .unwrap();
+
+        assert_eq!(restored.group_state(), group.group_state());
     }
 }
