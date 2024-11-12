@@ -677,6 +677,31 @@ where
         Group::from_snapshot(self.config.clone(), snapshot).await
     }
 
+    /// Load an existing group state into this client using the
+    /// [GroupStateStorage](crate::GroupStateStorage) that
+    /// this client was configured to use. The tree is taken from
+    /// `tree_data` instead of the stored state.
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    #[inline(never)]
+    pub async fn load_group_with_ratchet_tree(
+        &self,
+        group_id: &[u8],
+        tree_data: ExportedTree<'_>,
+    ) -> Result<Group<C>, MlsError> {
+        let snapshot = self
+            .config
+            .group_state_storage()
+            .state(group_id)
+            .await
+            .map_err(|e| MlsError::GroupStorageError(e.into_any_error()))?
+            .ok_or(MlsError::GroupNotFound)?;
+
+        let mut snapshot = Snapshot::mls_decode(&mut &*snapshot)?;
+        snapshot.state.public_tree.nodes = tree_data.0.into_owned();
+
+        Group::from_snapshot(self.config.clone(), snapshot).await
+    }
+
     /// Request to join an existing [group](crate::group::Group).
     ///
     /// An existing group member will need to perform a

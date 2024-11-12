@@ -152,6 +152,19 @@ where
         self.state_repo.write_to_storage(self.snapshot()).await
     }
 
+    /// Write the current state of the group to the
+    /// [`GroupStorageProvider`](crate::GroupStateStorage)
+    /// that is currently in use by the group.
+    /// The tree is not included in the state and can be stored
+    /// separately by calling [`Group::export_tree`].
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn write_to_storage_without_ratchet_tree(&mut self) -> Result<(), MlsError> {
+        let mut snapshot = self.snapshot();
+        snapshot.state.public_tree.nodes = Default::default();
+
+        self.state_repo.write_to_storage(snapshot).await
+    }
+
     pub(crate) fn snapshot(&self) -> Snapshot {
         Snapshot {
             state: RawGroupState::export(&self.state),
