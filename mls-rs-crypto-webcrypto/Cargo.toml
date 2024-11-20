@@ -1,6 +1,6 @@
 [package]
 name = "mls-rs-crypto-webcrypto"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2021"
 description = "SubtleCrypto based CryptoProvider for supporting mls-rs in a browser"
 homepage = "https://github.com/awslabs/mls-rs"
