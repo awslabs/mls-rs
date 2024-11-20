@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use crate::CipherSuiteProvider;
-use crate::{client::MlsError, group::transcript_hash::ConfirmedTranscriptHash};
+use crate::{client::MlsError, group::ConfirmedTranscriptHash};
 use alloc::vec::Vec;
 use core::{
     fmt::{self, Debug},

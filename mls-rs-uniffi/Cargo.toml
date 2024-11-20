@@ -17,9 +17,9 @@ name = "mls_rs_uniffi"
 [dependencies]
 async-trait = "0.1.77"
 maybe-async = "0.2.10"
-mls-rs = { version = "0.42.0", path = "../mls-rs" }
-mls-rs-core = { version = "0.19.0", path = "../mls-rs-core" }
-mls-rs-crypto-openssl = { version = "0.10.0", path = "../mls-rs-crypto-openssl" }
+mls-rs = { version = "0.43.0", path = "../mls-rs" }
+mls-rs-core = { version = "0.20.0", path = "../mls-rs-core" }
+mls-rs-crypto-openssl = { version = "0.11.0", path = "../mls-rs-crypto-openssl" }
 thiserror = "1.0.57"
 uniffi = { git = "https://github.com/mozilla/uniffi-rs/", rev = "eeb785c", version = "0.27.0" }
 

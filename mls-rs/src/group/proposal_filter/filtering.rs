@@ -30,7 +30,11 @@ use super::{
 use crate::extension::ExternalSendersExt;
 
 use alloc::vec::Vec;
-use mls_rs_core::{error::IntoAnyError, identity::IdentityProvider, psk::PreSharedKeyStorage};
+use mls_rs_core::{
+    error::IntoAnyError,
+    identity::{IdentityProvider, MemberValidationContext},
+    psk::PreSharedKeyStorage,
+};
 
 #[cfg(any(
     feature = "custom_proposal",
@@ -95,9 +99,11 @@ where
         .await?;
 
         let proposals = filter_out_extra_group_context_extensions(strategy, proposals)?;
-        let proposals = filter_out_invalid_reinit(strategy, proposals, self.protocol_version)?;
-        let proposals = filter_out_reinit_if_other_proposals(strategy.is_ignore(), proposals)?;
 
+        let proposals =
+            filter_out_invalid_reinit(strategy, proposals, self.original_context.protocol_version)?;
+
+        let proposals = filter_out_reinit_if_other_proposals(strategy.is_ignore(), proposals)?;
         let proposals = filter_out_external_init(strategy, proposals)?;
 
         self.apply_proposal_changes(strategy, proposals, commit_time)
@@ -120,7 +126,7 @@ where
                 self.apply_tree_changes(
                     strategy,
                     proposals,
-                    self.original_group_extensions,
+                    &self.original_context.extensions,
                     commit_time,
                 )
                 .await
@@ -133,11 +139,11 @@ where
         &self,
         strategy: FilterStrategy,
         proposals: ProposalBundle,
-        group_extensions_in_use: &ExtensionList,
+        new_extensions: &ExtensionList,
         commit_time: Option<MlsTime>,
     ) -> Result<ApplyProposalsOutput, MlsError> {
         let mut applied_proposals = self
-            .validate_new_nodes(strategy, proposals, group_extensions_in_use, commit_time)
+            .validate_new_nodes(strategy, proposals, new_extensions, commit_time)
             .await?;
 
         let mut new_tree = self.original_tree.clone();
@@ -145,7 +151,7 @@ where
         let added = new_tree
             .batch_edit(
                 &mut applied_proposals,
-                group_extensions_in_use,
+                new_extensions,
                 self.identity_provider,
                 self.cipher_suite_provider,
                 strategy.is_ignore(),
@@ -170,13 +176,18 @@ where
         &self,
         strategy: FilterStrategy,
         mut proposals: ProposalBundle,
-        group_extensions_in_use: &ExtensionList,
+        new_extensions: &ExtensionList,
         commit_time: Option<MlsTime>,
     ) -> Result<ProposalBundle, MlsError> {
+        let member_validation_context = MemberValidationContext::ForCommit {
+            current_context: self.original_context,
+            new_extensions,
+        };
+
         let leaf_node_validator = &LeafNodeValidator::new(
             self.cipher_suite_provider,
             self.identity_provider,
-            Some(group_extensions_in_use),
+            member_validation_context,
         );
 
         let bad_indices: Vec<_> = wrap_iter(proposals.update_proposals())
@@ -189,7 +200,11 @@ where
                     let res = leaf_node_validator
                         .check_if_valid(
                             leaf,
-                            ValidationContext::Update((self.group_id, *sender_index, commit_time)),
+                            ValidationContext::Update((
+                                &self.original_context.group_id,
+                                *sender_index,
+                                commit_time,
+                            )),
                         )
                         .await;
 
@@ -203,7 +218,7 @@ where
                         .valid_successor(
                             &old_leaf.signing_identity,
                             &leaf.signing_identity,
-                            group_extensions_in_use,
+                            new_extensions,
                         )
                         .await
                         .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))

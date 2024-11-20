@@ -264,7 +264,6 @@ impl GroupState {
         CSP: CipherSuiteProvider,
     {
         let roster = self.public_tree.roster();
-        let group_extensions = &self.context.extensions;
 
         #[cfg(feature = "by_ref_proposal")]
         let all_proposals = proposals.clone();
@@ -287,20 +286,17 @@ impl GroupState {
         prepare_proposals_for_mls_rules(&mut proposals, direction, &self.public_tree)?;
 
         proposals = user_rules
-            .filter_proposals(direction, origin, &roster, group_extensions, proposals)
+            .filter_proposals(direction, origin, &roster, &self.context, proposals)
             .await
             .map_err(|e| MlsError::MlsRulesError(e.into_any_error()))?;
 
         let applier = ProposalApplier::new(
             &self.public_tree,
-            self.context.protocol_version,
             cipher_suite_provider,
-            group_extensions,
+            &self.context,
             external_leaf,
             identity_provider,
             psk_storage,
-            #[cfg(feature = "by_ref_proposal")]
-            &self.context.group_id,
         );
 
         #[cfg(feature = "by_ref_proposal")]
@@ -665,8 +661,8 @@ mod tests {
     use crate::group::proposal_ref::test_utils::auth_content_from_proposal;
     use crate::group::proposal_ref::ProposalRef;
     use crate::group::{
-        AddProposal, AuthenticatedContent, Content, ExternalInit, Proposal, ProposalOrRef,
-        ReInitProposal, RemoveProposal, Roster, Sender, UpdateProposal,
+        AddProposal, AuthenticatedContent, Content, ExternalInit, GroupContext, Proposal,
+        ProposalOrRef, ReInitProposal, RemoveProposal, Roster, Sender, UpdateProposal,
     };
     use crate::key_package::test_utils::test_key_package_with_signer;
     use crate::signer::Signable;
@@ -3885,7 +3881,7 @@ mod tests {
                 _: CommitDirection,
                 _: CommitSource,
                 _: &Roster,
-                _: &ExtensionList,
+                _: &GroupContext,
                 mut proposals: ProposalBundle,
             ) -> Result<ProposalBundle, Self::Error> {
                 proposals.group_context_extensions.clear();
@@ -3896,7 +3892,7 @@ mod tests {
             fn commit_options(
                 &self,
                 _: &Roster,
-                _: &ExtensionList,
+                _: &GroupContext,
                 _: &ProposalBundle,
             ) -> Result<CommitOptions, Self::Error> {
                 Ok(Default::default())
@@ -3906,7 +3902,7 @@ mod tests {
             fn encryption_options(
                 &self,
                 _: &Roster,
-                _: &ExtensionList,
+                _: &GroupContext,
             ) -> Result<EncryptionOptions, Self::Error> {
                 Ok(Default::default())
             }
@@ -3937,7 +3933,7 @@ mod tests {
             _: CommitDirection,
             _: CommitSource,
             _: &Roster,
-            _: &ExtensionList,
+            _: &GroupContext,
             _: ProposalBundle,
         ) -> Result<ProposalBundle, Self::Error> {
             Err(MlsError::InvalidSignature)
@@ -3947,7 +3943,7 @@ mod tests {
         fn commit_options(
             &self,
             _: &Roster,
-            _: &ExtensionList,
+            _: &GroupContext,
             _: &ProposalBundle,
         ) -> Result<CommitOptions, Self::Error> {
             Ok(Default::default())
@@ -3957,7 +3953,7 @@ mod tests {
         fn encryption_options(
             &self,
             _: &Roster,
-            _: &ExtensionList,
+            _: &GroupContext,
         ) -> Result<EncryptionOptions, Self::Error> {
             Ok(Default::default())
         }
@@ -3978,7 +3974,7 @@ mod tests {
             _: CommitDirection,
             _: CommitSource,
             _: &Roster,
-            _: &ExtensionList,
+            _: &GroupContext,
             mut proposals: ProposalBundle,
         ) -> Result<ProposalBundle, Self::Error> {
             for proposal in self.to_inject.iter().cloned() {
@@ -3992,7 +3988,7 @@ mod tests {
         fn commit_options(
             &self,
             _: &Roster,
-            _: &ExtensionList,
+            _: &GroupContext,
             _: &ProposalBundle,
         ) -> Result<CommitOptions, Self::Error> {
             Ok(Default::default())
@@ -4002,7 +3998,7 @@ mod tests {
         fn encryption_options(
             &self,
             _: &Roster,
-            _: &ExtensionList,
+            _: &GroupContext,
         ) -> Result<EncryptionOptions, Self::Error> {
             Ok(Default::default())
         }
