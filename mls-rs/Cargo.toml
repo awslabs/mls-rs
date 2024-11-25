@@ -48,6 +48,7 @@ sqlcipher-bundled = ["sqlite", "mls-rs-provider-sqlite/sqlcipher-bundled"]
 
 test_util = []
 benchmark_util = ["test_util", "default", "dep:mls-rs-crypto-openssl"]
+benchmark_pq_crypto = ["mls-rs-crypto-awslc/post-quantum"]
 fuzz_util = ["test_util", "default", "dep:once_cell", "dep:mls-rs-crypto-openssl"]
 
 [dependencies]
@@ -65,6 +66,7 @@ maybe-async = { version = "0.2.10" }
 # Optional dependencies
 mls-rs-provider-sqlite = { path = "../mls-rs-provider-sqlite", version = "0.14.0", default-features = false, optional = true }
 mls-rs-crypto-openssl = { path = "../mls-rs-crypto-openssl", optional = true, version = "0.11.0" }
+mls-rs-crypto-awslc = { path = "../mls-rs-crypto-awslc", optional = true, version = "0.13" }
 # TODO: https://github.com/GoogleChromeLabs/wasm-bindgen-rayon
 rayon = { version = "1", optional = true }
 arbitrary = { version = "1", features = ["derive"], optional = true }
@@ -108,6 +110,9 @@ criterion = { version = "0.5.1", default-features = false, features = ["plotters
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 mls-rs-crypto-openssl = { path = "../mls-rs-crypto-openssl", version = "0.11.0"}
 criterion = { version = "0.5.1", features = ["async_futures", "html_reports"] }
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(mls_build_async)', 'cfg(coverage_nightly)'] }
 
 [[example]]
 name = "basic_usage"
@@ -157,6 +162,3 @@ required-features = ["benchmark_util"]
 [[test]]
 name = "client_tests"
 required-features = ["test_util"]
-
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(mls_build_async)', 'cfg(coverage_nightly)', 'cfg(awslc)', 'cfg(rustcrypto)'] }

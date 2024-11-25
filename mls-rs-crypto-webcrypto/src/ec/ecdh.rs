@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use mls_rs_core::crypto::{CipherSuite, HpkePublicKey, HpkeSecretKey};
-use mls_rs_crypto_traits::{Curve, DhType};
+use mls_rs_crypto_traits::{Curve, DhType, SamplingMethod};
 
 use der::Any;
 use js_sys::Uint8Array;
@@ -154,8 +154,8 @@ impl DhType for Ecdh {
         self.to_public(secret_key).await
     }
 
-    fn bitmask_for_rejection_sampling(&self) -> Option<u8> {
-        self.curve.curve_bitmask()
+    fn bitmask_for_rejection_sampling(&self) -> SamplingMethod {
+        self.curve.hpke_sampling_method()
     }
 
     fn secret_key_size(&self) -> usize {
@@ -164,6 +164,10 @@ impl DhType for Ecdh {
 
     fn public_key_validate(&self, _key: &HpkePublicKey) -> Result<(), Self::Error> {
         Ok(())
+    }
+
+    fn public_key_size(&self) -> usize {
+        self.curve.secret_key_size()
     }
 }
 
