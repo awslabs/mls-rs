@@ -21,6 +21,7 @@ x509 = []
 test_suite = ["serde", "dep:serde_json", "dep:itertools"]
 serde = ["dep:serde", "zeroize/serde", "hex/serde", "dep:serde_bytes"]
 last_resort_key_package_ext = []
+post-quantum = []
 
 [dependencies]
 mls-rs-codec = { version = "0.5.2", path = "../mls-rs-codec", default-features = false}
