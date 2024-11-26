@@ -69,16 +69,16 @@ impl CipherSuite {
 
     /// So far, there are no official PQ cipher suites
     #[cfg(feature = "post-quantum")]
-    pub const KYBER512: CipherSuite = CipherSuite(65001);
+    pub const ML_KEM_512: CipherSuite = CipherSuite(65001);
     #[cfg(feature = "post-quantum")]
-    pub const KYBER768: CipherSuite = CipherSuite(65002);
+    pub const ML_KEM_768: CipherSuite = CipherSuite(65002);
     #[cfg(feature = "post-quantum")]
 
-    pub const KYBER1024: CipherSuite = CipherSuite(65003);
+    pub const ML_KEM_1024: CipherSuite = CipherSuite(65003);
 
     /// So far, there are no official PQ cipher suites  
     #[cfg(feature = "post-quantum")]
-    pub const KYBER768_X25519: CipherSuite = CipherSuite(65100);
+    pub const ML_KEM_768_X25519: CipherSuite = CipherSuite(65100);
 
     /// Ciphersuite from a raw value.
     pub const fn new(value: u16) -> CipherSuite {
