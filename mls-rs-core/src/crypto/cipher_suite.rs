@@ -73,9 +73,10 @@ impl CipherSuite {
     #[cfg(feature = "post-quantum")]
     pub const KYBER768: CipherSuite = CipherSuite(65002);
     #[cfg(feature = "post-quantum")]
+
     pub const KYBER1024: CipherSuite = CipherSuite(65003);
 
-    /// So far, there are no official PQ cipher suites
+    /// So far, there are no official PQ cipher suites  
     #[cfg(feature = "post-quantum")]
     pub const KYBER768_X25519: CipherSuite = CipherSuite(65100);
 

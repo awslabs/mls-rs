@@ -112,7 +112,7 @@ impl AwsLcHash {
         })
     }
 
-    #[cfg(feature = "post-quantum")]
+    #[cfg(all(feature = "post-quantum", not(feature = "fips")))]
     pub fn new_sha3(sha3: Sha3) -> Option<Self> {
         let algo = match sha3 {
             Sha3::SHA3_256 => &digest::SHA3_256,
@@ -124,7 +124,7 @@ impl AwsLcHash {
     }
 }
 
-#[cfg(feature = "post-quantum")]
+#[cfg(all(feature = "post-quantum", not(feature = "fips")))]
 #[derive(Clone, Copy, Debug)]
 #[non_exhaustive]
 pub enum Sha3 {
