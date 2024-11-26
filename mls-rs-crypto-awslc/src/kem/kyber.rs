@@ -3,7 +3,6 @@ use std::ptr::null_mut;
 use aws_lc_rs::{
     error::Unspecified,
     kem::{Algorithm, AlgorithmIdentifier, EncapsulationKey},
-    unstable::kem::{get_algorithm, AlgorithmId},
 };
 use aws_lc_sys::{
     EVP_PKEY_CTX_free, EVP_PKEY_CTX_kem_set_params, EVP_PKEY_CTX_new, EVP_PKEY_CTX_new_id,
@@ -56,14 +55,12 @@ impl Kyber {
         }
     }
 
-    fn algorithm(&self) -> Result<&'static Algorithm<AlgorithmId>, AwsLcCryptoError> {
-        let algorithm_id = match self {
-            Kyber::KYBER512 => AlgorithmId::Kyber512_R3,
-            Kyber::KYBER768 => AlgorithmId::Kyber768_R3,
-            Kyber::KYBER1024 => AlgorithmId::Kyber1024_R3,
-        };
-
-        get_algorithm(algorithm_id).ok_or(AwsLcCryptoError::UnsupportedCipherSuite)
+    fn algorithm(&self) -> &'static Algorithm {
+        match self {
+            Kyber::KYBER512 => &aws_lc_rs::unstable::kem::ML_KEM_512,
+            Kyber::KYBER768 => &aws_lc_rs::unstable::kem::ML_KEM_768,
+            Kyber::KYBER1024 => &aws_lc_rs::unstable::kem::ML_KEM_1024,
+        }
     }
 }
 
@@ -76,7 +73,7 @@ impl KemType for KyberKem {
     }
 
     fn encap(&self, remote_key: &HpkePublicKey) -> Result<KemResult, Self::Error> {
-        let remote_key = EncapsulationKey::new(self.kyber.algorithm()?, remote_key)?;
+        let remote_key = EncapsulationKey::new(self.kyber.algorithm(), remote_key)?;
         let (enc, shared_secret) = remote_key.encapsulate()?;
 
         Ok(KemResult {
@@ -91,7 +88,7 @@ impl KemType for KyberKem {
         secret_key: &HpkeSecretKey,
         _local_public: &HpkePublicKey,
     ) -> Result<Vec<u8>, Self::Error> {
-        let nid = self.kyber.algorithm()?.id().nid();
+        let nid = self.kyber.algorithm().id().nid();
         let len = self.secret_key_size();
         let mut shared_secret = vec![0u8; 32];
 
@@ -127,7 +124,7 @@ impl KemType for KyberKem {
         &self,
         ikm: &[u8],
     ) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
-        let nid = self.kyber.algorithm()?.id().nid();
+        let nid = self.kyber.algorithm().id().nid();
         let secret_key_size = self.secret_key_size();
         let public_key_size = self.public_key_size();
 
