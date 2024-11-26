@@ -1,3 +1,3 @@
 pub(crate) mod ecdh;
-#[cfg(feature = "post-quantum")]
+#[cfg(all(feature = "post-quantum", not(feature = "fips")))]
 pub(crate) mod kyber;
