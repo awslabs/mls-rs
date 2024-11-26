@@ -22,7 +22,7 @@ pub type TestClientConfig =
 pub const BENCH_CIPHER_SUITE: CipherSuite = CipherSuite::CURVE25519_AES128;
 
 #[cfg(feature = "benchmark_pq_crypto")]
-pub const BENCH_CIPHER_SUITE: CipherSuite = CipherSuite::KYBER768_X25519;
+pub const BENCH_CIPHER_SUITE: CipherSuite = CipherSuite::ML_KEM_768_X25519;
 
 macro_rules! load_test_case_mls {
     ($name:ident, $generate:expr) => {
