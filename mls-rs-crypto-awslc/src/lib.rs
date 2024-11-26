@@ -48,7 +48,7 @@ use zeroize::Zeroizing;
 #[cfg(all(feature = "post-quantum", not(feature = "fips")))]
 use self::{
     kdf::{shake::AwsLcShake128, Sha3},
-    kem::kyber::KyberKem,
+    kem::ml_kem::MlKemKem,
 };
 
 #[cfg(all(feature = "post-quantum", not(feature = "fips")))]
@@ -68,17 +68,17 @@ pub struct AwsLcCipherSuite {
 pub type EcdhKem = DhKem<Ecdh, AwsLcHkdf>;
 
 #[cfg(all(feature = "post-quantum", not(feature = "fips")))]
-pub type CombinedEcdhKyberKem =
-    CombinedKem<KyberKem, EcdhKem, AwsLcHash, AwsLcShake128, XWingSharedSecretHashInput>;
+pub type CombinedEcdhMlKemKem =
+    CombinedKem<MlKemKem, EcdhKem, AwsLcHash, AwsLcShake128, XWingSharedSecretHashInput>;
 
 #[derive(Clone)]
 #[non_exhaustive]
 enum AwsLcHpke {
     Classical(Hpke<EcdhKem, AwsLcHkdf, AwsLcAead>),
     #[cfg(all(feature = "post-quantum", not(feature = "fips")))]
-    PostQuantum(Hpke<KyberKem, AwsLcHkdf, AwsLcAead>),
+    PostQuantum(Hpke<MlKemKem, AwsLcHkdf, AwsLcAead>),
     #[cfg(all(feature = "post-quantum", not(feature = "fips")))]
-    Combined(Hpke<CombinedEcdhKyberKem, AwsLcHkdf, AwsLcAead>),
+    Combined(Hpke<CombinedEcdhMlKemKem, AwsLcHkdf, AwsLcAead>),
 }
 
 impl AwsLcCipherSuite {
@@ -137,10 +137,10 @@ impl AwsLcCryptoProvider {
     #[cfg(all(feature = "post-quantum", not(feature = "fips")))]
     pub fn supported_pq_cipher_suites() -> Vec<CipherSuite> {
         vec![
-            CipherSuite::KYBER512,
-            CipherSuite::KYBER768,
-            CipherSuite::KYBER1024,
-            CipherSuite::KYBER768_X25519,
+            CipherSuite::ML_KEM_512,
+            CipherSuite::ML_KEM_768,
+            CipherSuite::ML_KEM_1024,
+            CipherSuite::ML_KEM_768_X25519,
         ]
     }
 }
@@ -166,9 +166,9 @@ impl CryptoProvider for AwsLcCryptoProvider {
     ) -> Option<Self::CipherSuiteProvider> {
         let classical_cs = match cipher_suite {
             #[cfg(all(feature = "post-quantum", not(feature = "fips")))]
-            CipherSuite::KYBER1024 => CipherSuite::P384_AES256,
+            CipherSuite::ML_KEM_1024 => CipherSuite::P384_AES256,
             #[cfg(all(feature = "post-quantum", not(feature = "fips")))]
-            CipherSuite::KYBER512 | CipherSuite::KYBER768 | CipherSuite::KYBER768_X25519 => {
+            CipherSuite::ML_KEM_512 | CipherSuite::ML_KEM_768 | CipherSuite::ML_KEM_768_X25519 => {
                 CipherSuite::CURVE25519_AES128
             }
             _ => cipher_suite,
@@ -188,13 +188,13 @@ impl CryptoProvider for AwsLcCryptoProvider {
 
         let hpke = match cipher_suite {
             #[cfg(all(feature = "post-quantum", not(feature = "fips")))]
-            CipherSuite::KYBER512 | CipherSuite::KYBER768 | CipherSuite::KYBER1024 => {
-                AwsLcHpke::PostQuantum(Hpke::new(KyberKem::new(cipher_suite)?, kdf, Some(aead)))
+            CipherSuite::ML_KEM_512 | CipherSuite::ML_KEM_768 | CipherSuite::ML_KEM_1024 => {
+                AwsLcHpke::PostQuantum(Hpke::new(MlKemKem::new(cipher_suite)?, kdf, Some(aead)))
             }
             #[cfg(all(feature = "post-quantum", not(feature = "fips")))]
-            CipherSuite::KYBER768_X25519 => {
+            CipherSuite::ML_KEM_768_X25519 => {
                 let kem = CombinedKem::new_xwing(
-                    KyberKem::new(CipherSuite::KYBER768)?,
+                    MlKemKem::new(CipherSuite::ML_KEM_768)?,
                     dhkem(classical_cs)?,
                     AwsLcHash::new_sha3(Sha3::SHA3_256)?,
                     AwsLcShake128,
