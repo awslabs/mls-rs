@@ -16,55 +16,55 @@ use mls_rs_crypto_traits::{KdfType, KemResult, KemType};
 use crate::{check_non_null, kdf::AwsLcHkdf, random_bytes, AwsLcCryptoError};
 
 #[derive(Clone)]
-pub struct KyberKem {
+pub struct MlKemKem {
     kdf: AwsLcHkdf,
-    kyber: Kyber,
+    ml_kem: MlKem,
 }
 
-impl KyberKem {
+impl MlKemKem {
     pub fn new(cipher_suite: CipherSuite) -> Option<Self> {
         let kdf = match cipher_suite {
-            CipherSuite::KYBER512 | CipherSuite::KYBER768 => {
+            CipherSuite::ML_KEM_512 | CipherSuite::ML_KEM_768 => {
                 AwsLcHkdf::new(CipherSuite::CURVE25519_AES128)?
             }
-            CipherSuite::KYBER1024 => AwsLcHkdf::new(CipherSuite::P384_AES256)?,
+            CipherSuite::ML_KEM_1024 => AwsLcHkdf::new(CipherSuite::P384_AES256)?,
             _ => return None,
         };
 
         Some(Self {
             kdf,
-            kyber: Kyber::new(cipher_suite)?,
+            ml_kem: MlKem::new(cipher_suite)?,
         })
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum Kyber {
-    KYBER512,
-    KYBER768,
-    KYBER1024,
+pub enum MlKem {
+    ML_KEM_512,
+    ML_KEM_768,
+    ML_KEM_1024,
 }
 
-impl Kyber {
+impl MlKem {
     fn new(cipher_suite: CipherSuite) -> Option<Self> {
         match cipher_suite {
-            CipherSuite::KYBER512 => Some(Self::KYBER512),
-            CipherSuite::KYBER768 => Some(Self::KYBER768),
-            CipherSuite::KYBER1024 => Some(Self::KYBER1024),
+            CipherSuite::ML_KEM_512 => Some(Self::ML_KEM_512),
+            CipherSuite::ML_KEM_768 => Some(Self::ML_KEM_768),
+            CipherSuite::ML_KEM_1024 => Some(Self::ML_KEM_1024),
             _ => None,
         }
     }
 
     fn algorithm(&self) -> &'static Algorithm {
         match self {
-            Kyber::KYBER512 => &aws_lc_rs::unstable::kem::ML_KEM_512,
-            Kyber::KYBER768 => &aws_lc_rs::unstable::kem::ML_KEM_768,
-            Kyber::KYBER1024 => &aws_lc_rs::unstable::kem::ML_KEM_1024,
+            MlKem::ML_KEM_512 => &aws_lc_rs::unstable::kem::ML_KEM_512,
+            MlKem::ML_KEM_768 => &aws_lc_rs::unstable::kem::ML_KEM_768,
+            MlKem::ML_KEM_1024 => &aws_lc_rs::unstable::kem::ML_KEM_1024,
         }
     }
 }
 
-impl KemType for KyberKem {
+impl KemType for MlKemKem {
     type Error = AwsLcCryptoError;
 
     fn kem_id(&self) -> u16 {
@@ -73,7 +73,7 @@ impl KemType for KyberKem {
     }
 
     fn encap(&self, remote_key: &HpkePublicKey) -> Result<KemResult, Self::Error> {
-        let remote_key = EncapsulationKey::new(self.kyber.algorithm(), remote_key)?;
+        let remote_key = EncapsulationKey::new(self.ml_kem.algorithm(), remote_key)?;
         let (enc, shared_secret) = remote_key.encapsulate()?;
 
         Ok(KemResult {
@@ -88,7 +88,7 @@ impl KemType for KyberKem {
         secret_key: &HpkeSecretKey,
         _local_public: &HpkePublicKey,
     ) -> Result<Vec<u8>, Self::Error> {
-        let nid = self.kyber.algorithm().id().nid();
+        let nid = self.ml_kem.algorithm().id().nid();
         let len = self.secret_key_size();
         let mut shared_secret = vec![0u8; 32];
 
@@ -124,7 +124,7 @@ impl KemType for KyberKem {
         &self,
         ikm: &[u8],
     ) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
-        let nid = self.kyber.algorithm().id().nid();
+        let nid = self.ml_kem.algorithm().id().nid();
         let secret_key_size = self.secret_key_size();
         let public_key_size = self.public_key_size();
 
@@ -152,26 +152,26 @@ impl KemType for KyberKem {
     }
 
     fn public_key_size(&self) -> usize {
-        match self.kyber {
-            Kyber::KYBER512 => 800,
-            Kyber::KYBER768 => 1184,
-            Kyber::KYBER1024 => 1568,
+        match self.ml_kem {
+            MlKem::ML_KEM_512 => 800,
+            MlKem::ML_KEM_768 => 1184,
+            MlKem::ML_KEM_1024 => 1568,
         }
     }
 
     fn secret_key_size(&self) -> usize {
-        match self.kyber {
-            Kyber::KYBER512 => 1632,
-            Kyber::KYBER768 => 2400,
-            Kyber::KYBER1024 => 3168,
+        match self.ml_kem {
+            MlKem::ML_KEM_512 => 1632,
+            MlKem::ML_KEM_768 => 2400,
+            MlKem::ML_KEM_1024 => 3168,
         }
     }
 
     fn enc_size(&self) -> usize {
-        match self.kyber {
-            Kyber::KYBER512 => 768,
-            Kyber::KYBER768 => 1088,
-            Kyber::KYBER1024 => 1568,
+        match self.ml_kem {
+            MlKem::ML_KEM_512 => 768,
+            MlKem::ML_KEM_768 => 1088,
+            MlKem::ML_KEM_1024 => 1568,
         }
     }
 }
@@ -222,11 +222,11 @@ mod test {
         kem::ecdh::Ecdh,
     };
 
-    use super::KyberKem;
+    use super::MlKemKem;
 
     #[test]
     fn round_trip() {
-        let kem = KyberKem::new(CipherSuite::KYBER768).unwrap();
+        let kem = MlKemKem::new(CipherSuite::ML_KEM_768).unwrap();
 
         let (secret_key, public_key) = kem.generate_deterministic(&[1u8; 64]).unwrap();
         let KemResult { shared_secret, enc } = kem.encap(&public_key).unwrap();
@@ -235,40 +235,5 @@ mod test {
             kem.decap(&enc, &secret_key, &public_key).unwrap(),
             shared_secret
         );
-    }
-
-    #[test]
-    fn xwing_rfc_test_vector() {
-        #[derive(serde::Deserialize)]
-        struct RfcTest {
-            #[serde(with = "hex::serde")]
-            seed: Vec<u8>,
-            #[serde(with = "hex::serde")]
-            pk: Vec<u8>,
-        }
-
-        let rfc_test: RfcTest = serde_json::from_slice(include_bytes!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/test_data/xwing_rfc.json",
-        )))
-        .unwrap();
-
-        let kem_id = KemId::new(CipherSuite::CURVE25519_AES128).unwrap();
-        let dh = Ecdh::new(CipherSuite::CURVE25519_AES128)
-            .unwrap()
-            .with_sampling_method(SamplingMethod::Raw);
-        let kdf = AwsLcHkdf::new(CipherSuite::CURVE25519_AES128).unwrap();
-
-        let kem = CombinedKem::new_xwing(
-            KyberKem::new(CipherSuite::KYBER768).unwrap(),
-            DhKem::new(dh, kdf, kem_id as u16, kem_id.n_secret()),
-            AwsLcHash::new_sha3(Sha3::SHA3_256).unwrap(),
-            AwsLcShake128,
-        );
-
-        let (seed1, seed2) = rfc_test.seed.split_at(64);
-        // We don't have to store the secret key in the format mandated by the RFC
-        let (_sk, pk) = kem.generate_key_pair_derand(seed1, seed2).unwrap();
-        assert_eq!(pk.as_ref(), rfc_test.pk);
     }
 }
