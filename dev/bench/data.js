@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1732130851895,
+  "lastUpdate": 1732725137970,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -18347,6 +18347,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 132338,
             "range": "± 5204",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "CaioSym@gmail.com",
+            "name": "Caio Sym",
+            "username": "CaioSym"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b9f0eae9079dc8963f095909b0fe563888cf0e43",
+          "message": "Fix mls-rs-crypto-cryptokit not building for iOS (#206)\n\n* Fix mls-rs-crypto-cryptokit not building for iOS\r\n\r\n* cargo fmt\r\n\r\n---------\r\n\r\nCo-authored-by: Tom Leavy <tomleavy@amazon.com>",
+          "timestamp": "2024-11-27T17:27:47+01:00",
+          "tree_id": "2b5ef1f720d0d897bf9d663ff7b4fe493d9fd07c",
+          "url": "https://github.com/awslabs/mls-rs/commit/b9f0eae9079dc8963f095909b0fe563888cf0e43"
+        },
+        "date": 1732725137326,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 520307,
+            "range": "± 21178",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 546410,
+            "range": "± 17213",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 611029,
+            "range": "± 18903",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1250329,
+            "range": "± 27290",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7646112,
+            "range": "± 92574",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1166863,
+            "range": "± 58919",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1239127,
+            "range": "± 59267",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1368021,
+            "range": "± 67679",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 731589,
+            "range": "± 8785",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 810761,
+            "range": "± 6923",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 906924,
+            "range": "± 7710",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 21165,
+            "range": "± 462",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 68649,
+            "range": "± 1592",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 131884,
+            "range": "± 1678",
             "unit": "ns/iter"
           }
         ]
