@@ -229,6 +229,12 @@ impl From<Vec<u8>> for SignaturePublicKey {
     }
 }
 
+impl From<SignaturePublicKey> for Vec<u8> {
+    fn from(value: SignaturePublicKey) -> Self {
+        value.0
+    }
+}
+
 /// Byte representation of a signature key.
 #[cfg_attr(
     all(feature = "ffi", not(test)),

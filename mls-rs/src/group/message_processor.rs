@@ -35,7 +35,9 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::fmt::{self, Debug};
 use mls_rs_core::{
-    identity::IdentityProvider, protocol_version::ProtocolVersion, psk::PreSharedKeyStorage,
+    identity::{IdentityProvider, MemberValidationContext},
+    protocol_version::ProtocolVersion,
+    psk::PreSharedKeyStorage,
 };
 
 #[cfg(feature = "by_ref_proposal")]
@@ -668,6 +670,22 @@ pub(crate) trait MessageProcessor: Send + Sync {
             });
         }
 
+        let update_path = match commit.path {
+            Some(update_path) => Some(
+                validate_update_path(
+                    &self.identity_provider(),
+                    self.cipher_suite_provider(),
+                    update_path,
+                    &provisional_state,
+                    sender,
+                    time_sent,
+                    &group_state.context,
+                )
+                .await?,
+            ),
+            None => None,
+        };
+
         let commit_effect =
             if let Some(reinit) = provisional_state.applied_proposals.reinitializations.pop() {
                 self.group_state_mut().pending_reinit = Some(reinit.proposal.clone());
@@ -678,21 +696,6 @@ pub(crate) trait MessageProcessor: Send + Sync {
                     &provisional_state,
                 )))
             };
-
-        let update_path = match commit.path {
-            Some(update_path) => Some(
-                validate_update_path(
-                    &self.identity_provider(),
-                    self.cipher_suite_provider(),
-                    update_path,
-                    &provisional_state,
-                    sender,
-                    time_sent,
-                )
-                .await?,
-            ),
-            None => None,
-        };
 
         let new_secrets = match update_path {
             Some(update_path) => {
@@ -900,7 +903,7 @@ pub(crate) async fn validate_key_package<C: CipherSuiteProvider, I: IdentityProv
     cs: &C,
     id: &I,
 ) -> Result<(), MlsError> {
-    let validator = LeafNodeValidator::new(cs, id, None);
+    let validator = LeafNodeValidator::new(cs, id, MemberValidationContext::None);
 
     #[cfg(feature = "std")]
     let context = Some(MlsTime::now());

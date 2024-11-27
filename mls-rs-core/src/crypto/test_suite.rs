@@ -11,7 +11,7 @@ use super::{
     CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkeContextS, HpkePublicKey, HpkeSecretKey,
 };
 
-#[cfg(all(not(mls_build_async), not(target_arch = "wasm32"), feature = "std"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "std"))]
 const PATH: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/test_data/crypto_provider.json"

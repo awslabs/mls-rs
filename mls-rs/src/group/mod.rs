@@ -9,6 +9,7 @@ use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
 #[cfg(feature = "last_resort_key_package_ext")]
 use mls_rs_core::extension::MlsExtension;
+use mls_rs_core::identity::MemberValidationContext;
 use mls_rs_core::secret::Secret;
 use mls_rs_core::time::MlsTime;
 
@@ -27,13 +28,11 @@ use crate::psk::PreSharedKeyID;
 use crate::signer::Signable;
 use crate::tree_kem::hpke_encryption::HpkeEncryptable;
 use crate::tree_kem::kem::TreeKem;
+use crate::tree_kem::leaf_node::LeafNode;
+use crate::tree_kem::leaf_node_validator::{LeafNodeValidator, ValidationContext};
 use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::path_secret::PathSecret;
 pub use crate::tree_kem::Capabilities;
-use crate::tree_kem::{
-    leaf_node::LeafNode,
-    leaf_node_validator::{LeafNodeValidator, ValidationContext},
-};
 use crate::tree_kem::{math as tree_math, ValidatedUpdatePath};
 use crate::tree_kem::{TreeKemPrivate, TreeKemPublic};
 use crate::{CipherSuiteProvider, CryptoProvider};
@@ -98,10 +97,10 @@ pub use group_info::GroupInfo;
 
 pub use self::framing::{ContentType, Sender};
 pub use commit::*;
-pub use context::GroupContext;
+pub use mls_rs_core::group::GroupContext;
 pub use roster::*;
 
-pub(crate) use transcript_hash::ConfirmedTranscriptHash;
+pub(crate) use mls_rs_core::group::ConfirmedTranscriptHash;
 pub(crate) use util::*;
 
 #[cfg(all(feature = "by_ref_proposal", feature = "external_client"))]
@@ -112,7 +111,6 @@ mod ciphertext_processor;
 
 mod commit;
 pub(crate) mod confirmation_tag;
-mod context;
 pub(crate) mod epoch;
 pub(crate) mod framing;
 mod group_info;
@@ -311,18 +309,6 @@ where
         )
         .await?;
 
-        let identity_provider = config.identity_provider();
-
-        let leaf_node_validator = LeafNodeValidator::new(
-            &cipher_suite_provider,
-            &identity_provider,
-            Some(&group_context_extensions),
-        );
-
-        leaf_node_validator
-            .check_if_valid(&leaf_node, ValidationContext::Add(None))
-            .await?;
-
         let (mut public_tree, private_tree) = TreeKemPublic::derive(
             leaf_node,
             leaf_node_secret,
@@ -339,13 +325,32 @@ where
                 .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
         })?;
 
-        let context = GroupContext::new_group(
+        let context = GroupContext::new(
             protocol_version,
             cipher_suite,
             group_id,
             tree_hash,
             group_context_extensions,
         );
+
+        let identity_provider = config.identity_provider();
+
+        let member_validation_context = MemberValidationContext::ForNewGroup {
+            current_context: &context,
+        };
+
+        let leaf_node_validator = LeafNodeValidator::new(
+            &cipher_suite_provider,
+            &identity_provider,
+            member_validation_context,
+        );
+
+        leaf_node_validator
+            .check_if_valid(
+                public_tree.get_leaf_node(LeafIndex(0))?,
+                ValidationContext::Add(None),
+            )
+            .await?;
 
         let state_repo = GroupStateRepository::new(
             #[cfg(feature = "prior_epoch")]
@@ -1511,7 +1516,7 @@ where
     pub(crate) fn encryption_options(&self) -> Result<EncryptionOptions, MlsError> {
         self.config
             .mls_rules()
-            .encryption_options(&self.roster(), self.group_context().extensions())
+            .encryption_options(&self.roster(), self.group_context())
             .map_err(|e| MlsError::MlsRulesError(e.into_any_error()))
     }
 
@@ -2010,8 +2015,11 @@ mod tests {
     #[cfg(all(feature = "by_ref_proposal", feature = "custom_proposal"))]
     use super::test_utils::test_group_custom_config;
 
+    #[cfg(any(feature = "psk", feature = "std"))]
+    use crate::client::Client;
+
     #[cfg(feature = "psk")]
-    use crate::{client::Client, psk::PreSharedKey};
+    use crate::psk::PreSharedKey;
 
     #[cfg(any(feature = "by_ref_proposal", feature = "private_message"))]
     use crate::group::test_utils::random_bytes;
@@ -4213,7 +4221,7 @@ mod tests {
         fn commit_options(
             &self,
             _: &Roster,
-            _: &ExtensionList,
+            _: &GroupContext,
             proposals: &ProposalBundle,
         ) -> Result<CommitOptions, MlsError> {
             Ok(CommitOptions::default().with_path_required(
@@ -4224,7 +4232,7 @@ mod tests {
         fn encryption_options(
             &self,
             _: &Roster,
-            _: &ExtensionList,
+            _: &GroupContext,
         ) -> Result<crate::mls_rules::EncryptionOptions, MlsError> {
             Ok(Default::default())
         }
@@ -4234,7 +4242,7 @@ mod tests {
             _: CommitDirection,
             sender: CommitSource,
             _: &Roster,
-            _: &ExtensionList,
+            _: &GroupContext,
             proposals: ProposalBundle,
         ) -> Result<ProposalBundle, MlsError> {
             let is_external = matches!(sender, CommitSource::NewMember(_));
@@ -4369,5 +4377,36 @@ mod tests {
         group.apply_pending_commit().await.unwrap();
 
         assert!(!group.commit_required());
+    }
+
+    // Testing with std is sufficient. Non-std creates incompatible storage and a lot of special cases.
+    #[cfg(feature = "std")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn can_be_stored_without_tree() {
+        let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let storage = group.config.group_state_storage().inner;
+
+        group.write_to_storage().await.unwrap();
+        let snapshot_with_tree = storage.lock().unwrap().drain().next().unwrap().1;
+
+        group.write_to_storage_without_ratchet_tree().await.unwrap();
+        let snapshot_without_tree = storage.lock().unwrap().iter().next().unwrap().1.clone();
+
+        let tree = group.state.public_tree.nodes.mls_encode_to_vec().unwrap();
+        let empty_tree = Vec::<u8>::new().mls_encode_to_vec().unwrap();
+
+        assert_eq!(
+            snapshot_with_tree.state_data.len() - snapshot_without_tree.state_data.len(),
+            tree.len() - empty_tree.len()
+        );
+
+        let exported_tree = group.export_tree();
+
+        let restored = Client::new(group.config.clone(), None, None, TEST_PROTOCOL_VERSION)
+            .load_group_with_ratchet_tree(group.group_id(), exported_tree)
+            .await
+            .unwrap();
+
+        assert_eq!(restored.group_state(), group.group_state());
     }
 }

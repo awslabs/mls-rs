@@ -18,7 +18,7 @@ use mls_rs::{
     },
     crypto::SignatureSecretKey,
     external_client::ExternalClient,
-    group::{CommitEffect, ExportedTree, Member, ReceivedMessage, Roster},
+    group::{CommitEffect, ExportedTree, GroupContext, Member, ReceivedMessage, Roster},
     identity::{
         basic::{BasicCredential, BasicIdentityProvider},
         Credential, SigningIdentity,
@@ -161,7 +161,7 @@ impl MlsRules for TestMlsRules {
         _: CommitDirection,
         _: CommitSource,
         _: &Roster,
-        _: &ExtensionList,
+        _: &GroupContext,
         proposals: ProposalBundle,
     ) -> Result<ProposalBundle, Self::Error> {
         Ok(proposals)
@@ -170,7 +170,7 @@ impl MlsRules for TestMlsRules {
     fn commit_options(
         &self,
         _: &Roster,
-        _: &ExtensionList,
+        _: &GroupContext,
         _: &ProposalBundle,
     ) -> Result<CommitOptions, Self::Error> {
         Ok(*self.commit_options.lock().unwrap())
@@ -179,7 +179,7 @@ impl MlsRules for TestMlsRules {
     fn encryption_options(
         &self,
         _: &Roster,
-        _: &ExtensionList,
+        _: &GroupContext,
     ) -> Result<EncryptionOptions, Self::Error> {
         Ok(*self.encryption_options.lock().unwrap())
     }

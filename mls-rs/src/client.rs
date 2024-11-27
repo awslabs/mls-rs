@@ -27,7 +27,7 @@ use mls_rs_core::crypto::{CryptoProvider, SignatureSecretKey};
 use mls_rs_core::error::{AnyError, IntoAnyError};
 use mls_rs_core::extension::{ExtensionError, ExtensionList, ExtensionType};
 use mls_rs_core::group::{GroupStateStorage, ProposalType};
-use mls_rs_core::identity::{CredentialType, IdentityProvider};
+use mls_rs_core::identity::{CredentialType, IdentityProvider, MemberValidationContext};
 use mls_rs_core::key_package::KeyPackageStorage;
 
 use crate::group::external_commit::ExternalCommitBuilder;
@@ -597,7 +597,11 @@ where
         validate_group_info_joiner(group_info_message.version, group_info, signer, &id, &cs)
             .await?;
 
-        id.validate_member(signer, None, Some(&group_info.group_context.extensions))
+        let context = MemberValidationContext::ForNewGroup {
+            current_context: &group_info.group_context,
+        };
+
+        id.validate_member(signer, None, context)
             .await
             .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?;
 
@@ -673,6 +677,31 @@ where
             .ok_or(MlsError::GroupNotFound)?;
 
         let snapshot = Snapshot::mls_decode(&mut &*snapshot)?;
+
+        Group::from_snapshot(self.config.clone(), snapshot).await
+    }
+
+    /// Load an existing group state into this client using the
+    /// [GroupStateStorage](crate::GroupStateStorage) that
+    /// this client was configured to use. The tree is taken from
+    /// `tree_data` instead of the stored state.
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    #[inline(never)]
+    pub async fn load_group_with_ratchet_tree(
+        &self,
+        group_id: &[u8],
+        tree_data: ExportedTree<'_>,
+    ) -> Result<Group<C>, MlsError> {
+        let snapshot = self
+            .config
+            .group_state_storage()
+            .state(group_id)
+            .await
+            .map_err(|e| MlsError::GroupStorageError(e.into_any_error()))?
+            .ok_or(MlsError::GroupNotFound)?;
+
+        let mut snapshot = Snapshot::mls_decode(&mut &*snapshot)?;
+        snapshot.state.public_tree.nodes = tree_data.0.into_owned();
 
         Group::from_snapshot(self.config.clone(), snapshot).await
     }

@@ -41,7 +41,6 @@ impl Debug for GroupInfo {
     }
 }
 
-#[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen)]
 impl GroupInfo {
     /// Group context.
     pub fn group_context(&self) -> &GroupContext {

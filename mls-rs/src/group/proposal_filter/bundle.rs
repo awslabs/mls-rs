@@ -562,12 +562,19 @@ impl<T> ProposalInfo<T> {
 
     #[inline(always)]
     pub fn is_by_value(&self) -> bool {
-        self.source == ProposalSource::ByValue
+        !self.is_by_reference()
     }
 
+    #[cfg(feature = "by_ref_proposal")]
     #[inline(always)]
     pub fn is_by_reference(&self) -> bool {
-        !self.is_by_value()
+        matches!(self.source, ProposalSource::ByReference(_))
+    }
+
+    #[cfg(not(feature = "by_ref_proposal"))]
+    #[inline(always)]
+    pub fn is_by_reference(&self) -> bool {
+        false
     }
 
     /// The [`ProposalRef`] of this proposal if its source is [`ProposalSource::ByReference`]

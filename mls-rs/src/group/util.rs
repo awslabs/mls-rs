@@ -168,7 +168,7 @@ pub(super) async fn transcript_hashes<P: CipherSuiteProvider>(
     prev_interim_transcript_hash: &InterimTranscriptHash,
     content: &AuthenticatedContent,
 ) -> Result<(InterimTranscriptHash, ConfirmedTranscriptHash), MlsError> {
-    let confirmed_transcript_hash = ConfirmedTranscriptHash::create(
+    let confirmed_transcript_hash = super::transcript_hash::create(
         cipher_suite_provider,
         prev_interim_transcript_hash,
         content,

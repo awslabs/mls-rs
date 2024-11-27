@@ -46,8 +46,7 @@ use super::{
     message_signature::AuthenticatedContent,
     mls_rules::CommitDirection,
     proposal::{Proposal, ProposalOrRef},
-    ConfirmedTranscriptHash, EncryptedGroupSecrets, ExportedTree, Group, GroupContext, GroupInfo,
-    Welcome,
+    EncryptedGroupSecrets, ExportedTree, Group, GroupContext, GroupInfo, Welcome,
 };
 
 #[cfg(not(feature = "by_ref_proposal"))]
@@ -553,7 +552,7 @@ where
         let commit_options = mls_rules
             .commit_options(
                 &provisional_state.public_tree.roster(),
-                &provisional_group_context.extensions,
+                &provisional_group_context,
                 &provisional_state.applied_proposals,
             )
             .map_err(|e| MlsError::MlsRulesError(e.into_any_error()))?;
@@ -653,7 +652,7 @@ where
 
         // Use the signature, the commit_secret and the psk_secret to advance the key schedule and
         // compute the confirmation_tag value in the MlsPlaintext.
-        let confirmed_transcript_hash = ConfirmedTranscriptHash::create(
+        let confirmed_transcript_hash = super::transcript_hash::create(
             self.cipher_suite_provider(),
             &self.state.interim_transcript_hash,
             &auth_content,
@@ -910,7 +909,7 @@ mod tests {
     use mls_rs_core::{
         error::IntoAnyError,
         extension::ExtensionType,
-        identity::{CredentialType, IdentityProvider},
+        identity::{CredentialType, IdentityProvider, MemberValidationContext},
         time::MlsTime,
     };
 
@@ -1586,9 +1585,9 @@ mod tests {
             &self,
             identity: &SigningIdentity,
             timestamp: Option<MlsTime>,
-            extensions: Option<&ExtensionList>,
+            context: MemberValidationContext<'_>,
         ) -> Result<(), Self::Error> {
-            self.starts_with_foo(identity, timestamp, extensions)
+            self.starts_with_foo(identity, timestamp, context.new_extensions())
                 .await
                 .then_some(())
                 .ok_or(IdentityProviderWithExtensionError {})

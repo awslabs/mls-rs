@@ -7,6 +7,7 @@ use alloc::vec::Vec;
 use super::{
     message_processor::ProvisionalState,
     mls_rules::{CommitDirection, CommitSource, MlsRules},
+    proposal_filter::prepare_proposals_for_mls_rules,
     GroupState, ProposalOrRef,
 };
 use crate::{
@@ -20,10 +21,7 @@ use crate::{
 
 #[cfg(feature = "by_ref_proposal")]
 use crate::{
-    group::{
-        message_hash::MessageHash, proposal_filter::FilterStrategy, ProposalMessageDescription,
-        ProposalRef, ProtocolVersion,
-    },
+    group::{message_hash::MessageHash, ProposalMessageDescription, ProposalRef, ProtocolVersion},
     MlsMessage,
 };
 
@@ -266,7 +264,6 @@ impl GroupState {
         CSP: CipherSuiteProvider,
     {
         let roster = self.public_tree.roster();
-        let group_extensions = &self.context.extensions;
 
         #[cfg(feature = "by_ref_proposal")]
         let all_proposals = proposals.clone();
@@ -286,36 +283,26 @@ impl GroupState {
             )),
         }?;
 
+        prepare_proposals_for_mls_rules(&mut proposals, direction, &self.public_tree)?;
+
         proposals = user_rules
-            .filter_proposals(direction, origin, &roster, group_extensions, proposals)
+            .filter_proposals(direction, origin, &roster, &self.context, proposals)
             .await
             .map_err(|e| MlsError::MlsRulesError(e.into_any_error()))?;
 
         let applier = ProposalApplier::new(
             &self.public_tree,
-            self.context.protocol_version,
             cipher_suite_provider,
-            group_extensions,
+            &self.context,
             external_leaf,
             identity_provider,
             psk_storage,
-            #[cfg(feature = "by_ref_proposal")]
-            &self.context.group_id,
         );
 
         #[cfg(feature = "by_ref_proposal")]
-        let applier_output = match direction {
-            CommitDirection::Send => {
-                applier
-                    .apply_proposals(FilterStrategy::IgnoreByRef, &sender, proposals, commit_time)
-                    .await?
-            }
-            CommitDirection::Receive => {
-                applier
-                    .apply_proposals(FilterStrategy::IgnoreNone, &sender, proposals, commit_time)
-                    .await?
-            }
-        };
+        let applier_output = applier
+            .apply_proposals(direction.into(), &sender, proposals, commit_time)
+            .await?;
 
         #[cfg(not(feature = "by_ref_proposal"))]
         let applier_output = applier
@@ -674,8 +661,8 @@ mod tests {
     use crate::group::proposal_ref::test_utils::auth_content_from_proposal;
     use crate::group::proposal_ref::ProposalRef;
     use crate::group::{
-        AddProposal, AuthenticatedContent, Content, ExternalInit, Proposal, ProposalOrRef,
-        ReInitProposal, RemoveProposal, Roster, Sender, UpdateProposal,
+        AddProposal, AuthenticatedContent, Content, ExternalInit, GroupContext, Proposal,
+        ProposalOrRef, ReInitProposal, RemoveProposal, Roster, Sender, UpdateProposal,
     };
     use crate::key_package::test_utils::test_key_package_with_signer;
     use crate::signer::Signable;
@@ -3894,7 +3881,7 @@ mod tests {
                 _: CommitDirection,
                 _: CommitSource,
                 _: &Roster,
-                _: &ExtensionList,
+                _: &GroupContext,
                 mut proposals: ProposalBundle,
             ) -> Result<ProposalBundle, Self::Error> {
                 proposals.group_context_extensions.clear();
@@ -3905,7 +3892,7 @@ mod tests {
             fn commit_options(
                 &self,
                 _: &Roster,
-                _: &ExtensionList,
+                _: &GroupContext,
                 _: &ProposalBundle,
             ) -> Result<CommitOptions, Self::Error> {
                 Ok(Default::default())
@@ -3915,7 +3902,7 @@ mod tests {
             fn encryption_options(
                 &self,
                 _: &Roster,
-                _: &ExtensionList,
+                _: &GroupContext,
             ) -> Result<EncryptionOptions, Self::Error> {
                 Ok(Default::default())
             }
@@ -3946,7 +3933,7 @@ mod tests {
             _: CommitDirection,
             _: CommitSource,
             _: &Roster,
-            _: &ExtensionList,
+            _: &GroupContext,
             _: ProposalBundle,
         ) -> Result<ProposalBundle, Self::Error> {
             Err(MlsError::InvalidSignature)
@@ -3956,7 +3943,7 @@ mod tests {
         fn commit_options(
             &self,
             _: &Roster,
-            _: &ExtensionList,
+            _: &GroupContext,
             _: &ProposalBundle,
         ) -> Result<CommitOptions, Self::Error> {
             Ok(Default::default())
@@ -3966,14 +3953,14 @@ mod tests {
         fn encryption_options(
             &self,
             _: &Roster,
-            _: &ExtensionList,
+            _: &GroupContext,
         ) -> Result<EncryptionOptions, Self::Error> {
             Ok(Default::default())
         }
     }
 
     struct InjectMlsRules {
-        to_inject: Proposal,
+        to_inject: Vec<Proposal>,
         source: ProposalSource,
     }
 
@@ -3987,14 +3974,13 @@ mod tests {
             _: CommitDirection,
             _: CommitSource,
             _: &Roster,
-            _: &ExtensionList,
+            _: &GroupContext,
             mut proposals: ProposalBundle,
         ) -> Result<ProposalBundle, Self::Error> {
-            proposals.add(
-                self.to_inject.clone(),
-                Sender::Member(0),
-                self.source.clone(),
-            );
+            for proposal in self.to_inject.iter().cloned() {
+                proposals.add(proposal, Sender::Member(0), self.source.clone());
+            }
+
             Ok(proposals)
         }
 
@@ -4002,7 +3988,7 @@ mod tests {
         fn commit_options(
             &self,
             _: &Roster,
-            _: &ExtensionList,
+            _: &GroupContext,
             _: &ProposalBundle,
         ) -> Result<CommitOptions, Self::Error> {
             Ok(Default::default())
@@ -4012,7 +3998,7 @@ mod tests {
         fn encryption_options(
             &self,
             _: &Roster,
-            _: &ExtensionList,
+            _: &GroupContext,
         ) -> Result<EncryptionOptions, Self::Error> {
             Ok(Default::default())
         }
@@ -4027,7 +4013,7 @@ mod tests {
         let (committed, _) =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
                 .with_user_rules(InjectMlsRules {
-                    to_inject: test_proposal.clone(),
+                    to_inject: vec![test_proposal.clone()],
                     source: ProposalSource::ByValue,
                 })
                 .send()
@@ -4049,7 +4035,7 @@ mod tests {
         let (committed, _) =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
                 .with_user_rules(InjectMlsRules {
-                    to_inject: test_proposal.clone(),
+                    to_inject: vec![test_proposal.clone()],
                     source: ProposalSource::Local,
                 })
                 .send()
@@ -4069,13 +4055,32 @@ mod tests {
 
         let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
             .with_user_rules(InjectMlsRules {
-                to_inject: test_proposal.clone(),
+                to_inject: vec![test_proposal.clone()],
                 source: ProposalSource::ByValue,
             })
             .send()
             .await;
 
         assert_matches!(res, Err(MlsError::InvalidProposalTypeForSender { .. }))
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn sending_invalid_local_proposal_fails() {
+        let (alice, tree) = new_tree("alice").await;
+        let gce_proposal = Proposal::GroupContextExtensions(Default::default());
+
+        let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+            .with_user_rules(InjectMlsRules {
+                to_inject: vec![gce_proposal.clone(), gce_proposal],
+                source: ProposalSource::Local,
+            })
+            .send()
+            .await;
+
+        assert_matches!(
+            res,
+            Err(MlsError::MoreThanOneGroupContextExtensionsProposal)
+        );
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -4164,17 +4169,27 @@ mod tests {
             #[cfg(feature = "by_ref_proposal")]
             let receiver = receiver.with_extensions(extensions);
 
-            let (receiver, proposals, proposer) = if by_ref {
+            let (receiver, proposals, proposer, source) = if by_ref {
                 let proposal_ref = make_proposal_ref(proposal, proposer).await;
                 let receiver = receiver.cache(proposal_ref.clone(), proposal.clone(), proposer);
-                (receiver, vec![ProposalOrRef::from(proposal_ref)], proposer)
+                (
+                    receiver,
+                    vec![ProposalOrRef::from(proposal_ref.clone())],
+                    proposer,
+                    ProposalSource::ByReference(proposal_ref),
+                )
             } else {
-                (receiver, vec![proposal.clone().into()], committer)
+                (
+                    receiver,
+                    vec![proposal.clone().into()],
+                    committer,
+                    ProposalSource::Local,
+                )
             };
 
             let res = receiver.receive(proposals).await;
 
-            if proposer_can_propose(proposer, proposal.proposal_type(), by_ref).is_err() {
+            if proposer_can_propose(proposer, proposal.proposal_type(), &source).is_err() {
                 assert_matches!(res, Err(MlsError::InvalidProposalTypeForSender));
             } else {
                 let is_self_update = proposal.proposal_type() == ProposalType::UPDATE
