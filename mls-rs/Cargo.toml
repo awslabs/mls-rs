@@ -1,6 +1,6 @@
 [package]
 name = "mls-rs"
-version = "0.43.0"
+version = "0.43.1"
 edition = "2021"
 description = "An implementation of Messaging Layer Security (RFC 9420)"
 homepage = "https://github.com/awslabs/mls-rs"
@@ -63,7 +63,7 @@ spin = { version = "0.9.8", default-features = false, features = ["mutex", "spin
 maybe-async = { version = "0.2.10" }
 
 # Optional dependencies
-mls-rs-provider-sqlite = { path = "../mls-rs-provider-sqlite", version = "0.13.0", default-features = false, optional = true }
+mls-rs-provider-sqlite = { path = "../mls-rs-provider-sqlite", version = "0.14.0", default-features = false, optional = true }
 mls-rs-crypto-openssl = { path = "../mls-rs-crypto-openssl", optional = true, version = "0.11.0" }
 # TODO: https://github.com/GoogleChromeLabs/wasm-bindgen-rayon
 rayon = { version = "1", optional = true }

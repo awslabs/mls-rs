@@ -1,6 +1,6 @@
 [package]
 name = "mls-rs-provider-sqlite"
-version = "0.13.3"
+version = "0.14.0"
 edition = "2021"
 description = "SQLite based state storage for mls-rs"
 homepage = "https://github.com/awslabs/mls-rs"
