@@ -40,26 +40,26 @@ impl MlKemKem {
 
 #[derive(Debug, Clone)]
 pub enum MlKem {
-    ML_KEM_512,
-    ML_KEM_768,
-    ML_KEM_1024,
+    MlKem512,
+    MlKem768,
+    MlKem1024,
 }
 
 impl MlKem {
     fn new(cipher_suite: CipherSuite) -> Option<Self> {
         match cipher_suite {
-            CipherSuite::ML_KEM_512 => Some(Self::ML_KEM_512),
-            CipherSuite::ML_KEM_768 => Some(Self::ML_KEM_768),
-            CipherSuite::ML_KEM_1024 => Some(Self::ML_KEM_1024),
+            CipherSuite::ML_KEM_512 => Some(Self::MlKem512),
+            CipherSuite::ML_KEM_768 => Some(Self::MlKem768),
+            CipherSuite::ML_KEM_1024 => Some(Self::MlKem1024),
             _ => None,
         }
     }
 
     fn algorithm(&self) -> &'static Algorithm {
         match self {
-            MlKem::ML_KEM_512 => &aws_lc_rs::unstable::kem::ML_KEM_512,
-            MlKem::ML_KEM_768 => &aws_lc_rs::unstable::kem::ML_KEM_768,
-            MlKem::ML_KEM_1024 => &aws_lc_rs::unstable::kem::ML_KEM_1024,
+            MlKem::MlKem512 => &aws_lc_rs::unstable::kem::ML_KEM_512,
+            MlKem::MlKem768 => &aws_lc_rs::unstable::kem::ML_KEM_768,
+            MlKem::MlKem1024 => &aws_lc_rs::unstable::kem::ML_KEM_1024,
         }
     }
 }
@@ -153,25 +153,25 @@ impl KemType for MlKemKem {
 
     fn public_key_size(&self) -> usize {
         match self.ml_kem {
-            MlKem::ML_KEM_512 => 800,
-            MlKem::ML_KEM_768 => 1184,
-            MlKem::ML_KEM_1024 => 1568,
+            MlKem::MlKem512 => 800,
+            MlKem::MlKem768 => 1184,
+            MlKem::MlKem1024 => 1568,
         }
     }
 
     fn secret_key_size(&self) -> usize {
         match self.ml_kem {
-            MlKem::ML_KEM_512 => 1632,
-            MlKem::ML_KEM_768 => 2400,
-            MlKem::ML_KEM_1024 => 3168,
+            MlKem::MlKem512 => 1632,
+            MlKem::MlKem768 => 2400,
+            MlKem::MlKem1024 => 3168,
         }
     }
 
     fn enc_size(&self) -> usize {
         match self.ml_kem {
-            MlKem::ML_KEM_512 => 768,
-            MlKem::ML_KEM_768 => 1088,
-            MlKem::ML_KEM_1024 => 1568,
+            MlKem::MlKem512 => 768,
+            MlKem::MlKem768 => 1088,
+            MlKem::MlKem1024 => 1568,
         }
     }
 }
@@ -214,13 +214,7 @@ unsafe fn kem_derive(
 #[cfg(test)]
 mod test {
     use mls_rs_core::crypto::CipherSuite;
-    use mls_rs_crypto_hpke::{dhkem::DhKem, kem_combiner::CombinedKem};
-    use mls_rs_crypto_traits::{KemId, KemResult, KemType, SamplingMethod};
-
-    use crate::{
-        kdf::{shake::AwsLcShake128, AwsLcHash, AwsLcHkdf, Sha3},
-        kem::ecdh::Ecdh,
-    };
+    use mls_rs_crypto_traits::KemResult;
 
     use super::MlKemKem;
 
