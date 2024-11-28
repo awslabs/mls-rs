@@ -4,7 +4,7 @@
 
 use std::ops::Deref;
 
-use mls_rs_crypto_traits::{Curve, DhType};
+use mls_rs_crypto_traits::{Curve, DhType, SamplingMethod};
 use thiserror::Error;
 
 use mls_rs_core::{
@@ -79,8 +79,8 @@ impl DhType for Ecdh {
         Ok((key_pair.secret.into(), key_pair.public.into()))
     }
 
-    fn bitmask_for_rejection_sampling(&self) -> Option<u8> {
-        self.curve_bitmask()
+    fn bitmask_for_rejection_sampling(&self) -> SamplingMethod {
+        self.hpke_sampling_method()
     }
 
     fn public_key_validate(&self, key: &HpkePublicKey) -> Result<(), Self::Error> {
@@ -88,6 +88,10 @@ impl DhType for Ecdh {
     }
 
     fn secret_key_size(&self) -> usize {
+        self.0.secret_key_size()
+    }
+
+    fn public_key_size(&self) -> usize {
         self.0.secret_key_size()
     }
 }

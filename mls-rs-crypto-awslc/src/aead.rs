@@ -8,7 +8,7 @@ use mls_rs_crypto_traits::AeadId;
 
 use crate::AwsLcCryptoError;
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct AwsLcAead(AeadId);
 
 impl AwsLcAead {
