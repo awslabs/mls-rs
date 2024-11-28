@@ -13,7 +13,7 @@ use aws_lc_sys::{
 use mls_rs_core::crypto::{CipherSuite, HpkePublicKey, HpkeSecretKey};
 use mls_rs_crypto_traits::{KdfType, KemResult, KemType};
 
-use crate::{check_non_null, kdf::AwsLcHkdf, random_bytes, AwsLcCryptoError};
+use crate::{check_non_null, kdf::AwsLcHkdf, AwsLcCryptoError};
 
 #[derive(Clone)]
 pub struct MlKemKem {
@@ -146,7 +146,7 @@ impl KemType for MlKemKem {
 
     fn generate(&self) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
         let mut out = vec![0u8; self.seed_length_for_derive()];
-        random_bytes(&mut out)?;
+        aws_lc_rs::rand::fill(&mut out)?;
 
         self.generate_deterministic(&out)
     }
@@ -212,15 +212,15 @@ unsafe fn kem_derive(
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use mls_rs_core::crypto::CipherSuite;
-    use mls_rs_crypto_traits::KemResult;
+    use mls_rs_crypto_traits::{KemResult, KemType};
 
     use super::MlKemKem;
 
     #[test]
     fn round_trip() {
-        let kem = MlKemKem::new(CipherSuite::ML_KEM_768).unwrap();
+        let kem = MlKemKem::new(CipherSuite::ML_KEM_512).unwrap();
 
         let (secret_key, public_key) = kem.generate_deterministic(&[1u8; 64]).unwrap();
         let KemResult { shared_secret, enc } = kem.encap(&public_key).unwrap();

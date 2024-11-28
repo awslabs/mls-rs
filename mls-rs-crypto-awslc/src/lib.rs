@@ -453,7 +453,7 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
     }
 
     fn random_bytes(&self, out: &mut [u8]) -> Result<(), Self::Error> {
-        random_bytes(out)
+        Ok(aws_lc_rs::rand::fill(out)?)
     }
 
     async fn signature_key_generate(
@@ -521,16 +521,6 @@ fn check_non_null_const<T>(r: *const T) -> Result<*const T, AwsLcCryptoError> {
     }
 
     Ok(r)
-}
-
-pub(crate) fn random_bytes(out: &mut [u8]) -> Result<(), AwsLcCryptoError> {
-    unsafe {
-        if 1 != aws_lc_sys::RAND_bytes(out.as_mut_ptr(), out.len()) {
-            return Err(Unspecified.into());
-        }
-    }
-
-    Ok(())
 }
 
 #[cfg(not(mls_build_async))]

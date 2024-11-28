@@ -141,7 +141,7 @@ impl Hash for AwsLcHash {
     }
 }
 
-#[cfg(feature = "post-quantum")]
+#[cfg(all(feature = "post-quantum", not(feature = "fips")))]
 pub mod shake {
     use crate::{check_int_return, AwsLcCryptoError};
     use aws_lc_sys::{EVP_Digest, EVP_shake128};

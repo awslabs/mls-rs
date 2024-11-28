@@ -73,10 +73,9 @@ impl CipherSuite {
     #[cfg(feature = "post-quantum")]
     pub const ML_KEM_768: CipherSuite = CipherSuite(65002);
     #[cfg(feature = "post-quantum")]
-
     pub const ML_KEM_1024: CipherSuite = CipherSuite(65003);
 
-    /// So far, there are no official PQ cipher suites  
+    /// So far, there are no official PQ cipher suites
     #[cfg(feature = "post-quantum")]
     pub const ML_KEM_768_X25519: CipherSuite = CipherSuite(65100);
 
