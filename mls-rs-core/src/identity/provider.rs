@@ -23,7 +23,7 @@ pub enum MemberValidationContext<'a> {
     None,
 }
 
-impl<'a> MemberValidationContext<'a> {
+impl MemberValidationContext<'_> {
     pub fn new_extensions(&self) -> Option<&ExtensionList> {
         match self {
             Self::ForCommit { new_extensions, .. } => Some(*new_extensions),

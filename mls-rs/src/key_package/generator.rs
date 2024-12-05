@@ -73,7 +73,7 @@ impl KeyPackageGeneration {
     }
 }
 
-impl<'a, CP> KeyPackageGenerator<'a, CP>
+impl<CP> KeyPackageGenerator<'_, CP>
 where
     CP: CipherSuiteProvider,
 {

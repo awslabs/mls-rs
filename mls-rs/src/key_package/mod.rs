@@ -139,7 +139,7 @@ impl KeyPackage {
     }
 }
 
-impl<'a> Signable<'a> for KeyPackage {
+impl Signable<'_> for KeyPackage {
     const SIGN_LABEL: &'static str = "KeyPackageTBS";
 
     type SigningContext = ();

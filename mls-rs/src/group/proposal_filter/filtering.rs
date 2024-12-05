@@ -53,7 +53,7 @@ use {crate::iter::ParallelIteratorExt, rayon::prelude::*};
 #[cfg(mls_build_async)]
 use futures::{StreamExt, TryStreamExt};
 
-impl<'a, C, P, CSP> ProposalApplier<'a, C, P, CSP>
+impl<C, P, CSP> ProposalApplier<'_, C, P, CSP>
 where
     C: IdentityProvider,
     P: PreSharedKeyStorage,
