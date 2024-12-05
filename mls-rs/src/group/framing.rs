@@ -354,6 +354,16 @@ pub struct MlsMessage {
     pub(crate) payload: MlsMessagePayload,
 }
 
+impl MlsMessage {
+    pub fn content_type(&self) -> Option<ContentType> {
+        match &self.payload {
+            MlsMessagePayload::Cipher(c) => Some(c.content_type),
+            MlsMessagePayload::Plain(p) => Some(p.content.content_type()),
+            _ => None,
+        }
+    }
+}
+
 #[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen)]
 #[allow(dead_code)]
 impl MlsMessage {

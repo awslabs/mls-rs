@@ -14,6 +14,7 @@ use crate::{
     external_client::ExternalClientConfig,
     group::{
         cipher_suite_provider,
+        commit_processor::{self, commit_processor, CommitProcessor},
         confirmation_tag::ConfirmationTag,
         framing::PublicMessage,
         member_from_leaf_node,
@@ -190,6 +191,14 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         )
         .await
     }
+
+    /*#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn commit_processor(
+        &mut self,
+        message: MlsMessage,
+    ) -> Result<CommitProcessor<'_, Self>, MlsError> {
+        CommitProcessor::new(self, message).await
+    }*/
 
     /// Replay a proposal message into the group skipping all validation steps.
     #[cfg(feature = "by_ref_proposal")]
@@ -559,6 +568,14 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
 
         Ok(member_from_leaf_node(node, index))
     }
+
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn commit_processor(
+        &mut self,
+        commit_message: MlsMessage,
+    ) -> Result<CommitProcessor<'_, Self>, MlsError> {
+        commit_processor(self, commit_message).await
+    }
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -656,6 +673,13 @@ where
 
     fn cipher_suite_provider(&self) -> &Self::CipherSuiteProvider {
         &self.cipher_suite_provider
+    }
+}
+
+impl<'a, C: ExternalClientConfig> CommitProcessor<'a, ExternalGroup<C>> {
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn build(self) -> Result<CommitMessageDescription, MlsError> {
+        commit_processor::commit(self).await
     }
 }
 

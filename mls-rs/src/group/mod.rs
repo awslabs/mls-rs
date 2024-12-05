@@ -4,6 +4,8 @@
 
 use alloc::vec;
 use alloc::vec::Vec;
+pub use commit_processor::CommitProcessor;
+use commit_processor::{commit_processor, commit_processor_from_content};
 use core::fmt::{self, Debug};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
@@ -157,9 +159,12 @@ pub use secret_tree::MessageKeyData as MessageKey;
 #[cfg(all(test, feature = "rfc_compliant"))]
 mod interop_test_vectors;
 
+pub(crate) mod commit_processor;
 mod exported_tree;
 
 pub use exported_tree::ExportedTree;
+
+//pub struct CommitProcessor<'a, C> = commit_processor::CommitProcessor<'a, Group<C>>;
 
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 struct GroupSecrets {
@@ -1208,6 +1213,11 @@ where
 
     /// Apply a pending commit that was created by [`Group::commit`] or
     /// [`CommitBuilder::build`].
+    //
+    // FIXME This should be caching the new state after commit.
+    //   * better FS - if we're corrupted while having a pending commit, we're currently
+    //     leaking HPKE / signature secrets for the past epoch.
+    //   * better efficiency
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn apply_pending_commit(&mut self) -> Result<CommitMessageDescription, MlsError> {
         let content = self
@@ -1217,7 +1227,10 @@ where
             .content
             .clone();
 
-        self.process_commit(content, None).await
+        commit_processor_from_content(self, content)
+            .await?
+            .build()
+            .await
     }
 
     /// Apply a detached commit that was created by [`Group::commit_detached`] or
@@ -1559,6 +1572,14 @@ where
 }
 
 impl<C: ClientConfig> Group<C> {
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn commit_processor(
+        &mut self,
+        commit_message: MlsMessage,
+    ) -> Result<CommitProcessor<'_, Self>, MlsError> {
+        commit_processor(self, commit_message).await
+    }
+
     #[cfg(feature = "psk")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn psk_secret<CS: CipherSuiteProvider>(
@@ -1968,6 +1989,13 @@ where
 
     fn cipher_suite_provider(&self) -> &Self::CipherSuiteProvider {
         &self.cipher_suite_provider
+    }
+}
+
+impl<'a, C: ClientConfig> CommitProcessor<'a, Group<C>> {
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn build(self) -> Result<CommitMessageDescription, MlsError> {
+        commit_processor::commit(self).await
     }
 }
 
