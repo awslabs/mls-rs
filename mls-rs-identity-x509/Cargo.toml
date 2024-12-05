@@ -32,7 +32,7 @@ getrandom = { version = "0.2", features = ["js"] }
 
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-wasm-bindgen = { version = "0.2.79" }
+wasm-bindgen = { version = "=0.2.87" }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(mls_build_async)'] }
