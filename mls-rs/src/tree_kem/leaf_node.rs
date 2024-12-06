@@ -186,7 +186,7 @@ struct LeafNodeTBS<'a> {
     leaf_index: Option<u32>,
 }
 
-impl<'a> MlsSize for LeafNodeTBS<'a> {
+impl MlsSize for LeafNodeTBS<'_> {
     fn mls_encoded_len(&self) -> usize {
         self.public_key.mls_encoded_len()
             + self.signing_identity.mls_encoded_len()
@@ -201,7 +201,7 @@ impl<'a> MlsSize for LeafNodeTBS<'a> {
     }
 }
 
-impl<'a> MlsEncode for LeafNodeTBS<'a> {
+impl MlsEncode for LeafNodeTBS<'_> {
     fn mls_encode(&self, writer: &mut Vec<u8>) -> Result<(), mls_rs_codec::Error> {
         self.public_key.mls_encode(writer)?;
         self.signing_identity.mls_encode(writer)?;

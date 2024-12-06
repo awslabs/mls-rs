@@ -96,12 +96,12 @@ serde = { version = "1.0", default-features = false, features = ["alloc", "deriv
 hex = { version = "^0.4.3", default-features = false, features = ["serde", "alloc"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-wasm-bindgen = { version = "^0.2.79" }
+wasm-bindgen = { version = "=0.2.87" }
 getrandom = { version = "0.2", features = ["js", "custom"], default-features = false }
 rand_core = { version = "0.6", default-features = false, features = ["alloc"] }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
-wasm-bindgen-test = { version = "0.3.26", default-features = false }
+wasm-bindgen-test = { version = "=0.3.26", default-features = false }
 mls-rs-crypto-webcrypto = { path = "../mls-rs-crypto-webcrypto", version = "0.6.0" }
 criterion = { version = "0.5.1", default-features = false, features = ["plotters", "cargo_bench_support", "async_futures", "html_reports"] }
 

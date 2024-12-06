@@ -20,7 +20,7 @@ pub enum ValidationContext<'a> {
     Commit((&'a [u8], u32, Option<MlsTime>)),
 }
 
-impl<'a> ValidationContext<'a> {
+impl ValidationContext<'_> {
     fn signing_context(&self) -> LeafNodeSigningContext {
         match *self {
             ValidationContext::Add(_) => Default::default(),
