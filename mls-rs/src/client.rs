@@ -18,6 +18,7 @@ use crate::group::{
     proposal::{AddProposal, Proposal},
 };
 use crate::identity::SigningIdentity;
+use crate::key_package::builder::KeyPackageBuilder;
 use crate::key_package::{KeyPackageGeneration, KeyPackageGenerator};
 use crate::protocol_version::ProtocolVersion;
 use crate::tree_kem::node::NodeIndex;
@@ -481,6 +482,23 @@ where
             .map_err(|e| MlsError::KeyPackageRepoError(e.into_any_error()))?;
 
         Ok(key_pkg_gen)
+    }
+
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
+    pub fn key_package_builder(
+        &self,
+        cipher_suite: CipherSuite,
+    ) -> Result<
+        KeyPackageBuilder<'_, <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider>,
+        MlsError,
+    > {
+        let cipher_suite_provider = self
+            .config
+            .crypto_provider()
+            .cipher_suite_provider(cipher_suite)
+            .ok_or(MlsError::UnsupportedCipherSuite(cipher_suite))?;
+
+        Ok(KeyPackageBuilder::new(self, cipher_suite_provider))
     }
 
     /// Create a group with a specific group_id.
