@@ -656,19 +656,8 @@ pub(crate) trait MessageProcessor: Send + Sync {
             return Err(MlsError::CommitMissingPath);
         }
 
-        if let Some(remove_proposal) = self.removal_proposal(&provisional_state) {
-            let new_epoch = NewEpoch::new(self.group_state().clone(), &provisional_state);
-
-            return Ok(CommitMessageDescription {
-                is_external: matches!(auth_content.content.sender, Sender::NewMemberCommit),
-                authenticated_data: auth_content.content.authenticated_data,
-                committer: *sender,
-                effect: CommitEffect::Removed {
-                    remove_proposal,
-                    new_epoch: Box::new(new_epoch),
-                },
-            });
-        }
+        let self_removed = self.removal_proposal(&provisional_state);
+        let is_self_removed = self_removed.is_some();
 
         let update_path = match commit.path {
             Some(update_path) => Some(
@@ -690,6 +679,12 @@ pub(crate) trait MessageProcessor: Send + Sync {
             if let Some(reinit) = provisional_state.applied_proposals.reinitializations.pop() {
                 self.group_state_mut().pending_reinit = Some(reinit.proposal.clone());
                 CommitEffect::ReInit(reinit)
+            } else if let Some(remove_proposal) = self_removed {
+                let new_epoch = NewEpoch::new(self.group_state().clone(), &provisional_state);
+                CommitEffect::Removed {
+                    remove_proposal,
+                    new_epoch: Box::new(new_epoch),
+                }
             } else {
                 CommitEffect::NewEpoch(Box::new(NewEpoch::new(
                     self.group_state().clone(),
@@ -698,11 +693,11 @@ pub(crate) trait MessageProcessor: Send + Sync {
             };
 
         let new_secrets = match update_path {
-            Some(update_path) => {
+            Some(update_path) if !is_self_removed => {
                 self.apply_update_path(sender, &update_path, &mut provisional_state)
                     .await
             }
-            None => Ok(None),
+            _ => Ok(None),
         }?;
 
         // Update the transcript hash to get the new context.
@@ -721,14 +716,16 @@ pub(crate) trait MessageProcessor: Send + Sync {
             .await?;
 
         if let Some(confirmation_tag) = &auth_content.auth.confirmation_tag {
-            // Update the key schedule to calculate new private keys
-            self.update_key_schedule(
-                new_secrets,
-                interim_transcript_hash,
-                confirmation_tag,
-                provisional_state,
-            )
-            .await?;
+            if !is_self_removed {
+                // Update the key schedule to calculate new private keys
+                self.update_key_schedule(
+                    new_secrets,
+                    interim_transcript_hash,
+                    confirmation_tag,
+                    provisional_state,
+                )
+                .await?;
+            }
 
             Ok(CommitMessageDescription {
                 is_external: matches!(auth_content.content.sender, Sender::NewMemberCommit),
