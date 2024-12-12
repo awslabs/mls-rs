@@ -203,7 +203,7 @@ mod tests {
                 .with_random_signing_identity("something", cipher_suite)
                 .await
                 .protocol_version(protocol_version)
-                .extension_types([42.into()].into_iter())
+                .extension_types([42.into()])
                 .build();
 
             let generated = client
@@ -287,7 +287,7 @@ mod tests {
             .with_random_signing_identity("something", TEST_CIPHER_SUITE)
             .await
             .protocol_version(TEST_PROTOCOL_VERSION)
-            .extension_types([42.into()].into_iter())
+            .extension_types([42.into()])
             .build();
 
         let builder = client.key_package_builder(TEST_CIPHER_SUITE).unwrap();

@@ -432,7 +432,7 @@ mod tests {
                 &secret,
                 capabilities.clone(),
                 extensions.clone(),
-                lifetime.clone(),
+                lifetime,
             )
             .await;
 

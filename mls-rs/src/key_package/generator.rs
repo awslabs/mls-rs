@@ -205,7 +205,7 @@ mod tests {
 
             let generated = test_generator
                 .generate(
-                    lifetime.clone(),
+                    lifetime,
                     capabilities.clone(),
                     key_package_ext.clone(),
                     leaf_node_ext.clone(),
