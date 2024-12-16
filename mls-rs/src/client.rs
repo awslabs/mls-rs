@@ -768,9 +768,10 @@ where
         group_info: &MlsMessage,
         tree_data: Option<crate::group::ExportedTree<'_>>,
         authenticated_data: Vec<u8>,
-        key_package_extensions: ExtensionList,
-        leaf_node_extensions: ExtensionList,
+        key_package_bytes: &[u8],
     ) -> Result<MlsMessage, MlsError> {
+        use crate::KeyPackage;
+
         let protocol_version = group_info.version;
 
         if !self.config.version_supported(protocol_version) && protocol_version == self.version {
@@ -798,21 +799,12 @@ where
         )
         .await?;
 
-        let key_package = self
-            .generate_key_package(key_package_extensions, leaf_node_extensions)
-            .await?
-            .key_package;
-
-        (key_package.cipher_suite == cipher_suite)
-            .then_some(())
-            .ok_or(MlsError::UnsupportedCipherSuite(cipher_suite))?;
-
         let message = AuthenticatedContent::new_signed(
             &cipher_suite_provider,
             &group_info.group_context,
             Sender::NewMemberProposal,
             Content::Proposal(Box::new(Proposal::Add(Box::new(AddProposal {
-                key_package,
+                key_package: KeyPackage::mls_decode(&mut &*key_package_bytes)?,
             })))),
             self.signer()?,
             WireFormat::PublicMessage,
@@ -1007,13 +999,19 @@ mod tests {
             .signing_identity(bob_identity.clone(), secret_key, TEST_CIPHER_SUITE)
             .build();
 
+        let kp = bob
+            .key_package_builder(TEST_CIPHER_SUITE)
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+
         let proposal = bob
             .external_add_proposal(
                 &alice_group.group_info_message(true).await.unwrap(),
                 None,
                 vec![],
-                Default::default(),
-                Default::default(),
+                &kp.key_package_data.key_package_bytes,
             )
             .await
             .unwrap();

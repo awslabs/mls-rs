@@ -369,18 +369,28 @@ pub(crate) mod external_proposal {
 
             let client = create_client(cipher_suite.into(), &request.identity).await?;
 
+            let kp = client
+                .client
+                .key_package_builder(cipher_suite)
+                .map_err(abort)?
+                .build()
+                .map_err(abort)?;
+
             let proposal = client
                 .client
                 .external_add_proposal(
                     &group_info,
                     None,
                     vec![],
-                    Default::default(),
-                    Default::default(),
+                    &kp.key_package_data.key_package_bytes,
                 )
                 .map_err(abort)?
                 .to_bytes()
                 .map_err(abort)?;
+
+            client
+                .key_package_repo
+                .insert(kp.reference.to_vec(), kp.key_package_data);
 
             let (_, key_pckg_secrets) = client.key_package_repo.key_packages()[0].clone();
             let signature_priv = client.signer.to_vec();
