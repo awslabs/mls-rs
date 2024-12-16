@@ -62,7 +62,7 @@ pub(crate) enum JustPreSharedKeyID {
 #[derive(Clone, Eq, Hash, Ord, PartialOrd, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub(crate) struct PskGroupId(
+pub struct PskGroupId(
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::vec_serde"))]
     pub Vec<u8>,
@@ -107,7 +107,7 @@ impl PskNonce {
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialOrd, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub(crate) struct ResumptionPsk {
+pub struct ResumptionPsk {
     pub usage: ResumptionPSKUsage,
     pub psk_group_id: PskGroupId,
     pub psk_epoch: u64,
@@ -117,7 +117,7 @@ pub(crate) struct ResumptionPsk {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(u8)]
-pub(crate) enum ResumptionPSKUsage {
+pub enum ResumptionPSKUsage {
     Application = 1u8,
     Reinit = 2u8,
     Branch = 3u8,

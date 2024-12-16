@@ -300,14 +300,10 @@ mod tests {
 
             alice.apply_pending_commit().await.unwrap();
 
-            let (bob, _) = Group::join(
-                &commit_output.welcome_messages[0],
-                None,
-                bob_client.config,
-                bob_client.signer.unwrap(),
-            )
-            .await
-            .unwrap();
+            let (bob, _) = bob_client
+                .join_group(None, &commit_output.welcome_messages[0])
+                .await
+                .unwrap();
 
             TestEnv {
                 alice,

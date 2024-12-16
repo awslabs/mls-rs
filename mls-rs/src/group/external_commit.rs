@@ -211,7 +211,6 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
             KeySchedule::new(init_secret),
             epoch_secrets,
             TreeKemPrivate::new_for_external(),
-            None,
             self.signer,
         )
         .await?;

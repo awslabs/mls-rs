@@ -11,11 +11,12 @@ use mls_rs_core::{
     protocol_version::ProtocolVersion,
 };
 
-use crate::{client::MlsError, Client, Group, MlsMessage};
+use crate::{client::MlsError, group_joiner::GroupJoiner, Client, Group, MlsMessage};
 
 use super::{
-    proposal::ReInitProposal, ClientConfig, ExportedTree, JustPreSharedKeyID, MessageProcessor,
-    NewMemberInfo, PreSharedKeyID, PskGroupId, PskSecretInput, ResumptionPSKUsage, ResumptionPsk,
+    find_key_package_generation, proposal::ReInitProposal, ClientConfig, ExportedTree,
+    JustPreSharedKeyID, MessageProcessor, MlsMessageDescription, NewMemberInfo, PreSharedKeyID,
+    PskGroupId, PskSecretInput, ResumptionPSKUsage, ResumptionPsk,
 };
 
 struct ResumptionGroupParameters<'a> {
@@ -287,10 +288,26 @@ async fn resumption_join_group<C: ClientConfig + Clone>(
     verify_group_id: bool,
     psk_input: PskSecretInput,
 ) -> Result<(Group<C>, NewMemberInfo), MlsError> {
-    let psk_input = Some(psk_input);
+    let MlsMessageDescription::Welcome {
+        key_package_refs, ..
+    } = welcome.description()
+    else {
+        return Err(MlsError::UnexpectedMessageType);
+    };
 
-    let (group, new_member_info) =
-        Group::<C>::from_welcome_message(welcome, tree_data, config, signer, psk_input).await?;
+    let key_package_data =
+        find_key_package_generation(&config.key_package_repo(), &key_package_refs).await?;
+
+    let mut joiner = GroupJoiner::new(config.clone(), welcome, key_package_data)
+        .await?
+        .signature_secret_key(signer)
+        .additional_psk(psk_input);
+
+    if let Some(tree) = tree_data {
+        joiner = joiner.ratchet_tree(tree);
+    }
+
+    let (group, new_member_info) = joiner.join().await?;
 
     if group.protocol_version() != expected_new_group_params.version {
         Err(MlsError::ProtocolVersionMismatch)
