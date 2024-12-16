@@ -607,7 +607,13 @@ where
         welcome_message: &'a MlsMessage,
         key_package_data: KeyPackageData,
     ) -> Result<GroupJoiner<'a, 'b, C>, MlsError> {
-        GroupJoiner::new(self.config.clone(), welcome_message, key_package_data).await
+        GroupJoiner::new(
+            self.config.clone(),
+            welcome_message,
+            key_package_data,
+            self.signer.clone(),
+        )
+        .await
     }
 
     /// Decrypt GroupInfo encrypted in the Welcome message without actually joining

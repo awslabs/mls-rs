@@ -100,6 +100,7 @@ impl<'a, 'b, C: ClientConfig> GroupJoiner<'a, 'b, C> {
         config: C,
         welcome_msg: &'a MlsMessage,
         key_package_data: KeyPackageData,
+        signer: Option<SignatureSecretKey>,
     ) -> Result<Self, MlsError> {
         let key_package = KeyPackage::mls_decode(&mut &*key_package_data.key_package_bytes)?;
         let init_key = &key_package_data.init_key;
@@ -115,7 +116,7 @@ impl<'a, 'b, C: ClientConfig> GroupJoiner<'a, 'b, C> {
             version: welcome_msg.version,
             key_package,
             leaf_secret: key_package_data.leaf_node_key,
-            signer: None,
+            signer,
             #[cfg(feature = "psk")]
             additional_psk: None,
         })

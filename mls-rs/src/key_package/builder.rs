@@ -8,6 +8,7 @@ use alloc::vec;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
 use mls_rs_core::extension::MlsExtension;
+use mls_rs_core::key_package::KeyPackageData;
 
 use crate::client::MlsError;
 use crate::client_config::ClientConfig;
@@ -124,17 +125,23 @@ impl<CP: CipherSuiteProvider> KeyPackageBuilder<'_, CP> {
             .sign(&self.cipher_suite_provider, signing_key, &())
             .await?;
 
+        let package_bytes = package.mls_encode_to_vec()?;
+        let reference = package.to_reference(&self.cipher_suite_provider).await?;
+
+        let key_package_message = MlsMessage::new(
+            self.protocol_version,
+            MlsMessagePayload::KeyPackage(package),
+        );
+
         Ok(KeyPackageGeneration {
-            reference: package.to_reference(&self.cipher_suite_provider).await?,
-            key_package_message: MlsMessage::new(
-                self.protocol_version,
-                MlsMessagePayload::KeyPackage(package),
-            ),
-            secrets: KeyPackageSecrets {
+            reference,
+            key_package_data: KeyPackageData::new(
+                package_bytes,
                 init_secret_key,
                 leaf_node_secret,
-            },
-            not_after: lifetime.not_after,
+                lifetime.not_after,
+            ),
+            key_package_message,
         })
     }
 }
@@ -150,8 +157,7 @@ pub struct KeyPackageSecrets {
 pub struct KeyPackageGeneration {
     pub reference: KeyPackageRef,
     pub key_package_message: MlsMessage,
-    pub secrets: KeyPackageSecrets,
-    pub not_after: u64,
+    pub key_package_data: KeyPackageData,
 }
 
 impl<'a, CP> KeyPackageBuilder<'a, CP> {
@@ -253,7 +259,7 @@ mod tests {
             let opened = cipher_suite_provider
                 .hpke_open(
                     &sealed,
-                    &generated.secrets.init_secret_key,
+                    &generated.key_package_data.init_key,
                     &generated_kp.hpke_init_key,
                     &[],
                     None,
