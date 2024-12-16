@@ -7,8 +7,6 @@ use alloc::vec::Vec;
 use core::fmt::{self, Debug};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
-#[cfg(feature = "last_resort_key_package_ext")]
-use mls_rs_core::extension::MlsExtension;
 use mls_rs_core::identity::MemberValidationContext;
 use mls_rs_core::secret::Secret;
 use mls_rs_core::time::MlsTime;
@@ -16,12 +14,11 @@ use mls_rs_core::time::MlsTime;
 use crate::cipher_suite::CipherSuite;
 use crate::client::MlsError;
 use crate::client_config::ClientConfig;
-use crate::crypto::{HpkeCiphertext, SignatureSecretKey};
-#[cfg(feature = "last_resort_key_package_ext")]
-use crate::extension::LastResortKeyPackageExt;
+use crate::crypto::{HpkeCiphertext, HpkeSecretKey, SignatureSecretKey};
 use crate::extension::RatchetTreeExt;
+use crate::group_joiner::GroupJoiner;
 use crate::identity::SigningIdentity;
-use crate::key_package::{KeyPackage, KeyPackageGeneration, KeyPackageRef};
+use crate::key_package::{KeyPackage, KeyPackageRef};
 use crate::protocol_version::ProtocolVersion;
 use crate::psk::secret::PskSecret;
 use crate::psk::PreSharedKeyID;
@@ -39,7 +36,7 @@ use crate::{CipherSuiteProvider, CryptoProvider};
 pub use state::GroupState;
 
 #[cfg(feature = "by_ref_proposal")]
-use crate::crypto::{HpkePublicKey, HpkeSecretKey};
+use crate::crypto::HpkePublicKey;
 
 use crate::extension::ExternalPubExt;
 
@@ -162,10 +159,10 @@ mod exported_tree;
 pub use exported_tree::ExportedTree;
 
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
-struct GroupSecrets {
-    joiner_secret: JoinerSecret,
-    path_secret: Option<PathSecret>,
-    psks: Vec<PreSharedKeyID>,
+pub(crate) struct GroupSecrets {
+    pub(crate) joiner_secret: JoinerSecret,
+    pub(crate) path_secret: Option<PathSecret>,
+    pub(crate) psks: Vec<PreSharedKeyID>,
 }
 
 impl HpkeEncryptable for GroupSecrets {
@@ -357,7 +354,6 @@ where
             context.group_id.clone(),
             config.group_state_storage(),
             config.key_package_repo(),
-            None,
         )?;
 
         let key_schedule_result = KeySchedule::from_random_epoch_secret(
@@ -401,139 +397,13 @@ where
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub(crate) async fn join(
-        welcome: &MlsMessage,
-        tree_data: Option<ExportedTree<'_>>,
-        config: C,
-        signer: SignatureSecretKey,
-    ) -> Result<(Self, NewMemberInfo), MlsError> {
-        Self::from_welcome_message(
-            welcome,
-            tree_data,
-            config,
-            signer,
-            #[cfg(feature = "psk")]
-            None,
-        )
-        .await
-    }
-
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn from_welcome_message(
-        welcome: &MlsMessage,
-        tree_data: Option<ExportedTree<'_>>,
-        config: C,
-        signer: SignatureSecretKey,
-        #[cfg(feature = "psk")] additional_psk: Option<PskSecretInput>,
-    ) -> Result<(Self, NewMemberInfo), MlsError> {
-        let (group_info, key_package_generation, group_secrets, psk_secret) =
-            Self::decrypt_group_info_internal(
-                welcome,
-                &config,
-                #[cfg(feature = "psk")]
-                additional_psk,
-            )
-            .await?;
-
-        let cipher_suite_provider = cipher_suite_provider(
-            config.crypto_provider(),
-            group_info.group_context.cipher_suite,
-        )?;
-
-        let id_provider = config.identity_provider();
-
-        let public_tree = validate_tree_and_info_joiner(
-            welcome.version,
-            &group_info,
-            tree_data,
-            &id_provider,
-            &cipher_suite_provider,
-        )
-        .await?;
-
-        let key_package = key_package_generation.key_package;
-
-        // Identify a leaf in the tree array (any even-numbered node) whose leaf_node is identical
-        // to the leaf_node field of the KeyPackage. If no such field exists, return an error. Let
-        // index represent the index of this node among the leaves in the tree, namely the index of
-        // the node in the tree array divided by two.
-        let self_index = public_tree
-            .find_leaf_node(&key_package.leaf_node)
-            .ok_or(MlsError::WelcomeKeyPackageNotFound)?;
-
-        #[cfg(not(feature = "last_resort_key_package_ext"))]
-        let is_last_resort = false;
-        #[cfg(feature = "last_resort_key_package_ext")]
-        let is_last_resort = key_package
-            .extensions
-            .has_extension(LastResortKeyPackageExt::extension_type());
-        // Delete the key just used if this is not a last-resort key package.
-        let used_key_package_ref = (!is_last_resort).then_some(key_package_generation.reference);
-
-        let mut private_tree =
-            TreeKemPrivate::new_self_leaf(self_index, key_package_generation.leaf_node_secret_key);
-
-        // If the path_secret value is set in the GroupSecrets object
-        if let Some(path_secret) = group_secrets.path_secret {
-            private_tree
-                .update_secrets(
-                    &cipher_suite_provider,
-                    group_info.signer,
-                    path_secret,
-                    &public_tree,
-                )
-                .await?;
-        }
-
-        // Use the joiner_secret from the GroupSecrets object to generate the epoch secret and
-        // other derived secrets for the current epoch.
-        let key_schedule_result = KeySchedule::from_joiner(
-            &cipher_suite_provider,
-            &group_secrets.joiner_secret,
-            &group_info.group_context,
-            #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
-            public_tree.total_leaf_count(),
-            &psk_secret,
-        )
-        .await?;
-
-        // Verify the confirmation tag in the GroupInfo using the derived confirmation key and the
-        // confirmed_transcript_hash from the GroupInfo.
-        if !group_info
-            .confirmation_tag
-            .matches(
-                &key_schedule_result.confirmation_key,
-                &group_info.group_context.confirmed_transcript_hash,
-                &cipher_suite_provider,
-            )
-            .await?
-        {
-            return Err(MlsError::InvalidConfirmationTag);
-        }
-
-        Self::join_with(
-            config,
-            group_info,
-            public_tree,
-            key_schedule_result.key_schedule,
-            key_schedule_result.epoch_secrets,
-            private_tree,
-            used_key_package_ref,
-            signer,
-        )
-        .await
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn join_with(
+    pub(crate) async fn join_with(
         config: C,
         group_info: GroupInfo,
         public_tree: TreeKemPublic,
         key_schedule: KeySchedule,
         epoch_secrets: EpochSecrets,
         private_tree: TreeKemPrivate,
-        used_key_package_ref: Option<KeyPackageRef>,
         signer: SignatureSecretKey,
     ) -> Result<(Self, NewMemberInfo), MlsError> {
         let cs = group_info.group_context.cipher_suite;
@@ -557,7 +427,6 @@ where
             group_info.group_context.group_id.clone(),
             config.group_state_storage(),
             config.key_package_repo(),
-            used_key_package_ref,
         )?;
 
         let group = Group {
@@ -1575,7 +1444,7 @@ where
 impl<C: ClientConfig> Group<C> {
     #[cfg(feature = "psk")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn psk_secret<CS: CipherSuiteProvider>(
+    pub(crate) async fn psk_secret<CS: CipherSuiteProvider>(
         config: &C,
         cipher_suite_provider: &CS,
         psks: &[PreSharedKeyID],
@@ -1612,7 +1481,7 @@ impl<C: ClientConfig> Group<C> {
 
     #[cfg(not(feature = "psk"))]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn psk_secret<CS: CipherSuiteProvider>(
+    pub(crate) async fn psk_secret<CS: CipherSuiteProvider>(
         _config: &C,
         cipher_suite_provider: &CS,
         _psks: &[PreSharedKeyID],
@@ -1625,22 +1494,32 @@ impl<C: ClientConfig> Group<C> {
         welcome: &MlsMessage,
         config: &C,
     ) -> Result<GroupInfo, MlsError> {
-        Self::decrypt_group_info_internal(
-            welcome,
-            config,
-            #[cfg(feature = "psk")]
-            None,
-        )
-        .await
-        .map(|info| info.0)
+        let MlsMessageDescription::Welcome {
+            key_package_refs, ..
+        } = welcome.description()
+        else {
+            return Err(MlsError::UnexpectedMessageType);
+        };
+
+        let key_package_data =
+            find_key_package_generation(&config.key_package_repo(), &key_package_refs).await?;
+
+        let (group_info, _, _) = GroupJoiner::new(config.clone(), welcome, key_package_data)
+            .await?
+            .decrypt_group_info()
+            .await?;
+
+        Ok(group_info)
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn decrypt_group_info_internal(
-        welcome: &MlsMessage,
+
+    pub(crate) async fn decrypt_group_secrets<'a>(
+        welcome: &'a MlsMessage,
         config: &C,
-        #[cfg(feature = "psk")] additional_psk: Option<PskSecretInput>,
-    ) -> Result<(GroupInfo, KeyPackageGeneration, GroupSecrets, PskSecret), MlsError> {
+        key_package: &KeyPackage,
+        init_key: &HpkeSecretKey,
+    ) -> Result<(GroupSecrets, &'a Welcome), MlsError> {
         let protocol_version = welcome.version;
 
         if !config.version_supported(protocol_version) {
@@ -1654,60 +1533,30 @@ impl<C: ClientConfig> Group<C> {
         let cipher_suite_provider =
             cipher_suite_provider(config.crypto_provider(), welcome.cipher_suite)?;
 
-        let (encrypted_group_secrets, key_package_generation) =
-            find_key_package_generation(&config.key_package_repo(), &welcome.secrets).await?;
-
-        let key_package_version = key_package_generation.key_package.version;
-
-        if key_package_version != protocol_version {
+        if key_package.version != protocol_version {
             return Err(MlsError::ProtocolVersionMismatch);
         }
 
+        let kp_ref = key_package.to_reference(&cipher_suite_provider).await?;
+
+        let encrypted_group_secrets = welcome
+            .secrets
+            .iter()
+            .find(|s| s.new_member == kp_ref)
+            .ok_or(MlsError::WelcomeKeyPackageNotFound)?;
+
         // Decrypt the encrypted_group_secrets using HPKE with the algorithms indicated by the
-        // cipher suite and the HPKE private key corresponding to the GroupSecrets. If a
-        // PreSharedKeyID is part of the GroupSecrets and the client is not in possession of
-        // the corresponding PSK, return an error
+        // cipher suite and the HPKE private key corresponding to the GroupSecrets.
         let group_secrets = GroupSecrets::decrypt(
             &cipher_suite_provider,
-            &key_package_generation.init_secret_key,
-            &key_package_generation.key_package.hpke_init_key,
+            init_key,
+            &key_package.hpke_init_key,
             &welcome.encrypted_group_info,
             &encrypted_group_secrets.encrypted_group_secrets,
         )
         .await?;
 
-        let psk_secret = Self::psk_secret(
-            config,
-            &cipher_suite_provider,
-            &group_secrets.psks,
-            #[cfg(feature = "psk")]
-            additional_psk,
-        )
-        .await?;
-
-        // From the joiner_secret in the decrypted GroupSecrets object and the PSKs specified in
-        // the GroupSecrets, derive the welcome_secret and using that the welcome_key and
-        // welcome_nonce.
-        let welcome_secret = WelcomeSecret::from_joiner_secret(
-            &cipher_suite_provider,
-            &group_secrets.joiner_secret,
-            &psk_secret,
-        )
-        .await?;
-
-        // Use the key and nonce to decrypt the encrypted_group_info field.
-        let decrypted_group_info = welcome_secret
-            .decrypt(&welcome.encrypted_group_info)
-            .await?;
-
-        let group_info = GroupInfo::mls_decode(&mut &**decrypted_group_info)?;
-
-        Ok((
-            group_info,
-            key_package_generation,
-            group_secrets,
-            psk_secret,
-        ))
+        Ok((group_secrets, welcome))
     }
 }
 
@@ -2044,6 +1893,9 @@ mod tests {
         time::MlsTime,
     };
 
+    #[cfg(feature = "last_resort_key_package_ext")]
+    use crate::extension::recommended::LastResortKeyPackageExt;
+
     use super::{
         test_utils::{
             get_test_25519_key, get_test_groups_with_features, group_extensions, process_commit,
@@ -2319,59 +2171,12 @@ mod tests {
             .unwrap();
 
         // Group from Bob's perspective
-        let bob_group = Group::join(
-            &commit_output.welcome_messages[0],
-            None,
-            bob_client.config,
-            bob_client.signer.unwrap(),
-        )
-        .await
-        .map(|_| ());
-
-        assert_matches!(bob_group, Err(MlsError::RatchetTreeNotFound));
-    }
-
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn test_reused_key_package() {
-        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
-        let (bob_client, bob_key_package) =
-            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
-        let mut carla_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
-
-        // Alice adds Bob to her group.
-        let commit_output = alice_group
-            .group
-            .commit_builder()
-            .add_member(bob_key_package.clone())
-            .unwrap()
-            .build()
-            .await
-            .unwrap();
-
-        // Bob joins group.
-        let (mut bob_group, _) = bob_client
-            .join_group(None, &commit_output.welcome_messages[0])
-            .await
-            .unwrap();
-        // This deletes the key package used to join the group.
-        bob_group.write_to_storage().await.unwrap();
-
-        // Carla adds Bob, reusing the same key package.
-        let commit_output = carla_group
-            .group
-            .commit_builder()
-            .add_member(bob_key_package.clone())
-            .unwrap()
-            .build()
-            .await
-            .unwrap();
-
-        // Bob cannot join Carla's group.
         let bob_group = bob_client
             .join_group(None, &commit_output.welcome_messages[0])
             .await
             .map(|_| ());
-        assert_matches!(bob_group, Err(MlsError::WelcomeKeyPackageNotFound));
+
+        assert_matches!(bob_group, Err(MlsError::RatchetTreeNotFound));
     }
 
     #[cfg(feature = "last_resort_key_package_ext")]
@@ -2992,6 +2797,7 @@ mod tests {
             .unwrap();
 
         let welcome = &welcome[0];
+        bob.write_to_storage().await.unwrap();
 
         let (mut bob_sub_group, _) = bob.join_subgroup(welcome, None).await.unwrap();
 

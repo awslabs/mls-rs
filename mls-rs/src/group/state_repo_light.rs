@@ -31,15 +31,10 @@ where
     S: GroupStateStorage,
     K: KeyPackageStorage,
 {
-    pub fn new(
-        storage: S,
-        key_package_repo: K,
-        // Set to `None` if restoring from snapshot; set to `Some` when joining a group.
-        key_package_to_remove: Option<KeyPackageRef>,
-    ) -> Result<GroupStateRepository<S, K>, MlsError> {
+    pub fn new(storage: S, key_package_repo: K) -> Result<GroupStateRepository<S, K>, MlsError> {
         Ok(GroupStateRepository {
             storage,
-            pending_key_package_removal: key_package_to_remove,
+            pending_key_package_removal: None,
             key_package_repo,
         })
     }
@@ -92,7 +87,6 @@ mod tests {
         let mut test_repo = GroupStateRepository::new(
             InMemoryGroupStateStorage::default(),
             InMemoryKeyPackageStorage::default(),
-            None,
         )
         .unwrap();
 
@@ -102,31 +96,5 @@ mod tests {
             .unwrap();
 
         assert_eq!(test_repo.storage.stored_groups(), vec![TEST_GROUP])
-    }
-
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn used_key_package_is_deleted() {
-        let key_package_repo = InMemoryKeyPackageStorage::default();
-
-        let key_package = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"member")
-            .await
-            .0;
-
-        let (id, data) = key_package.to_storage().unwrap();
-
-        key_package_repo.insert(id, data);
-
-        let mut repo = GroupStateRepository::new(
-            InMemoryGroupStateStorage::default(),
-            key_package_repo,
-            Some(key_package.reference.clone()),
-        )
-        .unwrap();
-
-        repo.key_package_repo.get(&key_package.reference).unwrap();
-
-        repo.write_to_storage(test_snapshot(4).await).await.unwrap();
-
-        assert!(repo.key_package_repo.get(&key_package.reference).is_none());
     }
 }

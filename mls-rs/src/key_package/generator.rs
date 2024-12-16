@@ -4,7 +4,7 @@
 
 use alloc::vec;
 use alloc::vec::Vec;
-use mls_rs_codec::{MlsDecode, MlsEncode};
+use mls_rs_codec::MlsEncode;
 use mls_rs_core::{error::IntoAnyError, key_package::KeyPackageData};
 
 use crate::client::MlsError;
@@ -54,15 +54,6 @@ impl KeyPackageGeneration {
         );
 
         Ok((id, data))
-    }
-
-    pub fn from_storage(id: Vec<u8>, data: KeyPackageData) -> Result<Self, MlsError> {
-        Ok(KeyPackageGeneration {
-            reference: KeyPackageRef::from(id),
-            key_package: KeyPackage::mls_decode(&mut &*data.key_package_bytes)?,
-            init_secret_key: data.init_key,
-            leaf_node_secret_key: data.leaf_node_key,
-        })
     }
 
     pub fn key_package_message(&self) -> MlsMessage {

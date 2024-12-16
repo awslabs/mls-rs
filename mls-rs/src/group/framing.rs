@@ -354,6 +354,46 @@ pub struct MlsMessage {
     pub(crate) payload: MlsMessagePayload,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum MlsMessageDescription<'a> {
+    Welcome {
+        key_package_refs: Vec<&'a KeyPackageRef>,
+        cipher_suite: CipherSuite,
+    },
+    ProtocolMessage {
+        group_id: &'a [u8],
+        epoch_id: u64,
+        content_type: ContentType, // commit, proposal, or application
+    },
+    // Processing GroupInfo and KeyPackage does not require any storage
+    GroupInfo,
+    KeyPackage,
+}
+
+impl MlsMessage {
+    pub fn description(&self) -> MlsMessageDescription<'_> {
+        match &self.payload {
+            MlsMessagePayload::Welcome(w) => MlsMessageDescription::Welcome {
+                key_package_refs: w.secrets.iter().map(|s| &s.new_member).collect(),
+                cipher_suite: w.cipher_suite,
+            },
+            MlsMessagePayload::Plain(p) => MlsMessageDescription::ProtocolMessage {
+                group_id: &p.content.group_id,
+                epoch_id: p.content.epoch,
+                content_type: p.content.content_type(),
+            },
+            #[cfg(feature = "private_message")]
+            MlsMessagePayload::Cipher(c) => MlsMessageDescription::ProtocolMessage {
+                group_id: &c.group_id,
+                epoch_id: c.epoch,
+                content_type: c.content_type,
+            },
+            MlsMessagePayload::GroupInfo(_) => MlsMessageDescription::GroupInfo,
+            MlsMessagePayload::KeyPackage(_) => MlsMessageDescription::KeyPackage,
+        }
+    }
+}
+
 #[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen)]
 #[allow(dead_code)]
 impl MlsMessage {
