@@ -72,13 +72,11 @@ where
         group_id: Vec<u8>,
         storage: S,
         key_package_repo: K,
-        // Set to `None` if restoring from snapshot; set to `Some` when joining a group.
-        key_package_to_remove: Option<KeyPackageRef>,
     ) -> Result<GroupStateRepository<S, K>, MlsError> {
         Ok(GroupStateRepository {
             group_id,
             storage,
-            pending_key_package_removal: key_package_to_remove,
+            pending_key_package_removal: None,
             pending_commit: Default::default(),
             key_package_repo,
         })
@@ -245,10 +243,10 @@ mod tests {
     use mls_rs_codec::MlsEncode;
 
     use crate::{
-        client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
+        client::test_utils::TEST_CIPHER_SUITE,
         group::{
             epoch::{test_utils::get_test_epoch_with_id, SenderDataSecret},
-            test_utils::{random_bytes, test_member, TEST_GROUP},
+            test_utils::{random_bytes, TEST_GROUP},
             PskGroupId, ResumptionPSKUsage,
         },
         storage_provider::in_memory::{InMemoryGroupStateStorage, InMemoryKeyPackageStorage},
@@ -265,7 +263,6 @@ mod tests {
                 .with_max_epoch_retention(retention_limit)
                 .unwrap(),
             InMemoryKeyPackageStorage::default(),
-            None,
         )
         .unwrap()
     }
@@ -542,32 +539,5 @@ mod tests {
         let lock = repo.storage.inner.lock();
 
         assert_eq!(lock.get(TEST_GROUP).unwrap().epoch_data.len(), 1);
-    }
-
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn used_key_package_is_deleted() {
-        let key_package_repo = InMemoryKeyPackageStorage::default();
-
-        let key_package = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"member")
-            .await
-            .0;
-
-        let (id, data) = key_package.to_storage().unwrap();
-
-        key_package_repo.insert(id, data);
-
-        let mut repo = GroupStateRepository::new(
-            TEST_GROUP.to_vec(),
-            InMemoryGroupStateStorage::new(),
-            key_package_repo,
-            Some(key_package.reference.clone()),
-        )
-        .unwrap();
-
-        repo.key_package_repo.get(&key_package.reference).unwrap();
-
-        repo.write_to_storage(test_snapshot(4).await).await.unwrap();
-
-        assert!(repo.key_package_repo.get(&key_package.reference).is_none());
     }
 }

@@ -5,18 +5,17 @@
 use mls_rs_core::{
     error::IntoAnyError,
     identity::{IdentityProvider, SigningIdentity},
-    key_package::KeyPackageStorage,
+    key_package::{KeyPackageData, KeyPackageStorage},
 };
 
 use crate::{
     cipher_suite::CipherSuite,
     client::MlsError,
     extension::RatchetTreeExt,
-    key_package::KeyPackageGeneration,
     protocol_version::ProtocolVersion,
     signer::Signable,
     tree_kem::{node::LeafIndex, tree_validator::TreeValidator, TreeKemPublic},
-    CipherSuiteProvider, CryptoProvider,
+    CipherSuiteProvider, CryptoProvider, KeyPackageRef,
 };
 
 #[cfg(feature = "by_ref_proposal")]
@@ -24,8 +23,8 @@ use crate::extension::ExternalSendersExt;
 
 use super::{
     framing::Sender, message_signature::AuthenticatedContent,
-    transcript_hash::InterimTranscriptHash, ConfirmedTranscriptHash, EncryptedGroupSecrets,
-    ExportedTree, GroupInfo, GroupState,
+    transcript_hash::InterimTranscriptHash, ConfirmedTranscriptHash, ExportedTree, GroupInfo,
+    GroupState,
 };
 
 use super::message_processor::ProvisionalState;
@@ -192,23 +191,15 @@ pub(super) async fn transcript_hashes<P: CipherSuiteProvider>(
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-pub(crate) async fn find_key_package_generation<'a, K: KeyPackageStorage>(
+pub(crate) async fn find_key_package_generation<K: KeyPackageStorage>(
     key_package_repo: &K,
-    secrets: &'a [EncryptedGroupSecrets],
-) -> Result<(&'a EncryptedGroupSecrets, KeyPackageGeneration), MlsError> {
-    for secret in secrets {
+    refs: &[&KeyPackageRef],
+) -> Result<KeyPackageData, MlsError> {
+    for kp_ref in refs {
         if let Some(val) = key_package_repo
-            .get(&secret.new_member)
+            .get(kp_ref)
             .await
-            .map_err(|e| MlsError::KeyPackageRepoError(e.into_any_error()))
-            .and_then(|maybe_data| {
-                if let Some(data) = maybe_data {
-                    KeyPackageGeneration::from_storage(secret.new_member.to_vec(), data)
-                        .map(|kpg| Some((secret, kpg)))
-                } else {
-                    Ok::<_, MlsError>(None)
-                }
-            })?
+            .map_err(|e| MlsError::KeyPackageRepoError(e.into_any_error()))?
         {
             return Ok(val);
         }

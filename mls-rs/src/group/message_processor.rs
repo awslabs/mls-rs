@@ -73,7 +73,7 @@ pub(crate) struct ProvisionalState {
 // psk
 // reinit
 pub(crate) fn path_update_required(proposals: &ProposalBundle) -> bool {
-    let res = proposals.external_init_proposals().first().is_some();
+    let res = !proposals.external_init_proposals().is_empty();
 
     #[cfg(feature = "by_ref_proposal")]
     let res = res || !proposals.update_proposals().is_empty();

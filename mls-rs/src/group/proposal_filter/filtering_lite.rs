@@ -42,7 +42,7 @@ use crate::group::{
 #[cfg(all(feature = "std", feature = "psk"))]
 use std::collections::HashSet;
 
-impl<'a, C, P, CSP> ProposalApplier<'a, C, P, CSP>
+impl<C, P, CSP> ProposalApplier<'_, C, P, CSP>
 where
     C: IdentityProvider,
     P: PreSharedKeyStorage,

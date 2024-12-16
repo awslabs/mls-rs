@@ -374,7 +374,7 @@ pub struct X509ExtensionContext<'a> {
     pub(crate) phantom: PhantomData<&'a Certificate>,
 }
 
-impl<'a> X509ExtensionContext<'a> {
+impl X509ExtensionContext<'_> {
     pub fn as_mut_ptr(&mut self) -> *mut X509V3_CTX {
         &mut self.inner
     }

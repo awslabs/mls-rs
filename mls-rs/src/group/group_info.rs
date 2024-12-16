@@ -67,7 +67,7 @@ struct SignableGroupInfo<'a> {
     signer: LeafIndex,
 }
 
-impl<'a> Signable<'a> for GroupInfo {
+impl Signable<'_> for GroupInfo {
     const SIGN_LABEL: &'static str = "GroupInfoTBS";
     type SigningContext = ();
 

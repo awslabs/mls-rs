@@ -44,10 +44,10 @@ async-trait = "0.1.74"
 assert_matches = "1.5.0"
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
-wasm-bindgen-test = { version = "0.3.26", default-features = false }
+wasm-bindgen-test = { version = "=0.3.26", default-features = false }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-wasm-bindgen = { version = "^0.2.79" }
+wasm-bindgen = { version = "=0.2.87" }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(mls_build_async)', 'cfg(coverage_nightly)'] }

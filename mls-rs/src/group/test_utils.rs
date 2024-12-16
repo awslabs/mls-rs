@@ -108,13 +108,9 @@ impl TestGroup {
         config(&mut new_client.config);
 
         // Group from new member's perspective
-        let (new_group, _) = Group::join(
-            &welcome_messages[0],
-            ratchet_tree,
-            new_client.config.clone(),
-            new_client.signer.clone().unwrap(),
-        )
-        .await?;
+        let (new_group, _) = new_client
+            .join_group(ratchet_tree, &welcome_messages[0])
+            .await?;
 
         let new_test_group = TestGroup { group: new_group };
 
