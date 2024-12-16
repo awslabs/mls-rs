@@ -298,9 +298,8 @@ async fn resumption_join_group<C: ClientConfig + Clone>(
     let key_package_data =
         find_key_package_generation(&config.key_package_repo(), &key_package_refs).await?;
 
-    let mut joiner = GroupJoiner::new(config.clone(), welcome, key_package_data)
+    let mut joiner = GroupJoiner::new(config.clone(), welcome, key_package_data, Some(signer))
         .await?
-        .signature_secret_key(signer)
         .additional_psk(psk_input);
 
     if let Some(tree) = tree_data {

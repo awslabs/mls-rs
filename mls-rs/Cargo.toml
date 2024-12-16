@@ -114,6 +114,10 @@ name = "basic_usage"
 required-features = []
 
 [[example]]
+name = "api_1x"
+required-features = []
+
+[[example]]
 name = "x509"
 required-features = ["x509"]
 

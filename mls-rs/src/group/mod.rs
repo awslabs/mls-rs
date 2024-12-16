@@ -1490,7 +1490,7 @@ impl<C: ClientConfig> Group<C> {
         let key_package_data =
             find_key_package_generation(&config.key_package_repo(), &key_package_refs).await?;
 
-        let (group_info, _, _) = GroupJoiner::new(config.clone(), welcome, key_package_data)
+        let (group_info, _, _) = GroupJoiner::new(config.clone(), welcome, key_package_data, None)
             .await?
             .decrypt_group_info()
             .await?;
@@ -1499,7 +1499,6 @@ impl<C: ClientConfig> Group<C> {
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-
     pub(crate) async fn decrypt_group_secrets<'a>(
         welcome: &'a MlsMessage,
         config: &C,
