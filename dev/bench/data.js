@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1733495780283,
+  "lastUpdate": 1734712862220,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -18671,6 +18671,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 130084,
             "range": "± 1367",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "felix.maneville@gmail.com",
+            "name": "Félix Lescaudey de Maneville",
+            "username": "ManevilleF"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3add3685f72300a6dcb7d6ac9b1fa5d06d1290aa",
+          "message": "feat(mls-rs): Verify the update path even in case of a self removal (#224)",
+          "timestamp": "2024-12-20T11:36:35-05:00",
+          "tree_id": "2a460f3b33f53a4a026fe9b7e88e8a0e57fc7b8f",
+          "url": "https://github.com/awslabs/mls-rs/commit/3add3685f72300a6dcb7d6ac9b1fa5d06d1290aa"
+        },
+        "date": 1734712861555,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 511981,
+            "range": "± 16074",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 519093,
+            "range": "± 15176",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 593003,
+            "range": "± 16414",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1256580,
+            "range": "± 29437",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7646251,
+            "range": "± 58269",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1130262,
+            "range": "± 45780",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1202994,
+            "range": "± 46437",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1343471,
+            "range": "± 49136",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 742814,
+            "range": "± 44296",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 815409,
+            "range": "± 8947",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 912214,
+            "range": "± 12078",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 21056,
+            "range": "± 241",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 68184,
+            "range": "± 1200",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 132108,
+            "range": "± 1140",
             "unit": "ns/iter"
           }
         ]
