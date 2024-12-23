@@ -262,12 +262,12 @@ impl<T: TreeIndex> SecretTree<T> {
 
         let res = ratchet
             .message_key_generation(cipher_suite, generation, key_type)
-            .await?;
+            .await;
 
         self.known_secrets
             .set_node(leaf_index, SecretTreeNode::Ratchet(ratchet));
 
-        Ok(res)
+        res
     }
 }
 
@@ -806,6 +806,30 @@ mod tests {
             Err(MlsError::InvalidFutureGeneration(invalid))
             if invalid == invalid_generation
         )
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn double_hit_leaves_epoch_intact() {
+        let cs = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+        let test_secret = vec![0u8; cs.kdf_extract_size()];
+        let mut test_tree = get_test_tree(test_secret, 4u32);
+        let key_type = KeyType::Application;
+
+        // We receive a ciphertext from leaf 2 (node 4)
+        test_tree
+            .message_key_generation(&cs, 4, key_type, 0)
+            .await
+            .unwrap();
+
+        // Due to a double hit we receive that ciphertext again
+        let res = test_tree.message_key_generation(&cs, 4, key_type, 0).await;
+        assert_matches!(res, Err(MlsError::KeyMissing(0)));
+
+        // We receive another ciphertext from leaf 2
+        test_tree
+            .message_key_generation(&cs, 4, key_type, 1)
+            .await
+            .unwrap();
     }
 
     #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
