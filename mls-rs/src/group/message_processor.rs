@@ -87,7 +87,7 @@ pub(crate) fn path_update_required(proposals: &ProposalBundle) -> bool {
     all(feature = "ffi", not(test)),
     safer_ffi_gen::ffi_type(clone, opaque)
 )]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[non_exhaustive]
 pub struct NewEpoch {
     pub epoch: u64,
@@ -97,7 +97,7 @@ pub struct NewEpoch {
 }
 
 impl NewEpoch {
-    fn new(prior_state: GroupState, provisional_state: &ProvisionalState) -> NewEpoch {
+    pub(crate) fn new(prior_state: GroupState, provisional_state: &ProvisionalState) -> NewEpoch {
         NewEpoch {
             epoch: provisional_state.group_context.epoch,
             prior_state,
@@ -140,9 +140,58 @@ pub enum CommitEffect {
     NewEpoch(Box<NewEpoch>),
     Removed {
         new_epoch: Box<NewEpoch>,
-        remove_proposal: ProposalInfo<RemoveProposal>,
+        remover: Sender,
     },
     ReInit(ProposalInfo<ReInitProposal>),
+}
+
+impl MlsSize for CommitEffect {
+    fn mls_encoded_len(&self) -> usize {
+        0u8.mls_encoded_len()
+            + match self {
+                Self::NewEpoch(e) => e.mls_encoded_len(),
+                Self::Removed { new_epoch, remover } => {
+                    new_epoch.mls_encoded_len() + remover.mls_encoded_len()
+                }
+                Self::ReInit(r) => r.mls_encoded_len(),
+            }
+    }
+}
+
+impl MlsEncode for CommitEffect {
+    fn mls_encode(&self, writer: &mut Vec<u8>) -> Result<(), mls_rs_codec::Error> {
+        match self {
+            Self::NewEpoch(e) => {
+                1u8.mls_encode(writer)?;
+                e.mls_encode(writer)?;
+            }
+            Self::Removed { new_epoch, remover } => {
+                2u8.mls_encode(writer)?;
+                new_epoch.mls_encode(writer)?;
+                remover.mls_encode(writer)?;
+            }
+            Self::ReInit(r) => {
+                3u8.mls_encode(writer)?;
+                r.mls_encode(writer)?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl MlsDecode for CommitEffect {
+    fn mls_decode(reader: &mut &[u8]) -> Result<Self, mls_rs_codec::Error> {
+        match u8::mls_decode(reader)? {
+            1u8 => Ok(Self::NewEpoch(NewEpoch::mls_decode(reader)?.into())),
+            2u8 => Ok(Self::Removed {
+                new_epoch: NewEpoch::mls_decode(reader)?.into(),
+                remover: Sender::mls_decode(reader)?,
+            }),
+            3u8 => Ok(Self::ReInit(ProposalInfo::mls_decode(reader)?)),
+            _ => Err(mls_rs_codec::Error::UnsupportedEnumDiscriminant),
+        }
+    }
 }
 
 #[cfg_attr(
@@ -245,7 +294,7 @@ impl ApplicationMessageDescription {
     all(feature = "ffi", not(test)),
     safer_ffi_gen::ffi_type(clone, opaque)
 )]
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[non_exhaustive]
 /// Description of a processed MLS commit message.
 pub struct CommitMessageDescription {
@@ -256,6 +305,7 @@ pub struct CommitMessageDescription {
     /// A full description of group state changes as a result of this commit.
     pub effect: CommitEffect,
     /// Plaintext authenticated data in the received MLS packet.
+    #[mls_codec(with = "mls_rs_codec::byte_vec")]
     pub authenticated_data: Vec<u8>,
 }
 
@@ -682,7 +732,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
             } else if let Some(remove_proposal) = self_removed {
                 let new_epoch = NewEpoch::new(self.group_state().clone(), &provisional_state);
                 CommitEffect::Removed {
-                    remove_proposal,
+                    remover: remove_proposal.sender,
                     new_epoch: Box::new(new_epoch),
                 }
             } else {
@@ -917,4 +967,50 @@ pub(crate) async fn validate_key_package<C: CipherSuiteProvider, I: IdentityProv
     validate_key_package_properties(key_package, version, cs).await?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::{vec, vec::Vec};
+    use mls_rs_codec::{MlsDecode, MlsEncode};
+
+    use crate::{
+        client::test_utils::TEST_PROTOCOL_VERSION,
+        group::{test_utils::get_test_group_context, GroupState, Sender},
+    };
+
+    use super::{CommitEffect, NewEpoch};
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn commit_effect_codec() {
+        let epoch = NewEpoch {
+            epoch: 7,
+            prior_state: GroupState {
+                #[cfg(feature = "by_ref_proposal")]
+                proposals: crate::group::ProposalCache::new(TEST_PROTOCOL_VERSION, vec![]),
+                context: get_test_group_context(7, 7.into()).await,
+                public_tree: Default::default(),
+                interim_transcript_hash: vec![].into(),
+                pending_reinit: None,
+                confirmation_tag: Default::default(),
+            },
+            applied_proposals: vec![],
+            unused_proposals: vec![],
+        };
+
+        let effects = vec![
+            CommitEffect::NewEpoch(epoch.clone().into()),
+            CommitEffect::Removed {
+                new_epoch: epoch.into(),
+                remover: Sender::Member(0),
+            },
+        ];
+
+        let bytes = effects.mls_encode_to_vec().unwrap();
+
+        assert_eq!(
+            effects,
+            Vec::<CommitEffect>::mls_decode(&mut &*bytes).unwrap()
+        );
+    }
 }
