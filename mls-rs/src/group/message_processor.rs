@@ -680,6 +680,8 @@ pub(crate) trait MessageProcessor: Send + Sync {
                 self.group_state_mut().pending_reinit = Some(reinit.proposal.clone());
                 CommitEffect::ReInit(reinit)
             } else if let Some(remove_proposal) = self_removed {
+                // since we are removed, this is the last version of the ratchet tree we're ever gonna see
+                self.group_state_mut().public_tree = provisional_state.public_tree.clone();
                 let new_epoch = NewEpoch::new(self.group_state().clone(), &provisional_state);
                 CommitEffect::Removed {
                     remove_proposal,
