@@ -2,6 +2,7 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
+use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::group::Member;
 
 use super::{
@@ -17,7 +18,7 @@ use crate::{
     all(feature = "ffi", not(test)),
     safer_ffi_gen::ffi_type(clone, opaque)
 )]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[non_exhaustive]
 pub struct GroupState {
     #[cfg(feature = "by_ref_proposal")]

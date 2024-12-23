@@ -12,7 +12,7 @@ use core::{
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
 
-#[derive(Clone, PartialEq, MlsSize, MlsEncode, MlsDecode)]
+#[derive(Clone, PartialEq, MlsSize, MlsEncode, MlsDecode, Default)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ConfirmationTag(

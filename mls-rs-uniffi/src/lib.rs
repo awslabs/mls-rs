@@ -229,7 +229,7 @@ impl From<mls_rs::group::CommitEffect> for CommitEffect {
             },
             group::CommitEffect::Removed {
                 new_epoch: _,
-                remove_proposal: _,
+                remover: _,
             } => CommitEffect::Removed,
             group::CommitEffect::ReInit(_) => CommitEffect::ReInit,
         }
