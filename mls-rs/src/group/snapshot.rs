@@ -13,7 +13,6 @@ use crate::{
         message_hash::MessageHash, state_repo::GroupStateRepository, ConfirmationTag, Group,
         GroupContext, GroupState, InterimTranscriptHash, ReInitProposal, TreeKemPublic,
     },
-    tree_kem::TreeKemPrivate,
 };
 
 #[cfg(feature = "by_ref_proposal")]
@@ -31,7 +30,7 @@ use mls_rs_core::crypto::SignatureSecretKey;
 #[cfg(feature = "tree_index")]
 use mls_rs_core::identity::IdentityProvider;
 
-use super::PendingCommit;
+use super::{PendingCommit, TreeKemPrivate};
 
 pub(crate) use legacy::LegacyPendingCommit;
 
