@@ -16,6 +16,7 @@ use crate::client::MlsError;
 use crate::client_config::ClientConfig;
 use crate::crypto::{HpkeCiphertext, HpkeSecretKey, SignatureSecretKey};
 use crate::extension::RatchetTreeExt;
+pub use crate::group::framing::MlsMessageDescription;
 use crate::identity::SigningIdentity;
 use crate::key_package::{KeyPackage, KeyPackageRef};
 use crate::protocol_version::ProtocolVersion;
