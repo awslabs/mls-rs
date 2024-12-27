@@ -115,7 +115,6 @@ struct ClientDetails {
     group: Option<Group<TestClientConfig>>,
     signing_identity: SigningIdentity,
     signer: SignatureSecretKey,
-    key_package_repo: InMemoryKeyPackageStorage,
     mls_rules: TestMlsRules,
 }
 

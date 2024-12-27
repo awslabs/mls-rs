@@ -25,9 +25,6 @@ pub(crate) mod builder;
 mod validator;
 pub(crate) use validator::*;
 
-pub(crate) mod generator;
-pub(crate) use generator::*;
-
 #[non_exhaustive]
 #[derive(Clone, MlsSize, MlsEncode, MlsDecode, PartialEq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -172,11 +169,8 @@ impl Signable<'_> for KeyPackage {
 pub(crate) mod test_utils {
     use super::*;
     use crate::{
-        crypto::test_utils::test_cipher_suite_provider,
-        group::framing::MlsMessagePayload,
-        identity::test_utils::get_test_signing_identity,
-        tree_kem::{leaf_node::test_utils::get_test_capabilities, Lifetime},
-        MlsMessage,
+        client::test_utils::TestClientBuilder, group::framing::MlsMessagePayload,
+        identity::test_utils::get_test_signing_identity, MlsMessage,
     };
 
     use mls_rs_core::crypto::SignatureSecretKey;
@@ -198,26 +192,22 @@ pub(crate) mod test_utils {
         cipher_suite: CipherSuite,
         id: &str,
     ) -> (KeyPackage, SignatureSecretKey) {
-        let (signing_identity, secret_key) =
-            get_test_signing_identity(cipher_suite, id.as_bytes()).await;
+        let (identity, secret_key) = get_test_signing_identity(cipher_suite, id.as_bytes()).await;
 
-        let generator = KeyPackageGenerator {
-            protocol_version,
-            cipher_suite_provider: &test_cipher_suite_provider(cipher_suite),
-            signing_identity: &signing_identity,
-            signing_key: &secret_key,
-        };
+        let client = TestClientBuilder::new_for_test()
+            .used_protocol_version(protocol_version)
+            .signing_identity(identity.clone(), secret_key.clone(), cipher_suite)
+            .build_for_test();
 
-        let key_package = generator
-            .generate(
-                Lifetime::years(1).unwrap(),
-                get_test_capabilities(),
-                ExtensionList::default(),
-                ExtensionList::default(),
-            )
-            .await
+        let key_package = client
+            .key_package_builder(cipher_suite)
             .unwrap()
-            .key_package;
+            .valid_for_sec(365 * 24 * 3600)
+            .build()
+            .unwrap()
+            .key_package_message
+            .into_key_package()
+            .unwrap();
 
         (key_package, secret_key)
     }

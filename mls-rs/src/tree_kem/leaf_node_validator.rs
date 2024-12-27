@@ -235,7 +235,6 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
 #[cfg(test)]
 mod tests {
     use crate::client::test_utils::TEST_PROTOCOL_VERSION;
-    use crate::crypto::test_utils::try_test_cipher_suite_provider;
     use crate::extension::MlsExtension;
     use alloc::vec;
     use assert_matches::assert_matches;
@@ -505,19 +504,18 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_cipher_suite_mismatch() {
-        for another_cipher_suite in CipherSuite::all().filter(|cs| cs != &TEST_CIPHER_SUITE) {
-            if let Some(cs) = try_test_cipher_suite_provider(*another_cipher_suite) {
-                let (leaf_node, _) = get_test_add_node().await;
+        // We need to choose a CS with different signing algorithm
+        let another_cipher_suite = CipherSuite::P256_AES128;
 
-                let test_validator = LeafNodeValidator::new_for_test(&cs, &BasicIdentityProvider);
+        let cs = test_cipher_suite_provider(another_cipher_suite);
+        let (leaf_node, _) = get_test_add_node().await;
+        let test_validator = LeafNodeValidator::new_for_test(&cs, &BasicIdentityProvider);
 
-                let res = test_validator
-                    .check_if_valid(&leaf_node, ValidationContext::Add(None))
-                    .await;
+        let res = test_validator
+            .check_if_valid(&leaf_node, ValidationContext::Add(None))
+            .await;
 
-                assert_matches!(res, Err(MlsError::InvalidSignature));
-            }
-        }
+        assert_matches!(res, Err(MlsError::InvalidSignature));
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]

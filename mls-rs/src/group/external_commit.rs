@@ -15,6 +15,7 @@ use crate::{
         proposal::{ExternalInit, Proposal, RemoveProposal},
         EpochSecrets, ExternalPubExt, LeafIndex, LeafNode, MlsError, TreeKemPrivate,
     },
+    tree_kem::Lifetime,
     Group, MlsMessage,
 };
 
@@ -59,6 +60,7 @@ pub struct ExternalCommitBuilder<C: ClientConfig> {
     custom_proposals: Vec<Proposal>,
     #[cfg(feature = "custom_proposal")]
     received_custom_proposals: Vec<MlsMessage>,
+    leafnode_valid_for_sec: u64,
 }
 
 impl<C: ClientConfig> ExternalCommitBuilder<C> {
@@ -81,6 +83,14 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
             custom_proposals: Vec::new(),
             #[cfg(feature = "custom_proposal")]
             received_custom_proposals: Vec::new(),
+            leafnode_valid_for_sec: 86400 * 366,
+        }
+    }
+
+    pub fn leaf_node_valid_for_sec(self, leafnode_valid_for_sec: u64) -> Self {
+        Self {
+            leafnode_valid_for_sec,
+            ..self
         }
     }
 
@@ -189,7 +199,7 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
             self.config.leaf_properties(self.leaf_node_extensions),
             self.signing_identity,
             &self.signer,
-            self.config.lifetime(),
+            Lifetime::seconds(self.leafnode_valid_for_sec)?,
         )
         .await?;
 

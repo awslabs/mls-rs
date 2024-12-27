@@ -2,11 +2,10 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use mls_rs_core::{
-    error::IntoAnyError,
-    identity::{IdentityProvider, SigningIdentity},
-    key_package::{KeyPackageData, KeyPackageStorage},
-};
+use mls_rs_core::identity::{IdentityProvider, SigningIdentity};
+
+#[cfg(feature = "by_ref_proposal")]
+use mls_rs_core::error::IntoAnyError;
 
 use crate::{
     cipher_suite::CipherSuite,
@@ -15,7 +14,7 @@ use crate::{
     protocol_version::ProtocolVersion,
     signer::Signable,
     tree_kem::{node::LeafIndex, tree_validator::TreeValidator, TreeKemPublic},
-    CipherSuiteProvider, CryptoProvider, KeyPackageRef,
+    CipherSuiteProvider, CryptoProvider,
 };
 
 #[cfg(feature = "by_ref_proposal")]
@@ -188,24 +187,6 @@ pub(super) async fn transcript_hashes<P: CipherSuiteProvider>(
     .await?;
 
     Ok((interim_transcript_hash, confirmed_transcript_hash))
-}
-
-#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-pub(crate) async fn find_key_package_generation<K: KeyPackageStorage>(
-    key_package_repo: &K,
-    refs: &[&KeyPackageRef],
-) -> Result<KeyPackageData, MlsError> {
-    for kp_ref in refs {
-        if let Some(val) = key_package_repo
-            .get(kp_ref)
-            .await
-            .map_err(|e| MlsError::KeyPackageRepoError(e.into_any_error()))?
-        {
-            return Ok(val);
-        }
-    }
-
-    Err(MlsError::WelcomeKeyPackageNotFound)
 }
 
 pub(crate) fn cipher_suite_provider<P>(

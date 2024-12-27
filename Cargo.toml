@@ -6,7 +6,6 @@ members = [
     "mls-rs-core",
     "mls-rs-ffi",
     "mls-rs-identity-x509",
-    "mls-rs/test_harness_integration",
     "mls-rs-crypto-cryptokit",
     "mls-rs-crypto-openssl",
     "mls-rs-crypto-rustcrypto",
@@ -16,8 +15,6 @@ members = [
     "mls-rs-provider-sqlite",
     "mls-rs-codec",
     "mls-rs-codec-derive",
-    "mls-rs-uniffi",
-    "mls-rs-uniffi/uniffi-bindgen",
 ]
 
 default-members = [
@@ -32,5 +29,4 @@ default-members = [
     "mls-rs-crypto-webcrypto",
     "mls-rs-provider-sqlite",
     "mls-rs-codec",
-    "mls-rs-uniffi",
 ]

@@ -241,9 +241,7 @@ mod tests {
 
     use crate::tree_kem::node::NodeVec;
     #[cfg(feature = "by_ref_proposal")]
-    use crate::{
-        client::test_utils::TEST_CIPHER_SUITE, identity::test_utils::get_test_signing_identity,
-    };
+    use crate::{identity::test_utils::get_test_signing_identity, test_utils::TEST_CIPHER_SUITE};
 
     use mls_rs_core::extension::MlsExtension;
 

@@ -193,7 +193,6 @@ where
             #[cfg(feature = "prior_epoch")]
             snapshot.state.context.group_id.clone(),
             config.group_state_storage(),
-            config.key_package_repo(),
         )?;
 
         Ok(Group {

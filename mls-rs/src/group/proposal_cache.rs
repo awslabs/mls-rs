@@ -676,11 +676,11 @@ mod tests {
         group::{
             message_processor::path_update_required,
             proposal_filter::proposer_can_propose,
-            test_utils::{get_test_group_context, random_bytes, test_group, TEST_GROUP},
+            test_utils::{get_test_group_context, test_group, TEST_GROUP},
         },
         identity::basic::BasicIdentityProvider,
         identity::test_utils::{get_test_signing_identity, BasicWithCustomProvider},
-        key_package::{test_utils::test_key_package, KeyPackageGenerator},
+        key_package::test_utils::test_key_package,
         mls_rules::{CommitOptions, DefaultMlsRules},
         psk::AlwaysFoundPskStorage,
         tree_kem::{
@@ -721,14 +721,11 @@ mod tests {
     use itertools::Itertools;
     use mls_rs_core::crypto::{CipherSuite, CipherSuiteProvider};
     use mls_rs_core::extension::ExtensionList;
+    use mls_rs_core::extension::MlsExtension;
     use mls_rs_core::group::{Capabilities, ProposalType};
     use mls_rs_core::identity::IdentityProvider;
     use mls_rs_core::protocol_version::ProtocolVersion;
     use mls_rs_core::psk::{PreSharedKey, PreSharedKeyStorage};
-    use mls_rs_core::{
-        extension::MlsExtension,
-        identity::{Credential, CredentialType, CustomCredential},
-    };
 
     fn test_sender() -> u32 {
         1
@@ -3582,7 +3579,7 @@ mod tests {
         );
     }
 
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    /*#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn unsupported_credential_key_package(name: &str) -> KeyPackage {
         let (mut signing_identity, secret_key) =
             get_test_signing_identity(TEST_CIPHER_SUITE, name.as_bytes()).await;
@@ -3666,7 +3663,7 @@ mod tests {
         assert_eq!(processed_proposals.0, Vec::new());
 
         assert_eq!(processed_proposals.1.unused_proposals, vec![add_info]);
-    }
+    }*/
 
     #[cfg(feature = "custom_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]

@@ -7,7 +7,6 @@ use mls_rs_core::{
     crypto::CipherSuiteProvider,
     error::IntoAnyError,
     group::GroupStateStorage,
-    key_package::KeyPackageStorage,
     psk::{ExternalPskId, PreSharedKey, PreSharedKeyStorage},
 };
 
@@ -19,21 +18,18 @@ use crate::{
 
 use super::{secret::PskSecretInput, JustPreSharedKeyID, PreSharedKeyID, ResumptionPsk};
 
-pub(crate) struct PskResolver<'a, GS, K, PS>
+pub(crate) struct PskResolver<'a, GS, PS>
 where
     GS: GroupStateStorage,
     PS: PreSharedKeyStorage,
-    K: KeyPackageStorage,
 {
     pub group_context: Option<&'a GroupContext>,
     pub current_epoch: Option<&'a EpochSecrets>,
-    pub prior_epochs: Option<&'a GroupStateRepository<GS, K>>,
+    pub prior_epochs: Option<&'a GroupStateRepository<GS>>,
     pub psk_store: &'a PS,
 }
 
-impl<GS: GroupStateStorage, K: KeyPackageStorage, PS: PreSharedKeyStorage>
-    PskResolver<'_, GS, K, PS>
-{
+impl<GS: GroupStateStorage, PS: PreSharedKeyStorage> PskResolver<'_, GS, PS> {
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn resolve_resumption(&self, psk_id: &ResumptionPsk) -> Result<PreSharedKey, MlsError> {
         if let Some(ctx) = self.group_context {

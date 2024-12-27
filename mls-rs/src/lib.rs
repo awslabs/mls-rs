@@ -161,7 +161,6 @@ pub use mls_rs_core::{
     crypto::{CipherSuiteProvider, CryptoProvider},
     group::GroupStateStorage,
     identity::IdentityProvider,
-    key_package::KeyPackageStorage,
     psk::PreSharedKeyStorage,
 };
 

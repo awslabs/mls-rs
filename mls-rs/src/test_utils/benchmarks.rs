@@ -3,7 +3,8 @@ use mls_rs_core::protocol_version::ProtocolVersion;
 
 use crate::{
     cipher_suite::CipherSuite,
-    client_builder::{BaseConfig, MlsConfig, WithCryptoProvider, WithIdentityProvider},
+    client_builder::{BaseConfig, WithCryptoProvider, WithIdentityProvider},
+    client_config::ClientConfig,
     group::{framing::MlsMessage, Group},
     identity::basic::BasicIdentityProvider,
     test_utils::{generate_basic_client, get_test_groups},
@@ -82,19 +83,19 @@ async fn generate_test_cases(cs: CipherSuite) -> Vec<MlsMessage> {
 }
 
 #[derive(Clone)]
-pub struct GroupStates<C: MlsConfig> {
+pub struct GroupStates<C: ClientConfig> {
     pub sender: Group<C>,
     pub receiver: Group<C>,
 }
 
 #[cfg(mls_build_async)]
-pub fn load_group_states(cs: CipherSuite) -> Vec<GroupStates<impl MlsConfig>> {
+pub fn load_group_states(cs: CipherSuite) -> Vec<GroupStates<impl ClientConfig>> {
     let group_info = load_test_case_mls!(group_state, block_on(generate_test_cases(cs)), to_vec);
     join_group(cs, group_info)
 }
 
 #[cfg(not(mls_build_async))]
-pub fn load_group_states(cs: CipherSuite) -> Vec<GroupStates<impl MlsConfig>> {
+pub fn load_group_states(cs: CipherSuite) -> Vec<GroupStates<impl ClientConfig>> {
     let group_infos: Vec<MlsMessage> =
         load_test_case_mls!(group_state, generate_test_cases(cs), to_vec);
 
@@ -105,7 +106,7 @@ pub fn load_group_states(cs: CipherSuite) -> Vec<GroupStates<impl MlsConfig>> {
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-pub async fn join_group(cs: CipherSuite, group_info: MlsMessage) -> GroupStates<impl MlsConfig> {
+pub async fn join_group(cs: CipherSuite, group_info: MlsMessage) -> GroupStates<impl ClientConfig> {
     let client = generate_basic_client(
         cs,
         ProtocolVersion::MLS_10,
@@ -113,7 +114,6 @@ pub async fn join_group(cs: CipherSuite, group_info: MlsMessage) -> GroupStates<
         None,
         false,
         &MlsCryptoProvider::new(),
-        None,
     );
 
     let mut sender = client.commit_external(group_info).await.unwrap().0;
@@ -125,7 +125,6 @@ pub async fn join_group(cs: CipherSuite, group_info: MlsMessage) -> GroupStates<
         None,
         false,
         &MlsCryptoProvider::new(),
-        None,
     );
 
     let group_info = sender

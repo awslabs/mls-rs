@@ -20,9 +20,7 @@ use crate::{
     crypto::test_utils::test_cipher_suite_provider,
     extension::ExtensionType,
     identity::test_utils::get_test_signing_identity,
-    key_package::{KeyPackageGeneration, KeyPackageGenerator},
     mls_rules::{CommitOptions, DefaultMlsRules},
-    tree_kem::{leaf_node::test_utils::get_test_capabilities, Lifetime},
 };
 
 use crate::extension::RequiredCapabilitiesExt;
@@ -198,36 +196,16 @@ pub(crate) fn group_extensions() -> ExtensionList {
     extensions
 }
 
-pub(crate) fn lifetime() -> Lifetime {
-    Lifetime::years(1).unwrap()
-}
-
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 pub(crate) async fn test_member(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
-    identifier: &[u8],
-) -> (KeyPackageGeneration, SignatureSecretKey) {
-    let (signing_identity, signing_key) = get_test_signing_identity(cipher_suite, identifier).await;
+    identity: &str,
+) -> (MlsMessage, SignatureSecretKey) {
+    let (client, package) =
+        test_client_with_key_pkg(protocol_version, cipher_suite, identity).await;
 
-    let key_package_generator = KeyPackageGenerator {
-        protocol_version,
-        cipher_suite_provider: &test_cipher_suite_provider(cipher_suite),
-        signing_identity: &signing_identity,
-        signing_key: &signing_key,
-    };
-
-    let key_package = key_package_generator
-        .generate(
-            lifetime(),
-            get_test_capabilities(),
-            ExtensionList::default(),
-            ExtensionList::default(),
-        )
-        .await
-        .unwrap();
-
-    (key_package, signing_key)
+    (package, client.client.signer.unwrap())
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -343,7 +321,7 @@ pub(crate) async fn get_test_groups_with_features(
             TestClientBuilder::new_for_test()
                 .extension_type(999.into())
                 .signing_identity(identity, secret_key, TEST_CIPHER_SUITE)
-                .build(),
+                .build_for_test(),
         );
     }
 
@@ -356,7 +334,11 @@ pub(crate) async fn get_test_groups_with_features(
 
     for client in clients.iter().skip(1) {
         let key_package = client
-            .generate_key_package_message(Default::default(), leaf_extensions.clone())
+            .generate_key_package_message_custom(
+                Default::default(),
+                leaf_extensions.clone(),
+                TEST_CIPHER_SUITE,
+            )
             .await
             .unwrap();
 

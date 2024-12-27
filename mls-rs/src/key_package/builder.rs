@@ -39,6 +39,9 @@ pub struct KeyPackageBuilder<'a, CP> {
     validity_sec: u64,
     // This I feel like can still be fixed for client as it rarely changes?
     capabilities: Capabilities,
+
+    #[cfg(feature = "test_util")]
+    lifetime_override: Option<Lifetime>,
 }
 
 impl<'a, CP> KeyPackageBuilder<'a, CP> {
@@ -78,6 +81,28 @@ impl<'a, CP> KeyPackageBuilder<'a, CP> {
             ..self
         }
     }
+
+    pub fn key_package_extensions(self, extensios: ExtensionList) -> Self {
+        Self {
+            key_package_extensions: extensios,
+            ..self
+        }
+    }
+
+    pub fn leaf_node_extensions(self, extensios: ExtensionList) -> Self {
+        Self {
+            leaf_node_extensions: extensios,
+            ..self
+        }
+    }
+
+    #[cfg(feature = "test_util")]
+    pub fn lifetime_override(self, lifetime_override: Lifetime) -> Self {
+        Self {
+            lifetime_override: Some(lifetime_override),
+            ..self
+        }
+    }
 }
 
 impl<CP: CipherSuiteProvider> KeyPackageBuilder<'_, CP> {
@@ -100,6 +125,9 @@ impl<CP: CipherSuiteProvider> KeyPackageBuilder<'_, CP> {
         };
 
         let lifetime = Lifetime::seconds(self.validity_sec)?;
+
+        #[cfg(feature = "test_util")]
+        let lifetime = self.lifetime_override.unwrap_or(lifetime);
 
         let (leaf_node, leaf_node_secret) = LeafNode::generate(
             &self.cipher_suite_provider,
@@ -171,6 +199,9 @@ impl<'a, CP> KeyPackageBuilder<'a, CP> {
             leaf_node_extensions: Default::default(),
             validity_sec: 86400 * 366,
             capabilities: client.config.capabilities(),
+
+            #[cfg(feature = "test_util")]
+            lifetime_override: None,
         }
     }
 }

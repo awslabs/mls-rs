@@ -2,6 +2,7 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
+use itertools::Itertools;
 use mls_rs::{
     client_builder::MlsConfig,
     error::MlsError,
@@ -66,15 +67,14 @@ fn make_groups_best_case<P: CryptoProvider + Clone>(
         let bob_client = make_client(crypto_provider.clone(), &make_name(i + 1))?;
 
         // The new client generates a key package.
-        let bob_kpkg =
-            bob_client.generate_key_package_message(Default::default(), Default::default())?;
+        let bob_kpkg = bob_client.key_package_builder(CIPHERSUITE)?.build()?;
 
         // Last group sends a commit adding the new client to the group.
         let commit = groups
             .last_mut()
             .unwrap()
             .commit_builder()
-            .add_member(bob_kpkg)?
+            .add_member(bob_kpkg.key_package_message)?
             .build()?;
 
         // All other groups process the commit.
@@ -86,7 +86,9 @@ fn make_groups_best_case<P: CryptoProvider + Clone>(
         groups.last_mut().unwrap().apply_pending_commit()?;
 
         // The new member joins.
-        let (bob_group, _info) = bob_client.join_group(None, &commit.welcome_messages[0])?;
+        let (bob_group, _info) = bob_client
+            .group_joiner(&commit.welcome_messages[0], bob_kpkg.key_package_data)?
+            .join()?;
 
         groups.push(bob_group);
     }
@@ -109,11 +111,12 @@ fn make_groups_worst_case<P: CryptoProvider + Clone>(
 
     // Alice adds all Bob's clients in a single commit.
     let mut commit_builder = alice_group.commit_builder();
+    let mut kpkgs = vec![];
 
     for bob_client in &bob_clients {
-        let bob_kpkg =
-            bob_client.generate_key_package_message(Default::default(), Default::default())?;
-        commit_builder = commit_builder.add_member(bob_kpkg)?;
+        let bob_kpkg = bob_client.key_package_builder(CIPHERSUITE)?.build()?;
+        commit_builder = commit_builder.add_member(bob_kpkg.key_package_message)?;
+        kpkgs.push(bob_kpkg.key_package_data);
     }
 
     let welcome_message = &commit_builder.build()?.welcome_messages[0];
@@ -123,8 +126,8 @@ fn make_groups_worst_case<P: CryptoProvider + Clone>(
     // Bob's clients join the group.
     let mut groups = vec![alice_group];
 
-    for bob_client in &bob_clients {
-        let (bob_group, _info) = bob_client.join_group(None, welcome_message)?;
+    for (bob_client, kpkg) in bob_clients.iter().cartesian_product(kpkgs.into_iter()) {
+        let (bob_group, _info) = bob_client.group_joiner(welcome_message, kpkg)?.join()?;
         groups.push(bob_group);
     }
 
