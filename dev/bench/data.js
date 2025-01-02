@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1735594806882,
+  "lastUpdate": 1735807878747,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -18995,6 +18995,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 131729,
             "range": "± 5676",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mh-github@glandium.org",
+            "name": "Mike Hommey",
+            "username": "glandium"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2af95d34cab8fb3fc56256e526eafa8729e76238",
+          "message": "Avoid intermediate Vec in TreeKemPublic::update_hashes (#230)\n\n[slice, slice].concat() creates an intermediate Vec, which can be\r\navoided by chaining updated_leaves and trailing_blanks before the first\r\nVec is created.",
+          "timestamp": "2025-01-02T09:46:35+01:00",
+          "tree_id": "4c48ecc0642d8bb37e5b667ed181846610b92006",
+          "url": "https://github.com/awslabs/mls-rs/commit/2af95d34cab8fb3fc56256e526eafa8729e76238"
+        },
+        "date": 1735807877920,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 510327,
+            "range": "± 18192",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 519719,
+            "range": "± 22968",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 610591,
+            "range": "± 18605",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1229341,
+            "range": "± 19886",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 8173758,
+            "range": "± 41705",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1144611,
+            "range": "± 47916",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 1242744,
+            "range": "± 55461",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 1345620,
+            "range": "± 48347",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 741657,
+            "range": "± 17168",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 818376,
+            "range": "± 9738",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 910351,
+            "range": "± 45846",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 21206,
+            "range": "± 485",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 68548,
+            "range": "± 1588",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 131919,
+            "range": "± 5190",
             "unit": "ns/iter"
           }
         ]
