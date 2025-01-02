@@ -1442,7 +1442,7 @@ where
     /// combination has a unique and independent secret. Secrets for all
     /// epochs, labels and contexts can be derived until either the epoch
     /// changes, i.e. a commit is received (or own commit is applied), or
-    /// (Group::delete_exporter) is called.
+    /// [Group::delete_exporter] is called.
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn export_secret(
         &self,
@@ -1457,10 +1457,10 @@ where
     }
 
     /// Delete the exporter secret. Afterwards the state contains no information
-    /// aboud any secrets outputted by (Group::export_secret) (for the current or
-    /// past epochs). This means that after calling this function (Group::export_secret)
+    /// about any secrets outputted by [Group::export_secret] (for the current or
+    /// past epochs). This means that after calling this function, [Group::export_secret]
     /// can no longer be used and we get forward secrecy for all secrets derived using
-    /// (Group::export_secret).
+    /// [Group::export_secret].
     pub fn delete_exporter(&mut self) {
         self.key_schedule.delete_exporter();
     }
