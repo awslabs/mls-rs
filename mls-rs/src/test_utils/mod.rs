@@ -62,8 +62,7 @@ impl<C: MlsConfig> TestClient<C> {
             return Err(MlsError::UnexpectedMessageType);
         };
 
-        let key_package_data =
-            find_key_package_generation(&self.key_packages, &key_package_refs).await?;
+        let key_package_data = find_key_package_generation(&self.key_packages, &key_package_refs)?;
 
         let mut joiner = self.client.group_joiner(welcome, key_package_data).await?;
 
