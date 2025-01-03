@@ -23,7 +23,7 @@ serde = ["dep:serde", "zeroize/serde", "hex/serde", "dep:serde_bytes"]
 last_resort_key_package_ext = []
 
 [dependencies]
-mls-rs-codec = { version = "0.5.2", path = "../mls-rs-codec", default-features = false}
+mls-rs-codec = { version = "0.5", path = "../mls-rs-codec", default-features = false}
 zeroize = { version = "1", default-features = false, features = ["alloc", "zeroize_derive"] }
 arbitrary = { version = "1", features = ["derive"], optional = true }
 thiserror = { version = "1.0.40", optional = true }

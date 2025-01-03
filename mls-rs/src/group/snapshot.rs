@@ -2,13 +2,17 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
+use core::ops::Deref;
+
+use alloc::{vec, vec::Vec};
+
 use crate::{
     client::MlsError,
     client_config::ClientConfig,
     group::{
         cipher_suite_provider, epoch::EpochSecrets, key_schedule::KeySchedule,
-        state_repo::GroupStateRepository, CommitGeneration, ConfirmationTag, Group, GroupContext,
-        GroupState, InterimTranscriptHash, ReInitProposal, TreeKemPublic,
+        state_repo::GroupStateRepository, ConfirmationTag, Group, GroupContext, GroupState,
+        InterimTranscriptHash, ReInitProposal, TreeKemPublic,
     },
     tree_kem::TreeKemPrivate,
 };
@@ -39,8 +43,26 @@ pub(crate) struct Snapshot {
     key_schedule: KeySchedule,
     #[cfg(feature = "by_ref_proposal")]
     pending_updates: SmallMap<HpkePublicKey, (HpkeSecretKey, Option<SignatureSecretKey>)>,
-    pending_commit: Option<CommitGeneration>,
+    pending_commit: PendingCommit,
     signer: SignatureSecretKey,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub(crate) struct PendingCommit(pub Vec<u8>);
+
+impl From<Vec<u8>> for PendingCommit {
+    fn from(value: Vec<u8>) -> Self {
+        Self(value)
+    }
+}
+
+impl Deref for PendingCommit {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 #[derive(Debug, MlsEncode, MlsDecode, MlsSize, PartialEq, Clone)]
@@ -149,7 +171,7 @@ where
     /// that is currently in use by the group.
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn write_to_storage(&mut self) -> Result<(), MlsError> {
-        self.state_repo.write_to_storage(self.snapshot()).await
+        self.state_repo.write_to_storage(self.snapshot()?).await
     }
 
     /// Write the current state of the group to the
@@ -159,24 +181,30 @@ where
     /// separately by calling [`Group::export_tree`].
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn write_to_storage_without_ratchet_tree(&mut self) -> Result<(), MlsError> {
-        let mut snapshot = self.snapshot();
+        let mut snapshot = self.snapshot()?;
         snapshot.state.public_tree.nodes = Default::default();
 
         self.state_repo.write_to_storage(snapshot).await
     }
 
-    pub(crate) fn snapshot(&self) -> Snapshot {
-        Snapshot {
+    pub(crate) fn snapshot(&self) -> Result<Snapshot, MlsError> {
+        Ok(Snapshot {
             state: RawGroupState::export(&self.state),
             private_tree: self.private_tree.clone(),
             key_schedule: self.key_schedule.clone(),
             #[cfg(feature = "by_ref_proposal")]
             pending_updates: self.pending_updates.clone(),
-            pending_commit: self.pending_commit.clone(),
+            pending_commit: self
+                .pending_commit
+                .as_ref()
+                .map(|p| p.mls_encode_to_vec())
+                .transpose()?
+                .unwrap_or_default()
+                .into(),
             epoch_secrets: self.epoch_secrets.clone(),
             version: 1,
             signer: self.signer.clone(),
-        }
+        })
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -197,6 +225,10 @@ where
             None,
         )?;
 
+        let pending_commit = (!snapshot.pending_commit.is_empty())
+            .then(|| MlsDecode::mls_decode(&mut &*snapshot.pending_commit))
+            .transpose()?;
+
         Ok(Group {
             config,
             state: snapshot
@@ -210,7 +242,7 @@ where
             key_schedule: snapshot.key_schedule,
             #[cfg(feature = "by_ref_proposal")]
             pending_updates: snapshot.pending_updates,
-            pending_commit: snapshot.pending_commit,
+            pending_commit,
             #[cfg(test)]
             commit_modifiers: Default::default(),
             epoch_secrets: snapshot.epoch_secrets,
@@ -220,6 +252,39 @@ where
             previous_psk: None,
             signer: snapshot.signer,
         })
+    }
+}
+
+mod legacy {
+
+    use super::*;
+
+    impl MlsSize for PendingCommit {
+        fn mls_encoded_len(&self) -> usize {
+            1 + self.0.mls_encoded_len()
+        }
+    }
+
+    impl MlsEncode for PendingCommit {
+        fn mls_encode(&self, writer: &mut Vec<u8>) -> Result<(), mls_rs_codec::Error> {
+            2u8.mls_encode(writer)?;
+            self.0.mls_encode(writer)
+        }
+    }
+
+    impl MlsDecode for PendingCommit {
+        fn mls_decode(reader: &mut &[u8]) -> Result<Self, mls_rs_codec::Error> {
+            let bytes = match u8::mls_decode(reader)? {
+                2u8 => Vec::mls_decode(reader)?,
+                // Legacy PendingCommit was Option<CommitGeneration>. The old CommitGeneration
+                // is not usable anymore, so if we detect that this is legacy, we delete the
+                // pending commit. Option always starts with 0 for None or 1 for Some
+                0u8 | 1u8 => vec![],
+                n => return Err(mls_rs_codec::Error::OptionOutOfRange(n)),
+            };
+
+            Ok(PendingCommit(bytes))
+        }
     }
 }
 
@@ -260,7 +325,7 @@ pub(crate) mod test_utils {
             key_schedule: get_test_key_schedule(cipher_suite),
             #[cfg(feature = "by_ref_proposal")]
             pending_updates: Default::default(),
-            pending_commit: None,
+            pending_commit: vec![].into(),
             version: 1,
             signer: vec![].into(),
         }
@@ -270,18 +335,65 @@ pub(crate) mod test_utils {
 #[cfg(test)]
 mod tests {
     use alloc::vec;
+    use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
+    use mls_rs_core::crypto::{HpkePublicKey, HpkeSecretKey, SignatureSecretKey};
 
     use crate::{
         client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         group::{
+            framing::test_utils::get_test_auth_content,
+            snapshot::RawGroupState,
             test_utils::{test_group, TestGroup},
-            Group,
+            AuthenticatedContent, EpochSecrets, Group, KeySchedule, TreeKemPrivate,
         },
+        map::SmallMap,
     };
+
+    use super::Snapshot;
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn legacy_interop() {
+        #[derive(Debug, PartialEq, Clone, MlsEncode, MlsDecode, MlsSize)]
+        struct LegacySnapshot {
+            version: u16,
+            pub(crate) state: RawGroupState,
+            private_tree: TreeKemPrivate,
+            epoch_secrets: EpochSecrets,
+            key_schedule: KeySchedule,
+            #[cfg(feature = "by_ref_proposal")]
+            pending_updates: SmallMap<HpkePublicKey, (HpkeSecretKey, Option<SignatureSecretKey>)>,
+
+            // This used to be Option<CommitGeneration>. It does not matter what's inside the option.
+            pending_commit: Option<(AuthenticatedContent, u8)>,
+
+            signer: SignatureSecretKey,
+        }
+
+        let mut snapshot = super::test_utils::get_test_snapshot(TEST_CIPHER_SUITE, 5).await;
+
+        let legacy_snapshot = LegacySnapshot {
+            version: snapshot.version,
+            state: snapshot.state.clone(),
+            private_tree: snapshot.private_tree.clone(),
+            epoch_secrets: snapshot.epoch_secrets.clone(),
+            key_schedule: snapshot.key_schedule.clone(),
+            #[cfg(feature = "by_ref_proposal")]
+            pending_updates: snapshot.pending_updates.clone(),
+
+            pending_commit: Some((get_test_auth_content(), 23)),
+
+            signer: snapshot.signer.clone(),
+        };
+
+        let bytes = legacy_snapshot.mls_encode_to_vec().unwrap();
+        let restored_snapshot = Snapshot::mls_decode(&mut &*bytes).unwrap();
+        snapshot.pending_commit = vec![].into();
+        assert_eq!(restored_snapshot, snapshot);
+    }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn snapshot_restore(group: TestGroup) {
-        let snapshot = group.snapshot();
+        let snapshot = group.snapshot().unwrap();
 
         let group_restored = Group::from_snapshot(group.config.clone(), snapshot)
             .await
