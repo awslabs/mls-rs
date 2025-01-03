@@ -47,7 +47,7 @@ mod tests {
             snapshot::{test_utils::get_test_snapshot, Snapshot},
             test_utils::{test_member, TEST_GROUP},
         },
-        storage_provider::in_memory::{InMemoryGroupStateStorage, InMemoryKeyPackageStorage},
+        storage_provider::in_memory::InMemoryGroupStateStorage,
     };
 
     use alloc::vec;
@@ -61,11 +61,8 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_stored_groups_list() {
-        let mut test_repo = GroupStateRepository::new(
-            InMemoryGroupStateStorage::default(),
-            InMemoryKeyPackageStorage::default(),
-        )
-        .unwrap();
+        let mut test_repo =
+            GroupStateRepository::new(InMemoryGroupStateStorage::default()).unwrap();
 
         test_repo
             .write_to_storage(test_snapshot(0).await)
