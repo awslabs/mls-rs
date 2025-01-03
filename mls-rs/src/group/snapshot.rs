@@ -377,6 +377,7 @@ mod tests {
             private_tree: snapshot.private_tree.clone(),
             epoch_secrets: snapshot.epoch_secrets.clone(),
             key_schedule: snapshot.key_schedule.clone(),
+            #[cfg(feature = "by_ref_proposal")]
             pending_updates: snapshot.pending_updates.clone(),
 
             pending_commit: Some((get_test_auth_content(), 23)),
