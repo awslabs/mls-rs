@@ -255,6 +255,7 @@ async fn invite_passive_client<P: CipherSuiteProvider, C: MlsConfig>(
         .unwrap()
         .lifetime_override(ETERNAL_LIFETIME)
         .build()
+        .await
         .unwrap();
 
     let mut commit_builder = groups[0]

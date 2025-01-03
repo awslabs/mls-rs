@@ -204,6 +204,7 @@ pub(crate) mod test_utils {
             .unwrap()
             .valid_for_sec(365 * 24 * 3600)
             .build()
+            .await
             .unwrap()
             .key_package_message
             .into_key_package()
