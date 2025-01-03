@@ -186,7 +186,7 @@ pub use crate::{
         mls_rules::MlsRules,
         Group,
     },
-    key_package::{KeyPackage, KeyPackageRef},
+    key_package::{builder::KeyPackageGeneration, KeyPackage, KeyPackageRef},
 };
 
 /// Error types.

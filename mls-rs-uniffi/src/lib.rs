@@ -23,6 +23,8 @@ use std::sync::Arc;
 
 pub use config::ClientConfig;
 use config::UniFFIConfig;
+use mls_rs::mls_rs_codec::{MlsDecode, MlsEncode};
+use mls_rs_core::key_package::KeyPackageData;
 
 #[cfg(not(mls_build_async))]
 use std::sync::Mutex;
@@ -190,6 +192,28 @@ impl From<mls_rs::MlsMessage> for Message {
 }
 
 #[derive(Clone, Debug, uniffi::Object)]
+pub struct KeyPackageGeneration {
+    inner: mls_rs::KeyPackageGeneration,
+}
+
+impl From<mls_rs::KeyPackageGeneration> for KeyPackageGeneration {
+    fn from(inner: mls_rs::KeyPackageGeneration) -> Self {
+        Self { inner }
+    }
+}
+
+#[uniffi::export]
+impl KeyPackageGeneration {
+    pub fn message(&self) -> Message {
+        self.inner.key_package_message.clone().into()
+    }
+
+    pub fn key_package_data(&self) -> Result<Vec<u8>, Error> {
+        Ok(self.inner.key_package_data.mls_encode_to_vec()?)
+    }
+}
+
+#[derive(Clone, Debug, uniffi::Object)]
 pub struct Proposal {
     // FIXME: This isn't very useful because we get no details about the
     // action this proposal performs
@@ -333,6 +357,7 @@ pub async fn generate_signature_keypair(
 #[derive(Clone, Debug, uniffi::Object)]
 pub struct Client {
     inner: mls_rs::client::Client<UniFFIConfig>,
+    cipher_suite: CipherSuite,
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -370,7 +395,10 @@ impl Client {
             .mls_rules(mls_rules)
             .build();
 
-        Client { inner: client }
+        Client {
+            inner: client,
+            cipher_suite,
+        }
     }
 
     /// Generate a new key package for this client.
@@ -381,12 +409,15 @@ impl Client {
     ///
     /// See [`mls_rs::Client::generate_key_package_message`] for
     /// details.
-    pub async fn generate_key_package_message(&self) -> Result<Message, Error> {
-        let message = self
+    pub async fn generate_key_package_message(&self) -> Result<KeyPackageGeneration, Error> {
+        let kp_generation = self
             .inner
-            .generate_key_package_message(Default::default(), Default::default())
+            .key_package_builder(self.cipher_suite.into())
+            .await?
+            .build()
             .await?;
-        Ok(message.into())
+
+        Ok(kp_generation.into())
     }
 
     pub fn signing_identity(&self) -> Result<Arc<SigningIdentity>, Error> {
@@ -430,12 +461,21 @@ impl Client {
         &self,
         ratchet_tree: Option<RatchetTree>,
         welcome_message: &Message,
+        key_package_data: Vec<u8>,
     ) -> Result<JoinInfo, Error> {
-        let ratchet_tree = ratchet_tree.map(TryInto::try_into).transpose()?;
-        let (group, new_member_info) = self
+        let mut joiner = self
             .inner
-            .join_group(ratchet_tree, &welcome_message.inner)
+            .group_joiner(
+                &welcome_message.inner,
+                KeyPackageData::mls_decode(&mut &*key_package_data)?,
+            )
             .await?;
+
+        if let Some(tree) = ratchet_tree {
+            joiner = joiner.ratchet_tree(tree.try_into()?)
+        }
+
+        let (group, new_member_info) = joiner.join().await?;
 
         let group = Arc::new(Group {
             inner: Arc::new(Mutex::new(group)),
@@ -884,11 +924,15 @@ mod tests {
 
         let alice_group = alice.create_group(None)?;
         let bob_key_package = bob.generate_key_package_message()?;
-        let commit = alice_group.add_members(vec![Arc::new(bob_key_package)])?;
+        let commit = alice_group.add_members(vec![Arc::new(bob_key_package.message())])?;
         alice_group.process_incoming_message(commit.commit_message)?;
 
         let bob_group = bob
-            .join_group(None, &commit.welcome_message.unwrap())?
+            .join_group(
+                None,
+                &commit.welcome_message.unwrap(),
+                bob_key_package.key_package_data()?,
+            )?
             .group;
         let message = alice_group.encrypt_application_message(b"hello, bob")?;
         let received_message = bob_group.process_incoming_message(Arc::new(message))?;

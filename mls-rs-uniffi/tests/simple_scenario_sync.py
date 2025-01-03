@@ -10,11 +10,11 @@ key = generate_signature_keypair(CipherSuite.CURVE25519_AES128)
 bob = Client(b'bob', key, client_config)
 
 alice = alice.create_group(None)
-message = bob.generate_key_package_message()
+key_package = bob.generate_key_package_message()
 
-commit = alice.add_members([message])
+commit = alice.add_members([key_package.message()])
 alice.process_incoming_message(commit.commit_message)
-bob = bob.join_group(None, commit.welcome_message).group
+bob = bob.join_group(None, commit.welcome_message, key_package.key_package_data()).group
 
 msg = alice.encrypt_application_message(b'hello, bob')
 output = bob.process_incoming_message(msg)

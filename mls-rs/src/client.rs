@@ -418,12 +418,6 @@ where
     /// client to a [Group](crate::group::Group). Each call to this function
     /// will produce a unique value that is signed by `signing_identity`.
     ///
-    /// The secret keys for the resulting key package message will be stored in
-    /// the [KeyPackageStorage](crate::KeyPackageStorage)
-    /// that was used to configure the client and will
-    /// automatically be erased when this key package is used to
-    /// [join a group](Client::join_group).
-    ///
     /// # Warning
     ///
     /// A key package message may only be used once.

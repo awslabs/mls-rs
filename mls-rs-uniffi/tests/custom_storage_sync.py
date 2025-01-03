@@ -72,11 +72,11 @@ key = generate_signature_keypair(CipherSuite.CURVE25519_AES128)
 bob = Client(b'bob', key, client_config)
 
 alice = alice.create_group(None)
-message = bob.generate_key_package_message()
+key_package = bob.generate_key_package_message()
 
-output = alice.add_members([message])
+output = alice.add_members([key_package.message()])
 alice.process_incoming_message(output.commit_message)
-bob = bob.join_group(None, output.welcome_message).group
+bob = bob.join_group(None, output.welcome_message, key_package.key_package_data()).group
 
 msg = alice.encrypt_application_message(b'hello, bob')
 output = bob.process_incoming_message(msg)

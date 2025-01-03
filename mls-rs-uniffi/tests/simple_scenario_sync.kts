@@ -10,11 +10,11 @@ val bobKey = generateSignatureKeypair(CipherSuite.CURVE25519_AES128)
 val bob = Client("bob".toByteArray(), bobKey, clientConfig)
 
 val aliceGroup = alice.createGroup(null)
-val message = bob.generateKeyPackageMessage()
+val keyPackage = bob.generateKeyPackageMessage()
 
-val commit = aliceGroup.addMembers(listOf(message))
+val commit = aliceGroup.addMembers(listOf(keyPackage.message()))
 aliceGroup.processIncomingMessage(commit.commitMessage)
-val bobGroup = bob.joinGroup(null, commit.welcomeMessage!!).group
+val bobGroup = bob.joinGroup(null, commit.welcomeMessage!!, keyPackage.keyPackageData()).group
 
 val encrypted = aliceGroup.encryptApplicationMessage("hello, bob".toByteArray())
 val receivedMessage = bobGroup.processIncomingMessage(encrypted!!)
