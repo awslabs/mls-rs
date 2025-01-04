@@ -47,7 +47,8 @@ use super::{
     mls_rules::CommitDirection,
     proposal::{Proposal, ProposalOrRef},
     CommitEffect, CommitMessageDescription, EncryptedGroupSecrets, EpochSecrets, ExportedTree,
-    Group, GroupContext, GroupInfo, GroupState, InterimTranscriptHash, NewEpoch, Welcome,
+    Group, GroupContext, GroupInfo, GroupState, InterimTranscriptHash, NewEpoch,
+    PendingCommitSnapshot, Welcome,
 };
 
 #[cfg(not(feature = "by_ref_proposal"))]
@@ -82,12 +83,12 @@ pub(crate) struct PendingCommit {
     safer_ffi_gen::ffi_type(clone, opaque)
 )]
 #[derive(Clone)]
-pub struct CommitSecrets(pub(crate) PendingCommit);
+pub struct CommitSecrets(pub(crate) PendingCommitSnapshot);
 
 impl CommitSecrets {
     /// Deserialize the commit secrets from bytes
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, MlsError> {
-        Ok(PendingCommit::mls_decode(&mut &*bytes).map(Self)?)
+        Ok(MlsDecode::mls_decode(&mut &*bytes).map(Self)?)
     }
 
     /// Serialize the commit secrets to bytes
@@ -364,7 +365,7 @@ where
             )
             .await?;
 
-        self.group.pending_commit = Some(pending_commit);
+        self.group.pending_commit = pending_commit.try_into()?;
 
         Ok(output)
     }
@@ -388,7 +389,12 @@ where
             )
             .await?;
 
-        Ok((output, CommitSecrets(pending_commit)))
+        Ok((
+            output,
+            CommitSecrets(PendingCommitSnapshot::PendingCommit(
+                pending_commit.mls_encode_to_vec()?,
+            )),
+        ))
     }
 }
 
@@ -487,7 +493,7 @@ where
         new_signing_identity: Option<SigningIdentity>,
         new_leaf_node_extensions: Option<ExtensionList>,
     ) -> Result<(CommitOutput, PendingCommit), MlsError> {
-        if self.pending_commit.is_some() {
+        if !self.pending_commit.is_none() {
             return Err(MlsError::ExistingPendingCommit);
         }
 

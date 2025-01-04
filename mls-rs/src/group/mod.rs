@@ -12,6 +12,7 @@ use mls_rs_core::extension::MlsExtension;
 use mls_rs_core::identity::MemberValidationContext;
 use mls_rs_core::secret::Secret;
 use mls_rs_core::time::MlsTime;
+use snapshot::PendingCommitSnapshot;
 
 use crate::cipher_suite::CipherSuite;
 use crate::client::MlsError;
@@ -273,7 +274,7 @@ where
     #[cfg(feature = "by_ref_proposal")]
     pending_updates:
         crate::map::SmallMap<HpkePublicKey, (HpkeSecretKey, Option<SignatureSecretKey>)>,
-    pending_commit: Option<PendingCommit>,
+    pending_commit: PendingCommitSnapshot,
     #[cfg(feature = "psk")]
     previous_psk: Option<PskSecretInput>,
     #[cfg(test)]
@@ -388,7 +389,7 @@ where
             key_schedule: key_schedule_result.key_schedule,
             #[cfg(feature = "by_ref_proposal")]
             pending_updates: Default::default(),
-            pending_commit: None,
+            pending_commit: Default::default(),
             #[cfg(test)]
             commit_modifiers: Default::default(),
             epoch_secrets: key_schedule_result.epoch_secrets,
@@ -572,7 +573,7 @@ where
             key_schedule,
             #[cfg(feature = "by_ref_proposal")]
             pending_updates: Default::default(),
-            pending_commit: None,
+            pending_commit: Default::default(),
             #[cfg(test)]
             commit_modifiers: Default::default(),
             epoch_secrets,
@@ -1210,12 +1211,16 @@ where
     /// [`CommitBuilder::build`].
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn apply_pending_commit(&mut self) -> Result<CommitMessageDescription, MlsError> {
-        let pending = self
-            .pending_commit
-            .take()
-            .ok_or(MlsError::PendingCommitNotFound)?;
+        let pending = core::mem::take(&mut self.pending_commit);
+        self.apply_detached_commit(CommitSecrets(pending))
+    }
 
-        self.apply_detached_commit(CommitSecrets(pending)).await
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn apply_pending_commit_backwards_compatible(
+        &mut self,
+    ) -> Result<CommitMessageDescription, MlsError> {
+        let pending = core::mem::take(&mut self.pending_commit);
+        self.apply_detached_commit_backwards_compatible(CommitSecrets(pending))
     }
 
     /// Apply a detached commit that was created by [`Group::commit_detached`] or
@@ -1225,7 +1230,10 @@ where
         &mut self,
         commit_secrets: CommitSecrets,
     ) -> Result<CommitMessageDescription, MlsError> {
-        let pending = commit_secrets.0;
+        let pending = match commit_secrets.0 {
+            PendingCommitSnapshot::PendingCommit(bytes) => PendingCommit::mls_decode(&mut &*bytes)?,
+            _ => return Err(MlsError::PendingCommitNotFound),
+        };
 
         self.insert_past_epoch().await?;
 
@@ -1238,10 +1246,27 @@ where
         Ok(pending.output)
     }
 
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn apply_detached_commit_backwards_compatible(
+        &mut self,
+        commit_secrets: CommitSecrets,
+    ) -> Result<CommitMessageDescription, MlsError> {
+        match commit_secrets.0 {
+            PendingCommitSnapshot::None | PendingCommitSnapshot::PendingCommit(_) => {
+                self.apply_detached_commit(commit_secrets).await
+            }
+            PendingCommitSnapshot::LegacyPendingCommit(legacy_pending) => {
+                let content = legacy_pending.content.clone();
+                self.pending_commit = PendingCommitSnapshot::LegacyPendingCommit(legacy_pending);
+                self.process_commit(content, None).await
+            }
+        }
+    }
+
     /// Returns true if a commit has been created but not yet applied
     /// with [`Group::apply_pending_commit`] or cleared with [`Group::clear_pending_commit`]
     pub fn has_pending_commit(&self) -> bool {
-        self.pending_commit.is_some()
+        !self.pending_commit.is_none()
     }
 
     /// Clear the currently pending commit.
@@ -1250,7 +1275,7 @@ where
     /// commit message is processed using [`Group::process_incoming_message`]
     /// before [`Group::apply_pending_commit`] is called.
     pub fn clear_pending_commit(&mut self) {
-        self.pending_commit = None
+        self.pending_commit = Default::default()
     }
 
     /// Returns true if the client has received or issued a proposal
@@ -1275,10 +1300,10 @@ where
         &mut self,
         message: MlsMessage,
     ) -> Result<ReceivedMessage, MlsError> {
-        if let Some(pending) = &self.pending_commit {
+        if let Some(pending) = self.pending_commit.commit_hash()? {
             let message_hash = MessageHash::compute(&self.cipher_suite_provider, &message).await?;
 
-            if message_hash == pending.commit_message_hash {
+            if message_hash == pending {
                 let message_description = self.apply_pending_commit().await?;
 
                 return Ok(ReceivedMessage::Commit(message_description));
@@ -1820,6 +1845,18 @@ where
             )
             .await?;
 
+        if sender == self.private_tree.self_index {
+            let PendingCommitSnapshot::LegacyPendingCommit(legacy_pending) = &self.pending_commit
+            else {
+                return Err(MlsError::CantProcessMessageFromSelf);
+            };
+
+            return Ok(Some((
+                legacy_pending.private_tree.clone(),
+                legacy_pending.commit_secret.clone(),
+            )));
+        }
+
         // Update the tree hash to get context for decryption
         provisional_state.group_context.tree_hash = provisional_state
             .public_tree
@@ -1927,7 +1964,7 @@ where
             self.pending_updates = Default::default();
         }
 
-        self.pending_commit = None;
+        self.pending_commit = Default::default();
 
         Ok(())
     }

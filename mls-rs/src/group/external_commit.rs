@@ -270,7 +270,7 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
             )
             .await?;
 
-        group.pending_commit = Some(pending_commit);
+        group.pending_commit = pending_commit.try_into()?;
         group.apply_pending_commit().await?;
 
         Ok((group, commit_output.commit_message))
