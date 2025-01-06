@@ -44,6 +44,7 @@ pub struct GroupJoiner<'a, 'b, C> {
 
 impl<'a, 'b, C: ClientConfig> GroupJoiner<'a, 'b, C> {
     // Info
+    #[cfg(feature = "psk")]
     pub fn required_external_psks(&self) -> impl Iterator<Item = &ExternalPskId> {
         self.group_secrets
             .psks
@@ -54,6 +55,7 @@ impl<'a, 'b, C: ClientConfig> GroupJoiner<'a, 'b, C> {
             })
     }
 
+    #[cfg(feature = "psk")]
     pub fn required_resumption_psks(&self) -> impl Iterator<Item = &ResumptionPsk> {
         self.group_secrets
             .psks
@@ -126,9 +128,7 @@ impl<'a, 'b, C: ClientConfig> GroupJoiner<'a, 'b, C> {
     /// that the ratchet tree is a part of GroupInfo or has been provided with
     /// [GroupJoiner::tree], and that all required PSKs have been provided [TODO].
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub(crate) async fn decrypt_group_info(
-        &mut self,
-    ) -> Result<(GroupInfo, TreeKemPublic, PskSecret), MlsError> {
+    pub(crate) async fn decrypt_group_info(&mut self) -> Result<DecryptedGroupInfo, MlsError> {
         let cipher_suite_provider =
             cipher_suite_provider(self.config.crypto_provider(), self.welcome.cipher_suite)?;
 
@@ -156,25 +156,33 @@ impl<'a, 'b, C: ClientConfig> GroupJoiner<'a, 'b, C> {
             .decrypt(&self.welcome.encrypted_group_info)
             .await?;
 
-        let decrypted_group_info = GroupInfo::mls_decode(&mut &**decrypted_group_info)?;
+        let group_info = GroupInfo::mls_decode(&mut &**decrypted_group_info)?;
 
         let id_provider = self.config.identity_provider();
 
         let public_tree = validate_tree_and_info_joiner(
             self.version,
-            &decrypted_group_info,
+            &group_info,
             self.tree.take(),
             &id_provider,
             &cipher_suite_provider,
         )
         .await?;
 
-        Ok((decrypted_group_info, public_tree, psk_secret))
+        Ok(DecryptedGroupInfo {
+            group_info,
+            public_tree,
+            psk_secret,
+        })
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn join(mut self) -> Result<(Group<C>, NewMemberInfo), MlsError> {
-        let (group_info, public_tree, psk_secret) = self.decrypt_group_info().await?;
+        let DecryptedGroupInfo {
+            group_info,
+            public_tree,
+            psk_secret,
+        } = self.decrypt_group_info().await?;
 
         let cipher_suite_provider =
             cipher_suite_provider(self.config.crypto_provider(), self.welcome.cipher_suite)?;
@@ -237,4 +245,10 @@ impl<'a, 'b, C: ClientConfig> GroupJoiner<'a, 'b, C> {
         .await
         .map_err(Into::into)
     }
+}
+
+pub(crate) struct DecryptedGroupInfo {
+    pub group_info: GroupInfo,
+    public_tree: TreeKemPublic,
+    psk_secret: PskSecret,
 }
