@@ -6,9 +6,9 @@ use crate::{
     client::test_utils::TEST_PROTOCOL_VERSION,
     crypto::test_utils::try_test_cipher_suite_provider,
     group::{
-        confirmation_tag::ConfirmationTag, framing::Content, message_processor::MessageProcessor,
-        message_signature::AuthenticatedContent, test_utils::GroupWithoutKeySchedule, Commit,
-        GroupContext, PathSecret, Sender,
+        commit_processor_from_content, confirmation_tag::ConfirmationTag, framing::Content,
+        message_signature::AuthenticatedContent, process_commit,
+        test_utils::GroupWithoutKeySchedule, Commit, GroupContext, PathSecret, Sender,
     },
     identity::basic::BasicIdentityProvider,
     tree_kem::{
@@ -167,7 +167,13 @@ async fn tree_kem() {
                 // Hack not to increment epoch
                 group.state.context.epoch -= 1;
 
-                group.process_commit(auth_content, None).await.unwrap();
+                process_commit(
+                    commit_processor_from_content(&mut group, auth_content)
+                        .await
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
 
                 // Check that we got the expected commit secret and correctly merged the update path.
                 // This implies that we computed the path secrets correctly.

@@ -7,13 +7,14 @@ use crate::{
     client_config::ClientConfig,
     extension::RatchetTreeExt,
     identity::SigningIdentity,
+    mls_rules::CommitSource,
     protocol_version::ProtocolVersion,
     signer::Signable,
-    tree_kem::{
-        kem::TreeKem, node::LeafIndex, path_secret::PathSecret, TreeKemPrivate, UpdatePath,
-    },
+    tree_kem::{kem::TreeKem, node::LeafIndex, path_secret::PathSecret, TreeKemPrivate},
     ExtensionList, MlsRules,
 };
+
+use super::Commit;
 
 #[cfg(all(not(mls_build_async), feature = "rayon"))]
 use {crate::iter::ParallelIteratorExt, rayon::prelude::*};
@@ -37,7 +38,7 @@ use crate::group::{
     message_processor::{path_update_required, MessageProcessor},
     message_signature::AuthenticatedContent,
     mls_rules::CommitDirection,
-    proposal::{Proposal, ProposalOrRef},
+    proposal::Proposal,
     CommitEffect, CommitMessageDescription, EncryptedGroupSecrets, EpochSecrets, ExportedTree,
     Group, GroupContext, GroupInfo, GroupState, InterimTranscriptHash, NewEpoch,
     PendingCommitSnapshot, Welcome,
@@ -48,14 +49,6 @@ use crate::group::proposal_cache::prepare_commit;
 
 #[cfg(feature = "custom_proposal")]
 use crate::group::proposal::CustomProposal;
-
-#[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
-#[cfg_attr(feature = "arbitrary", derive(mls_rs_core::arbitrary::Arbitrary))]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub(crate) struct Commit {
-    pub proposals: Vec<ProposalOrRef>,
-    pub path: Option<UpdatePath>,
-}
 
 #[derive(Clone, PartialEq, Debug, MlsEncode, MlsDecode, MlsSize)]
 pub(crate) struct PendingCommit {
@@ -534,18 +527,20 @@ where
         #[cfg(not(feature = "by_ref_proposal"))]
         let proposals = prepare_commit(sender, proposals);
 
+        let committer = CommitSource::new(&sender, &self.state.public_tree, external_leaf)?;
+
         let mut provisional_state = self
             .state
             .apply_resolved(
-                sender,
                 proposals,
                 external_leaf,
                 &self.config.identity_provider(),
                 &self.cipher_suite_provider,
-                &self.config.secret_store(),
-                &mls_rules,
                 time,
                 CommitDirection::Send,
+                &self.config.secret_store(),
+                &mls_rules,
+                &committer,
             )
             .await?;
 
@@ -667,7 +662,7 @@ where
         // Use the signature, the commit_secret and the psk_secret to advance the key schedule and
         // compute the confirmation_tag value in the MlsPlaintext.
         let confirmed_transcript_hash = crate::group::transcript_hash::create(
-            self.cipher_suite_provider(),
+            &self.cipher_suite_provider(),
             &self.state.interim_transcript_hash,
             &auth_content,
         )
@@ -694,7 +689,7 @@ where
         .await?;
 
         let interim_transcript_hash = InterimTranscriptHash::create(
-            self.cipher_suite_provider(),
+            &self.cipher_suite_provider(),
             &provisional_state.group_context.confirmed_transcript_hash,
             &confirmation_tag,
         )
@@ -901,7 +896,7 @@ where
             signature: vec![],
         };
 
-        group_info.grease(self.cipher_suite_provider())?;
+        group_info.grease(&self.cipher_suite_provider())?;
 
         // Sign the GroupInfo using the member's private signing key
         group_info
@@ -963,7 +958,6 @@ mod tests {
         time::MlsTime,
     };
 
-    use crate::extension::RequiredCapabilitiesExt;
     use crate::{
         client::test_utils::{test_client_with_key_pkg, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         client_builder::{
@@ -984,6 +978,7 @@ mod tests {
         mls_rules::CommitOptions,
         Client,
     };
+    use crate::{extension::RequiredCapabilitiesExt, group::ProposalOrRef};
 
     #[cfg(feature = "by_ref_proposal")]
     use crate::crypto::test_utils::test_cipher_suite_provider;

@@ -459,7 +459,7 @@ impl MessageProcessor for GroupWithoutKeySchedule {
         self.inner.identity_provider()
     }
 
-    fn cipher_suite_provider(&self) -> &Self::CipherSuiteProvider {
+    fn cipher_suite_provider(&self) -> Self::CipherSuiteProvider {
         self.inner.cipher_suite_provider()
     }
 

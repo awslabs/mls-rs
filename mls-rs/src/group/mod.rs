@@ -1128,7 +1128,8 @@ where
             PendingCommitSnapshot::LegacyPendingCommit(legacy_pending) => {
                 let content = legacy_pending.content.clone();
                 self.pending_commit = PendingCommitSnapshot::LegacyPendingCommit(legacy_pending);
-                self.process_commit(content, None).await
+                let processor = commit_processor_from_content(self, content).await?;
+                process_commit(processor).await
             }
         }
     }
@@ -1316,7 +1317,7 @@ where
             signature: Vec::new(),
         };
 
-        info.grease(self.cipher_suite_provider())?;
+        info.grease(&self.cipher_suite_provider())?;
 
         info.sign(&self.cipher_suite_provider, &self.signer, &())
             .await?;
@@ -1406,7 +1407,7 @@ where
         if let Some(psk) = self.previous_psk.clone() {
             // TODO consider throwing error if psks not empty
             let psk_id = vec![psk.id.clone()];
-            let psk = PskSecret::calculate(&[psk], self.cipher_suite_provider()).await?;
+            let psk = PskSecret::calculate(&[psk], &self.cipher_suite_provider()).await?;
 
             Ok((psk, psk_id))
         } else {
@@ -1421,7 +1422,7 @@ where
                 prior_epochs: Some(&self.state_repo),
                 psk_store: &self.config.secret_store(),
             }
-            .resolve_to_secret(&psks, self.cipher_suite_provider())
+            .resolve_to_secret(&psks, &self.cipher_suite_provider())
             .await?;
 
             Ok((psk, psks))
@@ -1705,7 +1706,7 @@ where
                 update_path,
                 &provisional_state.group_context.extensions,
                 self.identity_provider(),
-                self.cipher_suite_provider(),
+                &self.cipher_suite_provider(),
             )
             .await?;
 
@@ -1870,8 +1871,8 @@ where
         None
     }
 
-    fn cipher_suite_provider(&self) -> &Self::CipherSuiteProvider {
-        &self.cipher_suite_provider
+    fn cipher_suite_provider(&self) -> Self::CipherSuiteProvider {
+        self.cipher_suite_provider.clone()
     }
 }
 

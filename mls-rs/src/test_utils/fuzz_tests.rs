@@ -75,7 +75,7 @@ pub fn create_fuzz_commit_message(
     let wire_format = WireFormat::PublicMessage;
 
     let auth_content = AuthenticatedContent::new_signed(
-        group.cipher_suite_provider(),
+        &group.cipher_suite_provider(),
         &context,
         Sender::Member(0),
         Content::Commit(alloc::boxed::Box::new(Commit {
