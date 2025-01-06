@@ -504,11 +504,7 @@ where
             .cipher_suite_provider(cipher_suite)
             .ok_or(MlsError::UnsupportedCipherSuite(cipher_suite))?;
 
-        Ok(KeyPackageBuilder::new(
-            self,
-            cipher_suite_provider,
-            signing_data,
-        )?)
+        KeyPackageBuilder::new(self, cipher_suite_provider, signing_data)
     }
 
     /// Create a group with a specific group_id.

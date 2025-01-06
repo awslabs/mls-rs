@@ -161,7 +161,7 @@ impl<CP> KeyPackageBuilder<CP> {
                 signing_identity,
                 signing_key,
             })
-            .or_else(|| signing_data)
+            .or(signing_data)
             .ok_or(MlsError::SignerNotFound)?;
 
         Ok(Self {

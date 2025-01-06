@@ -7,8 +7,10 @@ use mls_rs_core::{
     crypto::{CipherSuite, HpkeSecretKey, SignatureSecretKey},
     key_package::KeyPackageData,
     protocol_version::ProtocolVersion,
-    psk::ExternalPskId,
 };
+
+#[cfg(feature = "psk")]
+use mls_rs_core::psk::ExternalPskId;
 
 use crate::{
     client_config::ClientConfig,
@@ -19,10 +21,13 @@ use crate::{
         validate_tree_and_info_joiner, ExportedTree, GroupInfo, GroupSecrets, NewMemberInfo,
         Welcome,
     },
-    psk::{secret::PskSecret, JustPreSharedKeyID, ResumptionPsk},
+    psk::secret::PskSecret,
     tree_kem::{TreeKemPrivate, TreeKemPublic},
     Group, KeyPackage, MlsMessage,
 };
+
+#[cfg(feature = "psk")]
+use crate::psk::{JustPreSharedKeyID, ResumptionPsk};
 
 pub struct GroupJoiner<'a, 'b, C> {
     // Parsed data
