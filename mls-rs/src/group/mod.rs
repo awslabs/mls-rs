@@ -1212,7 +1212,7 @@ where
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn apply_pending_commit(&mut self) -> Result<CommitMessageDescription, MlsError> {
         let pending = core::mem::take(&mut self.pending_commit);
-        self.apply_detached_commit(CommitSecrets(pending))
+        self.apply_detached_commit(CommitSecrets(pending)).await
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -1221,6 +1221,7 @@ where
     ) -> Result<CommitMessageDescription, MlsError> {
         let pending = core::mem::take(&mut self.pending_commit);
         self.apply_detached_commit_backwards_compatible(CommitSecrets(pending))
+            .await
     }
 
     /// Apply a detached commit that was created by [`Group::commit_detached`] or
