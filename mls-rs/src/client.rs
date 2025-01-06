@@ -31,7 +31,9 @@ use mls_rs_core::crypto::{CryptoProvider, SignatureSecretKey};
 use mls_rs_core::error::{AnyError, IntoAnyError};
 use mls_rs_core::extension::{ExtensionError, ExtensionList, ExtensionType};
 use mls_rs_core::group::{GroupStateStorage, ProposalType};
-use mls_rs_core::identity::{CredentialType, IdentityProvider, MemberValidationContext};
+use mls_rs_core::identity::{
+    CredentialType, IdentityProvider, MemberValidationContext, SigningData,
+};
 use mls_rs_core::key_package::{KeyPackageData, KeyPackageStorage};
 
 use crate::group::external_commit::ExternalCommitBuilder;
@@ -491,8 +493,9 @@ where
     pub fn key_package_builder(
         &self,
         cipher_suite: CipherSuite,
+        signing_data: Option<SigningData>,
     ) -> Result<
-        KeyPackageBuilder<'_, <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider>,
+        KeyPackageBuilder<<C::CryptoProvider as CryptoProvider>::CipherSuiteProvider>,
         MlsError,
     > {
         let cipher_suite_provider = self
@@ -501,7 +504,11 @@ where
             .cipher_suite_provider(cipher_suite)
             .ok_or(MlsError::UnsupportedCipherSuite(cipher_suite))?;
 
-        Ok(KeyPackageBuilder::new(self, cipher_suite_provider))
+        Ok(KeyPackageBuilder::new(
+            self,
+            cipher_suite_provider,
+            signing_data,
+        )?)
     }
 
     /// Create a group with a specific group_id.

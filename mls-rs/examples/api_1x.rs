@@ -26,7 +26,7 @@ fn main() -> Result<(), MlsError> {
 
     // Bob generates key package. We store secrets in memory, no need for any storage.
     let key_package_generation = bob
-        .key_package_builder(CIPHERSUITE)?
+        .key_package_builder(CIPHERSUITE, None)?
         .valid_for_sec(123)
         .build()?;
 

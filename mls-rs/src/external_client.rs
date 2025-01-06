@@ -13,10 +13,7 @@ mod config;
 mod group;
 
 pub(crate) use config::ExternalClientConfig;
-use mls_rs_core::{
-    crypto::{CryptoProvider, SignatureSecretKey},
-    identity::SigningIdentity,
-};
+use mls_rs_core::{crypto::CryptoProvider, identity::SigningData};
 
 use builder::{ExternalBaseConfig, ExternalClientBuilder};
 
@@ -39,7 +36,7 @@ pub use group::{ExternalGroup, ExternalReceivedMessage, ExternalSnapshot};
 /// the resulting group state.
 pub struct ExternalClient<C> {
     config: C,
-    signing_data: Option<(SignatureSecretKey, SigningIdentity)>,
+    signing_data: Option<SigningData>,
 }
 
 impl ExternalClient<()> {
@@ -52,10 +49,7 @@ impl<C> ExternalClient<C>
 where
     C: ExternalClientConfig + Clone,
 {
-    pub(crate) fn new(
-        config: C,
-        signing_data: Option<(SignatureSecretKey, SigningIdentity)>,
-    ) -> Self {
+    pub(crate) fn new(config: C, signing_data: Option<SigningData>) -> Self {
         Self {
             config,
             signing_data,

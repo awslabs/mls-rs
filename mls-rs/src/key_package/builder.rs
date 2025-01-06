@@ -8,15 +8,15 @@ use alloc::vec;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
 use mls_rs_core::extension::MlsExtension;
+use mls_rs_core::identity::SigningData;
 use mls_rs_core::key_package::KeyPackageData;
 
 use crate::client::MlsError;
 use crate::client_config::ClientConfig;
 use crate::Client;
 use crate::{
-    crypto::{HpkeSecretKey, SignatureSecretKey},
+    crypto::HpkeSecretKey,
     group::framing::MlsMessagePayload,
-    identity::SigningIdentity,
     protocol_version::ProtocolVersion,
     signer::Signable,
     tree_kem::{
@@ -29,11 +29,10 @@ use crate::{
 use super::{KeyPackage, KeyPackageRef};
 
 #[derive(Clone, Debug)]
-pub struct KeyPackageBuilder<'a, CP> {
+pub struct KeyPackageBuilder<CP> {
     protocol_version: ProtocolVersion,
     cipher_suite_provider: CP,
-    signing_identity: Option<SigningIdentity>,
-    signing_key: Option<&'a SignatureSecretKey>,
+    signing_data: SigningData,
     key_package_extensions: ExtensionList,
     leaf_node_extensions: ExtensionList,
     validity_sec: u64,
@@ -41,19 +40,7 @@ pub struct KeyPackageBuilder<'a, CP> {
     capabilities: Capabilities,
 }
 
-impl<'a, CP> KeyPackageBuilder<'a, CP> {
-    pub fn signing_data(
-        self,
-        signing_identity: SigningIdentity,
-        signing_key: &'a SignatureSecretKey,
-    ) -> Self {
-        Self {
-            signing_identity: Some(signing_identity),
-            signing_key: Some(signing_key),
-            ..self
-        }
-    }
-
+impl<CP> KeyPackageBuilder<CP> {
     pub fn with_key_package_extension<T: MlsExtension>(
         mut self,
         extension: T,
@@ -80,13 +67,13 @@ impl<'a, CP> KeyPackageBuilder<'a, CP> {
     }
 }
 
-impl<CP: CipherSuiteProvider> KeyPackageBuilder<'_, CP> {
+impl<CP: CipherSuiteProvider> KeyPackageBuilder<CP> {
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn build(self) -> Result<KeyPackageGeneration, MlsError> {
-        let (signing_identity, signing_key) = self
-            .signing_identity
-            .zip(self.signing_key)
-            .ok_or(MlsError::SignerNotFound)?;
+        let SigningData {
+            signing_identity,
+            signing_key,
+        } = self.signing_data;
 
         let (init_secret_key, public_init) = self
             .cipher_suite_provider
@@ -105,7 +92,7 @@ impl<CP: CipherSuiteProvider> KeyPackageBuilder<'_, CP> {
             &self.cipher_suite_provider,
             properties,
             signing_identity,
-            signing_key,
+            &signing_key,
             lifetime,
         )
         .await?;
@@ -122,7 +109,7 @@ impl<CP: CipherSuiteProvider> KeyPackageBuilder<'_, CP> {
         package.grease(&self.cipher_suite_provider)?;
 
         package
-            .sign(&self.cipher_suite_provider, signing_key, &())
+            .sign(&self.cipher_suite_provider, &signing_key, &())
             .await?;
 
         let package_bytes = package.mls_encode_to_vec()?;
@@ -160,18 +147,32 @@ pub struct KeyPackageGeneration {
     pub key_package_data: KeyPackageData,
 }
 
-impl<'a, CP> KeyPackageBuilder<'a, CP> {
-    pub(crate) fn new<C: ClientConfig>(client: &'a Client<C>, cipher_suite_provider: CP) -> Self {
-        Self {
+impl<CP> KeyPackageBuilder<CP> {
+    pub(crate) fn new<C: ClientConfig>(
+        client: &Client<C>,
+        cipher_suite_provider: CP,
+        signing_data: Option<SigningData>,
+    ) -> Result<Self, MlsError> {
+        let signing_data = client
+            .signing_identity
+            .clone()
+            .zip(client.signer.clone())
+            .map(|((signing_identity, _), signing_key)| SigningData {
+                signing_identity,
+                signing_key,
+            })
+            .or_else(|| signing_data)
+            .ok_or(MlsError::SignerNotFound)?;
+
+        Ok(Self {
             protocol_version: client.version,
             cipher_suite_provider,
-            signing_identity: client.signing_identity.clone().map(|(id, _)| id),
-            signing_key: client.signer.as_ref(),
+            signing_data,
             key_package_extensions: Default::default(),
             leaf_node_extensions: Default::default(),
             validity_sec: 86400 * 366,
             capabilities: client.config.capabilities(),
-        }
+        })
     }
 }
 
@@ -213,7 +214,7 @@ mod tests {
                 .build();
 
             let generated = client
-                .key_package_builder(cipher_suite)
+                .key_package_builder(cipher_suite, None)
                 .unwrap()
                 .with_key_package_extension(TestExtension::from(32))
                 .unwrap()
@@ -296,7 +297,7 @@ mod tests {
             .extension_types([42.into()])
             .build();
 
-        let builder = client.key_package_builder(TEST_CIPHER_SUITE).unwrap();
+        let builder = client.key_package_builder(TEST_CIPHER_SUITE, None).unwrap();
         let mut generated_keys = HashSet::new();
 
         for _ in 0..100 {
