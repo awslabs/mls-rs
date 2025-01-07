@@ -45,13 +45,13 @@ use mls_rs_crypto_traits::{AeadType, Hash, KdfType, KemId};
 use thiserror::Error;
 use zeroize::Zeroizing;
 
-#[cfg(all(feature = "post-quantum", not(feature = "fips")))]
+#[cfg(feature = "post-quantum")]
 use self::{
     kdf::{shake::AwsLcShake128, Sha3},
     kem::ml_kem::MlKemKem,
 };
 
-#[cfg(all(feature = "post-quantum", not(feature = "fips")))]
+#[cfg(feature = "post-quantum")]
 use mls_rs_crypto_hpke::kem_combiner::{CombinedKem, XWingSharedSecretHashInput};
 
 #[derive(Clone)]
@@ -67,7 +67,7 @@ pub struct AwsLcCipherSuite {
 
 pub type EcdhKem = DhKem<Ecdh, AwsLcHkdf>;
 
-#[cfg(all(feature = "post-quantum", not(feature = "fips")))]
+#[cfg(feature = "post-quantum")]
 pub type CombinedEcdhMlKemKem =
     CombinedKem<MlKemKem, EcdhKem, AwsLcHash, AwsLcShake128, XWingSharedSecretHashInput>;
 
@@ -75,9 +75,9 @@ pub type CombinedEcdhMlKemKem =
 #[non_exhaustive]
 enum AwsLcHpke {
     Classical(Hpke<EcdhKem, AwsLcHkdf, AwsLcAead>),
-    #[cfg(all(feature = "post-quantum", not(feature = "fips")))]
+    #[cfg(feature = "post-quantum")]
     PostQuantum(Hpke<MlKemKem, AwsLcHkdf, AwsLcAead>),
-    #[cfg(all(feature = "post-quantum", not(feature = "fips")))]
+    #[cfg(feature = "post-quantum")]
     Combined(Hpke<CombinedEcdhMlKemKem, AwsLcHkdf, AwsLcAead>),
 }
 
@@ -118,7 +118,7 @@ impl AwsLcCryptoProvider {
     pub fn all_supported_cipher_suites() -> Vec<CipherSuite> {
         [
             Self::supported_classical_cipher_suites(),
-            #[cfg(all(feature = "post-quantum", not(feature = "fips")))]
+            #[cfg(feature = "post-quantum")]
             Self::supported_pq_cipher_suites(),
         ]
         .concat()
@@ -134,7 +134,7 @@ impl AwsLcCryptoProvider {
         ]
     }
 
-    #[cfg(all(feature = "post-quantum", not(feature = "fips")))]
+    #[cfg(feature = "post-quantum")]
     pub fn supported_pq_cipher_suites() -> Vec<CipherSuite> {
         vec![
             CipherSuite::ML_KEM_512,
@@ -165,9 +165,9 @@ impl CryptoProvider for AwsLcCryptoProvider {
         cipher_suite: CipherSuite,
     ) -> Option<Self::CipherSuiteProvider> {
         let classical_cs = match cipher_suite {
-            #[cfg(all(feature = "post-quantum", not(feature = "fips")))]
+            #[cfg(feature = "post-quantum")]
             CipherSuite::ML_KEM_1024 => CipherSuite::P384_AES256,
-            #[cfg(all(feature = "post-quantum", not(feature = "fips")))]
+            #[cfg(feature = "post-quantum")]
             CipherSuite::ML_KEM_512 | CipherSuite::ML_KEM_768 | CipherSuite::ML_KEM_768_X25519 => {
                 CipherSuite::CURVE25519_AES128
             }
@@ -187,11 +187,11 @@ impl CryptoProvider for AwsLcCryptoProvider {
         };
 
         let hpke = match cipher_suite {
-            #[cfg(all(feature = "post-quantum", not(feature = "fips")))]
+            #[cfg(feature = "post-quantum")]
             CipherSuite::ML_KEM_512 | CipherSuite::ML_KEM_768 | CipherSuite::ML_KEM_1024 => {
                 AwsLcHpke::PostQuantum(Hpke::new(MlKemKem::new(cipher_suite)?, kdf, Some(aead)))
             }
-            #[cfg(all(feature = "post-quantum", not(feature = "fips")))]
+            #[cfg(feature = "post-quantum")]
             CipherSuite::ML_KEM_768_X25519 => {
                 let kem = CombinedKem::new_xwing(
                     MlKemKem::new(CipherSuite::ML_KEM_768)?,
@@ -343,9 +343,9 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
     ) -> Result<HpkeCiphertext, Self::Error> {
         match &self.hpke {
             AwsLcHpke::Classical(hpke) => hpke.seal(remote_key, info, None, aad, pt),
-            #[cfg(all(feature = "post-quantum", not(feature = "fips")))]
+            #[cfg(feature = "post-quantum")]
             AwsLcHpke::PostQuantum(hpke) => hpke.seal(remote_key, info, None, aad, pt),
-            #[cfg(all(feature = "post-quantum", not(feature = "fips")))]
+            #[cfg(feature = "post-quantum")]
             AwsLcHpke::Combined(hpke) => hpke.seal(remote_key, info, None, aad, pt),
         }
         .await
@@ -364,11 +364,11 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
             AwsLcHpke::Classical(hpke) => {
                 hpke.open(ciphertext, local_secret, local_public, info, None, aad)
             }
-            #[cfg(all(feature = "post-quantum", not(feature = "fips")))]
+            #[cfg(feature = "post-quantum")]
             AwsLcHpke::PostQuantum(hpke) => {
                 hpke.open(ciphertext, local_secret, local_public, info, None, aad)
             }
-            #[cfg(all(feature = "post-quantum", not(feature = "fips")))]
+            #[cfg(feature = "post-quantum")]
             AwsLcHpke::Combined(hpke) => {
                 hpke.open(ciphertext, local_secret, local_public, info, None, aad)
             }
@@ -384,9 +384,9 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
     ) -> Result<(Vec<u8>, Self::HpkeContextS), Self::Error> {
         match &self.hpke {
             AwsLcHpke::Classical(hpke) => hpke.setup_sender(remote_key, info, None),
-            #[cfg(all(feature = "post-quantum", not(feature = "fips")))]
+            #[cfg(feature = "post-quantum")]
             AwsLcHpke::PostQuantum(hpke) => hpke.setup_sender(remote_key, info, None),
-            #[cfg(all(feature = "post-quantum", not(feature = "fips")))]
+            #[cfg(feature = "post-quantum")]
             AwsLcHpke::Combined(hpke) => hpke.setup_sender(remote_key, info, None),
         }
         .await
@@ -404,11 +404,11 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
             AwsLcHpke::Classical(hpke) => {
                 hpke.setup_receiver(kem_output, local_secret, local_public, info, None)
             }
-            #[cfg(all(feature = "post-quantum", not(feature = "fips")))]
+            #[cfg(feature = "post-quantum")]
             AwsLcHpke::PostQuantum(hpke) => {
                 hpke.setup_receiver(kem_output, local_secret, local_public, info, None)
             }
-            #[cfg(all(feature = "post-quantum", not(feature = "fips")))]
+            #[cfg(feature = "post-quantum")]
             AwsLcHpke::Combined(hpke) => {
                 hpke.setup_receiver(kem_output, local_secret, local_public, info, None)
             }
@@ -420,9 +420,9 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
     async fn kem_derive(&self, ikm: &[u8]) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
         match &self.hpke {
             AwsLcHpke::Classical(hpke) => hpke.derive(ikm),
-            #[cfg(all(feature = "post-quantum", not(feature = "fips")))]
+            #[cfg(feature = "post-quantum")]
             AwsLcHpke::PostQuantum(hpke) => hpke.derive(ikm),
-            #[cfg(all(feature = "post-quantum", not(feature = "fips")))]
+            #[cfg(feature = "post-quantum")]
             AwsLcHpke::Combined(hpke) => hpke.derive(ikm),
         }
         .await
@@ -432,9 +432,9 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
     async fn kem_generate(&self) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
         match &self.hpke {
             AwsLcHpke::Classical(hpke) => hpke.generate(),
-            #[cfg(all(feature = "post-quantum", not(feature = "fips")))]
+            #[cfg(feature = "post-quantum")]
             AwsLcHpke::PostQuantum(hpke) => hpke.generate(),
-            #[cfg(all(feature = "post-quantum", not(feature = "fips")))]
+            #[cfg(feature = "post-quantum")]
             AwsLcHpke::Combined(hpke) => hpke.generate(),
         }
         .await
@@ -444,9 +444,9 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
     fn kem_public_key_validate(&self, key: &HpkePublicKey) -> Result<(), Self::Error> {
         match &self.hpke {
             AwsLcHpke::Classical(hpke) => hpke.public_key_validate(key),
-            #[cfg(all(feature = "post-quantum", not(feature = "fips")))]
+            #[cfg(feature = "post-quantum")]
             AwsLcHpke::PostQuantum(hpke) => hpke.public_key_validate(key),
-            #[cfg(all(feature = "post-quantum", not(feature = "fips")))]
+            #[cfg(feature = "post-quantum")]
             AwsLcHpke::Combined(hpke) => hpke.public_key_validate(key),
         }
         .map_err(Into::into)

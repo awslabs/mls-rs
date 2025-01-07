@@ -1,3 +1,3 @@
 pub(crate) mod ecdh;
-#[cfg(all(feature = "post-quantum", not(feature = "fips")))]
+#[cfg(all(feature = "post-quantum"))]
 pub(crate) mod ml_kem;

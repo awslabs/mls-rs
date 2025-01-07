@@ -10,17 +10,6 @@ use std::{
     ptr::null_mut,
 };
 
-#[cfg(feature = "fips")]
-use crate::aws_lc_sys_impl::{
-    sk_free as OPENSSL_sk_free, sk_new_null as OPENSSL_sk_new_null, sk_pop as OPENSSL_sk_pop,
-    sk_push as OPENSSL_sk_push,
-};
-
-#[cfg(not(feature = "fips"))]
-use crate::aws_lc_sys_impl::{
-    OPENSSL_sk_free, OPENSSL_sk_new_null, OPENSSL_sk_pop, OPENSSL_sk_push,
-};
-
 use crate::aws_lc_sys_impl::{
     stack_st, ASN1_STRING_data, ASN1_STRING_free, ASN1_STRING_get0_data, ASN1_STRING_length,
     ASN1_STRING_set, ASN1_STRING_type_new, BIO_free, BIO_new, BIO_number_written, BIO_read,
@@ -30,8 +19,9 @@ use crate::aws_lc_sys_impl::{
     NID_givenName, NID_initials, NID_key_usage, NID_localityName, NID_organizationName,
     NID_organizationalUnitName, NID_pkcs9_emailAddress, NID_pseudonym, NID_serialNumber,
     NID_stateOrProvinceName, NID_streetAddress, NID_subject_alt_name, NID_subject_key_identifier,
-    NID_surname, NID_title, NID_userId, OBJ_obj2nid, X509V3_EXT_conf_nid, X509V3_EXT_i2d,
-    X509V3_EXT_print, X509_EXTENSION_free, X509_NAME_ENTRY_get_data, X509_NAME_ENTRY_get_object,
+    NID_surname, NID_title, NID_userId, OBJ_obj2nid, OPENSSL_sk_free, OPENSSL_sk_new_null,
+    OPENSSL_sk_pop, OPENSSL_sk_push, X509V3_EXT_conf_nid, X509V3_EXT_i2d, X509V3_EXT_print,
+    X509_EXTENSION_free, X509_NAME_ENTRY_get_data, X509_NAME_ENTRY_get_object,
     X509_NAME_add_entry_by_NID, X509_NAME_entry_count, X509_NAME_free, X509_NAME_get_entry,
     X509_NAME_new, X509_name_st, ASN1_STRING, GENERAL_NAME, GEN_DNS, GEN_EMAIL, GEN_IPADD, GEN_RID,
     GEN_URI, MBSTRING_UTF8, V_ASN1_IA5STRING, V_ASN1_OCTET_STRING, X509V3_CTX, X509_EXTENSION,
@@ -512,7 +502,7 @@ impl X509Extension {
                 }
             };
 
-            let mut out_buffer = vec![0u8; out_len];
+            let mut out_buffer = vec![0u8; out_len.try_into()?];
 
             let res = BIO_read(
                 bio_out,

@@ -112,7 +112,7 @@ impl AwsLcHash {
         })
     }
 
-    #[cfg(all(feature = "post-quantum", not(feature = "fips")))]
+    #[cfg(feature = "post-quantum")]
     pub fn new_sha3(sha3: Sha3) -> Option<Self> {
         let algo = match sha3 {
             Sha3::SHA3_256 => &digest::SHA3_256,
@@ -124,7 +124,7 @@ impl AwsLcHash {
     }
 }
 
-#[cfg(all(feature = "post-quantum", not(feature = "fips")))]
+#[cfg(feature = "post-quantum")]
 #[derive(Clone, Copy, Debug)]
 #[non_exhaustive]
 pub enum Sha3 {
@@ -141,7 +141,7 @@ impl Hash for AwsLcHash {
     }
 }
 
-#[cfg(all(feature = "post-quantum", not(feature = "fips")))]
+#[cfg(feature = "post-quantum")]
 pub mod shake {
     use crate::{check_int_return, AwsLcCryptoError};
     use aws_lc_sys::{EVP_Digest, EVP_shake128};
