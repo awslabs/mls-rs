@@ -54,7 +54,9 @@ jobs:
         run: cargo test --no-default-features --features std,test_util,non-fips  --verbose --workspace
       - name: Examples
         working-directory: mls-rs
-        run: cargo run --example basic_usage
+        run: |
+          cargo run --example basic_usage
+          cargo run --example api_1x
   AsyncBuildAndTest:
     strategy:
       matrix:

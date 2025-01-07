@@ -242,7 +242,6 @@ where
             snapshot.state.context.group_id.clone(),
             config.group_state_storage(),
             config.key_package_repo(),
-            None,
         )?;
 
         Ok(Group {

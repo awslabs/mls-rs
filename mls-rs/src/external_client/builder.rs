@@ -276,7 +276,10 @@ impl<C: IntoConfig> ExternalClientBuilder<C> {
         signing_identity: SigningIdentity,
     ) -> ExternalClientBuilder<IntoConfigOutput<C>> {
         let mut c = self.0.into_config();
-        c.0.signing_data = Some((signer, signing_identity));
+        c.0.signing_data = Some(SigningData {
+            signing_identity,
+            signing_key: signer,
+        });
         ExternalClientBuilder(c)
     }
 }
@@ -520,7 +523,7 @@ impl Default for Settings {
 /// Definitions meant to be private that are inaccessible outside this crate. They need to be marked
 /// `pub` because they appear in public definitions.
 mod private {
-    use mls_rs_core::{crypto::SignatureSecretKey, identity::SigningIdentity};
+    use mls_rs_core::identity::SigningData;
 
     use super::{IntoConfigOutput, Settings};
 
@@ -533,7 +536,7 @@ mod private {
         pub(crate) identity_provider: Ip,
         pub(crate) mls_rules: Mpf,
         pub(crate) crypto_provider: Cp,
-        pub(crate) signing_data: Option<(SignatureSecretKey, SigningIdentity)>,
+        pub(crate) signing_data: Option<SigningData>,
     }
 
     pub trait IntoConfig {
@@ -557,7 +560,7 @@ mod private {
 
 use mls_rs_core::{
     crypto::SignatureSecretKey,
-    identity::{IdentityProvider, SigningIdentity},
+    identity::{IdentityProvider, SigningData, SigningIdentity},
 };
 use private::{Config, ConfigInner, IntoConfig};
 

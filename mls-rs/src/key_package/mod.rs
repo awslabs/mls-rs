@@ -21,6 +21,7 @@ use mls_rs_codec::MlsEncode;
 use mls_rs_codec::MlsSize;
 use mls_rs_core::extension::ExtensionList;
 
+pub(crate) mod builder;
 mod validator;
 pub(crate) use validator::*;
 
@@ -85,7 +86,7 @@ impl From<Vec<u8>> for KeyPackageRef {
 }
 
 #[derive(MlsSize, MlsEncode)]
-struct KeyPackageData<'a> {
+struct KeyPackageTbs<'a> {
     pub version: ProtocolVersion,
     pub cipher_suite: CipherSuite,
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
@@ -152,7 +153,7 @@ impl Signable<'_> for KeyPackage {
         &self,
         _context: &Self::SigningContext,
     ) -> Result<Vec<u8>, mls_rs_codec::Error> {
-        KeyPackageData {
+        KeyPackageTbs {
             version: self.version,
             cipher_suite: self.cipher_suite,
             hpke_init_key: &self.hpke_init_key,
