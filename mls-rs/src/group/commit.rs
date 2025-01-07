@@ -46,7 +46,9 @@ use super::{
     message_signature::AuthenticatedContent,
     mls_rules::CommitDirection,
     proposal::{Proposal, ProposalOrRef},
-    EncryptedGroupSecrets, ExportedTree, Group, GroupContext, GroupInfo, Welcome,
+    CommitEffect, CommitMessageDescription, EncryptedGroupSecrets, EpochSecrets, ExportedTree,
+    Group, GroupContext, GroupInfo, GroupState, InterimTranscriptHash, NewEpoch,
+    PendingCommitSnapshot, Welcome,
 };
 
 #[cfg(not(feature = "by_ref_proposal"))]
@@ -64,12 +66,16 @@ pub(crate) struct Commit {
 }
 
 #[derive(Clone, PartialEq, Debug, MlsEncode, MlsDecode, MlsSize)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub(crate) struct CommitGeneration {
-    pub content: AuthenticatedContent,
-    pub pending_private_tree: TreeKemPrivate,
-    pub pending_commit_secret: PathSecret,
-    pub commit_message_hash: MessageHash,
+pub(crate) struct PendingCommit {
+    pub(crate) state: GroupState,
+    pub(crate) epoch_secrets: EpochSecrets,
+    pub(crate) private_tree: TreeKemPrivate,
+    pub(crate) key_schedule: KeySchedule,
+    pub(crate) signer: SignatureSecretKey,
+
+    pub(crate) output: CommitMessageDescription,
+
+    pub(crate) commit_message_hash: MessageHash,
 }
 
 #[cfg_attr(
@@ -77,12 +83,12 @@ pub(crate) struct CommitGeneration {
     safer_ffi_gen::ffi_type(clone, opaque)
 )]
 #[derive(Clone)]
-pub struct CommitSecrets(pub(crate) CommitGeneration);
+pub struct CommitSecrets(pub(crate) PendingCommitSnapshot);
 
 impl CommitSecrets {
     /// Deserialize the commit secrets from bytes
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, MlsError> {
-        Ok(CommitGeneration::mls_decode(&mut &*bytes).map(Self)?)
+        Ok(MlsDecode::mls_decode(&mut &*bytes).map(Self)?)
     }
 
     /// Serialize the commit secrets to bytes
@@ -359,7 +365,7 @@ where
             )
             .await?;
 
-        self.group.pending_commit = Some(pending_commit);
+        self.group.pending_commit = pending_commit.try_into()?;
 
         Ok(output)
     }
@@ -383,7 +389,12 @@ where
             )
             .await?;
 
-        Ok((output, CommitSecrets(pending_commit)))
+        Ok((
+            output,
+            CommitSecrets(PendingCommitSnapshot::PendingCommit(
+                pending_commit.mls_encode_to_vec()?,
+            )),
+        ))
     }
 }
 
@@ -481,8 +492,8 @@ where
         new_signer: Option<SignatureSecretKey>,
         new_signing_identity: Option<SigningIdentity>,
         new_leaf_node_extensions: Option<ExtensionList>,
-    ) -> Result<(CommitOutput, CommitGeneration), MlsError> {
-        if self.pending_commit.is_some() {
+    ) -> Result<(CommitOutput, PendingCommit), MlsError> {
+        if !self.pending_commit.is_none() {
             return Err(MlsError::ExistingPendingCommit);
         }
 
@@ -503,7 +514,7 @@ where
             Sender::Member(*self.private_tree.self_index)
         };
 
-        let new_signer_ref = new_signer.as_ref().unwrap_or(&self.signer);
+        let new_signer = new_signer.unwrap_or_else(|| self.signer.clone());
         let old_signer = &self.signer;
 
         #[cfg(feature = "std")]
@@ -544,15 +555,13 @@ where
             self.private_tree.self_index = provisional_private_tree.self_index;
         }
 
-        let mut provisional_group_context = provisional_state.group_context;
-
         // Decide whether to populate the path field: If the path field is required based on the
         // proposals that are in the commit (see above), then it MUST be populated. Otherwise, the
         // sender MAY omit the path field at its discretion.
         let commit_options = mls_rules
             .commit_options(
                 &provisional_state.public_tree.roster(),
-                &provisional_group_context,
+                &provisional_state.group_context,
                 &provisional_state.applied_proposals,
             )
             .map_err(|e| MlsError::MlsRulesError(e.into_any_error()))?;
@@ -582,9 +591,9 @@ where
                 &mut provisional_private_tree,
             )
             .encap(
-                &mut provisional_group_context,
+                &mut provisional_state.group_context,
                 &provisional_state.indexes_of_added_kpkgs,
-                new_signer_ref,
+                &new_signer,
                 Some(self.config.leaf_properties(new_leaf_node_extensions)),
                 new_signing_identity,
                 &self.cipher_suite_provider,
@@ -608,7 +617,7 @@ where
                 )
                 .await?;
 
-            provisional_group_context.tree_hash = provisional_state
+            provisional_state.group_context.tree_hash = provisional_state
                 .public_tree
                 .tree_hash(&self.cipher_suite_provider)
                 .await?;
@@ -632,7 +641,7 @@ where
             .collect();
 
         let commit = Commit {
-            proposals: provisional_state.applied_proposals.into_proposals_or_refs(),
+            proposals: provisional_state.applied_proposals.proposals_or_refs(),
             path: update_path,
         };
 
@@ -659,14 +668,14 @@ where
         )
         .await?;
 
-        provisional_group_context.confirmed_transcript_hash = confirmed_transcript_hash;
+        provisional_state.group_context.confirmed_transcript_hash = confirmed_transcript_hash;
 
         let key_schedule_result = KeySchedule::from_key_schedule(
             &self.key_schedule,
             &commit_secret,
-            &provisional_group_context,
+            &provisional_state.group_context,
             #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
-            self.state.public_tree.total_leaf_count(),
+            provisional_state.public_tree.total_leaf_count(),
             &psk_secret,
             &self.cipher_suite_provider,
         )
@@ -674,8 +683,15 @@ where
 
         let confirmation_tag = ConfirmationTag::create(
             &key_schedule_result.confirmation_key,
-            &provisional_group_context.confirmed_transcript_hash,
+            &provisional_state.group_context.confirmed_transcript_hash,
             &self.cipher_suite_provider,
+        )
+        .await?;
+
+        let interim_transcript_hash = InterimTranscriptHash::create(
+            self.cipher_suite_provider(),
+            &provisional_state.group_context.confirmed_transcript_hash,
+            &confirmation_tag,
         )
         .await?;
 
@@ -705,10 +721,10 @@ where
 
                 let info = self
                     .make_group_info(
-                        &provisional_group_context,
+                        &provisional_state.group_context,
                         extensions,
                         &confirmation_tag,
-                        new_signer_ref,
+                        &new_signer,
                     )
                     .await?;
 
@@ -728,10 +744,10 @@ where
 
         let welcome_group_info = self
             .make_group_info(
-                &provisional_group_context,
+                &provisional_state.group_context,
                 welcome_group_info_extensions,
                 &confirmation_tag,
-                new_signer_ref,
+                &new_signer,
             )
             .await?;
 
@@ -754,11 +770,11 @@ where
         #[cfg(not(any(mls_build_async, not(feature = "rayon"))))]
         let encrypted_path_secrets: Vec<_> = added_key_pkgs
             .into_par_iter()
-            .zip(provisional_state.indexes_of_added_kpkgs)
+            .zip(&provisional_state.indexes_of_added_kpkgs)
             .map(|(key_package, leaf_index)| {
                 self.encrypt_group_secrets(
                     &key_package,
-                    leaf_index,
+                    *leaf_index,
                     &key_schedule_result.joiner_secret,
                     path_secrets,
                     #[cfg(feature = "psk")]
@@ -774,12 +790,12 @@ where
 
             for (key_package, leaf_index) in added_key_pkgs
                 .into_iter()
-                .zip(provisional_state.indexes_of_added_kpkgs)
+                .zip(&provisional_state.indexes_of_added_kpkgs)
             {
                 secrets.push(
                     self.encrypt_group_secrets(
                         &key_package,
-                        leaf_index,
+                        *leaf_index,
                         &key_schedule_result.joiner_secret,
                         path_secrets,
                         #[cfg(feature = "psk")]
@@ -805,20 +821,49 @@ where
 
         let commit_message = self.format_for_wire(auth_content.clone()).await?;
 
-        let pending_commit = CommitGeneration {
-            content: auth_content,
-            pending_private_tree: provisional_private_tree,
-            pending_commit_secret: commit_secret,
+        // TODO is it necessary to clone the tree here? or can we just output serialized bytes?
+        let ratchet_tree = (!commit_options.ratchet_tree_extension)
+            .then(|| ExportedTree::new(provisional_state.public_tree.nodes.clone()));
+
+        let pending_reinit = provisional_state
+            .applied_proposals
+            .reinitializations
+            .first();
+
+        let pending_commit = PendingCommit {
+            output: CommitMessageDescription {
+                is_external: matches!(auth_content.content.sender, Sender::NewMemberCommit),
+                authenticated_data: auth_content.content.authenticated_data,
+                committer: *provisional_private_tree.self_index,
+                effect: match pending_reinit {
+                    Some(r) => CommitEffect::ReInit(r.clone()),
+                    None => CommitEffect::NewEpoch(
+                        NewEpoch::new(self.state.clone(), &provisional_state).into(),
+                    ),
+                },
+            },
+
+            state: GroupState {
+                #[cfg(feature = "by_ref_proposal")]
+                proposals: crate::group::ProposalCache::new(
+                    self.protocol_version(),
+                    self.group_id().to_vec(),
+                ),
+                context: provisional_state.group_context,
+                public_tree: provisional_state.public_tree,
+                interim_transcript_hash,
+                pending_reinit: pending_reinit.map(|r| r.proposal.clone()),
+                confirmation_tag,
+            },
+
             commit_message_hash: MessageHash::compute(&self.cipher_suite_provider, &commit_message)
                 .await?,
+            signer: new_signer,
+            epoch_secrets: key_schedule_result.epoch_secrets,
+            key_schedule: key_schedule_result.key_schedule,
+
+            private_tree: provisional_private_tree,
         };
-
-        let ratchet_tree = (!commit_options.ratchet_tree_extension)
-            .then(|| ExportedTree::new(provisional_state.public_tree.nodes));
-
-        if let Some(signer) = new_signer {
-            self.signer = signer;
-        }
 
         let output = CommitOutput {
             commit_message,

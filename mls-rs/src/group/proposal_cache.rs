@@ -47,7 +47,7 @@ pub struct CachedProposal {
 }
 
 #[cfg(feature = "by_ref_proposal")]
-#[derive(Clone)]
+#[derive(Clone, MlsSize, MlsEncode, MlsDecode)]
 pub(crate) struct ProposalCache {
     protocol_version: ProtocolVersion,
     group_id: Vec<u8>,
@@ -954,8 +954,8 @@ mod tests {
     }
 
     fn assert_matches(mut expected_state: ProvisionalState, state: ProvisionalState) {
-        let expected_proposals = expected_state.applied_proposals.into_proposals_or_refs();
-        let proposals = state.applied_proposals.into_proposals_or_refs();
+        let expected_proposals = expected_state.applied_proposals.proposals_or_refs();
+        let proposals = state.applied_proposals.proposals_or_refs();
 
         assert_eq!(proposals.len(), expected_proposals.len());
 
@@ -1149,7 +1149,7 @@ mod tests {
 
         assert!(!provisional_state
             .applied_proposals
-            .into_proposals_or_refs()
+            .proposals_or_refs()
             .contains(&ProposalOrRef::Reference(update_proposal_ref)))
     }
 
@@ -1284,7 +1284,7 @@ mod tests {
         let proposals = expected_effects
             .applied_proposals
             .clone()
-            .into_proposals_or_refs();
+            .proposals_or_refs();
 
         let resolution = cache
             .resolve_for_commit_default(
@@ -2023,7 +2023,7 @@ mod tests {
                 )
                 .await?;
 
-            let proposals = state.applied_proposals.clone().into_proposals_or_refs();
+            let proposals = state.applied_proposals.clone().proposals_or_refs();
 
             Ok((proposals, state))
         }

@@ -1073,7 +1073,7 @@ mod tests {
                 ReceivedMessage::Commit(CommitMessageDescription {
                     effect: CommitEffect::Removed {
                         new_epoch: _,
-                        remove_proposal: _
+                        remover: _
                     },
                     ..
                 })

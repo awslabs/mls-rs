@@ -12,6 +12,7 @@ use mls_rs_core::extension::MlsExtension;
 use mls_rs_core::identity::MemberValidationContext;
 use mls_rs_core::secret::Secret;
 use mls_rs_core::time::MlsTime;
+use snapshot::PendingCommitSnapshot;
 
 use crate::cipher_suite::CipherSuite;
 use crate::client::MlsError;
@@ -273,7 +274,7 @@ where
     #[cfg(feature = "by_ref_proposal")]
     pending_updates:
         crate::map::SmallMap<HpkePublicKey, (HpkeSecretKey, Option<SignatureSecretKey>)>,
-    pending_commit: Option<CommitGeneration>,
+    pending_commit: PendingCommitSnapshot,
     #[cfg(feature = "psk")]
     previous_psk: Option<PskSecretInput>,
     #[cfg(test)]
@@ -388,7 +389,7 @@ where
             key_schedule: key_schedule_result.key_schedule,
             #[cfg(feature = "by_ref_proposal")]
             pending_updates: Default::default(),
-            pending_commit: None,
+            pending_commit: Default::default(),
             #[cfg(test)]
             commit_modifiers: Default::default(),
             epoch_secrets: key_schedule_result.epoch_secrets,
@@ -572,7 +573,7 @@ where
             key_schedule,
             #[cfg(feature = "by_ref_proposal")]
             pending_updates: Default::default(),
-            pending_commit: None,
+            pending_commit: Default::default(),
             #[cfg(test)]
             commit_modifiers: Default::default(),
             epoch_secrets,
@@ -1210,14 +1211,17 @@ where
     /// [`CommitBuilder::build`].
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn apply_pending_commit(&mut self) -> Result<CommitMessageDescription, MlsError> {
-        let content = self
-            .pending_commit
-            .as_ref()
-            .ok_or(MlsError::PendingCommitNotFound)?
-            .content
-            .clone();
+        let pending = core::mem::take(&mut self.pending_commit);
+        self.apply_detached_commit(CommitSecrets(pending)).await
+    }
 
-        self.process_commit(content, None).await
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn apply_pending_commit_backwards_compatible(
+        &mut self,
+    ) -> Result<CommitMessageDescription, MlsError> {
+        let pending = core::mem::take(&mut self.pending_commit);
+        self.apply_detached_commit_backwards_compatible(CommitSecrets(pending))
+            .await
     }
 
     /// Apply a detached commit that was created by [`Group::commit_detached`] or
@@ -1227,14 +1231,43 @@ where
         &mut self,
         commit_secrets: CommitSecrets,
     ) -> Result<CommitMessageDescription, MlsError> {
-        self.pending_commit = Some(commit_secrets.0);
-        self.apply_pending_commit().await
+        let pending = match commit_secrets.0 {
+            PendingCommitSnapshot::PendingCommit(bytes) => PendingCommit::mls_decode(&mut &*bytes)?,
+            _ => return Err(MlsError::PendingCommitNotFound),
+        };
+
+        self.insert_past_epoch().await?;
+
+        self.state = pending.state;
+        self.epoch_secrets = pending.epoch_secrets;
+        self.private_tree = pending.private_tree;
+        self.key_schedule = pending.key_schedule;
+        self.signer = pending.signer;
+
+        Ok(pending.output)
+    }
+
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn apply_detached_commit_backwards_compatible(
+        &mut self,
+        commit_secrets: CommitSecrets,
+    ) -> Result<CommitMessageDescription, MlsError> {
+        match commit_secrets.0 {
+            PendingCommitSnapshot::None | PendingCommitSnapshot::PendingCommit(_) => {
+                self.apply_detached_commit(commit_secrets).await
+            }
+            PendingCommitSnapshot::LegacyPendingCommit(legacy_pending) => {
+                let content = legacy_pending.content.clone();
+                self.pending_commit = PendingCommitSnapshot::LegacyPendingCommit(legacy_pending);
+                self.process_commit(content, None).await
+            }
+        }
     }
 
     /// Returns true if a commit has been created but not yet applied
     /// with [`Group::apply_pending_commit`] or cleared with [`Group::clear_pending_commit`]
     pub fn has_pending_commit(&self) -> bool {
-        self.pending_commit.is_some()
+        !self.pending_commit.is_none()
     }
 
     /// Clear the currently pending commit.
@@ -1243,7 +1276,7 @@ where
     /// commit message is processed using [`Group::process_incoming_message`]
     /// before [`Group::apply_pending_commit`] is called.
     pub fn clear_pending_commit(&mut self) {
-        self.pending_commit = None
+        self.pending_commit = Default::default()
     }
 
     /// Returns true if the client has received or issued a proposal
@@ -1268,10 +1301,10 @@ where
         &mut self,
         message: MlsMessage,
     ) -> Result<ReceivedMessage, MlsError> {
-        if let Some(pending) = &self.pending_commit {
+        if let Some(pending) = self.pending_commit.commit_hash()? {
             let message_hash = MessageHash::compute(&self.cipher_suite_provider, &message).await?;
 
-            if message_hash == pending.commit_message_hash {
+            if message_hash == pending {
                 let message_description = self.apply_pending_commit().await?;
 
                 return Ok(ReceivedMessage::Commit(message_description));
@@ -1709,6 +1742,34 @@ impl<C: ClientConfig> Group<C> {
             psk_secret,
         ))
     }
+
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    #[cfg(feature = "prior_epoch")]
+    pub(crate) async fn insert_past_epoch(&mut self) -> Result<(), MlsError> {
+        let signature_public_keys = self
+            .state
+            .public_tree
+            .leaves()
+            .map(|l| l.map(|n| n.signing_identity.signature_key.clone()))
+            .collect();
+
+        let past_epoch = PriorEpoch {
+            context: self.context().clone(),
+            self_index: self.private_tree.self_index,
+            secrets: self.epoch_secrets.clone(),
+            signature_public_keys,
+        };
+
+        self.state_repo.insert(past_epoch).await?;
+
+        Ok(())
+    }
+
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    #[cfg(not(feature = "prior_epoch"))]
+    pub(crate) async fn insert_past_epoch(&mut self) -> Result<(), MlsError> {
+        Ok(())
+    }
 }
 
 #[cfg(feature = "private_message")]
@@ -1800,38 +1861,38 @@ where
             .await?;
 
         if sender == self.private_tree.self_index {
-            let pending = self
-                .pending_commit
-                .as_ref()
-                .ok_or(MlsError::CantProcessMessageFromSelf)?;
+            let PendingCommitSnapshot::LegacyPendingCommit(legacy_pending) = &self.pending_commit
+            else {
+                return Err(MlsError::CantProcessMessageFromSelf);
+            };
 
-            Ok(Some((
-                pending.pending_private_tree.clone(),
-                pending.pending_commit_secret.clone(),
-            )))
-        } else {
-            // Update the tree hash to get context for decryption
-            provisional_state.group_context.tree_hash = provisional_state
-                .public_tree
-                .tree_hash(&self.cipher_suite_provider)
-                .await?;
-
-            let context_bytes = provisional_state.group_context.mls_encode_to_vec()?;
-
-            TreeKem::new(
-                &mut provisional_state.public_tree,
-                &mut provisional_private_tree,
-            )
-            .decap(
-                sender,
-                update_path,
-                &provisional_state.indexes_of_added_kpkgs,
-                &context_bytes,
-                &self.cipher_suite_provider,
-            )
-            .await
-            .map(|root_secret| Some((provisional_private_tree, root_secret)))
+            return Ok(Some((
+                legacy_pending.private_tree.clone(),
+                legacy_pending.commit_secret.clone(),
+            )));
         }
+
+        // Update the tree hash to get context for decryption
+        provisional_state.group_context.tree_hash = provisional_state
+            .public_tree
+            .tree_hash(&self.cipher_suite_provider)
+            .await?;
+
+        let context_bytes = provisional_state.group_context.mls_encode_to_vec()?;
+
+        TreeKem::new(
+            &mut provisional_state.public_tree,
+            &mut provisional_private_tree,
+        )
+        .decap(
+            sender,
+            update_path,
+            &provisional_state.indexes_of_added_kpkgs,
+            &context_bytes,
+            &self.cipher_suite_provider,
+        )
+        .await
+        .map(|root_secret| Some((provisional_private_tree, root_secret)))
     }
 
     async fn update_key_schedule(
@@ -1899,24 +1960,7 @@ where
             return Err(MlsError::InvalidConfirmationTag);
         }
 
-        #[cfg(feature = "prior_epoch")]
-        let signature_public_keys = self
-            .state
-            .public_tree
-            .leaves()
-            .map(|l| l.map(|n| n.signing_identity.signature_key.clone()))
-            .collect();
-
-        #[cfg(feature = "prior_epoch")]
-        let past_epoch = PriorEpoch {
-            context: self.context().clone(),
-            self_index: self.private_tree.self_index,
-            secrets: self.epoch_secrets.clone(),
-            signature_public_keys,
-        };
-
-        #[cfg(feature = "prior_epoch")]
-        self.state_repo.insert(past_epoch).await?;
+        self.insert_past_epoch().await?;
 
         self.epoch_secrets = key_schedule_result.epoch_secrets;
         self.state.context = provisional_state.group_context;
@@ -1935,7 +1979,7 @@ where
             self.pending_updates = Default::default();
         }
 
-        self.pending_commit = None;
+        self.pending_commit = Default::default();
 
         Ok(())
     }
@@ -1964,15 +2008,12 @@ where
         &self,
         provisional_state: &ProvisionalState,
     ) -> Option<ProposalInfo<RemoveProposal>> {
-        match &self.pending_commit {
-            Some(c) if c.content.content.sender == Sender::NewMemberCommit => None,
-            _ => provisional_state
-                .applied_proposals
-                .removals
-                .iter()
-                .find(|p| p.proposal.to_remove == self.private_tree.self_index)
-                .cloned(),
-        }
+        provisional_state
+            .applied_proposals
+            .removals
+            .iter()
+            .find(|p| p.proposal.to_remove == self.private_tree.self_index)
+            .cloned()
     }
 
     #[cfg(feature = "private_message")]
@@ -2697,21 +2738,16 @@ mod tests {
         let test_key_package =
             test_key_package_message(protocol_version, cipher_suite, "alice").await;
 
-        test_group
+        let has_path = test_group
             .commit_builder()
             .add_member(test_key_package.clone())
             .unwrap()
             .build()
             .await
-            .unwrap();
-
-        assert!(test_group
-            .group
-            .pending_commit
             .unwrap()
-            .pending_commit_secret
-            .iter()
-            .all(|x| x == &0));
+            .contains_update_path;
+
+        assert!(!has_path);
 
         let mut test_group = test_group_custom(
             protocol_version,
@@ -2722,21 +2758,16 @@ mod tests {
         )
         .await;
 
-        test_group
+        let has_path = test_group
             .commit_builder()
             .add_member(test_key_package)
             .unwrap()
             .build()
             .await
-            .unwrap();
-
-        assert!(!test_group
-            .group
-            .pending_commit
             .unwrap()
-            .pending_commit_secret
-            .iter()
-            .all(|x| x == &0));
+            .contains_update_path;
+
+        assert!(has_path)
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -2753,15 +2784,13 @@ mod tests {
         )
         .await;
 
-        test_group.commit(vec![]).await.unwrap();
-
-        assert!(!test_group
-            .group
-            .pending_commit
+        let has_path = test_group
+            .commit(vec![])
+            .await
             .unwrap()
-            .pending_commit_secret
-            .iter()
-            .all(|x| x == &0));
+            .contains_update_path;
+
+        assert!(has_path);
     }
 
     #[cfg(feature = "private_message")]
@@ -3501,9 +3530,38 @@ mod tests {
             .with_random_signing_identity("alice", TEST_CIPHER_SUITE)
             .await
             .build()
-            .create_group(core::iter::once(ext_senders).collect(), Default::default())
+            .create_group(vec![ext_senders].into(), Default::default())
             .await
             .unwrap();
+
+        let bob = ClientBuilder::new()
+            .crypto_provider(TestCryptoProvider::new())
+            .identity_provider(
+                BasicWithCustomProvider::default().with_credential_type(CredentialType::X509),
+            )
+            .with_random_signing_identity("bob", TEST_CIPHER_SUITE)
+            .await
+            .build();
+
+        let kp = bob
+            .generate_key_package_message(Default::default(), Default::default())
+            .await
+            .unwrap();
+
+        let commit = alice
+            .commit_builder()
+            .add_member(kp)
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+
+        let (mut bob, _) = bob
+            .join_group(None, &commit.welcome_messages[0])
+            .await
+            .unwrap();
+
+        alice.apply_pending_commit().await.unwrap();
 
         // New leaf supports only basic credentials (used by the group) but not X509 used by external sender
         alice.commit_modifiers.modify_leaf = |leaf, sk| {
@@ -3511,8 +3569,8 @@ mod tests {
             Some(sk.clone())
         };
 
-        alice.commit(vec![]).await.unwrap();
-        let res = alice.apply_pending_commit().await;
+        let commit = alice.commit(vec![]).await.unwrap();
+        let res = bob.process_incoming_message(commit.commit_message).await;
 
         assert_matches!(
             res,
