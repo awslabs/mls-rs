@@ -243,11 +243,24 @@ where
     /// [`PreSharedKeyProposal`](crate::group::proposal::PreSharedKeyProposal) with
     /// a resumption PSK into the current commit that is being built.
     #[cfg(feature = "psk")]
-    pub fn add_resumption_psk(mut self, psk_epoch: u64) -> Result<Self, MlsError> {
+    pub fn add_resumption_psk(self, psk_epoch: u64) -> Result<Self, MlsError> {
+        let group_id = self.group.group_id().to_vec();
+        self.add_resumption_psk_for_group(psk_epoch, group_id)
+    }
+
+    /// Insert a
+    /// [`PreSharedKeyProposal`](crate::group::proposal::PreSharedKeyProposal) with
+    /// a resumption PSK into the current commit that is being built.
+    #[cfg(feature = "psk")]
+    pub fn add_resumption_psk_for_group(
+        mut self,
+        psk_epoch: u64,
+        group_id: Vec<u8>,
+    ) -> Result<Self, MlsError> {
         let psk_id = ResumptionPsk {
             psk_epoch,
             usage: ResumptionPSKUsage::Application,
-            psk_group_id: PskGroupId(self.group.group_id().to_vec()),
+            psk_group_id: PskGroupId(group_id),
         };
 
         let key_id = JustPreSharedKeyID::Resumption(psk_id);

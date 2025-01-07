@@ -257,3 +257,118 @@ pub(crate) struct DecryptedGroupInfo {
     public_tree: TreeKemPublic,
     psk_secret: PskSecret,
 }
+
+#[cfg(feature = "psk")]
+#[cfg(test)]
+mod tests {
+    use mls_rs_core::psk::{ExternalPskId, PreSharedKey};
+
+    use crate::{
+        client::test_utils::{
+            test_client_with_key_pkg_custom, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION,
+        },
+        psk::{PskGroupId, ResumptionPSKUsage, ResumptionPsk},
+        storage_provider::in_memory::InMemoryPreSharedKeyStorage,
+    };
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn outputs_correct_join_info() {
+        let mut psk_store = InMemoryPreSharedKeyStorage::default();
+
+        let (alice, _kp_alice) = test_client_with_key_pkg_custom(
+            TEST_PROTOCOL_VERSION,
+            TEST_CIPHER_SUITE,
+            "alice",
+            Default::default(),
+            Default::default(),
+            |c| c.0.psk_store = psk_store.clone(),
+        )
+        .await;
+
+        let (bob, kp_bob) = test_client_with_key_pkg_custom(
+            TEST_PROTOCOL_VERSION,
+            TEST_CIPHER_SUITE,
+            "bob",
+            Default::default(),
+            Default::default(),
+            |c| c.0.psk_store = psk_store.clone(),
+        )
+        .await;
+
+        let mut group_alice = alice
+            .create_group(Default::default(), Default::default())
+            .await
+            .unwrap();
+
+        let commit1 = group_alice
+            .commit_builder()
+            .add_member(kp_bob)
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+
+        group_alice.apply_pending_commit().await.unwrap();
+        let commit2 = group_alice.commit(vec![]).await.unwrap();
+        group_alice.apply_pending_commit().await.unwrap();
+        group_alice.write_to_storage().await.unwrap();
+
+        let mut group_bob = bob
+            .join_group(None, &commit1.welcome_messages[0])
+            .await
+            .unwrap()
+            .0;
+
+        group_bob
+            .process_incoming_message(commit2.commit_message)
+            .await
+            .unwrap();
+
+        group_bob.write_to_storage().await.unwrap();
+
+        let psk_id = ExternalPskId::new(b"123".into());
+        psk_store.insert(psk_id.clone(), PreSharedKey::new(b"123".into()));
+
+        let kp_alice = alice
+            .key_package_builder(TEST_CIPHER_SUITE, None)
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+
+        let commit = bob
+            .create_group(Default::default(), Default::default())
+            .await
+            .unwrap()
+            .commit_builder()
+            .add_member(kp_alice.key_package_message)
+            .unwrap()
+            .add_external_psk(psk_id.clone())
+            .unwrap()
+            .add_resumption_psk_for_group(1, group_alice.group_id().to_vec())
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+
+        let joiner = alice
+            .group_joiner(&commit.welcome_messages[0], kp_alice.key_package_data)
+            .await
+            .unwrap();
+
+        let external_psks = joiner.required_external_psks().collect::<Vec<_>>();
+        assert_eq!(external_psks, vec![&psk_id]);
+
+        let resumption_psks = joiner.required_resumption_psks().collect::<Vec<_>>();
+
+        let expected_resumption_psk = ResumptionPsk {
+            usage: ResumptionPSKUsage::Application,
+            psk_group_id: PskGroupId(group_alice.group_id().to_vec()),
+            psk_epoch: 1,
+        };
+
+        assert_eq!(resumption_psks, vec![&expected_resumption_psk]);
+
+        assert_eq!(joiner.cipher_suite(), TEST_CIPHER_SUITE);
+    }
+}

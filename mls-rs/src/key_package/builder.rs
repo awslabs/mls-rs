@@ -220,6 +220,7 @@ mod tests {
                 .unwrap()
                 .with_leaf_node_extension(TestExtension::from(42))
                 .unwrap()
+                .valid_for_sec(123456)
                 .build()
                 .await
                 .unwrap();

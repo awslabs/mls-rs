@@ -722,8 +722,10 @@ mod tests {
         crypto::test_utils::test_cipher_suite_provider,
         group::{
             framing::test_utils::get_test_ciphertext_content,
-            proposal_ref::test_utils::auth_content_from_proposal, RemoveProposal,
+            proposal_ref::test_utils::auth_content_from_proposal, test_utils::test_group,
+            RemoveProposal,
         },
+        key_package::test_utils::test_key_package_message,
     };
 
     use super::*;
@@ -784,5 +786,47 @@ mod tests {
             .unwrap();
 
         assert_eq!(computed_ref, expected_ref.to_vec());
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn message_description() {
+        let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+
+        let message = group.commit(vec![]).unwrap();
+
+        let expected = MlsMessageDescription::ProtocolMessage {
+            group_id: group.group_id(),
+            epoch_id: group.context().epoch,
+            content_type: ContentType::Commit,
+        };
+
+        assert_eq!(message.commit_message.description(), expected);
+
+        group.apply_pending_commit().await.unwrap();
+
+        let message = group
+            .encrypt_application_message(b"123", vec![])
+            .await
+            .unwrap();
+
+        let expected = MlsMessageDescription::ProtocolMessage {
+            group_id: group.group_id(),
+            epoch_id: group.context().epoch,
+            content_type: ContentType::Application,
+        };
+
+        assert_eq!(message.description(), expected);
+
+        let group_info = group
+            .group_info_message_allowing_ext_commit(true)
+            .await
+            .unwrap();
+
+        assert_eq!(group_info.description(), MlsMessageDescription::GroupInfo);
+
+        let key_package =
+            test_key_package_message(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "something").await;
+
+        assert_eq!(key_package.description(), MlsMessageDescription::KeyPackage);
     }
 }
