@@ -5,9 +5,11 @@
 use crate::cipher_suite::CipherSuite;
 use crate::client_builder::{recreate_config, BaseConfig, ClientBuilder, MakeConfig};
 use crate::client_config::ClientConfig;
-use crate::group::framing::MlsMessage;
+use crate::group::framing::{MlsMessage, MlsMessageDescription};
 
-use crate::group::{cipher_suite_provider, validate_group_info_joiner, GroupInfo};
+use crate::group::{
+    cipher_suite_provider, find_key_package_generation, validate_group_info_joiner, GroupInfo,
+};
 use crate::group::{
     framing::MlsMessagePayload, snapshot::Snapshot, ExportedTree, Group, NewMemberInfo,
 };
@@ -17,7 +19,9 @@ use crate::group::{
     message_signature::AuthenticatedContent,
     proposal::{AddProposal, Proposal},
 };
+use crate::group_joiner::GroupJoiner;
 use crate::identity::SigningIdentity;
+use crate::key_package::builder::KeyPackageBuilder;
 use crate::key_package::{KeyPackageGeneration, KeyPackageGenerator};
 use crate::protocol_version::ProtocolVersion;
 use crate::tree_kem::node::NodeIndex;
@@ -27,8 +31,10 @@ use mls_rs_core::crypto::{CryptoProvider, SignatureSecretKey};
 use mls_rs_core::error::{AnyError, IntoAnyError};
 use mls_rs_core::extension::{ExtensionError, ExtensionList, ExtensionType};
 use mls_rs_core::group::{GroupStateStorage, ProposalType};
-use mls_rs_core::identity::{CredentialType, IdentityProvider, MemberValidationContext};
-use mls_rs_core::key_package::KeyPackageStorage;
+use mls_rs_core::identity::{
+    CredentialType, IdentityProvider, MemberValidationContext, SigningData,
+};
+use mls_rs_core::key_package::{KeyPackageData, KeyPackageStorage};
 
 use crate::group::external_commit::ExternalCommitBuilder;
 
@@ -483,6 +489,24 @@ where
         Ok(key_pkg_gen)
     }
 
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
+    pub fn key_package_builder(
+        &self,
+        cipher_suite: CipherSuite,
+        signing_data: Option<SigningData>,
+    ) -> Result<
+        KeyPackageBuilder<<C::CryptoProvider as CryptoProvider>::CipherSuiteProvider>,
+        MlsError,
+    > {
+        let cipher_suite_provider = self
+            .config
+            .crypto_provider()
+            .cipher_suite_provider(cipher_suite)
+            .ok_or(MlsError::UnsupportedCipherSuite(cipher_suite))?;
+
+        KeyPackageBuilder::new(self, cipher_suite_provider, signing_data)
+    }
+
     /// Create a group with a specific group_id.
     ///
     /// This function behaves the same way as
@@ -557,11 +581,40 @@ where
         tree_data: Option<ExportedTree<'_>>,
         welcome_message: &MlsMessage,
     ) -> Result<(Group<C>, NewMemberInfo), MlsError> {
-        Group::join(
-            welcome_message,
-            tree_data,
+        let MlsMessageDescription::Welcome {
+            key_package_refs, ..
+        } = welcome_message.description()
+        else {
+            return Err(MlsError::UnexpectedMessageType);
+        };
+
+        let key_package_data =
+            find_key_package_generation(&self.config.key_package_repo(), &key_package_refs).await?;
+
+        let mut joiner = self
+            .group_joiner(welcome_message, key_package_data)
+            .await?
+            .signature_secret_key(self.signer()?.clone());
+
+        if let Some(tree) = tree_data {
+            joiner = joiner.ratchet_tree(tree);
+        }
+
+        joiner.join().await
+    }
+
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn group_joiner<'a, 'b>(
+        &self,
+        welcome_message: &'a MlsMessage,
+        key_package_data: KeyPackageData,
+    ) -> Result<GroupJoiner<'a, 'b, C>, MlsError> {
+        GroupJoiner::new(
             self.config.clone(),
-            self.signer()?.clone(),
+            welcome_message,
+            key_package_data,
+            self.signer.clone(),
         )
         .await
     }

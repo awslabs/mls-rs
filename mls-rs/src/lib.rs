@@ -143,6 +143,7 @@ pub mod external_client;
 mod grease;
 /// E2EE group created by a [`Client`].
 pub mod group;
+pub(crate) mod group_joiner;
 mod hash_reference;
 /// Identity providers to use with [`ClientBuilder`](client_builder::ClientBuilder).
 pub mod identity;

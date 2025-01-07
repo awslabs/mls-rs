@@ -4,8 +4,10 @@
 
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::{
-    crypto::SignatureSecretKey, error::IntoAnyError, extension::ExtensionList, group::Member,
-    identity::IdentityProvider,
+    error::IntoAnyError,
+    extension::ExtensionList,
+    group::Member,
+    identity::{IdentityProvider, SigningData},
 };
 
 use crate::{
@@ -103,14 +105,14 @@ where
     pub(crate) config: C,
     pub(crate) cipher_suite_provider: <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider,
     pub(crate) state: GroupState,
-    pub(crate) signing_data: Option<(SignatureSecretKey, SigningIdentity)>,
+    pub(crate) signing_data: Option<SigningData>,
 }
 
 impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn join(
         config: C,
-        signing_data: Option<(SignatureSecretKey, SigningIdentity)>,
+        signing_data: Option<SigningData>,
         group_info: MlsMessage,
         tree_data: Option<ExportedTree<'_>>,
     ) -> Result<Self, MlsError> {
@@ -428,8 +430,10 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         proposal: Proposal,
         authenticated_data: Vec<u8>,
     ) -> Result<MlsMessage, MlsError> {
-        let (signer, signing_identity) =
-            self.signing_data.as_ref().ok_or(MlsError::SignerNotFound)?;
+        let SigningData {
+            signing_key,
+            signing_identity,
+        } = self.signing_data.as_ref().ok_or(MlsError::SignerNotFound)?;
 
         let external_senders_ext = self
             .state
@@ -451,7 +455,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             &self.state.context,
             sender,
             Content::Proposal(Box::new(proposal.clone())),
-            signer,
+            signing_key,
             WireFormat::PublicMessage,
             authenticated_data,
         )
@@ -664,7 +668,7 @@ where
 pub struct ExternalSnapshot {
     version: u16,
     pub(crate) state: RawGroupState,
-    signing_data: Option<(SignatureSecretKey, SigningIdentity)>,
+    signing_data: Option<SigningData>,
 }
 
 impl ExternalSnapshot {
@@ -850,6 +854,9 @@ mod tests {
     };
     use assert_matches::assert_matches;
     use mls_rs_codec::{MlsDecode, MlsEncode};
+
+    #[cfg(feature = "by_ref_proposal")]
+    use mls_rs_core::identity::SigningData;
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn test_group_with_one_commit(v: ProtocolVersion, cs: CipherSuite) -> TestGroup {
@@ -1170,7 +1177,10 @@ mod tests {
 
         let mut server = make_external_group(&alice).await;
 
-        server.signing_data = Some((server_key, server_identity));
+        server.signing_data = Some(SigningData {
+            signing_key: server_key,
+            signing_identity: server_identity,
+        });
 
         let charlie_key_package =
             test_key_package_message(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "charlie").await;
@@ -1190,7 +1200,10 @@ mod tests {
 
         let mut server = make_external_group(&alice).await;
 
-        server.signing_data = Some((server_key, server_identity));
+        server.signing_data = Some(SigningData {
+            signing_key: server_key,
+            signing_identity: server_identity,
+        });
 
         let external_proposal = server.propose_remove(1, vec![]).await.unwrap();
 
@@ -1203,7 +1216,10 @@ mod tests {
         let (signing_id, secret_key, alice) = setup_extern_proposal_test(false).await;
         let mut server = make_external_group(&alice).await;
 
-        server.signing_data = Some((secret_key, signing_id));
+        server.signing_data = Some(SigningData {
+            signing_key: secret_key,
+            signing_identity: signing_id,
+        });
 
         let charlie_key_package =
             test_key_package_message(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "charlie").await;
@@ -1232,7 +1248,10 @@ mod tests {
 
         let mut server = make_external_group(&alice).await;
 
-        server.signing_data = Some((server_key, server_identity));
+        server.signing_data = Some(SigningData {
+            signing_key: server_key,
+            signing_identity: server_identity,
+        });
 
         let res = server.propose_remove(1, vec![]).await;
 

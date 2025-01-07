@@ -732,7 +732,11 @@ pub(crate) trait MessageProcessor: Send + Sync {
             } else if let Some(remove_proposal) = self_removed {
                 let new_epoch = NewEpoch::new(self.group_state().clone(), &provisional_state);
                 CommitEffect::Removed {
+<<<<<<< HEAD
                     remover: remove_proposal.sender,
+=======
+                    remove_proposal,
+>>>>>>> 8da6828 (Key Package Generation / Join API 1.x (#226))
                     new_epoch: Box::new(new_epoch),
                 }
             } else {
