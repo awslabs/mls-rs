@@ -261,6 +261,7 @@ pub(crate) struct DecryptedGroupInfo {
 #[cfg(feature = "psk")]
 #[cfg(test)]
 mod tests {
+    use alloc::{vec, vec::Vec};
     use mls_rs_core::psk::{ExternalPskId, PreSharedKey};
 
     use crate::{

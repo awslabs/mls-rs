@@ -715,6 +715,7 @@ pub(crate) mod test_utils {
 #[cfg(feature = "private_message")]
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
     use assert_matches::assert_matches;
 
     use crate::{
