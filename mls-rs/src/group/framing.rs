@@ -793,7 +793,7 @@ mod tests {
     async fn message_description() {
         let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
-        let message = group.commit(vec![]).unwrap();
+        let message = group.commit(vec![]).await.unwrap();
 
         let expected = MlsMessageDescription::ProtocolMessage {
             group_id: group.group_id(),
