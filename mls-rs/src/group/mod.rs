@@ -1471,6 +1471,11 @@ where
         Ok(self.key_schedule.authentication_secret.clone().into())
     }
 
+    /// Export a secret for use outside of MLS. Each epoch, label, context
+    /// combination has a unique and independent secret. Secrets for all
+    /// epochs, labels and contexts can be derived until either the epoch
+    /// changes, i.e. a commit is received (or own commit is applied), or
+    /// [Group::delete_exporter] is called.
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn export_secret(
         &self,
@@ -1482,6 +1487,15 @@ where
             .export_secret(label, context, len, &self.cipher_suite_provider)
             .await
             .map(Into::into)
+    }
+
+    /// Delete the exporter secret. Afterwards the state contains no information
+    /// about any secrets outputted by [Group::export_secret] (for the current or
+    /// past epochs). This means that after calling this function, [Group::export_secret]
+    /// can no longer be used and we get forward secrecy for all secrets derived using
+    /// [Group::export_secret].
+    pub fn delete_exporter(&mut self) {
+        self.key_schedule.delete_exporter();
     }
 
     /// Export the current epoch's ratchet tree in serialized format.
@@ -4469,5 +4483,20 @@ mod tests {
             .unwrap();
 
         assert_eq!(restored.group_state(), group.group_state());
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn delete_exporter() {
+        let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+
+        group.export_secret(b"123", b"", 15).await.unwrap();
+
+        group.delete_exporter();
+        let res = group.export_secret(b"123", b"", 15).await;
+        assert_matches!(res, Err(MlsError::ExporterDeleted));
+
+        group.commit(vec![]).await.unwrap();
+        group.apply_pending_commit().await.unwrap();
+        group.export_secret(b"123", b"", 15).await.unwrap();
     }
 }

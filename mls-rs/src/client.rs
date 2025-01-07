@@ -338,6 +338,8 @@ pub enum MlsError {
     InvalidGroupInfo,
     #[cfg_attr(feature = "std", error("Invalid welcome message"))]
     InvalidWelcomeMessage,
+    #[cfg_attr(feature = "std", error("Exporter deleted"))]
+    ExporterDeleted,
 }
 
 impl IntoAnyError for MlsError {
