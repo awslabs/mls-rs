@@ -294,3 +294,60 @@ impl<C: ClientConfig> Group<C> {
         Ok(CommitProcessor(p))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
+        crypto::test_utils::TestCryptoProvider,
+        group::Sender,
+        mls_rules::{CommitSource, ProposalInfo},
+        test_utils::get_test_groups,
+    };
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn commit_processor_info() {
+        let mut groups = get_test_groups(
+            TEST_PROTOCOL_VERSION,
+            TEST_CIPHER_SUITE,
+            3,
+            None,
+            false,
+            &TestCryptoProvider::new(),
+        )
+        .await;
+
+        let commit = groups[0]
+            .commit_builder()
+            .remove_member(2)
+            .unwrap()
+            .authenticated_data(b"auth data".into())
+            .build()
+            .await
+            .unwrap()
+            .commit_message;
+
+        let member_0 = groups[0].roster().member_with_index(0).unwrap();
+        let processor = groups[1].commit_processor(commit).await.unwrap();
+
+        assert_eq!(
+            &processor.proposals().removals,
+            &[ProposalInfo::new(2.into(), Sender::Member(0), true)]
+        );
+
+        assert!(processor.has_path());
+
+        assert!(processor
+            .committers_new_leaf()
+            .is_some_and(|leaf| leaf.signing_identity == member_0.signing_identity));
+
+        assert_eq!(
+            processor.committer(),
+            &CommitSource::ExistingMember(member_0)
+        );
+
+        assert_eq!(processor.authenticated_data(), b"auth data");
+
+        processor.process().await.unwrap();
+    }
+}
