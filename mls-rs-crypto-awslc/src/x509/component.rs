@@ -172,6 +172,7 @@ impl GeneralName {
 
             let value = check_non_null(GENERAL_NAME_get0_value(self.0, &mut name_type))?;
 
+            #[allow(non_snake_case)]
             match name_type {
                 GEN_EMAIL => Ok(SubjectAltName::Email(asn1_to_string(value.cast())?)),
                 GEN_URI => Ok(SubjectAltName::Uri(asn1_to_string(value.cast())?)),
@@ -581,7 +582,7 @@ unsafe fn asn1_to_ip(value: *mut ASN1_STRING) -> Result<String, AwsLcCryptoError
     }
 }
 
-#[allow(non_upper_case_globals)]
+#[allow(non_upper_case_globals, non_snake_case)]
 pub(super) unsafe fn components_from_name(
     name: *mut X509_NAME,
 ) -> Result<Vec<SubjectComponent>, AwsLcCryptoError> {
