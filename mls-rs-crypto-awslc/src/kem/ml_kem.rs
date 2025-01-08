@@ -1,19 +1,16 @@
 use std::ptr::null_mut;
 
 use crate::aws_lc_sys_impl::{
-    EVP_PKEY_CTX_free, EVP_PKEY_CTX_new, EVP_PKEY_decapsulate, EVP_PKEY_free,
-    EVP_PKEY_kem_new_raw_secret_key, EVP_PKEY_KEM,
+    EVP_PKEY_CTX_free, EVP_PKEY_CTX_kem_set_params, EVP_PKEY_CTX_new, EVP_PKEY_CTX_new_id,
+    EVP_PKEY_decapsulate, EVP_PKEY_free, EVP_PKEY_get_raw_private_key, EVP_PKEY_get_raw_public_key,
+    EVP_PKEY_kem_new_raw_secret_key, EVP_PKEY_keygen_deterministic, EVP_PKEY_keygen_init, EVP_PKEY,
+    EVP_PKEY_KEM,
 };
-use crate::aws_lc_sys_impl::{
-    EVP_PKEY_CTX_kem_set_params, EVP_PKEY_CTX_new_id, EVP_PKEY_get_raw_private_key,
-    EVP_PKEY_get_raw_public_key, EVP_PKEY_keygen_init, EVP_PKEY,
-};
-use aws_lc_fips_sys::EVP_PKEY_CTX;
+
 use aws_lc_rs::{
     error::Unspecified,
     kem::{Algorithm, AlgorithmIdentifier, EncapsulationKey},
 };
-//use aws_lc_sys::EVP_PKEY_keygen_deterministic;
 
 use mls_rs_core::crypto::{CipherSuite, HpkePublicKey, HpkeSecretKey};
 use mls_rs_crypto_traits::{KdfType, KemResult, KemType};
@@ -181,16 +178,6 @@ impl KemType for MlKemKem {
     }
 }
 
-extern "C" {
-    #[link_name = "\u{1}_aws_lc_fips_0_13_0_EVP_PKEY_keygen_deterministic"]
-    pub fn EVP_PKEY_keygen_deterministic(
-        ctx: *mut EVP_PKEY_CTX,
-        out_pkey: *mut *mut EVP_PKEY,
-        seed: *const u8,
-        seed_len: *mut usize,
-    ) -> ::std::os::raw::c_int;
-}
-
 unsafe fn kem_derive(
     nid: i32,
     ikm: &[u8],
@@ -206,7 +193,6 @@ unsafe fn kem_derive(
 
     let mut pkey: *mut EVP_PKEY = null_mut();
     let mut ikm_len = ikm.len();
-    println!("AAA");
 
     if 1 != EVP_PKEY_keygen_deterministic(ctx, &mut pkey, ikm.as_ptr(), &mut ikm_len) {
         aws_lc_fips_sys::EVP_PKEY_CTX_free(ctx);
