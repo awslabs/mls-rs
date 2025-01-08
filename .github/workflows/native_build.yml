@@ -33,6 +33,9 @@ jobs:
           go-version: '>=1.18'
       - uses: seanmiddleditch/gha-setup-ninja@master
         if: runner.os == 'Windows'
+      # TODO remove after AWS-LC FIPS bindings for Kyber are fixed
+      - name: Install bindgen-cli
+        run: cargo install --force --locked bindgen-cli
       - run: |
           echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
           vcpkg install openssl:x64-windows-static-md sqlite3:x64-windows-static-md
@@ -102,6 +105,9 @@ jobs:
         with:
           go-version: '>=1.18'
       - uses: seanmiddleditch/gha-setup-ninja@master
+      # TODO remove after AWS-LC FIPS bindings for Kyber are fixed
+      - name: Install bindgen-cli
+        run: cargo install --force --locked bindgen-cli
       - name: Rust Fmt
         run: cargo fmt --all -- --check
       - name: Clippy Full RFC Compliance
