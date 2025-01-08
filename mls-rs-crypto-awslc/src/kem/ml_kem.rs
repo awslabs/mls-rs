@@ -187,7 +187,7 @@ unsafe fn kem_derive(
     let ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_KEM, null_mut());
 
     if 1 != EVP_PKEY_CTX_kem_set_params(ctx, nid) || 1 != EVP_PKEY_keygen_init(ctx) {
-        aws_lc_fips_sys::EVP_PKEY_CTX_free(ctx);
+        EVP_PKEY_CTX_free(ctx);
         return Err(Unspecified);
     }
 
@@ -195,7 +195,7 @@ unsafe fn kem_derive(
     let mut ikm_len = ikm.len();
 
     if 1 != EVP_PKEY_keygen_deterministic(ctx, &mut pkey, ikm.as_ptr(), &mut ikm_len) {
-        aws_lc_fips_sys::EVP_PKEY_CTX_free(ctx);
+        EVP_PKEY_CTX_free(ctx);
         return Err(Unspecified);
     }
 
@@ -205,8 +205,8 @@ unsafe fn kem_derive(
     let err = 1 != EVP_PKEY_get_raw_private_key(pkey, secret_key.as_mut_ptr(), &mut secret_key_len)
         || 1 != EVP_PKEY_get_raw_public_key(pkey, public_key.as_mut_ptr(), &mut public_key_len);
 
-    aws_lc_fips_sys::EVP_PKEY_CTX_free(ctx);
-    aws_lc_fips_sys::EVP_PKEY_free(pkey);
+    EVP_PKEY_CTX_free(ctx);
+    EVP_PKEY_free(pkey);
 
     (!err)
         .then_some((secret_key.into(), public_key.into()))
