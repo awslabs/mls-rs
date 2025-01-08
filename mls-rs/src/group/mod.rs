@@ -2212,67 +2212,12 @@ mod tests {
             .unwrap();
 
         // Group from Bob's perspective
-<<<<<<< HEAD
-        let bob_group = Group::join(
-            &commit_output.welcome_messages[0],
-            None,
-            bob_client.config,
-            bob_client.signer.unwrap(),
-        )
-        .await
-        .map(|_| ());
-
-        assert_matches!(bob_group, Err(MlsError::RatchetTreeNotFound));
-    }
-
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn test_reused_key_package() {
-        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
-        let (bob_client, bob_key_package) =
-            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
-        let mut carla_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
-
-        // Alice adds Bob to her group.
-        let commit_output = alice_group
-            .group
-            .commit_builder()
-            .add_member(bob_key_package.clone())
-            .unwrap()
-            .build()
-            .await
-            .unwrap();
-
-        // Bob joins group.
-        let (mut bob_group, _) = bob_client
-            .join_group(None, &commit_output.welcome_messages[0])
-            .await
-            .unwrap();
-        // This deletes the key package used to join the group.
-        bob_group.write_to_storage().await.unwrap();
-
-        // Carla adds Bob, reusing the same key package.
-        let commit_output = carla_group
-            .group
-            .commit_builder()
-            .add_member(bob_key_package.clone())
-            .unwrap()
-            .build()
-            .await
-            .unwrap();
-
-        // Bob cannot join Carla's group.
-=======
->>>>>>> 8da6828 (Key Package Generation / Join API 1.x (#226))
         let bob_group = bob_client
             .join_group(None, &commit_output.welcome_messages[0])
             .await
             .map(|_| ());
-<<<<<<< HEAD
-        assert_matches!(bob_group, Err(MlsError::WelcomeKeyPackageNotFound));
-=======
 
         assert_matches!(bob_group, Err(MlsError::RatchetTreeNotFound));
->>>>>>> 8da6828 (Key Package Generation / Join API 1.x (#226))
     }
 
     #[cfg(feature = "last_resort_key_package_ext")]
