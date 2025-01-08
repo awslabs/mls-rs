@@ -143,8 +143,8 @@ impl Hash for AwsLcHash {
 
 #[cfg(feature = "post-quantum")]
 pub mod shake {
+    use crate::aws_lc_sys_impl::{EVP_Digest, EVP_shake128};
     use crate::{check_int_return, AwsLcCryptoError};
-    use aws_lc_sys::{EVP_Digest, EVP_shake128};
     use mls_rs_crypto_traits::VariableLengthHash;
     use std::{os::raw::c_uint, ptr::null_mut};
 
