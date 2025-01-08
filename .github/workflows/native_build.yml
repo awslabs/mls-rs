@@ -46,8 +46,10 @@ jobs:
       - name: Test Full RFC Compliance
         # Don't test AWS LC on all features as it makes it build both FIPS and non-FIPS versions
         run: cargo test --all-features --verbose --workspace --exclude mls-rs-crypto-aws-lc
-        run: cargo test --verbose -p mls-rs-crypto-aws-lc --features post-quantum
-        run: cargo test --verbose -p mls-rs-crypto-aws-lc --features post-quantum,fips --no-default-features
+      - name: Test AWS-LC provider
+        run: |
+          cargo test --verbose -p mls-rs-crypto-aws-lc --features post-quantum
+          cargo test --verbose -p mls-rs-crypto-aws-lc --features post-quantum,fips --no-default-features
       - name: Test Bare Bones
         run: cargo test --no-default-features --features std,test_util,non-fips  --verbose --workspace
       - name: Examples
