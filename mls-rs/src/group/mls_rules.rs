@@ -4,15 +4,12 @@
 
 use crate::{
     error::MlsError,
-    group::{proposal_filter::ProposalBundle, Roster},
+    group::{proposal_filter::ProposalBundle, Roster, Sender},
     tree_kem::{leaf_node::LeafNode, TreeKemPublic},
 };
 
 #[cfg(feature = "private_message")]
-use crate::{
-    group::{padding::PaddingMode, Sender},
-    WireFormat,
-};
+use crate::{group::padding::PaddingMode, WireFormat};
 
 use alloc::boxed::Box;
 use core::convert::Infallible;

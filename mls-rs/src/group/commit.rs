@@ -8,6 +8,8 @@ pub(crate) mod processor;
 pub use builder::*;
 pub use processor::*;
 
+use alloc::vec::Vec;
+
 use mls_rs_codec::{self, MlsDecode, MlsEncode, MlsSize};
 
 use crate::group::ProposalOrRef;

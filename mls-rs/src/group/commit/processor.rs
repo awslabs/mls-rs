@@ -2,6 +2,9 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
+use alloc::boxed::Box;
+use alloc::vec::Vec;
+
 use mls_rs_core::{group::ConfirmedTranscriptHash, time::MlsTime};
 
 use crate::{
@@ -84,7 +87,10 @@ pub(crate) async fn commit_processor_from_content<P: MessageProcessor>(
         .resolve_for_commit(commit_content.content.sender, commit.proposals)?;
 
     #[cfg(not(feature = "by_ref_proposal"))]
-    let proposals = resolve_for_commit(commit_content.content.sender, commit.proposals)?;
+    let proposals = crate::group::proposal_cache::resolve_for_commit(
+        commit_content.content.sender,
+        commit.proposals,
+    )?;
 
     let committer = CommitSource::new(
         &commit_content.content.sender,

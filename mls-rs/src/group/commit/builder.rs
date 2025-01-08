@@ -1,3 +1,10 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// Copyright by contributors to this project.
+// SPDX-License-Identifier: (Apache-2.0 OR MIT)
+
+use alloc::boxed::Box;
+use alloc::{vec, vec::Vec};
+
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::{crypto::SignatureSecretKey, error::IntoAnyError};
 

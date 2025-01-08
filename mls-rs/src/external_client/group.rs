@@ -791,7 +791,7 @@ pub struct ExternalCommitProcessor<'a, C: ExternalClientConfig>(
     InternalCommitProcessor<'a, ExternalGroup<C>>,
 );
 
-impl<'a, C: ExternalClientConfig> ExternalCommitProcessor<'a, C> {
+impl<C: ExternalClientConfig> ExternalCommitProcessor<'_, C> {
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn process(self) -> Result<CommitMessageDescription, MlsError> {
         process_commit(self.0).await

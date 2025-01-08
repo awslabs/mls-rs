@@ -1439,7 +1439,7 @@ where
 
     #[cfg(not(feature = "psk"))]
     fn get_psk(&self) -> PskSecret {
-        PskSecret::new(self.cipher_suite_provider())
+        PskSecret::new(&self.cipher_suite_provider())
     }
 
     #[cfg(feature = "secret_tree_access")]

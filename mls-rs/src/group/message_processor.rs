@@ -43,9 +43,6 @@ use mls_rs_core::{
 #[cfg(feature = "by_ref_proposal")]
 use super::proposal_ref::ProposalRef;
 
-#[cfg(not(feature = "by_ref_proposal"))]
-use crate::group::proposal_cache::resolve_for_commit;
-
 use super::proposal::Proposal;
 use super::proposal_filter::ProposalInfo;
 
