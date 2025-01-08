@@ -290,7 +290,11 @@ where
     }
 
     fn secret_key_size(&self) -> usize {
-        self.kem1.secret_key_size() + self.kem1.secret_key_size()
+        self.kem1.secret_key_size() + self.kem2.secret_key_size()
+    }
+
+    fn enc_size(&self) -> usize {
+        self.kem1.enc_size() + self.kem2.enc_size()
     }
 }
 
@@ -513,5 +517,27 @@ mod tests {
 
         let decap_result = kem.decap(&enc(12), &sk(12), &pk(12)).unwrap();
         assert_eq!(decap_result.as_slice(), b"shared secret");
+    }
+
+    #[test]
+    fn sizes() {
+        let mut kem1 = MockKemType::new();
+        let mut kem2 = MockKemType::new();
+        let hash = MockHash::new();
+        let variable_length_hash = MockVariableLengthHash::new();
+
+        kem1.expect_public_key_size().returning(|| 1);
+        kem1.expect_enc_size().returning(|| 10);
+        kem1.expect_secret_key_size().returning(|| 100);
+
+        kem2.expect_public_key_size().returning(|| 1000);
+        kem2.expect_enc_size().returning(|| 10000);
+        kem2.expect_secret_key_size().returning(|| 100000);
+
+        let kem = CombinedKem::new(kem1, kem2, hash, variable_length_hash);
+
+        assert_eq!(kem.public_key_size(), 1001);
+        assert_eq!(kem.secret_key_size(), 100100);
+        assert_eq!(kem.enc_size(), 10010);
     }
 }
