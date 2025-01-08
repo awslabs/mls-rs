@@ -48,8 +48,8 @@ jobs:
         run: cargo test --all-features --verbose --workspace --exclude mls-rs-crypto-aws-lc
       - name: Test AWS-LC provider
         run: |
-          cargo test --verbose -p mls-rs-crypto-aws-lc --features post-quantum
-          cargo test --verbose -p mls-rs-crypto-aws-lc --features post-quantum,fips --no-default-features
+          cargo test --verbose -p mls-rs-crypto-awslc --features post-quantum
+          cargo test --verbose -p mls-rs-crypto-awslc --features post-quantum,fips --no-default-features
       - name: Test Bare Bones
         run: cargo test --no-default-features --features std,test_util,non-fips  --verbose --workspace
       - name: Examples
