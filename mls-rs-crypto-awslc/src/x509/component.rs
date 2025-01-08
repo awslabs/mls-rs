@@ -490,18 +490,7 @@ impl X509Extension {
                 return Err(AwsLcCryptoError::CryptoError);
             }
 
-            #[cfg(feature = "fips")]
             let out_len = BIO_number_written(bio_out);
-
-            #[cfg(not(feature = "fips"))]
-            let out_len = match BIO_number_written(bio_out).try_into() {
-                Ok(out_len) => out_len,
-                Err(e) => {
-                    BIO_free(bio_out);
-                    return Err(AwsLcCryptoError::from(e));
-                }
-            };
-
             let mut out_buffer = vec![0u8; out_len.try_into()?];
 
             let res = BIO_read(
