@@ -198,6 +198,7 @@ where
 
         let ss_details1 = SharedSecretDetails::new(&ct1.shared_secret, &ct1.enc, &pk1);
         let ss_details2 = SharedSecretDetails::new(&ct2.shared_secret, &ct2.enc, &pk2);
+
         let mut shared_secret_input = self
             .shared_secret_hash_input
             .input(ss_details1, ss_details2);
@@ -257,6 +258,7 @@ where
     }
 
     fn public_key_validate(&self, _key: &HpkePublicKey) -> Result<(), Self::Error> {
+        // TODO Not clear how to do this for Kyber or how useful it is.
         Ok(())
     }
 
@@ -315,7 +317,6 @@ where
         self.generate_key_pair_derand(ikm1, ikm2).await
     }
 
-    // The funciton is useful for X-Wing RFC test.
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn generate_key_pair_derand(
         &self,
@@ -348,5 +349,169 @@ where
         let (key1, key2) = key.split_at(size);
 
         Ok((key1.to_vec(), key2.to_vec()))
+    }
+}
+
+// Makes no sense to test this both in sync and async mode
+#[cfg(all(test, not(mls_build_async)))]
+mod tests {
+    use mls_rs_core::crypto::{HpkePublicKey, HpkeSecretKey};
+    use mls_rs_crypto_traits::{
+        mock::{MockHash, MockKemType, MockVariableLengthHash},
+        KemResult, KemType,
+    };
+
+    use super::{
+        CombinedKem, DefaultSharedSecretHashInput, SharedSecretHashInput,
+        XWingSharedSecretHashInput,
+    };
+
+    fn pk(i: u8) -> HpkePublicKey {
+        if i == 12 {
+            b"pk1pk2".to_vec().into()
+        } else {
+            format!("pk{i}").into_bytes().into()
+        }
+    }
+
+    fn sk(i: u8) -> HpkeSecretKey {
+        if i == 12 {
+            b"sk1sk2".to_vec().into()
+        } else {
+            format!("sk{i}").into_bytes().into()
+        }
+    }
+
+    fn enc(i: u8) -> Vec<u8> {
+        if i == 12 {
+            b"enc1enc2".to_vec()
+        } else {
+            format!("enc{i}").into_bytes()
+        }
+    }
+
+    fn ss(i: u8) -> Vec<u8> {
+        format!("ss{i}").into_bytes()
+    }
+
+    fn ikm(i: u8) -> Vec<u8> {
+        format!("ikm{i}").into_bytes()
+    }
+
+    #[test]
+    fn generate_deterministic() {
+        let mut kem1 = MockKemType::new();
+        let mut kem2 = MockKemType::new();
+        let hash = MockHash::new();
+        let mut variable_length_hash = MockVariableLengthHash::new();
+
+        variable_length_hash
+            .expect_hash()
+            .withf(|ikm, ikm1_len| ikm == b"test ikm" && *ikm1_len == 8)
+            .return_once(|_, _| Ok([ikm(1), ikm(2)].concat()));
+
+        kem1.expect_seed_length_for_derive().returning(|| 4);
+        kem2.expect_seed_length_for_derive().returning(|| 4);
+
+        kem1.expect_generate_deterministic()
+            .withf(|ikm1| ikm1 == ikm(1))
+            .return_once(|_| Ok((sk(1), pk(1))));
+
+        kem2.expect_generate_deterministic()
+            .withf(|ikm1| ikm1 == ikm(2))
+            .return_once(|_| Ok((sk(2), pk(2))));
+
+        let kem = CombinedKem::new(kem1, kem2, hash, variable_length_hash);
+
+        let keypair = kem.generate_deterministic(b"test ikm").unwrap();
+        assert_eq!(keypair.0, sk(12));
+        assert_eq!(keypair.1, pk(12));
+    }
+
+    #[test]
+    fn generate() {
+        let mut kem1 = MockKemType::new();
+        let mut kem2 = MockKemType::new();
+        let hash = MockHash::new();
+        let variable_length_hash = MockVariableLengthHash::new();
+
+        kem1.expect_generate().return_once(|| Ok((sk(1), pk(1))));
+        kem2.expect_generate().return_once(|| Ok((sk(2), pk(2))));
+
+        let kem = CombinedKem::new(kem1, kem2, hash, variable_length_hash);
+
+        let keypair = kem.generate().unwrap();
+        assert_eq!(keypair.0, sk(12));
+        assert_eq!(keypair.1, pk(12));
+    }
+
+    fn encap_test<F: SharedSecretHashInput>(hash_input_bytes: Vec<u8>, hash_input_fn: F) {
+        let mut kem1 = MockKemType::new();
+        let mut kem2 = MockKemType::new();
+        let mut hash = MockHash::new();
+        let variable_length_hash = MockVariableLengthHash::new();
+
+        kem1.expect_public_key_size().returning(|| pk(1).len());
+        kem1.expect_enc_size().returning(|| enc(1).len());
+
+        kem1.expect_encap()
+            .withf(|pk1| pk1 == &pk(1))
+            .return_once(|_| Ok(KemResult::new(ss(1), enc(1))));
+
+        kem2.expect_encap()
+            .withf(|pk2| pk2 == &pk(2))
+            .return_once(|_| Ok(KemResult::new(ss(2), enc(2))));
+
+        hash.expect_hash()
+            .withf(move |input| input == hash_input_bytes)
+            .return_once(|_| Ok(b"shared secret".to_vec()));
+
+        let kem = CombinedKem::new_custom(kem1, kem2, hash, variable_length_hash, hash_input_fn);
+
+        let encap_result = kem.encap(&pk(12)).unwrap();
+        assert_eq!(encap_result.enc, enc(12));
+        assert_eq!(encap_result.shared_secret, b"shared secret");
+    }
+
+    #[test]
+    fn encap() {
+        encap_test(
+            [&enc(1)[..], &ss(1), &pk(1), &enc(2), &ss(2), &pk(2)].concat(),
+            DefaultSharedSecretHashInput,
+        );
+
+        encap_test(
+            [b"\\./\n/^\\".as_slice(), &ss(1), &ss(2), &enc(2), &pk(2)].concat(),
+            XWingSharedSecretHashInput,
+        );
+    }
+
+    #[test]
+    fn decap() {
+        let mut kem1 = MockKemType::new();
+        let mut kem2 = MockKemType::new();
+        let mut hash = MockHash::new();
+        let variable_length_hash = MockVariableLengthHash::new();
+
+        kem1.expect_public_key_size().returning(|| pk(1).len());
+        kem1.expect_enc_size().returning(|| enc(1).len());
+        kem1.expect_secret_key_size().returning(|| sk(1).len());
+
+        kem1.expect_decap()
+            .withf(|enc1, sk1, pk1| enc1 == enc(1) && sk1 == &sk(1) && pk1 == &pk(1))
+            .return_once(|_, _, _| Ok(ss(1)));
+
+        kem2.expect_decap()
+            .withf(|enc2, sk2, pk2| enc2 == enc(2) && sk2 == &sk(2) && pk2 == &pk(2))
+            .return_once(|_, _, _| Ok(ss(2)));
+
+        hash.expect_hash()
+            .withf(|input| input == [&enc(1)[..], &ss(1), &pk(1), &enc(2), &ss(2), &pk(2)].concat())
+            .return_once(|_| Ok(b"shared secret".to_vec()));
+
+        let kem = CombinedKem::new(kem1, kem2, hash, variable_length_hash);
+
+        let decap_result = kem.decap(&enc(12), &sk(12), &pk(12)).unwrap();
+        assert_eq!(decap_result.as_slice(), b"shared secret");
     }
 }

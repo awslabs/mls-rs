@@ -23,12 +23,14 @@ pub mod mock;
 
 use alloc::vec::Vec;
 
+#[cfg_attr(feature = "mock", mockall::automock(type Error = crate::mock::TestError;))]
 pub trait Hash: Send + Sync {
     type Error: IntoAnyError + Send + Sync;
 
     fn hash(&self, input: &[u8]) -> Result<Vec<u8>, Self::Error>;
 }
 
+#[cfg_attr(feature = "mock", mockall::automock(type Error = crate::mock::TestError;))]
 pub trait VariableLengthHash: Send + Sync {
     type Error: IntoAnyError + Send + Sync;
 
