@@ -274,11 +274,13 @@ impl<C: IntoConfig> ExternalClientBuilder<C> {
         self,
         signer: SignatureSecretKey,
         signing_identity: SigningIdentity,
+        cipher_suite: CipherSuite,
     ) -> ExternalClientBuilder<IntoConfigOutput<C>> {
         let mut c = self.0.into_config();
         c.0.signing_data = Some(SigningData {
             signing_identity,
             signing_key: signer,
+            cipher_suite,
         });
         ExternalClientBuilder(c)
     }
@@ -559,7 +561,7 @@ mod private {
 }
 
 use mls_rs_core::{
-    crypto::SignatureSecretKey,
+    crypto::{CipherSuite, SignatureSecretKey},
     identity::{IdentityProvider, SigningData, SigningIdentity},
 };
 use private::{Config, ConfigInner, IntoConfig};

@@ -17,7 +17,6 @@ use crate::client::MlsError;
 use crate::client_config::ClientConfig;
 use crate::crypto::{HpkeCiphertext, HpkeSecretKey, SignatureSecretKey};
 use crate::extension::RatchetTreeExt;
-use crate::group_joiner::GroupJoiner;
 use crate::identity::SigningIdentity;
 use crate::key_package::{KeyPackage, KeyPackageRef};
 use crate::protocol_version::ProtocolVersion;
@@ -263,7 +262,7 @@ where
 {
     config: C,
     cipher_suite_provider: <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider,
-    state_repo: GroupStateRepository<C::GroupStateStorage, C::KeyPackageRepository>,
+    state_repo: GroupStateRepository<C::GroupStateStorage>,
     pub(crate) state: GroupState,
     epoch_secrets: EpochSecrets,
     private_tree: TreeKemPrivate,
@@ -354,7 +353,6 @@ where
             #[cfg(feature = "prior_epoch")]
             context.group_id.clone(),
             config.group_state_storage(),
-            config.key_package_repo(),
         )?;
 
         let key_schedule_result = KeySchedule::from_random_epoch_secret(
@@ -427,7 +425,6 @@ where
             #[cfg(feature = "prior_epoch")]
             group_info.group_context.group_id.clone(),
             config.group_state_storage(),
-            config.key_package_repo(),
         )?;
 
         let group = Group {
@@ -1498,11 +1495,7 @@ impl<C: ClientConfig> Group<C> {
             psk.id.psk_nonce = psk_id.psk_nonce.clone();
             PskSecret::calculate(&[psk], cipher_suite_provider).await
         } else {
-            PskResolver::<
-                <C as ClientConfig>::GroupStateStorage,
-                <C as ClientConfig>::KeyPackageRepository,
-                <C as ClientConfig>::PskStore,
-            > {
+            PskResolver::<<C as ClientConfig>::GroupStateStorage, <C as ClientConfig>::PskStore> {
                 group_context: None,
                 current_epoch: None,
                 prior_epochs: None,
@@ -1521,30 +1514,6 @@ impl<C: ClientConfig> Group<C> {
         _psks: &[PreSharedKeyID],
     ) -> Result<PskSecret, MlsError> {
         Ok(PskSecret::new(cipher_suite_provider))
-    }
-
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub(crate) async fn decrypt_group_info(
-        welcome: &MlsMessage,
-        config: &C,
-    ) -> Result<GroupInfo, MlsError> {
-        let MlsMessageDescription::Welcome {
-            key_package_refs, ..
-        } = welcome.description()
-        else {
-            return Err(MlsError::UnexpectedMessageType);
-        };
-
-        let key_package_data =
-            find_key_package_generation(&config.key_package_repo(), &key_package_refs).await?;
-
-        let group_info = GroupJoiner::new(config.clone(), welcome, key_package_data, None)
-            .await?
-            .decrypt_group_info()
-            .await?
-            .group_info;
-
-        Ok(group_info)
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -1958,9 +1927,6 @@ mod tests {
     #[cfg(feature = "by_ref_proposal")]
     use crate::{crypto::test_utils::test_cipher_suite_provider, extension::ExternalSendersExt};
 
-    #[cfg(feature = "private_message")]
-    use super::test_utils::test_member;
-
     use mls_rs_core::extension::MlsExtension;
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -2003,13 +1969,10 @@ mod tests {
         let mut test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
         // Create a proposal
-        let (bob_key_package, _) =
-            test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob").await;
+        let bob_key_package =
+            test_key_package_message(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
 
-        let proposal = test_group
-            .add_proposal(bob_key_package.key_package_message())
-            .unwrap();
-
+        let proposal = test_group.add_proposal(bob_key_package).unwrap();
         test_group.proposal_message(proposal, vec![]).await.unwrap();
 
         // We should not be able to send application messages until a commit happens
@@ -2803,7 +2766,7 @@ mod tests {
     async fn only_selected_members_of_the_original_group_can_join_subgroup() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let (mut bob, _) = alice.join("bob").await;
-        let (carol, commit) = alice.join("carol").await;
+        let (_carol, commit) = alice.join("carol").await;
 
         // Apply the commit that adds carol
         bob.process_incoming_message(commit).await.unwrap();
@@ -2817,23 +2780,32 @@ mod tests {
             Some((bob_identity, TEST_CIPHER_SUITE)),
             TEST_PROTOCOL_VERSION,
         )
-        .generate_key_package_message(Default::default(), Default::default())
+        .generate_key_package()
         .await
         .unwrap();
 
         let (mut alice_sub_group, welcome) = alice
-            .branch(b"subgroup".to_vec(), vec![new_key_pkg])
+            .branch(b"subgroup".to_vec(), vec![new_key_pkg.key_package_message])
             .await
             .unwrap();
 
         let welcome = &welcome[0];
         bob.write_to_storage().await.unwrap();
 
-        let (mut bob_sub_group, _) = bob.join_subgroup(welcome, None).await.unwrap();
+        let (mut bob_sub_group, _) = bob
+            .join_subgroup(welcome, None, new_key_pkg.key_package_data)
+            .await
+            .unwrap();
 
-        // Carol can't join
-        let res = carol.join_subgroup(welcome, None).await.map(|_| ());
-        assert_matches!(res, Err(_));
+        let MlsMessageDescription::Welcome {
+            key_package_refs, ..
+        } = welcome.description()
+        else {
+            panic!("expected welcome")
+        };
+
+        // Welcome message does not have kp reference for carol
+        assert_eq!(key_package_refs.len(), 1);
 
         // Alice and Bob can still talk
         let commit_output = alice_sub_group.commit(vec![]).await.unwrap();
@@ -3324,6 +3296,8 @@ mod tests {
     #[cfg(not(target_arch = "wasm32"))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn commit_leaf_not_supporting_external_sender_credential_leads_to_rejected_commit() {
+        use crate::test_utils::TestClient;
+
         let ext_senders = make_x509_external_senders_ext()
             .await
             .into_extension()
@@ -3350,10 +3324,9 @@ mod tests {
             .await
             .build();
 
-        let kp = bob
-            .generate_key_package_message(Default::default(), Default::default())
-            .await
-            .unwrap();
+        let bob = TestClient::new(bob);
+
+        let kp = bob.generate_key_package().await.unwrap();
 
         let commit = alice
             .commit_builder()
@@ -3799,43 +3772,28 @@ mod tests {
                 TEST_CIPHER_SUITE,
             )
             .extension_type(EXTENSION_TYPE)
-            .build();
+            .build_for_test();
 
         let carol_client = TestClientBuilder::new_for_test()
             .with_random_signing_identity("carol", TEST_CIPHER_SUITE)
             .await
             .extension_type(EXTENSION_TYPE)
-            .build();
+            .build_for_test();
 
         let dave_client = TestClientBuilder::new_for_test()
             .with_random_signing_identity("dave", TEST_CIPHER_SUITE)
             .await
             .extension_type(EXTENSION_TYPE)
-            .build();
+            .build_for_test();
 
         // Alice adds Bob, Carol and Dave to the group. They all support the mandatory extension.
         let commit = alice
             .commit_builder()
-            .add_member(
-                bob_client
-                    .generate_key_package_message(Default::default(), Default::default())
-                    .await
-                    .unwrap(),
-            )
+            .add_member(bob_client.generate_key_package().await.unwrap())
             .unwrap()
-            .add_member(
-                carol_client
-                    .generate_key_package_message(Default::default(), Default::default())
-                    .await
-                    .unwrap(),
-            )
+            .add_member(carol_client.generate_key_package().await.unwrap())
             .unwrap()
-            .add_member(
-                dave_client
-                    .generate_key_package_message(Default::default(), Default::default())
-                    .await
-                    .unwrap(),
-            )
+            .add_member(dave_client.generate_key_package().await.unwrap())
             .unwrap()
             .build()
             .await
@@ -3855,9 +3813,8 @@ mod tests {
         // not support the mandatory extension.
         let mut bob = TestClientBuilder::new_for_test()
             .signing_identity(bob_signing_identity, bob_secret_key, TEST_CIPHER_SUITE)
-            .key_package_repo(bob.config.key_package_repo())
             .group_state_storage(bob.config.group_state_storage())
-            .build()
+            .build_for_test()
             .load_group(alice.group_id())
             .await
             .unwrap();
@@ -3958,7 +3915,7 @@ mod tests {
 
         let kp = client_with_custom_rules(b"bob", mls_rules)
             .await
-            .generate_key_package_message(Default::default(), Default::default())
+            .generate_key_package()
             .await
             .unwrap();
 
@@ -4068,7 +4025,7 @@ mod tests {
     async fn client_with_custom_rules(
         name: &[u8],
         mls_rules: CustomMlsRules,
-    ) -> Client<impl MlsConfig> {
+    ) -> crate::test_utils::TestClient<impl MlsConfig> {
         let (signing_identity, signer) = get_test_signing_identity(TEST_CIPHER_SUITE, name).await;
 
         ClientBuilder::new()
@@ -4078,6 +4035,7 @@ mod tests {
             .custom_proposal_type(TEST_CUSTOM_PROPOSAL_TYPE)
             .mls_rules(mls_rules)
             .build()
+            .into()
     }
 
     #[derive(Debug, Clone)]

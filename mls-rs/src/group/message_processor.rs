@@ -468,7 +468,6 @@ pub(crate) enum EventOrContent<E> {
 pub(crate) trait MessageProcessor: Send + Sync + Sized {
     type OutputType: TryFrom<ApplicationMessageDescription, Error = MlsError>
         + From<CommitMessageDescription>
-        // From<CommitProcessor>
         + From<ProposalMessageDescription>
         + From<GroupInfo>
         + From<Welcome>

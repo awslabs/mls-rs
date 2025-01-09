@@ -5,14 +5,10 @@
 use crate::cipher_suite::CipherSuite;
 use crate::client_builder::{recreate_config, BaseConfig, ClientBuilder, MakeConfig};
 use crate::client_config::ClientConfig;
-use crate::group::framing::{MlsMessage, MlsMessageDescription};
+use crate::group::framing::MlsMessage;
 
-use crate::group::{
-    cipher_suite_provider, find_key_package_generation, validate_group_info_joiner, GroupInfo,
-};
-use crate::group::{
-    framing::MlsMessagePayload, snapshot::Snapshot, ExportedTree, Group, NewMemberInfo,
-};
+use crate::group::{cipher_suite_provider, validate_group_info_joiner, GroupInfo, NewMemberInfo};
+use crate::group::{framing::MlsMessagePayload, snapshot::Snapshot, ExportedTree, Group};
 #[cfg(feature = "by_ref_proposal")]
 use crate::group::{
     framing::{Content, PublicMessage, Sender, WireFormat},
@@ -21,8 +17,7 @@ use crate::group::{
 };
 use crate::group_joiner::GroupJoiner;
 use crate::identity::SigningIdentity;
-use crate::key_package::builder::KeyPackageBuilder;
-use crate::key_package::{KeyPackageGeneration, KeyPackageGenerator};
+use crate::key_package::builder::{KeyPackageBuilder, KeyPackageGeneration};
 use crate::protocol_version::ProtocolVersion;
 use crate::tree_kem::node::NodeIndex;
 use alloc::vec::Vec;
@@ -34,7 +29,7 @@ use mls_rs_core::group::{GroupStateStorage, ProposalType};
 use mls_rs_core::identity::{
     CredentialType, IdentityProvider, MemberValidationContext, SigningData,
 };
-use mls_rs_core::key_package::{KeyPackageData, KeyPackageStorage};
+use mls_rs_core::key_package::KeyPackageData;
 
 use crate::group::external_commit::ExternalCommitBuilder;
 
@@ -427,77 +422,31 @@ where
     /// client to a [Group](crate::group::Group). Each call to this function
     /// will produce a unique value that is signed by `signing_identity`.
     ///
-    /// The secret keys for the resulting key package message will be stored in
-    /// the [KeyPackageStorage](crate::KeyPackageStorage)
-    /// that was used to configure the client and will
-    /// automatically be erased when this key package is used to
-    /// [join a group](Client::join_group).
-    ///
     /// # Warning
     ///
     /// A key package message may only be used once.
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn generate_key_package_message(
-        &self,
-        key_package_extensions: ExtensionList,
-        leaf_node_extensions: ExtensionList,
-    ) -> Result<MlsMessage, MlsError> {
-        Ok(self
-            .generate_key_package(key_package_extensions, leaf_node_extensions)
-            .await?
-            .key_package_message())
-    }
-
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn generate_key_package(
-        &self,
-        key_package_extensions: ExtensionList,
-        leaf_node_extensions: ExtensionList,
-    ) -> Result<KeyPackageGeneration, MlsError> {
-        let (signing_identity, cipher_suite) = self.signing_identity()?;
-
-        let cipher_suite_provider = self
-            .config
-            .crypto_provider()
-            .cipher_suite_provider(cipher_suite)
-            .ok_or(MlsError::UnsupportedCipherSuite(cipher_suite))?;
-
-        let key_package_generator = KeyPackageGenerator {
-            protocol_version: self.version,
-            cipher_suite_provider: &cipher_suite_provider,
-            signing_key: self.signer()?,
-            signing_identity,
-        };
-
-        let key_pkg_gen = key_package_generator
-            .generate(
-                self.config.lifetime(),
-                self.config.capabilities(),
-                key_package_extensions,
-                leaf_node_extensions,
-            )
-            .await?;
-
-        let (id, key_package_data) = key_pkg_gen.to_storage()?;
-
-        self.config
-            .key_package_repo()
-            .insert(id, key_package_data)
-            .await
-            .map_err(|e| MlsError::KeyPackageRepoError(e.into_any_error()))?;
-
-        Ok(key_pkg_gen)
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
+    pub async fn generate_key_package(&self) -> Result<KeyPackageGeneration, MlsError> {
+        self.key_package_builder(None)?.build().await
     }
 
     #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     pub fn key_package_builder(
         &self,
-        cipher_suite: CipherSuite,
         signing_data: Option<SigningData>,
     ) -> Result<
         KeyPackageBuilder<<C::CryptoProvider as CryptoProvider>::CipherSuiteProvider>,
         MlsError,
     > {
+        // TODO create provider inside key package builder
+        let cipher_suite = signing_data
+            .as_ref()
+            .map(|data| data.cipher_suite)
+            .or(self.signing_identity.as_ref().map(|(_, cs)| *cs))
+            // TODO no error fits
+            .ok_or(MlsError::CipherSuiteMismatch)?;
+
         let cipher_suite_provider = self
             .config
             .crypto_provider()
@@ -576,21 +525,13 @@ where
     /// be exported from a group using the
     /// [export tree function](crate::group::Group::export_tree).
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     pub async fn join_group(
         &self,
         tree_data: Option<ExportedTree<'_>>,
         welcome_message: &MlsMessage,
+        key_package_data: KeyPackageData,
     ) -> Result<(Group<C>, NewMemberInfo), MlsError> {
-        let MlsMessageDescription::Welcome {
-            key_package_refs, ..
-        } = welcome_message.description()
-        else {
-            return Err(MlsError::UnexpectedMessageType);
-        };
-
-        let key_package_data =
-            find_key_package_generation(&self.config.key_package_repo(), &key_package_refs).await?;
-
         let mut joiner = self
             .group_joiner(welcome_message, key_package_data)
             .await?
@@ -621,12 +562,18 @@ where
 
     /// Decrypt GroupInfo encrypted in the Welcome message without actually joining
     /// the group. The ratchet tree is not needed.
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn examine_welcome_message(
         &self,
         welcome_message: &MlsMessage,
+        key_package_data: KeyPackageData,
     ) -> Result<GroupInfo, MlsError> {
-        Group::decrypt_group_info(welcome_message, &self.config).await
+        GroupJoiner::new(self.config.clone(), welcome_message, key_package_data, None)
+            .await?
+            .decrypt_group_info()
+            .await
+            .map(|out| out.group_info)
     }
 
     /// Validate GroupInfo message. This does NOT validate the ratchet tree in case
@@ -773,9 +720,10 @@ where
         group_info: &MlsMessage,
         tree_data: Option<crate::group::ExportedTree<'_>>,
         authenticated_data: Vec<u8>,
-        key_package_extensions: ExtensionList,
-        leaf_node_extensions: ExtensionList,
+        key_package_bytes: &[u8],
     ) -> Result<MlsMessage, MlsError> {
+        use crate::KeyPackage;
+
         let protocol_version = group_info.version;
 
         if !self.config.version_supported(protocol_version) && protocol_version == self.version {
@@ -803,21 +751,12 @@ where
         )
         .await?;
 
-        let key_package = self
-            .generate_key_package(key_package_extensions, leaf_node_extensions)
-            .await?
-            .key_package;
-
-        (key_package.cipher_suite == cipher_suite)
-            .then_some(())
-            .ok_or(MlsError::UnsupportedCipherSuite(cipher_suite))?;
-
         let message = AuthenticatedContent::new_signed(
             &cipher_suite_provider,
             &group_info.group_context,
             Sender::NewMemberProposal,
             Content::Proposal(Box::new(Proposal::Add(Box::new(AddProposal {
-                key_package,
+                key_package: KeyPackage::mls_decode(&mut &*key_package_bytes)?,
             })))),
             self.signer()?,
             WireFormat::PublicMessage,
@@ -849,12 +788,6 @@ where
             .ok_or(MlsError::SignerNotFound)
     }
 
-    /// The [KeyPackageStorage] that this client was configured to use.
-    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
-    pub fn key_package_store(&self) -> <C as ClientConfig>::KeyPackageRepository {
-        self.config.key_package_repo()
-    }
-
     /// The [PreSharedKeyStorage](crate::PreSharedKeyStorage) that
     /// this client was configured to use.
     #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
@@ -878,7 +811,7 @@ where
 #[cfg(test)]
 pub(crate) mod test_utils {
     use super::*;
-    use crate::identity::test_utils::get_test_signing_identity;
+    use crate::{identity::test_utils::get_test_signing_identity, test_utils::TestClient};
 
     pub use crate::client_builder::test_utils::{TestClientBuilder, TestClientConfig};
 
@@ -891,7 +824,7 @@ pub(crate) mod test_utils {
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
         identity: &str,
-    ) -> (Client<TestClientConfig>, MlsMessage) {
+    ) -> (TestClient<TestClientConfig>, MlsMessage) {
         test_client_with_key_pkg_custom(
             protocol_version,
             cipher_suite,
@@ -911,7 +844,7 @@ pub(crate) mod test_utils {
         key_package_extensions: ExtensionList,
         leaf_node_extensions: ExtensionList,
         mut config: F,
-    ) -> (Client<TestClientConfig>, MlsMessage)
+    ) -> (TestClient<TestClientConfig>, MlsMessage)
     where
         F: FnMut(&mut TestClientConfig),
     {
@@ -921,12 +854,12 @@ pub(crate) mod test_utils {
         let mut client = TestClientBuilder::new_for_test()
             .used_protocol_version(protocol_version)
             .signing_identity(identity.clone(), secret_key, cipher_suite)
-            .build();
+            .build_for_test();
 
         config(&mut client.config);
 
         let key_package = client
-            .generate_key_package_message(key_package_extensions, leaf_node_extensions)
+            .generate_key_package_custom(key_package_extensions, leaf_node_extensions)
             .await
             .unwrap();
 
@@ -941,8 +874,8 @@ mod tests {
     use super::*;
     use crate::{
         crypto::test_utils::TestCryptoProvider,
+        group::framing::MlsMessageDescription,
         identity::test_utils::{get_test_basic_credential, get_test_signing_identity},
-        tree_kem::leaf_node::LeafNodeSource,
     };
     use assert_matches::assert_matches;
 
@@ -972,13 +905,10 @@ mod tests {
 
             let client = TestClientBuilder::new_for_test()
                 .signing_identity(identity.clone(), secret_key, cipher_suite)
-                .build();
+                .build_for_test();
 
             // TODO: Tests around extensions
-            let key_package = client
-                .generate_key_package_message(Default::default(), Default::default())
-                .await
-                .unwrap();
+            let key_package = client.generate_key_package().await.unwrap();
 
             assert_eq!(key_package.version, protocol_version);
 
@@ -995,9 +925,6 @@ mod tests {
 
             let capabilities = key_package.leaf_node.ungreased_capabilities();
             assert_eq!(capabilities, client.config.capabilities());
-
-            let client_lifetime = client.config.lifetime();
-            assert_matches!(key_package.leaf_node.leaf_node_source, LeafNodeSource::KeyPackage(lifetime) if (lifetime.not_after - lifetime.not_before) == (client_lifetime.not_after - client_lifetime.not_before));
         }
     }
 
@@ -1012,13 +939,19 @@ mod tests {
             .signing_identity(bob_identity.clone(), secret_key, TEST_CIPHER_SUITE)
             .build();
 
+        let kp = bob
+            .key_package_builder(None)
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+
         let proposal = bob
             .external_add_proposal(
                 &alice_group.group_info_message(true).await.unwrap(),
                 None,
                 vec![],
-                Default::default(),
-                Default::default(),
+                &kp.key_package_data.key_package_bytes,
             )
             .await
             .unwrap();
@@ -1162,12 +1095,9 @@ mod tests {
 
         let alice = TestClientBuilder::new_for_test()
             .signing_identity(alice_identity.clone(), secret_key, TEST_CIPHER_SUITE)
-            .build();
+            .build_for_test();
 
-        let msg = alice
-            .generate_key_package_message(Default::default(), Default::default())
-            .await
-            .unwrap();
+        let msg = alice.generate_key_package().await.unwrap();
         let res = alice.commit_external(msg).await.map(|_| ());
 
         assert_matches!(res, Err(MlsError::UnexpectedMessageType));
@@ -1233,8 +1163,17 @@ mod tests {
 
         alice.apply_pending_commit().await.unwrap();
 
+        let welcome = &commit.welcome_messages[0];
+
+        let prop_ref = match welcome.description() {
+            MlsMessageDescription::Welcome {
+                key_package_refs, ..
+            } => key_package_refs[0].as_ref(),
+            _ => panic!("expected welcome message"),
+        };
+
         let mut group_info = bob
-            .examine_welcome_message(&commit.welcome_messages[0])
+            .examine_welcome_message(welcome, bob.key_packages.get(prop_ref).unwrap())
             .await
             .unwrap();
 

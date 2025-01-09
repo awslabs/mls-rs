@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 mod framing;
+#[cfg(feature = "test_util")]
 mod passive_client;
 mod serialization;
 mod tree_kem;

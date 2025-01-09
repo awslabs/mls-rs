@@ -32,12 +32,15 @@ use super::{KeyPackage, KeyPackageRef};
 pub struct KeyPackageBuilder<CP> {
     protocol_version: ProtocolVersion,
     cipher_suite_provider: CP,
-    signing_data: SigningData,
+    pub(crate) signing_data: SigningData,
     key_package_extensions: ExtensionList,
     leaf_node_extensions: ExtensionList,
     validity_sec: u64,
     // This I feel like can still be fixed for client as it rarely changes?
-    capabilities: Capabilities,
+    pub(crate) capabilities: Capabilities,
+
+    #[cfg(feature = "test_util")]
+    lifetime_override: Option<Lifetime>,
 }
 
 impl<CP> KeyPackageBuilder<CP> {
@@ -59,9 +62,31 @@ impl<CP> KeyPackageBuilder<CP> {
         Ok(self)
     }
 
+    pub fn key_package_extensions(self, key_package_extensions: ExtensionList) -> Self {
+        Self {
+            key_package_extensions,
+            ..self
+        }
+    }
+
+    pub fn leaf_node_extensions(self, leaf_node_extensions: ExtensionList) -> Self {
+        Self {
+            leaf_node_extensions,
+            ..self
+        }
+    }
+
     pub fn valid_for_sec(self, validity_sec: u64) -> Self {
         Self {
             validity_sec,
+            ..self
+        }
+    }
+
+    #[cfg(feature = "test_util")]
+    pub fn lifetime_override(self, lifetime_override: Lifetime) -> Self {
+        Self {
+            lifetime_override: Some(lifetime_override),
             ..self
         }
     }
@@ -73,6 +98,7 @@ impl<CP: CipherSuiteProvider> KeyPackageBuilder<CP> {
         let SigningData {
             signing_identity,
             signing_key,
+            ..
         } = self.signing_data;
 
         let (init_secret_key, public_init) = self
@@ -87,6 +113,9 @@ impl<CP: CipherSuiteProvider> KeyPackageBuilder<CP> {
         };
 
         let lifetime = Lifetime::seconds(self.validity_sec)?;
+
+        #[cfg(feature = "test_util")]
+        let lifetime = self.lifetime_override.unwrap_or(lifetime);
 
         let (leaf_node, leaf_node_secret) = LeafNode::generate(
             &self.cipher_suite_provider,
@@ -157,10 +186,13 @@ impl<CP> KeyPackageBuilder<CP> {
             .signing_identity
             .clone()
             .zip(client.signer.clone())
-            .map(|((signing_identity, _), signing_key)| SigningData {
-                signing_identity,
-                signing_key,
-            })
+            .map(
+                |((signing_identity, cipher_suite), signing_key)| SigningData {
+                    signing_identity,
+                    signing_key,
+                    cipher_suite,
+                },
+            )
             .or(signing_data)
             .ok_or(MlsError::SignerNotFound)?;
 
@@ -172,6 +204,9 @@ impl<CP> KeyPackageBuilder<CP> {
             leaf_node_extensions: Default::default(),
             validity_sec: 86400 * 366,
             capabilities: client.config.capabilities(),
+
+            #[cfg(feature = "test_util")]
+            lifetime_override: None,
         })
     }
 }
@@ -214,7 +249,7 @@ mod tests {
                 .build();
 
             let generated = client
-                .key_package_builder(cipher_suite, None)
+                .key_package_builder(None)
                 .unwrap()
                 .with_key_package_extension(TestExtension::from(32))
                 .unwrap()
@@ -298,7 +333,7 @@ mod tests {
             .extension_types([42.into()])
             .build();
 
-        let builder = client.key_package_builder(TEST_CIPHER_SUITE, None).unwrap();
+        let builder = client.key_package_builder(None).unwrap();
         let mut generated_keys = HashSet::new();
 
         for _ in 0..100 {

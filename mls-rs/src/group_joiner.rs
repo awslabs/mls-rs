@@ -133,7 +133,7 @@ impl<'a, 'b, C: ClientConfig> GroupJoiner<'a, 'b, C> {
     /// that the ratchet tree is a part of GroupInfo or has been provided with
     /// [GroupJoiner::tree], and that all required PSKs have been provided [TODO].
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub(crate) async fn decrypt_group_info(&mut self) -> Result<DecryptedGroupInfo, MlsError> {
+    pub async fn decrypt_group_info(&mut self) -> Result<DecryptedGroupInfo, MlsError> {
         let cipher_suite_provider =
             cipher_suite_provider(self.config.crypto_provider(), self.welcome.cipher_suite)?;
 
@@ -252,7 +252,7 @@ impl<'a, 'b, C: ClientConfig> GroupJoiner<'a, 'b, C> {
     }
 }
 
-pub(crate) struct DecryptedGroupInfo {
+pub struct DecryptedGroupInfo {
     pub group_info: GroupInfo,
     public_tree: TreeKemPublic,
     psk_secret: PskSecret,
@@ -331,7 +331,7 @@ mod tests {
         psk_store.insert(psk_id.clone(), PreSharedKey::new(b"123".into()));
 
         let kp_alice = alice
-            .key_package_builder(TEST_CIPHER_SUITE, None)
+            .key_package_builder(None)
             .unwrap()
             .build()
             .await

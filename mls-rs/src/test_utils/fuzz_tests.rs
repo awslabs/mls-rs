@@ -23,6 +23,8 @@ use crate::{
 
 pub use mls_rs_crypto_openssl::OpensslCryptoProvider as MlsCryptoProvider;
 
+use super::TestClient;
+
 pub type TestClientConfig =
     WithIdentityProvider<BasicIdentityProvider, WithCryptoProvider<MlsCryptoProvider, BaseConfig>>;
 
@@ -39,10 +41,7 @@ pub fn create_group() -> Group<TestClientConfig> {
 
     alice
         .commit_builder()
-        .add_member(
-            bob.generate_key_package_message(Default::default(), Default::default())
-                .unwrap(),
-        )
+        .add_member(bob.generate_key_package().unwrap())
         .unwrap()
         .build()
         .unwrap();
@@ -85,15 +84,17 @@ pub fn create_fuzz_commit_message(
     group.format_for_wire(auth_content)
 }
 
-fn make_client(cipher_suite: CipherSuite, name: &str) -> Client<TestClientConfig> {
+fn make_client(cipher_suite: CipherSuite, name: &str) -> TestClient<TestClientConfig> {
     let (secret, signing_identity) = make_identity(cipher_suite, name);
 
     // TODO : consider fuzzing on encrypted controls (doesn't seem very useful)
-    Client::builder()
+    let client = Client::builder()
         .identity_provider(BasicIdentityProvider)
         .crypto_provider(MlsCryptoProvider::default())
         .signing_identity(signing_identity, secret, cipher_suite)
-        .build()
+        .build();
+
+    TestClient::new(client)
 }
 
 fn make_identity(cipher_suite: CipherSuite, name: &str) -> (SignatureSecretKey, SigningIdentity) {

@@ -10,7 +10,7 @@ use mls_rs::{
         SigningIdentity,
     },
     mls_rules::{CommitOptions, DefaultMlsRules},
-    test_utils::benchmarks::{MlsCryptoProvider, BENCH_CIPHER_SUITE},
+    test_utils::benchmarks::{MlsCryptoProvider, TestClient, BENCH_CIPHER_SUITE},
     CipherSuiteProvider, Client, CryptoProvider,
 };
 
@@ -24,7 +24,7 @@ fn bench(c: &mut Criterion) {
     let key_packages = (0..MAX_ADD_COUNT)
         .map(|i| {
             make_client(&format!("bob-{i}"))
-                .generate_key_package_message(Default::default(), Default::default())
+                .generate_key_package()
                 .unwrap()
         })
         .collect::<Vec<_>>();
@@ -58,7 +58,7 @@ fn bench(c: &mut Criterion) {
 criterion::criterion_group!(benches, bench);
 criterion::criterion_main!(benches);
 
-fn make_client(name: &str) -> Client<impl MlsConfig> {
+fn make_client(name: &str) -> TestClient<impl MlsConfig> {
     let crypto_provider = MlsCryptoProvider::new();
     let cipher_suite = BENCH_CIPHER_SUITE;
 
@@ -68,7 +68,7 @@ fn make_client(name: &str) -> Client<impl MlsConfig> {
         .signature_key_generate()
         .unwrap();
 
-    Client::builder()
+    TestClient::builder()
         .crypto_provider(crypto_provider)
         .identity_provider(BasicIdentityProvider)
         .mls_rules(
@@ -84,4 +84,5 @@ fn make_client(name: &str) -> Client<impl MlsConfig> {
             cipher_suite,
         )
         .build()
+        .into()
 }

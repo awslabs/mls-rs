@@ -3,6 +3,7 @@ pub(crate) mod inner {
     use mls_rs::{
         group::CommitEffect, identity::SigningIdentity, mls_rs_codec::MlsEncode,
         mls_rules::ProposalInfo, CipherSuiteProvider, CryptoProvider, MlsMessage,
+        MlsMessageDescription,
     };
     use mls_rs_crypto_openssl::OpensslCryptoProvider;
     use tonic::{Request, Response, Status};
@@ -74,8 +75,21 @@ pub(crate) mod inner {
                 )
                 .map_err(abort)?;
 
+            let MlsMessageDescription::Welcome {
+                key_package_refs,
+                cipher_suite: _,
+            } = welcome.description()
+            else {
+                return Err(Status::aborted("not a welcome message"));
+            };
+
+            let pkg_data = key_package_refs
+                .iter()
+                .find_map(|r| client.key_package_repo.get(r))
+                .ok_or(Status::aborted("key package not found"))?;
+
             let (group, _info) = reinit_client
-                .join(&welcome, get_tree(&request.ratchet_tree)?)
+                .join(&welcome, get_tree(&request.ratchet_tree)?, pkg_data)
                 .map_err(abort)?;
 
             let resp = JoinGroupResponse {
@@ -96,7 +110,7 @@ pub(crate) mod inner {
             let clients = &mut self.clients.lock().await;
 
             // Find the key package generated earlier based on the transaction_id
-            let (id, key_package_data) = {
+            let (_, key_package_data) = {
                 let key_package_client = clients
                     .get(&request.transaction_id)
                     .ok_or_else(|| Status::aborted("no group with such index."))?;
@@ -108,9 +122,6 @@ pub(crate) mod inner {
                 .get_mut(&request.state_id)
                 .ok_or_else(|| Status::aborted("no group with such index."))?;
 
-            // Insert the previously created key package
-            client.key_package_repo.insert(id, key_package_data);
-
             let group = client
                 .group
                 .as_mut()
@@ -120,7 +131,9 @@ pub(crate) mod inner {
 
             let welcome = MlsMessage::from_bytes(&request.welcome).map_err(abort)?;
 
-            let (new_group, _info) = group.join_subgroup(&welcome, tree).map_err(abort)?;
+            let (new_group, _info) = group
+                .join_subgroup(&welcome, tree, key_package_data)
+                .map_err(abort)?;
 
             let resp = HandleBranchResponse {
                 state_id: request.state_id,
@@ -248,11 +261,18 @@ pub(crate) mod inner {
                 .get_reinit_client(Some(secret_key.clone()), Some(signing_identity.clone()))
                 .map_err(abort)?;
 
-            let key_package = reinit_client.generate_key_package().map_err(abort)?;
+            let key_package = reinit_client
+                .key_package_builder(None)
+                .and_then(|b| b.build())
+                .map_err(abort)?;
+
+            client
+                .key_package_repo
+                .insert(key_package.reference.to_vec(), key_package.key_package_data);
 
             let resp = HandleReInitCommitResponse {
                 epoch_authenticator: commit_resp.epoch_authenticator,
-                key_package: key_package.to_bytes().map_err(abort)?,
+                key_package: key_package.key_package_message.to_bytes().map_err(abort)?,
                 reinit_id: commit_resp.state_id,
             };
 

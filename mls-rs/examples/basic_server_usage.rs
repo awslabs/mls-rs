@@ -141,16 +141,18 @@ fn main() -> Result<(), MlsError> {
 
     // Alice creates a group with bob
     let mut alice_group = alice.create_group(ExtensionList::default(), Default::default())?;
-    let bob_key_package =
-        bob.generate_key_package_message(Default::default(), Default::default())?;
+    let bob_key_package = bob.key_package_builder(None)?.build()?;
 
     let welcome = &alice_group
         .commit_builder()
-        .add_member(bob_key_package)?
+        .add_member(bob_key_package.key_package_message)?
         .build()?
         .welcome_messages[0];
 
-    let (mut bob_group, _) = bob.join_group(None, welcome)?;
+    let (mut bob_group, _) = bob
+        .group_joiner(welcome, bob_key_package.key_package_data)?
+        .join()?;
+
     alice_group.apply_pending_commit()?;
 
     // Server starts observing Alice's group

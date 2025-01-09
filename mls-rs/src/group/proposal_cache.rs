@@ -646,6 +646,7 @@ mod tests {
 
     use super::test_utils::{make_proposal_cache, pass_through_rules, CommitReceiver};
     use super::{CachedProposal, ProposalCache};
+    use crate::client::test_utils::test_client_with_key_pkg;
     use crate::client::MlsError;
     use crate::group::message_processor::ProvisionalState;
     use crate::group::mls_rules::{CommitDirection, CommitSource, EncryptionOptions};
@@ -668,11 +669,11 @@ mod tests {
         group::{
             message_processor::path_update_required,
             proposal_filter::proposer_can_propose,
-            test_utils::{get_test_group_context, random_bytes, test_group, TEST_GROUP},
+            test_utils::{get_test_group_context, test_group, TEST_GROUP},
         },
         identity::basic::BasicIdentityProvider,
         identity::test_utils::{get_test_signing_identity, BasicWithCustomProvider},
-        key_package::{test_utils::test_key_package, KeyPackageGenerator},
+        key_package::test_utils::test_key_package,
         mls_rules::{CommitOptions, DefaultMlsRules},
         psk::AlwaysFoundPskStorage,
         tree_kem::{
@@ -3575,34 +3576,26 @@ mod tests {
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn unsupported_credential_key_package(name: &str) -> KeyPackage {
-        let (mut signing_identity, secret_key) =
-            get_test_signing_identity(TEST_CIPHER_SUITE, name.as_bytes()).await;
+        let (client, _) =
+            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, name).await;
 
-        signing_identity.credential = Credential::Custom(CustomCredential::new(
-            CredentialType::new(BasicWithCustomProvider::CUSTOM_CREDENTIAL_TYPE),
-            random_bytes(32),
-        ));
+        let mut kp_builder = client.key_package_builder(None).unwrap();
 
-        let generator = KeyPackageGenerator {
-            protocol_version: TEST_PROTOCOL_VERSION,
-            cipher_suite_provider: &test_cipher_suite_provider(TEST_CIPHER_SUITE),
-            signing_identity: &signing_identity,
-            signing_key: &secret_key,
-        };
+        kp_builder.signing_data.signing_identity.credential =
+            Credential::Custom(CustomCredential::new(
+                CredentialType::new(BasicWithCustomProvider::CUSTOM_CREDENTIAL_TYPE),
+                vec![0u8; 32],
+            ));
 
-        generator
-            .generate(
-                Lifetime::years(1).unwrap(),
-                Capabilities {
-                    credentials: vec![42.into()],
-                    ..Default::default()
-                },
-                Default::default(),
-                Default::default(),
-            )
+        kp_builder.capabilities.credentials = vec![42.into()];
+
+        kp_builder
+            .build()
             .await
             .unwrap()
-            .key_package
+            .key_package_message
+            .into_key_package()
+            .unwrap()
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
