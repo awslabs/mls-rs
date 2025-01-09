@@ -27,7 +27,7 @@ use mls_rs::{
     psk::ExternalPskId,
     storage_provider::in_memory::{InMemoryKeyPackageStorage, InMemoryPreSharedKeyStorage},
     CipherSuite, CipherSuiteProvider, Client, CryptoProvider, Extension, ExtensionList, Group,
-    MlsMessage, MlsRules,
+    MlsMessage, MlsMessageDescription, MlsRules,
 };
 
 #[cfg(feature = "by_ref_proposal")]
@@ -112,10 +112,10 @@ impl MlsClientImpl {
 struct ClientDetails {
     client: Client<TestClientConfig>,
     psk_store: InMemoryPreSharedKeyStorage,
+    key_package_repo: InMemoryKeyPackageStorage,
     group: Option<Group<TestClientConfig>>,
     signing_identity: SigningIdentity,
     signer: SignatureSecretKey,
-    key_package_repo: InMemoryKeyPackageStorage,
     mls_rules: TestMlsRules,
 }
 
@@ -240,19 +240,25 @@ impl MlsClient for MlsClientImpl {
 
         let key_package = client
             .client
-            .generate_key_package_message(Default::default(), Default::default())
+            .key_package_builder(None)
+            .and_then(|b| b.build())
             .map_err(abort)?;
 
-        let (_, key_pckg_secrets) = client.key_package_repo.key_packages()[0].clone();
-        let signature_priv = client.signer.to_vec();
+        let encryption_priv = key_package.key_package_data.leaf_node_key.to_vec();
+        let init_priv = key_package.key_package_data.init_key.to_vec();
 
+        client
+            .key_package_repo
+            .insert(key_package.reference.to_vec(), key_package.key_package_data);
+
+        let signature_priv = client.signer.to_vec();
         let transaction_id = self.insert_client(client).await;
 
         let resp = CreateKeyPackageResponse {
             transaction_id,
-            key_package: key_package.to_bytes().map_err(abort)?,
-            init_priv: key_pckg_secrets.init_key.to_vec(),
-            encryption_priv: key_pckg_secrets.leaf_node_key.to_vec(),
+            key_package: key_package.key_package_message.to_bytes().map_err(abort)?,
+            init_priv,
+            encryption_priv,
             signature_priv,
         };
 
@@ -272,9 +278,31 @@ impl MlsClient for MlsClientImpl {
             .get_mut(&request.transaction_id)
             .ok_or_else(|| Status::aborted("no client with such index"))?;
 
+        let MlsMessageDescription::Welcome {
+            key_package_refs,
+            cipher_suite: _,
+        } = welcome_msg.description()
+        else {
+            return Err(Status::aborted("not a welcome message"));
+        };
+
+        let pkg_data = key_package_refs
+            .iter()
+            .find_map(|r| client.key_package_repo.get(r))
+            .ok_or(Status::aborted("key package not found"))?;
+
+        let tree = get_tree(&request.ratchet_tree)?;
+
         let (group, _) = client
             .client
-            .join_group(get_tree(&request.ratchet_tree)?, &welcome_msg)
+            .group_joiner(&welcome_msg, pkg_data)
+            .and_then(|joiner| {
+                match tree {
+                    Some(tree) => joiner.ratchet_tree(tree),
+                    None => joiner,
+                }
+                .join()
+            })
             .map_err(abort)?;
 
         let epoch_authenticator = group.epoch_authenticator().map_err(abort)?.to_vec();
@@ -826,7 +854,6 @@ async fn create_client(cipher_suite: u16, identity: &[u8]) -> Result<ClientDetai
         .identity_provider(BasicIdentityProvider::new())
         .mls_rules(mls_rules.clone())
         .psk_store(psk_store.clone())
-        .key_package_repo(key_package_repo.clone())
         .signing_identity(signing_identity.clone(), secret_key.clone(), cipher_suite)
         .build();
 

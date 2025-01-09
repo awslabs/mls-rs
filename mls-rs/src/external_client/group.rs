@@ -436,6 +436,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         let SigningData {
             signing_key,
             signing_identity,
+            ..
         } = self.signing_data.as_ref().ok_or(MlsError::SignerNotFound)?;
 
         let external_senders_ext = self
@@ -1234,6 +1235,7 @@ mod tests {
         server.signing_data = Some(SigningData {
             signing_key: server_key,
             signing_identity: server_identity,
+            cipher_suite: TEST_CIPHER_SUITE,
         });
 
         let charlie_key_package =
@@ -1257,6 +1259,7 @@ mod tests {
         server.signing_data = Some(SigningData {
             signing_key: server_key,
             signing_identity: server_identity,
+            cipher_suite: TEST_CIPHER_SUITE,
         });
 
         let external_proposal = server.propose_remove(1, vec![]).await.unwrap();
@@ -1273,6 +1276,7 @@ mod tests {
         server.signing_data = Some(SigningData {
             signing_key: secret_key,
             signing_identity: signing_id,
+            cipher_suite: TEST_CIPHER_SUITE,
         });
 
         let charlie_key_package =
@@ -1305,6 +1309,7 @@ mod tests {
         server.signing_data = Some(SigningData {
             signing_key: server_key,
             signing_identity: server_identity,
+            cipher_suite: TEST_CIPHER_SUITE,
         });
 
         let res = server.propose_remove(1, vec![]).await;

@@ -183,7 +183,7 @@ pub use mls_rs_core::extension::{Extension, ExtensionList};
 pub use crate::{
     client::Client,
     group::{
-        framing::{MlsMessage, WireFormat},
+        framing::{MlsMessage, MlsMessageDescription, WireFormat},
         mls_rules::MlsRules,
         Group,
     },

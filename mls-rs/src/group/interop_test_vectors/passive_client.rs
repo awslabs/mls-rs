@@ -6,9 +6,11 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use itertools::Itertools;
+use mls_rs_codec::{self, MlsEncode};
 use mls_rs_core::{
     crypto::{CipherSuite, CipherSuiteProvider, CryptoProvider},
     identity::SigningIdentity,
+    key_package::KeyPackageData,
     protocol_version::ProtocolVersion,
     psk::ExternalPskId,
     time::MlsTime,
@@ -20,15 +22,13 @@ use crate::{
     crypto::test_utils::TestCryptoProvider,
     group::{ClientConfig, CommitBuilder, ExportedTree},
     identity::basic::BasicIdentityProvider,
-    key_package::KeyPackageGeneration,
     mls_rules::CommitOptions,
-    storage_provider::in_memory::InMemoryKeyPackageStorage,
     test_utils::{
         all_process_message, generate_basic_client, get_test_basic_credential, get_test_groups,
-        make_test_ext_psk, TEST_EXT_PSK_ID,
+        make_test_ext_psk, TestClient, TEST_EXT_PSK_ID,
     },
     tree_kem::Lifetime,
-    Client, Group, MlsMessage,
+    Group, MlsMessage,
 };
 
 const VERSION: ProtocolVersion = ProtocolVersion::MLS_10;
@@ -179,23 +179,25 @@ async fn interop_passive_client() {
             .signing_identity(id, key, cs.cipher_suite())
             .build();
 
-        let key_pckg_gen = KeyPackageGeneration {
-            reference: key_package.to_reference(&cs).await.unwrap(),
-            key_package,
-            init_secret_key: test_case.init_priv.into(),
-            leaf_node_secret_key: test_case.encryption_priv.into(),
-        };
-
-        let (id, pkg) = key_pckg_gen.to_storage().unwrap();
-        client.config.key_package_repo().insert(id, pkg);
-
         let welcome = MlsMessage::from_bytes(&test_case.welcome).unwrap();
 
-        let tree = test_case
-            .ratchet_tree
-            .map(|t| ExportedTree::from_bytes(&t.0).unwrap());
+        let key_package_data = KeyPackageData::new(
+            key_package.mls_encode_to_vec().unwrap(),
+            test_case.init_priv.into(),
+            test_case.encryption_priv.into(),
+            123,
+        );
 
-        let (mut group, _info) = client.join_group(tree, &welcome).await.unwrap();
+        let mut joiner = client
+            .group_joiner(&welcome, key_package_data)
+            .await
+            .unwrap();
+
+        if let Some(tree) = test_case.ratchet_tree {
+            joiner = joiner.ratchet_tree(ExportedTree::from_bytes(&tree.0).unwrap())
+        }
+
+        let (mut group, _info) = joiner.join().await.unwrap();
 
         assert_eq!(
             group.epoch_authenticator().unwrap().to_vec(),
@@ -229,8 +231,8 @@ async fn interop_passive_client() {
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 #[cfg_attr(coverage_nightly, coverage(off))]
-async fn invite_passive_client<P: CipherSuiteProvider>(
-    groups: &mut [Group<impl MlsConfig>],
+async fn invite_passive_client<P: CipherSuiteProvider, C: MlsConfig>(
+    groups: &mut [Group<C>],
     with_psk: bool,
     cs: &P,
 ) -> TestCase {
@@ -239,27 +241,26 @@ async fn invite_passive_client<P: CipherSuiteProvider>(
     let (secret_key, public_key) = cs.signature_key_generate().await.unwrap();
     let credential = get_test_basic_credential(b"Arnold".to_vec());
     let identity = SigningIdentity::new(credential, public_key);
-    let key_package_repo = InMemoryKeyPackageStorage::new();
 
     let client = ClientBuilder::new()
         .crypto_provider(crypto_provider)
         .identity_provider(BasicIdentityProvider::new())
-        .key_package_repo(key_package_repo.clone())
-        .key_package_lifetime(ETERNAL_LIFETIME.not_after - ETERNAL_LIFETIME.not_before)
-        .key_package_not_before(ETERNAL_LIFETIME.not_before)
         .signing_identity(identity.clone(), secret_key.clone(), cs.cipher_suite())
         .build();
 
+    let client = TestClient::new(client);
+
     let key_pckg = client
-        .generate_key_package_message(Default::default(), Default::default())
+        .key_package_builder(None)
+        .unwrap()
+        .lifetime_override(ETERNAL_LIFETIME)
+        .build()
         .await
         .unwrap();
 
-    let (_, key_pckg_secrets) = key_package_repo.key_packages()[0].clone();
-
     let mut commit_builder = groups[0]
         .commit_builder()
-        .add_member(key_pckg.clone())
+        .add_member(key_pckg.key_package_message.clone())
         .unwrap();
 
     if with_psk {
@@ -279,9 +280,9 @@ async fn invite_passive_client<P: CipherSuiteProvider>(
 
     TestCase {
         cipher_suite: cs.cipher_suite().into(),
-        key_package: key_pckg.to_bytes().unwrap(),
-        encryption_priv: key_pckg_secrets.leaf_node_key.to_vec(),
-        init_priv: key_pckg_secrets.init_key.to_vec(),
+        key_package: key_pckg.key_package_data.key_package_bytes,
+        encryption_priv: key_pckg.key_package_data.leaf_node_key.to_vec(),
+        init_priv: key_pckg.key_package_data.init_key.to_vec(),
         welcome: commit.welcome_messages[0].to_bytes().unwrap(),
         initial_epoch_authenticator: groups[0].epoch_authenticator().unwrap().to_vec(),
         epochs: vec![],
@@ -460,7 +461,7 @@ pub async fn generate_passive_client_proposal_tests() -> Vec<TestCase> {
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 #[cfg_attr(coverage_nightly, coverage(off))]
-async fn commit_by_value<F, C: MlsConfig>(
+async fn commit_by_value<F, C: ClientConfig>(
     group: &mut Group<C>,
     proposal_adder: F,
     partial_test_case: TestCase,
@@ -481,21 +482,10 @@ where
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 async fn create_key_package(cs: CipherSuite) -> MlsMessage {
-    let client = generate_basic_client(
-        cs,
-        VERSION,
-        0xbeef,
-        None,
-        false,
-        &TestCryptoProvider::new(),
-        Some(ETERNAL_LIFETIME),
-    )
-    .await;
+    let client =
+        generate_basic_client(cs, VERSION, 0xbeef, None, false, &TestCryptoProvider::new()).await;
 
-    client
-        .generate_key_package_message(Default::default(), Default::default())
-        .await
-        .unwrap()
+    client.generate_key_package().await.unwrap()
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -556,9 +546,7 @@ pub async fn generate_passive_client_random_tests() -> Vec<TestCase> {
             continue;
         };
 
-        let creator =
-            generate_basic_client(cs, VERSION, 0, None, false, &crypto, Some(ETERNAL_LIFETIME))
-                .await;
+        let creator = generate_basic_client(cs, VERSION, 0, None, false, &crypto).await;
 
         let creator_group = creator
             .create_group(Default::default(), Default::default())
@@ -570,18 +558,7 @@ pub async fn generate_passive_client_random_tests() -> Vec<TestCase> {
         let mut new_clients = Vec::new();
 
         for i in 0..10 {
-            new_clients.push(
-                generate_basic_client(
-                    cs,
-                    VERSION,
-                    i + 1,
-                    None,
-                    false,
-                    &crypto,
-                    Some(ETERNAL_LIFETIME),
-                )
-                .await,
-            )
+            new_clients.push(generate_basic_client(cs, VERSION, i + 1, None, false, &crypto).await)
         }
 
         add_random_members(0, &mut groups, new_clients, None).await;
@@ -618,16 +595,8 @@ pub async fn generate_passive_client_random_tests() -> Vec<TestCase> {
 
             for i in 0..num_added {
                 new_clients.push(
-                    generate_basic_client(
-                        cs,
-                        VERSION,
-                        next_free_idx + i,
-                        None,
-                        false,
-                        &crypto,
-                        Some(ETERNAL_LIFETIME),
-                    )
-                    .await,
+                    generate_basic_client(cs, VERSION, next_free_idx + i, None, false, &crypto)
+                        .await,
                 );
             }
 
@@ -647,7 +616,7 @@ pub async fn generate_passive_client_random_tests() -> Vec<TestCase> {
 pub async fn add_random_members<C: MlsConfig>(
     committer: usize,
     groups: &mut Vec<Group<C>>,
-    clients: Vec<Client<C>>,
+    clients: Vec<TestClient<C>>,
     test_case: Option<&mut TestCase>,
 ) {
     let committer_index = groups[committer].current_member_index() as usize;
@@ -655,10 +624,7 @@ pub async fn add_random_members<C: MlsConfig>(
     let mut key_packages = Vec::new();
 
     for client in &clients {
-        let key_package = client
-            .generate_key_package_message(Default::default(), Default::default())
-            .await
-            .unwrap();
+        let key_package = client.generate_key_package().await.unwrap();
         key_packages.push(key_package);
     }
 

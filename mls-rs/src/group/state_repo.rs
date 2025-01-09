@@ -10,7 +10,7 @@ use alloc::vec::Vec;
 use core::fmt::{self, Debug};
 use mls_rs_codec::{MlsDecode, MlsEncode};
 use mls_rs_core::group::{EpochRecord, GroupState};
-use mls_rs_core::{error::IntoAnyError, group::GroupStateStorage, key_package::KeyPackageStorage};
+use mls_rs_core::{error::IntoAnyError, group::GroupStateStorage};
 
 use super::snapshot::Snapshot;
 
@@ -29,22 +29,16 @@ struct EpochStorageCommit {
 }
 
 #[derive(Clone)]
-pub(crate) struct GroupStateRepository<S, K>
-where
-    S: GroupStateStorage,
-    K: KeyPackageStorage,
-{
+pub(crate) struct GroupStateRepository<S: GroupStateStorage> {
     pending_commit: EpochStorageCommit,
     pending_key_package_removal: Option<KeyPackageRef>,
     group_id: Vec<u8>,
     storage: S,
-    key_package_repo: K,
 }
 
-impl<S, K> Debug for GroupStateRepository<S, K>
+impl<S> Debug for GroupStateRepository<S>
 where
     S: GroupStateStorage + Debug,
-    K: KeyPackageStorage + Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("GroupStateRepository")
@@ -58,27 +52,17 @@ where
                 &mls_rs_core::debug::pretty_group_id(&self.group_id),
             )
             .field("storage", &self.storage)
-            .field("key_package_repo", &self.key_package_repo)
             .finish()
     }
 }
 
-impl<S, K> GroupStateRepository<S, K>
-where
-    S: GroupStateStorage,
-    K: KeyPackageStorage,
-{
-    pub fn new(
-        group_id: Vec<u8>,
-        storage: S,
-        key_package_repo: K,
-    ) -> Result<GroupStateRepository<S, K>, MlsError> {
+impl<S: GroupStateStorage> GroupStateRepository<S> {
+    pub fn new(group_id: Vec<u8>, storage: S) -> Result<GroupStateRepository<S>, MlsError> {
         Ok(GroupStateRepository {
             group_id,
             storage,
             pending_key_package_removal: None,
             pending_commit: Default::default(),
-            key_package_repo,
         })
     }
 
@@ -215,13 +199,6 @@ where
             .await
             .map_err(|e| MlsError::GroupStorageError(e.into_any_error()))?;
 
-        if let Some(ref key_package_ref) = self.pending_key_package_removal {
-            self.key_package_repo
-                .delete(key_package_ref)
-                .await
-                .map_err(|e| MlsError::KeyPackageRepoError(e.into_any_error()))?;
-        }
-
         self.pending_commit.inserts.clear();
         self.pending_commit.updates.clear();
 
@@ -249,20 +226,19 @@ mod tests {
             test_utils::{random_bytes, TEST_GROUP},
             PskGroupId, ResumptionPSKUsage,
         },
-        storage_provider::in_memory::{InMemoryGroupStateStorage, InMemoryKeyPackageStorage},
+        storage_provider::in_memory::InMemoryGroupStateStorage,
     };
 
     use super::*;
 
     fn test_group_state_repo(
         retention_limit: usize,
-    ) -> GroupStateRepository<InMemoryGroupStateStorage, InMemoryKeyPackageStorage> {
+    ) -> GroupStateRepository<InMemoryGroupStateStorage> {
         GroupStateRepository::new(
             TEST_GROUP.to_vec(),
             InMemoryGroupStateStorage::new()
                 .with_max_epoch_retention(retention_limit)
                 .unwrap(),
-            InMemoryKeyPackageStorage::default(),
         )
         .unwrap()
     }

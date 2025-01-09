@@ -381,27 +381,29 @@ fn main() -> Result<(), CustomError> {
 
     // Alice can add her other device
     let alice_pc_client = make_client(alice_pc)?;
-    let key_package =
-        alice_pc_client.generate_key_package_message(Default::default(), Default::default())?;
+    let key_package = alice_pc_client.key_package_builder(None)?.build()?;
 
     let welcome = alice_tablet_group
         .commit_builder()
-        .add_member(key_package)?
+        .add_member(key_package.key_package_message)?
         .build()?
         .welcome_messages
         .remove(0);
 
     alice_tablet_group.apply_pending_commit()?;
-    let (mut alice_pc_group, _) = alice_pc_client.join_group(None, &welcome)?;
+
+    let (mut alice_pc_group, _) = alice_pc_client
+        .group_joiner(&welcome, key_package.key_package_data)?
+        .join()?;
 
     // Alice cannot add bob's devices yet
     let bob_tablet_client = make_client(bob_tablet)?;
-    let key_package =
-        bob_tablet_client.generate_key_package_message(Default::default(), Default::default())?;
+
+    let key_package = bob_tablet_client.key_package_builder(None)?.build()?;
 
     let res = alice_tablet_group
         .commit_builder()
-        .add_member(key_package.clone())?
+        .add_member(key_package.key_package_message.clone())?
         .build();
 
     assert_matches!(res, Err(MlsError::IdentityProviderError(_)));
@@ -414,10 +416,13 @@ fn main() -> Result<(), CustomError> {
     let commit = alice_tablet_group
         .commit_builder()
         .custom_proposal(add_bob.to_custom_proposal()?)
-        .add_member(key_package)?
+        .add_member(key_package.key_package_message)?
         .build()?;
 
-    bob_tablet_client.join_group(None, &commit.welcome_messages[0])?;
+    bob_tablet_client
+        .group_joiner(&commit.welcome_messages[0], key_package.key_package_data)?
+        .join()?;
+
     alice_tablet_group.apply_pending_commit()?;
     alice_pc_group.process_incoming_message(commit.commit_message)?;
 

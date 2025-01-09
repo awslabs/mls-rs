@@ -5,18 +5,21 @@
 use alloc::vec::Vec;
 
 use mls_rs_core::{
-    crypto::{CipherSuite, SignatureSecretKey},
+    crypto::{CipherSuite, CryptoProvider, SignatureSecretKey},
     extension::ExtensionList,
-    identity::SigningIdentity,
+    identity::{SigningData, SigningIdentity},
+    key_package::KeyPackageData,
     protocol_version::ProtocolVersion,
 };
 
-use crate::{client::MlsError, group_joiner::GroupJoiner, Client, Group, MlsMessage};
+use crate::{
+    client::MlsError, group_joiner::GroupJoiner, key_package::builder::KeyPackageBuilder, Client,
+    Group, MlsMessage,
+};
 
 use super::{
-    find_key_package_generation, proposal::ReInitProposal, ClientConfig, ExportedTree,
-    JustPreSharedKeyID, MessageProcessor, MlsMessageDescription, NewMemberInfo, PreSharedKeyID,
-    PskGroupId, PskSecretInput, ResumptionPSKUsage, ResumptionPsk,
+    proposal::ReInitProposal, ClientConfig, ExportedTree, JustPreSharedKeyID, MessageProcessor,
+    NewMemberInfo, PreSharedKeyID, PskGroupId, PskSecretInput, ResumptionPSKUsage, ResumptionPsk,
 };
 
 struct ResumptionGroupParameters<'a> {
@@ -79,6 +82,7 @@ where
         &self,
         welcome: &MlsMessage,
         tree_data: Option<ExportedTree<'_>>,
+        key_package_data: KeyPackageData,
     ) -> Result<(Group<C>, NewMemberInfo), MlsError> {
         let expected_new_group_prams = ResumptionGroupParameters {
             group_id: &[],
@@ -95,6 +99,7 @@ where
             expected_new_group_prams,
             false,
             self.resumption_psk_input(ResumptionPSKUsage::Branch)?,
+            key_package_data,
         )
         .await
     }
@@ -166,10 +171,14 @@ impl<C: ClientConfig + Clone> ReinitClient<C> {
     /// Generate a key package for the new group. The key package can
     /// be used in [`ReinitClient::commit`].
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn generate_key_package(&self) -> Result<MlsMessage, MlsError> {
-        self.client
-            .generate_key_package_message(Default::default(), Default::default())
-            .await
+    pub fn key_package_builder(
+        &self,
+        signing_data: Option<SigningData>,
+    ) -> Result<
+        KeyPackageBuilder<<C::CryptoProvider as CryptoProvider>::CipherSuiteProvider>,
+        MlsError,
+    > {
+        self.client.key_package_builder(signing_data)
     }
 
     /// Create the new group using new key packages of all group members, possibly
@@ -212,6 +221,7 @@ impl<C: ClientConfig + Clone> ReinitClient<C> {
         self,
         welcome: &MlsMessage,
         tree_data: Option<ExportedTree<'_>>,
+        key_package_data: KeyPackageData,
     ) -> Result<(Group<C>, NewMemberInfo), MlsError> {
         let reinit = self.reinit;
 
@@ -231,6 +241,7 @@ impl<C: ClientConfig + Clone> ReinitClient<C> {
             expected_group_params,
             true,
             self.psk_input,
+            key_package_data,
         )
         .await
     }
@@ -279,6 +290,7 @@ async fn resumption_create_group<C: ClientConfig + Clone>(
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[allow(clippy::too_many_arguments)]
 async fn resumption_join_group<C: ClientConfig + Clone>(
     config: C,
     signer: SignatureSecretKey,
@@ -287,17 +299,8 @@ async fn resumption_join_group<C: ClientConfig + Clone>(
     expected_new_group_params: ResumptionGroupParameters<'_>,
     verify_group_id: bool,
     psk_input: PskSecretInput,
+    key_package_data: KeyPackageData,
 ) -> Result<(Group<C>, NewMemberInfo), MlsError> {
-    let MlsMessageDescription::Welcome {
-        key_package_refs, ..
-    } = welcome.description()
-    else {
-        return Err(MlsError::UnexpectedMessageType);
-    };
-
-    let key_package_data =
-        find_key_package_generation(&config.key_package_repo(), &key_package_refs).await?;
-
     let mut joiner = GroupJoiner::new(config.clone(), welcome, key_package_data, Some(signer))
         .await?
         .additional_psk(psk_input);
