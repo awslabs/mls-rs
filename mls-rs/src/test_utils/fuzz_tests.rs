@@ -25,6 +25,8 @@ pub use mls_rs_crypto_openssl::OpensslCryptoProvider as MlsCryptoProvider;
 
 use super::TestClient;
 
+use super::TestClient;
+
 pub type TestClientConfig =
     WithIdentityProvider<BasicIdentityProvider, WithCryptoProvider<MlsCryptoProvider, BaseConfig>>;
 
