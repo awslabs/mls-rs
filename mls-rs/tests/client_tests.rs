@@ -10,16 +10,16 @@ use mls_rs::group::proposal::Proposal;
 use mls_rs::group::ReceivedMessage;
 use mls_rs::identity::SigningIdentity;
 use mls_rs::mls_rules::CommitOptions;
+use mls_rs::CryptoProvider;
 use mls_rs::ExtensionList;
 use mls_rs::MlsMessage;
 use mls_rs::ProtocolVersion;
 use mls_rs::{CipherSuite, Group};
-use mls_rs::{Client, CryptoProvider};
 use mls_rs_core::crypto::CipherSuiteProvider;
 use rand::prelude::SliceRandom;
 use rand::RngCore;
 
-use mls_rs::test_utils::{all_process_message, get_test_basic_credential};
+use mls_rs::test_utils::{all_process_message, get_test_basic_credential, TestClient};
 
 #[cfg(mls_build_async)]
 use futures::Future;
@@ -38,7 +38,7 @@ async fn generate_client(
     protocol_version: ProtocolVersion,
     id: usize,
     encrypt_controls: bool,
-) -> Client<impl MlsConfig> {
+) -> TestClient<impl MlsConfig> {
     mls_rs::test_utils::generate_basic_client(
         cipher_suite,
         protocol_version,
@@ -46,7 +46,6 @@ async fn generate_client(
         None,
         encrypt_controls,
         &TestCryptoProvider::default(),
-        None,
     )
     .await
 }
@@ -164,10 +163,7 @@ async fn test_create(
 ) {
     let alice = generate_client(cipher_suite, protocol_version, 0, encrypt_controls).await;
     let bob = generate_client(cipher_suite, protocol_version, 1, encrypt_controls).await;
-    let bob_key_pkg = bob
-        .generate_key_package_message(Default::default(), Default::default())
-        .await
-        .unwrap();
+    let bob_key_pkg = bob.generate_key_package().await.unwrap();
 
     // Alice creates a group and adds bob
     let mut alice_group = alice
@@ -608,10 +604,7 @@ async fn reinit_works() {
         .create_group(Default::default(), Default::default())
         .await
         .unwrap();
-    let kp = bob1
-        .generate_key_package_message(Default::default(), Default::default())
-        .await
-        .unwrap();
+    let kp = bob1.generate_key_package().await.unwrap();
 
     let welcome = &alice_group
         .commit_builder()
@@ -696,19 +689,29 @@ async fn reinit_works() {
         .unwrap();
 
     // Bob produces key package, alice commits, bob joins
-    let kp = bob2.generate_key_package().await.unwrap();
-    let (mut alice_group, welcome) = alice2.commit(vec![kp], Default::default()).await.unwrap();
-    let (mut bob_group, _) = bob2.join(&welcome[0], None).await.unwrap();
+    let kp = bob2
+        .key_package_builder(None)
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+
+    let (mut alice_group, welcome) = alice2
+        .commit(vec![kp.key_package_message], Default::default())
+        .await
+        .unwrap();
+
+    let (mut bob_group, _) = bob2
+        .join(&welcome[0], None, kp.key_package_data)
+        .await
+        .unwrap();
 
     assert!(bob_group.cipher_suite() == suite2);
 
     // They can talk
     let carol = generate_client(suite2, version, 3, Default::default()).await;
 
-    let kp = carol
-        .generate_key_package_message(Default::default(), Default::default())
-        .await
-        .unwrap();
+    let kp = carol.generate_key_package().await.unwrap();
 
     let commit_output = alice_group
         .commit_builder()
@@ -818,7 +821,7 @@ async fn weird_tree_scenario() {
 async fn fake_key_package(id: usize) -> MlsMessage {
     generate_client(CipherSuite::P256_AES128, ProtocolVersion::MLS_10, id, false)
         .await
-        .generate_key_package_message(Default::default(), Default::default())
+        .generate_key_package()
         .await
         .unwrap()
 }

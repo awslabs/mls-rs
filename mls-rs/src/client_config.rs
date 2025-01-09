@@ -13,11 +13,10 @@ use crate::{
 use alloc::vec::Vec;
 use mls_rs_core::{
     crypto::CryptoProvider, group::GroupStateStorage, identity::IdentityProvider,
-    key_package::KeyPackageStorage, psk::PreSharedKeyStorage,
+    psk::PreSharedKeyStorage,
 };
 
 pub trait ClientConfig: Send + Sync + Clone {
-    type KeyPackageRepository: KeyPackageStorage + Clone;
     type PskStore: PreSharedKeyStorage + Clone;
     type GroupStateStorage: GroupStateStorage + Clone;
     type IdentityProvider: IdentityProvider + Clone;
@@ -27,8 +26,6 @@ pub trait ClientConfig: Send + Sync + Clone {
     fn supported_extensions(&self) -> Vec<ExtensionType>;
     fn supported_custom_proposals(&self) -> Vec<ProposalType>;
     fn supported_protocol_versions(&self) -> Vec<ProtocolVersion>;
-
-    fn key_package_repo(&self) -> Self::KeyPackageRepository;
 
     fn mls_rules(&self) -> Self::MlsRules;
 

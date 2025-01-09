@@ -2,8 +2,6 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use std::convert::Infallible;
-
 use mls_rs::{
     client_builder::MlsConfig,
     error::MlsError,
@@ -11,9 +9,8 @@ use mls_rs::{
         basic::{BasicCredential, BasicIdentityProvider},
         SigningIdentity,
     },
-    CipherSuite, CipherSuiteProvider, Client, CryptoProvider, ExtensionList, KeyPackageStorage,
+    CipherSuite, CipherSuiteProvider, Client, CryptoProvider, ExtensionList,
 };
-use mls_rs_core::key_package::KeyPackageData;
 
 const CIPHERSUITE: CipherSuite = CipherSuite::CURVE25519_AES128;
 
@@ -25,10 +22,7 @@ fn main() -> Result<(), MlsError> {
     let bob = make_client(crypto_provider.clone(), "bob")?;
 
     // Bob generates key package. We store secrets in memory, no need for any storage.
-    let key_package_generation = bob
-        .key_package_builder(CIPHERSUITE, None)?
-        .valid_for_sec(123)
-        .build()?;
+    let key_package_generation = bob.key_package_builder(None)?.valid_for_sec(123).build()?;
 
     let stored_secrets = key_package_generation.key_package_data;
 
@@ -55,25 +49,6 @@ fn main() -> Result<(), MlsError> {
     Ok(())
 }
 
-#[derive(Clone)]
-struct NoOpKeyPackageStorage;
-
-impl KeyPackageStorage for NoOpKeyPackageStorage {
-    type Error = Infallible;
-
-    fn delete(&mut self, _: &[u8]) -> Result<(), Infallible> {
-        Ok(())
-    }
-
-    fn get(&self, _: &[u8]) -> Result<Option<KeyPackageData>, Infallible> {
-        Ok(None)
-    }
-
-    fn insert(&mut self, _: Vec<u8>, _: KeyPackageData) -> Result<(), Infallible> {
-        Ok(())
-    }
-}
-
 fn make_client<P: CryptoProvider + Clone>(
     crypto_provider: P,
     name: &str,
@@ -87,6 +62,5 @@ fn make_client<P: CryptoProvider + Clone>(
         .identity_provider(BasicIdentityProvider)
         .crypto_provider(crypto_provider)
         .signing_identity(signing_identity, secret, CIPHERSUITE)
-        .key_package_repo(NoOpKeyPackageStorage)
         .build())
 }

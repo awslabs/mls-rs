@@ -384,7 +384,7 @@ impl Client {
     pub async fn generate_key_package_message(&self) -> Result<Message, Error> {
         let message = self
             .inner
-            .generate_key_package_message(Default::default(), Default::default())
+            .generate_key_package()
             .await?;
         Ok(message.into())
     }

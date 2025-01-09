@@ -10,6 +10,7 @@ use mls_rs::{
         SigningIdentity,
     },
     mls_rules::{CommitOptions, DefaultMlsRules},
+    test_utils::TestClient,
     CipherSuite, CipherSuiteProvider, Client, CryptoProvider,
 };
 use mls_rs_crypto_openssl::OpensslCryptoProvider;
@@ -24,7 +25,7 @@ fn bench(c: &mut Criterion) {
     let key_packages = (0..MAX_ADD_COUNT)
         .map(|i| {
             make_client(&format!("bob-{i}"))
-                .generate_key_package_message(Default::default(), Default::default())
+                .generate_key_package()
                 .unwrap()
         })
         .collect::<Vec<_>>();
@@ -58,7 +59,7 @@ fn bench(c: &mut Criterion) {
 criterion::criterion_group!(benches, bench);
 criterion::criterion_main!(benches);
 
-fn make_client(name: &str) -> Client<impl MlsConfig> {
+fn make_client(name: &str) -> TestClient<impl MlsConfig> {
     let crypto_provider = OpensslCryptoProvider::new();
     let cipher_suite = CipherSuite::CURVE25519_AES128;
 
@@ -84,4 +85,5 @@ fn make_client(name: &str) -> Client<impl MlsConfig> {
             cipher_suite,
         )
         .build()
+        .into()
 }

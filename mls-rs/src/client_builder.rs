@@ -19,9 +19,7 @@ use crate::{
     identity::SigningIdentity,
     protocol_version::ProtocolVersion,
     psk::{ExternalPskId, PreSharedKey},
-    storage_provider::in_memory::{
-        InMemoryGroupStateStorage, InMemoryKeyPackageStorage, InMemoryPreSharedKeyStorage,
-    },
+    storage_provider::in_memory::{InMemoryGroupStateStorage, InMemoryPreSharedKeyStorage},
     tree_kem::{Capabilities, Lifetime},
     Sealed,
 };
@@ -36,7 +34,7 @@ use mls_rs_provider_sqlite::{
     SqLiteDataStorageEngine, SqLiteDataStorageError,
     {
         connection_strategy::ConnectionStrategy,
-        storage::{SqLiteGroupStateStorage, SqLiteKeyPackageStorage, SqLitePreSharedKeyStorage},
+        storage::{SqLiteGroupStateStorage, SqLitePreSharedKeyStorage},
     },
 };
 
@@ -45,7 +43,6 @@ pub use crate::group::padding::PaddingMode;
 
 /// Base client configuration type when instantiating `ClientBuilder`
 pub type BaseConfig = Config<
-    InMemoryKeyPackageStorage,
     InMemoryPreSharedKeyStorage,
     InMemoryGroupStateStorage,
     Missing,
@@ -54,27 +51,15 @@ pub type BaseConfig = Config<
 >;
 
 /// Base client configuration type when instantiating `ClientBuilder`
-pub type BaseInMemoryConfig = Config<
-    InMemoryKeyPackageStorage,
-    InMemoryPreSharedKeyStorage,
-    InMemoryGroupStateStorage,
-    Missing,
-    Missing,
-    Missing,
->;
+pub type BaseInMemoryConfig =
+    Config<InMemoryPreSharedKeyStorage, InMemoryGroupStateStorage, Missing, Missing, Missing>;
 
-pub type EmptyConfig = Config<Missing, Missing, Missing, Missing, Missing, Missing>;
+pub type EmptyConfig = Config<Missing, Missing, Missing, Missing, Missing>;
 
 /// Base client configuration that is backed by SQLite storage.
 #[cfg(feature = "sqlite")]
-pub type BaseSqlConfig = Config<
-    SqLiteKeyPackageStorage,
-    SqLitePreSharedKeyStorage,
-    SqLiteGroupStateStorage,
-    Missing,
-    DefaultMlsRules,
-    Missing,
->;
+pub type BaseSqlConfig =
+    Config<SqLitePreSharedKeyStorage, SqLiteGroupStateStorage, Missing, DefaultMlsRules, Missing>;
 
 /// Builder for [`Client`]
 ///
@@ -194,7 +179,6 @@ impl ClientBuilder<BaseConfig> {
     pub fn new() -> Self {
         Self(Config(ConfigInner {
             settings: Default::default(),
-            key_package_repo: Default::default(),
             psk_store: Default::default(),
             group_state_storage: Default::default(),
             identity_provider: Missing,
@@ -211,7 +195,6 @@ impl ClientBuilder<EmptyConfig> {
     pub fn new_empty() -> Self {
         Self(Config(ConfigInner {
             settings: Default::default(),
-            key_package_repo: Missing,
             psk_store: Missing,
             group_state_storage: Missing,
             identity_provider: Missing,
@@ -232,7 +215,6 @@ impl ClientBuilder<BaseSqlConfig> {
     ) -> Result<Self, SqLiteDataStorageError> {
         Ok(Self(Config(ConfigInner {
             settings: Default::default(),
-            key_package_repo: storage.key_package_storage()?,
             psk_store: storage.pre_shared_key_storage()?,
             group_state_storage: storage.group_state_storage()?,
             identity_provider: Missing,
@@ -304,29 +286,6 @@ impl<C: IntoConfig> ClientBuilder<C> {
         ClientBuilder(c)
     }
 
-    /// Set the key package repository to be used by the client.
-    ///
-    /// By default, an in-memory repository is used.
-    pub fn key_package_repo<K>(self, key_package_repo: K) -> ClientBuilder<WithKeyPackageRepo<K, C>>
-    where
-        K: KeyPackageStorage,
-    {
-        let Config(c) = self.0.into_config();
-
-        ClientBuilder(Config(ConfigInner {
-            settings: c.settings,
-            key_package_repo,
-            psk_store: c.psk_store,
-            group_state_storage: c.group_state_storage,
-            identity_provider: c.identity_provider,
-            mls_rules: c.mls_rules,
-            crypto_provider: c.crypto_provider,
-            signer: c.signer,
-            signing_identity: c.signing_identity,
-            version: c.version,
-        }))
-    }
-
     /// Set the PSK store to be used by the client.
     ///
     /// By default, an in-memory store is used.
@@ -338,7 +297,6 @@ impl<C: IntoConfig> ClientBuilder<C> {
 
         ClientBuilder(Config(ConfigInner {
             settings: c.settings,
-            key_package_repo: c.key_package_repo,
             psk_store,
             group_state_storage: c.group_state_storage,
             identity_provider: c.identity_provider,
@@ -364,7 +322,6 @@ impl<C: IntoConfig> ClientBuilder<C> {
 
         ClientBuilder(Config(ConfigInner {
             settings: c.settings,
-            key_package_repo: c.key_package_repo,
             psk_store: c.psk_store,
             group_state_storage,
             identity_provider: c.identity_provider,
@@ -388,7 +345,6 @@ impl<C: IntoConfig> ClientBuilder<C> {
 
         ClientBuilder(Config(ConfigInner {
             settings: c.settings,
-            key_package_repo: c.key_package_repo,
             psk_store: c.psk_store,
             group_state_storage: c.group_state_storage,
             identity_provider,
@@ -412,7 +368,6 @@ impl<C: IntoConfig> ClientBuilder<C> {
 
         ClientBuilder(Config(ConfigInner {
             settings: c.settings,
-            key_package_repo: c.key_package_repo,
             psk_store: c.psk_store,
             group_state_storage: c.group_state_storage,
             identity_provider: c.identity_provider,
@@ -439,7 +394,6 @@ impl<C: IntoConfig> ClientBuilder<C> {
 
         ClientBuilder(Config(ConfigInner {
             settings: c.settings,
-            key_package_repo: c.key_package_repo,
             psk_store: c.psk_store,
             group_state_storage: c.group_state_storage,
             identity_provider: c.identity_provider,
@@ -481,21 +435,10 @@ impl<C: IntoConfig> ClientBuilder<C> {
         c.0.signer = Some(signer);
         ClientBuilder(c)
     }
-
-    #[cfg(any(test, feature = "test_util"))]
-    pub(crate) fn key_package_not_before(
-        self,
-        key_package_not_before: u64,
-    ) -> ClientBuilder<IntoConfigOutput<C>> {
-        let mut c = self.0.into_config();
-        c.0.settings.key_package_not_before = Some(key_package_not_before);
-        ClientBuilder(c)
-    }
 }
 
 impl<C: IntoConfig> ClientBuilder<C>
 where
-    C::KeyPackageRepository: KeyPackageStorage + Clone,
     C::PskStore: PreSharedKeyStorage + Clone,
     C::GroupStateStorage: GroupStateStorage + Clone,
     C::IdentityProvider: IdentityProvider + Clone,
@@ -543,23 +486,10 @@ impl<C: IntoConfig<PskStore = InMemoryPreSharedKeyStorage>> ClientBuilder<C> {
 #[derive(Debug)]
 pub struct Missing;
 
-/// Change the key package repository used by a client configuration.
-///
-/// See [`ClientBuilder::key_package_repo`].
-pub type WithKeyPackageRepo<K, C> = Config<
-    K,
-    <C as IntoConfig>::PskStore,
-    <C as IntoConfig>::GroupStateStorage,
-    <C as IntoConfig>::IdentityProvider,
-    <C as IntoConfig>::MlsRules,
-    <C as IntoConfig>::CryptoProvider,
->;
-
 /// Change the PSK store used by a client configuration.
 ///
 /// See [`ClientBuilder::psk_store`].
 pub type WithPskStore<P, C> = Config<
-    <C as IntoConfig>::KeyPackageRepository,
     P,
     <C as IntoConfig>::GroupStateStorage,
     <C as IntoConfig>::IdentityProvider,
@@ -571,7 +501,6 @@ pub type WithPskStore<P, C> = Config<
 ///
 /// See [`ClientBuilder::group_state_storage`].
 pub type WithGroupStateStorage<G, C> = Config<
-    <C as IntoConfig>::KeyPackageRepository,
     <C as IntoConfig>::PskStore,
     G,
     <C as IntoConfig>::IdentityProvider,
@@ -583,7 +512,6 @@ pub type WithGroupStateStorage<G, C> = Config<
 ///
 /// See [`ClientBuilder::identity_provider`].
 pub type WithIdentityProvider<I, C> = Config<
-    <C as IntoConfig>::KeyPackageRepository,
     <C as IntoConfig>::PskStore,
     <C as IntoConfig>::GroupStateStorage,
     I,
@@ -595,7 +523,6 @@ pub type WithIdentityProvider<I, C> = Config<
 ///
 /// See [`ClientBuilder::mls_rules`].
 pub type WithMlsRules<Pr, C> = Config<
-    <C as IntoConfig>::KeyPackageRepository,
     <C as IntoConfig>::PskStore,
     <C as IntoConfig>::GroupStateStorage,
     <C as IntoConfig>::IdentityProvider,
@@ -607,7 +534,6 @@ pub type WithMlsRules<Pr, C> = Config<
 ///
 /// See [`ClientBuilder::crypto_provider`].
 pub type WithCryptoProvider<Cp, C> = Config<
-    <C as IntoConfig>::KeyPackageRepository,
     <C as IntoConfig>::PskStore,
     <C as IntoConfig>::GroupStateStorage,
     <C as IntoConfig>::IdentityProvider,
@@ -617,7 +543,6 @@ pub type WithCryptoProvider<Cp, C> = Config<
 
 /// Helper alias for `Config`.
 pub type IntoConfigOutput<C> = Config<
-    <C as IntoConfig>::KeyPackageRepository,
     <C as IntoConfig>::PskStore,
     <C as IntoConfig>::GroupStateStorage,
     <C as IntoConfig>::IdentityProvider,
@@ -627,7 +552,6 @@ pub type IntoConfigOutput<C> = Config<
 
 /// Helper alias to make a `Config` from a `ClientConfig`
 pub type MakeConfig<C> = Config<
-    <C as ClientConfig>::KeyPackageRepository,
     <C as ClientConfig>::PskStore,
     <C as ClientConfig>::GroupStateStorage,
     <C as ClientConfig>::IdentityProvider,
@@ -635,16 +559,14 @@ pub type MakeConfig<C> = Config<
     <C as ClientConfig>::CryptoProvider,
 >;
 
-impl<Kpr, Ps, Gss, Ip, Pr, Cp> ClientConfig for ConfigInner<Kpr, Ps, Gss, Ip, Pr, Cp>
+impl<Ps, Gss, Ip, Pr, Cp> ClientConfig for ConfigInner<Ps, Gss, Ip, Pr, Cp>
 where
-    Kpr: KeyPackageStorage + Clone,
     Ps: PreSharedKeyStorage + Clone,
     Gss: GroupStateStorage + Clone,
     Ip: IdentityProvider + Clone,
     Pr: MlsRules + Clone,
     Cp: CryptoProvider + Clone,
 {
-    type KeyPackageRepository = Kpr;
     type PskStore = Ps;
     type GroupStateStorage = Gss;
     type IdentityProvider = Ip;
@@ -657,10 +579,6 @@ where
 
     fn supported_protocol_versions(&self) -> Vec<ProtocolVersion> {
         self.settings.protocol_versions.clone()
-    }
-
-    fn key_package_repo(&self) -> Self::KeyPackageRepository {
-        self.key_package_repo.clone()
     }
 
     fn mls_rules(&self) -> Self::MlsRules {
@@ -690,12 +608,6 @@ where
         #[cfg(not(feature = "std"))]
         let now_timestamp = 0;
 
-        #[cfg(test)]
-        let now_timestamp = self
-            .settings
-            .key_package_not_before
-            .unwrap_or(now_timestamp);
-
         Lifetime {
             not_before: now_timestamp,
             not_after: now_timestamp + self.settings.lifetime_in_s,
@@ -707,19 +619,17 @@ where
     }
 }
 
-impl<Kpr, Ps, Gss, Ip, Pr, Cp> Sealed for Config<Kpr, Ps, Gss, Ip, Pr, Cp> {}
+impl<Ps, Gss, Ip, Pr, Cp> Sealed for Config<Ps, Gss, Ip, Pr, Cp> {}
 
-impl<Kpr, Ps, Gss, Ip, Pr, Cp> MlsConfig for Config<Kpr, Ps, Gss, Ip, Pr, Cp>
+impl<Ps, Gss, Ip, Pr, Cp> MlsConfig for Config<Ps, Gss, Ip, Pr, Cp>
 where
-    Kpr: KeyPackageStorage + Clone,
-
     Ps: PreSharedKeyStorage + Clone,
     Gss: GroupStateStorage + Clone,
     Ip: IdentityProvider + Clone,
     Pr: MlsRules + Clone,
     Cp: CryptoProvider + Clone,
 {
-    type Output = ConfigInner<Kpr, Ps, Gss, Ip, Pr, Cp>;
+    type Output = ConfigInner<Ps, Gss, Ip, Pr, Cp>;
 
     fn get(&self) -> &Self::Output {
         &self.0
@@ -739,7 +649,6 @@ pub trait MlsConfig: Clone + Send + Sync + Sealed {
 
 /// Blanket implementation so that `T: MlsConfig` implies `T: ClientConfig`
 impl<T: MlsConfig> ClientConfig for T {
-    type KeyPackageRepository = <T::Output as ClientConfig>::KeyPackageRepository;
     type PskStore = <T::Output as ClientConfig>::PskStore;
     type GroupStateStorage = <T::Output as ClientConfig>::GroupStateStorage;
     type IdentityProvider = <T::Output as ClientConfig>::IdentityProvider;
@@ -756,10 +665,6 @@ impl<T: MlsConfig> ClientConfig for T {
 
     fn supported_protocol_versions(&self) -> Vec<ProtocolVersion> {
         self.get().supported_protocol_versions()
-    }
-
-    fn key_package_repo(&self) -> Self::KeyPackageRepository {
-        self.get().key_package_repo()
     }
 
     fn mls_rules(&self) -> Self::MlsRules {
@@ -805,8 +710,6 @@ pub(crate) struct Settings {
     pub(crate) protocol_versions: Vec<ProtocolVersion>,
     pub(crate) custom_proposal_types: Vec<ProposalType>,
     pub(crate) lifetime_in_s: u64,
-    #[cfg(any(test, feature = "test_util"))]
-    pub(crate) key_package_not_before: Option<u64>,
 }
 
 impl Default for Settings {
@@ -816,8 +719,6 @@ impl Default for Settings {
             protocol_versions: Default::default(),
             lifetime_in_s: 365 * 24 * 3600,
             custom_proposal_types: Default::default(),
-            #[cfg(any(test, feature = "test_util"))]
-            key_package_not_before: None,
         }
     }
 }
@@ -837,10 +738,7 @@ pub(crate) fn recreate_config<T: ClientConfig>(
                 let l = c.lifetime();
                 l.not_after - l.not_before
             },
-            #[cfg(any(test, feature = "test_util"))]
-            key_package_not_before: None,
         },
-        key_package_repo: c.key_package_repo(),
         psk_store: c.secret_store(),
         group_state_storage: c.group_state_storage(),
         identity_provider: c.identity_provider(),
@@ -864,12 +762,11 @@ mod private {
     use crate::client_builder::{IntoConfigOutput, Settings};
 
     #[derive(Clone, Debug)]
-    pub struct Config<Kpr, Ps, Gss, Ip, Pr, Cp>(pub(crate) ConfigInner<Kpr, Ps, Gss, Ip, Pr, Cp>);
+    pub struct Config<Ps, Gss, Ip, Pr, Cp>(pub(crate) ConfigInner<Ps, Gss, Ip, Pr, Cp>);
 
     #[derive(Clone, Debug)]
-    pub struct ConfigInner<Kpr, Ps, Gss, Ip, Pr, Cp> {
+    pub struct ConfigInner<Ps, Gss, Ip, Pr, Cp> {
         pub(crate) settings: Settings,
-        pub(crate) key_package_repo: Kpr,
         pub(crate) psk_store: Ps,
         pub(crate) group_state_storage: Gss,
         pub(crate) identity_provider: Ip,
@@ -881,7 +778,6 @@ mod private {
     }
 
     pub trait IntoConfig {
-        type KeyPackageRepository;
         type PskStore;
         type GroupStateStorage;
         type IdentityProvider;
@@ -891,8 +787,7 @@ mod private {
         fn into_config(self) -> IntoConfigOutput<Self>;
     }
 
-    impl<Kpr, Ps, Gss, Ip, Pr, Cp> IntoConfig for Config<Kpr, Ps, Gss, Ip, Pr, Cp> {
-        type KeyPackageRepository = Kpr;
+    impl<Ps, Gss, Ip, Pr, Cp> IntoConfig for Config<Ps, Gss, Ip, Pr, Cp> {
         type PskStore = Ps;
         type GroupStateStorage = Gss;
         type IdentityProvider = Ip;
@@ -909,7 +804,6 @@ use mls_rs_core::{
     crypto::{CryptoProvider, SignatureSecretKey},
     group::GroupStateStorage,
     identity::IdentityProvider,
-    key_package::KeyPackageStorage,
     psk::PreSharedKeyStorage,
 };
 use private::{Config, ConfigInner, IntoConfig};
@@ -923,6 +817,8 @@ pub(crate) mod test_utils {
             basic::BasicIdentityProvider,
             test_utils::{get_test_signing_identity, BasicWithCustomProvider},
         },
+        storage_provider::in_memory::InMemoryKeyPackageStorage,
+        test_utils::TestClient,
         CipherSuite,
     };
 
@@ -951,6 +847,13 @@ pub(crate) mod test_utils {
             let (signing_identity, signer) =
                 get_test_signing_identity(cipher_suite, identity.as_bytes()).await;
             self.signing_identity(signing_identity, signer, cipher_suite)
+        }
+
+        pub fn build_for_test(self) -> TestClient<TestClientConfig> {
+            TestClient {
+                client: self.build(),
+                key_packages: InMemoryKeyPackageStorage::new(),
+            }
         }
     }
 }

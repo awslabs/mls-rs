@@ -974,16 +974,19 @@ mod tests {
         client_config::ClientConfig,
         crypto::test_utils::TestCryptoProvider,
         extension::test_utils::{TestExtension, TEST_EXTENSION_TYPE},
-        group::test_utils::{test_group, test_group_custom},
         group::{
             proposal::ProposalType,
-            test_utils::{test_group_custom_config, test_n_member_group},
+            test_utils::{
+                test_group, test_group_custom, test_group_custom_config, test_n_member_group,
+            },
         },
-        identity::test_utils::get_test_signing_identity,
-        identity::{basic::BasicIdentityProvider, test_utils::get_test_basic_credential},
+        identity::{
+            basic::BasicIdentityProvider,
+            test_utils::{get_test_basic_credential, get_test_signing_identity},
+        },
         key_package::test_utils::test_key_package_message,
         mls_rules::CommitOptions,
-        Client,
+        test_utils::TestClient,
     };
     use crate::{extension::RequiredCapabilitiesExt, group::ProposalOrRef};
 
@@ -1503,10 +1506,7 @@ mod tests {
             .unwrap();
 
         let bob = client_with_test_extension(b"bob").await;
-        let bob_kp = bob
-            .generate_key_package_message(Default::default(), Default::default())
-            .await
-            .unwrap();
+        let bob_kp = bob.generate_key_package().await.unwrap();
 
         let mut extension_list = ExtensionList::new();
         let extension = TestExtension { foo: b'a' };
@@ -1527,11 +1527,7 @@ mod tests {
 
         alice
             .commit_builder()
-            .add_member(
-                alex.generate_key_package_message(Default::default(), Default::default())
-                    .await
-                    .unwrap(),
-            )
+            .add_member(alex.generate_key_package().await.unwrap())
             .unwrap()
             .set_group_context_ext(extension_list.clone())
             .unwrap()
@@ -1687,15 +1683,17 @@ mod tests {
     >;
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn client_with_test_extension(name: &[u8]) -> Client<ExtensionClientConfig> {
+    async fn client_with_test_extension(name: &[u8]) -> TestClient<ExtensionClientConfig> {
         let (identity, secret_key) = get_test_signing_identity(TEST_CIPHER_SUITE, name).await;
 
-        ClientBuilder::new()
+        let client = ClientBuilder::new()
             .crypto_provider(TestCryptoProvider::new())
             .extension_types(vec![TEST_EXTENSION_TYPE.into()])
             .identity_provider(IdentityProviderWithExtension(BasicIdentityProvider::new()))
             .signing_identity(identity, secret_key, TEST_CIPHER_SUITE)
-            .build()
+            .build();
+
+        TestClient::new(client)
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
