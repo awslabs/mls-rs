@@ -413,9 +413,10 @@ pub(crate) mod external_proposal {
             request: Request<CreateExternalSignerRequest>,
         ) -> Result<Response<CreateExternalSignerResponse>, Status> {
             let request = request.into_inner();
+            let cipher_suite = (request.cipher_suite as u16).into();
 
             let cs = OpensslCryptoProvider::new()
-                .cipher_suite_provider((request.cipher_suite as u16).into())
+                .cipher_suite_provider(cipher_suite)
                 .ok_or_else(|| Status::aborted("ciphersuite not supported"))?;
 
             let (secret_key, public_key) = cs.signature_key_generate().map_err(abort)?;
@@ -429,7 +430,7 @@ pub(crate) mod external_proposal {
             let ext_client = ExternalClientBuilder::new()
                 .crypto_provider(OpensslCryptoProvider::default())
                 .identity_provider(BasicIdentityProvider::new())
-                .signer(secret_key, signing_identity)
+                .signer(secret_key, signing_identity, cipher_suite)
                 .build();
 
             let signer_id = *ext_clients.keys().max().unwrap_or(&0);

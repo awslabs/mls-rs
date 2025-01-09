@@ -19,10 +19,11 @@ pub use signing_identity::*;
 #[cfg(feature = "x509")]
 pub use x509::*;
 
-use crate::crypto::SignatureSecretKey;
+use crate::crypto::{CipherSuite, SignatureSecretKey};
 
 #[derive(Clone, Debug, MlsEncode, MlsSize, MlsDecode, PartialEq)]
 pub struct SigningData {
     pub signing_identity: SigningIdentity,
     pub signing_key: SignatureSecretKey,
+    pub cipher_suite: CipherSuite,
 }

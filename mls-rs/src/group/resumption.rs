@@ -173,7 +173,7 @@ impl<C: ClientConfig + Clone> ReinitClient<C> {
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub fn key_package_builder(
         &self,
-        signing_data: Option<(CipherSuite, SigningData)>,
+        signing_data: Option<SigningData>,
     ) -> Result<
         KeyPackageBuilder<<C::CryptoProvider as CryptoProvider>::CipherSuiteProvider>,
         MlsError,

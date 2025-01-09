@@ -434,15 +434,15 @@ where
     #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     pub fn key_package_builder(
         &self,
-        signing_data: Option<(CipherSuite, SigningData)>,
+        signing_data: Option<SigningData>,
     ) -> Result<
         KeyPackageBuilder<<C::CryptoProvider as CryptoProvider>::CipherSuiteProvider>,
         MlsError,
     > {
         // TODO create provider inside key package builder
-        let (cipher_suite, signing_data) = signing_data.unzip();
-
-        let cipher_suite = cipher_suite
+        let cipher_suite = signing_data
+            .as_ref()
+            .map(|data| data.cipher_suite)
             .or(self.signing_identity.as_ref().map(|(_, cs)| *cs))
             // TODO no error fits
             .ok_or(MlsError::CipherSuiteMismatch)?;

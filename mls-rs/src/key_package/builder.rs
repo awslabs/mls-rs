@@ -98,6 +98,7 @@ impl<CP: CipherSuiteProvider> KeyPackageBuilder<CP> {
         let SigningData {
             signing_identity,
             signing_key,
+            ..
         } = self.signing_data;
 
         let (init_secret_key, public_init) = self
@@ -185,10 +186,13 @@ impl<CP> KeyPackageBuilder<CP> {
             .signing_identity
             .clone()
             .zip(client.signer.clone())
-            .map(|((signing_identity, _), signing_key)| SigningData {
-                signing_identity,
-                signing_key,
-            })
+            .map(
+                |((signing_identity, cipher_suite), signing_key)| SigningData {
+                    signing_identity,
+                    signing_key,
+                    cipher_suite,
+                },
+            )
             .or(signing_data)
             .ok_or(MlsError::SignerNotFound)?;
 
