@@ -3,18 +3,18 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use super::{
-    commit_sender,
+    commit_processor_from_content,
     confirmation_tag::ConfirmationTag,
     framing::{
         ApplicationData, Content, ContentType, MlsMessage, MlsMessagePayload, PublicMessage, Sender,
     },
     message_signature::AuthenticatedContent,
-    mls_rules::{CommitDirection, MlsRules},
+    mls_rules::MlsRules,
+    process_commit,
     proposal_filter::ProposalBundle,
     state::GroupState,
     transcript_hash::InterimTranscriptHash,
-    transcript_hashes, validate_group_info_member, GroupContext, GroupInfo, ReInitProposal,
-    RemoveProposal, Welcome,
+    validate_group_info_member, GroupContext, GroupInfo, ReInitProposal, RemoveProposal, Welcome,
 };
 use crate::{
     client::MlsError,
@@ -24,7 +24,7 @@ use crate::{
         leaf_node_validator::{LeafNodeValidator, ValidationContext},
         node::LeafIndex,
         path_secret::PathSecret,
-        validate_update_path, TreeKemPrivate, TreeKemPublic, ValidatedUpdatePath,
+        TreeKemPrivate, TreeKemPublic, ValidatedUpdatePath,
     },
     CipherSuiteProvider, KeyPackage,
 };
@@ -42,9 +42,6 @@ use mls_rs_core::{
 
 #[cfg(feature = "by_ref_proposal")]
 use super::proposal_ref::ProposalRef;
-
-#[cfg(not(feature = "by_ref_proposal"))]
-use crate::group::proposal_cache::resolve_for_commit;
 
 use super::proposal::Proposal;
 use super::proposal_filter::ProposalInfo;
@@ -468,9 +465,10 @@ pub(crate) enum EventOrContent<E> {
     all(not(target_arch = "wasm32"), mls_build_async),
     maybe_async::must_be_async
 )]
-pub(crate) trait MessageProcessor: Send + Sync {
+pub(crate) trait MessageProcessor: Send + Sync + Sized {
     type OutputType: TryFrom<ApplicationMessageDescription, Error = MlsError>
         + From<CommitMessageDescription>
+        // From<CommitProcessor>
         + From<ProposalMessageDescription>
         + From<GroupInfo>
         + From<Welcome>
@@ -530,7 +528,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
                     self.group_state(),
                     message.version,
                     &group_info,
-                    self.cipher_suite_provider(),
+                    &self.cipher_suite_provider(),
                 )
                 .await?;
 
@@ -587,10 +585,11 @@ pub(crate) trait MessageProcessor: Send + Sync {
                 self.process_application_message(data, sender, authenticated_data)
                     .and_then(Self::OutputType::try_from)
             }
-            Content::Commit(_) => self
-                .process_commit(auth_content, time_sent)
-                .await
-                .map(Self::OutputType::from),
+            Content::Commit(_) => {
+                let mut processor = commit_processor_from_content(self, auth_content).await?;
+                processor.time_sent = time_sent;
+                process_commit(processor).await.map(Self::OutputType::from)
+            }
             #[cfg(feature = "by_ref_proposal")]
             Content::Proposal(ref proposal) => self
                 .process_proposal(&auth_content, proposal, cache_proposal)
@@ -628,7 +627,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
         cache_proposal: bool,
     ) -> Result<ProposalMessageDescription, MlsError> {
         let proposal = ProposalMessageDescription::new(
-            self.cipher_suite_provider(),
+            &self.cipher_suite_provider(),
             auth_content,
             proposal.clone(),
         )
@@ -647,152 +646,11 @@ pub(crate) trait MessageProcessor: Send + Sync {
         Ok(proposal)
     }
 
-    async fn process_commit(
-        &mut self,
-        auth_content: AuthenticatedContent,
-        time_sent: Option<MlsTime>,
-    ) -> Result<CommitMessageDescription, MlsError> {
-        if self.group_state().pending_reinit.is_some() {
-            return Err(MlsError::GroupUsedAfterReInit);
-        }
-
-        // Update the new GroupContext's confirmed and interim transcript hashes using the new Commit.
-        let (interim_transcript_hash, confirmed_transcript_hash) = transcript_hashes(
-            self.cipher_suite_provider(),
-            &self.group_state().interim_transcript_hash,
-            &auth_content,
-        )
-        .await?;
-
-        #[cfg(any(feature = "private_message", feature = "by_ref_proposal"))]
-        let commit = match auth_content.content.content {
-            Content::Commit(commit) => Ok(commit),
-            _ => Err(MlsError::UnexpectedMessageType),
-        }?;
-
-        #[cfg(not(any(feature = "private_message", feature = "by_ref_proposal")))]
-        let Content::Commit(commit) = auth_content.content.content;
-
-        let group_state = self.group_state();
-        let id_provider = self.identity_provider();
-
-        #[cfg(feature = "by_ref_proposal")]
-        let proposals = group_state
-            .proposals
-            .resolve_for_commit(auth_content.content.sender, commit.proposals)?;
-
-        #[cfg(not(feature = "by_ref_proposal"))]
-        let proposals = resolve_for_commit(auth_content.content.sender, commit.proposals)?;
-
-        let mut provisional_state = group_state
-            .apply_resolved(
-                auth_content.content.sender,
-                proposals,
-                commit.path.as_ref().map(|path| &path.leaf_node),
-                &id_provider,
-                self.cipher_suite_provider(),
-                &self.psk_storage(),
-                &self.mls_rules(),
-                time_sent,
-                CommitDirection::Receive,
-            )
-            .await?;
-
-        let sender = commit_sender(&auth_content.content.sender, &provisional_state)?;
-
-        //Verify that the path value is populated if the proposals vector contains any Update
-        // or Remove proposals, or if it's empty. Otherwise, the path value MAY be omitted.
-        if path_update_required(&provisional_state.applied_proposals) && commit.path.is_none() {
-            return Err(MlsError::CommitMissingPath);
-        }
-
-        let self_removed = self.removal_proposal(&provisional_state);
-        let is_self_removed = self_removed.is_some();
-
-        let update_path = match commit.path {
-            Some(update_path) => Some(
-                validate_update_path(
-                    &self.identity_provider(),
-                    self.cipher_suite_provider(),
-                    update_path,
-                    &provisional_state,
-                    sender,
-                    time_sent,
-                    &group_state.context,
-                )
-                .await?,
-            ),
-            None => None,
-        };
-
-        let commit_effect =
-            if let Some(reinit) = provisional_state.applied_proposals.reinitializations.pop() {
-                self.group_state_mut().pending_reinit = Some(reinit.proposal.clone());
-                CommitEffect::ReInit(reinit)
-            } else if let Some(remove_proposal) = self_removed {
-                let new_epoch = NewEpoch::new(self.group_state().clone(), &provisional_state);
-                CommitEffect::Removed {
-                    remover: remove_proposal.sender,
-                    new_epoch: Box::new(new_epoch),
-                }
-            } else {
-                CommitEffect::NewEpoch(Box::new(NewEpoch::new(
-                    self.group_state().clone(),
-                    &provisional_state,
-                )))
-            };
-
-        let new_secrets = match update_path {
-            Some(update_path) if !is_self_removed => {
-                self.apply_update_path(sender, &update_path, &mut provisional_state)
-                    .await
-            }
-            _ => Ok(None),
-        }?;
-
-        // Update the transcript hash to get the new context.
-        provisional_state.group_context.confirmed_transcript_hash = confirmed_transcript_hash;
-
-        // Update the parent hashes in the new context
-        provisional_state
-            .public_tree
-            .update_hashes(&[sender], self.cipher_suite_provider())
-            .await?;
-
-        // Update the tree hash in the new context
-        provisional_state.group_context.tree_hash = provisional_state
-            .public_tree
-            .tree_hash(self.cipher_suite_provider())
-            .await?;
-
-        if let Some(confirmation_tag) = &auth_content.auth.confirmation_tag {
-            if !is_self_removed {
-                // Update the key schedule to calculate new private keys
-                self.update_key_schedule(
-                    new_secrets,
-                    interim_transcript_hash,
-                    confirmation_tag,
-                    provisional_state,
-                )
-                .await?;
-            }
-
-            Ok(CommitMessageDescription {
-                is_external: matches!(auth_content.content.sender, Sender::NewMemberCommit),
-                authenticated_data: auth_content.content.authenticated_data,
-                committer: *sender,
-                effect: commit_effect,
-            })
-        } else {
-            Err(MlsError::InvalidConfirmationTag)
-        }
-    }
-
     fn group_state(&self) -> &GroupState;
     fn group_state_mut(&mut self) -> &mut GroupState;
     fn mls_rules(&self) -> Self::MlsRules;
     fn identity_provider(&self) -> Self::IdentityProvider;
-    fn cipher_suite_provider(&self) -> &Self::CipherSuiteProvider;
+    fn cipher_suite_provider(&self) -> Self::CipherSuiteProvider;
     fn psk_storage(&self) -> Self::PreSharedKeyStorage;
 
     fn removal_proposal(
@@ -901,7 +759,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
         let cs = self.cipher_suite_provider();
         let id = self.identity_provider();
 
-        validate_key_package(key_package, version, cs, &id).await
+        validate_key_package(key_package, version, &cs, &id).await
     }
 
     #[cfg(feature = "private_message")]
@@ -928,7 +786,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
                 update_path,
                 &provisional_state.group_context.extensions,
                 self.identity_provider(),
-                self.cipher_suite_provider(),
+                &self.cipher_suite_provider(),
             )
             .await
             .map(|_| None)

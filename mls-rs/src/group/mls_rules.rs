@@ -2,13 +2,14 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use crate::group::{proposal_filter::ProposalBundle, Roster};
+use crate::{
+    error::MlsError,
+    group::{proposal_filter::ProposalBundle, Roster, Sender},
+    tree_kem::{leaf_node::LeafNode, TreeKemPublic},
+};
 
 #[cfg(feature = "private_message")]
-use crate::{
-    group::{padding::PaddingMode, Sender},
-    WireFormat,
-};
+use crate::{group::padding::PaddingMode, WireFormat};
 
 use alloc::boxed::Box;
 use core::convert::Infallible;
@@ -28,6 +29,29 @@ pub enum CommitDirection {
 pub enum CommitSource {
     ExistingMember(Member),
     NewMember(SigningIdentity),
+}
+
+impl CommitSource {
+    pub(crate) fn new(
+        sender: &Sender,
+        public_tree: &TreeKemPublic,
+        external_leaf: Option<&LeafNode>,
+    ) -> Result<Self, MlsError> {
+        match sender {
+            Sender::Member(index) => Ok(CommitSource::ExistingMember(
+                public_tree.roster().member_with_index(*index)?,
+            )),
+            #[cfg(feature = "by_ref_proposal")]
+            Sender::NewMemberProposal => Err(MlsError::InvalidSender),
+            #[cfg(feature = "by_ref_proposal")]
+            Sender::External(_) => Err(MlsError::InvalidSender),
+            Sender::NewMemberCommit => Ok(CommitSource::NewMember(
+                external_leaf
+                    .map(|l| l.signing_identity.clone())
+                    .ok_or(MlsError::ExternalCommitMustHaveNewLeaf)?,
+            )),
+        }
+    }
 }
 
 /// Options controlling commit generation

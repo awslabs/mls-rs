@@ -8,6 +8,7 @@ use mls_rs_core::{
     extension::ExtensionList,
     group::Member,
     identity::{IdentityProvider, SigningData},
+    time::MlsTime,
 };
 
 use crate::{
@@ -23,18 +24,20 @@ use crate::{
             ApplicationMessageDescription, CommitMessageDescription, EventOrContent,
             MessageProcessor, ProposalMessageDescription, ProvisionalState,
         },
+        new_commit_processor, process_commit,
         proposal::RemoveProposal,
         proposal_filter::ProposalInfo,
         snapshot::RawGroupState,
         state::GroupState,
         transcript_hash::InterimTranscriptHash,
-        validate_tree_and_info_joiner, ContentType, ExportedTree, GroupContext, GroupInfo, Roster,
-        Welcome,
+        validate_tree_and_info_joiner, ContentType, ExportedTree, GroupContext, GroupInfo,
+        InternalCommitProcessor, Roster, Welcome,
     },
     identity::SigningIdentity,
+    mls_rules::{CommitSource, ProposalBundle},
     protocol_version::ProtocolVersion,
     psk::AlwaysFoundPskStorage,
-    tree_kem::{node::LeafIndex, path_secret::PathSecret, TreeKemPrivate},
+    tree_kem::{leaf_node::LeafNode, node::LeafIndex, path_secret::PathSecret, TreeKemPrivate},
     CryptoProvider, KeyPackage, MlsMessage,
 };
 
@@ -658,8 +661,8 @@ where
             .map(|j| self.state.context.epoch - j)
     }
 
-    fn cipher_suite_provider(&self) -> &Self::CipherSuiteProvider {
-        &self.cipher_suite_provider
+    fn cipher_suite_provider(&self) -> Self::CipherSuiteProvider {
+        self.cipher_suite_provider.clone()
     }
 }
 
@@ -781,6 +784,57 @@ impl From<Welcome> for ExternalReceivedMessage {
 impl From<KeyPackage> for ExternalReceivedMessage {
     fn from(value: KeyPackage) -> Self {
         ExternalReceivedMessage::KeyPackage(value)
+    }
+}
+
+pub struct ExternalCommitProcessor<'a, C: ExternalClientConfig>(
+    InternalCommitProcessor<'a, ExternalGroup<C>>,
+);
+
+impl<C: ExternalClientConfig> ExternalCommitProcessor<'_, C> {
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn process(self) -> Result<CommitMessageDescription, MlsError> {
+        process_commit(self.0).await
+    }
+
+    // Settings
+    pub fn time_sent(self, time_sent: MlsTime) -> Self {
+        Self(InternalCommitProcessor {
+            time_sent: Some(time_sent),
+            ..self.0
+        })
+    }
+
+    // Info
+    pub fn proposals(&self) -> &ProposalBundle {
+        &self.0.proposals
+    }
+
+    pub fn has_path(&self) -> bool {
+        self.0.path.is_some()
+    }
+
+    pub fn committers_new_leaf(&self) -> Option<&LeafNode> {
+        self.0.path.as_ref().map(|p| &p.leaf_node)
+    }
+
+    pub fn committer(&self) -> &CommitSource {
+        &self.0.committer
+    }
+
+    pub fn authenticated_data(&self) -> &[u8] {
+        &self.0.authenticated_data
+    }
+}
+
+impl<C: ExternalClientConfig> ExternalGroup<C> {
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn commit_processor(
+        &mut self,
+        commit_message: MlsMessage,
+    ) -> Result<ExternalCommitProcessor<'_, C>, MlsError> {
+        let p = new_commit_processor(self, commit_message).await?;
+        Ok(ExternalCommitProcessor(p))
     }
 }
 

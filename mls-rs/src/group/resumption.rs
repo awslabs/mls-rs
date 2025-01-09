@@ -154,7 +154,7 @@ where
             psk_epoch: self.current_epoch(),
         });
 
-        let id = PreSharedKeyID::new(id, self.cipher_suite_provider())?;
+        let id = PreSharedKeyID::new(id, &self.cipher_suite_provider())?;
         Ok(PskSecretInput { id, psk })
     }
 }
