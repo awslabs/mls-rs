@@ -12,7 +12,7 @@ use mls_rs::{
     mls_rules::{CommitOptions, DefaultMlsRules},
     test_utils::benchmarks::{MlsCryptoProvider, BENCH_CIPHER_SUITE},
     test_utils::TestClient,
-    CipherSuite, CipherSuiteProvider, Client, CryptoProvider,
+    CipherSuiteProvider, Client, CryptoProvider,
 };
 
 fn bench(c: &mut Criterion) {
