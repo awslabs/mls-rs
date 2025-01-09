@@ -4,9 +4,9 @@
 
 use crate::{
     client::MlsError,
-    group::{proposal_filter::ProposalBundle, GroupContext, Sender},
+    group::{proposal_filter::ProposalBundle, GroupContext},
     key_package::{validate_key_package_properties, KeyPackage},
-    mls_rules::CommitDirection,
+    mls_rules::{CommitDirection, CommitSource},
     time::MlsTime,
     tree_kem::{
         leaf_node_validator::{LeafNodeValidator, ValidationContext},
@@ -96,30 +96,26 @@ where
     pub(crate) async fn apply_proposals(
         &self,
         #[cfg(feature = "by_ref_proposal")] strategy: FilterStrategy,
-        commit_sender: &Sender,
+        commit_sender: &CommitSource,
         #[cfg(not(feature = "by_ref_proposal"))] proposals: &ProposalBundle,
         #[cfg(feature = "by_ref_proposal")] proposals: ProposalBundle,
         commit_time: Option<MlsTime>,
     ) -> Result<ApplyProposalsOutput, MlsError> {
         let output = match commit_sender {
-            Sender::Member(sender) => {
+            CommitSource::ExistingMember(sender) => {
                 self.apply_proposals_from_member(
                     #[cfg(feature = "by_ref_proposal")]
                     strategy,
-                    LeafIndex(*sender),
+                    LeafIndex(sender.index),
                     proposals,
                     commit_time,
                 )
                 .await
             }
-            Sender::NewMemberCommit => {
+            CommitSource::NewMember(_) => {
                 self.apply_proposals_from_new_member(proposals, commit_time)
                     .await
             }
-            #[cfg(feature = "by_ref_proposal")]
-            Sender::External(_) => Err(MlsError::ExternalSenderCannotCommit),
-            #[cfg(feature = "by_ref_proposal")]
-            Sender::NewMemberProposal => Err(MlsError::ExternalSenderCannotCommit),
         }?;
 
         Ok(output)

@@ -14,7 +14,7 @@ use crate::{
     extension::RatchetTreeExt,
     protocol_version::ProtocolVersion,
     signer::Signable,
-    tree_kem::{node::LeafIndex, tree_validator::TreeValidator, TreeKemPublic},
+    tree_kem::{tree_validator::TreeValidator, TreeKemPublic},
     CipherSuiteProvider, CryptoProvider, KeyPackageRef,
 };
 
@@ -22,12 +22,9 @@ use crate::{
 use crate::extension::ExternalSendersExt;
 
 use super::{
-    framing::Sender, message_signature::AuthenticatedContent,
-    transcript_hash::InterimTranscriptHash, ConfirmedTranscriptHash, ExportedTree, GroupInfo,
-    GroupState,
+    message_signature::AuthenticatedContent, transcript_hash::InterimTranscriptHash,
+    ConfirmedTranscriptHash, ExportedTree, GroupInfo, GroupState,
 };
-
-use super::message_processor::ProvisionalState;
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 pub(crate) async fn validate_group_info_common<C: CipherSuiteProvider>(
@@ -143,22 +140,6 @@ pub(crate) async fn validate_group_info_joiner<C: CipherSuiteProvider, I: Identi
     validate_group_info_common(msg_version, group_info, signer, cs).await?;
 
     Ok(())
-}
-
-pub(crate) fn commit_sender(
-    sender: &Sender,
-    provisional_state: &ProvisionalState,
-) -> Result<LeafIndex, MlsError> {
-    match sender {
-        Sender::Member(index) => Ok(LeafIndex(*index)),
-        #[cfg(feature = "by_ref_proposal")]
-        Sender::External(_) => Err(MlsError::ExternalSenderCannotCommit),
-        #[cfg(feature = "by_ref_proposal")]
-        Sender::NewMemberProposal => Err(MlsError::ExpectedAddProposalForNewMemberProposal),
-        Sender::NewMemberCommit => provisional_state
-            .external_init_index
-            .ok_or(MlsError::ExternalCommitMissingExternalInit),
-    }
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]

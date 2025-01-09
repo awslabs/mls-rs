@@ -245,48 +245,37 @@ impl GroupState {
     #[inline(never)]
     #[allow(clippy::too_many_arguments)]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub(crate) async fn apply_resolved<C, F, P, CSP>(
+    pub(crate) async fn apply_resolved<C, F, PSK, CSP>(
         &self,
-        sender: Sender,
         mut proposals: ProposalBundle,
         external_leaf: Option<&LeafNode>,
         identity_provider: &C,
         cipher_suite_provider: &CSP,
-        psk_storage: &P,
-        user_rules: &F,
         commit_time: Option<MlsTime>,
         direction: CommitDirection,
+        psk_storage: &PSK,
+        user_rules: &F,
+        sender: &CommitSource,
     ) -> Result<ProvisionalState, MlsError>
     where
         C: IdentityProvider,
-        F: MlsRules,
-        P: PreSharedKeyStorage,
         CSP: CipherSuiteProvider,
+        PSK: PreSharedKeyStorage,
+        F: MlsRules,
     {
-        let roster = self.public_tree.roster();
-
         #[cfg(feature = "by_ref_proposal")]
         let all_proposals = proposals.clone();
-
-        let origin = match sender {
-            Sender::Member(index) => Ok::<_, MlsError>(CommitSource::ExistingMember(
-                roster.member_with_index(index)?,
-            )),
-            #[cfg(feature = "by_ref_proposal")]
-            Sender::NewMemberProposal => Err(MlsError::InvalidSender),
-            #[cfg(feature = "by_ref_proposal")]
-            Sender::External(_) => Err(MlsError::InvalidSender),
-            Sender::NewMemberCommit => Ok(CommitSource::NewMember(
-                external_leaf
-                    .map(|l| l.signing_identity.clone())
-                    .ok_or(MlsError::ExternalCommitMustHaveNewLeaf)?,
-            )),
-        }?;
 
         prepare_proposals_for_mls_rules(&mut proposals, direction, &self.public_tree)?;
 
         proposals = user_rules
-            .filter_proposals(direction, origin, &roster, &self.context, proposals)
+            .filter_proposals(
+                direction,
+                sender.clone(),
+                &self.public_tree.roster(),
+                &self.context,
+                proposals,
+            )
             .await
             .map_err(|e| MlsError::MlsRulesError(e.into_any_error()))?;
 
@@ -301,12 +290,12 @@ impl GroupState {
 
         #[cfg(feature = "by_ref_proposal")]
         let applier_output = applier
-            .apply_proposals(direction.into(), &sender, proposals, commit_time)
+            .apply_proposals(direction.into(), sender, proposals, commit_time)
             .await?;
 
         #[cfg(not(feature = "by_ref_proposal"))]
         let applier_output = applier
-            .apply_proposals(&sender, &proposals, commit_time)
+            .apply_proposals(sender, &proposals, commit_time)
             .await?;
 
         #[cfg(feature = "by_ref_proposal")]
@@ -393,6 +382,7 @@ pub(crate) mod test_utils {
             GroupContext, LeafIndex, LeafNode, ProvisionalState, Sender, TreeKemPublic,
         },
         identity::{basic::BasicIdentityProvider, test_utils::BasicWithCustomProvider},
+        mls_rules::CommitSource,
         psk::AlwaysFoundPskStorage,
     };
 
@@ -585,18 +575,19 @@ pub(crate) mod test_utils {
 
             state.proposals.proposals.clone_from(&self.proposals);
             let proposals = self.resolve_for_commit(sender, proposal_list)?;
+            let committer = CommitSource::new(&sender, public_tree, external_leaf)?;
 
             state
                 .apply_resolved(
-                    sender,
                     proposals,
                     external_leaf,
                     identity_provider,
                     cipher_suite_provider,
-                    psk_storage,
-                    &user_rules,
                     None,
                     CommitDirection::Receive,
+                    psk_storage,
+                    &user_rules,
+                    &committer,
                 )
                 .await
         }
@@ -629,18 +620,19 @@ pub(crate) mod test_utils {
             );
 
             let proposals = self.prepare_commit(sender, additional_proposals);
+            let committer = CommitSource::new(&sender, public_tree, external_leaf)?;
 
             state
                 .apply_resolved(
-                    sender,
                     proposals,
                     external_leaf,
                     identity_provider,
                     cipher_suite_provider,
-                    psk_storage,
-                    &user_rules,
                     None,
                     CommitDirection::Send,
+                    psk_storage,
+                    &user_rules,
+                    &committer,
                 )
                 .await
         }
