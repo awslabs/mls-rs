@@ -3577,7 +3577,9 @@ mod tests {
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn unsupported_credential_key_package(name: &str) -> KeyPackage {
-        let (client, _) = test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, name);
+        let (client, _) =
+            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, name).await;
+
         let mut kp_builder = client.key_package_builder(None).unwrap();
 
         kp_builder.signing_data.signing_identity.credential =

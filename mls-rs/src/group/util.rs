@@ -2,10 +2,7 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use mls_rs_core::{
-    error::IntoAnyError,
-    identity::{IdentityProvider, SigningIdentity},
-};
+use mls_rs_core::identity::{IdentityProvider, SigningIdentity};
 
 use crate::{
     cipher_suite::CipherSuite,
@@ -19,6 +16,8 @@ use crate::{
 
 #[cfg(feature = "by_ref_proposal")]
 use crate::extension::ExternalSendersExt;
+#[cfg(feature = "by_ref_proposal")]
+use mls_rs_core::error::IntoAnyError;
 
 use super::{
     message_signature::AuthenticatedContent, transcript_hash::InterimTranscriptHash,
