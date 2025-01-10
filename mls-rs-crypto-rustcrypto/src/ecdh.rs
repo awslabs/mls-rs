@@ -99,7 +99,7 @@ impl DhType for Ecdh {
     }
 
     fn public_key_size(&self) -> usize {
-        self.0.secret_key_size()
+        self.0.public_key_size()
     }
 }
 

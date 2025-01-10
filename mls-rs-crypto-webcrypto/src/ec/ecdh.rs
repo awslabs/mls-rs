@@ -167,7 +167,7 @@ impl DhType for Ecdh {
     }
 
     fn public_key_size(&self) -> usize {
-        self.curve.secret_key_size()
+        self.curve.public_key_size()
     }
 }
 
