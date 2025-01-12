@@ -80,7 +80,7 @@ where
 
     /// Determine if a certificate is valid based on the behavior of the
     /// underlying validator provided.
-    pub fn validate(
+    fn validate(
         &self,
         signing_identity: &mls_rs_core::identity::SigningIdentity,
         timestamp: Option<mls_rs_core::time::MlsTime>,
@@ -98,40 +98,6 @@ where
 
         Ok(())
     }
-
-    /// Produce a unique identity value to represent the entity controlling a
-    /// certificate credential within an MLS group.
-    pub fn identity(
-        &self,
-        signing_id: &mls_rs_core::identity::SigningIdentity,
-    ) -> Result<Vec<u8>, X509IdentityError> {
-        self.identity_extractor
-            .identity(&credential_to_chain(&signing_id.credential)?)
-            .map_err(|e| X509IdentityError::IdentityExtractorError(e.into_any_error()))
-    }
-
-    /// Determine if `successor` is controlled by the same entity as
-    /// `predecessor` based on the behavior of the underlying identity
-    /// extractor provided.
-    pub fn valid_successor(
-        &self,
-        predecessor: &mls_rs_core::identity::SigningIdentity,
-        successor: &mls_rs_core::identity::SigningIdentity,
-    ) -> Result<bool, X509IdentityError> {
-        self.identity_extractor
-            .valid_successor(
-                &credential_to_chain(&predecessor.credential)?,
-                &credential_to_chain(&successor.credential)?,
-            )
-            .map_err(|e| X509IdentityError::IdentityExtractorError(e.into_any_error()))
-    }
-
-    /// Supported credential types.
-    ///
-    /// Only [`CredentialType::X509`] is supported.
-    pub fn supported_types(&self) -> Vec<mls_rs_core::identity::CredentialType> {
-        vec![CredentialType::X509]
-    }
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -143,13 +109,44 @@ where
 {
     type Error = X509IdentityError;
 
+    /// Determine if a certificate is valid based on the behavior of the
+    /// underlying validator provided.
     async fn validate_member(
         &self,
         signing_identity: &mls_rs_core::identity::SigningIdentity,
-        timestamp: Option<MlsTime>,
-        _: MemberValidationContext<'_>,
-    ) -> Result<(), Self::Error> {
+        timestamp: Option<mls_rs_core::time::MlsTime>,
+        _context: MemberValidationContext<'_>,
+    ) -> Result<(), X509IdentityError> {
         self.validate(signing_identity, timestamp)
+    }
+
+    /// Produce a unique identity value to represent the entity controlling a
+    /// certificate credential within an MLS group.
+    async fn identity(
+        &self,
+        signing_id: &mls_rs_core::identity::SigningIdentity,
+        _extensions: &ExtensionList,
+    ) -> Result<Vec<u8>, X509IdentityError> {
+        self.identity_extractor
+            .identity(&credential_to_chain(&signing_id.credential)?)
+            .map_err(|e| X509IdentityError::IdentityExtractorError(e.into_any_error()))
+    }
+
+    /// Determine if `successor` is controlled by the same entity as
+    /// `predecessor` based on the behavior of the underlying identity
+    /// extractor provided.
+    async fn valid_successor(
+        &self,
+        predecessor: &mls_rs_core::identity::SigningIdentity,
+        successor: &mls_rs_core::identity::SigningIdentity,
+        _extensions: &ExtensionList,
+    ) -> Result<bool, X509IdentityError> {
+        self.identity_extractor
+            .valid_successor(
+                &credential_to_chain(&predecessor.credential)?,
+                &credential_to_chain(&successor.credential)?,
+            )
+            .map_err(|e| X509IdentityError::IdentityExtractorError(e.into_any_error()))
     }
 
     async fn validate_external_sender(
@@ -161,30 +158,17 @@ where
         self.validate(signing_identity, timestamp)
     }
 
-    async fn identity(
-        &self,
-        signing_id: &mls_rs_core::identity::SigningIdentity,
-        _extensions: &ExtensionList,
-    ) -> Result<Vec<u8>, Self::Error> {
-        self.identity(signing_id)
-    }
-
-    async fn valid_successor(
-        &self,
-        predecessor: &mls_rs_core::identity::SigningIdentity,
-        successor: &mls_rs_core::identity::SigningIdentity,
-        _extensions: &ExtensionList,
-    ) -> Result<bool, Self::Error> {
-        self.valid_successor(predecessor, successor)
-    }
-
+    /// Supported credential types.
+    ///
+    /// Only [`CredentialType::X509`] is supported.
     fn supported_types(&self) -> Vec<CredentialType> {
-        self.supported_types()
+        vec![CredentialType::X509]
     }
 }
 
 #[cfg(all(test, feature = "std"))]
 mod tests {
+    use super::*;
     use mls_rs_core::{crypto::SignaturePublicKey, identity::CredentialType, time::MlsTime};
 
     use crate::{
