@@ -106,7 +106,7 @@ getrandom = { version = "0.2", features = ["js", "custom"], default-features = f
 rand_core = { version = "0.6", default-features = false, features = ["alloc"] }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
-wasm-bindgen-test = { version = "=0.3.26", default-features = false }
+wasm-bindgen-test = { version = "=0.3", default-features = false }
 mls-rs-crypto-webcrypto = { path = "../mls-rs-crypto-webcrypto", version = "0.7.0" }
 criterion = { version = "0.5.1", default-features = false, features = ["plotters", "cargo_bench_support", "async_futures", "html_reports"] }
 
