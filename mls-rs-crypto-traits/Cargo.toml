@@ -15,7 +15,7 @@ default = ["std"]
 
 [dependencies]
 mls-rs-core = { path = "../mls-rs-core", version = "0.20.0", default-features = false }
-mockall = { version = "^0.11", optional = true }
+mockall = { version = "0.13", optional = true }
 maybe-async = "0.2.10"
 
 [target.'cfg(mls_build_async)'.dependencies]

@@ -17,7 +17,7 @@ test_utils = ["mls-rs-core/test_suite"]
 [dependencies]
 mls-rs-core = { path = "../mls-rs-core", default-features = false, version = "0.20.0" }
 mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", default-features = false, version = "0.12.0" }
-thiserror = { version = "1.0.40", optional = true }
+thiserror = { version = "2.0", optional = true }
 zeroize = { version = "1", default-features = false, features = ["alloc", "zeroize_derive"] }
 cfg-if = "^1"
 maybe-async = "0.2.10"
@@ -26,12 +26,12 @@ maybe-async = "0.2.10"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "^1.0" }
 assert_matches = "1.5.0"
-mockall = "0.12"
+mockall = "0.13"
 hex = { version = "^0.4.3", features = ["serde"] }
 mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", features = ["mock"], version = "0.12.0" }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
-wasm-bindgen-test = { version = "=0.3.26", default-features = false }
+wasm-bindgen-test = { version = "0.3", default-features = false }
 getrandom = { version = "0.2", features = ["js"] }
 
 [target.'cfg(mls_build_async)'.dependencies]

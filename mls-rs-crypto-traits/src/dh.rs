@@ -20,8 +20,8 @@ pub enum SamplingMethod {
 }
 
 /// A trait that provides the required DH functions, as in RFC 9180,Section 4.1
-#[cfg_attr(feature = "mock", automock(type Error = crate::mock::TestError;))]
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(feature = "mock", automock(type Error = crate::mock::TestError;))]
 #[cfg_attr(all(target_arch = "wasm32", mls_build_async), maybe_async::must_be_async(?Send))]
 #[cfg_attr(
     all(not(target_arch = "wasm32"), mls_build_async),
