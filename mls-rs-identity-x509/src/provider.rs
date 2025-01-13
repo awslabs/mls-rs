@@ -9,7 +9,7 @@ use mls_rs_core::{
     crypto::SignaturePublicKey,
     error::IntoAnyError,
     extension::ExtensionList,
-    identity::{CredentialType, IdentityProvider, MemberValidationContext},
+    identity::{CredentialType, IdentityProvider, MemberValidationContext, SigningIdentity},
     time::MlsTime,
 };
 
@@ -82,8 +82,8 @@ where
     /// underlying validator provided.
     fn validate(
         &self,
-        signing_identity: &mls_rs_core::identity::SigningIdentity,
-        timestamp: Option<mls_rs_core::time::MlsTime>,
+        signing_identity: &SigningIdentity,
+        timestamp: Option<MlsTime>,
     ) -> Result<(), X509IdentityError> {
         let chain = credential_to_chain(&signing_identity.credential)?;
 
@@ -113,8 +113,8 @@ where
     /// underlying validator provided.
     async fn validate_member(
         &self,
-        signing_identity: &mls_rs_core::identity::SigningIdentity,
-        timestamp: Option<mls_rs_core::time::MlsTime>,
+        signing_identity: &SigningIdentity,
+        timestamp: Option<MlsTime>,
         _context: MemberValidationContext<'_>,
     ) -> Result<(), X509IdentityError> {
         self.validate(signing_identity, timestamp)
@@ -124,7 +124,7 @@ where
     /// certificate credential within an MLS group.
     async fn identity(
         &self,
-        signing_id: &mls_rs_core::identity::SigningIdentity,
+        signing_id: &SigningIdentity,
         _extensions: &ExtensionList,
     ) -> Result<Vec<u8>, X509IdentityError> {
         self.identity_extractor
@@ -137,8 +137,8 @@ where
     /// extractor provided.
     async fn valid_successor(
         &self,
-        predecessor: &mls_rs_core::identity::SigningIdentity,
-        successor: &mls_rs_core::identity::SigningIdentity,
+        predecessor: &SigningIdentity,
+        successor: &SigningIdentity,
         _extensions: &ExtensionList,
     ) -> Result<bool, X509IdentityError> {
         self.identity_extractor
@@ -151,7 +151,7 @@ where
 
     async fn validate_external_sender(
         &self,
-        signing_identity: &mls_rs_core::identity::SigningIdentity,
+        signing_identity: &SigningIdentity,
         timestamp: Option<MlsTime>,
         _extensions: Option<&ExtensionList>,
     ) -> Result<(), Self::Error> {
