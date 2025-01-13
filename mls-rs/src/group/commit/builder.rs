@@ -52,9 +52,6 @@ use crate::group::{
     PendingCommitSnapshot, Welcome,
 };
 
-#[cfg(not(feature = "by_ref_proposal"))]
-use crate::group::proposal_cache::prepare_commit;
-
 #[cfg(feature = "custom_proposal")]
 use crate::group::proposal::CustomProposal;
 

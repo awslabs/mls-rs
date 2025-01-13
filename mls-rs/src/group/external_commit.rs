@@ -3,9 +3,7 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use mls_rs_core::{
-    crypto::{CryptoProvider, SignatureSecretKey},
-    extension::ExtensionList,
-    identity::SigningIdentity,
+    crypto::SignatureSecretKey, extension::ExtensionList, identity::SigningIdentity,
     protocol_version::ProtocolVersion,
 };
 
@@ -59,7 +57,6 @@ pub struct ExternalCommitBuilder<C: ClientConfig> {
     received_custom_proposals: Vec<PublicMessage>,
     proposals: ProposalBundle,
     group_info: GroupInfo,
-    cipher_suite: <<C as ClientConfig>::CryptoProvider as CryptoProvider>::CipherSuiteProvider,
     protocol_version: ProtocolVersion,
     init_secret: InitSecret,
 }
@@ -106,7 +103,6 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
             received_custom_proposals: Vec::new(),
             proposals: Default::default(),
             group_info,
-            cipher_suite,
             protocol_version,
             init_secret,
         };
@@ -143,11 +139,15 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
     }
 
     #[cfg(feature = "psk")]
-    #[must_use]
     /// Add an external psk to the group as part of the external commit.
     pub fn with_external_psk(self, psk: ExternalPskId) -> Result<Self, MlsError> {
+        let cipher_suite = cipher_suite_provider(
+            self.config.crypto_provider(),
+            self.group_info.group_context.cipher_suite,
+        )?;
+
         let key_id = JustPreSharedKeyID::External(psk);
-        let psk = PreSharedKeyID::new(key_id, &self.cipher_suite)?;
+        let psk = PreSharedKeyID::new(key_id, &cipher_suite)?;
         let proposal = Proposal::Psk(PreSharedKeyProposal { psk });
         Ok(self.with_proposal(proposal))
     }
@@ -160,7 +160,6 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
     }
 
     #[cfg(all(feature = "custom_proposal", feature = "by_ref_proposal"))]
-    #[must_use]
     /// Insert a [`CustomProposal`] received from a current group member into the current
     /// commit that is being built.
     ///

@@ -35,6 +35,9 @@ use mls_rs_core::{
     psk::PreSharedKeyStorage,
 };
 
+#[cfg(not(any(mls_build_async, feature = "rayon")))]
+use itertools::Itertools;
+
 use crate::group::ExternalInit;
 
 #[cfg(feature = "psk")]

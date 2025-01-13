@@ -3937,18 +3937,6 @@ mod tests {
     #[cfg(feature = "custom_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn custom_proposal_by_value_in_external_join_may_be_allowed() {
-        test_custom_proposal_by_value_in_external_join(true).await
-    }
-
-    #[cfg(feature = "custom_proposal")]
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn custom_proposal_by_value_in_external_join_may_not_be_allowed() {
-        test_custom_proposal_by_value_in_external_join(false).await
-    }
-
-    #[cfg(feature = "custom_proposal")]
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn test_custom_proposal_by_value_in_external_join(external_joiner_can_send_custom: bool) {
         let mls_rules = CustomMlsRules {
             path_required_for_custom: true,
         };
@@ -3973,12 +3961,8 @@ mod tests {
             .build()
             .await;
 
-        if external_joiner_can_send_custom {
-            let commit = commit.unwrap().1;
-            alice.process_incoming_message(commit).await.unwrap();
-        } else {
-            assert_matches!(commit.map(|_| ()), Err(MlsError::MlsRulesError(_)));
-        }
+        let commit = commit.unwrap().1;
+        alice.process_incoming_message(commit).await.unwrap();
     }
 
     #[cfg(feature = "custom_proposal")]

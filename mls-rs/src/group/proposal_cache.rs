@@ -13,14 +13,17 @@ use crate::{
     client::MlsError,
     group::{
         proposal_filter::{ProposalApplier, ProposalBundle, ProposalSource},
-        Proposal, Sender,
+        Sender,
     },
     time::MlsTime,
 };
 
 #[cfg(feature = "by_ref_proposal")]
 use crate::{
-    group::{message_hash::MessageHash, ProposalMessageDescription, ProposalRef, ProtocolVersion},
+    group::{
+        message_hash::MessageHash, Proposal, ProposalMessageDescription, ProposalRef,
+        ProtocolVersion,
+    },
     MlsMessage,
 };
 
@@ -227,7 +230,8 @@ impl GroupState {
         identity_provider: &C,
         cipher_suite_provider: &CSP,
         commit_time: Option<MlsTime>,
-        direction: CommitDirection,
+        #[cfg(feature = "by_ref_proposal")] direction: CommitDirection,
+        #[cfg(not(feature = "by_ref_proposal"))] _: CommitDirection,
         psk_storage: &PSK,
         sender: &CommitSource,
     ) -> Result<ProvisionalState, MlsError>
@@ -3565,27 +3569,26 @@ mod tests {
 
     #[cfg(feature = "custom_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn sending_custom_proposal_with_member_not_supporting_filters_it_out() {
+    async fn sending_custom_proposal_with_member_not_supporting_fails() {
         let (alice, tree) = new_tree("alice").await;
 
         let custom_proposal = Proposal::Custom(CustomProposal::new(ProposalType::new(42), vec![]));
 
         let custom_info = make_proposal_info(&custom_proposal, alice).await;
 
-        let processed_proposals =
-            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
-                .cache(
-                    custom_info.proposal_ref().unwrap().clone(),
-                    custom_proposal.clone(),
-                    alice,
-                )
-                .send()
-                .await
-                .unwrap();
+        let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+            .cache(
+                custom_info.proposal_ref().unwrap().clone(),
+                custom_proposal.clone(),
+                alice,
+            )
+            .send()
+            .await;
 
-        assert_eq!(processed_proposals.0, Vec::new());
-
-        assert_eq!(processed_proposals.1.unused_proposals, vec![custom_info]);
+        assert_matches!(
+            res,
+            Err(MlsError::UnsupportedCustomProposal(c)) if c == custom_proposal.proposal_type()
+        );
     }
 
     #[cfg(feature = "custom_proposal")]
