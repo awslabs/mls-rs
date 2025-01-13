@@ -2456,8 +2456,8 @@ mod tests {
             group.group.signer,
             signing_identity,
             group.group.config,
+            info_msg,
         )
-        .build(info_msg)
         .await
         .map(|_| {});
 
@@ -2483,9 +2483,10 @@ mod tests {
             test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
 
         test_client
-            .external_commit_builder()
+            .external_commit_builder(commit_output.external_commit_group_info.unwrap())
+            .await
             .unwrap()
-            .build(commit_output.external_commit_group_info.unwrap())
+            .build()
             .await
             .unwrap();
     }
@@ -2591,14 +2592,15 @@ mod tests {
             .build();
 
         let (bob_group, commit) = bob
-            .external_commit_builder()
-            .unwrap()
-            .build(
+            .external_commit_builder(
                 alice_group
                     .group_info_message_allowing_ext_commit(true)
                     .await
                     .unwrap(),
             )
+            .await
+            .unwrap()
+            .build()
             .await
             .unwrap();
 
@@ -2637,15 +2639,16 @@ mod tests {
             .build();
 
         let (_, commit) = bob
-            .external_commit_builder()
-            .unwrap()
-            .with_tree_data(alice_group.export_tree().into_owned())
-            .build(
+            .external_commit_builder(
                 alice_group
                     .group_info_message_allowing_ext_commit(false)
                     .await
                     .unwrap(),
             )
+            .await
+            .unwrap()
+            .with_tree_data(alice_group.export_tree().into_owned())
+            .build()
             .await
             .unwrap();
 
@@ -3972,10 +3975,11 @@ mod tests {
 
         let commit = client_with_custom_rules(b"bob", mls_rules)
             .await
-            .external_commit_builder()
+            .external_commit_builder(group_info)
+            .await
             .unwrap()
             .with_custom_proposal(CustomProposal::new(TEST_CUSTOM_PROPOSAL_TYPE, vec![]))
-            .build(group_info)
+            .build()
             .await;
 
         if external_joiner_can_send_custom {
@@ -4010,10 +4014,12 @@ mod tests {
 
         let (_, commit) = client_with_custom_rules(b"bob", mls_rules)
             .await
-            .external_commit_builder()
+            .external_commit_builder(group_info)
+            .await
             .unwrap()
             .with_received_custom_proposal(by_ref)
-            .build(group_info)
+            .unwrap()
+            .build()
             .await
             .unwrap();
 

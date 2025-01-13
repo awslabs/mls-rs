@@ -512,9 +512,10 @@ async fn external_commits_work(
             .unwrap();
 
         let (new_group, commit) = client
-            .external_commit_builder()
+            .external_commit_builder(group_info)
+            .await
             .unwrap()
-            .build(group_info)
+            .build()
             .await
             .unwrap();
 

@@ -358,7 +358,10 @@ impl MlsClient for MlsClientImpl {
             None
         };
 
-        let mut builder = client.client.external_commit_builder().map_err(abort)?;
+        let mut builder = client
+            .client
+            .external_commit_builder(group_info)
+            .map_err(abort)?;
 
         if let Some(tree) = tree {
             builder = builder.with_tree_data(tree.clone());
@@ -368,7 +371,7 @@ impl MlsClient for MlsClientImpl {
             builder = builder.with_removal(removed_index);
         }
 
-        let (group, commit) = builder.build(group_info.clone()).map_err(abort)?;
+        let (group, commit) = builder.build().map_err(abort)?;
 
         let epoch_authenticator = group.epoch_authenticator().map_err(abort)?.to_vec();
 

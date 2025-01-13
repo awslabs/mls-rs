@@ -145,11 +145,7 @@ impl ProposalCache {
         Ok(())
     }
 
-    pub fn prepare_commit(
-        &self,
-        sender: Sender,
-        additional_proposals: Vec<Proposal>,
-    ) -> ProposalBundle {
+    pub fn prepare_commit(&self) -> ProposalBundle {
         self.proposals
             .iter()
             .map(|(r, p)| {
@@ -159,11 +155,6 @@ impl ProposalCache {
                     ProposalSource::ByReference(r.clone()),
                 )
             })
-            .chain(
-                additional_proposals
-                    .into_iter()
-                    .map(|p| (p, sender, ProposalSource::ByValue)),
-            )
             .collect()
     }
 
@@ -210,20 +201,6 @@ impl ProposalCache {
 
         Ok(self.own_proposals.get(&message_hash).cloned())
     }
-}
-
-#[cfg(not(feature = "by_ref_proposal"))]
-pub(crate) fn prepare_commit(
-    sender: Sender,
-    additional_proposals: Vec<Proposal>,
-) -> ProposalBundle {
-    let mut proposals = ProposalBundle::default();
-
-    for p in additional_proposals.into_iter() {
-        proposals.add(p, sender, ProposalSource::ByValue);
-    }
-
-    proposals
 }
 
 #[cfg(not(feature = "by_ref_proposal"))]
@@ -382,7 +359,7 @@ pub(crate) mod test_utils {
             GroupContext, LeafIndex, LeafNode, ProvisionalState, Sender, TreeKemPublic,
         },
         identity::{basic::BasicIdentityProvider, test_utils::BasicWithCustomProvider},
-        mls_rules::CommitSource,
+        mls_rules::{CommitSource, ProposalSource},
         psk::AlwaysFoundPskStorage,
     };
 
@@ -619,7 +596,14 @@ pub(crate) mod test_utils {
                 ConfirmationTag::empty(cipher_suite_provider).await,
             );
 
-            let proposals = self.prepare_commit(sender, additional_proposals);
+            let proposals =
+                additional_proposals
+                    .into_iter()
+                    .fold(self.prepare_commit(), |mut proposals, p| {
+                        proposals.add(p, sender, ProposalSource::ByValue);
+                        proposals
+                    });
+
             let committer = CommitSource::new(&sender, public_tree, external_leaf)?;
 
             state

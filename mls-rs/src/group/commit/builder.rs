@@ -8,6 +8,7 @@ use alloc::{vec, vec::Vec};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::{crypto::SignatureSecretKey, error::IntoAnyError};
 
+use crate::mls_rules::{ProposalBundle, ProposalSource};
 use crate::{
     cipher_suite::CipherSuite,
     client::MlsError,
@@ -172,12 +173,13 @@ where
     C: ClientConfig + Clone,
 {
     group: &'a mut Group<C>,
-    pub(super) proposals: Vec<Proposal>,
+    proposals: ProposalBundle,
     authenticated_data: Vec<u8>,
     group_info_extensions: ExtensionList,
     new_signer: Option<SignatureSecretKey>,
     new_signing_identity: Option<SigningIdentity>,
     new_leaf_node_extensions: Option<ExtensionList>,
+    sender: Sender,
 }
 
 impl<'a, C> CommitBuilder<'a, C>
@@ -186,10 +188,9 @@ where
 {
     /// Insert an [`AddProposal`](crate::group::proposal::AddProposal) into
     /// the current commit that is being built.
-    pub fn add_member(mut self, key_package: MlsMessage) -> Result<CommitBuilder<'a, C>, MlsError> {
+    pub fn add_member(self, key_package: MlsMessage) -> Result<CommitBuilder<'a, C>, MlsError> {
         let proposal = self.group.add_proposal(key_package)?;
-        self.proposals.push(proposal);
-        Ok(self)
+        Ok(self.with_proposal(proposal))
     }
 
     /// Set group info extensions that will be inserted into the resulting
@@ -211,30 +212,27 @@ where
 
     /// Insert a [`RemoveProposal`](crate::group::proposal::RemoveProposal) into
     /// the current commit that is being built.
-    pub fn remove_member(mut self, index: u32) -> Result<Self, MlsError> {
+    pub fn remove_member(self, index: u32) -> Result<Self, MlsError> {
         let proposal = self.group.remove_proposal(index)?;
-        self.proposals.push(proposal);
-        Ok(self)
+        Ok(self.with_proposal(proposal))
     }
 
     /// Insert a
     /// [`GroupContextExtensions`](crate::group::proposal::Proposal::GroupContextExtensions)
     /// into the current commit that is being built.
-    pub fn set_group_context_ext(mut self, extensions: ExtensionList) -> Result<Self, MlsError> {
+    pub fn set_group_context_ext(self, extensions: ExtensionList) -> Result<Self, MlsError> {
         let proposal = self.group.group_context_extensions_proposal(extensions);
-        self.proposals.push(proposal);
-        Ok(self)
+        Ok(self.with_proposal(proposal))
     }
 
     /// Insert a
     /// [`PreSharedKeyProposal`](crate::group::proposal::PreSharedKeyProposal) with
     /// an external PSK into the current commit that is being built.
     #[cfg(feature = "psk")]
-    pub fn add_external_psk(mut self, psk_id: ExternalPskId) -> Result<Self, MlsError> {
+    pub fn add_external_psk(self, psk_id: ExternalPskId) -> Result<Self, MlsError> {
         let key_id = JustPreSharedKeyID::External(psk_id);
         let proposal = self.group.psk_proposal(key_id)?;
-        self.proposals.push(proposal);
-        Ok(self)
+        Ok(self.with_proposal(proposal))
     }
 
     /// Insert a
@@ -251,7 +249,7 @@ where
     /// a resumption PSK into the current commit that is being built.
     #[cfg(feature = "psk")]
     pub fn add_resumption_psk_for_group(
-        mut self,
+        self,
         psk_epoch: u64,
         group_id: Vec<u8>,
     ) -> Result<Self, MlsError> {
@@ -263,14 +261,13 @@ where
 
         let key_id = JustPreSharedKeyID::Resumption(psk_id);
         let proposal = self.group.psk_proposal(key_id)?;
-        self.proposals.push(proposal);
-        Ok(self)
+        Ok(self.with_proposal(proposal))
     }
 
     /// Insert a [`ReInitProposal`](crate::group::proposal::ReInitProposal) into
     /// the current commit that is being built.
     pub fn reinit(
-        mut self,
+        self,
         group_id: Option<Vec<u8>>,
         version: ProtocolVersion,
         cipher_suite: CipherSuite,
@@ -280,31 +277,34 @@ where
             .group
             .reinit_proposal(group_id, version, cipher_suite, extensions)?;
 
-        self.proposals.push(proposal);
-        Ok(self)
+        Ok(self.with_proposal(proposal))
     }
 
     /// Insert a [`CustomProposal`](crate::group::proposal::CustomProposal) into
     /// the current commit that is being built.
     #[cfg(feature = "custom_proposal")]
-    pub fn custom_proposal(mut self, proposal: CustomProposal) -> Self {
-        self.proposals.push(Proposal::Custom(proposal));
-        self
+    pub fn custom_proposal(self, proposal: CustomProposal) -> Self {
+        self.with_proposal(Proposal::Custom(proposal))
     }
 
     /// Insert a proposal that was previously constructed such as when a
     /// proposal is returned from
     /// [`NewEpoch::unused_proposals`](super::NewEpoch::unused_proposals).
-    pub fn raw_proposal(mut self, proposal: Proposal) -> Self {
-        self.proposals.push(proposal);
-        self
+    pub fn raw_proposal(self, proposal: Proposal) -> Self {
+        self.with_proposal(proposal)
     }
 
     /// Insert proposals that were previously constructed such as when a
     /// proposal is returned from
     /// [`NewEpoch::unused_proposals`](super::NewEpoch::unused_proposals).
-    pub fn raw_proposals(mut self, mut proposals: Vec<Proposal>) -> Self {
-        self.proposals.append(&mut proposals);
+    pub fn raw_proposals(self, proposals: Vec<Proposal>) -> Self {
+        proposals.into_iter().fold(self, |b, p| b.with_proposal(p))
+    }
+
+    fn with_proposal(mut self, proposal: Proposal) -> Self {
+        self.proposals
+            .add(proposal, self.sender, ProposalSource::ByValue);
+
         self
     }
 
@@ -347,6 +347,10 @@ where
         }
     }
 
+    pub fn proposals(&self) -> &ProposalBundle {
+        &self.proposals
+    }
+
     /// Finalize the commit to send.
     ///
     /// # Errors
@@ -367,6 +371,7 @@ where
                 self.new_signer,
                 self.new_signing_identity,
                 self.new_leaf_node_extensions,
+                self.sender,
             )
             .await?;
 
@@ -391,6 +396,7 @@ where
                 self.new_signer,
                 self.new_signing_identity,
                 self.new_leaf_node_extensions,
+                self.sender,
             )
             .await?;
 
@@ -474,8 +480,12 @@ where
     /// by-value.
     pub fn commit_builder(&mut self) -> CommitBuilder<C> {
         CommitBuilder {
-            group: self,
+            #[cfg(feature = "by_ref_proposal")]
+            proposals: self.state.proposals.prepare_commit(),
+            #[cfg(not(feature = "by_ref_proposal"))]
             proposals: Default::default(),
+            sender: Sender::Member(*self.private_tree.self_index),
+            group: self,
             authenticated_data: Default::default(),
             group_info_extensions: Default::default(),
             new_signer: Default::default(),
@@ -490,13 +500,14 @@ where
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn commit_internal(
         &mut self,
-        proposals: Vec<Proposal>,
+        proposals: ProposalBundle,
         external_leaf: Option<&LeafNode>,
         authenticated_data: Vec<u8>,
         mut welcome_group_info_extensions: ExtensionList,
         new_signer: Option<SignatureSecretKey>,
         new_signing_identity: Option<SigningIdentity>,
         new_leaf_node_extensions: Option<ExtensionList>,
+        sender: Sender,
     ) -> Result<(CommitOutput, PendingCommit), MlsError> {
         if !self.pending_commit.is_none() {
             return Err(MlsError::ExistingPendingCommit);
@@ -513,12 +524,6 @@ where
         // Construct an initial Commit object with the proposals field populated from Proposals
         // received during the current epoch, and an empty path field. Add passed in proposals
         // by value
-        let sender = if is_external {
-            Sender::NewMemberCommit
-        } else {
-            Sender::Member(*self.private_tree.self_index)
-        };
-
         let new_signer = new_signer.unwrap_or_else(|| self.signer.clone());
         let old_signer = &self.signer;
 
@@ -527,12 +532,6 @@ where
 
         #[cfg(not(feature = "std"))]
         let time = None;
-
-        #[cfg(feature = "by_ref_proposal")]
-        let proposals = self.state.proposals.prepare_commit(sender, proposals);
-
-        #[cfg(not(feature = "by_ref_proposal"))]
-        let proposals = prepare_commit(sender, proposals);
 
         let committer = CommitSource::new(&sender, &self.state.public_tree, external_leaf)?;
 
