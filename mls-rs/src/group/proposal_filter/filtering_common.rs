@@ -554,3 +554,23 @@ async fn insert_external_leaf<I: IdentityProvider>(
     tree.add_leaf(leaf_node, identity_provider, extensions, None)
         .await
 }
+
+#[cfg(feature = "custom_proposal")]
+pub fn filter_out_unsupported_custom_proposals(
+    proposals: &ProposalBundle,
+    tree: &TreeKemPublic,
+) -> Result<(), MlsError> {
+    let supported_types = proposals
+        .custom_proposal_types()
+        .filter(|t| tree.can_support_proposal(*t))
+        .collect::<Vec<_>>();
+
+    proposals
+        .custom_proposal_types()
+        .try_for_each(|proposal_type| {
+            supported_types
+                .contains(&proposal_type)
+                .then_some(())
+                .ok_or(MlsError::UnsupportedCustomProposal(proposal_type))
+        })
+}

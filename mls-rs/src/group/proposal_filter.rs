@@ -18,3 +18,6 @@ pub(crate) use filtering_common::ProposalApplier;
 
 #[cfg(all(feature = "by_ref_proposal", test))]
 pub(crate) use filtering::proposer_can_propose;
+
+#[cfg(feature = "custom_proposal")]
+pub(crate) use filtering_common::filter_out_unsupported_custom_proposals;

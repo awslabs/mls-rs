@@ -16,7 +16,6 @@ use crate::{
     tree_kem::{
         leaf_node_validator::{LeafNodeValidator, ValidationContext},
         node::LeafIndex,
-        TreeKemPublic,
     },
     CipherSuiteProvider, ExtensionList,
 };
@@ -35,12 +34,6 @@ use mls_rs_core::{
     identity::{IdentityProvider, MemberValidationContext},
     psk::PreSharedKeyStorage,
 };
-
-#[cfg(any(
-    feature = "custom_proposal",
-    not(any(mls_build_async, feature = "rayon"))
-))]
-use itertools::Itertools;
 
 use crate::group::ExternalInit;
 
@@ -582,29 +575,4 @@ fn leaf_index_of_update_sender(p: &ProposalInfo<UpdateProposal>) -> Result<LeafI
         Sender::Member(i) => Ok(LeafIndex(i)),
         _ => Err(MlsError::InvalidProposalTypeForSender),
     }
-}
-
-#[cfg(feature = "custom_proposal")]
-pub(super) fn filter_out_unsupported_custom_proposals(
-    proposals: &mut ProposalBundle,
-    tree: &TreeKemPublic,
-    strategy: FilterStrategy,
-) -> Result<(), MlsError> {
-    let supported_types = proposals
-        .custom_proposal_types()
-        .filter(|t| tree.can_support_proposal(*t))
-        .collect_vec();
-
-    proposals.retain_custom(|p| {
-        let proposal_type = p.proposal.proposal_type();
-
-        apply_strategy(
-            strategy,
-            p.is_by_reference(),
-            supported_types
-                .contains(&proposal_type)
-                .then_some(())
-                .ok_or(MlsError::UnsupportedCustomProposal(proposal_type)),
-        )
-    })
 }

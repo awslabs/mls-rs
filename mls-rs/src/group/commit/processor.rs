@@ -5,7 +5,10 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
-use mls_rs_core::{group::ConfirmedTranscriptHash, time::MlsTime};
+use mls_rs_core::{
+    group::{ConfirmedTranscriptHash, GroupContext},
+    time::MlsTime,
+};
 
 use crate::{
     client_config::ClientConfig,
@@ -283,6 +286,10 @@ impl<C: ClientConfig> CommitProcessor<'_, C> {
 
     pub fn authenticated_data(&self) -> &[u8] {
         &self.0.authenticated_data
+    }
+
+    pub fn context(&self) -> &GroupContext {
+        self.0.processor.context()
     }
 }
 

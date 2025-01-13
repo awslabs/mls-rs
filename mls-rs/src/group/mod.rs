@@ -3898,7 +3898,6 @@ mod tests {
     async fn test_custom_proposal_mls_rules(path_required_for_custom: bool) {
         let mls_rules = CustomMlsRules {
             path_required_for_custom,
-            external_joiner_can_send_custom: true,
         };
 
         let mut alice = client_with_custom_rules(b"alice", mls_rules.clone())
@@ -3952,7 +3951,6 @@ mod tests {
     async fn test_custom_proposal_by_value_in_external_join(external_joiner_can_send_custom: bool) {
         let mls_rules = CustomMlsRules {
             path_required_for_custom: true,
-            external_joiner_can_send_custom,
         };
 
         let mut alice = client_with_custom_rules(b"alice", mls_rules.clone())
@@ -3988,7 +3986,6 @@ mod tests {
     async fn custom_proposal_by_ref_in_external_join() {
         let mls_rules = CustomMlsRules {
             path_required_for_custom: true,
-            external_joiner_can_send_custom: true,
         };
 
         let mut alice = client_with_custom_rules(b"alice", mls_rules.clone())
@@ -4040,7 +4037,6 @@ mod tests {
     #[derive(Debug, Clone)]
     struct CustomMlsRules {
         path_required_for_custom: bool,
-        external_joiner_can_send_custom: bool,
     }
 
     #[cfg(feature = "custom_proposal")]

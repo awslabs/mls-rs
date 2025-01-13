@@ -355,6 +355,10 @@ where
         &mut self.proposals
     }
 
+    pub fn context(&self) -> &GroupContext {
+        self.group.context()
+    }
+
     /// Finalize the commit to send.
     ///
     /// # Errors

@@ -239,6 +239,12 @@ impl GroupState {
         #[cfg(feature = "by_ref_proposal")]
         let all_proposals = proposals.clone();
 
+        #[cfg(feature = "custom_proposal")]
+        crate::group::proposal_filter::filter_out_unsupported_custom_proposals(
+            &proposals,
+            &self.public_tree,
+        )?;
+
         let applier = ProposalApplier::new(
             &self.public_tree,
             cipher_suite_provider,
