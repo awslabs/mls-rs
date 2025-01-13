@@ -122,7 +122,6 @@ pub(crate) async fn process_commit<P: MessageProcessor>(
     let cs_provider = commit_processor.processor.cipher_suite_provider();
 
     // TODO remove
-    let user_rules = commit_processor.processor.mls_rules();
     let psk_storage = commit_processor.processor.psk_storage();
 
     let mut provisional_state = commit_processor
@@ -136,7 +135,6 @@ pub(crate) async fn process_commit<P: MessageProcessor>(
             commit_processor.time_sent,
             CommitDirection::Receive,
             &psk_storage,
-            &user_rules,
             &commit_processor.committer,
         )
         .await?;
@@ -260,6 +258,10 @@ impl<C: ClientConfig> CommitProcessor<'_, C> {
             time_sent: Some(time_sent),
             ..self.0
         })
+    }
+
+    pub fn proposals_mut(&mut self) -> &mut ProposalBundle {
+        &mut self.0.proposals
     }
 
     // Info

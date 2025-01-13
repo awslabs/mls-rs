@@ -351,6 +351,10 @@ where
         &self.proposals
     }
 
+    pub fn proposals_mut(&mut self) -> &mut ProposalBundle {
+        &mut self.proposals
+    }
+
     /// Finalize the commit to send.
     ///
     /// # Errors
@@ -545,7 +549,6 @@ where
                 time,
                 CommitDirection::Send,
                 &self.config.secret_store(),
-                &mls_rules,
                 &committer,
             )
             .await?;

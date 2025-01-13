@@ -6,8 +6,7 @@ use alloc::vec::Vec;
 
 use super::{
     message_processor::ProvisionalState,
-    mls_rules::{CommitDirection, CommitSource, MlsRules},
-    proposal_filter::prepare_proposals_for_mls_rules,
+    mls_rules::{CommitDirection, CommitSource},
     GroupState, ProposalOrRef,
 };
 use crate::{
@@ -31,8 +30,7 @@ use crate::tree_kem::leaf_node::LeafNode;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 
 use mls_rs_core::{
-    crypto::CipherSuiteProvider, error::IntoAnyError, identity::IdentityProvider,
-    psk::PreSharedKeyStorage,
+    crypto::CipherSuiteProvider, identity::IdentityProvider, psk::PreSharedKeyStorage,
 };
 
 #[cfg(feature = "by_ref_proposal")]
@@ -222,39 +220,24 @@ impl GroupState {
     #[inline(never)]
     #[allow(clippy::too_many_arguments)]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub(crate) async fn apply_resolved<C, F, PSK, CSP>(
+    pub(crate) async fn apply_resolved<C, PSK, CSP>(
         &self,
-        mut proposals: ProposalBundle,
+        proposals: ProposalBundle,
         external_leaf: Option<&LeafNode>,
         identity_provider: &C,
         cipher_suite_provider: &CSP,
         commit_time: Option<MlsTime>,
         direction: CommitDirection,
         psk_storage: &PSK,
-        user_rules: &F,
         sender: &CommitSource,
     ) -> Result<ProvisionalState, MlsError>
     where
         C: IdentityProvider,
         CSP: CipherSuiteProvider,
         PSK: PreSharedKeyStorage,
-        F: MlsRules,
     {
         #[cfg(feature = "by_ref_proposal")]
         let all_proposals = proposals.clone();
-
-        prepare_proposals_for_mls_rules(&mut proposals, direction, &self.public_tree)?;
-
-        proposals = user_rules
-            .filter_proposals(
-                direction,
-                sender.clone(),
-                &self.public_tree.roster(),
-                &self.context,
-                proposals,
-            )
-            .await
-            .map_err(|e| MlsError::MlsRulesError(e.into_any_error()))?;
 
         let applier = ProposalApplier::new(
             &self.public_tree,
@@ -351,7 +334,7 @@ pub(crate) mod test_utils {
         client::test_utils::TEST_PROTOCOL_VERSION,
         group::{
             confirmation_tag::ConfirmationTag,
-            mls_rules::{CommitDirection, DefaultMlsRules, MlsRules},
+            mls_rules::CommitDirection,
             proposal::{Proposal, ProposalOrRef},
             proposal_ref::ProposalRef,
             state::GroupState,
@@ -374,7 +357,7 @@ pub(crate) mod test_utils {
     }
 
     #[derive(Debug)]
-    pub(crate) struct CommitReceiver<'a, C, F, P, CSP> {
+    pub(crate) struct CommitReceiver<'a, C, P, CSP> {
         tree: &'a TreeKemPublic,
         sender: Sender,
         receiver: LeafIndex,
@@ -382,13 +365,10 @@ pub(crate) mod test_utils {
         identity_provider: C,
         cipher_suite_provider: CSP,
         group_context_extensions: ExtensionList,
-        user_rules: F,
         with_psk_storage: P,
     }
 
-    impl<'a, CSP>
-        CommitReceiver<'a, BasicWithCustomProvider, DefaultMlsRules, AlwaysFoundPskStorage, CSP>
-    {
+    impl<'a, CSP> CommitReceiver<'a, BasicWithCustomProvider, AlwaysFoundPskStorage, CSP> {
         pub fn new<S>(
             tree: &'a TreeKemPublic,
             sender: S,
@@ -405,22 +385,20 @@ pub(crate) mod test_utils {
                 cache: make_proposal_cache(),
                 identity_provider: BasicWithCustomProvider::new(BasicIdentityProvider),
                 group_context_extensions: Default::default(),
-                user_rules: pass_through_rules(),
                 with_psk_storage: AlwaysFoundPskStorage,
                 cipher_suite_provider,
             }
         }
     }
 
-    impl<'a, C, F, P, CSP> CommitReceiver<'a, C, F, P, CSP>
+    impl<'a, C, P, CSP> CommitReceiver<'a, C, P, CSP>
     where
         C: IdentityProvider,
-        F: MlsRules,
         P: PreSharedKeyStorage,
         CSP: CipherSuiteProvider,
     {
         #[cfg(feature = "by_ref_proposal")]
-        pub fn with_identity_provider<V>(self, validator: V) -> CommitReceiver<'a, V, F, P, CSP>
+        pub fn with_identity_provider<V>(self, validator: V) -> CommitReceiver<'a, V, P, CSP>
         where
             V: IdentityProvider,
         {
@@ -431,30 +409,12 @@ pub(crate) mod test_utils {
                 cache: self.cache,
                 identity_provider: validator,
                 group_context_extensions: self.group_context_extensions,
-                user_rules: self.user_rules,
                 with_psk_storage: self.with_psk_storage,
                 cipher_suite_provider: self.cipher_suite_provider,
             }
         }
 
-        pub fn with_user_rules<G>(self, f: G) -> CommitReceiver<'a, C, G, P, CSP>
-        where
-            G: MlsRules,
-        {
-            CommitReceiver {
-                tree: self.tree,
-                sender: self.sender,
-                receiver: self.receiver,
-                cache: self.cache,
-                identity_provider: self.identity_provider,
-                group_context_extensions: self.group_context_extensions,
-                user_rules: f,
-                with_psk_storage: self.with_psk_storage,
-                cipher_suite_provider: self.cipher_suite_provider,
-            }
-        }
-
-        pub fn with_psk_storage<V>(self, v: V) -> CommitReceiver<'a, C, F, V, CSP>
+        pub fn with_psk_storage<V>(self, v: V) -> CommitReceiver<'a, C, V, CSP>
         where
             V: PreSharedKeyStorage,
         {
@@ -465,7 +425,6 @@ pub(crate) mod test_utils {
                 cache: self.cache,
                 identity_provider: self.identity_provider,
                 group_context_extensions: self.group_context_extensions,
-                user_rules: self.user_rules,
                 with_psk_storage: v,
                 cipher_suite_provider: self.cipher_suite_provider,
             }
@@ -503,7 +462,6 @@ pub(crate) mod test_utils {
                     &self.cipher_suite_provider,
                     self.tree,
                     &self.with_psk_storage,
-                    &self.user_rules,
                 )
                 .await
         }
@@ -513,14 +471,10 @@ pub(crate) mod test_utils {
         ProposalCache::new(TEST_PROTOCOL_VERSION, TEST_GROUP.to_vec())
     }
 
-    pub fn pass_through_rules() -> DefaultMlsRules {
-        DefaultMlsRules::new()
-    }
-
     impl ProposalCache {
         #[allow(clippy::too_many_arguments)]
         #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-        pub async fn resolve_for_commit_default<C, F, P, CSP>(
+        pub async fn resolve_for_commit_default<C, P, CSP>(
             &self,
             sender: Sender,
             proposal_list: Vec<ProposalOrRef>,
@@ -530,11 +484,9 @@ pub(crate) mod test_utils {
             cipher_suite_provider: &CSP,
             public_tree: &TreeKemPublic,
             psk_storage: &P,
-            user_rules: F,
         ) -> Result<ProvisionalState, MlsError>
         where
             C: IdentityProvider,
-            F: MlsRules,
             P: PreSharedKeyStorage,
             CSP: CipherSuiteProvider,
         {
@@ -563,7 +515,6 @@ pub(crate) mod test_utils {
                     None,
                     CommitDirection::Receive,
                     psk_storage,
-                    &user_rules,
                     &committer,
                 )
                 .await
@@ -571,7 +522,7 @@ pub(crate) mod test_utils {
 
         #[allow(clippy::too_many_arguments)]
         #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-        pub async fn prepare_commit_default<C, F, P, CSP>(
+        pub async fn prepare_commit_default<C, P, CSP>(
             &self,
             sender: Sender,
             additional_proposals: Vec<Proposal>,
@@ -581,11 +532,9 @@ pub(crate) mod test_utils {
             public_tree: &TreeKemPublic,
             external_leaf: Option<&LeafNode>,
             psk_storage: &P,
-            user_rules: F,
         ) -> Result<ProvisionalState, MlsError>
         where
             C: IdentityProvider,
-            F: MlsRules,
             P: PreSharedKeyStorage,
             CSP: CipherSuiteProvider,
         {
@@ -615,7 +564,6 @@ pub(crate) mod test_utils {
                     None,
                     CommitDirection::Send,
                     psk_storage,
-                    &user_rules,
                     &committer,
                 )
                 .await
@@ -628,24 +576,24 @@ pub(crate) mod test_utils {
 mod tests {
     use alloc::{boxed::Box, vec, vec::Vec};
 
-    use super::test_utils::{make_proposal_cache, pass_through_rules, CommitReceiver};
+    use super::test_utils::{make_proposal_cache, CommitReceiver};
     use super::{CachedProposal, ProposalCache};
     use crate::client::test_utils::test_client_with_key_pkg;
     use crate::client::MlsError;
     use crate::group::message_processor::ProvisionalState;
-    use crate::group::mls_rules::{CommitDirection, CommitSource, EncryptionOptions};
     use crate::group::proposal_filter::{ProposalBundle, ProposalInfo, ProposalSource};
     use crate::group::proposal_ref::test_utils::auth_content_from_proposal;
     use crate::group::proposal_ref::ProposalRef;
     use crate::group::{
-        AddProposal, AuthenticatedContent, Content, ExternalInit, GroupContext, Proposal,
-        ProposalOrRef, ReInitProposal, RemoveProposal, Roster, Sender, UpdateProposal,
+        AddProposal, AuthenticatedContent, Content, ExternalInit, Proposal, ProposalOrRef,
+        ReInitProposal, RemoveProposal, Sender, UpdateProposal,
     };
     use crate::key_package::test_utils::test_key_package_with_signer;
     use crate::signer::Signable;
     use crate::tree_kem::leaf_node::LeafNode;
     use crate::tree_kem::node::LeafIndex;
     use crate::tree_kem::TreeKemPublic;
+    use crate::KeyPackage;
     use crate::{
         client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         crypto::{self, test_utils::test_cipher_suite_provider},
@@ -658,7 +606,6 @@ mod tests {
         identity::basic::BasicIdentityProvider,
         identity::test_utils::{get_test_signing_identity, BasicWithCustomProvider},
         key_package::test_utils::test_key_package,
-        mls_rules::{CommitOptions, DefaultMlsRules},
         psk::AlwaysFoundPskStorage,
         tree_kem::{
             leaf_node::{
@@ -671,7 +618,6 @@ mod tests {
             Lifetime,
         },
     };
-    use crate::{KeyPackage, MlsRules};
 
     use crate::extension::RequiredCapabilitiesExt;
 
@@ -990,7 +936,6 @@ mod tests {
                 &tree,
                 None,
                 &AlwaysFoundPskStorage,
-                pass_through_rules(),
             )
             .await
             .unwrap();
@@ -1029,7 +974,6 @@ mod tests {
                 &tree,
                 None,
                 &AlwaysFoundPskStorage,
-                pass_through_rules(),
             )
             .await
             .unwrap();
@@ -1079,7 +1023,6 @@ mod tests {
                 &tree,
                 None,
                 &AlwaysFoundPskStorage,
-                pass_through_rules(),
             )
             .await;
 
@@ -1113,7 +1056,6 @@ mod tests {
                 &tree,
                 None,
                 &AlwaysFoundPskStorage,
-                pass_through_rules(),
             )
             .await
             .unwrap();
@@ -1155,7 +1097,6 @@ mod tests {
                 &tree,
                 None,
                 &AlwaysFoundPskStorage,
-                pass_through_rules(),
             )
             .await
             .unwrap();
@@ -1199,7 +1140,6 @@ mod tests {
                 &tree,
                 None,
                 &AlwaysFoundPskStorage,
-                pass_through_rules(),
             )
             .await
             .unwrap();
@@ -1253,7 +1193,6 @@ mod tests {
                 &tree,
                 None,
                 &AlwaysFoundPskStorage,
-                pass_through_rules(),
             )
             .await
             .unwrap();
@@ -1273,7 +1212,6 @@ mod tests {
                 &cipher_suite_provider,
                 &tree,
                 &AlwaysFoundPskStorage,
-                pass_through_rules(),
             )
             .await
             .unwrap();
@@ -1304,7 +1242,6 @@ mod tests {
                 &tree,
                 None,
                 &AlwaysFoundPskStorage,
-                pass_through_rules(),
             )
             .await;
 
@@ -1352,7 +1289,6 @@ mod tests {
                 &cipher_suite_provider,
                 public_tree,
                 &AlwaysFoundPskStorage,
-                pass_through_rules(),
             )
             .await;
 
@@ -1390,7 +1326,6 @@ mod tests {
                 &cipher_suite_provider,
                 public_tree,
                 &AlwaysFoundPskStorage,
-                pass_through_rules(),
             )
             .await;
 
@@ -1423,7 +1358,6 @@ mod tests {
                 &cipher_suite_provider,
                 public_tree,
                 &AlwaysFoundPskStorage,
-                pass_through_rules(),
             )
             .await;
 
@@ -1457,7 +1391,6 @@ mod tests {
                 &cipher_suite_provider,
                 public_tree,
                 &AlwaysFoundPskStorage,
-                pass_through_rules(),
             )
             .await
     }
@@ -1524,7 +1457,6 @@ mod tests {
                 &cipher_suite_provider,
                 &public_tree,
                 &AlwaysFoundPskStorage,
-                pass_through_rules(),
             )
             .await;
 
@@ -1573,7 +1505,6 @@ mod tests {
                 &cipher_suite_provider,
                 &public_tree,
                 &AlwaysFoundPskStorage,
-                pass_through_rules(),
             )
             .await;
 
@@ -1622,7 +1553,6 @@ mod tests {
                 &cipher_suite_provider,
                 &public_tree,
                 &AlwaysFoundPskStorage,
-                pass_through_rules(),
             )
             .await;
 
@@ -1693,7 +1623,6 @@ mod tests {
                 &cipher_suite_provider,
                 public_tree,
                 &AlwaysFoundPskStorage,
-                pass_through_rules(),
             )
             .await;
 
@@ -1722,7 +1651,6 @@ mod tests {
                 &tree,
                 None,
                 &AlwaysFoundPskStorage,
-                pass_through_rules(),
             )
             .await
             .unwrap();
@@ -1757,7 +1685,6 @@ mod tests {
                 &tree,
                 None,
                 &AlwaysFoundPskStorage,
-                pass_through_rules(),
             )
             .await
             .unwrap();
@@ -1806,7 +1733,6 @@ mod tests {
                 &tree,
                 None,
                 &AlwaysFoundPskStorage,
-                pass_through_rules(),
             )
             .await
             .unwrap();
@@ -1843,7 +1769,6 @@ mod tests {
                 &tree,
                 None,
                 &AlwaysFoundPskStorage,
-                pass_through_rules(),
             )
             .await
             .unwrap();
@@ -1874,7 +1799,6 @@ mod tests {
                 &tree,
                 None,
                 &AlwaysFoundPskStorage,
-                pass_through_rules(),
             )
             .await
             .unwrap();
@@ -1883,20 +1807,17 @@ mod tests {
     }
 
     #[derive(Debug)]
-    struct CommitSender<'a, C, F, P, CSP> {
+    struct CommitSender<'a, C, P, CSP> {
         cipher_suite_provider: CSP,
         tree: &'a TreeKemPublic,
         sender: LeafIndex,
         cache: ProposalCache,
         additional_proposals: Vec<Proposal>,
         identity_provider: C,
-        user_rules: F,
         psk_storage: P,
     }
 
-    impl<'a, CSP>
-        CommitSender<'a, BasicWithCustomProvider, DefaultMlsRules, AlwaysFoundPskStorage, CSP>
-    {
+    impl<'a, CSP> CommitSender<'a, BasicWithCustomProvider, AlwaysFoundPskStorage, CSP> {
         fn new(tree: &'a TreeKemPublic, sender: LeafIndex, cipher_suite_provider: CSP) -> Self {
             Self {
                 tree,
@@ -1904,22 +1825,20 @@ mod tests {
                 cache: make_proposal_cache(),
                 additional_proposals: Vec::new(),
                 identity_provider: BasicWithCustomProvider::new(BasicIdentityProvider::new()),
-                user_rules: pass_through_rules(),
                 psk_storage: AlwaysFoundPskStorage,
                 cipher_suite_provider,
             }
         }
     }
 
-    impl<'a, C, F, P, CSP> CommitSender<'a, C, F, P, CSP>
+    impl<'a, C, P, CSP> CommitSender<'a, C, P, CSP>
     where
         C: IdentityProvider,
-        F: MlsRules,
         P: PreSharedKeyStorage,
         CSP: CipherSuiteProvider,
     {
         #[cfg(feature = "by_ref_proposal")]
-        fn with_identity_provider<V>(self, identity_provider: V) -> CommitSender<'a, V, F, P, CSP>
+        fn with_identity_provider<V>(self, identity_provider: V) -> CommitSender<'a, V, P, CSP>
         where
             V: IdentityProvider,
         {
@@ -1930,7 +1849,6 @@ mod tests {
                 sender: self.sender,
                 cache: self.cache,
                 additional_proposals: self.additional_proposals,
-                user_rules: self.user_rules,
                 psk_storage: self.psk_storage,
             }
         }
@@ -1951,23 +1869,7 @@ mod tests {
             self
         }
 
-        fn with_user_rules<G>(self, f: G) -> CommitSender<'a, C, G, P, CSP>
-        where
-            G: MlsRules,
-        {
-            CommitSender {
-                tree: self.tree,
-                sender: self.sender,
-                cache: self.cache,
-                additional_proposals: self.additional_proposals,
-                identity_provider: self.identity_provider,
-                user_rules: f,
-                psk_storage: self.psk_storage,
-                cipher_suite_provider: self.cipher_suite_provider,
-            }
-        }
-
-        fn with_psk_storage<V>(self, v: V) -> CommitSender<'a, C, F, V, CSP>
+        fn with_psk_storage<V>(self, v: V) -> CommitSender<'a, C, V, CSP>
         where
             V: PreSharedKeyStorage,
         {
@@ -1977,7 +1879,6 @@ mod tests {
                 cache: self.cache,
                 additional_proposals: self.additional_proposals,
                 identity_provider: self.identity_provider,
-                user_rules: self.user_rules,
                 psk_storage: v,
                 cipher_suite_provider: self.cipher_suite_provider,
             }
@@ -1996,7 +1897,6 @@ mod tests {
                     self.tree,
                     None,
                     &self.psk_storage,
-                    &self.user_rules,
                 )
                 .await?;
 
@@ -3834,252 +3734,6 @@ mod tests {
         assert_eq!(processed_proposals.0, Vec::new());
 
         assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
-    }
-
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn user_defined_filter_can_remove_proposals() {
-        struct RemoveGroupContextExtensions;
-
-        #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-        #[cfg_attr(mls_build_async, maybe_async::must_be_async)]
-        impl MlsRules for RemoveGroupContextExtensions {
-            type Error = Infallible;
-
-            async fn filter_proposals(
-                &self,
-                _: CommitDirection,
-                _: CommitSource,
-                _: &Roster,
-                _: &GroupContext,
-                mut proposals: ProposalBundle,
-            ) -> Result<ProposalBundle, Self::Error> {
-                proposals.group_context_extensions.clear();
-                Ok(proposals)
-            }
-
-            #[cfg_attr(coverage_nightly, coverage(off))]
-            fn commit_options(
-                &self,
-                _: &Roster,
-                _: &GroupContext,
-                _: &ProposalBundle,
-            ) -> Result<CommitOptions, Self::Error> {
-                Ok(Default::default())
-            }
-
-            #[cfg_attr(coverage_nightly, coverage(off))]
-            fn encryption_options(
-                &self,
-                _: &Roster,
-                _: &GroupContext,
-            ) -> Result<EncryptionOptions, Self::Error> {
-                Ok(Default::default())
-            }
-        }
-
-        let (alice, tree) = new_tree("alice").await;
-
-        let (committed, _) =
-            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
-                .with_additional([Proposal::GroupContextExtensions(Default::default())])
-                .with_user_rules(RemoveGroupContextExtensions)
-                .send()
-                .await
-                .unwrap();
-
-        assert_eq!(committed, Vec::new());
-    }
-
-    struct FailureMlsRules;
-
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    #[cfg_attr(mls_build_async, maybe_async::must_be_async)]
-    impl MlsRules for FailureMlsRules {
-        type Error = MlsError;
-
-        async fn filter_proposals(
-            &self,
-            _: CommitDirection,
-            _: CommitSource,
-            _: &Roster,
-            _: &GroupContext,
-            _: ProposalBundle,
-        ) -> Result<ProposalBundle, Self::Error> {
-            Err(MlsError::InvalidSignature)
-        }
-
-        #[cfg_attr(coverage_nightly, coverage(off))]
-        fn commit_options(
-            &self,
-            _: &Roster,
-            _: &GroupContext,
-            _: &ProposalBundle,
-        ) -> Result<CommitOptions, Self::Error> {
-            Ok(Default::default())
-        }
-
-        #[cfg_attr(coverage_nightly, coverage(off))]
-        fn encryption_options(
-            &self,
-            _: &Roster,
-            _: &GroupContext,
-        ) -> Result<EncryptionOptions, Self::Error> {
-            Ok(Default::default())
-        }
-    }
-
-    struct InjectMlsRules {
-        to_inject: Vec<Proposal>,
-        source: ProposalSource,
-    }
-
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    #[cfg_attr(mls_build_async, maybe_async::must_be_async)]
-    impl MlsRules for InjectMlsRules {
-        type Error = MlsError;
-
-        async fn filter_proposals(
-            &self,
-            _: CommitDirection,
-            _: CommitSource,
-            _: &Roster,
-            _: &GroupContext,
-            mut proposals: ProposalBundle,
-        ) -> Result<ProposalBundle, Self::Error> {
-            for proposal in self.to_inject.iter().cloned() {
-                proposals.add(proposal, Sender::Member(0), self.source.clone());
-            }
-
-            Ok(proposals)
-        }
-
-        #[cfg_attr(coverage_nightly, coverage(off))]
-        fn commit_options(
-            &self,
-            _: &Roster,
-            _: &GroupContext,
-            _: &ProposalBundle,
-        ) -> Result<CommitOptions, Self::Error> {
-            Ok(Default::default())
-        }
-
-        #[cfg_attr(coverage_nightly, coverage(off))]
-        fn encryption_options(
-            &self,
-            _: &Roster,
-            _: &GroupContext,
-        ) -> Result<EncryptionOptions, Self::Error> {
-            Ok(Default::default())
-        }
-    }
-
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn user_defined_filter_can_inject_proposals() {
-        let (alice, tree) = new_tree("alice").await;
-
-        let test_proposal = Proposal::GroupContextExtensions(Default::default());
-
-        let (committed, _) =
-            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
-                .with_user_rules(InjectMlsRules {
-                    to_inject: vec![test_proposal.clone()],
-                    source: ProposalSource::ByValue,
-                })
-                .send()
-                .await
-                .unwrap();
-
-        assert_eq!(
-            committed,
-            vec![ProposalOrRef::Proposal(test_proposal.into())]
-        );
-    }
-
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn user_defined_filter_can_inject_local_only_proposals() {
-        let (alice, tree) = new_tree("alice").await;
-
-        let test_proposal = Proposal::GroupContextExtensions(Default::default());
-
-        let (committed, _) =
-            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
-                .with_user_rules(InjectMlsRules {
-                    to_inject: vec![test_proposal.clone()],
-                    source: ProposalSource::Local,
-                })
-                .send()
-                .await
-                .unwrap();
-
-        assert_eq!(committed, vec![]);
-    }
-
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn user_defined_filter_cant_break_base_rules() {
-        let (alice, tree) = new_tree("alice").await;
-
-        let test_proposal = Proposal::Update(UpdateProposal {
-            leaf_node: get_basic_test_node(TEST_CIPHER_SUITE, "leaf").await,
-        });
-
-        let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
-            .with_user_rules(InjectMlsRules {
-                to_inject: vec![test_proposal.clone()],
-                source: ProposalSource::ByValue,
-            })
-            .send()
-            .await;
-
-        assert_matches!(res, Err(MlsError::InvalidProposalTypeForSender { .. }))
-    }
-
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn sending_invalid_local_proposal_fails() {
-        let (alice, tree) = new_tree("alice").await;
-        let gce_proposal = Proposal::GroupContextExtensions(Default::default());
-
-        let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
-            .with_user_rules(InjectMlsRules {
-                to_inject: vec![gce_proposal.clone(), gce_proposal],
-                source: ProposalSource::Local,
-            })
-            .send()
-            .await;
-
-        assert_matches!(
-            res,
-            Err(MlsError::MoreThanOneGroupContextExtensionsProposal)
-        );
-    }
-
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn user_defined_filter_can_refuse_to_send_commit() {
-        let (alice, tree) = new_tree("alice").await;
-
-        let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
-            .with_additional([Proposal::GroupContextExtensions(Default::default())])
-            .with_user_rules(FailureMlsRules)
-            .send()
-            .await;
-
-        assert_matches!(res, Err(MlsError::MlsRulesError(_)));
-    }
-
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn user_defined_filter_can_reject_incoming_commit() {
-        let (alice, tree) = new_tree("alice").await;
-
-        let res = CommitReceiver::new(
-            &tree,
-            alice,
-            alice,
-            test_cipher_suite_provider(TEST_CIPHER_SUITE),
-        )
-        .with_user_rules(FailureMlsRules)
-        .receive([Proposal::GroupContextExtensions(Default::default())])
-        .await;
-
-        assert_matches!(res, Err(MlsError::MlsRulesError(_)));
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]

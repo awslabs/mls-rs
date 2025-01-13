@@ -14,7 +14,7 @@ use filtering_lite as filtering;
 
 pub use bundle::{ProposalBundle, ProposalInfo, ProposalSource};
 
-pub(crate) use filtering_common::{prepare_proposals_for_mls_rules, ProposalApplier};
+pub(crate) use filtering_common::ProposalApplier;
 
 #[cfg(all(feature = "by_ref_proposal", test))]
 pub(crate) use filtering::proposer_can_propose;

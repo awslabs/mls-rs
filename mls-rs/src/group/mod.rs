@@ -1803,10 +1803,6 @@ where
         Ok(())
     }
 
-    fn mls_rules(&self) -> Self::MlsRules {
-        self.config.mls_rules()
-    }
-
     fn identity_provider(&self) -> Self::IdentityProvider {
         self.config.identity_provider()
     }
@@ -1870,10 +1866,7 @@ mod tests {
     use crate::{
         client::test_utils::{test_client_with_key_pkg_custom, TEST_CUSTOM_PROPOSAL_TYPE},
         client_builder::{ClientBuilder, MlsConfig},
-        group::{
-            mls_rules::{CommitDirection, CommitSource},
-            proposal_filter::ProposalBundle,
-        },
+        group::proposal_filter::ProposalBundle,
         identity::basic::BasicIdentityProvider,
         identity::test_utils::BasicWithCustomProvider,
     };
@@ -4081,21 +4074,6 @@ mod tests {
             _: &GroupContext,
         ) -> Result<crate::mls_rules::EncryptionOptions, MlsError> {
             Ok(Default::default())
-        }
-
-        async fn filter_proposals(
-            &self,
-            _: CommitDirection,
-            sender: CommitSource,
-            _: &Roster,
-            _: &GroupContext,
-            proposals: ProposalBundle,
-        ) -> Result<ProposalBundle, MlsError> {
-            let is_external = matches!(sender, CommitSource::NewMember(_));
-            let has_custom = proposals.has_test_custom_proposal();
-            let allowed = !has_custom || !is_external || self.external_joiner_can_send_custom;
-
-            allowed.then_some(proposals).ok_or(MlsError::InvalidSender)
         }
     }
 

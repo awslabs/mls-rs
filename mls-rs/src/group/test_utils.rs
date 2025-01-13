@@ -429,10 +429,6 @@ impl MessageProcessor for GroupWithoutKeySchedule {
         self.inner.group_state_mut()
     }
 
-    fn mls_rules(&self) -> Self::MlsRules {
-        self.inner.mls_rules()
-    }
-
     fn identity_provider(&self) -> Self::IdentityProvider {
         self.inner.identity_provider()
     }
