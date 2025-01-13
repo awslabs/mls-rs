@@ -1036,7 +1036,7 @@ mod tests {
         }
 
         if with_psk {
-            builder = builder.with_external_psk(psk_id).await.unwrap();
+            builder = builder.with_external_psk(psk_id).unwrap();
         }
 
         let (new_group, external_commit) = builder.build().await?;
