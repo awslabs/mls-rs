@@ -32,14 +32,14 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 #[cfg(feature = "psk")]
-use mls_rs_core::psk::{ExternalPskId, PreSharedKey};
+use crate::psk::{secret::PskSecretInput, ExternalPskId, PreSharedKey};
 
 #[cfg(feature = "psk")]
 use crate::group::{
     PreSharedKeyProposal, {JustPreSharedKeyID, PreSharedKeyID},
 };
 
-use super::{validate_tree_and_info_joiner, ExportedTree, PskSecretInput, GroupInfo, Sender};
+use super::{validate_tree_and_info_joiner, ExportedTree};
 
 /// A builder that aids with the construction of an external commit.
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::ffi_type(opaque))]

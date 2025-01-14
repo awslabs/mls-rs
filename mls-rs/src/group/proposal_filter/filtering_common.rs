@@ -85,6 +85,7 @@ where
             original_context,
             external_leaf,
             identity_provider,
+            #[cfg(feature = "psk")]
             psks,
         }
     }
@@ -440,15 +441,13 @@ where
 
 #[cfg(not(feature = "psk"))]
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-pub(crate) async fn filter_out_invalid_psks<P, CP>(
+pub(crate) async fn filter_out_invalid_psks<CP>(
     #[cfg(feature = "by_ref_proposal")] _: FilterStrategy,
     _: &CP,
     #[cfg(not(feature = "by_ref_proposal"))] _: &ProposalBundle,
     #[cfg(feature = "by_ref_proposal")] _: &mut ProposalBundle,
-    _: &P,
 ) -> Result<(), MlsError>
 where
-    P: PreSharedKeyStorage,
     CP: CipherSuiteProvider,
 {
     Ok(())

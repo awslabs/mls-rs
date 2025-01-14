@@ -42,10 +42,9 @@ use crate::group::{
 #[cfg(all(feature = "std", feature = "psk"))]
 use std::collections::HashSet;
 
-impl<C, P, CSP> ProposalApplier<'_, C, P, CSP>
+impl<C, CSP> ProposalApplier<'_, C, CSP>
 where
     C: IdentityProvider,
-    P: PreSharedKeyStorage,
     CSP: CipherSuiteProvider,
 {
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -56,7 +55,14 @@ where
         commit_time: Option<MlsTime>,
     ) -> Result<ApplyProposalsOutput, MlsError> {
         filter_out_removal_of_committer(commit_sender, proposals)?;
-        filter_out_invalid_psks(self.cipher_suite_provider, proposals, self.psk_storage).await?;
+
+        filter_out_invalid_psks(
+            self.cipher_suite_provider,
+            proposals,
+            #[cfg(feature = "psk")]
+            self.psks,
+        )
+        .await?;
 
         #[cfg(feature = "by_ref_proposal")]
         filter_out_invalid_group_extensions(proposals, self.identity_provider, commit_time).await?;

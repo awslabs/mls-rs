@@ -21,7 +21,6 @@ use crate::extension::RatchetTreeExt;
 use crate::identity::SigningIdentity;
 use crate::key_package::{KeyPackage, KeyPackageRef};
 use crate::protocol_version::ProtocolVersion;
-use crate::psk::secret::PskSecret;
 use crate::psk::PreSharedKeyID;
 use crate::signer::Signable;
 use crate::tree_kem::hpke_encryption::HpkeEncryptable;
@@ -50,8 +49,8 @@ pub use self::resumption::ReinitClient;
 
 #[cfg(feature = "psk")]
 use crate::psk::{
-    secret::PskSecretInput, ExternalPskId, JustPreSharedKeyID, PskGroupId, ResumptionPSKUsage,
-    ResumptionPsk,
+    secret::{PskSecret, PskSecretInput},
+    ExternalPskId, JustPreSharedKeyID, PskGroupId, ResumptionPSKUsage, ResumptionPsk,
 };
 
 #[cfg(feature = "private_message")]
@@ -1446,10 +1445,17 @@ impl<C: ClientConfig> Group<C> {
             return Ok(self.epoch_secrets.resumption_secret.clone());
         }
 
-        self.state_repo
+        #[cfg(feature = "prior_epoch")]
+        let res = self
+            .state_repo
             .resumption_secret(epoch)
             .await?
-            .ok_or_else(|| MlsError::EpochNotFound)
+            .ok_or_else(|| MlsError::EpochNotFound);
+
+        #[cfg(not(feature = "prior_epoch"))]
+        let res = Err(MlsError::EpochNotFound);
+
+        res
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -1692,7 +1698,7 @@ where
         }?;
 
         #[cfg(not(feature = "psk"))]
-        let psk = PskSecret::new(&self.cipher_suite_provider);
+        let psk = crate::psk::secret::PskSecret::new(&self.cipher_suite_provider);
 
         let key_schedule_result = KeySchedule::from_key_schedule(
             &key_schedule,

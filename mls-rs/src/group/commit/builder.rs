@@ -8,8 +8,6 @@ use alloc::{vec, vec::Vec};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::{crypto::SignatureSecretKey, error::IntoAnyError};
 
-use crate::mls_rules::{ProposalBundle, ProposalSource};
-use crate::group::{PskSecret, PskSecretInput};
 use crate::{
     cipher_suite::CipherSuite,
     client::MlsError,
@@ -36,7 +34,10 @@ use crate::WireFormat;
 #[cfg(feature = "psk")]
 use crate::{
     group::{JustPreSharedKeyID, PskGroupId, ResumptionPSKUsage, ResumptionPsk},
-    psk::ExternalPskId,
+    psk::{
+        secret::{PskSecret, PskSecretInput},
+        ExternalPskId,
+    },
 };
 
 use crate::group::{
@@ -177,6 +178,7 @@ where
     new_signer: Option<SignatureSecretKey>,
     new_signing_identity: Option<SigningIdentity>,
     new_leaf_node_extensions: Option<ExtensionList>,
+    #[cfg(feature = "psk")]
     psks: Vec<PskSecretInput>,
     sender: Sender,
 }
@@ -403,6 +405,7 @@ where
                 self.new_signer,
                 self.new_signing_identity,
                 self.new_leaf_node_extensions,
+                #[cfg(feature = "psk")]
                 self.psks,
                 self.sender,
             )
@@ -429,6 +432,7 @@ where
                 self.new_signer,
                 self.new_signing_identity,
                 self.new_leaf_node_extensions,
+                #[cfg(feature = "psk")]
                 self.psks,
                 self.sender,
             )
@@ -525,6 +529,7 @@ where
             new_signer: Default::default(),
             new_signing_identity: Default::default(),
             new_leaf_node_extensions: Default::default(),
+            #[cfg(feature = "psk")]
             psks: Default::default(),
         }
     }
@@ -580,6 +585,7 @@ where
                 &self.cipher_suite_provider,
                 time,
                 CommitDirection::Send,
+                #[cfg(feature = "psk")]
                 &psks
                     .iter()
                     .map(|psk| psk.id.key_id.clone())
@@ -685,7 +691,7 @@ where
         };
 
         #[cfg(not(feature = "psk"))]
-        let psk_secret = PskSecret::from(Default::default());
+        let psk_secret = crate::psk::secret::PskSecret::new(&self.cipher_suite_provider).await;
 
         let added_key_pkgs: Vec<_> = provisional_state
             .applied_proposals

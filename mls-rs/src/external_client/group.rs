@@ -36,10 +36,12 @@ use crate::{
     identity::SigningIdentity,
     mls_rules::{CommitSource, ProposalBundle},
     protocol_version::ProtocolVersion,
-    psk::secret::PskSecretInput,
     tree_kem::{leaf_node::LeafNode, node::LeafIndex, path_secret::PathSecret, TreeKemPrivate},
     CryptoProvider, KeyPackage, MlsMessage,
 };
+
+#[cfg(feature = "psk")]
+use crate::psk::secret::PskSecretInput;
 
 #[cfg(feature = "by_ref_proposal")]
 use crate::{

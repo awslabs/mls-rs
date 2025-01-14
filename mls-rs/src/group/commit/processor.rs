@@ -17,13 +17,16 @@ use crate::{
     group::{
         message_processor::path_update_required, transcript_hashes, AuthenticatedContent,
         CommitEffect, CommitMessageDescription, ConfirmationTag, Content, EventOrContent,
-        InterimTranscriptHash, MessageProcessor, NewEpoch, PskSecretInput,
+        InterimTranscriptHash, MessageProcessor, NewEpoch,
     },
     mls_rules::{CommitDirection, CommitSource, ProposalBundle},
     psk::JustPreSharedKeyID,
     tree_kem::{leaf_node::LeafNode, node::LeafIndex, validate_update_path, UpdatePath},
     Group, MlsMessage,
 };
+
+#[cfg(feature = "psk")]
+use crate::psk::secret::PskSecretInput;
 
 pub(crate) struct InternalCommitProcessor<'a, P: MessageProcessor> {
     // Group
@@ -329,6 +332,7 @@ impl<C: ClientConfig> CommitProcessor<'_, C> {
         &self.0.authenticated_data
     }
 
+    #[cfg(feature = "psk")]
     pub fn required_psks(&self) -> Vec<ExternalPskId> {
         self.0
             .proposals

@@ -14,9 +14,12 @@ use super::{
     proposal_filter::ProposalBundle,
     state::GroupState,
     transcript_hash::InterimTranscriptHash,
-    validate_group_info_member, GroupContext, GroupInfo, PskSecretInput, ReInitProposal,
-    RemoveProposal, Welcome,
+    validate_group_info_member, GroupContext, GroupInfo, ReInitProposal, RemoveProposal, Welcome,
 };
+
+#[cfg(feature = "psk")]
+use crate::psk::secret::PskSecretInput;
+
 use crate::{
     client::MlsError,
     key_package::validate_key_package_properties,

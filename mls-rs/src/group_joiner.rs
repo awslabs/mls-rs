@@ -30,6 +30,8 @@ use crate::{
     Group, KeyPackage, MlsMessage,
 };
 
+use alloc::vec::Vec;
+
 #[cfg(feature = "psk")]
 use crate::psk::{JustPreSharedKeyID, ResumptionPsk};
 
@@ -195,7 +197,7 @@ impl<'a, 'b, C: ClientConfig> GroupJoiner<'a, 'b, C> {
         }?;
 
         #[cfg(not(feature = "psk"))]
-        let psk_secret = PskSecret::calculate(&[], cipher_suite_provider).await?;
+        let psk_secret = PskSecret::new(&cipher_suite_provider).await;
 
         // From the joiner_secret in the decrypted GroupSecrets object and the PSKs specified in
         // the GroupSecrets, derive the welcome_secret and using that the welcome_key and

@@ -14,7 +14,6 @@ use crate::{client::MlsError, CipherSuiteProvider};
 #[cfg(feature = "psk")]
 use mls_rs_core::error::IntoAnyError;
 
-#[cfg(feature = "psk")]
 pub(crate) mod secret;
 
 pub use mls_rs_core::psk::{ExternalPskId, PreSharedKey};

@@ -6,9 +6,8 @@ use alloc::vec::Vec;
 
 use super::{
     message_processor::ProvisionalState,
-    GroupState, JustPreSharedKeyID, ProposalOrRef,
     proposal_filter::prepare_proposals_for_mls_rules,
-    mls_rules::{CommitDirection, CommitSource},
+    GroupState, ProposalOrRef,
 };
 use crate::{
     client::MlsError,
@@ -18,6 +17,9 @@ use crate::{
     },
     time::MlsTime,
 };
+
+#[cfg(feature = "psk")]
+use crate::psk::JustPreSharedKeyID;
 
 #[cfg(feature = "by_ref_proposal")]
 use crate::{
@@ -253,6 +255,7 @@ impl GroupState {
             &self.context,
             external_leaf,
             identity_provider,
+            #[cfg(feature = "psk")]
             psks,
         );
 
