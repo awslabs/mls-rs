@@ -854,9 +854,11 @@ impl MlsClientImpl {
         let request = request.into_inner();
         let clients = &mut self.clients.lock().await;
 
-        let group = clients
+        let client = clients
             .get_mut(&request.state_id)
-            .ok_or_else(|| Status::aborted("no group with such index."))?
+            .ok_or_else(|| Status::aborted("no group with such index."))?;
+
+        let group = client
             .group
             .as_mut()
             .ok_or_else(|| Status::aborted("no group with such index."))?;
@@ -868,17 +870,50 @@ impl MlsClientImpl {
 
         let commit = MlsMessage::from_bytes(&request.commit).map_err(abort)?;
 
-        let message = group.process_incoming_message(commit).map_err(abort)?;
+        let mut processor = group.commit_processor(commit).map_err(abort)?;
+
+        let required_external_psks = processor
+            .required_external_psk()
+            .cloned()
+            .collect::<Vec<_>>();
+
+        processor = required_external_psks
+            .into_iter()
+            .try_fold(processor, |processor, psk| {
+                let psk_secret = client
+                    .psk_store
+                    .get(&psk)
+                    .ok_or(Status::aborted("missing psk"))?;
+
+                Ok::<_, Status>(processor.with_external_psk(psk, psk_secret))
+            })?;
+
+        let required_resumption_psks = processor
+            .required_resumption_psk()
+            .cloned()
+            .collect::<Vec<_>>();
+
+        processor =
+            required_resumption_psks
+                .into_iter()
+                .try_fold(processor, |processor, psk| {
+                    let resumption_psk = client
+                        .client
+                        .load_group(&psk.psk_group_id.0)
+                        .and_then(|g| g.resumption_secret(psk.psk_epoch))
+                        .map_err(abort)?;
+
+                    Ok::<_, Status>(processor.with_resumption_psk(psk, resumption_psk))
+                })?;
+
+        let message = processor.process().map_err(abort)?;
 
         let resp = HandleCommitResponse {
             state_id: request.state_id,
             epoch_authenticator: group.epoch_authenticator().map_err(abort)?.to_vec(),
         };
 
-        match message {
-            ReceivedMessage::Commit(update) => Ok((Response::new(resp), update.effect)),
-            _ => Err(Status::aborted("message not a commit.")),
-        }
+        Ok((Response::new(resp), message.effect))
     }
 }
 
