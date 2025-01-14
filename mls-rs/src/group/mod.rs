@@ -3670,6 +3670,7 @@ mod tests {
         bob.join_group_custom(None, &commit.welcome_messages[0], |joiner| {
             joiner.with_external_psk(psk_id, psk)
         })
+        .await
         .unwrap();
     }
 

@@ -216,10 +216,33 @@ async fn interop_passive_client() {
 
             let message = MlsMessage::from_bytes(&epoch.commit).unwrap();
 
-            group
-                .process_incoming_message_with_time(message, MlsTime::now())
-                .await
-                .unwrap();
+            let group_clone = group.clone();
+
+            let mut processor = group.commit_processor(message).await.unwrap();
+
+            processor = test_case
+                .external_psks
+                .iter()
+                .fold(processor, |processor, psk| {
+                    processor.with_external_psk(psk.psk_id.clone().into(), psk.psk.clone().into())
+                });
+
+            for resumption_psk in processor
+                .required_resumption_psk()
+                .cloned()
+                .collect::<Vec<_>>()
+                .iter()
+            {
+                processor = processor.with_resumption_psk(
+                    resumption_psk.clone(),
+                    group_clone
+                        .resumption_secret(resumption_psk.psk_epoch)
+                        .await
+                        .unwrap(),
+                );
+            }
+
+            processor.process().await.unwrap();
 
             assert_eq!(
                 epoch.epoch_authenticator,
@@ -356,7 +379,7 @@ pub async fn generate_passive_client_proposal_tests() -> Vec<TestCase> {
         test_cases.push(test_case);
 
         let epoch_to_resume = groups[1].current_epoch() - 1;
-        let resumption_psk = groups[1].resumption_secret(epoch_to_resume).unwrap();
+        let resumption_psk = groups[1].resumption_secret(epoch_to_resume).await.unwrap();
 
         let test_case = commit_by_value(
             &mut groups[5].clone(),
@@ -380,7 +403,7 @@ pub async fn generate_passive_client_proposal_tests() -> Vec<TestCase> {
         test_cases.push(test_case);
 
         let epoch_to_resume = groups[4].current_epoch() - 1;
-        let resumption_psk = groups[4].resumption_secret(epoch_to_resume).unwrap();
+        let resumption_psk = groups[4].resumption_secret(epoch_to_resume).await.unwrap();
 
         let test_case = commit_by_value(
             &mut groups[3].clone(),

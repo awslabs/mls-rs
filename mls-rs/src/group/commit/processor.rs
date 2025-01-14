@@ -28,6 +28,9 @@ use crate::{
 #[cfg(feature = "psk")]
 use crate::psk::secret::PskSecretInput;
 
+#[cfg(feature = "psk")]
+use crate::psk::ResumptionPsk;
+
 pub(crate) struct InternalCommitProcessor<'a, P: MessageProcessor> {
     // Group
     pub(crate) processor: &'a mut P,
@@ -307,6 +310,13 @@ impl<C: ClientConfig> CommitProcessor<'_, C> {
         self
     }
 
+    #[cfg(feature = "psk")]
+    pub fn with_resumption_psk(mut self, id: ResumptionPsk, psk: crate::psk::PreSharedKey) -> Self {
+        self.0.psks.push((JustPreSharedKeyID::Resumption(id), psk));
+        self
+
+    }
+
     pub fn proposals_mut(&mut self) -> &mut ProposalBundle {
         &mut self.0.proposals
     }
@@ -333,14 +343,21 @@ impl<C: ClientConfig> CommitProcessor<'_, C> {
     }
 
     #[cfg(feature = "psk")]
-    pub fn required_psks(&self) -> Vec<ExternalPskId> {
+    pub fn required_external_psk(&self) -> impl Iterator<Item = &ExternalPskId> {
         self.0
             .proposals
             .psk_proposals()
             .iter()
             .filter_map(|p| p.proposal.external_psk_id())
-            .cloned()
-            .collect()
+    }
+
+    #[cfg(feature = "psk")]
+    pub fn required_resumption_psk(&self) -> impl Iterator<Item = &ResumptionPsk> {
+        self.0
+            .proposals
+            .psk_proposals()
+            .iter()
+            .filter_map(|p| p.proposal.resumption_psk_id())
     }
 
     pub fn context(&self) -> &GroupContext {

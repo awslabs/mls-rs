@@ -349,7 +349,7 @@ mod tests {
         group_alice.apply_pending_commit().await.unwrap();
         group_alice.write_to_storage().await.unwrap();
 
-        let resumption_psk = group_alice.resumption_secret(1).unwrap();
+        let resumption_psk = group_alice.resumption_secret(1).await.unwrap();
 
         let mut group_bob = bob
             .join_group(None, &commit1.welcome_messages[0])
@@ -397,8 +397,8 @@ mod tests {
 
         let joiner = alice
             .group_joiner(&commit.welcome_messages[0], kp_alice.key_package_data)
-            .unwrap()
-            .await;
+            .await
+            .unwrap();
 
         let external_psks = joiner.required_external_psks().collect::<Vec<_>>();
         assert_eq!(external_psks, vec![&psk_id]);

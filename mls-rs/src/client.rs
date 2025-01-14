@@ -989,7 +989,7 @@ mod tests {
         let psk = PreSharedKey::from(b"psk".to_vec());
         let psk_id = ExternalPskId::new(b"psk id".to_vec());
 
-        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
         let (mut bob_group, _) = alice_group.join("bob").await;
 
@@ -1028,6 +1028,7 @@ mod tests {
 
         let _ = alice_group
             .commit_processor(external_commit.clone())
+            .await
             .unwrap()
             .with_external_psk(psk_id.clone(), psk.clone())
             .process()
@@ -1038,6 +1039,7 @@ mod tests {
 
         let message = bob_group
             .commit_processor(external_commit.clone())
+            .await
             .unwrap()
             .with_external_psk(psk_id, psk)
             .process()

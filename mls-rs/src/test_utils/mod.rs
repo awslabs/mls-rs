@@ -85,7 +85,7 @@ impl<C: MlsConfig> TestClient<C> {
         tree: Option<ExportedTree<'_>>,
         welcome: &'a MlsMessage,
     ) -> Result<(Group<C>, NewMemberInfo), MlsError> {
-        self.join_group_custom(tree, welcome, |joiner| joiner)
+        self.join_group_custom(tree, welcome, |joiner| joiner).await
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
