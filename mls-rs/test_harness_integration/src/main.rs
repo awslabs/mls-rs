@@ -17,7 +17,6 @@ use mls_rs::{
         BaseInMemoryConfig, ClientBuilder, WithCryptoProvider, WithIdentityProvider, WithMlsRules,
     },
     crypto::SignatureSecretKey,
-    error::MlsError,
     external_client::ExternalClient,
     group::{CommitEffect, ExportedTree, GroupContext, Member, ReceivedMessage, Roster},
     identity::{
@@ -30,6 +29,9 @@ use mls_rs::{
     CipherSuite, CipherSuiteProvider, Client, CryptoProvider, Extension, ExtensionList, Group,
     MlsMessage, MlsMessageDescription, MlsRules,
 };
+
+#[cfg(feature = "psk")]
+use mls_rs::error::MlsError;
 
 #[cfg(feature = "by_ref_proposal")]
 use mls_rs::external_client::builder::ExternalBaseConfig;
@@ -735,7 +737,9 @@ impl MlsClientImpl {
 
         let roster = group.roster().members();
 
+        #[cfg(feature = "psk")]
         let group_clone = group.clone();
+
         let mut commit_builder = group.commit_builder();
 
         for proposal in request.by_value {

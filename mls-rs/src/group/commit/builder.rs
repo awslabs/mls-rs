@@ -691,7 +691,7 @@ where
         };
 
         #[cfg(not(feature = "psk"))]
-        let psk_secret = crate::psk::secret::PskSecret::new(&self.cipher_suite_provider).await;
+        let psk_secret = crate::psk::secret::PskSecret::new(&self.cipher_suite_provider);
 
         let added_key_pkgs: Vec<_> = provisional_state
             .applied_proposals
