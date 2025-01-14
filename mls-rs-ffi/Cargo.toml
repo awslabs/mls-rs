@@ -25,7 +25,7 @@ secret_tree_access = ["mls-rs/secret_tree_access"]
 
 [dependencies]
 mls-rs = { path = "../mls-rs", version = "0.43.0", features = ["ffi"] }
-mls-rs-crypto-openssl = { path = "../mls-rs-crypto-openssl", version = "0.11.0", optional = true }
+mls-rs-crypto-openssl = { path = "../mls-rs-crypto-openssl", version = "0.12.0", optional = true }
 mls-rs-identity-x509 = { path = "../mls-rs-identity-x509", version = "0.13.0", optional = true }
 mls-rs-provider-sqlite = { path = "../mls-rs-provider-sqlite", version = "0.14.0", default-features = false, optional = true }
 safer-ffi = { version = "0.1.7", default-features = false }

@@ -587,7 +587,7 @@ pub(crate) mod test_utils {
     impl TestExternalClientBuilder {
         pub fn new_for_test() -> Self {
             ExternalClientBuilder::new()
-                .crypto_provider(TestCryptoProvider::default())
+                .crypto_provider(TestCryptoProvider::new())
                 .identity_provider(BasicIdentityProvider::new())
         }
 
