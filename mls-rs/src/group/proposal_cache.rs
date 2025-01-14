@@ -357,6 +357,7 @@ pub(crate) mod test_utils {
 
     use super::{CachedProposal, JustPreSharedKeyID, MlsError, ProposalCache};
 
+    use alloc::vec;
     use alloc::vec::Vec;
 
     impl CachedProposal {
