@@ -5,11 +5,7 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
-use mls_rs_core::{
-    psk::{ExternalPskId, PreSharedKey},
-    group::{ConfirmedTranscriptHash, GroupContext},
-    time::MlsTime,
-};
+use mls_rs_core::{group::ConfirmedTranscriptHash, time::MlsTime};
 
 use crate::{
     client_config::ClientConfig,
@@ -20,16 +16,15 @@ use crate::{
         InterimTranscriptHash, MessageProcessor, NewEpoch,
     },
     mls_rules::{CommitDirection, CommitSource, ProposalBundle},
-    psk::JustPreSharedKeyID,
     tree_kem::{leaf_node::LeafNode, node::LeafIndex, validate_update_path, UpdatePath},
     Group, MlsMessage,
 };
 
 #[cfg(feature = "psk")]
-use crate::psk::secret::PskSecretInput;
+use mls_rs_core::psk::{ExternalPskId, PreSharedKey};
 
 #[cfg(feature = "psk")]
-use crate::psk::ResumptionPsk;
+use crate::psk::{secret::PskSecretInput, JustPreSharedKeyID, ResumptionPsk};
 
 pub(crate) struct InternalCommitProcessor<'a, P: MessageProcessor> {
     // Group

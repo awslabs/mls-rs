@@ -17,10 +17,7 @@ use super::filtering_common::{filter_out_invalid_psks, ApplyProposalsOutput, Pro
 #[cfg(feature = "by_ref_proposal")]
 use {crate::extension::ExternalSendersExt, mls_rs_core::error::IntoAnyError};
 
-use mls_rs_core::{
-    identity::{IdentityProvider, MemberValidationContext},
-    psk::PreSharedKeyStorage,
-};
+use mls_rs_core::identity::{IdentityProvider, MemberValidationContext};
 
 #[cfg(feature = "custom_proposal")]
 use itertools::Itertools;

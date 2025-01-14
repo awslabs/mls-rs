@@ -8,6 +8,7 @@ use core::fmt::{self, Debug};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
 use mls_rs_core::identity::MemberValidationContext;
+#[cfg(feature = "psk")]
 use mls_rs_core::psk::PreSharedKey;
 use mls_rs_core::secret::Secret;
 use mls_rs_core::time::MlsTime;
