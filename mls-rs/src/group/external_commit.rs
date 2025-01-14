@@ -39,10 +39,7 @@ use crate::group::{
     PreSharedKeyProposal, {JustPreSharedKeyID, PreSharedKeyID},
 };
 
-use super::{validate_tree_and_info_joiner, ExportedTree, GroupInfo, Sender};
-
-#[cfg(feature = "custom_proposal")]
-use super::PublicMessage;
+use super::{validate_tree_and_info_joiner, ExportedTree, PskSecretInput, GroupInfo, Sender};
 
 /// A builder that aids with the construction of an external commit.
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::ffi_type(opaque))]
@@ -52,6 +49,8 @@ pub struct ExternalCommitBuilder<C: ClientConfig> {
     leaf_node_extensions: ExtensionList,
     config: C,
     tree_data: Option<ExportedTree<'static>>,
+    external_psks: Vec<(ExternalPskId, PreSharedKey)>,
+    #[cfg(feature = "psk")]
     authenticated_data: Vec<u8>,
     #[cfg(feature = "custom_proposal")]
     received_custom_proposals: Vec<PublicMessage>,
@@ -140,16 +139,9 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
 
     #[cfg(feature = "psk")]
     /// Add an external psk to the group as part of the external commit.
-    pub fn with_external_psk(self, psk: ExternalPskId) -> Result<Self, MlsError> {
-        let cipher_suite = cipher_suite_provider(
-            self.config.crypto_provider(),
-            self.group_info.group_context.cipher_suite,
-        )?;
-
-        let key_id = JustPreSharedKeyID::External(psk);
-        let psk = PreSharedKeyID::new(key_id, &cipher_suite)?;
-        let proposal = Proposal::Psk(PreSharedKeyProposal { psk });
-        Ok(self.with_proposal(proposal))
+    pub fn with_external_psk(mut self, id: ExternalPskId, psk: PreSharedKey) -> Self {
+        self.external_psks.push((id, psk));
+        self
     }
 
     #[cfg(feature = "custom_proposal")]
@@ -246,6 +238,33 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
         )
         .await?;
 
+        let mut proposals = vec![Proposal::ExternalInit(ExternalInit { kem_output })];
+
+        #[cfg(feature = "psk")]
+        let psks = self
+            .external_psks
+            .into_iter()
+            .map(|(psk_id, psk_secret)| {
+                let key_id =
+                    PreSharedKeyID::new(JustPreSharedKeyID::External(psk_id), &cipher_suite)?;
+
+                proposals.push(Proposal::Psk(PreSharedKeyProposal {
+                    psk: key_id.clone(),
+                }));
+
+                Ok(PskSecretInput {
+                    id: key_id,
+                    psk: psk_secret,
+                })
+            })
+            .collect::<Result<Vec<_>, MlsError>>()?;
+
+        #[cfg(feature = "custom_proposal")]
+        {
+            let mut custom_proposals = self.custom_proposals;
+            proposals.append(&mut custom_proposals);
+        }
+
         #[cfg(all(feature = "custom_proposal", feature = "by_ref_proposal"))]
         for message in self.received_custom_proposals {
             verify_plaintext_authentication(&cipher_suite, message, None, &group.state).await?;
@@ -260,7 +279,8 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
                 None,
                 None,
                 None,
-                Sender::NewMemberCommit,
+                #[cfg(feature = "psk")]
+                psks,
             )
             .await?;
 

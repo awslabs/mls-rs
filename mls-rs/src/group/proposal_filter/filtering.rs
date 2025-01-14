@@ -32,7 +32,6 @@ use alloc::vec::Vec;
 use mls_rs_core::{
     error::IntoAnyError,
     identity::{IdentityProvider, MemberValidationContext},
-    psk::PreSharedKeyStorage,
 };
 
 #[cfg(not(any(mls_build_async, feature = "rayon")))]
@@ -49,10 +48,9 @@ use {crate::iter::ParallelIteratorExt, rayon::prelude::*};
 #[cfg(mls_build_async)]
 use futures::{StreamExt, TryStreamExt};
 
-impl<C, P, CSP> ProposalApplier<'_, C, P, CSP>
+impl<C, CSP> ProposalApplier<'_, C, CSP>
 where
     C: IdentityProvider,
-    P: PreSharedKeyStorage,
     CSP: CipherSuiteProvider,
 {
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -81,7 +79,8 @@ where
             strategy,
             self.cipher_suite_provider,
             &mut proposals,
-            self.psk_storage,
+            #[cfg(feature = "psk")]
+            self.psks,
         )
         .await?;
 

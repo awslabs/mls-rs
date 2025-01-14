@@ -17,6 +17,7 @@ use mls_rs::{
         BaseInMemoryConfig, ClientBuilder, WithCryptoProvider, WithIdentityProvider, WithMlsRules,
     },
     crypto::SignatureSecretKey,
+    error::MlsError,
     external_client::ExternalClient,
     group::{CommitEffect, ExportedTree, GroupContext, Member, ReceivedMessage, Roster},
     identity::{
@@ -360,7 +361,15 @@ impl MlsClient for MlsClientImpl {
             builder = builder.with_removal(removed_index);
         }
 
-        let (group, commit) = builder.build().map_err(abort)?;
+        builder = request
+            .psks
+            .clone()
+            .into_iter()
+            .fold(builder, |builder, psk| {
+                builder.with_external_psk(psk.psk_id.into(), psk.psk_secret.into())
+            });
+
+        let (group, commit) = builder.build(group_info.clone()).map_err(abort)?;
 
         let epoch_authenticator = group.epoch_authenticator().map_err(abort)?.to_vec();
 
@@ -726,6 +735,7 @@ impl MlsClientImpl {
 
         let roster = group.roster().members();
 
+        let group_clone = group.clone();
         let mut commit_builder = group.commit_builder();
 
         for proposal in request.by_value {
@@ -746,12 +756,25 @@ impl MlsClientImpl {
                 #[cfg(feature = "psk")]
                 PROPOSAL_DESC_EXTERNAL_PSK => {
                     let psk_id = ExternalPskId::new(proposal.psk_id.to_vec());
-                    commit_builder = commit_builder.add_external_psk(psk_id).map_err(abort)?;
+
+                    let psk = client
+                        .psk_store
+                        .get(&psk_id)
+                        .ok_or(MlsError::MissingRequiredPsk)
+                        .map_err(abort)?;
+
+                    commit_builder = commit_builder
+                        .add_external_psk(psk_id, psk)
+                        .map_err(abort)?;
                 }
                 #[cfg(feature = "psk")]
                 PROPOSAL_DESC_RESUMPTION_PSK => {
+                    let resumption_psk = group_clone
+                        .resumption_secret(proposal.epoch_id)
+                        .map_err(abort)?;
+
                     commit_builder = commit_builder
-                        .add_resumption_psk(proposal.epoch_id)
+                        .add_resumption_psk(proposal.epoch_id, resumption_psk)
                         .map_err(abort)?;
                 }
                 PROPOSAL_DESC_GCE => {
@@ -845,7 +868,6 @@ async fn create_client(cipher_suite: u16, identity: &[u8]) -> Result<ClientDetai
         .crypto_provider(OpensslCryptoProvider::default())
         .identity_provider(BasicIdentityProvider::new())
         .mls_rules(mls_rules.clone())
-        .psk_store(psk_store.clone())
         .signing_identity(signing_identity.clone(), secret_key.clone(), cipher_suite)
         .build();
 

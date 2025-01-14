@@ -9,6 +9,7 @@ use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::{crypto::SignatureSecretKey, error::IntoAnyError};
 
 use crate::mls_rules::{ProposalBundle, ProposalSource};
+use crate::group::{PskSecret, PskSecretInput};
 use crate::{
     cipher_suite::CipherSuite,
     client::MlsError,
@@ -176,6 +177,7 @@ where
     new_signer: Option<SignatureSecretKey>,
     new_signing_identity: Option<SigningIdentity>,
     new_leaf_node_extensions: Option<ExtensionList>,
+    psks: Vec<PskSecretInput>,
     sender: Sender,
 }
 
@@ -226,9 +228,21 @@ where
     /// [`PreSharedKeyProposal`](crate::group::proposal::PreSharedKeyProposal) with
     /// an external PSK into the current commit that is being built.
     #[cfg(feature = "psk")]
-    pub fn add_external_psk(self, psk_id: ExternalPskId) -> Result<Self, MlsError> {
-        let key_id = JustPreSharedKeyID::External(psk_id);
-        let proposal = self.group.psk_proposal(key_id)?;
+    pub fn add_external_psk(
+        mut self,
+        id: ExternalPskId,
+        psk: crate::psk::PreSharedKey,
+    ) -> Result<Self, MlsError> {
+        use crate::psk::PreSharedKeyID;
+
+        let key_id = JustPreSharedKeyID::External(id);
+        let proposal = self.group.psk_proposal(key_id.clone())?;
+
+        self.psks.push(PskSecretInput {
+            id: PreSharedKeyID::new(key_id, &self.group.cipher_suite_provider)?,
+            psk,
+        });
+
         Ok(self.with_proposal(proposal))
     }
 
@@ -236,9 +250,13 @@ where
     /// [`PreSharedKeyProposal`](crate::group::proposal::PreSharedKeyProposal) with
     /// a resumption PSK into the current commit that is being built.
     #[cfg(feature = "psk")]
-    pub fn add_resumption_psk(self, psk_epoch: u64) -> Result<Self, MlsError> {
+    pub fn add_resumption_psk(
+        self,
+        psk_epoch: u64,
+        psk: crate::psk::PreSharedKey,
+    ) -> Result<Self, MlsError> {
         let group_id = self.group.group_id().to_vec();
-        self.add_resumption_psk_for_group(psk_epoch, group_id)
+        self.add_resumption_psk_for_group(psk_epoch, group_id, psk)
     }
 
     /// Insert a
@@ -249,7 +267,10 @@ where
         self,
         psk_epoch: u64,
         group_id: Vec<u8>,
+        psk: crate::psk::PreSharedKey,
     ) -> Result<Self, MlsError> {
+        use crate::psk::PreSharedKeyID;
+
         let psk_id = ResumptionPsk {
             psk_epoch,
             usage: ResumptionPSKUsage::Application,
@@ -257,7 +278,13 @@ where
         };
 
         let key_id = JustPreSharedKeyID::Resumption(psk_id);
-        let proposal = self.group.psk_proposal(key_id)?;
+        let proposal = self.group.psk_proposal(key_id.clone())?;
+
+        self.psks.push(PskSecretInput {
+            id: PreSharedKeyID::new(key_id, &self.group.cipher_suite_provider)?,
+            psk,
+        });
+
         Ok(self.with_proposal(proposal))
     }
 
@@ -376,6 +403,7 @@ where
                 self.new_signer,
                 self.new_signing_identity,
                 self.new_leaf_node_extensions,
+                self.psks,
                 self.sender,
             )
             .await?;
@@ -401,6 +429,7 @@ where
                 self.new_signer,
                 self.new_signing_identity,
                 self.new_leaf_node_extensions,
+                self.psks,
                 self.sender,
             )
             .await?;
@@ -496,6 +525,7 @@ where
             new_signer: Default::default(),
             new_signing_identity: Default::default(),
             new_leaf_node_extensions: Default::default(),
+            psks: Default::default(),
         }
     }
 
@@ -512,6 +542,7 @@ where
         new_signer: Option<SignatureSecretKey>,
         new_signing_identity: Option<SigningIdentity>,
         new_leaf_node_extensions: Option<ExtensionList>,
+        #[cfg(feature = "psk")] psks: Vec<PskSecretInput>,
         sender: Sender,
     ) -> Result<(CommitOutput, PendingCommit), MlsError> {
         if !self.pending_commit.is_none() {
@@ -549,7 +580,10 @@ where
                 &self.cipher_suite_provider,
                 time,
                 CommitDirection::Send,
-                &self.config.secret_store(),
+                &psks
+                    .iter()
+                    .map(|psk| psk.id.key_id.clone())
+                    .collect::<Vec<_>>(),
                 &committer,
             )
             .await?;
@@ -636,12 +670,22 @@ where
         };
 
         #[cfg(feature = "psk")]
-        let (psk_secret, psks) = self
-            .get_psk(&provisional_state.applied_proposals.psks)
-            .await?;
+        let (psk_secret, psk_ids) = {
+            if let Some(previous) = self.previous_psk.as_ref() {
+                (
+                    PskSecret::calculate(&[previous.clone()], &self.cipher_suite_provider).await?,
+                    vec![previous.id.clone()],
+                )
+            } else {
+                (
+                    PskSecret::calculate(&psks, &self.cipher_suite_provider).await?,
+                    psks.into_iter().map(|psk| psk.id).collect::<Vec<_>>(),
+                )
+            }
+        };
 
         #[cfg(not(feature = "psk"))]
-        let psk_secret = self.get_psk();
+        let psk_secret = PskSecret::from(Default::default());
 
         let added_key_pkgs: Vec<_> = provisional_state
             .applied_proposals
@@ -788,7 +832,7 @@ where
                     &key_schedule_result.joiner_secret,
                     path_secrets,
                     #[cfg(feature = "psk")]
-                    psks.clone(),
+                    psk_ids.clone(),
                     &encrypted_group_info,
                 )
             })
@@ -809,7 +853,7 @@ where
                         &key_schedule_result.joiner_secret,
                         path_secrets,
                         #[cfg(feature = "psk")]
-                        psks.clone(),
+                        psk_ids.clone(),
                         &encrypted_group_info,
                     )
                     .await?,
@@ -1003,7 +1047,7 @@ mod tests {
     #[cfg(feature = "psk")]
     use crate::{
         group::proposal::PreSharedKeyProposal,
-        psk::{JustPreSharedKeyID, PreSharedKey, PreSharedKeyID},
+        psk::{JustPreSharedKeyID, PreSharedKeyID},
     };
 
     use super::*;
@@ -1157,17 +1201,15 @@ mod tests {
     #[cfg(feature = "psk")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_commit_builder_psk() {
+        use mls_rs_core::psk::PreSharedKey;
+
         let mut group = test_commit_builder_group().await;
         let test_psk = ExternalPskId::new(vec![1]);
-
-        group
-            .config
-            .secret_store()
-            .insert(test_psk.clone(), PreSharedKey::from(vec![1]));
+        let psk_data = PreSharedKey::new(vec![2]);
 
         let commit_output = group
             .commit_builder()
-            .add_external_psk(test_psk.clone())
+            .add_external_psk(test_psk.clone(), psk_data)
             .unwrap()
             .build()
             .await

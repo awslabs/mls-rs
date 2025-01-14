@@ -14,7 +14,8 @@ use super::{
     proposal_filter::ProposalBundle,
     state::GroupState,
     transcript_hash::InterimTranscriptHash,
-    validate_group_info_member, GroupContext, GroupInfo, ReInitProposal, RemoveProposal, Welcome,
+    validate_group_info_member, GroupContext, GroupInfo, PskSecretInput, ReInitProposal,
+    RemoveProposal, Welcome,
 };
 use crate::{
     client::MlsError,
@@ -37,7 +38,6 @@ use core::fmt::{self, Debug};
 use mls_rs_core::{
     identity::{IdentityProvider, MemberValidationContext},
     protocol_version::ProtocolVersion,
-    psk::PreSharedKeyStorage,
 };
 
 #[cfg(feature = "by_ref_proposal")]
@@ -477,7 +477,6 @@ pub(crate) trait MessageProcessor: Send + Sync + Sized {
     type MlsRules: MlsRules;
     type IdentityProvider: IdentityProvider;
     type CipherSuiteProvider: CipherSuiteProvider;
-    type PreSharedKeyStorage: PreSharedKeyStorage;
 
     async fn process_incoming_message(
         &mut self,
@@ -649,7 +648,6 @@ pub(crate) trait MessageProcessor: Send + Sync + Sized {
     fn group_state_mut(&mut self) -> &mut GroupState;
     fn identity_provider(&self) -> Self::IdentityProvider;
     fn cipher_suite_provider(&self) -> Self::CipherSuiteProvider;
-    fn psk_storage(&self) -> Self::PreSharedKeyStorage;
 
     fn removal_proposal(
         &self,
@@ -796,6 +794,7 @@ pub(crate) trait MessageProcessor: Send + Sync + Sized {
         interim_transcript_hash: InterimTranscriptHash,
         confirmation_tag: &ConfirmationTag,
         provisional_public_state: ProvisionalState,
+        #[cfg(feature = "psk")] psks: &[PskSecretInput],
     ) -> Result<(), MlsError>;
 }
 

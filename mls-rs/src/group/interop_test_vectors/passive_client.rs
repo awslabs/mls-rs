@@ -167,13 +167,9 @@ async fn interop_passive_client() {
         let id = key_package.leaf_node.signing_identity.clone();
         let key = test_case.signature_priv.clone().into();
 
-        let mut client_builder = ClientBuilder::new()
+        let client_builder = ClientBuilder::new()
             .crypto_provider(crypto_provider)
             .identity_provider(BasicIdentityProvider::new());
-
-        for psk in test_case.external_psks {
-            client_builder = client_builder.psk(ExternalPskId::new(psk.psk_id), psk.psk.into());
-        }
 
         let client = client_builder
             .signing_identity(id, key, cs.cipher_suite())
@@ -192,6 +188,10 @@ async fn interop_passive_client() {
             .group_joiner(&welcome, key_package_data)
             .await
             .unwrap();
+
+        joiner = test_case.external_psks.iter().fold(joiner, |joiner, psk| {
+            joiner.with_external_psk(psk.psk_id.clone().into(), psk.psk.clone().into())
+        });
 
         if let Some(tree) = test_case.ratchet_tree {
             joiner = joiner.ratchet_tree(ExportedTree::from_bytes(&tree.0).unwrap())
@@ -263,20 +263,23 @@ async fn invite_passive_client<P: CipherSuiteProvider, C: MlsConfig>(
         .add_member(key_pckg.key_package_message.clone())
         .unwrap();
 
+    let external_psk = TestExternalPsk {
+        psk_id: TEST_EXT_PSK_ID.to_vec(),
+        psk: make_test_ext_psk(),
+    };
+
     if with_psk {
         commit_builder = commit_builder
-            .add_external_psk(ExternalPskId::new(TEST_EXT_PSK_ID.to_vec()))
+            .add_external_psk(
+                external_psk.psk_id.clone().into(),
+                external_psk.psk.clone().into(),
+            )
             .unwrap();
     }
 
     let commit = commit_builder.build().await.unwrap();
 
     all_process_message(groups, &commit.commit_message, 0, true).await;
-
-    let external_psk = TestExternalPsk {
-        psk_id: TEST_EXT_PSK_ID.to_vec(),
-        psk: make_test_ext_psk(),
-    };
 
     TestCase {
         cipher_suite: cs.cipher_suite().into(),
@@ -342,16 +345,25 @@ pub async fn generate_passive_client_proposal_tests() -> Vec<TestCase> {
 
         let test_case = commit_by_value(
             &mut groups[1].clone(),
-            |b| b.add_external_psk(psk.clone()).unwrap(),
+            |b| {
+                b.add_external_psk(psk.clone(), make_test_ext_psk().into())
+                    .unwrap()
+            },
             partial_test_case.clone(),
         )
         .await;
 
         test_cases.push(test_case);
 
+        let epoch_to_resume = groups[1].current_epoch() - 1;
+        let resumption_psk = groups[1].resumption_secret(epoch_to_resume).unwrap();
+
         let test_case = commit_by_value(
             &mut groups[5].clone(),
-            |b| b.add_resumption_psk(groups[1].current_epoch() - 1).unwrap(),
+            |b| {
+                b.add_resumption_psk(epoch_to_resume, resumption_psk)
+                    .unwrap()
+            },
             partial_test_case.clone(),
         )
         .await;
@@ -367,6 +379,9 @@ pub async fn generate_passive_client_proposal_tests() -> Vec<TestCase> {
 
         test_cases.push(test_case);
 
+        let epoch_to_resume = groups[4].current_epoch() - 1;
+        let resumption_psk = groups[4].resumption_secret(epoch_to_resume).unwrap();
+
         let test_case = commit_by_value(
             &mut groups[3].clone(),
             |b| {
@@ -374,9 +389,9 @@ pub async fn generate_passive_client_proposal_tests() -> Vec<TestCase> {
                     .unwrap()
                     .remove_member(5)
                     .unwrap()
-                    .add_external_psk(psk.clone())
+                    .add_external_psk(psk.clone(), make_test_ext_psk().into())
                     .unwrap()
-                    .add_resumption_psk(groups[4].current_epoch() - 1)
+                    .add_resumption_psk(epoch_to_resume, resumption_psk)
                     .unwrap()
                     .set_group_context_ext(Default::default())
                     .unwrap()
@@ -661,11 +676,10 @@ pub async fn add_random_members<C: MlsConfig>(
     for client in &clients {
         let commit = commit_output.welcome_messages[0].clone();
 
-        let group = client
+        let (group, _) = client
             .join_group(Some(tree_data.clone()), &commit)
             .await
-            .unwrap()
-            .0;
+            .unwrap();
 
         groups.push(group);
     }
