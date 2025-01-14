@@ -870,6 +870,8 @@ impl MlsClientImpl {
 
         let commit = MlsMessage::from_bytes(&request.commit).map_err(abort)?;
 
+        let group_clone = group.clone();
+
         let mut processor = group.commit_processor(commit).map_err(abort)?;
 
         let required_external_psks = processor
@@ -897,10 +899,8 @@ impl MlsClientImpl {
             required_resumption_psks
                 .into_iter()
                 .try_fold(processor, |processor, psk| {
-                    let resumption_psk = client
-                        .client
-                        .load_group(&psk.psk_group_id.0)
-                        .and_then(|g| g.resumption_secret(psk.psk_epoch))
+                    let resumption_psk = group_clone
+                        .resumption_secret(psk.psk_epoch)
                         .map_err(abort)?;
 
                     Ok::<_, Status>(processor.with_resumption_psk(psk, resumption_psk))
