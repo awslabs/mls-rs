@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1736860208279,
+  "lastUpdate": 1736887973645,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -19535,6 +19535,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 129059,
             "range": "± 1819",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mgeisler@google.com",
+            "name": "Martin Geisler",
+            "username": "mgeisler"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "527675b82ba18bc20049748fc0661255e2dda867",
+          "message": "Remove overloaded public methods from X509IdentityProvider (#236)\n\n* Avoid X509IdentityProvider overloaded methods\n\nWhile using a `X509IdentityProvider` in a generic context, I\ndiscovered that it has a few methods which I found confusing:\n\n- X509IdentityProvider::identity takes 1 argument, but\n  IdentityProvider::identity takes 2 arguments!\n\n- X509IdentityProvider::valid_successor takes 2 arguments,\n  but IdentityProvider::valid_successor takes 3 arguments!\n\nI ended up solving this with the fully-qualified `<Type as\nTrait>::method` syntax, but I think the situation can be avoided all\ntogether by just implementing the trait directly.\n\n* Bump mls-rs-identity-x509 version to 0.14\n\nThe previous commit removed a few public methods, implying that we\nneed a SemVer breaking change. Since the types are re-exported in\nmls-rs, I also bumped the version of that crate.\n\n* Use imported names more consistently\n\n---------\n\nCo-authored-by: mulmarta <103590845+mulmarta@users.noreply.github.com>",
+          "timestamp": "2025-01-14T15:48:28-05:00",
+          "tree_id": "2195c197364e6de80998527553c7f764ad2b5888",
+          "url": "https://github.com/awslabs/mls-rs/commit/527675b82ba18bc20049748fc0661255e2dda867"
+        },
+        "date": 1736887972359,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 551677,
+            "range": "± 14652",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 553940,
+            "range": "± 20186",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 620175,
+            "range": "± 30328",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1263546,
+            "range": "± 36781",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7947210,
+            "range": "± 137908",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2620789,
+            "range": "± 128586",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7204636,
+            "range": "± 143496",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13238282,
+            "range": "± 509934",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 781210,
+            "range": "± 22466",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 859063,
+            "range": "± 18684",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 1009741,
+            "range": "± 34160",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 20755,
+            "range": "± 603",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 68570,
+            "range": "± 1274",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 131832,
+            "range": "± 3101",
             "unit": "ns/iter"
           }
         ]
