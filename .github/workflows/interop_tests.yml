@@ -48,7 +48,7 @@ jobs:
           cargo build
           cargo run -- --port 50001 &
           cd ../../interop/interop
-          for config in `ls mls-rs-configs | sed -e "s/mls-rs-configs\///"`; do >&2 echo $config && test-runner/test-runner --client localhost:50001 --config mls-rs-configs/$config ; done > /dev/null
+          for config in `ls mls-rs-configs | sed -e "s/mls-rs-configs\///"`; do >&2 echo $config && test-runner/test-runner --client localhost:50001 --config mls-rs-configs/$config ; done
           kill %1
       - name: Test interop; full feature with "bare bones"
         run: |
