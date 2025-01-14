@@ -10,7 +10,10 @@ use mls_rs::{
         SigningIdentity,
     },
     mls_rules::{CommitOptions, DefaultMlsRules},
-    test_utils::benchmarks::{MlsCryptoProvider, TestClient, BENCH_CIPHER_SUITE},
+    test_utils::{
+        benchmarks::{MlsCryptoProvider, BENCH_CIPHER_SUITE},
+        TestClient,
+    },
     CipherSuiteProvider, Client, CryptoProvider,
 };
 
@@ -68,7 +71,7 @@ fn make_client(name: &str) -> TestClient<impl MlsConfig> {
         .signature_key_generate()
         .unwrap();
 
-    TestClient::builder()
+    Client::builder()
         .crypto_provider(crypto_provider)
         .identity_provider(BasicIdentityProvider)
         .mls_rules(
