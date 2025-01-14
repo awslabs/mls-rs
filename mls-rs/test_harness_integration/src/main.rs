@@ -285,17 +285,46 @@ impl MlsClient for MlsClientImpl {
 
         let tree = get_tree(&request.ratchet_tree)?;
 
-        let (group, _) = client
+        let mut joiner = client
             .client
             .group_joiner(&welcome_msg, pkg_data)
-            .and_then(|joiner| {
-                match tree {
-                    Some(tree) => joiner.ratchet_tree(tree),
-                    None => joiner,
-                }
-                .join()
-            })
             .map_err(abort)?;
+
+        if let Some(tree) = tree {
+            joiner = joiner.ratchet_tree(tree);
+        }
+
+        let required_external_psks = joiner.required_external_psks().cloned().collect::<Vec<_>>();
+
+        joiner = required_external_psks
+            .into_iter()
+            .try_fold(joiner, |joiner, psk| {
+                let psk_secret = client
+                    .psk_store
+                    .get(&psk)
+                    .ok_or(Status::aborted("missing psk"))?;
+
+                Ok::<_, Status>(joiner.with_external_psk(psk, psk_secret))
+            })?;
+
+        let required_resumption_psks = joiner
+            .required_resumption_psks()
+            .cloned()
+            .collect::<Vec<_>>();
+
+        joiner = required_resumption_psks
+            .into_iter()
+            .try_fold(joiner, |joiner, psk| {
+                let resumption_psk = client
+                    .client
+                    .load_group(&psk.psk_group_id.0)
+                    .and_then(|g| g.resumption_secret(psk.psk_epoch))
+                    .map_err(abort)?;
+
+                Ok::<_, Status>(joiner.with_resumption_psk(psk, resumption_psk))
+            })?;
+
+        let (group, _) = joiner.join().map_err(abort)?;
 
         let epoch_authenticator = group.epoch_authenticator().map_err(abort)?.to_vec();
         client.group = Some(group);
