@@ -13,6 +13,9 @@ jobs:
         os: [ubuntu-latest, macos-14, windows-latest]
       fail-fast: false
     runs-on: ${{ matrix.os }}
+    # TODO remove after AWS-LC FIPS bindings for Kyber are fixed
+    env:
+      AWS_LC_FIPS_SYS_EXTERNAL_BINDGEN: '1'
     steps:
       - uses: actions/checkout@v3
       - uses: arduino/setup-protoc@v2
@@ -30,6 +33,9 @@ jobs:
           go-version: '>=1.18'
       - uses: seanmiddleditch/gha-setup-ninja@master
         if: runner.os == 'Windows'
+      # TODO remove after AWS-LC FIPS bindings for Kyber are fixed
+      - name: Install bindgen-cli
+        run: cargo install --force --locked bindgen-cli
       - run: |
           echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
           vcpkg install openssl:x64-windows-static-md sqlite3:x64-windows-static-md
@@ -38,7 +44,12 @@ jobs:
           echo "SSL_CERT_FILE=C:/cacert.pem" | Out-File -FilePath $env:GITHUB_ENV -Append
         if: runner.os == 'Windows'
       - name: Test Full RFC Compliance
-        run: cargo test --all-features --verbose --workspace
+        # Don't test AWS LC on all features as it makes it build both FIPS and non-FIPS versions
+        run: cargo test --all-features --verbose --workspace --exclude mls-rs-crypto-aws-lc
+      - name: Test AWS-LC provider
+        run: |
+          cargo test --verbose -p mls-rs-crypto-awslc --features post-quantum
+          cargo test --verbose -p mls-rs-crypto-awslc --features post-quantum,fips --no-default-features
       - name: Test Bare Bones
         run: cargo test --no-default-features --features std,test_util,non-fips  --verbose --workspace
       - name: Examples
@@ -82,6 +93,9 @@ jobs:
         run: cargo test --no-default-features --lib --test '*' --features std,test_util --verbose -p mls-rs
   LintAndFormatting:
     runs-on: ubuntu-latest
+     # TODO remove after AWS-LC FIPS bindings for Kyber are fixed
+    env:
+      AWS_LC_FIPS_SYS_EXTERNAL_BINDGEN: '1'
     steps:
       - uses: actions/checkout@v3
       - uses: arduino/setup-protoc@v2
@@ -96,6 +110,9 @@ jobs:
         with:
           go-version: '>=1.18'
       - uses: seanmiddleditch/gha-setup-ninja@master
+      # TODO remove after AWS-LC FIPS bindings for Kyber are fixed
+      - name: Install bindgen-cli
+        run: cargo install --force --locked bindgen-cli
       - name: Rust Fmt
         run: cargo fmt --all -- --check
       - name: Clippy Full RFC Compliance
