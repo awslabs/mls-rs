@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1736781960466,
+  "lastUpdate": 1736860208279,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -19427,6 +19427,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 132676,
             "range": "± 837",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "103590845+mulmarta@users.noreply.github.com",
+            "name": "mulmarta",
+            "username": "mulmarta"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9aee7e625c49fef79ee6c1a8f7b5aec65d651041",
+          "message": "PQ KEMs behind a feature flag (#221)\n\n* wip\r\n\r\n* Replace round3 submission by ml-kem\r\n\r\n* Fixup\r\n\r\n* Rename kyber to ml-kem\r\n\r\n* Rename kyber to ml-kem\r\n\r\n* Fixup\r\n\r\n* Fixup\r\n\r\n* Fix?\r\n\r\n* Bump versions\r\n\r\n* wip\r\n\r\n* wip\r\n\r\n* Update aws-lc version. Support Kyber with FIPS\r\n\r\n* Add tests for combiner\r\n\r\n* Fixup\r\n\r\n* Fixup\r\n\r\n* Fixup\r\n\r\n* Fixup\r\n\r\n* Fix warnings, not build FIPS and non-FIPS at the same time\r\n\r\n* Fixup\r\n\r\n* Fixup\r\n\r\n* Fixup :(\r\n\r\n* Fix key size\r\n\r\n* Apply suggestions from code review\r\n\r\nCo-authored-by: Stephane Raux <94983192+stefunctional@users.noreply.github.com>\r\n\r\n---------\r\n\r\nCo-authored-by: Marta Mularczyk <mulmarta@amazon.com>\r\nCo-authored-by: Stephane Raux <94983192+stefunctional@users.noreply.github.com>",
+          "timestamp": "2025-01-14T14:05:49+01:00",
+          "tree_id": "6d00c19505f595aa3eac2772e515531831634c84",
+          "url": "https://github.com/awslabs/mls-rs/commit/9aee7e625c49fef79ee6c1a8f7b5aec65d651041"
+        },
+        "date": 1736860207604,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 547631,
+            "range": "± 16095",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 555210,
+            "range": "± 16770",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 580801,
+            "range": "± 21700",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1269017,
+            "range": "± 27893",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7856848,
+            "range": "± 110906",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2600058,
+            "range": "± 83074",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7154437,
+            "range": "± 64139",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13083731,
+            "range": "± 151422",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 756113,
+            "range": "± 53835",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 841184,
+            "range": "± 12492",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 981868,
+            "range": "± 16087",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 20378,
+            "range": "± 1112",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 67017,
+            "range": "± 1499",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 129059,
+            "range": "± 1819",
             "unit": "ns/iter"
           }
         ]
