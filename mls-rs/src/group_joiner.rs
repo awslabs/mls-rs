@@ -9,9 +9,6 @@ use mls_rs_core::{
     protocol_version::ProtocolVersion,
 };
 
-#[cfg(feature = "psk")]
-use mls_rs_core::psk::ExternalPskId;
-
 use crate::{
     client_config::ClientConfig,
     error::MlsError,
@@ -27,7 +24,13 @@ use crate::{
 };
 
 #[cfg(feature = "psk")]
-use crate::psk::{JustPreSharedKeyID, ResumptionPsk};
+use alloc::vec::Vec;
+
+#[cfg(feature = "psk")]
+use crate::psk::{
+    secret::PskSecretInput, ExternalPskId, JustPreSharedKeyID, PreSharedKey, ResumptionPSKUsage,
+    ResumptionPsk,
+};
 
 pub struct GroupJoiner<'a, 'b, C> {
     // Parsed data
@@ -41,6 +44,8 @@ pub struct GroupJoiner<'a, 'b, C> {
     // Inputted by application
     tree: Option<ExportedTree<'b>>,
     signer: Option<SignatureSecretKey>,
+    #[cfg(feature = "psk")]
+    psks: Vec<(JustPreSharedKeyID, PreSharedKey)>,
 
     // Needed for reinit
     #[cfg(feature = "psk")]
@@ -90,11 +95,21 @@ impl<'a, 'b, C: ClientConfig> GroupJoiner<'a, 'b, C> {
         }
     }
 
-    // TODO with_psks
+    #[cfg(feature = "psk")]
+    pub fn with_external_psk(mut self, id: ExternalPskId, psk: PreSharedKey) -> Self {
+        self.psks.push((JustPreSharedKeyID::External(id), psk));
+        self
+    }
+
+    #[cfg(feature = "psk")]
+    pub fn with_resumption_psk(mut self, id: ResumptionPsk, psk: PreSharedKey) -> Self {
+        self.psks.push((JustPreSharedKeyID::Resumption(id), psk));
+        self
+    }
 
     // Reinit
     #[cfg(feature = "psk")]
-    pub(crate) fn additional_psk(self, additional_psk: crate::psk::secret::PskSecretInput) -> Self {
+    pub(crate) fn additional_psk(self, additional_psk: PskSecretInput) -> Self {
         Self {
             additional_psk: Some(additional_psk),
             ..self
@@ -126,6 +141,8 @@ impl<'a, 'b, C: ClientConfig> GroupJoiner<'a, 'b, C> {
             signer,
             #[cfg(feature = "psk")]
             additional_psk: None,
+            #[cfg(feature = "psk")]
+            psks: Default::default(),
         })
     }
 
@@ -137,14 +154,47 @@ impl<'a, 'b, C: ClientConfig> GroupJoiner<'a, 'b, C> {
         let cipher_suite_provider =
             cipher_suite_provider(self.config.crypto_provider(), self.welcome.cipher_suite)?;
 
-        let psk_secret = Group::psk_secret(
-            &self.config,
-            &cipher_suite_provider,
-            &self.group_secrets.psks,
-            #[cfg(feature = "psk")]
-            self.additional_psk.take(),
-        )
-        .await?;
+        #[cfg(feature = "psk")]
+        let psk_secret = if let Some(psk) = &self.additional_psk {
+            let psk_id = self
+                .group_secrets
+                .psks
+                .first()
+                .ok_or(MlsError::UnexpectedPskId)?;
+
+            match &psk_id.key_id {
+                JustPreSharedKeyID::Resumption(r) if r.usage != ResumptionPSKUsage::Application => {
+                    Ok(())
+                }
+                _ => Err(MlsError::UnexpectedPskId),
+            }?;
+
+            let mut psk = psk.clone();
+            psk.id.psk_nonce = psk_id.psk_nonce.clone();
+            PskSecret::calculate(&[psk], &cipher_suite_provider).await
+        } else {
+            let psk_inputs = self
+                .group_secrets
+                .psks
+                .iter()
+                .map(|id| {
+                    self.psks
+                        .iter()
+                        .find_map(|(psk_id, psk)| {
+                            (*psk_id == id.key_id).then(|| PskSecretInput {
+                                id: id.clone(),
+                                psk: psk.clone(),
+                            })
+                        })
+                        .ok_or_else(|| MlsError::MissingRequiredPsk)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+
+            PskSecret::calculate(&psk_inputs, &cipher_suite_provider).await
+        }?;
+
+        #[cfg(not(feature = "psk"))]
+        let psk_secret = PskSecret::new(&cipher_suite_provider);
 
         // From the joiner_secret in the decrypted GroupSecrets object and the PSKs specified in
         // the GroupSecrets, derive the welcome_secret and using that the welcome_key and
@@ -265,36 +315,17 @@ mod tests {
     use mls_rs_core::psk::{ExternalPskId, PreSharedKey};
 
     use crate::{
-        client::test_utils::{
-            test_client_with_key_pkg_custom, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION,
-        },
+        client::test_utils::{test_client_with_key_pkg, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         psk::{PskGroupId, ResumptionPSKUsage, ResumptionPsk},
-        storage_provider::in_memory::InMemoryPreSharedKeyStorage,
     };
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn outputs_correct_join_info() {
-        let mut psk_store = InMemoryPreSharedKeyStorage::default();
+        let (alice, _kp_alice) =
+            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "alice").await;
 
-        let (alice, _kp_alice) = test_client_with_key_pkg_custom(
-            TEST_PROTOCOL_VERSION,
-            TEST_CIPHER_SUITE,
-            "alice",
-            Default::default(),
-            Default::default(),
-            |c| c.0.psk_store = psk_store.clone(),
-        )
-        .await;
-
-        let (bob, kp_bob) = test_client_with_key_pkg_custom(
-            TEST_PROTOCOL_VERSION,
-            TEST_CIPHER_SUITE,
-            "bob",
-            Default::default(),
-            Default::default(),
-            |c| c.0.psk_store = psk_store.clone(),
-        )
-        .await;
+        let (bob, kp_bob) =
+            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
 
         let mut group_alice = alice
             .create_group(Default::default(), Default::default())
@@ -310,9 +341,12 @@ mod tests {
             .unwrap();
 
         group_alice.apply_pending_commit().await.unwrap();
+
         let commit2 = group_alice.commit(vec![]).await.unwrap();
         group_alice.apply_pending_commit().await.unwrap();
         group_alice.write_to_storage().await.unwrap();
+
+        let resumption_psk = group_alice.resumption_secret(1).await.unwrap();
 
         let mut group_bob = bob
             .join_group(None, &commit1.welcome_messages[0])
@@ -328,7 +362,7 @@ mod tests {
         group_bob.write_to_storage().await.unwrap();
 
         let psk_id = ExternalPskId::new(b"123".into());
-        psk_store.insert(psk_id.clone(), PreSharedKey::new(b"123".into()));
+        let psk_secret = PreSharedKey::new(b"456".into());
 
         let kp_alice = alice
             .key_package_builder(None)
@@ -337,16 +371,22 @@ mod tests {
             .await
             .unwrap();
 
-        let commit = bob
+        let mut bob_group = bob
             .create_group(Default::default(), Default::default())
             .await
-            .unwrap()
+            .unwrap();
+
+        let commit = bob_group
             .commit_builder()
             .add_member(kp_alice.key_package_message)
             .unwrap()
-            .add_external_psk(psk_id.clone())
+            .add_external_psk(psk_id.clone(), psk_secret.clone())
             .unwrap()
-            .add_resumption_psk_for_group(1, group_alice.group_id().to_vec())
+            .add_resumption_psk_for_group(
+                1,
+                group_alice.group_id().to_vec(),
+                resumption_psk.clone(),
+            )
             .unwrap()
             .build()
             .await
@@ -360,7 +400,10 @@ mod tests {
         let external_psks = joiner.required_external_psks().collect::<Vec<_>>();
         assert_eq!(external_psks, vec![&psk_id]);
 
-        let resumption_psks = joiner.required_resumption_psks().collect::<Vec<_>>();
+        let resumption_psks = joiner
+            .required_resumption_psks()
+            .cloned()
+            .collect::<Vec<_>>();
 
         let expected_resumption_psk = ResumptionPsk {
             usage: ResumptionPSKUsage::Application,
@@ -368,8 +411,14 @@ mod tests {
             psk_epoch: 1,
         };
 
-        assert_eq!(resumption_psks, vec![&expected_resumption_psk]);
-
+        assert_eq!(resumption_psks, vec![expected_resumption_psk]);
         assert_eq!(joiner.cipher_suite(), TEST_CIPHER_SUITE);
+
+        joiner
+            .with_resumption_psk(resumption_psks[0].clone(), resumption_psk)
+            .with_external_psk(psk_id.clone(), psk_secret)
+            .join()
+            .await
+            .unwrap();
     }
 }

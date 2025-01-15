@@ -30,6 +30,9 @@ use mls_rs::{
     MlsMessage, MlsMessageDescription, MlsRules,
 };
 
+#[cfg(feature = "psk")]
+use mls_rs::error::MlsError;
+
 #[cfg(feature = "by_ref_proposal")]
 use mls_rs::external_client::builder::ExternalBaseConfig;
 
@@ -282,17 +285,46 @@ impl MlsClient for MlsClientImpl {
 
         let tree = get_tree(&request.ratchet_tree)?;
 
-        let (group, _) = client
+        let mut joiner = client
             .client
             .group_joiner(&welcome_msg, pkg_data)
-            .and_then(|joiner| {
-                match tree {
-                    Some(tree) => joiner.ratchet_tree(tree),
-                    None => joiner,
-                }
-                .join()
-            })
             .map_err(abort)?;
+
+        if let Some(tree) = tree {
+            joiner = joiner.ratchet_tree(tree);
+        }
+
+        let required_external_psks = joiner.required_external_psks().cloned().collect::<Vec<_>>();
+
+        joiner = required_external_psks
+            .into_iter()
+            .try_fold(joiner, |joiner, psk| {
+                let psk_secret = client
+                    .psk_store
+                    .get(&psk)
+                    .ok_or(Status::aborted("missing psk"))?;
+
+                Ok::<_, Status>(joiner.with_external_psk(psk, psk_secret))
+            })?;
+
+        let required_resumption_psks = joiner
+            .required_resumption_psks()
+            .cloned()
+            .collect::<Vec<_>>();
+
+        joiner = required_resumption_psks
+            .into_iter()
+            .try_fold(joiner, |joiner, psk| {
+                let resumption_psk = client
+                    .client
+                    .load_group(&psk.psk_group_id.0)
+                    .and_then(|g| g.resumption_secret(psk.psk_epoch))
+                    .map_err(abort)?;
+
+                Ok::<_, Status>(joiner.with_resumption_psk(psk, resumption_psk))
+            })?;
+
+        let (group, _) = joiner.join().map_err(abort)?;
 
         let epoch_authenticator = group.epoch_authenticator().map_err(abort)?.to_vec();
         client.group = Some(group);
@@ -359,6 +391,14 @@ impl MlsClient for MlsClientImpl {
         if let Some(removed_index) = removed_index {
             builder = builder.with_removal(removed_index);
         }
+
+        builder = request
+            .psks
+            .clone()
+            .into_iter()
+            .fold(builder, |builder, psk| {
+                builder.with_external_psk(psk.psk_id.into(), psk.psk_secret.into())
+            });
 
         let (group, commit) = builder.build().map_err(abort)?;
 
@@ -726,6 +766,9 @@ impl MlsClientImpl {
 
         let roster = group.roster().members();
 
+        #[cfg(feature = "psk")]
+        let group_clone = group.clone();
+
         let mut commit_builder = group.commit_builder();
 
         for proposal in request.by_value {
@@ -746,12 +789,25 @@ impl MlsClientImpl {
                 #[cfg(feature = "psk")]
                 PROPOSAL_DESC_EXTERNAL_PSK => {
                     let psk_id = ExternalPskId::new(proposal.psk_id.to_vec());
-                    commit_builder = commit_builder.add_external_psk(psk_id).map_err(abort)?;
+
+                    let psk = client
+                        .psk_store
+                        .get(&psk_id)
+                        .ok_or(MlsError::MissingRequiredPsk)
+                        .map_err(abort)?;
+
+                    commit_builder = commit_builder
+                        .add_external_psk(psk_id, psk)
+                        .map_err(abort)?;
                 }
                 #[cfg(feature = "psk")]
                 PROPOSAL_DESC_RESUMPTION_PSK => {
+                    let resumption_psk = group_clone
+                        .resumption_secret(proposal.epoch_id)
+                        .map_err(abort)?;
+
                     commit_builder = commit_builder
-                        .add_resumption_psk(proposal.epoch_id)
+                        .add_resumption_psk(proposal.epoch_id, resumption_psk)
                         .map_err(abort)?;
                 }
                 PROPOSAL_DESC_GCE => {
@@ -798,9 +854,11 @@ impl MlsClientImpl {
         let request = request.into_inner();
         let clients = &mut self.clients.lock().await;
 
-        let group = clients
+        let client = clients
             .get_mut(&request.state_id)
-            .ok_or_else(|| Status::aborted("no group with such index."))?
+            .ok_or_else(|| Status::aborted("no group with such index."))?;
+
+        let group = client
             .group
             .as_mut()
             .ok_or_else(|| Status::aborted("no group with such index."))?;
@@ -812,17 +870,50 @@ impl MlsClientImpl {
 
         let commit = MlsMessage::from_bytes(&request.commit).map_err(abort)?;
 
-        let message = group.process_incoming_message(commit).map_err(abort)?;
+        let group_clone = group.clone();
+
+        let mut processor = group.commit_processor(commit).map_err(abort)?;
+
+        let required_external_psks = processor
+            .required_external_psk()
+            .cloned()
+            .collect::<Vec<_>>();
+
+        processor = required_external_psks
+            .into_iter()
+            .try_fold(processor, |processor, psk| {
+                let psk_secret = client
+                    .psk_store
+                    .get(&psk)
+                    .ok_or(Status::aborted("missing psk"))?;
+
+                Ok::<_, Status>(processor.with_external_psk(psk, psk_secret))
+            })?;
+
+        let required_resumption_psks = processor
+            .required_resumption_psk()
+            .cloned()
+            .collect::<Vec<_>>();
+
+        processor =
+            required_resumption_psks
+                .into_iter()
+                .try_fold(processor, |processor, psk| {
+                    let resumption_psk = group_clone
+                        .resumption_secret(psk.psk_epoch)
+                        .map_err(abort)?;
+
+                    Ok::<_, Status>(processor.with_resumption_psk(psk, resumption_psk))
+                })?;
+
+        let message = processor.process().map_err(abort)?;
 
         let resp = HandleCommitResponse {
             state_id: request.state_id,
             epoch_authenticator: group.epoch_authenticator().map_err(abort)?.to_vec(),
         };
 
-        match message {
-            ReceivedMessage::Commit(update) => Ok((Response::new(resp), update.effect)),
-            _ => Err(Status::aborted("message not a commit.")),
-        }
+        Ok((Response::new(resp), message.effect))
     }
 }
 
@@ -845,7 +936,6 @@ async fn create_client(cipher_suite: u16, identity: &[u8]) -> Result<ClientDetai
         .crypto_provider(OpensslCryptoProvider::default())
         .identity_provider(BasicIdentityProvider::new())
         .mls_rules(mls_rules.clone())
-        .psk_store(psk_store.clone())
         .signing_identity(signing_identity.clone(), secret_key.clone(), cipher_suite)
         .build();
 

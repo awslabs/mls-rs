@@ -416,7 +416,6 @@ impl GroupWithoutKeySchedule {
 impl MessageProcessor for GroupWithoutKeySchedule {
     type CipherSuiteProvider = <Group<TestClientConfig> as MessageProcessor>::CipherSuiteProvider;
     type OutputType = <Group<TestClientConfig> as MessageProcessor>::OutputType;
-    type PreSharedKeyStorage = <Group<TestClientConfig> as MessageProcessor>::PreSharedKeyStorage;
     type IdentityProvider = <Group<TestClientConfig> as MessageProcessor>::IdentityProvider;
     type MlsRules = <Group<TestClientConfig> as MessageProcessor>::MlsRules;
 
@@ -435,10 +434,6 @@ impl MessageProcessor for GroupWithoutKeySchedule {
 
     fn cipher_suite_provider(&self) -> Self::CipherSuiteProvider {
         self.inner.cipher_suite_provider()
-    }
-
-    fn psk_storage(&self) -> Self::PreSharedKeyStorage {
-        self.inner.psk_storage()
     }
 
     fn removal_proposal(
@@ -488,6 +483,7 @@ impl MessageProcessor for GroupWithoutKeySchedule {
         _interim_transcript_hash: InterimTranscriptHash,
         _confirmation_tag: &ConfirmationTag,
         provisional_public_state: ProvisionalState,
+        #[cfg(feature = "psk")] _psks: &[PskSecretInput],
     ) -> Result<(), MlsError> {
         self.provisional_public_state = Some(provisional_public_state);
         self.secrets = secrets;

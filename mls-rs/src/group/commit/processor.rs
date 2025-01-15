@@ -23,6 +23,12 @@ use crate::{
     Group, MlsMessage,
 };
 
+#[cfg(feature = "psk")]
+use mls_rs_core::psk::{ExternalPskId, PreSharedKey};
+
+#[cfg(feature = "psk")]
+use crate::psk::{secret::PskSecretInput, JustPreSharedKeyID, ResumptionPsk};
+
 pub(crate) struct InternalCommitProcessor<'a, P: MessageProcessor> {
     // Group
     pub(crate) processor: &'a mut P,
@@ -38,6 +44,10 @@ pub(crate) struct InternalCommitProcessor<'a, P: MessageProcessor> {
 
     // Processing options
     pub(crate) time_sent: Option<MlsTime>,
+
+    // Outside inputs
+    #[cfg(feature = "psk")]
+    pub(crate) psks: Vec<(JustPreSharedKeyID, PreSharedKey)>,
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -114,6 +124,9 @@ pub(crate) async fn commit_processor_from_content<P: MessageProcessor>(
             .confirmation_tag
             .ok_or(MlsError::InvalidConfirmationTag)?,
         time_sent: None,
+        // FIXME: Where can this actually come from???
+        #[cfg(feature = "psk")]
+        psks: Default::default(),
     })
 }
 
@@ -123,9 +136,6 @@ pub(crate) async fn process_commit<P: MessageProcessor>(
 ) -> Result<CommitMessageDescription, MlsError> {
     let id_provider = commit_processor.processor.identity_provider();
     let cs_provider = commit_processor.processor.cipher_suite_provider();
-
-    // TODO remove
-    let psk_storage = commit_processor.processor.psk_storage();
 
     let mut provisional_state = commit_processor
         .processor
@@ -137,7 +147,12 @@ pub(crate) async fn process_commit<P: MessageProcessor>(
             &cs_provider,
             commit_processor.time_sent,
             CommitDirection::Receive,
-            &psk_storage,
+            #[cfg(feature = "psk")]
+            &commit_processor
+                .psks
+                .iter()
+                .map(|(id, _)| id.clone())
+                .collect::<Vec<_>>(),
             &commit_processor.committer,
         )
         .await?;
@@ -226,6 +241,25 @@ pub(crate) async fn process_commit<P: MessageProcessor>(
         .tree_hash(&cs_provider)
         .await?;
 
+    #[cfg(feature = "psk")]
+    let psk_inputs = provisional_state
+        .applied_proposals
+        .psks
+        .iter()
+        .map(|id| {
+            commit_processor
+                .psks
+                .iter()
+                .find_map(|(psk_id, psk)| {
+                    (*psk_id == id.proposal.psk.key_id).then(|| PskSecretInput {
+                        id: id.proposal.psk.clone(),
+                        psk: psk.clone(),
+                    })
+                })
+                .ok_or_else(|| MlsError::MissingRequiredPsk)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
     if !is_self_removed {
         // Update the key schedule to calculate new private keys
         commit_processor
@@ -235,6 +269,8 @@ pub(crate) async fn process_commit<P: MessageProcessor>(
                 commit_processor.interim_transcript_hash,
                 &commit_processor.confirmation_tag,
                 provisional_state,
+                #[cfg(feature = "psk")]
+                &psk_inputs,
             )
             .await?;
     }
@@ -263,6 +299,18 @@ impl<C: ClientConfig> CommitProcessor<'_, C> {
         })
     }
 
+    #[cfg(feature = "psk")]
+    pub fn with_external_psk(mut self, id: ExternalPskId, psk: crate::psk::PreSharedKey) -> Self {
+        self.0.psks.push((JustPreSharedKeyID::External(id), psk));
+        self
+    }
+
+    #[cfg(feature = "psk")]
+    pub fn with_resumption_psk(mut self, id: ResumptionPsk, psk: crate::psk::PreSharedKey) -> Self {
+        self.0.psks.push((JustPreSharedKeyID::Resumption(id), psk));
+        self
+    }
+
     pub fn proposals_mut(&mut self) -> &mut ProposalBundle {
         &mut self.0.proposals
     }
@@ -286,6 +334,24 @@ impl<C: ClientConfig> CommitProcessor<'_, C> {
 
     pub fn authenticated_data(&self) -> &[u8] {
         &self.0.authenticated_data
+    }
+
+    #[cfg(feature = "psk")]
+    pub fn required_external_psk(&self) -> impl Iterator<Item = &ExternalPskId> {
+        self.0
+            .proposals
+            .psk_proposals()
+            .iter()
+            .filter_map(|p| p.proposal.external_psk_id())
+    }
+
+    #[cfg(feature = "psk")]
+    pub fn required_resumption_psk(&self) -> impl Iterator<Item = &ResumptionPsk> {
+        self.0
+            .proposals
+            .psk_proposals()
+            .iter()
+            .filter_map(|p| p.proposal.resumption_psk_id())
     }
 
     pub fn context(&self) -> &GroupContext {

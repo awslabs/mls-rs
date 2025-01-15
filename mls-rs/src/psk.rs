@@ -4,16 +4,8 @@
 
 use alloc::vec::Vec;
 
-#[cfg(any(test, feature = "external_client"))]
-use alloc::vec;
-
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 
-#[cfg(any(test, feature = "external_client"))]
-use mls_rs_core::psk::PreSharedKeyStorage;
-
-#[cfg(any(test, feature = "external_client"))]
-use core::convert::Infallible;
 use core::fmt::{self, Debug};
 
 #[cfg(feature = "psk")]
@@ -22,8 +14,6 @@ use crate::{client::MlsError, CipherSuiteProvider};
 #[cfg(feature = "psk")]
 use mls_rs_core::error::IntoAnyError;
 
-#[cfg(feature = "psk")]
-pub(crate) mod resolver;
 pub(crate) mod secret;
 
 pub use mls_rs_core::psk::{ExternalPskId, PreSharedKey};
@@ -73,6 +63,12 @@ impl Debug for PskGroupId {
         mls_rs_core::debug::pretty_bytes(&self.0)
             .named("PskGroupId")
             .fmt(f)
+    }
+}
+
+impl From<Vec<u8>> for PskGroupId {
+    fn from(value: Vec<u8>) -> Self {
+        Self(value)
     }
 }
 
@@ -129,21 +125,6 @@ struct PSKLabel<'a> {
     id: &'a PreSharedKeyID,
     index: u16,
     count: u16,
-}
-
-#[cfg(any(test, feature = "external_client"))]
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct AlwaysFoundPskStorage;
-
-#[cfg(any(test, feature = "external_client"))]
-#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
-impl PreSharedKeyStorage for AlwaysFoundPskStorage {
-    type Error = Infallible;
-
-    async fn get(&self, _: &ExternalPskId) -> Result<Option<PreSharedKey>, Self::Error> {
-        Ok(Some(vec![].into()))
-    }
 }
 
 #[cfg(feature = "psk")]

@@ -22,7 +22,7 @@ pub use mls_rs_core::extension::ExtensionList;
 pub use mls_rs_core::group::ProposalType;
 
 #[cfg(feature = "psk")]
-use crate::psk::{ExternalPskId, JustPreSharedKeyID, PreSharedKeyID};
+use crate::psk::{ExternalPskId, JustPreSharedKeyID, PreSharedKeyID, ResumptionPsk};
 
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -158,6 +158,13 @@ impl PreSharedKeyProposal {
         match self.psk.key_id {
             JustPreSharedKeyID::External(ref ext) => Some(ext),
             JustPreSharedKeyID::Resumption(_) => None,
+        }
+    }
+
+    pub fn resumption_psk_id(&self) -> Option<&ResumptionPsk> {
+        match self.psk.key_id {
+            JustPreSharedKeyID::External(_) => None,
+            JustPreSharedKeyID::Resumption(ref ext) => Some(ext),
         }
     }
 }

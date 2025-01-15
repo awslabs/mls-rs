@@ -653,23 +653,20 @@ where
             self.config.clone(),
             group_info_msg,
         )
-        .await?
         .build()
         .await
     }
 
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn external_commit_builder(
+    pub fn external_commit_builder(
         &self,
         group_info_msg: MlsMessage,
     ) -> Result<ExternalCommitBuilder<C>, MlsError> {
-        ExternalCommitBuilder::new(
+        Ok(ExternalCommitBuilder::new(
             self.signer()?.clone(),
             self.signing_identity()?.0.clone(),
             self.config.clone(),
             group_info_msg,
-        )
-        .await
+        ))
     }
 
     /// Load an existing group state into this client using the
@@ -796,13 +793,6 @@ where
             .ok_or(MlsError::SignerNotFound)
     }
 
-    /// The [PreSharedKeyStorage](crate::PreSharedKeyStorage) that
-    /// this client was configured to use.
-    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
-    pub fn secret_store(&self) -> <C as ClientConfig>::PskStore {
-        self.config.secret_store()
-    }
-
     /// The [GroupStateStorage] that this client was configured to use.
     #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     pub fn group_state_storage(&self) -> <C as ClientConfig>::GroupStateStorage {
@@ -892,8 +882,6 @@ mod tests {
     #[cfg(feature = "by_ref_proposal")]
     use crate::group::proposal::Proposal;
     use crate::group::test_utils::test_group;
-    #[cfg(feature = "psk")]
-    use crate::group::test_utils::test_group_custom_config;
     #[cfg(feature = "by_ref_proposal")]
     use crate::group::ReceivedMessage;
     #[cfg(feature = "psk")]
@@ -998,18 +986,9 @@ mod tests {
         let psk = PreSharedKey::from(b"psk".to_vec());
         let psk_id = ExternalPskId::new(b"psk id".to_vec());
 
-        let mut alice_group =
-            test_group_custom_config(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, |c| {
-                c.psk(psk_id.clone(), psk.clone())
-            })
-            .await;
+        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
-        let (mut bob_group, _) = alice_group
-            .join_with_custom_config("bob", false, |c| {
-                c.0.psk_store.insert(psk_id.clone(), psk.clone());
-            })
-            .await
-            .unwrap();
+        let (mut bob_group, _) = alice_group.join("bob").await;
 
         let group_info_msg = alice_group
             .group_info_message_allowing_ext_commit(true)
@@ -1022,21 +1001,17 @@ mod tests {
             get_test_signing_identity(TEST_CIPHER_SUITE, new_client_id.as_bytes()).await;
 
         let new_client = TestClientBuilder::new_for_test()
-            .psk(psk_id.clone(), psk)
             .signing_identity(new_client_identity.clone(), secret_key, TEST_CIPHER_SUITE)
             .build();
 
-        let mut builder = new_client
-            .external_commit_builder(group_info_msg)
-            .await
-            .unwrap();
+        let mut builder = new_client.external_commit_builder(group_info_msg).unwrap();
 
         if do_remove {
             builder = builder.with_removal(1);
         }
 
         if with_psk {
-            builder = builder.with_external_psk(psk_id).unwrap();
+            builder = builder.with_external_psk(psk_id.clone(), psk.clone());
         }
 
         let (new_group, external_commit) = builder.build().await?;
@@ -1046,14 +1021,22 @@ mod tests {
         assert_eq!(new_group.roster().members_iter().count(), num_members);
 
         let _ = alice_group
-            .process_incoming_message(external_commit.clone())
+            .commit_processor(external_commit.clone())
+            .await
+            .unwrap()
+            .with_external_psk(psk_id.clone(), psk.clone())
+            .process()
             .await
             .unwrap();
 
         let bob_current_epoch = bob_group.current_epoch();
 
         let message = bob_group
-            .process_incoming_message(external_commit)
+            .commit_processor(external_commit.clone())
+            .await
+            .unwrap()
+            .with_external_psk(psk_id, psk)
+            .process()
             .await
             .unwrap();
 
@@ -1067,13 +1050,13 @@ mod tests {
 
             assert_matches!(
                 message,
-                ReceivedMessage::Commit(CommitMessageDescription {
+                CommitMessageDescription {
                     effect: CommitEffect::Removed {
                         new_epoch: _,
                         remover: _
                     },
                     ..
-                })
+                }
             );
         }
 
@@ -1136,7 +1119,6 @@ mod tests {
 
         let (_, external_commit) = carol
             .external_commit_builder(group_info_msg)
-            .await
             .unwrap()
             .build()
             .await
