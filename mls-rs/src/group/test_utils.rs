@@ -130,10 +130,10 @@ impl TestGroup {
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub(crate) async fn process_message<'a>(
-        &'a mut self,
+    pub(crate) async fn process_message(
+        &mut self,
         message: MlsMessage,
-    ) -> Result<ReceivedMessage<'a, TestClientConfig>, MlsError> {
+    ) -> Result<ReceivedMessage<'_, TestClientConfig>, MlsError> {
         self.process_incoming_message_oneshot(message).await
     }
 
