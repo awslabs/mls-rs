@@ -2379,7 +2379,7 @@ mod tests {
         let group = test_group(protocol_version, cipher_suite).await;
 
         let info = group
-            .group_info_message(false)
+            .group_info_message(true)
             .await
             .unwrap()
             .into_group_info()
@@ -2395,10 +2395,11 @@ mod tests {
             group.group.config,
             info_msg,
         )
-        .await
-        .map(|_| {});
+        .build()
+        .await;
 
-        assert_matches!(res, Err(MlsError::MissingExternalPubExtension));
+        // assert_matches! needs Debug which Group doesn't have
+        assert!(matches!(res, Err(MlsError::MissingExternalPubExtension)));
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -2421,7 +2422,6 @@ mod tests {
 
         test_client
             .external_commit_builder(commit_output.external_commit_group_info.unwrap())
-            .await
             .unwrap()
             .build()
             .await
@@ -2535,7 +2535,6 @@ mod tests {
                     .await
                     .unwrap(),
             )
-            .await
             .unwrap()
             .build()
             .await
@@ -2582,7 +2581,6 @@ mod tests {
                     .await
                     .unwrap(),
             )
-            .await
             .unwrap()
             .with_tree_data(alice_group.export_tree().into_owned())
             .build()
@@ -3931,7 +3929,6 @@ mod tests {
         let commit = client_with_custom_rules(b"bob", mls_rules)
             .await
             .external_commit_builder(group_info)
-            .await
             .unwrap()
             .with_custom_proposal(CustomProposal::new(TEST_CUSTOM_PROPOSAL_TYPE, vec![]))
             .build()
@@ -3965,10 +3962,8 @@ mod tests {
         let (_, commit) = client_with_custom_rules(b"bob", mls_rules)
             .await
             .external_commit_builder(group_info)
-            .await
             .unwrap()
             .with_received_custom_proposal(by_ref)
-            .unwrap()
             .build()
             .await
             .unwrap();

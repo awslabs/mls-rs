@@ -6,7 +6,7 @@ use alloc::vec::Vec;
 
 use super::{
     message_processor::ProvisionalState,
-    proposal_filter::prepare_proposals_for_mls_rules,
+    mls_rules::{CommitDirection, CommitSource},
     GroupState, ProposalOrRef,
 };
 use crate::{
@@ -35,7 +35,7 @@ use crate::tree_kem::leaf_node::LeafNode;
 #[cfg(feature = "by_ref_proposal")]
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 
-use mls_rs_core::{crypto::CipherSuiteProvider, error::IntoAnyError, identity::IdentityProvider};
+use mls_rs_core::{crypto::CipherSuiteProvider, identity::IdentityProvider};
 
 #[cfg(feature = "by_ref_proposal")]
 use core::fmt::{self, Debug};
@@ -238,7 +238,6 @@ impl GroupState {
     where
         C: IdentityProvider,
         CSP: CipherSuiteProvider,
-        F: MlsRules,
     {
         #[cfg(feature = "by_ref_proposal")]
         let all_proposals = proposals.clone();
@@ -376,6 +375,8 @@ pub(crate) mod test_utils {
         cipher_suite_provider: CSP,
         group_context_extensions: ExtensionList,
         psks: Vec<JustPreSharedKeyID>,
+    }
+
     impl<'a, CSP> CommitReceiver<'a, BasicWithCustomProvider, CSP> {
         pub fn new<S>(
             tree: &'a TreeKemPublic,
@@ -405,7 +406,7 @@ pub(crate) mod test_utils {
         CSP: CipherSuiteProvider,
     {
         #[cfg(feature = "by_ref_proposal")]
-        pub fn with_identity_provider<V>(self, validator: V) -> CommitReceiver<'a, V, F, CSP>
+        pub fn with_identity_provider<V>(self, validator: V) -> CommitReceiver<'a, V, CSP>
         where
             V: IdentityProvider,
         {
@@ -608,7 +609,6 @@ mod tests {
         identity::basic::BasicIdentityProvider,
         identity::test_utils::{get_test_signing_identity, BasicWithCustomProvider},
         key_package::test_utils::test_key_package,
-        mls_rules::{CommitOptions},
         tree_kem::{
             leaf_node::{
                 test_utils::{
@@ -642,7 +642,6 @@ mod tests {
     use crate::group::proposal::CustomProposal;
 
     use assert_matches::assert_matches;
-    use core::convert::Infallible;
     use itertools::Itertools;
     use mls_rs_core::crypto::{CipherSuite, CipherSuiteProvider};
     use mls_rs_core::extension::ExtensionList;
@@ -1871,14 +1870,6 @@ mod tests {
             self
         }
 
-        fn with_user_rules<G>(self, f: G) -> CommitSender<'a, C, G, CSP>
-        {
-            CommitSender {
-                tree: self.tree,
-                sender: self.sender,
-                cache: self.cache,
-                additional_proposals: self.additional_proposals,
-                identity_provider: self.identity_provider,
         fn with_psks(self, psks: Vec<JustPreSharedKeyID>) -> CommitSender<'a, C, CSP> {
             CommitSender { psks, ..self }
         }

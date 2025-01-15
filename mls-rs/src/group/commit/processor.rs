@@ -5,7 +5,10 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
-use mls_rs_core::{group::ConfirmedTranscriptHash, time::MlsTime};
+use mls_rs_core::{
+    group::{ConfirmedTranscriptHash, GroupContext},
+    time::MlsTime,
+};
 
 use crate::{
     client_config::ClientConfig,
@@ -133,9 +136,6 @@ pub(crate) async fn process_commit<P: MessageProcessor>(
 ) -> Result<CommitMessageDescription, MlsError> {
     let id_provider = commit_processor.processor.identity_provider();
     let cs_provider = commit_processor.processor.cipher_suite_provider();
-
-    // TODO remove
-    let user_rules = commit_processor.processor.mls_rules();
 
     let mut provisional_state = commit_processor
         .processor
@@ -309,7 +309,6 @@ impl<C: ClientConfig> CommitProcessor<'_, C> {
     pub fn with_resumption_psk(mut self, id: ResumptionPsk, psk: crate::psk::PreSharedKey) -> Self {
         self.0.psks.push((JustPreSharedKeyID::Resumption(id), psk));
         self
-
     }
 
     pub fn proposals_mut(&mut self) -> &mut ProposalBundle {
@@ -358,7 +357,6 @@ impl<C: ClientConfig> CommitProcessor<'_, C> {
     pub fn context(&self) -> &GroupContext {
         self.0.processor.context()
     }
-    
 }
 
 impl<C: ClientConfig> Group<C> {

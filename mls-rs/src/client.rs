@@ -653,23 +653,20 @@ where
             self.config.clone(),
             group_info_msg,
         )
-        .await?
         .build()
         .await
     }
 
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn external_commit_builder(
+    pub fn external_commit_builder(
         &self,
         group_info_msg: MlsMessage,
     ) -> Result<ExternalCommitBuilder<C>, MlsError> {
-        ExternalCommitBuilder::new(
+        Ok(ExternalCommitBuilder::new(
             self.signer()?.clone(),
             self.signing_identity()?.0.clone(),
             self.config.clone(),
             group_info_msg,
-        )
-        .await
+        ))
     }
 
     /// Load an existing group state into this client using the
@@ -1007,10 +1004,7 @@ mod tests {
             .signing_identity(new_client_identity.clone(), secret_key, TEST_CIPHER_SUITE)
             .build();
 
-        let mut builder = new_client
-            .external_commit_builder(group_info_msg)
-            .await
-            .unwrap();
+        let mut builder = new_client.external_commit_builder(group_info_msg).unwrap();
 
         if do_remove {
             builder = builder.with_removal(1);
@@ -1125,7 +1119,6 @@ mod tests {
 
         let (_, external_commit) = carol
             .external_commit_builder(group_info_msg)
-            .await
             .unwrap()
             .build()
             .await

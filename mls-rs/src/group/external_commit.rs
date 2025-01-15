@@ -4,7 +4,6 @@
 
 use mls_rs_core::{
     crypto::SignatureSecretKey, extension::ExtensionList, identity::SigningIdentity,
-    protocol_version::ProtocolVersion,
 };
 
 use crate::{
@@ -13,8 +12,8 @@ use crate::{
         cipher_suite_provider,
         epoch::SenderDataSecret,
         key_schedule::{InitSecret, KeySchedule},
-        proposal::{ExternalInit, Proposal, RemoveProposal},
-        EpochSecrets, ExternalPubExt, LeafIndex, LeafNode, MlsError, TreeKemPrivate,
+        proposal::{ExternalInit, Proposal},
+        EpochSecrets, ExternalPubExt, LeafNode, MlsError, TreeKemPrivate,
     },
     mls_rules::{ProposalBundle, ProposalSource},
     Group, MlsMessage,
@@ -39,7 +38,7 @@ use crate::group::{
     PreSharedKeyProposal, {JustPreSharedKeyID, PreSharedKeyID},
 };
 
-use super::{validate_tree_and_info_joiner, ExportedTree};
+use super::{validate_tree_and_info_joiner, ExportedTree, Sender};
 
 /// A builder that aids with the construction of an external commit.
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::ffi_type(opaque))]
@@ -49,64 +48,39 @@ pub struct ExternalCommitBuilder<C: ClientConfig> {
     leaf_node_extensions: ExtensionList,
     config: C,
     tree_data: Option<ExportedTree<'static>>,
+    to_remove: Option<u32>,
     external_psks: Vec<(ExternalPskId, PreSharedKey)>,
     #[cfg(feature = "psk")]
     authenticated_data: Vec<u8>,
     #[cfg(feature = "custom_proposal")]
-    received_custom_proposals: Vec<PublicMessage>,
-    proposals: ProposalBundle,
-    group_info: GroupInfo,
-    protocol_version: ProtocolVersion,
-    init_secret: InitSecret,
+    custom_proposals: Vec<Proposal>,
+    #[cfg(feature = "custom_proposal")]
+    received_custom_proposals: Vec<MlsMessage>,
+    group_info: MlsMessage,
 }
 
 impl<C: ClientConfig> ExternalCommitBuilder<C> {
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub(crate) async fn new(
+    pub(crate) fn new(
         signer: SignatureSecretKey,
         signing_identity: SigningIdentity,
         config: C,
         group_info: MlsMessage,
-    ) -> Result<Self, MlsError> {
-        let protocol_version = group_info.version;
-
-        if !config.version_supported(protocol_version) {
-            return Err(MlsError::UnsupportedProtocolVersion(protocol_version));
-        }
-
-        let group_info = group_info
-            .into_group_info()
-            .ok_or(MlsError::UnexpectedMessageType)?;
-
-        let cipher_suite = cipher_suite_provider(
-            config.crypto_provider(),
-            group_info.group_context.cipher_suite,
-        )?;
-
-        let external_pub_ext = group_info
-            .extensions
-            .get_as::<ExternalPubExt>()?
-            .ok_or(MlsError::MissingExternalPubExtension)?;
-
-        let (init_secret, kem_output) =
-            InitSecret::encode_for_external(&cipher_suite, &external_pub_ext.external_pub).await?;
-
-        let builder = Self {
-            tree_data: None,
-            authenticated_data: Vec::new(),
+    ) -> Self {
+        Self {
             signer,
             signing_identity,
-            leaf_node_extensions: Default::default(),
             config,
+            group_info,
+            tree_data: None,
+            authenticated_data: Vec::new(),
+            leaf_node_extensions: Default::default(),
+            to_remove: Default::default(),
+            #[cfg(feature = "custom_proposal")]
+            custom_proposals: Vec::new(),
             #[cfg(feature = "custom_proposal")]
             received_custom_proposals: Vec::new(),
-            proposals: Default::default(),
-            group_info,
-            protocol_version,
-            init_secret,
-        };
-
-        Ok(builder.with_proposal(Proposal::ExternalInit(ExternalInit { kem_output })))
+            external_psks: Default::default(),
+        }
     }
 
     #[must_use]
@@ -123,9 +97,10 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
     /// Propose the removal of an old version of the client as part of the external commit.
     /// Only one such proposal is allowed.
     pub fn with_removal(self, to_remove: u32) -> Self {
-        self.with_proposal(Proposal::Remove(RemoveProposal {
-            to_remove: LeafIndex(to_remove),
-        }))
+        Self {
+            to_remove: Some(to_remove),
+            ..self
+        }
     }
 
     #[must_use]
@@ -147,8 +122,9 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
     #[cfg(feature = "custom_proposal")]
     #[must_use]
     /// Insert a [`CustomProposal`] into the current commit that is being built.
-    pub fn with_custom_proposal(self, proposal: CustomProposal) -> Self {
-        self.with_proposal(Proposal::Custom(proposal))
+    pub fn with_custom_proposal(mut self, proposal: CustomProposal) -> Self {
+        self.custom_proposals.push(Proposal::Custom(proposal));
+        self
     }
 
     #[cfg(all(feature = "custom_proposal", feature = "by_ref_proposal"))]
@@ -160,20 +136,9 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
     /// The authenticity of the proposal is NOT fully verified. It is only verified the
     /// same way as by [`ExternalGroup`](`crate::external_client::ExternalGroup`).
     /// The proposal MUST be an MlsPlaintext, else the [`Self::build`] function will fail.
-    pub fn with_received_custom_proposal(mut self, proposal: MlsMessage) -> Result<Self, MlsError> {
-        let MlsMessagePayload::Plain(plaintext) = proposal.payload else {
-            return Err(MlsError::UnexpectedMessageType);
-        };
-
-        let super::Content::Proposal(proposal) = plaintext.content.content.clone() else {
-            return Err(MlsError::UnexpectedMessageType);
-        };
-
-        // We store proposal to verify authenticity later. At this point this may not be possible if we
-        // don't have the tree.
-        self.received_custom_proposals.push(plaintext);
-
-        Ok(self.with_proposal(*proposal))
+    pub fn with_received_custom_proposal(mut self, proposal: MlsMessage) -> Self {
+        self.received_custom_proposals.push(proposal);
+        self
     }
 
     /// Change the committer's leaf node extensions as part of making this commit.
@@ -184,17 +149,19 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
         }
     }
 
-    fn with_proposal(mut self, proposal: Proposal) -> Self {
-        self.proposals
-            .add(proposal, Sender::NewMemberCommit, ProposalSource::ByValue);
-
-        self
-    }
-
     /// Build the external commit using a GroupInfo message provided by an existing group member.
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn build(self) -> Result<(Group<C>, MlsMessage), MlsError> {
-        let group_info = self.group_info;
+        let protocol_version = self.group_info.version;
+
+        if !self.config.version_supported(protocol_version) {
+            return Err(MlsError::UnsupportedProtocolVersion(protocol_version));
+        }
+
+        let group_info = self
+            .group_info
+            .into_group_info()
+            .ok_or(MlsError::UnexpectedMessageType)?;
 
         let cipher_suite = cipher_suite_provider(
             self.config.crypto_provider(),
@@ -202,7 +169,7 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
         )?;
 
         let public_tree = validate_tree_and_info_joiner(
-            self.protocol_version,
+            protocol_version,
             &group_info,
             self.tree_data,
             &self.config.identity_provider(),
@@ -227,11 +194,19 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
             secret_tree: SecretTree::empty(),
         };
 
+        let external_pub_ext = group_info
+            .extensions
+            .get_as::<ExternalPubExt>()?
+            .ok_or(MlsError::MissingExternalPubExtension)?;
+
+        let (init_secret, kem_output) =
+            InitSecret::encode_for_external(&cipher_suite, &external_pub_ext.external_pub).await?;
+
         let (mut group, _) = Group::join_with(
             self.config,
             group_info,
             public_tree,
-            KeySchedule::new(self.init_secret),
+            KeySchedule::new(init_secret),
             epoch_secrets,
             TreeKemPrivate::new_for_external(),
             self.signer,
@@ -239,6 +214,10 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
         .await?;
 
         let mut proposals = vec![Proposal::ExternalInit(ExternalInit { kem_output })];
+
+        if let Some(to_remove) = self.to_remove {
+            proposals.push(Proposal::Remove(to_remove.into()));
+        }
 
         #[cfg(feature = "psk")]
         let psks = self
@@ -267,12 +246,30 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
 
         #[cfg(all(feature = "custom_proposal", feature = "by_ref_proposal"))]
         for message in self.received_custom_proposals {
-            verify_plaintext_authentication(&cipher_suite, message, None, &group.state).await?;
+            let MlsMessagePayload::Plain(plaintext) = message.payload else {
+                return Err(MlsError::UnexpectedMessageType);
+            };
+
+            let super::Content::Proposal(proposal) = plaintext.content.content.clone() else {
+                return Err(MlsError::UnexpectedMessageType);
+            };
+
+            verify_plaintext_authentication(&cipher_suite, plaintext, None, &group.state).await?;
+
+            proposals.push(*proposal);
         }
+
+        let proposal_bundle =
+            proposals
+                .into_iter()
+                .fold(ProposalBundle::default(), |mut bundle, proposal| {
+                    bundle.add(proposal, Sender::NewMemberCommit, ProposalSource::ByValue);
+                    bundle
+                });
 
         let (commit_output, pending_commit) = group
             .commit_internal(
-                self.proposals,
+                proposal_bundle,
                 Some(&leaf_node),
                 self.authenticated_data,
                 Default::default(),
@@ -281,6 +278,7 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
                 None,
                 #[cfg(feature = "psk")]
                 psks,
+                Sender::NewMemberCommit,
             )
             .await?;
 

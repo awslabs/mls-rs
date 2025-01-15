@@ -400,7 +400,7 @@ impl MlsClient for MlsClientImpl {
                 builder.with_external_psk(psk.psk_id.into(), psk.psk_secret.into())
             });
 
-        let (group, commit) = builder.build(group_info.clone()).map_err(abort)?;
+        let (group, commit) = builder.build().map_err(abort)?;
 
         let epoch_authenticator = group.epoch_authenticator().map_err(abort)?.to_vec();
 

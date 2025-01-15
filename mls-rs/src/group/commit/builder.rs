@@ -8,6 +8,7 @@ use alloc::{vec, vec::Vec};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::{crypto::SignatureSecretKey, error::IntoAnyError};
 
+use crate::mls_rules::{ProposalBundle, ProposalSource};
 use crate::{
     cipher_suite::CipherSuite,
     client::MlsError,
@@ -269,7 +270,7 @@ where
     /// a resumption PSK into the current commit that is being built.
     #[cfg(feature = "psk")]
     pub fn add_resumption_psk_for_group(
-        self,
+        mut self,
         psk_epoch: u64,
         group_id: Vec<u8>,
         psk: crate::psk::PreSharedKey,
