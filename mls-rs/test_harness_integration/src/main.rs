@@ -812,7 +812,9 @@ impl MlsClientImpl {
 
         let commit = MlsMessage::from_bytes(&request.commit).map_err(abort)?;
 
-        let message = group.process_incoming_message(commit).map_err(abort)?;
+        let message = group
+            .process_incoming_message_oneshot(commit)
+            .map_err(abort)?;
 
         let ReceivedMessage::Commit(update) = message else {
             return Err(Status::aborted("message not a commit."));
