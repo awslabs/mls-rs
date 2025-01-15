@@ -66,6 +66,12 @@ impl Debug for PskGroupId {
     }
 }
 
+impl From<Vec<u8>> for PskGroupId {
+    fn from(value: Vec<u8>) -> Self {
+        Self(value)
+    }
+}
+
 #[derive(Clone, Eq, Hash, PartialEq, PartialOrd, Ord, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

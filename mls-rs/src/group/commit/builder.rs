@@ -33,7 +33,9 @@ use crate::WireFormat;
 
 #[cfg(feature = "psk")]
 use crate::{
-    group::{JustPreSharedKeyID, PskGroupId, ResumptionPSKUsage, ResumptionPsk},
+    group::{
+        JustPreSharedKeyID, PreSharedKeyProposal, PskGroupId, ResumptionPSKUsage, ResumptionPsk,
+    },
     psk::{
         secret::{PskSecret, PskSecretInput},
         ExternalPskId,
@@ -238,13 +240,14 @@ where
         use crate::psk::PreSharedKeyID;
 
         let key_id = JustPreSharedKeyID::External(id);
-        let proposal = self.group.psk_proposal(key_id.clone())?;
+        let id = PreSharedKeyID::new(key_id, &self.group.cipher_suite_provider)?;
 
         self.psks.push(PskSecretInput {
-            id: PreSharedKeyID::new(key_id, &self.group.cipher_suite_provider)?,
+            id: id.clone(),
             psk,
         });
 
+        let proposal = Proposal::Psk(PreSharedKeyProposal { psk: id });
         Ok(self.with_proposal(proposal))
     }
 
@@ -280,13 +283,14 @@ where
         };
 
         let key_id = JustPreSharedKeyID::Resumption(psk_id);
-        let proposal = self.group.psk_proposal(key_id.clone())?;
+        let id = PreSharedKeyID::new(key_id, &self.group.cipher_suite_provider)?;
 
         self.psks.push(PskSecretInput {
-            id: PreSharedKeyID::new(key_id, &self.group.cipher_suite_provider)?,
+            id: id.clone(),
             psk,
         });
 
+        let proposal = Proposal::Psk(PreSharedKeyProposal { psk: id });
         Ok(self.with_proposal(proposal))
     }
 

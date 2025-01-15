@@ -3675,6 +3675,44 @@ mod tests {
         .unwrap();
     }
 
+    #[cfg(feature = "psk")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn can_process_with_psk() {
+        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (mut bob, _) = alice.join("bob");
+
+        let psk_id_external = ExternalPskId::new(vec![0]);
+        let psk_external = PreSharedKey::from(vec![1]);
+        let psk_epoch = bob.context().epoch;
+
+        let psk_id_resumption = ResumptionPsk {
+            usage: ResumptionPSKUsage::Application,
+            psk_group_id: bob.context().group_id.clone().into(),
+            psk_epoch,
+        };
+
+        let psk_resumption = bob.resumption_secret(psk_epoch).unwrap();
+
+        let commit = alice
+            .commit_builder()
+            .add_external_psk(psk_id_external.clone(), psk_external.clone())
+            .unwrap()
+            .add_resumption_psk(psk_epoch, psk_resumption.clone())
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+
+        bob.commit_processor(commit.commit_message)
+            .await
+            .unwrap()
+            .with_external_psk(psk_id_external, psk_external)
+            .with_resumption_psk(psk_id_resumption, psk_resumption)
+            .process()
+            .await
+            .unwrap();
+    }
+
     #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn invalid_update_does_not_prevent_other_updates() {
