@@ -17,7 +17,7 @@ openssl = { version = "0.10.40" }
 mls-rs-core = { path = "../mls-rs-core", version = "0.20.0" }
 mls-rs-identity-x509 = { path = "../mls-rs-identity-x509", optional = true, version = "0.14.0" }
 mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", version = "0.12.0" }
-mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", version = "0.12.0" }
+mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", version = "0.13.0" }
 thiserror = "1.0.40"
 zeroize = { version = "1", features = ["zeroize_derive"] }
 maybe-async = "0.2.10"

@@ -11,7 +11,7 @@ license = "Apache-2.0 OR MIT"
 [dependencies]
 mls-rs-core = { path = "../mls-rs-core", default-features = false, features = ["std"], version = "0.20.0" }
 mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", default-features = false, features = ["std"], version = "0.12.0" }
-mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", default-features = false, features = ["std"], version = "0.12.0" }
+mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", default-features = false, features = ["std"], version = "0.13.0" }
 thiserror = "1.0.40"
 zeroize = { version = "1", features = ["zeroize_derive"] }
 maybe-async = "0.2.10"
