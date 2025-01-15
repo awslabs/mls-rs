@@ -142,35 +142,6 @@ impl EncryptionOptions {
 pub trait MlsRules: Send + Sync {
     type Error: IntoAnyError;
 
-    /// This is called when preparing or receiving a commit to pre-process the set of committed
-    /// proposals.
-    ///
-    /// Both proposals received during the current epoch and at the time of commit
-    /// will be presented for validation and filtering. Filter and validate will
-    /// present a raw list of proposals. Standard MLS rules are applied internally
-    /// on the result of these rules.
-    ///
-    /// Each member of a group MUST apply the same proposal rules in order to
-    /// maintain a working group.
-    ///
-    /// Typically, any invalid proposal should result in an error. The exception are invalid
-    /// by-reference proposals processed when _preparing_ a commit, which should be filtered
-    /// out instead. This is to avoid the deadlock situation when no commit can be generated
-    /// after receiving an invalid set of proposal messages.
-    ///
-    /// `ProposalBundle` can be arbitrarily modified. For example, a Remove proposal that
-    /// removes a moderator can result in adding a GroupContextExtensions proposal that updates
-    /// the moderator list in the group context. The resulting `ProposalBundle` is validated
-    /// by the library.
-    async fn filter_proposals(
-        &self,
-        direction: CommitDirection,
-        source: CommitSource,
-        current_roster: &Roster,
-        current_context: &GroupContext,
-        proposals: ProposalBundle,
-    ) -> Result<ProposalBundle, Self::Error>;
-
     /// This is called when preparing a commit to determine various options: whether to enforce an update
     /// path in case it is not mandated by MLS, whether to include the ratchet tree in the welcome
     /// message (if the commit adds members) and whether to generate a single welcome message, or one
@@ -202,20 +173,6 @@ macro_rules! delegate_mls_rules {
         #[cfg_attr(mls_build_async, maybe_async::must_be_async)]
         impl<T: MlsRules + ?Sized> MlsRules for $implementer {
             type Error = T::Error;
-
-            #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-            async fn filter_proposals(
-                &self,
-                direction: CommitDirection,
-                source: CommitSource,
-                current_roster: &Roster,
-                context: &GroupContext,
-                proposals: ProposalBundle,
-            ) -> Result<ProposalBundle, Self::Error> {
-                (**self)
-                    .filter_proposals(direction, source, current_roster, context, proposals)
-                    .await
-            }
 
             fn commit_options(
                 &self,
@@ -276,17 +233,6 @@ impl DefaultMlsRules {
 #[cfg_attr(mls_build_async, maybe_async::must_be_async)]
 impl MlsRules for DefaultMlsRules {
     type Error = Infallible;
-
-    async fn filter_proposals(
-        &self,
-        _direction: CommitDirection,
-        _source: CommitSource,
-        _current_roster: &Roster,
-        _: &GroupContext,
-        proposals: ProposalBundle,
-    ) -> Result<ProposalBundle, Self::Error> {
-        Ok(proposals)
-    }
 
     fn commit_options(
         &self,

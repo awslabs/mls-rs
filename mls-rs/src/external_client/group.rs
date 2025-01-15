@@ -585,10 +585,6 @@ where
     type OutputType = ExternalReceivedMessage;
     type CipherSuiteProvider = <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider;
 
-    fn mls_rules(&self) -> Self::MlsRules {
-        self.config.mls_rules()
-    }
-
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn verify_plaintext_authentication(
         &self,

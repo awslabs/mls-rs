@@ -23,7 +23,7 @@ use mls_rs::{
         basic::{BasicCredential, BasicIdentityProvider},
         Credential, SigningIdentity,
     },
-    mls_rules::{CommitDirection, CommitOptions, CommitSource, EncryptionOptions, ProposalBundle},
+    mls_rules::{CommitOptions, EncryptionOptions, ProposalBundle},
     psk::ExternalPskId,
     storage_provider::in_memory::{InMemoryKeyPackageStorage, InMemoryPreSharedKeyStorage},
     CipherSuite, CipherSuiteProvider, Client, CryptoProvider, Extension, ExtensionList, Group,
@@ -155,17 +155,6 @@ impl TestMlsRules {
 
 impl MlsRules for TestMlsRules {
     type Error = Infallible;
-
-    fn filter_proposals(
-        &self,
-        _: CommitDirection,
-        _: CommitSource,
-        _: &Roster,
-        _: &GroupContext,
-        proposals: ProposalBundle,
-    ) -> Result<ProposalBundle, Self::Error> {
-        Ok(proposals)
-    }
 
     fn commit_options(
         &self,
@@ -358,7 +347,10 @@ impl MlsClient for MlsClientImpl {
             None
         };
 
-        let mut builder = client.client.external_commit_builder().map_err(abort)?;
+        let mut builder = client
+            .client
+            .external_commit_builder(group_info)
+            .map_err(abort)?;
 
         if let Some(tree) = tree {
             builder = builder.with_tree_data(tree.clone());
@@ -368,7 +360,7 @@ impl MlsClient for MlsClientImpl {
             builder = builder.with_removal(removed_index);
         }
 
-        let (group, commit) = builder.build(group_info.clone()).map_err(abort)?;
+        let (group, commit) = builder.build().map_err(abort)?;
 
         let epoch_authenticator = group.epoch_authenticator().map_err(abort)?.to_vec();
 

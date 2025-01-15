@@ -1803,10 +1803,6 @@ where
         Ok(())
     }
 
-    fn mls_rules(&self) -> Self::MlsRules {
-        self.config.mls_rules()
-    }
-
     fn identity_provider(&self) -> Self::IdentityProvider {
         self.config.identity_provider()
     }
@@ -1870,10 +1866,7 @@ mod tests {
     use crate::{
         client::test_utils::{test_client_with_key_pkg_custom, TEST_CUSTOM_PROPOSAL_TYPE},
         client_builder::{ClientBuilder, MlsConfig},
-        group::{
-            mls_rules::{CommitDirection, CommitSource},
-            proposal_filter::ProposalBundle,
-        },
+        group::proposal_filter::ProposalBundle,
         identity::basic::BasicIdentityProvider,
         identity::test_utils::BasicWithCustomProvider,
     };
@@ -2456,8 +2449,8 @@ mod tests {
             group.group.signer,
             signing_identity,
             group.group.config,
+            info_msg,
         )
-        .build(info_msg)
         .await
         .map(|_| {});
 
@@ -2483,9 +2476,10 @@ mod tests {
             test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
 
         test_client
-            .external_commit_builder()
+            .external_commit_builder(commit_output.external_commit_group_info.unwrap())
+            .await
             .unwrap()
-            .build(commit_output.external_commit_group_info.unwrap())
+            .build()
             .await
             .unwrap();
     }
@@ -2591,14 +2585,15 @@ mod tests {
             .build();
 
         let (bob_group, commit) = bob
-            .external_commit_builder()
-            .unwrap()
-            .build(
+            .external_commit_builder(
                 alice_group
                     .group_info_message_allowing_ext_commit(true)
                     .await
                     .unwrap(),
             )
+            .await
+            .unwrap()
+            .build()
             .await
             .unwrap();
 
@@ -2637,15 +2632,16 @@ mod tests {
             .build();
 
         let (_, commit) = bob
-            .external_commit_builder()
-            .unwrap()
-            .with_tree_data(alice_group.export_tree().into_owned())
-            .build(
+            .external_commit_builder(
                 alice_group
                     .group_info_message_allowing_ext_commit(false)
                     .await
                     .unwrap(),
             )
+            .await
+            .unwrap()
+            .with_tree_data(alice_group.export_tree().into_owned())
+            .build()
             .await
             .unwrap();
 
@@ -3902,7 +3898,6 @@ mod tests {
     async fn test_custom_proposal_mls_rules(path_required_for_custom: bool) {
         let mls_rules = CustomMlsRules {
             path_required_for_custom,
-            external_joiner_can_send_custom: true,
         };
 
         let mut alice = client_with_custom_rules(b"alice", mls_rules.clone())
@@ -3942,21 +3937,8 @@ mod tests {
     #[cfg(feature = "custom_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn custom_proposal_by_value_in_external_join_may_be_allowed() {
-        test_custom_proposal_by_value_in_external_join(true).await
-    }
-
-    #[cfg(feature = "custom_proposal")]
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn custom_proposal_by_value_in_external_join_may_not_be_allowed() {
-        test_custom_proposal_by_value_in_external_join(false).await
-    }
-
-    #[cfg(feature = "custom_proposal")]
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn test_custom_proposal_by_value_in_external_join(external_joiner_can_send_custom: bool) {
         let mls_rules = CustomMlsRules {
             path_required_for_custom: true,
-            external_joiner_can_send_custom,
         };
 
         let mut alice = client_with_custom_rules(b"alice", mls_rules.clone())
@@ -3972,18 +3954,15 @@ mod tests {
 
         let commit = client_with_custom_rules(b"bob", mls_rules)
             .await
-            .external_commit_builder()
+            .external_commit_builder(group_info)
+            .await
             .unwrap()
             .with_custom_proposal(CustomProposal::new(TEST_CUSTOM_PROPOSAL_TYPE, vec![]))
-            .build(group_info)
+            .build()
             .await;
 
-        if external_joiner_can_send_custom {
-            let commit = commit.unwrap().1;
-            alice.process_incoming_message(commit).await.unwrap();
-        } else {
-            assert_matches!(commit.map(|_| ()), Err(MlsError::MlsRulesError(_)));
-        }
+        let commit = commit.unwrap().1;
+        alice.process_incoming_message(commit).await.unwrap();
     }
 
     #[cfg(feature = "custom_proposal")]
@@ -3991,7 +3970,6 @@ mod tests {
     async fn custom_proposal_by_ref_in_external_join() {
         let mls_rules = CustomMlsRules {
             path_required_for_custom: true,
-            external_joiner_can_send_custom: true,
         };
 
         let mut alice = client_with_custom_rules(b"alice", mls_rules.clone())
@@ -4010,10 +3988,12 @@ mod tests {
 
         let (_, commit) = client_with_custom_rules(b"bob", mls_rules)
             .await
-            .external_commit_builder()
+            .external_commit_builder(group_info)
+            .await
             .unwrap()
             .with_received_custom_proposal(by_ref)
-            .build(group_info)
+            .unwrap()
+            .build()
             .await
             .unwrap();
 
@@ -4041,7 +4021,6 @@ mod tests {
     #[derive(Debug, Clone)]
     struct CustomMlsRules {
         path_required_for_custom: bool,
-        external_joiner_can_send_custom: bool,
     }
 
     #[cfg(feature = "custom_proposal")]
@@ -4075,21 +4054,6 @@ mod tests {
             _: &GroupContext,
         ) -> Result<crate::mls_rules::EncryptionOptions, MlsError> {
             Ok(Default::default())
-        }
-
-        async fn filter_proposals(
-            &self,
-            _: CommitDirection,
-            sender: CommitSource,
-            _: &Roster,
-            _: &GroupContext,
-            proposals: ProposalBundle,
-        ) -> Result<ProposalBundle, MlsError> {
-            let is_external = matches!(sender, CommitSource::NewMember(_));
-            let has_custom = proposals.has_test_custom_proposal();
-            let allowed = !has_custom || !is_external || self.external_joiner_can_send_custom;
-
-            allowed.then_some(proposals).ok_or(MlsError::InvalidSender)
         }
     }
 

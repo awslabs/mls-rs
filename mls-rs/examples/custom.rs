@@ -25,18 +25,14 @@
 ///
 use assert_matches::assert_matches;
 use mls_rs::{
-    client_builder::{MlsConfig, PaddingMode},
+    client_builder::MlsConfig,
     error::MlsError,
     group::{
         proposal::{MlsCustomProposal, Proposal},
-        GroupContext, Roster, Sender,
+        GroupContext, Sender,
     },
-    mls_rules::{
-        CommitDirection, CommitOptions, CommitSource, EncryptionOptions, ProposalBundle,
-        ProposalSource,
-    },
+    mls_rules::{ProposalBundle, ProposalSource},
     CipherSuite, CipherSuiteProvider, Client, CryptoProvider, ExtensionList, IdentityProvider,
-    MlsRules,
 };
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::{
@@ -51,7 +47,7 @@ use mls_rs_core::{
     time::MlsTime,
 };
 
-use std::fmt::Display;
+use std::{fmt::Display, ops::Deref};
 
 const CIPHER_SUITE: CipherSuite = CipherSuite::CURVE25519_AES128;
 
@@ -119,67 +115,38 @@ impl MlsCustomProposal for AddUserProposal {
     }
 }
 
-/// MlsRules tell MLS how to handle our custom proposal
-#[derive(Debug, Clone, Copy)]
-struct CustomMlsRules;
+fn handle_custom_proposals(
+    context: &GroupContext,
+    proposals: &mut ProposalBundle,
+) -> Result<(), CustomError> {
+    // Find our extension
+    let mut roster: RosterExtension = context
+        .extensions
+        .get_as()
+        .ok()
+        .flatten()
+        .ok_or(CustomError)?;
 
-impl MlsRules for CustomMlsRules {
-    type Error = CustomError;
+    // Find AddUser proposals
+    let add_user_proposals = proposals
+        .custom_proposals()
+        .iter()
+        .filter(|p| p.proposal.proposal_type() == ADD_USER_PROPOSAL_V1);
 
-    fn filter_proposals(
-        &self,
-        _: CommitDirection,
-        _: CommitSource,
-        _: &Roster,
-        context: &GroupContext,
-        mut proposals: ProposalBundle,
-    ) -> Result<ProposalBundle, Self::Error> {
-        // Find our extension
-        let mut roster: RosterExtension = context
-            .extensions
-            .get_as()
-            .ok()
-            .flatten()
-            .ok_or(CustomError)?;
+    for add_user_info in add_user_proposals {
+        let add_user = AddUserProposal::from_custom_proposal(&add_user_info.proposal)?;
 
-        // Find AddUser proposals
-        let add_user_proposals = proposals
-            .custom_proposals()
-            .iter()
-            .filter(|p| p.proposal.proposal_type() == ADD_USER_PROPOSAL_V1);
-
-        for add_user_info in add_user_proposals {
-            let add_user = AddUserProposal::from_custom_proposal(&add_user_info.proposal)?;
-
-            // Eventually we should check for duplicates
-            roster.roster.push(add_user.new_user);
-        }
-
-        // Issue GroupContextExtensions proposal to modify our roster (eventually we don't have to do this if there were no AddUser proposals)
-        let mut new_extensions = context.extensions.clone();
-        new_extensions.set_from(roster)?;
-        let gce_proposal = Proposal::GroupContextExtensions(new_extensions);
-        proposals.add(gce_proposal, Sender::Member(0), ProposalSource::Local);
-
-        Ok(proposals)
+        // Eventually we should check for duplicates
+        roster.roster.push(add_user.new_user);
     }
 
-    fn commit_options(
-        &self,
-        _: &Roster,
-        _: &GroupContext,
-        _: &ProposalBundle,
-    ) -> Result<CommitOptions, Self::Error> {
-        Ok(CommitOptions::new())
-    }
+    // Issue GroupContextExtensions proposal to modify our roster (eventually we don't have to do this if there were no AddUser proposals)
+    let mut new_extensions = context.extensions.clone();
+    new_extensions.set_from(roster)?;
+    let gce_proposal = Proposal::GroupContextExtensions(new_extensions);
+    proposals.add(gce_proposal, Sender::Member(0), ProposalSource::Local);
 
-    fn encryption_options(
-        &self,
-        _: &Roster,
-        _: &GroupContext,
-    ) -> Result<EncryptionOptions, Self::Error> {
-        Ok(EncryptionOptions::new(false, PaddingMode::None))
-    }
+    Ok(())
 }
 
 // The IdentityProvider will tell MLS how to validate members' identities. We will use custom identity
@@ -348,19 +315,32 @@ impl Member {
     }
 }
 
+struct CustomClient<C: MlsConfig> {
+    inner: Client<C>,
+}
+
 // Set up Client to use our custom providers
-fn make_client(member: Member) -> Result<Client<impl MlsConfig>, CustomError> {
+fn make_client(member: Member) -> Result<CustomClient<impl MlsConfig>, CustomError> {
     let mls_credential = member.credential.into_credential()?;
     let signing_identity = SigningIdentity::new(mls_credential, member.public_key);
 
-    Ok(Client::builder()
-        .identity_provider(CustomIdentityProvider)
-        .mls_rules(CustomMlsRules)
-        .custom_proposal_type(ADD_USER_PROPOSAL_V1)
-        .extension_type(ROSTER_EXTENSION_V1)
-        .crypto_provider(crypto())
-        .signing_identity(signing_identity, member.signer, CIPHER_SUITE)
-        .build())
+    Ok(CustomClient {
+        inner: Client::builder()
+            .identity_provider(CustomIdentityProvider)
+            .custom_proposal_type(ADD_USER_PROPOSAL_V1)
+            .extension_type(ROSTER_EXTENSION_V1)
+            .crypto_provider(crypto())
+            .signing_identity(signing_identity, member.signer, CIPHER_SUITE)
+            .build(),
+    })
+}
+
+impl<C: MlsConfig> Deref for CustomClient<C> {
+    type Target = Client<C>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
 }
 
 fn main() -> Result<(), CustomError> {
@@ -413,18 +393,24 @@ fn main() -> Result<(), CustomError> {
         new_user: bob.credential,
     };
 
-    let commit = alice_tablet_group
+    let mut builder = alice_tablet_group
         .commit_builder()
         .custom_proposal(add_bob.to_custom_proposal()?)
-        .add_member(key_package.key_package_message)?
-        .build()?;
+        .add_member(key_package.key_package_message)?;
+
+    handle_custom_proposals(&builder.context().clone(), builder.proposals_mut())?;
+
+    let commit = builder.build()?;
 
     bob_tablet_client
         .group_joiner(&commit.welcome_messages[0], key_package.key_package_data)?
         .join()?;
 
     alice_tablet_group.apply_pending_commit()?;
-    alice_pc_group.process_incoming_message(commit.commit_message)?;
+
+    let mut processor = alice_pc_group.commit_processor(commit.commit_message)?;
+    handle_custom_proposals(&processor.context().clone(), processor.proposals_mut())?;
+    processor.process()?;
 
     Ok(())
 }

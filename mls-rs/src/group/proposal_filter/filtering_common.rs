@@ -6,7 +6,7 @@ use crate::{
     client::MlsError,
     group::{proposal_filter::ProposalBundle, GroupContext},
     key_package::{validate_key_package_properties, KeyPackage},
-    mls_rules::{CommitDirection, CommitSource},
+    mls_rules::CommitSource,
     time::MlsTime,
     tree_kem::{
         leaf_node_validator::{LeafNodeValidator, ValidationContext},
@@ -43,9 +43,6 @@ use std::collections::HashSet;
 
 #[cfg(feature = "by_ref_proposal")]
 use super::filtering::{apply_strategy, filter_out_invalid_proposers, FilterStrategy};
-
-#[cfg(feature = "custom_proposal")]
-use super::filtering::filter_out_unsupported_custom_proposals;
 
 #[derive(Debug)]
 pub(crate) struct ProposalApplier<'a, C, P, CSP> {
@@ -339,33 +336,6 @@ where
     }
 }
 
-#[cfg(all(feature = "custom_proposal", feature = "by_ref_proposal"))]
-pub(crate) fn prepare_proposals_for_mls_rules(
-    proposals: &mut ProposalBundle,
-    direction: CommitDirection,
-    tree: &TreeKemPublic,
-) -> Result<(), MlsError> {
-    filter_out_unsupported_custom_proposals(proposals, tree, direction.into())
-}
-
-#[cfg(all(feature = "custom_proposal", not(feature = "by_ref_proposal")))]
-pub(crate) fn prepare_proposals_for_mls_rules(
-    proposals: &mut ProposalBundle,
-    _direction: CommitDirection,
-    tree: &TreeKemPublic,
-) -> Result<(), MlsError> {
-    filter_out_unsupported_custom_proposals(&proposals, tree)
-}
-
-#[cfg(not(feature = "custom_proposal"))]
-pub(crate) fn prepare_proposals_for_mls_rules(
-    _: &mut ProposalBundle,
-    _: CommitDirection,
-    _: &TreeKemPublic,
-) -> Result<(), MlsError> {
-    Ok(())
-}
-
 #[cfg(feature = "psk")]
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 pub(crate) async fn filter_out_invalid_psks<P, CP>(
@@ -583,4 +553,24 @@ async fn insert_external_leaf<I: IdentityProvider>(
 ) -> Result<LeafIndex, MlsError> {
     tree.add_leaf(leaf_node, identity_provider, extensions, None)
         .await
+}
+
+#[cfg(feature = "custom_proposal")]
+pub fn filter_out_unsupported_custom_proposals(
+    proposals: &ProposalBundle,
+    tree: &TreeKemPublic,
+) -> Result<(), MlsError> {
+    let supported_types = proposals
+        .custom_proposal_types()
+        .filter(|t| tree.can_support_proposal(*t))
+        .collect::<Vec<_>>();
+
+    proposals
+        .custom_proposal_types()
+        .try_for_each(|proposal_type| {
+            supported_types
+                .contains(&proposal_type)
+                .then_some(())
+                .ok_or(MlsError::UnsupportedCustomProposal(proposal_type))
+        })
 }
