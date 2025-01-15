@@ -629,15 +629,12 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
 )]
 impl<'a, C> MessageProcessor<'a> for ExternalGroup<C>
 where
-    C: ExternalClientConfig + Clone,
+    C: 'a + ExternalClientConfig + Clone,
 {
     type MlsRules = C::MlsRules;
     type IdentityProvider = C::IdentityProvider;
     type PreSharedKeyStorage = AlwaysFoundPskStorage;
-    type OutputType
-        = ExternalReceivedMessage<'a, C>
-    where
-        C: 'a;
+    type OutputType = ExternalReceivedMessage<'a, C>;
     type CipherSuiteProvider = <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider;
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]

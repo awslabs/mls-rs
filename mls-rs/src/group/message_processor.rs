@@ -20,7 +20,6 @@ use crate::{
     client::MlsError,
     client_config::ClientConfig,
     key_package::validate_key_package_properties,
-    time::MlsTime,
     tree_kem::{
         leaf_node_validator::{LeafNodeValidator, ValidationContext},
         node::LeafIndex,
@@ -33,6 +32,7 @@ use itertools::Itertools;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 
 use alloc::boxed::Box;
+use alloc::format;
 use alloc::vec::Vec;
 use core::fmt::{self, Debug};
 use mls_rs_core::{
@@ -486,16 +486,17 @@ pub(crate) enum EventOrContent<E> {
     all(not(target_arch = "wasm32"), mls_build_async),
     maybe_async::must_be_async
 )]
-pub(crate) trait MessageProcessor<'a>: Send + Sync + Sized {
+pub(crate) trait MessageProcessor<'a>: Send + Sync + Sized
+where
+    Self: 'a,
+{
     type OutputType: TryFrom<ApplicationMessageDescription, Error = MlsError>
         + From<InternalCommitProcessor<'a, Self>>
         + From<ProposalMessageDescription>
         + From<GroupInfo>
         + From<Welcome>
         + From<KeyPackage>
-        + Send
-    where
-        Self: 'a;
+        + Send;
 
     type MlsRules: MlsRules;
     type IdentityProvider: IdentityProvider;
@@ -811,7 +812,7 @@ pub(crate) async fn validate_key_package<C: CipherSuiteProvider, I: IdentityProv
     let validator = LeafNodeValidator::new(cs, id, MemberValidationContext::None);
 
     #[cfg(feature = "std")]
-    let context = Some(MlsTime::now());
+    let context = Some(crate::time::MlsTime::now());
 
     #[cfg(not(feature = "std"))]
     let context = None;

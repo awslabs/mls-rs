@@ -1603,15 +1603,12 @@ where
 )]
 impl<'a, C> MessageProcessor<'a> for Group<C>
 where
-    C: ClientConfig + Clone,
+    C: 'a + ClientConfig + Clone,
 {
     type MlsRules = C::MlsRules;
     type IdentityProvider = C::IdentityProvider;
     type PreSharedKeyStorage = C::PskStore;
-    type OutputType
-        = ReceivedMessage<'a, C>
-    where
-        C: 'a;
+    type OutputType = ReceivedMessage<'a, C>;
     type CipherSuiteProvider = <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider;
 
     #[cfg(feature = "private_message")]
