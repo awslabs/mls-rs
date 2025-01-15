@@ -3679,7 +3679,7 @@ mod tests {
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn can_process_with_psk() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
-        let (mut bob, _) = alice.join("bob");
+        let (mut bob, _) = alice.join("bob").await;
 
         let psk_id_external = ExternalPskId::new(vec![0]);
         let psk_external = PreSharedKey::from(vec![1]);
@@ -3691,7 +3691,7 @@ mod tests {
             psk_epoch,
         };
 
-        let psk_resumption = bob.resumption_secret(psk_epoch).unwrap();
+        let psk_resumption = bob.resumption_secret(psk_epoch).await.unwrap();
 
         let commit = alice
             .commit_builder()
