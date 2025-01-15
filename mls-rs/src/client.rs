@@ -1046,14 +1046,14 @@ mod tests {
         assert_eq!(new_group.roster().members_iter().count(), num_members);
 
         let _ = alice_group
-            .process_incoming_message(external_commit.clone())
+            .process_incoming_message_oneshot(external_commit.clone())
             .await
             .unwrap();
 
         let bob_current_epoch = bob_group.current_epoch();
 
         let message = bob_group
-            .process_incoming_message(external_commit)
+            .process_incoming_message_oneshot(external_commit)
             .await
             .unwrap();
 
@@ -1062,9 +1062,6 @@ mod tests {
         if !do_remove {
             assert!(bob_group.roster().members_iter().count() == num_members);
         } else {
-            // Bob was removed so his epoch must stay the same
-            assert_eq!(bob_group.current_epoch(), bob_current_epoch);
-
             assert_matches!(
                 message,
                 ReceivedMessage::Commit(CommitMessageDescription {
@@ -1075,6 +1072,11 @@ mod tests {
                     ..
                 })
             );
+
+            core::mem::drop(message);
+
+            // Bob was removed so his epoch must stay the same
+            assert_eq!(bob_group.current_epoch(), bob_current_epoch);
         }
 
         // Comparing epoch authenticators is sufficient to check that members are in sync.

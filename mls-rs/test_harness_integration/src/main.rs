@@ -814,15 +814,16 @@ impl MlsClientImpl {
 
         let message = group.process_incoming_message(commit).map_err(abort)?;
 
+        let ReceivedMessage::Commit(update) = message else {
+            return Err(Status::aborted("message not a commit."));
+        };
+
         let resp = HandleCommitResponse {
             state_id: request.state_id,
             epoch_authenticator: group.epoch_authenticator().map_err(abort)?.to_vec(),
         };
 
-        match message {
-            ReceivedMessage::Commit(update) => Ok((Response::new(resp), update.effect)),
-            _ => Err(Status::aborted("message not a commit.")),
-        }
+        Ok((Response::new(resp), update.effect))
     }
 }
 

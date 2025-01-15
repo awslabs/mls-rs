@@ -10,14 +10,15 @@ use super::{
     },
     message_signature::AuthenticatedContent,
     mls_rules::MlsRules,
-    process_commit,
     proposal_filter::ProposalBundle,
     state::GroupState,
     transcript_hash::InterimTranscriptHash,
-    validate_group_info_member, GroupContext, GroupInfo, ReInitProposal, RemoveProposal, Welcome,
+    validate_group_info_member, CommitProcessor, Group, GroupContext, GroupInfo,
+    InternalCommitProcessor, ReInitProposal, RemoveProposal, Welcome,
 };
 use crate::{
     client::MlsError,
+    client_config::ClientConfig,
     key_package::validate_key_package_properties,
     time::MlsTime,
     tree_kem::{
@@ -191,15 +192,11 @@ impl MlsDecode for CommitEffect {
     }
 }
 
-#[cfg_attr(
-    all(feature = "ffi", not(test)),
-    safer_ffi_gen::ffi_type(clone, opaque)
-)]
-#[derive(Debug, Clone)]
+#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::ffi_type(opaque))]
 #[allow(clippy::large_enum_variant)]
 /// An event generated as a result of processing a message for a group with
 /// [`Group::process_incoming_message`](crate::group::Group::process_incoming_message).
-pub enum ReceivedMessage {
+pub enum ReceivedMessage<'a, C: ClientConfig> {
     /// An application message was decrypted.
     ApplicationMessage(ApplicationMessageDescription),
     /// A new commit was processed creating a new group state.
@@ -212,9 +209,27 @@ pub enum ReceivedMessage {
     Welcome,
     /// Validated key package
     KeyPackage(KeyPackage),
+    /// A new commit can be processed to create a new group state.
+    CommitProcessor(CommitProcessor<'a, C>),
 }
 
-impl TryFrom<ApplicationMessageDescription> for ReceivedMessage {
+impl<C: ClientConfig> Debug for ReceivedMessage<'_, C> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ReceivedMessage::ApplicationMessage(value) => {
+                f.write_str(&format!("ApplicationMessage({value:?})"))
+            }
+            ReceivedMessage::Commit(value) => f.write_str(&format!("Commit({value:?})")),
+            ReceivedMessage::Proposal(value) => f.write_str(&format!("Proposal({value:?})")),
+            ReceivedMessage::GroupInfo(value) => f.write_str(&format!("GroupInfo({value:?})")),
+            ReceivedMessage::KeyPackage(value) => f.write_str(&format!("KeyPackage({value:?})")),
+            ReceivedMessage::Welcome => f.write_str("Welcome"),
+            ReceivedMessage::CommitProcessor(_) => f.write_str("CommitProcessor"),
+        }
+    }
+}
+
+impl<C: ClientConfig> TryFrom<ApplicationMessageDescription> for ReceivedMessage<'_, C> {
     type Error = MlsError;
 
     fn try_from(value: ApplicationMessageDescription) -> Result<Self, Self::Error> {
@@ -222,31 +237,37 @@ impl TryFrom<ApplicationMessageDescription> for ReceivedMessage {
     }
 }
 
-impl From<CommitMessageDescription> for ReceivedMessage {
+impl<'a, C: ClientConfig> From<InternalCommitProcessor<'a, Group<C>>> for ReceivedMessage<'a, C> {
+    fn from(value: InternalCommitProcessor<'a, Group<C>>) -> Self {
+        ReceivedMessage::CommitProcessor(CommitProcessor(value))
+    }
+}
+
+impl<C: ClientConfig> From<CommitMessageDescription> for ReceivedMessage<'_, C> {
     fn from(value: CommitMessageDescription) -> Self {
         ReceivedMessage::Commit(value)
     }
 }
 
-impl From<ProposalMessageDescription> for ReceivedMessage {
+impl<C: ClientConfig> From<ProposalMessageDescription> for ReceivedMessage<'_, C> {
     fn from(value: ProposalMessageDescription) -> Self {
         ReceivedMessage::Proposal(value)
     }
 }
 
-impl From<GroupInfo> for ReceivedMessage {
+impl<C: ClientConfig> From<GroupInfo> for ReceivedMessage<'_, C> {
     fn from(value: GroupInfo) -> Self {
         ReceivedMessage::GroupInfo(value)
     }
 }
 
-impl From<Welcome> for ReceivedMessage {
+impl<C: ClientConfig> From<Welcome> for ReceivedMessage<'_, C> {
     fn from(_: Welcome) -> Self {
         ReceivedMessage::Welcome
     }
 }
 
-impl From<KeyPackage> for ReceivedMessage {
+impl<C: ClientConfig> From<KeyPackage> for ReceivedMessage<'_, C> {
     fn from(value: KeyPackage) -> Self {
         ReceivedMessage::KeyPackage(value)
     }
@@ -465,14 +486,16 @@ pub(crate) enum EventOrContent<E> {
     all(not(target_arch = "wasm32"), mls_build_async),
     maybe_async::must_be_async
 )]
-pub(crate) trait MessageProcessor: Send + Sync + Sized {
+pub(crate) trait MessageProcessor<'a>: Send + Sync + Sized {
     type OutputType: TryFrom<ApplicationMessageDescription, Error = MlsError>
-        + From<CommitMessageDescription>
+        + From<InternalCommitProcessor<'a, Self>>
         + From<ProposalMessageDescription>
         + From<GroupInfo>
         + From<Welcome>
         + From<KeyPackage>
-        + Send;
+        + Send
+    where
+        Self: 'a;
 
     type MlsRules: MlsRules;
     type IdentityProvider: IdentityProvider;
@@ -480,24 +503,9 @@ pub(crate) trait MessageProcessor: Send + Sync + Sized {
     type PreSharedKeyStorage: PreSharedKeyStorage;
 
     async fn process_incoming_message(
-        &mut self,
+        &'a mut self,
         message: MlsMessage,
         #[cfg(feature = "by_ref_proposal")] cache_proposal: bool,
-    ) -> Result<Self::OutputType, MlsError> {
-        self.process_incoming_message_with_time(
-            message,
-            #[cfg(feature = "by_ref_proposal")]
-            cache_proposal,
-            None,
-        )
-        .await
-    }
-
-    async fn process_incoming_message_with_time(
-        &mut self,
-        message: MlsMessage,
-        #[cfg(feature = "by_ref_proposal")] cache_proposal: bool,
-        time_sent: Option<MlsTime>,
     ) -> Result<Self::OutputType, MlsError> {
         let event_or_content = self.get_event_from_incoming_message(message).await?;
 
@@ -505,7 +513,6 @@ pub(crate) trait MessageProcessor: Send + Sync + Sized {
             event_or_content,
             #[cfg(feature = "by_ref_proposal")]
             cache_proposal,
-            time_sent,
         )
         .await
     }
@@ -548,10 +555,9 @@ pub(crate) trait MessageProcessor: Send + Sync + Sized {
     }
 
     async fn process_event_or_content(
-        &mut self,
+        &'a mut self,
         event_or_content: EventOrContent<Self::OutputType>,
         #[cfg(feature = "by_ref_proposal")] cache_proposal: bool,
-        time_sent: Option<MlsTime>,
     ) -> Result<Self::OutputType, MlsError> {
         let msg = match event_or_content {
             EventOrContent::Event(event) => event,
@@ -560,7 +566,6 @@ pub(crate) trait MessageProcessor: Send + Sync + Sized {
                     content,
                     #[cfg(feature = "by_ref_proposal")]
                     cache_proposal,
-                    time_sent,
                 )
                 .await?
             }
@@ -570,10 +575,9 @@ pub(crate) trait MessageProcessor: Send + Sync + Sized {
     }
 
     async fn process_auth_content(
-        &mut self,
+        &'a mut self,
         auth_content: AuthenticatedContent,
         #[cfg(feature = "by_ref_proposal")] cache_proposal: bool,
-        time_sent: Option<MlsTime>,
     ) -> Result<Self::OutputType, MlsError> {
         let event = match auth_content.content.content {
             #[cfg(feature = "private_message")]
@@ -584,11 +588,9 @@ pub(crate) trait MessageProcessor: Send + Sync + Sized {
                 self.process_application_message(data, sender, authenticated_data)
                     .and_then(Self::OutputType::try_from)
             }
-            Content::Commit(_) => {
-                let mut processor = commit_processor_from_content(self, auth_content).await?;
-                processor.time_sent = time_sent;
-                process_commit(processor).await.map(Self::OutputType::from)
-            }
+            Content::Commit(_) => commit_processor_from_content(self, auth_content)
+                .await
+                .map(Self::OutputType::from),
             #[cfg(feature = "by_ref_proposal")]
             Content::Proposal(ref proposal) => self
                 .process_proposal(&auth_content, proposal, cache_proposal)

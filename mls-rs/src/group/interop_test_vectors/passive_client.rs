@@ -20,7 +20,7 @@ use rand::{seq::IteratorRandom, Rng, SeedableRng};
 use crate::{
     client_builder::{ClientBuilder, MlsConfig},
     crypto::test_utils::TestCryptoProvider,
-    group::{ClientConfig, CommitBuilder, ExportedTree},
+    group::{ClientConfig, CommitBuilder, ExportedTree, ReceivedMessage},
     identity::basic::BasicIdentityProvider,
     mls_rules::CommitOptions,
     test_utils::{
@@ -207,19 +207,18 @@ async fn interop_passive_client() {
         for epoch in test_case.epochs {
             for proposal in epoch.proposals.iter() {
                 let message = MlsMessage::from_bytes(&proposal.0).unwrap();
-
-                group
-                    .process_incoming_message_with_time(message, MlsTime::now())
-                    .await
-                    .unwrap();
+                group.process_incoming_message(message).await.unwrap();
             }
 
             let message = MlsMessage::from_bytes(&epoch.commit).unwrap();
 
-            group
-                .process_incoming_message_with_time(message, MlsTime::now())
-                .await
-                .unwrap();
+            let ReceivedMessage::CommitProcessor(processor) =
+                group.process_incoming_message(message).await.unwrap()
+            else {
+                panic!("expected  commit")
+            };
+
+            processor.time_sent(MlsTime::now()).process().await.unwrap();
 
             assert_eq!(
                 epoch.epoch_authenticator,

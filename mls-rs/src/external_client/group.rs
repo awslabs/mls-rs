@@ -2,6 +2,8 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
+use core::fmt::{self, Debug};
+
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::{
     error::IntoAnyError,
@@ -24,7 +26,7 @@ use crate::{
             ApplicationMessageDescription, CommitMessageDescription, EventOrContent,
             MessageProcessor, ProposalMessageDescription, ProvisionalState,
         },
-        new_commit_processor, process_commit,
+        process_commit,
         proposal::RemoveProposal,
         proposal_filter::ProposalInfo,
         snapshot::RawGroupState,
@@ -79,14 +81,16 @@ use crate::group::framing::PrivateMessage;
 
 use alloc::boxed::Box;
 
-/// The result of processing an [ExternalGroup](ExternalGroup) message using
-/// [process_incoming_message](ExternalGroup::process_incoming_message)
-#[derive(Clone, Debug)]
+#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::ffi_type(opaque))]
 #[allow(clippy::large_enum_variant)]
-pub enum ExternalReceivedMessage {
-    /// State update as the result of a successful commit.
+/// An event generated as a result of processing a message for a group with
+/// [`Group::process_incoming_message`](crate::group::Group::process_incoming_message).
+pub enum ExternalReceivedMessage<'a, C: ExternalClientConfig> {
+    /// An application message was decrypted.
+    ApplicationMessage(ApplicationMessageDescription),
+    /// A new commit was processed creating a new group state.
     Commit(CommitMessageDescription),
-    /// Received proposal and its unique identifier.
+    /// A proposal was received.
     Proposal(ProposalMessageDescription),
     /// Encrypted message that can not be processed.
     Ciphertext(ContentType),
@@ -96,6 +100,33 @@ pub enum ExternalReceivedMessage {
     Welcome,
     /// Validated key package
     KeyPackage(KeyPackage),
+    /// A new commit can be processed to create a new group state.
+    CommitProcessor(ExternalCommitProcessor<'a, C>),
+}
+
+impl<C: ExternalClientConfig> Debug for ExternalReceivedMessage<'_, C> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ExternalReceivedMessage::ApplicationMessage(value) => {
+                f.write_str(&format!("ApplicationMessage({value:?})"))
+            }
+            ExternalReceivedMessage::Commit(value) => f.write_str(&format!("Commit({value:?})")),
+            ExternalReceivedMessage::Proposal(value) => {
+                f.write_str(&format!("Proposal({value:?})"))
+            }
+            ExternalReceivedMessage::Ciphertext(value) => {
+                f.write_str(&format!("Ciphertext({value:?})"))
+            }
+            ExternalReceivedMessage::GroupInfo(value) => {
+                f.write_str(&format!("GroupInfo({value:?})"))
+            }
+            ExternalReceivedMessage::KeyPackage(value) => {
+                f.write_str(&format!("KeyPackage({value:?})"))
+            }
+            ExternalReceivedMessage::Welcome => f.write_str("Welcome"),
+            ExternalReceivedMessage::CommitProcessor(_) => f.write_str("CommitProcessor"),
+        }
+    }
 }
 
 /// A handle to an observed group that can track plaintext control messages
@@ -186,7 +217,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     pub async fn process_incoming_message(
         &mut self,
         message: MlsMessage,
-    ) -> Result<ExternalReceivedMessage, MlsError> {
+    ) -> Result<ExternalReceivedMessage<'_, C>, MlsError> {
         MessageProcessor::process_incoming_message(
             self,
             message,
@@ -194,6 +225,27 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             self.config.cache_proposals(),
         )
         .await
+    }
+
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn process_incoming_message_oneshot(
+        &mut self,
+        message: MlsMessage,
+    ) -> Result<ExternalReceivedMessage<'_, C>, MlsError> {
+        let received_message = MessageProcessor::process_incoming_message(
+            self,
+            message,
+            #[cfg(feature = "by_ref_proposal")]
+            self.config.cache_proposals(),
+        )
+        .await?;
+
+        match received_message {
+            ExternalReceivedMessage::CommitProcessor(p) => {
+                p.process().await.map(ExternalReceivedMessage::Commit)
+            }
+            other => Ok(other),
+        }
     }
 
     /// Replay a proposal message into the group skipping all validation steps.
@@ -575,14 +627,17 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     all(not(target_arch = "wasm32"), mls_build_async),
     maybe_async::must_be_async
 )]
-impl<C> MessageProcessor for ExternalGroup<C>
+impl<'a, C> MessageProcessor<'a> for ExternalGroup<C>
 where
     C: ExternalClientConfig + Clone,
 {
     type MlsRules = C::MlsRules;
     type IdentityProvider = C::IdentityProvider;
     type PreSharedKeyStorage = AlwaysFoundPskStorage;
-    type OutputType = ExternalReceivedMessage;
+    type OutputType
+        = ExternalReceivedMessage<'a, C>
+    where
+        C: 'a;
     type CipherSuiteProvider = <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider;
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -746,13 +801,9 @@ where
     }
 }
 
-impl From<CommitMessageDescription> for ExternalReceivedMessage {
-    fn from(value: CommitMessageDescription) -> Self {
-        ExternalReceivedMessage::Commit(value)
-    }
-}
-
-impl TryFrom<ApplicationMessageDescription> for ExternalReceivedMessage {
+impl<C: ExternalClientConfig> TryFrom<ApplicationMessageDescription>
+    for ExternalReceivedMessage<'_, C>
+{
     type Error = MlsError;
 
     fn try_from(_: ApplicationMessageDescription) -> Result<Self, Self::Error> {
@@ -760,25 +811,39 @@ impl TryFrom<ApplicationMessageDescription> for ExternalReceivedMessage {
     }
 }
 
-impl From<ProposalMessageDescription> for ExternalReceivedMessage {
+impl<'a, C: ExternalClientConfig> From<InternalCommitProcessor<'a, ExternalGroup<C>>>
+    for ExternalReceivedMessage<'a, C>
+{
+    fn from(value: InternalCommitProcessor<'a, ExternalGroup<C>>) -> Self {
+        ExternalReceivedMessage::CommitProcessor(ExternalCommitProcessor(value))
+    }
+}
+
+impl<C: ExternalClientConfig> From<CommitMessageDescription> for ExternalReceivedMessage<'_, C> {
+    fn from(value: CommitMessageDescription) -> Self {
+        ExternalReceivedMessage::Commit(value)
+    }
+}
+
+impl<C: ExternalClientConfig> From<ProposalMessageDescription> for ExternalReceivedMessage<'_, C> {
     fn from(value: ProposalMessageDescription) -> Self {
         ExternalReceivedMessage::Proposal(value)
     }
 }
 
-impl From<GroupInfo> for ExternalReceivedMessage {
+impl<C: ExternalClientConfig> From<GroupInfo> for ExternalReceivedMessage<'_, C> {
     fn from(value: GroupInfo) -> Self {
         ExternalReceivedMessage::GroupInfo(value)
     }
 }
 
-impl From<Welcome> for ExternalReceivedMessage {
+impl<C: ExternalClientConfig> From<Welcome> for ExternalReceivedMessage<'_, C> {
     fn from(_: Welcome) -> Self {
         ExternalReceivedMessage::Welcome
     }
 }
 
-impl From<KeyPackage> for ExternalReceivedMessage {
+impl<C: ExternalClientConfig> From<KeyPackage> for ExternalReceivedMessage<'_, C> {
     fn from(value: KeyPackage) -> Self {
         ExternalReceivedMessage::KeyPackage(value)
     }
@@ -821,17 +886,6 @@ impl<C: ExternalClientConfig> ExternalCommitProcessor<'_, C> {
 
     pub fn authenticated_data(&self) -> &[u8] {
         &self.0.authenticated_data
-    }
-}
-
-impl<C: ExternalClientConfig> ExternalGroup<C> {
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn commit_processor(
-        &mut self,
-        commit_message: MlsMessage,
-    ) -> Result<ExternalCommitProcessor<'_, C>, MlsError> {
-        let p = new_commit_processor(self, commit_message).await?;
-        Ok(ExternalCommitProcessor(p))
     }
 }
 
@@ -967,7 +1021,7 @@ mod tests {
         alice.apply_pending_commit().await.unwrap();
 
         server
-            .process_incoming_message(commit_output.commit_message)
+            .process_incoming_message_oneshot(commit_output.commit_message)
             .await
             .unwrap();
 
@@ -988,7 +1042,10 @@ mod tests {
 
         let packet = alice.propose(add_proposal.clone()).await;
 
-        let proposal_process = server.process_incoming_message(packet).await.unwrap();
+        let proposal_process = server
+            .process_incoming_message_oneshot(packet)
+            .await
+            .unwrap();
 
         assert_matches!(
             proposal_process,
@@ -999,7 +1056,7 @@ mod tests {
         alice.apply_pending_commit().await.unwrap();
 
         let new_epoch = match server
-            .process_incoming_message(commit_output.commit_message)
+            .process_incoming_message_oneshot(commit_output.commit_message)
             .await
             .unwrap()
         {
@@ -1026,7 +1083,11 @@ mod tests {
         let mut server = make_external_group(&alice).await;
         let (_, commit) = alice.join("bob").await;
 
-        let new_epoch = match server.process_incoming_message(commit).await.unwrap() {
+        let new_epoch = match server
+            .process_incoming_message_oneshot(commit)
+            .await
+            .unwrap()
+        {
             ExternalReceivedMessage::Commit(CommitMessageDescription {
                 effect: CommitEffect::NewEpoch(new_epoch),
                 ..
@@ -1063,7 +1124,7 @@ mod tests {
         };
 
         let res = server
-            .process_incoming_message(commit_output.commit_message)
+            .process_incoming_message_oneshot(commit_output.commit_message)
             .await;
 
         assert_matches!(res, Err(MlsError::InvalidEpoch));
@@ -1087,7 +1148,7 @@ mod tests {
         };
 
         let res = server
-            .process_incoming_message(commit_output.commit_message)
+            .process_incoming_message_oneshot(commit_output.commit_message)
             .await;
 
         assert_matches!(res, Err(MlsError::InvalidSignature));
@@ -1102,7 +1163,7 @@ mod tests {
             .make_plaintext(Content::Application(b"hello".to_vec().into()))
             .await;
 
-        let res = server.process_incoming_message(plaintext).await;
+        let res = server.process_incoming_message_oneshot(plaintext).await;
 
         assert_matches!(res, Err(MlsError::UnencryptedApplicationMessage));
     }
@@ -1214,7 +1275,7 @@ mod tests {
         alice.process_pending_commit().await.unwrap();
 
         server
-            .process_incoming_message(commit_output.commit_message)
+            .process_incoming_message_oneshot(commit_output.commit_message)
             .await
             .unwrap();
 
@@ -1333,11 +1394,13 @@ mod tests {
         let commit_output = alice.commit(vec![]).await.unwrap();
 
         server
-            .process_incoming_message(commit_output.commit_message)
+            .process_incoming_message_oneshot(commit_output.commit_message)
             .await
             .unwrap();
 
-        let res = server.process_incoming_message(old_application_msg).await;
+        let res = server
+            .process_incoming_message_oneshot(old_application_msg)
+            .await;
 
         assert_matches!(res, Err(MlsError::InvalidEpoch));
     }
@@ -1359,14 +1422,14 @@ mod tests {
         let commit_output = alice.commit(vec![]).await.unwrap();
 
         server
-            .process_incoming_message(proposal.clone())
+            .process_incoming_message_oneshot(proposal.clone())
             .await
             .unwrap();
 
         server.insert_proposal_from_message(proposal).await.unwrap();
 
         server
-            .process_incoming_message(commit_output.commit_message)
+            .process_incoming_message_oneshot(commit_output.commit_message)
             .await
             .unwrap();
     }
@@ -1386,7 +1449,11 @@ mod tests {
         for _ in 0..2 {
             let commit = alice.commit(vec![]).await.unwrap().commit_message;
             alice.process_pending_commit().await.unwrap();
-            server.process_incoming_message(commit).await.unwrap();
+
+            server
+                .process_incoming_message_oneshot(commit)
+                .await
+                .unwrap();
         }
     }
 
@@ -1416,7 +1483,10 @@ mod tests {
             .await
             .unwrap();
 
-        let update = server.process_incoming_message(info.clone()).await.unwrap();
+        let update = server
+            .process_incoming_message_oneshot(info.clone())
+            .await
+            .unwrap();
         let info = info.into_group_info().unwrap();
 
         assert_matches!(update, ExternalReceivedMessage::GroupInfo(update_info) if update_info == info);
@@ -1429,7 +1499,10 @@ mod tests {
 
         let kp = test_key_package_message(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "john").await;
 
-        let update = server.process_incoming_message(kp.clone()).await.unwrap();
+        let update = server
+            .process_incoming_message_oneshot(kp.clone())
+            .await
+            .unwrap();
         let kp = kp.into_key_package().unwrap();
 
         assert_matches!(update, ExternalReceivedMessage::KeyPackage(update_kp) if update_kp == kp);
@@ -1453,7 +1526,10 @@ mod tests {
             .try_into()
             .unwrap();
 
-        let update = server.process_incoming_message(welcome).await.unwrap();
+        let update = server
+            .process_incoming_message_oneshot(welcome)
+            .await
+            .unwrap();
 
         assert_matches!(update, ExternalReceivedMessage::Welcome);
     }

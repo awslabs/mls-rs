@@ -29,7 +29,7 @@ use mls_rs::{
     error::MlsError,
     group::{
         proposal::{MlsCustomProposal, Proposal},
-        GroupContext, Sender,
+        GroupContext, ReceivedMessage, Sender,
     },
     mls_rules::{ProposalBundle, ProposalSource},
     CipherSuite, CipherSuiteProvider, Client, CryptoProvider, ExtensionList, IdentityProvider,
@@ -408,7 +408,12 @@ fn main() -> Result<(), CustomError> {
 
     alice_tablet_group.apply_pending_commit()?;
 
-    let mut processor = alice_pc_group.commit_processor(commit.commit_message)?;
+    let ReceivedMessage::CommitProcessor(mut processor) =
+        alice_pc_group.process_incoming_message(commit.commit_message)?
+    else {
+        return Err(CustomError);
+    };
+
     handle_custom_proposals(&processor.context().clone(), processor.proposals_mut())?;
     processor.process()?;
 

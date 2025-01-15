@@ -15,15 +15,16 @@ use crate::{
     error::MlsError,
     group::{
         message_processor::path_update_required, transcript_hashes, AuthenticatedContent,
-        CommitEffect, CommitMessageDescription, ConfirmationTag, Content, EventOrContent,
-        InterimTranscriptHash, MessageProcessor, NewEpoch,
+        CommitEffect, CommitMessageDescription, ConfirmationTag, Content, InterimTranscriptHash,
+        MessageProcessor, NewEpoch,
     },
     mls_rules::{CommitDirection, CommitSource, ProposalBundle},
     tree_kem::{leaf_node::LeafNode, node::LeafIndex, validate_update_path, UpdatePath},
-    Group, MlsMessage,
+    Group,
 };
 
-pub(crate) struct InternalCommitProcessor<'a, P: MessageProcessor> {
+#[derive(Debug)]
+pub(crate) struct InternalCommitProcessor<'a, P: MessageProcessor<'a>> {
     // Group
     pub(crate) processor: &'a mut P,
 
@@ -41,27 +42,10 @@ pub(crate) struct InternalCommitProcessor<'a, P: MessageProcessor> {
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-pub(crate) async fn new_commit_processor<P: MessageProcessor>(
-    processor: &mut P,
-    commit_message: MlsMessage,
-) -> Result<InternalCommitProcessor<'_, P>, MlsError> {
-    let event_or_content = processor
-        .get_event_from_incoming_message(commit_message)
-        .await?;
-
-    let commit_content = match event_or_content {
-        EventOrContent::Content(c) => c,
-        _ => return Err(MlsError::UnexpectedMessageType),
-    };
-
-    commit_processor_from_content(processor, commit_content).await
-}
-
-#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-pub(crate) async fn commit_processor_from_content<P: MessageProcessor>(
-    processor: &mut P,
+pub(crate) async fn commit_processor_from_content<'a, P: MessageProcessor<'a>>(
+    processor: &'a mut P,
     commit_content: AuthenticatedContent,
-) -> Result<InternalCommitProcessor<'_, P>, MlsError> {
+) -> Result<InternalCommitProcessor<'a, P>, MlsError> {
     if processor.group_state().pending_reinit.is_some() {
         return Err(MlsError::GroupUsedAfterReInit);
     }
@@ -118,8 +102,8 @@ pub(crate) async fn commit_processor_from_content<P: MessageProcessor>(
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-pub(crate) async fn process_commit<P: MessageProcessor>(
-    commit_processor: InternalCommitProcessor<'_, P>,
+pub(crate) async fn process_commit<'a, P: MessageProcessor<'a>>(
+    commit_processor: InternalCommitProcessor<'a, P>,
 ) -> Result<CommitMessageDescription, MlsError> {
     let id_provider = commit_processor.processor.identity_provider();
     let cs_provider = commit_processor.processor.cipher_suite_provider();
@@ -247,7 +231,7 @@ pub(crate) async fn process_commit<P: MessageProcessor>(
     })
 }
 
-pub struct CommitProcessor<'a, C: ClientConfig>(InternalCommitProcessor<'a, Group<C>>);
+pub struct CommitProcessor<'a, C: ClientConfig>(pub(crate) InternalCommitProcessor<'a, Group<C>>);
 
 impl<C: ClientConfig> CommitProcessor<'_, C> {
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -293,23 +277,12 @@ impl<C: ClientConfig> CommitProcessor<'_, C> {
     }
 }
 
-impl<C: ClientConfig> Group<C> {
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn commit_processor(
-        &mut self,
-        commit_message: MlsMessage,
-    ) -> Result<CommitProcessor<'_, C>, MlsError> {
-        let p = new_commit_processor(self, commit_message).await?;
-        Ok(CommitProcessor(p))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::{
         client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         crypto::test_utils::TestCryptoProvider,
-        group::Sender,
+        group::{ReceivedMessage, Sender},
         mls_rules::{CommitSource, ProposalInfo},
         test_utils::get_test_groups,
     };
@@ -337,7 +310,12 @@ mod tests {
             .commit_message;
 
         let member_0 = groups[0].roster().member_with_index(0).unwrap();
-        let processor = groups[1].commit_processor(commit).await.unwrap();
+
+        let ReceivedMessage::CommitProcessor(processor) =
+            groups[1].process_incoming_message(commit).await.unwrap()
+        else {
+            panic!("expected commit processor")
+        };
 
         assert_eq!(
             &processor.proposals().removals,
