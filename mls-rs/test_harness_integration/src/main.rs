@@ -294,9 +294,11 @@ impl MlsClient for MlsClientImpl {
             joiner = joiner.ratchet_tree(tree);
         }
 
+        #[cfg(feature = "psk")]
         let required_external_psks = joiner.required_external_psks().cloned().collect::<Vec<_>>();
 
-        joiner = required_external_psks
+        #[cfg(feature = "psk")]
+        let joiner = required_external_psks
             .into_iter()
             .try_fold(joiner, |joiner, psk| {
                 let psk_secret = client
@@ -307,12 +309,14 @@ impl MlsClient for MlsClientImpl {
                 Ok::<_, Status>(joiner.with_external_psk(psk, psk_secret))
             })?;
 
+        #[cfg(feature = "psk")]
         let required_resumption_psks = joiner
             .required_resumption_psks()
             .cloned()
             .collect::<Vec<_>>();
 
-        joiner = required_resumption_psks
+        #[cfg(feature = "psk")]
+        let joiner = required_resumption_psks
             .into_iter()
             .try_fold(joiner, |joiner, psk| {
                 let resumption_psk = client
@@ -392,7 +396,8 @@ impl MlsClient for MlsClientImpl {
             builder = builder.with_removal(removed_index);
         }
 
-        builder = request
+        #[cfg(feature = "psk")]
+        let builder = request
             .psks
             .clone()
             .into_iter()
@@ -872,30 +877,35 @@ impl MlsClientImpl {
 
         let group_clone = group.clone();
 
-        let mut processor = group.commit_processor(commit).map_err(abort)?;
+        let processor = group.commit_processor(commit).map_err(abort)?;
 
+        #[cfg(feature = "psk")]
         let required_external_psks = processor
             .required_external_psk()
             .cloned()
             .collect::<Vec<_>>();
 
-        processor = required_external_psks
-            .into_iter()
-            .try_fold(processor, |processor, psk| {
-                let psk_secret = client
-                    .psk_store
-                    .get(&psk)
-                    .ok_or(Status::aborted("missing psk"))?;
+        #[cfg(feature = "psk")]
+        let processor =
+            required_external_psks
+                .into_iter()
+                .try_fold(processor, |processor, psk| {
+                    let psk_secret = client
+                        .psk_store
+                        .get(&psk)
+                        .ok_or(Status::aborted("missing psk"))?;
 
-                Ok::<_, Status>(processor.with_external_psk(psk, psk_secret))
-            })?;
+                    Ok::<_, Status>(processor.with_external_psk(psk, psk_secret))
+                })?;
 
+        #[cfg(feature = "psk")]
         let required_resumption_psks = processor
             .required_resumption_psk()
             .cloned()
             .collect::<Vec<_>>();
 
-        processor =
+        #[cfg(feature = "psk")]
+        let processor =
             required_resumption_psks
                 .into_iter()
                 .try_fold(processor, |processor, psk| {
