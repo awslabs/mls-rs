@@ -18,7 +18,9 @@ use mls_rs::{
     },
     crypto::SignatureSecretKey,
     external_client::ExternalClient,
-    group::{CommitEffect, ExportedTree, GroupContext, Member, ReceivedMessage, Roster},
+    group::{
+        CommitBuilder, CommitEffect, ExportedTree, GroupContext, Member, ReceivedMessage, Roster,
+    },
     identity::{
         basic::{BasicCredential, BasicIdentityProvider},
         Credential, SigningIdentity,
@@ -774,7 +776,14 @@ impl MlsClientImpl {
         #[cfg(feature = "psk")]
         let group_clone = group.clone();
 
-        let mut commit_builder = group.commit_builder();
+        let commit_builder = group.commit_builder();
+
+        #[cfg(feature = "psk")]
+        let commit_builder = self
+            .inject_psks(commit_builder, &client.psk_store, &group_clone)
+            .map_err(abort)?;
+
+        let mut commit_builder = commit_builder;
 
         for proposal in request.by_value {
             match proposal.proposal_type.as_slice() {
@@ -850,6 +859,35 @@ impl MlsClientImpl {
         };
 
         Ok(Response::new(resp))
+    }
+
+    #[cfg(feature = "psk")]
+    fn inject_psks<'a>(
+        &self,
+        mut commit_builder: CommitBuilder<'a, TestClientConfig>,
+        psk_store: &InMemoryPreSharedKeyStorage,
+        group_clone: &Group<TestClientConfig>,
+    ) -> Result<CommitBuilder<'a, TestClientConfig>, MlsError> {
+        let required_psks = commit_builder
+            .proposals()
+            .psk_proposals()
+            .iter()
+            .map(|psk| psk.proposal.clone())
+            .collect::<Vec<_>>();
+
+        for psk_proposal in required_psks {
+            if let Some(psk_id) = psk_proposal.external_psk_id() {
+                let psk = psk_store.get(psk_id).ok_or(MlsError::MissingRequiredPsk)?;
+                commit_builder = commit_builder.apply_external_psk(psk_id.clone(), psk);
+            }
+
+            if let Some(psk_id) = psk_proposal.resumption_psk_id() {
+                let psk = group_clone.resumption_secret(psk_id.psk_epoch)?;
+                commit_builder = commit_builder.apply_resumption_psk(psk_id.clone(), psk);
+            }
+        }
+
+        Ok(commit_builder)
     }
 
     async fn handle_commit(

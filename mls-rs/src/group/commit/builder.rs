@@ -580,8 +580,10 @@ where
         let proposals = Default::default();
 
         CommitBuilder {
-            #[cfg(feature = "psk")]
+            #[cfg(all(feature = "by_ref_proposal", feature = "psk"))]
             psks: vec![None; proposals.psk_proposals().len()],
+            #[cfg(all(not(feature = "by_ref_proposal"), feature = "psk"))]
+            psks: vec![],
             proposals,
             sender: Sender::Member(*self.private_tree.self_index),
             group: self,
