@@ -914,7 +914,11 @@ impl MlsClientImpl {
         #[cfg(feature = "psk")]
         let group_clone = group.clone();
 
-        let processor = group.commit_processor(commit).map_err(abort)?;
+        let ReceivedMessage::CommitProcessor(processor) =
+            group.process_incoming_message(commit).map_err(abort)?
+        else {
+            return Err(Status::aborted("expected commit message"));
+        };
 
         #[cfg(feature = "psk")]
         let required_external_psks = processor

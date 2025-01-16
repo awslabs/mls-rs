@@ -412,7 +412,10 @@ async fn test_out_of_order_application_messages() {
 
     alice_group.apply_pending_commit().await.unwrap();
 
-    bob_group.process_incoming_message(commit).await.unwrap();
+    bob_group
+        .process_incoming_message_oneshot(commit)
+        .await
+        .unwrap();
 
     ciphertexts.push(
         alice_group
@@ -520,7 +523,7 @@ async fn external_commits_work(
 
         for group in groups.iter_mut() {
             group
-                .process_incoming_message(commit.clone())
+                .process_incoming_message_oneshot(commit.clone())
                 .await
                 .unwrap();
         }
@@ -604,6 +607,7 @@ async fn reinit_works() {
         .create_group(Default::default(), Default::default())
         .await
         .unwrap();
+
     let kp = bob1.generate_key_package().await.unwrap();
 
     let welcome = &alice_group
@@ -633,7 +637,7 @@ async fn reinit_works() {
 
     // Bob commits the reinit
     bob_group
-        .process_incoming_message(reinit_proposal_message)
+        .process_incoming_message_oneshot(reinit_proposal_message)
         .await
         .unwrap();
 
@@ -644,7 +648,10 @@ async fn reinit_works() {
     let commit_effect = bob_group.apply_pending_commit().await.unwrap().effect;
     assert_matches!(commit_effect, CommitEffect::ReInit(_));
 
-    let message = alice_group.process_incoming_message(commit).await.unwrap();
+    let message = alice_group
+        .process_incoming_message_oneshot(commit)
+        .await
+        .unwrap();
 
     assert_matches!(
         message,
@@ -724,7 +731,7 @@ async fn reinit_works() {
     alice_group.apply_pending_commit().await.unwrap();
 
     bob_group
-        .process_incoming_message(commit_output.commit_message)
+        .process_incoming_message_oneshot(commit_output.commit_message)
         .await
         .unwrap();
 

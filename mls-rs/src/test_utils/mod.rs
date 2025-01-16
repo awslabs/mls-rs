@@ -289,7 +289,7 @@ pub async fn all_process_message<C: MlsConfig>(
     for group in groups {
         if sender != group.current_member_index() as usize {
             group
-                .process_incoming_message(message.clone())
+                .process_incoming_message_oneshot(message.clone())
                 .await
                 .unwrap();
         } else if is_commit {
