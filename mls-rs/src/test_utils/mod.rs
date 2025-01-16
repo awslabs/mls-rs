@@ -16,13 +16,13 @@ use mls_rs_core::{
     identity::{BasicCredential, Credential, SigningIdentity},
     key_package::KeyPackageData,
     protocol_version::ProtocolVersion,
-    psk::ExternalPskId,
 };
 
 use crate::{
     client_builder::{ClientBuilder, MlsConfig},
     error::MlsError,
     group::{framing::MlsMessageDescription, ExportedTree, NewMemberInfo},
+    group_joiner::GroupJoiner,
     identity::basic::BasicIdentityProvider,
     mls_rules::{CommitOptions, DefaultMlsRules},
     storage_provider::in_memory::InMemoryKeyPackageStorage,
@@ -50,11 +50,15 @@ impl<C: MlsConfig> TestClient<C> {
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn join_group(
-        &self,
-        tree: Option<ExportedTree<'_>>,
-        welcome: &MlsMessage,
-    ) -> Result<(Group<C>, NewMemberInfo), MlsError> {
+    pub async fn join_group_custom<'a, 'b, F>(
+        &'a self,
+        tree: Option<ExportedTree<'b>>,
+        welcome: &'a MlsMessage,
+        joiner_edit: F,
+    ) -> Result<(Group<C>, NewMemberInfo), MlsError>
+    where
+        F: FnOnce(GroupJoiner<'a, 'b, C>) -> GroupJoiner<'a, 'b, C>,
+    {
         let MlsMessageDescription::Welcome {
             key_package_refs, ..
         } = welcome.description()
@@ -70,7 +74,18 @@ impl<C: MlsConfig> TestClient<C> {
             joiner = joiner.ratchet_tree(tree)
         };
 
+        joiner = joiner_edit(joiner);
+
         joiner.join().await
+    }
+
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn join_group<'a>(
+        &'a self,
+        tree: Option<ExportedTree<'_>>,
+        welcome: &'a MlsMessage,
+    ) -> Result<(Group<C>, NewMemberInfo), MlsError> {
+        self.join_group_custom(tree, welcome, |joiner| joiner).await
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -145,6 +160,11 @@ pub fn make_test_ext_psk() -> Vec<u8> {
     b"secret psk key".to_vec()
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
+pub fn make_test_resumption_psk() -> Vec<u8> {
+    b"secret resumption key".to_vec()
+}
+
 pub fn is_edwards(cs: u16) -> bool {
     [
         CipherSuite::CURVE25519_AES128,
@@ -187,10 +207,6 @@ pub async fn generate_basic_client<C: CryptoProvider + Clone>(
         .crypto_provider(crypto.clone())
         .identity_provider(BasicIdentityProvider::new())
         .mls_rules(mls_rules)
-        .psk(
-            ExternalPskId::new(TEST_EXT_PSK_ID.to_vec()),
-            make_test_ext_psk().into(),
-        )
         .used_protocol_version(protocol_version)
         .signing_identity(identity, secret_key, cipher_suite);
 

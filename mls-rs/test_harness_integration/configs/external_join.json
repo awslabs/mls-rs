@@ -5,12 +5,6 @@
       {"action": "externalJoin", "actor": "alice", "joiner": "bob"}
     ],
 
-    "with_psk": [
-      {"action": "createGroup", "actor": "alice"},
-      {"action": "installExternalPSK", "clients": ["alice"]},
-      {"action": "externalJoin", "actor": "alice", "joiner": "bob", "psks": [1]}
-    ],
-
     "removing_prior": [
       {"action": "createGroup", "actor": "alice"},
       {"action": "externalJoin", "actor": "alice", "joiner": "bob"},

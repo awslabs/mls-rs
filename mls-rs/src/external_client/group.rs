@@ -36,10 +36,12 @@ use crate::{
     identity::SigningIdentity,
     mls_rules::{CommitSource, ProposalBundle},
     protocol_version::ProtocolVersion,
-    psk::AlwaysFoundPskStorage,
     tree_kem::{leaf_node::LeafNode, node::LeafIndex, path_secret::PathSecret, TreeKemPrivate},
     CryptoProvider, KeyPackage, MlsMessage,
 };
+
+#[cfg(feature = "psk")]
+use crate::psk::secret::PskSecretInput;
 
 #[cfg(feature = "by_ref_proposal")]
 use crate::{
@@ -581,7 +583,6 @@ where
 {
     type MlsRules = C::MlsRules;
     type IdentityProvider = C::IdentityProvider;
-    type PreSharedKeyStorage = AlwaysFoundPskStorage;
     type OutputType = ExternalReceivedMessage;
     type CipherSuiteProvider = <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider;
 
@@ -617,6 +618,7 @@ where
         interim_transcript_hash: InterimTranscriptHash,
         confirmation_tag: &ConfirmationTag,
         provisional_public_state: ProvisionalState,
+        #[cfg(feature = "psk")] _psks: &[PskSecretInput],
     ) -> Result<(), MlsError> {
         self.state.context = provisional_public_state.group_context;
         #[cfg(feature = "by_ref_proposal")]
@@ -630,10 +632,6 @@ where
 
     fn identity_provider(&self) -> Self::IdentityProvider {
         self.config.identity_provider()
-    }
-
-    fn psk_storage(&self) -> Self::PreSharedKeyStorage {
-        AlwaysFoundPskStorage
     }
 
     fn group_state(&self) -> &GroupState {

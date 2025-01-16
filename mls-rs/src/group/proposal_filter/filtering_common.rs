@@ -28,7 +28,7 @@ use crate::extension::ExternalSendersExt;
 use mls_rs_core::{error::IntoAnyError, identity::MemberValidationContext};
 
 use alloc::vec::Vec;
-use mls_rs_core::{identity::IdentityProvider, psk::PreSharedKeyStorage};
+use mls_rs_core::identity::IdentityProvider;
 
 use crate::group::{ExternalInit, ProposalType, RemoveProposal};
 
@@ -45,13 +45,14 @@ use std::collections::HashSet;
 use super::filtering::{apply_strategy, filter_out_invalid_proposers, FilterStrategy};
 
 #[derive(Debug)]
-pub(crate) struct ProposalApplier<'a, C, P, CSP> {
+pub(crate) struct ProposalApplier<'a, C, CSP> {
     pub original_tree: &'a TreeKemPublic,
     pub cipher_suite_provider: &'a CSP,
     pub original_context: &'a GroupContext,
     pub external_leaf: Option<&'a LeafNode>,
     pub identity_provider: &'a C,
-    pub psk_storage: &'a P,
+    #[cfg(feature = "psk")]
+    pub psks: &'a [JustPreSharedKeyID],
 }
 
 #[derive(Debug)]
@@ -64,10 +65,9 @@ pub(crate) struct ApplyProposalsOutput {
     pub(crate) new_context_extensions: Option<ExtensionList>,
 }
 
-impl<'a, C, P, CSP> ProposalApplier<'a, C, P, CSP>
+impl<'a, C, CSP> ProposalApplier<'a, C, CSP>
 where
     C: IdentityProvider,
-    P: PreSharedKeyStorage,
     CSP: CipherSuiteProvider,
 {
     #[allow(clippy::too_many_arguments)]
@@ -77,7 +77,7 @@ where
         original_context: &'a GroupContext,
         external_leaf: Option<&'a LeafNode>,
         identity_provider: &'a C,
-        psk_storage: &'a P,
+        #[cfg(feature = "psk")] psks: &'a [JustPreSharedKeyID],
     ) -> Self {
         Self {
             original_tree,
@@ -85,7 +85,8 @@ where
             original_context,
             external_leaf,
             identity_provider,
-            psk_storage,
+            #[cfg(feature = "psk")]
+            psks,
         }
     }
 
@@ -156,7 +157,8 @@ where
             &mut proposals,
             #[cfg(not(feature = "by_ref_proposal"))]
             proposals,
-            self.psk_storage,
+            #[cfg(feature = "psk")]
+            self.psks,
         )
         .await?;
 
@@ -338,15 +340,14 @@ where
 
 #[cfg(feature = "psk")]
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-pub(crate) async fn filter_out_invalid_psks<P, CP>(
+pub(crate) async fn filter_out_invalid_psks<CP>(
     #[cfg(feature = "by_ref_proposal")] strategy: FilterStrategy,
     cipher_suite_provider: &CP,
     #[cfg(not(feature = "by_ref_proposal"))] proposals: &ProposalBundle,
     #[cfg(feature = "by_ref_proposal")] proposals: &mut ProposalBundle,
-    psk_storage: &P,
+    #[cfg(feature = "psk")] psks: &[crate::psk::JustPreSharedKeyID],
 ) -> Result<(), MlsError>
 where
-    P: PreSharedKeyStorage,
     CP: CipherSuiteProvider,
 {
     let kdf_extract_size = cipher_suite_provider.kdf_extract_size();
@@ -381,20 +382,13 @@ where
         #[cfg(not(feature = "std"))]
         let is_new_id = !ids_seen.contains(&p.proposal.psk);
 
-        let external_id_is_valid = match &p.proposal.psk.key_id {
-            JustPreSharedKeyID::External(id) => psk_storage
-                .contains(id)
-                .await
-                .map_err(|e| MlsError::PskStoreError(e.into_any_error()))
-                .and_then(|found| {
-                    if found {
-                        Ok(())
-                    } else {
-                        Err(MlsError::MissingRequiredPsk)
-                    }
-                }),
-            JustPreSharedKeyID::Resumption(_) => Ok(()),
-        };
+        let has_required_psk_secret = psks
+            .contains(&p.proposal.psk.key_id)
+            .then_some(())
+            .ok_or_else(|| MlsError::MissingRequiredPsk);
+
+        #[cfg(not(feature = "psk"))]
+        let has_required_psk_secret = Ok(());
 
         #[cfg(not(feature = "by_ref_proposal"))]
         if !valid {
@@ -403,8 +397,8 @@ where
             return Err(MlsError::InvalidPskNonceLength);
         } else if !is_new_id {
             return Err(MlsError::DuplicatePskIds);
-        } else if external_id_is_valid.is_err() {
-            return external_id_is_valid;
+        } else if has_required_psk_secret.is_err() {
+            return has_required_psk_secret;
         }
 
         #[cfg(feature = "by_ref_proposal")]
@@ -416,7 +410,7 @@ where
             } else if !is_new_id {
                 Err(MlsError::DuplicatePskIds)
             } else {
-                external_id_is_valid
+                has_required_psk_secret
             };
 
             if !apply_strategy(strategy, p.is_by_reference(), res)? {
@@ -439,15 +433,13 @@ where
 
 #[cfg(not(feature = "psk"))]
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-pub(crate) async fn filter_out_invalid_psks<P, CP>(
+pub(crate) async fn filter_out_invalid_psks<CP>(
     #[cfg(feature = "by_ref_proposal")] _: FilterStrategy,
     _: &CP,
     #[cfg(not(feature = "by_ref_proposal"))] _: &ProposalBundle,
     #[cfg(feature = "by_ref_proposal")] _: &mut ProposalBundle,
-    _: &P,
 ) -> Result<(), MlsError>
 where
-    P: PreSharedKeyStorage,
     CP: CipherSuiteProvider,
 {
     Ok(())

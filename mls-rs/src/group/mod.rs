@@ -8,6 +8,8 @@ use core::fmt::{self, Debug};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
 use mls_rs_core::identity::MemberValidationContext;
+#[cfg(feature = "psk")]
+use mls_rs_core::psk::PreSharedKey;
 use mls_rs_core::secret::Secret;
 use mls_rs_core::time::MlsTime;
 use snapshot::PendingCommitSnapshot;
@@ -20,7 +22,6 @@ use crate::extension::RatchetTreeExt;
 use crate::identity::SigningIdentity;
 use crate::key_package::{KeyPackage, KeyPackageRef};
 use crate::protocol_version::ProtocolVersion;
-use crate::psk::secret::PskSecret;
 use crate::psk::PreSharedKeyID;
 use crate::signer::Signable;
 use crate::tree_kem::hpke_encryption::HpkeEncryptable;
@@ -49,8 +50,8 @@ pub use self::resumption::ReinitClient;
 
 #[cfg(feature = "psk")]
 use crate::psk::{
-    resolver::PskResolver, secret::PskSecretInput, ExternalPskId, JustPreSharedKeyID, PskGroupId,
-    ResumptionPSKUsage, ResumptionPsk,
+    secret::{PskSecret, PskSecretInput},
+    ExternalPskId, JustPreSharedKeyID, PskGroupId, ResumptionPSKUsage, ResumptionPsk,
 };
 
 #[cfg(feature = "private_message")]
@@ -1395,48 +1396,12 @@ where
         a.state == b.state && a.key_schedule == b.key_schedule && a.epoch_secrets == b.epoch_secrets
     }
 
-    #[cfg(feature = "psk")]
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn get_psk(
-        &self,
-        psks: &[ProposalInfo<PreSharedKeyProposal>],
-    ) -> Result<(PskSecret, Vec<PreSharedKeyID>), MlsError> {
-        if let Some(psk) = self.previous_psk.clone() {
-            // TODO consider throwing error if psks not empty
-            let psk_id = vec![psk.id.clone()];
-            let psk = PskSecret::calculate(&[psk], &self.cipher_suite_provider()).await?;
-
-            Ok((psk, psk_id))
-        } else {
-            let psks = psks
-                .iter()
-                .map(|psk| psk.proposal.psk.clone())
-                .collect::<Vec<_>>();
-
-            let psk = PskResolver {
-                group_context: Some(self.context()),
-                current_epoch: Some(&self.epoch_secrets),
-                prior_epochs: Some(&self.state_repo),
-                psk_store: &self.config.secret_store(),
-            }
-            .resolve_to_secret(&psks, &self.cipher_suite_provider())
-            .await?;
-
-            Ok((psk, psks))
-        }
-    }
-
     #[cfg(feature = "private_message")]
     pub(crate) fn encryption_options(&self) -> Result<EncryptionOptions, MlsError> {
         self.config
             .mls_rules()
             .encryption_options(&self.roster(), self.group_context())
             .map_err(|e| MlsError::MlsRulesError(e.into_any_error()))
-    }
-
-    #[cfg(not(feature = "psk"))]
-    fn get_psk(&self) -> PskSecret {
-        PskSecret::new(&self.cipher_suite_provider())
     }
 
     #[cfg(feature = "secret_tree_access")]
@@ -1473,47 +1438,25 @@ where
 }
 
 impl<C: ClientConfig> Group<C> {
+    // FIXME: This is temporary until we get rid of the group state storage
     #[cfg(feature = "psk")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub(crate) async fn psk_secret<CS: CipherSuiteProvider>(
-        config: &C,
-        cipher_suite_provider: &CS,
-        psks: &[PreSharedKeyID],
-        additional_psk: Option<PskSecretInput>,
-    ) -> Result<PskSecret, MlsError> {
-        if let Some(psk) = additional_psk {
-            let psk_id = psks.first().ok_or(MlsError::UnexpectedPskId)?;
-
-            match &psk_id.key_id {
-                JustPreSharedKeyID::Resumption(r) if r.usage != ResumptionPSKUsage::Application => {
-                    Ok(())
-                }
-                _ => Err(MlsError::UnexpectedPskId),
-            }?;
-
-            let mut psk = psk;
-            psk.id.psk_nonce = psk_id.psk_nonce.clone();
-            PskSecret::calculate(&[psk], cipher_suite_provider).await
-        } else {
-            PskResolver::<<C as ClientConfig>::GroupStateStorage, <C as ClientConfig>::PskStore> {
-                group_context: None,
-                current_epoch: None,
-                prior_epochs: None,
-                psk_store: &config.secret_store(),
-            }
-            .resolve_to_secret(psks, cipher_suite_provider)
-            .await
+    pub async fn resumption_secret(&self, epoch: u64) -> Result<PreSharedKey, MlsError> {
+        if epoch == self.current_epoch() {
+            return Ok(self.epoch_secrets.resumption_secret.clone());
         }
-    }
 
-    #[cfg(not(feature = "psk"))]
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub(crate) async fn psk_secret<CS: CipherSuiteProvider>(
-        _config: &C,
-        cipher_suite_provider: &CS,
-        _psks: &[PreSharedKeyID],
-    ) -> Result<PskSecret, MlsError> {
-        Ok(PskSecret::new(cipher_suite_provider))
+        #[cfg(feature = "prior_epoch")]
+        let res = self
+            .state_repo
+            .resumption_secret(epoch)
+            .await?
+            .ok_or_else(|| MlsError::EpochNotFound);
+
+        #[cfg(not(feature = "prior_epoch"))]
+        let res = Err(MlsError::EpochNotFound);
+
+        res
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -1625,7 +1568,6 @@ where
 {
     type MlsRules = C::MlsRules;
     type IdentityProvider = C::IdentityProvider;
-    type PreSharedKeyStorage = C::PskStore;
     type OutputType = ReceivedMessage;
     type CipherSuiteProvider = <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider;
 
@@ -1720,6 +1662,7 @@ where
         interim_transcript_hash: InterimTranscriptHash,
         confirmation_tag: &ConfirmationTag,
         provisional_state: ProvisionalState,
+        #[cfg(feature = "psk")] psks: &[PskSecretInput],
     ) -> Result<(), MlsError> {
         let commit_secret = if let Some(secrets) = secrets {
             self.private_tree = secrets.0;
@@ -1747,12 +1690,16 @@ where
         };
 
         #[cfg(feature = "psk")]
-        let (psk, _) = self
-            .get_psk(&provisional_state.applied_proposals.psks)
-            .await?;
+        let psk = {
+            if let Some(psk) = self.previous_psk.clone() {
+                PskSecret::calculate(&[psk], &self.cipher_suite_provider()).await
+            } else {
+                PskSecret::calculate(psks, &self.cipher_suite_provider()).await
+            }
+        }?;
 
         #[cfg(not(feature = "psk"))]
-        let psk = self.get_psk();
+        let psk = crate::psk::secret::PskSecret::new(&self.cipher_suite_provider);
 
         let key_schedule_result = KeySchedule::from_key_schedule(
             &key_schedule,
@@ -1805,10 +1752,6 @@ where
 
     fn identity_provider(&self) -> Self::IdentityProvider {
         self.config.identity_provider()
-    }
-
-    fn psk_storage(&self) -> Self::PreSharedKeyStorage {
-        self.config.secret_store()
     }
 
     fn group_state(&self) -> &GroupState {
@@ -2204,6 +2147,7 @@ mod tests {
         let (mut bob_group, _) = bob_client
             .join_group(None, &commit_output.welcome_messages[0])
             .await?;
+
         // This no longer deletes the key package
         bob_group.write_to_storage()?;
 
@@ -2435,7 +2379,7 @@ mod tests {
         let group = test_group(protocol_version, cipher_suite).await;
 
         let info = group
-            .group_info_message(false)
+            .group_info_message(true)
             .await
             .unwrap()
             .into_group_info()
@@ -2451,10 +2395,11 @@ mod tests {
             group.group.config,
             info_msg,
         )
-        .await
-        .map(|_| {});
+        .build()
+        .await;
 
-        assert_matches!(res, Err(MlsError::MissingExternalPubExtension));
+        // assert_matches! needs Debug which Group doesn't have
+        assert!(matches!(res, Err(MlsError::MissingExternalPubExtension)));
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -2477,7 +2422,6 @@ mod tests {
 
         test_client
             .external_commit_builder(commit_output.external_commit_group_info.unwrap())
-            .await
             .unwrap()
             .build()
             .await
@@ -2591,7 +2535,6 @@ mod tests {
                     .await
                     .unwrap(),
             )
-            .await
             .unwrap()
             .build()
             .await
@@ -2638,7 +2581,6 @@ mod tests {
                     .await
                     .unwrap(),
             )
-            .await
             .unwrap()
             .with_tree_data(alice_group.export_tree().into_owned())
             .build()
@@ -3712,26 +3654,123 @@ mod tests {
             test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
 
         let psk_id = ExternalPskId::new(vec![0]);
-        let psk = PreSharedKey::from(vec![0]);
-
-        alice
-            .config
-            .secret_store()
-            .insert(psk_id.clone(), psk.clone());
-
-        bob.config.secret_store().insert(psk_id.clone(), psk);
+        let psk = PreSharedKey::from(vec![1]);
 
         let commit = alice
             .commit_builder()
             .add_member(key_pkg)
             .unwrap()
-            .add_external_psk(psk_id)
+            .add_external_psk(psk_id.clone(), psk.clone())
             .unwrap()
             .build()
             .await
             .unwrap();
 
-        bob.join_group(None, &commit.welcome_messages[0])
+        bob.join_group_custom(None, &commit.welcome_messages[0], |joiner| {
+            joiner.with_external_psk(psk_id, psk)
+        })
+        .await
+        .unwrap();
+    }
+
+    #[cfg(feature = "psk")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn can_process_commit_with_psk_by_value() {
+        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (mut bob, _) = alice.join("bob").await;
+
+        let psk_id_external = ExternalPskId::new(vec![0]);
+        let psk_external = PreSharedKey::from(vec![1]);
+        let psk_epoch = bob.context().epoch;
+
+        let psk_id_resumption = ResumptionPsk {
+            usage: ResumptionPSKUsage::Application,
+            psk_group_id: bob.context().group_id.clone().into(),
+            psk_epoch,
+        };
+
+        let psk_resumption = bob.resumption_secret(psk_epoch).await.unwrap();
+
+        let commit = alice
+            .commit_builder()
+            .add_external_psk(psk_id_external.clone(), psk_external.clone())
+            .unwrap()
+            .add_resumption_psk(psk_epoch, psk_resumption.clone())
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+
+        bob.commit_processor(commit.commit_message)
+            .await
+            .unwrap()
+            .with_external_psk(psk_id_external, psk_external)
+            .with_resumption_psk(psk_id_resumption, psk_resumption)
+            .process()
+            .await
+            .unwrap();
+    }
+
+    #[cfg(feature = "psk")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn can_process_commit_with_psk_by_reference() {
+        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (mut bob, _) = alice.join("bob").await;
+
+        let psk_id_external1 = ExternalPskId::new(vec![0]);
+        let psk_id_external2 = ExternalPskId::new(vec![1]);
+        let psk_external = PreSharedKey::from(vec![2]);
+        let psk_epoch = bob.context().epoch;
+
+        let psk_id_resumption = ResumptionPsk {
+            usage: ResumptionPSKUsage::Application,
+            psk_group_id: bob.context().group_id.clone().into(),
+            psk_epoch,
+        };
+
+        let psk_resumption = bob.resumption_secret(psk_epoch).await.unwrap();
+
+        let psk_external_proposal = alice
+            .propose_external_psk(psk_id_external1.clone(), Vec::new())
+            .await
+            .unwrap();
+
+        let psk_resumption_proposal = alice
+            .propose_resumption_psk(psk_epoch, Vec::new())
+            .await
+            .unwrap();
+
+        let commit = alice
+            .commit_builder()
+            .apply_external_psk(psk_id_external1.clone(), psk_external.clone())
+            .add_external_psk(psk_id_external2.clone(), psk_external.clone())
+            .unwrap()
+            .apply_resumption_psk(psk_id_resumption.clone(), psk_resumption.clone())
+            .build()
+            .await
+            .unwrap();
+
+        let commit_changes = alice.apply_pending_commit().await.unwrap();
+
+        // Make sure the proposals are actually in the commit to verify the rest of the test is
+        // working as expected
+        assert_matches!(commit_changes.effect, CommitEffect::NewEpoch(epoch) if epoch.unused_proposals.is_empty());
+
+        bob.process_incoming_message(psk_external_proposal)
+            .await
+            .unwrap();
+
+        bob.process_incoming_message(psk_resumption_proposal)
+            .await
+            .unwrap();
+
+        bob.commit_processor(commit.commit_message)
+            .await
+            .unwrap()
+            .with_external_psk(psk_id_external2.clone(), psk_external.clone())
+            .with_external_psk(psk_id_external1, psk_external)
+            .with_resumption_psk(psk_id_resumption, psk_resumption)
+            .process()
             .await
             .unwrap();
     }
@@ -3797,11 +3836,10 @@ mod tests {
 
         alice.apply_pending_commit().await.unwrap();
 
-        let mut bob = bob_client
+        let (mut bob, _) = bob_client
             .join_group(None, &commit.welcome_messages[0])
             .await
-            .unwrap()
-            .0;
+            .unwrap();
 
         bob.write_to_storage().await.unwrap();
 
@@ -3955,7 +3993,6 @@ mod tests {
         let commit = client_with_custom_rules(b"bob", mls_rules)
             .await
             .external_commit_builder(group_info)
-            .await
             .unwrap()
             .with_custom_proposal(CustomProposal::new(TEST_CUSTOM_PROPOSAL_TYPE, vec![]))
             .build()
@@ -3989,10 +4026,8 @@ mod tests {
         let (_, commit) = client_with_custom_rules(b"bob", mls_rules)
             .await
             .external_commit_builder(group_info)
-            .await
             .unwrap()
             .with_received_custom_proposal(by_ref)
-            .unwrap()
             .build()
             .await
             .unwrap();

@@ -15,9 +15,6 @@ use mls_rs_core::{error::IntoAnyError, group::GroupStateStorage};
 use super::snapshot::Snapshot;
 
 #[cfg(feature = "psk")]
-use crate::group::ResumptionPsk;
-
-#[cfg(feature = "psk")]
 use mls_rs_core::psk::PreSharedKey;
 
 /// A set of changes to apply to a GroupStateStorage implementation. These changes MUST
@@ -80,23 +77,20 @@ impl<S: GroupStateStorage> GroupStateRepository<S> {
 
     #[cfg(feature = "psk")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn resumption_secret(
-        &self,
-        psk_id: &ResumptionPsk,
-    ) -> Result<Option<PreSharedKey>, MlsError> {
+    pub async fn resumption_secret(&self, epoch_id: u64) -> Result<Option<PreSharedKey>, MlsError> {
         // Search the local inserts cache
         if let Some(min) = self.pending_commit.inserts.front().map(|e| e.epoch_id()) {
-            if psk_id.psk_epoch >= min {
+            if epoch_id >= min {
                 return Ok(self
                     .pending_commit
                     .inserts
-                    .get((psk_id.psk_epoch - min) as usize)
+                    .get((epoch_id - min) as usize)
                     .map(|e| e.secrets.resumption_secret.clone()));
             }
         }
 
         // Search the local updates cache
-        let maybe_pending = self.find_pending(psk_id.psk_epoch);
+        let maybe_pending = self.find_pending(epoch_id);
 
         if let Some(pending) = maybe_pending {
             return Ok(Some(
@@ -109,7 +103,7 @@ impl<S: GroupStateStorage> GroupStateRepository<S> {
 
         // Search the stored cache
         self.storage
-            .epoch(&psk_id.psk_group_id.0, psk_id.psk_epoch)
+            .epoch(&self.group_id, epoch_id)
             .await
             .map_err(|e| MlsError::GroupStorageError(e.into_any_error()))?
             .map(|e| Ok(PriorEpoch::mls_decode(&mut &*e)?.secrets.resumption_secret))
@@ -224,7 +218,6 @@ mod tests {
         group::{
             epoch::{test_utils::get_test_epoch_with_id, SenderDataSecret},
             test_utils::{random_bytes, TEST_GROUP},
-            PskGroupId, ResumptionPSKUsage,
         },
         storage_provider::in_memory::InMemoryGroupStateStorage,
     };
@@ -272,14 +265,8 @@ mod tests {
         #[cfg(not(feature = "std"))]
         assert!(test_repo.storage.inner.lock().is_empty());
 
-        let psk_id = ResumptionPsk {
-            psk_epoch: 0,
-            psk_group_id: PskGroupId(test_repo.group_id.clone()),
-            usage: ResumptionPSKUsage::Application,
-        };
-
         // Make sure you can recall an epoch sitting as a pending insert
-        let resumption = test_repo.resumption_secret(&psk_id).await.unwrap();
+        let resumption = test_repo.resumption_secret(0).await.unwrap();
         let prior_epoch = test_repo.get_epoch_mut(0).await.unwrap().cloned();
 
         assert_eq!(
@@ -349,13 +336,7 @@ mod tests {
         );
 
         // Make sure you can access an epoch pending update
-        let psk_id = ResumptionPsk {
-            psk_epoch: 0,
-            psk_group_id: PskGroupId(test_repo.group_id.clone()),
-            usage: ResumptionPSKUsage::Application,
-        };
-
-        let owned = test_repo.resumption_secret(&psk_id).await.unwrap();
+        let owned = test_repo.resumption_secret(0).await.unwrap();
         assert_eq!(owned.as_ref(), Some(&to_update.secrets.resumption_secret));
 
         // Write the update to storage

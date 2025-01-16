@@ -5,6 +5,8 @@
 use alloc::boxed::Box;
 use alloc::{vec, vec::Vec};
 
+#[cfg(feature = "psk")]
+use itertools::Itertools;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::{crypto::SignatureSecretKey, error::IntoAnyError};
 
@@ -34,8 +36,13 @@ use crate::WireFormat;
 
 #[cfg(feature = "psk")]
 use crate::{
-    group::{JustPreSharedKeyID, PskGroupId, ResumptionPSKUsage, ResumptionPsk},
-    psk::ExternalPskId,
+    group::{
+        JustPreSharedKeyID, PreSharedKeyProposal, PskGroupId, ResumptionPSKUsage, ResumptionPsk,
+    },
+    psk::{
+        secret::{PskSecret, PskSecretInput},
+        ExternalPskId,
+    },
 };
 
 use crate::group::{
@@ -45,12 +52,14 @@ use crate::group::{
     message_hash::MessageHash,
     message_processor::{path_update_required, MessageProcessor},
     message_signature::AuthenticatedContent,
-    mls_rules::CommitDirection,
     proposal::Proposal,
     CommitEffect, CommitMessageDescription, EncryptedGroupSecrets, EpochSecrets, ExportedTree,
     Group, GroupContext, GroupInfo, GroupState, InterimTranscriptHash, NewEpoch,
     PendingCommitSnapshot, Welcome,
 };
+
+#[cfg(feature = "by_ref_proposal")]
+use crate::group::mls_rules::CommitDirection;
 
 #[cfg(feature = "custom_proposal")]
 use crate::group::proposal::CustomProposal;
@@ -176,6 +185,8 @@ where
     new_signer: Option<SignatureSecretKey>,
     new_signing_identity: Option<SigningIdentity>,
     new_leaf_node_extensions: Option<ExtensionList>,
+    #[cfg(feature = "psk")]
+    psks: Vec<Option<PskSecretInput>>,
     sender: Sender,
 }
 
@@ -222,13 +233,59 @@ where
         Ok(self.with_proposal(proposal))
     }
 
+    /// Add an external PSK that can be used to fulfil PSK requirements that were
+    /// established via a [`PreSharedKeyProposal`](crate::group::proposal::PreSharedKeyProposal)
+    /// from another client during the current epoch.
+    #[cfg(feature = "psk")]
+    pub fn apply_external_psk(self, id: ExternalPskId, psk: crate::psk::PreSharedKey) -> Self {
+        self.apply_psk(JustPreSharedKeyID::External(id), psk)
+    }
+
+    /// Add an resumption PSK that can be used to fulfil PSK requirements that were
+    /// established via a [`PreSharedKeyProposal`](crate::group::proposal::PreSharedKeyProposal)
+    /// from another client during the current epoch.
+    #[cfg(feature = "psk")]
+    pub fn apply_resumption_psk(self, id: ResumptionPsk, psk: crate::psk::PreSharedKey) -> Self {
+        self.apply_psk(JustPreSharedKeyID::Resumption(id), psk)
+    }
+
+    #[cfg(feature = "psk")]
+    fn apply_psk(mut self, id: JustPreSharedKeyID, psk: crate::psk::PreSharedKey) -> Self {
+        if let Some((i, proposal)) = self
+            .proposals
+            .psks
+            .iter()
+            .filter(|proposal| proposal.is_by_reference())
+            .find_position(|p| p.proposal.psk.key_id == id)
+        {
+            let id = proposal.proposal.psk.clone();
+            let secret_input = PskSecretInput { id, psk };
+            self.psks[i] = Some(secret_input);
+        }
+
+        self
+    }
+
     /// Insert a
     /// [`PreSharedKeyProposal`](crate::group::proposal::PreSharedKeyProposal) with
     /// an external PSK into the current commit that is being built.
     #[cfg(feature = "psk")]
-    pub fn add_external_psk(self, psk_id: ExternalPskId) -> Result<Self, MlsError> {
-        let key_id = JustPreSharedKeyID::External(psk_id);
-        let proposal = self.group.psk_proposal(key_id)?;
+    pub fn add_external_psk(
+        mut self,
+        id: ExternalPskId,
+        psk: crate::psk::PreSharedKey,
+    ) -> Result<Self, MlsError> {
+        use crate::psk::PreSharedKeyID;
+
+        let key_id = JustPreSharedKeyID::External(id);
+        let id = PreSharedKeyID::new(key_id, &self.group.cipher_suite_provider)?;
+
+        self.psks.push(Some(PskSecretInput {
+            id: id.clone(),
+            psk,
+        }));
+
+        let proposal = Proposal::Psk(PreSharedKeyProposal { psk: id });
         Ok(self.with_proposal(proposal))
     }
 
@@ -236,9 +293,13 @@ where
     /// [`PreSharedKeyProposal`](crate::group::proposal::PreSharedKeyProposal) with
     /// a resumption PSK into the current commit that is being built.
     #[cfg(feature = "psk")]
-    pub fn add_resumption_psk(self, psk_epoch: u64) -> Result<Self, MlsError> {
+    pub fn add_resumption_psk(
+        self,
+        psk_epoch: u64,
+        psk: crate::psk::PreSharedKey,
+    ) -> Result<Self, MlsError> {
         let group_id = self.group.group_id().to_vec();
-        self.add_resumption_psk_for_group(psk_epoch, group_id)
+        self.add_resumption_psk_for_group(psk_epoch, group_id, psk)
     }
 
     /// Insert a
@@ -246,10 +307,13 @@ where
     /// a resumption PSK into the current commit that is being built.
     #[cfg(feature = "psk")]
     pub fn add_resumption_psk_for_group(
-        self,
+        mut self,
         psk_epoch: u64,
         group_id: Vec<u8>,
+        psk: crate::psk::PreSharedKey,
     ) -> Result<Self, MlsError> {
+        use crate::psk::PreSharedKeyID;
+
         let psk_id = ResumptionPsk {
             psk_epoch,
             usage: ResumptionPSKUsage::Application,
@@ -257,7 +321,14 @@ where
         };
 
         let key_id = JustPreSharedKeyID::Resumption(psk_id);
-        let proposal = self.group.psk_proposal(key_id)?;
+        let id = PreSharedKeyID::new(key_id, &self.group.cipher_suite_provider)?;
+
+        self.psks.push(Some(PskSecretInput {
+            id: id.clone(),
+            psk,
+        }));
+
+        let proposal = Proposal::Psk(PreSharedKeyProposal { psk: id });
         Ok(self.with_proposal(proposal))
     }
 
@@ -366,6 +437,13 @@ where
     /// [proposal rules](crate::client_builder::ClientBuilder::mls_rules).
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn build(self) -> Result<CommitOutput, MlsError> {
+        #[cfg(feature = "psk")]
+        let psks = self
+            .psks
+            .into_iter()
+            .map(|psk| psk.ok_or(MlsError::MissingRequiredPsk))
+            .try_collect()?;
+
         let (output, pending_commit) = self
             .group
             .commit_internal(
@@ -376,6 +454,8 @@ where
                 self.new_signer,
                 self.new_signing_identity,
                 self.new_leaf_node_extensions,
+                #[cfg(feature = "psk")]
+                psks,
                 self.sender,
             )
             .await?;
@@ -391,6 +471,13 @@ where
     /// A detached commit can be applied using `Group::apply_detached_commit`.
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn build_detached(self) -> Result<(CommitOutput, CommitSecrets), MlsError> {
+        #[cfg(feature = "psk")]
+        let psks = self
+            .psks
+            .into_iter()
+            .map(|psk| psk.ok_or(MlsError::MissingRequiredPsk))
+            .try_collect()?;
+
         let (output, pending_commit) = self
             .group
             .commit_internal(
@@ -401,6 +488,8 @@ where
                 self.new_signer,
                 self.new_signing_identity,
                 self.new_leaf_node_extensions,
+                #[cfg(feature = "psk")]
+                psks,
                 self.sender,
             )
             .await?;
@@ -484,11 +573,18 @@ where
     /// Create a new commit builder that can include proposals
     /// by-value.
     pub fn commit_builder(&mut self) -> CommitBuilder<C> {
+        #[cfg(feature = "by_ref_proposal")]
+        let proposals = self.state.proposals.prepare_commit();
+
+        #[cfg(not(feature = "by_ref_proposal"))]
+        let proposals = Default::default();
+
         CommitBuilder {
-            #[cfg(feature = "by_ref_proposal")]
-            proposals: self.state.proposals.prepare_commit(),
-            #[cfg(not(feature = "by_ref_proposal"))]
-            proposals: Default::default(),
+            #[cfg(all(feature = "by_ref_proposal", feature = "psk"))]
+            psks: vec![None; proposals.psk_proposals().len()],
+            #[cfg(all(not(feature = "by_ref_proposal"), feature = "psk"))]
+            psks: vec![],
+            proposals,
             sender: Sender::Member(*self.private_tree.self_index),
             group: self,
             authenticated_data: Default::default(),
@@ -512,6 +608,7 @@ where
         new_signer: Option<SignatureSecretKey>,
         new_signing_identity: Option<SigningIdentity>,
         new_leaf_node_extensions: Option<ExtensionList>,
+        #[cfg(feature = "psk")] psks: Vec<PskSecretInput>,
         sender: Sender,
     ) -> Result<(CommitOutput, PendingCommit), MlsError> {
         if !self.pending_commit.is_none() {
@@ -548,8 +645,13 @@ where
                 &self.config.identity_provider(),
                 &self.cipher_suite_provider,
                 time,
+                #[cfg(feature = "by_ref_proposal")]
                 CommitDirection::Send,
-                &self.config.secret_store(),
+                #[cfg(feature = "psk")]
+                &psks
+                    .iter()
+                    .map(|psk| psk.id.key_id.clone())
+                    .collect::<Vec<_>>(),
                 &committer,
             )
             .await?;
@@ -636,12 +738,22 @@ where
         };
 
         #[cfg(feature = "psk")]
-        let (psk_secret, psks) = self
-            .get_psk(&provisional_state.applied_proposals.psks)
-            .await?;
+        let (psk_secret, psk_ids) = {
+            if let Some(previous) = self.previous_psk.as_ref() {
+                (
+                    PskSecret::calculate(&[previous.clone()], &self.cipher_suite_provider).await?,
+                    vec![previous.id.clone()],
+                )
+            } else {
+                (
+                    PskSecret::calculate(&psks, &self.cipher_suite_provider).await?,
+                    psks.into_iter().map(|psk| psk.id).collect::<Vec<_>>(),
+                )
+            }
+        };
 
         #[cfg(not(feature = "psk"))]
-        let psk_secret = self.get_psk();
+        let psk_secret = crate::psk::secret::PskSecret::new(&self.cipher_suite_provider);
 
         let added_key_pkgs: Vec<_> = provisional_state
             .applied_proposals
@@ -788,7 +900,7 @@ where
                     &key_schedule_result.joiner_secret,
                     path_secrets,
                     #[cfg(feature = "psk")]
-                    psks.clone(),
+                    psk_ids.clone(),
                     &encrypted_group_info,
                 )
             })
@@ -809,7 +921,7 @@ where
                         &key_schedule_result.joiner_secret,
                         path_secrets,
                         #[cfg(feature = "psk")]
-                        psks.clone(),
+                        psk_ids.clone(),
                         &encrypted_group_info,
                     )
                     .await?,
@@ -1003,7 +1115,7 @@ mod tests {
     #[cfg(feature = "psk")]
     use crate::{
         group::proposal::PreSharedKeyProposal,
-        psk::{JustPreSharedKeyID, PreSharedKey, PreSharedKeyID},
+        psk::{JustPreSharedKeyID, PreSharedKeyID},
     };
 
     use super::*;
@@ -1157,17 +1269,15 @@ mod tests {
     #[cfg(feature = "psk")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_commit_builder_psk() {
+        use mls_rs_core::psk::PreSharedKey;
+
         let mut group = test_commit_builder_group().await;
         let test_psk = ExternalPskId::new(vec![1]);
-
-        group
-            .config
-            .secret_store()
-            .insert(test_psk.clone(), PreSharedKey::from(vec![1]));
+        let psk_data = PreSharedKey::new(vec![2]);
 
         let commit_output = group
             .commit_builder()
-            .add_external_psk(test_psk.clone())
+            .add_external_psk(test_psk.clone(), psk_data)
             .unwrap()
             .build()
             .await

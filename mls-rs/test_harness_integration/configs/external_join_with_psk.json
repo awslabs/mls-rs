@@ -1,0 +1,9 @@
+{
+  "scripts": {
+    "with_psk": [
+      {"action": "createGroup", "actor": "alice"},
+      {"action": "installExternalPSK", "clients": ["alice"]},
+      {"action": "externalJoin", "actor": "alice", "joiner": "bob", "psks": [1]}
+    ]
+  }
+}

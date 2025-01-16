@@ -5,9 +5,7 @@
 use alloc::vec::Vec;
 
 use super::{
-    message_processor::ProvisionalState,
-    mls_rules::{CommitDirection, CommitSource},
-    GroupState, ProposalOrRef,
+    message_processor::ProvisionalState, mls_rules::CommitSource, GroupState, ProposalOrRef,
 };
 use crate::{
     client::MlsError,
@@ -18,12 +16,16 @@ use crate::{
     time::MlsTime,
 };
 
+#[cfg(feature = "psk")]
+use crate::psk::JustPreSharedKeyID;
+
 #[cfg(feature = "by_ref_proposal")]
 use crate::{
     group::{
         message_hash::MessageHash, Proposal, ProposalMessageDescription, ProposalRef,
         ProtocolVersion,
     },
+    mls_rules::CommitDirection,
     MlsMessage,
 };
 
@@ -32,9 +34,7 @@ use crate::tree_kem::leaf_node::LeafNode;
 #[cfg(feature = "by_ref_proposal")]
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 
-use mls_rs_core::{
-    crypto::CipherSuiteProvider, identity::IdentityProvider, psk::PreSharedKeyStorage,
-};
+use mls_rs_core::{crypto::CipherSuiteProvider, identity::IdentityProvider};
 
 #[cfg(feature = "by_ref_proposal")]
 use core::fmt::{self, Debug};
@@ -223,7 +223,7 @@ impl GroupState {
     #[inline(never)]
     #[allow(clippy::too_many_arguments)]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub(crate) async fn apply_resolved<C, PSK, CSP>(
+    pub(crate) async fn apply_resolved<C, CSP>(
         &self,
         proposals: ProposalBundle,
         external_leaf: Option<&LeafNode>,
@@ -231,14 +231,12 @@ impl GroupState {
         cipher_suite_provider: &CSP,
         commit_time: Option<MlsTime>,
         #[cfg(feature = "by_ref_proposal")] direction: CommitDirection,
-        #[cfg(not(feature = "by_ref_proposal"))] _: CommitDirection,
-        psk_storage: &PSK,
+        #[cfg(feature = "psk")] psks: &[JustPreSharedKeyID],
         sender: &CommitSource,
     ) -> Result<ProvisionalState, MlsError>
     where
         C: IdentityProvider,
         CSP: CipherSuiteProvider,
-        PSK: PreSharedKeyStorage,
     {
         #[cfg(feature = "by_ref_proposal")]
         let all_proposals = proposals.clone();
@@ -255,7 +253,8 @@ impl GroupState {
             &self.context,
             external_leaf,
             identity_provider,
-            psk_storage,
+            #[cfg(feature = "psk")]
+            psks,
         );
 
         #[cfg(feature = "by_ref_proposal")]
@@ -337,7 +336,6 @@ fn unused_proposals(
 pub(crate) mod test_utils {
     use mls_rs_core::{
         crypto::CipherSuiteProvider, extension::ExtensionList, identity::IdentityProvider,
-        psk::PreSharedKeyStorage,
     };
 
     use crate::{
@@ -353,11 +351,11 @@ pub(crate) mod test_utils {
         },
         identity::{basic::BasicIdentityProvider, test_utils::BasicWithCustomProvider},
         mls_rules::{CommitSource, ProposalSource},
-        psk::AlwaysFoundPskStorage,
     };
 
-    use super::{CachedProposal, MlsError, ProposalCache};
+    use super::{CachedProposal, JustPreSharedKeyID, MlsError, ProposalCache};
 
+    use alloc::vec;
     use alloc::vec::Vec;
 
     impl CachedProposal {
@@ -367,7 +365,7 @@ pub(crate) mod test_utils {
     }
 
     #[derive(Debug)]
-    pub(crate) struct CommitReceiver<'a, C, P, CSP> {
+    pub(crate) struct CommitReceiver<'a, C, CSP> {
         tree: &'a TreeKemPublic,
         sender: Sender,
         receiver: LeafIndex,
@@ -375,10 +373,10 @@ pub(crate) mod test_utils {
         identity_provider: C,
         cipher_suite_provider: CSP,
         group_context_extensions: ExtensionList,
-        with_psk_storage: P,
+        psks: Vec<JustPreSharedKeyID>,
     }
 
-    impl<'a, CSP> CommitReceiver<'a, BasicWithCustomProvider, AlwaysFoundPskStorage, CSP> {
+    impl<'a, CSP> CommitReceiver<'a, BasicWithCustomProvider, CSP> {
         pub fn new<S>(
             tree: &'a TreeKemPublic,
             sender: S,
@@ -395,20 +393,19 @@ pub(crate) mod test_utils {
                 cache: make_proposal_cache(),
                 identity_provider: BasicWithCustomProvider::new(BasicIdentityProvider),
                 group_context_extensions: Default::default(),
-                with_psk_storage: AlwaysFoundPskStorage,
+                psks: vec![],
                 cipher_suite_provider,
             }
         }
     }
 
-    impl<'a, C, P, CSP> CommitReceiver<'a, C, P, CSP>
+    impl<'a, C, CSP> CommitReceiver<'a, C, CSP>
     where
         C: IdentityProvider,
-        P: PreSharedKeyStorage,
         CSP: CipherSuiteProvider,
     {
         #[cfg(feature = "by_ref_proposal")]
-        pub fn with_identity_provider<V>(self, validator: V) -> CommitReceiver<'a, V, P, CSP>
+        pub fn with_identity_provider<V>(self, validator: V) -> CommitReceiver<'a, V, CSP>
         where
             V: IdentityProvider,
         {
@@ -419,15 +416,12 @@ pub(crate) mod test_utils {
                 cache: self.cache,
                 identity_provider: validator,
                 group_context_extensions: self.group_context_extensions,
-                with_psk_storage: self.with_psk_storage,
+                psks: self.psks,
                 cipher_suite_provider: self.cipher_suite_provider,
             }
         }
 
-        pub fn with_psk_storage<V>(self, v: V) -> CommitReceiver<'a, C, V, CSP>
-        where
-            V: PreSharedKeyStorage,
-        {
+        pub fn with_psks(self, v: Vec<JustPreSharedKeyID>) -> CommitReceiver<'a, C, CSP> {
             CommitReceiver {
                 tree: self.tree,
                 sender: self.sender,
@@ -435,7 +429,7 @@ pub(crate) mod test_utils {
                 cache: self.cache,
                 identity_provider: self.identity_provider,
                 group_context_extensions: self.group_context_extensions,
-                with_psk_storage: v,
+                psks: v,
                 cipher_suite_provider: self.cipher_suite_provider,
             }
         }
@@ -471,7 +465,7 @@ pub(crate) mod test_utils {
                     &self.identity_provider,
                     &self.cipher_suite_provider,
                     self.tree,
-                    &self.with_psk_storage,
+                    &self.psks,
                 )
                 .await
         }
@@ -484,7 +478,7 @@ pub(crate) mod test_utils {
     impl ProposalCache {
         #[allow(clippy::too_many_arguments)]
         #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-        pub async fn resolve_for_commit_default<C, P, CSP>(
+        pub async fn resolve_for_commit_default<C, CSP>(
             &self,
             sender: Sender,
             proposal_list: Vec<ProposalOrRef>,
@@ -493,11 +487,10 @@ pub(crate) mod test_utils {
             identity_provider: &C,
             cipher_suite_provider: &CSP,
             public_tree: &TreeKemPublic,
-            psk_storage: &P,
+            #[cfg(feature = "psk")] psks: &[JustPreSharedKeyID],
         ) -> Result<ProvisionalState, MlsError>
         where
             C: IdentityProvider,
-            P: PreSharedKeyStorage,
             CSP: CipherSuiteProvider,
         {
             let mut context =
@@ -523,8 +516,10 @@ pub(crate) mod test_utils {
                     identity_provider,
                     cipher_suite_provider,
                     None,
+                    #[cfg(feature = "by_ref_proposal")]
                     CommitDirection::Receive,
-                    psk_storage,
+                    #[cfg(feature = "psk")]
+                    psks,
                     &committer,
                 )
                 .await
@@ -532,7 +527,7 @@ pub(crate) mod test_utils {
 
         #[allow(clippy::too_many_arguments)]
         #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-        pub async fn prepare_commit_default<C, P, CSP>(
+        pub async fn prepare_commit_default<C, CSP>(
             &self,
             sender: Sender,
             additional_proposals: Vec<Proposal>,
@@ -541,11 +536,10 @@ pub(crate) mod test_utils {
             cipher_suite_provider: &CSP,
             public_tree: &TreeKemPublic,
             external_leaf: Option<&LeafNode>,
-            psk_storage: &P,
+            #[cfg(feature = "psk")] psks: &[JustPreSharedKeyID],
         ) -> Result<ProvisionalState, MlsError>
         where
             C: IdentityProvider,
-            P: PreSharedKeyStorage,
             CSP: CipherSuiteProvider,
         {
             let state = GroupState::new(
@@ -572,8 +566,10 @@ pub(crate) mod test_utils {
                     identity_provider,
                     cipher_suite_provider,
                     None,
+                    #[cfg(feature = "by_ref_proposal")]
                     CommitDirection::Send,
-                    psk_storage,
+                    #[cfg(feature = "psk")]
+                    psks,
                     &committer,
                 )
                 .await
@@ -616,7 +612,6 @@ mod tests {
         identity::basic::BasicIdentityProvider,
         identity::test_utils::{get_test_signing_identity, BasicWithCustomProvider},
         key_package::test_utils::test_key_package,
-        psk::AlwaysFoundPskStorage,
         tree_kem::{
             leaf_node::{
                 test_utils::{
@@ -650,14 +645,12 @@ mod tests {
     use crate::group::proposal::CustomProposal;
 
     use assert_matches::assert_matches;
-    use core::convert::Infallible;
     use itertools::Itertools;
     use mls_rs_core::crypto::{CipherSuite, CipherSuiteProvider};
     use mls_rs_core::extension::ExtensionList;
     use mls_rs_core::group::{Capabilities, ProposalType};
     use mls_rs_core::identity::IdentityProvider;
     use mls_rs_core::protocol_version::ProtocolVersion;
-    use mls_rs_core::psk::{PreSharedKey, PreSharedKeyStorage};
     use mls_rs_core::{
         extension::MlsExtension,
         identity::{Credential, CredentialType, CustomCredential},
@@ -945,7 +938,7 @@ mod tests {
                 &cipher_suite_provider,
                 &tree,
                 None,
-                &AlwaysFoundPskStorage,
+                &[],
             )
             .await
             .unwrap();
@@ -983,7 +976,7 @@ mod tests {
                 &cipher_suite_provider,
                 &tree,
                 None,
-                &AlwaysFoundPskStorage,
+                &[],
             )
             .await
             .unwrap();
@@ -1032,7 +1025,7 @@ mod tests {
                 &cipher_suite_provider,
                 &tree,
                 None,
-                &AlwaysFoundPskStorage,
+                &[],
             )
             .await;
 
@@ -1065,7 +1058,7 @@ mod tests {
                 &cipher_suite_provider,
                 &tree,
                 None,
-                &AlwaysFoundPskStorage,
+                &[],
             )
             .await
             .unwrap();
@@ -1106,7 +1099,7 @@ mod tests {
                 &cipher_suite_provider,
                 &tree,
                 None,
-                &AlwaysFoundPskStorage,
+                &[],
             )
             .await
             .unwrap();
@@ -1149,7 +1142,7 @@ mod tests {
                 &cipher_suite_provider,
                 &tree,
                 None,
-                &AlwaysFoundPskStorage,
+                &[],
             )
             .await
             .unwrap();
@@ -1202,7 +1195,7 @@ mod tests {
                 &cipher_suite_provider,
                 &tree,
                 None,
-                &AlwaysFoundPskStorage,
+                &[],
             )
             .await
             .unwrap();
@@ -1221,7 +1214,7 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
-                &AlwaysFoundPskStorage,
+                &[],
             )
             .await
             .unwrap();
@@ -1237,8 +1230,10 @@ mod tests {
         let (alice, tree) = new_tree("alice").await;
         let cache = make_proposal_cache();
 
+        let psk_id = b"ted";
+
         let proposal = Proposal::Psk(make_external_psk(
-            b"ted",
+            psk_id,
             crate::psk::PskNonce::random(&test_cipher_suite_provider(TEST_CIPHER_SUITE)).unwrap(),
         ));
 
@@ -1251,7 +1246,7 @@ mod tests {
                 &cipher_suite_provider,
                 &tree,
                 None,
-                &AlwaysFoundPskStorage,
+                &[JustPreSharedKeyID::External(psk_id.to_vec().into())],
             )
             .await;
 
@@ -1298,7 +1293,7 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 public_tree,
-                &AlwaysFoundPskStorage,
+                &[],
             )
             .await;
 
@@ -1335,7 +1330,7 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 public_tree,
-                &AlwaysFoundPskStorage,
+                &[],
             )
             .await;
 
@@ -1367,7 +1362,7 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 public_tree,
-                &AlwaysFoundPskStorage,
+                &[],
             )
             .await;
 
@@ -1400,7 +1395,7 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 public_tree,
-                &AlwaysFoundPskStorage,
+                &[],
             )
             .await
     }
@@ -1466,7 +1461,7 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &public_tree,
-                &AlwaysFoundPskStorage,
+                &[],
             )
             .await;
 
@@ -1514,7 +1509,7 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &public_tree,
-                &AlwaysFoundPskStorage,
+                &[],
             )
             .await;
 
@@ -1562,7 +1557,7 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &public_tree,
-                &AlwaysFoundPskStorage,
+                &[],
             )
             .await;
 
@@ -1632,7 +1627,7 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 public_tree,
-                &AlwaysFoundPskStorage,
+                &[],
             )
             .await;
 
@@ -1660,7 +1655,7 @@ mod tests {
                 &cipher_suite_provider,
                 &tree,
                 None,
-                &AlwaysFoundPskStorage,
+                &[],
             )
             .await
             .unwrap();
@@ -1694,7 +1689,7 @@ mod tests {
                 &cipher_suite_provider,
                 &tree,
                 None,
-                &AlwaysFoundPskStorage,
+                &[],
             )
             .await
             .unwrap();
@@ -1742,7 +1737,7 @@ mod tests {
                 &cipher_suite_provider,
                 &tree,
                 None,
-                &AlwaysFoundPskStorage,
+                &[],
             )
             .await
             .unwrap();
@@ -1756,10 +1751,11 @@ mod tests {
         let (alice, tree) = new_tree("alice").await;
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let cache = make_proposal_cache();
+        let psk_id = JustPreSharedKeyID::External(ExternalPskId::new(vec![]));
 
         let psk = Proposal::Psk(PreSharedKeyProposal {
             psk: PreSharedKeyID::new(
-                JustPreSharedKeyID::External(ExternalPskId::new(vec![])),
+                psk_id.clone(),
                 &test_cipher_suite_provider(TEST_CIPHER_SUITE),
             )
             .unwrap(),
@@ -1778,7 +1774,7 @@ mod tests {
                 &cipher_suite_provider,
                 &tree,
                 None,
-                &AlwaysFoundPskStorage,
+                &[psk_id],
             )
             .await
             .unwrap();
@@ -1808,7 +1804,7 @@ mod tests {
                 &cipher_suite_provider,
                 &tree,
                 None,
-                &AlwaysFoundPskStorage,
+                &[],
             )
             .await
             .unwrap();
@@ -1817,17 +1813,16 @@ mod tests {
     }
 
     #[derive(Debug)]
-    struct CommitSender<'a, C, P, CSP> {
+    struct CommitSender<'a, C, CSP> {
         cipher_suite_provider: CSP,
         tree: &'a TreeKemPublic,
         sender: LeafIndex,
         cache: ProposalCache,
         additional_proposals: Vec<Proposal>,
         identity_provider: C,
-        psk_storage: P,
+        psks: Vec<JustPreSharedKeyID>,
     }
-
-    impl<'a, CSP> CommitSender<'a, BasicWithCustomProvider, AlwaysFoundPskStorage, CSP> {
+    impl<'a, CSP> CommitSender<'a, BasicWithCustomProvider, CSP> {
         fn new(tree: &'a TreeKemPublic, sender: LeafIndex, cipher_suite_provider: CSP) -> Self {
             Self {
                 tree,
@@ -1835,20 +1830,19 @@ mod tests {
                 cache: make_proposal_cache(),
                 additional_proposals: Vec::new(),
                 identity_provider: BasicWithCustomProvider::new(BasicIdentityProvider::new()),
-                psk_storage: AlwaysFoundPskStorage,
+                psks: vec![],
                 cipher_suite_provider,
             }
         }
     }
 
-    impl<'a, C, P, CSP> CommitSender<'a, C, P, CSP>
+    impl<'a, C, CSP> CommitSender<'a, C, CSP>
     where
         C: IdentityProvider,
-        P: PreSharedKeyStorage,
         CSP: CipherSuiteProvider,
     {
         #[cfg(feature = "by_ref_proposal")]
-        fn with_identity_provider<V>(self, identity_provider: V) -> CommitSender<'a, V, P, CSP>
+        fn with_identity_provider<V>(self, identity_provider: V) -> CommitSender<'a, V, CSP>
         where
             V: IdentityProvider,
         {
@@ -1859,7 +1853,7 @@ mod tests {
                 sender: self.sender,
                 cache: self.cache,
                 additional_proposals: self.additional_proposals,
-                psk_storage: self.psk_storage,
+                psks: self.psks,
             }
         }
 
@@ -1879,19 +1873,8 @@ mod tests {
             self
         }
 
-        fn with_psk_storage<V>(self, v: V) -> CommitSender<'a, C, V, CSP>
-        where
-            V: PreSharedKeyStorage,
-        {
-            CommitSender {
-                tree: self.tree,
-                sender: self.sender,
-                cache: self.cache,
-                additional_proposals: self.additional_proposals,
-                identity_provider: self.identity_provider,
-                psk_storage: v,
-                cipher_suite_provider: self.cipher_suite_provider,
-            }
+        fn with_psks(self, psks: Vec<JustPreSharedKeyID>) -> CommitSender<'a, C, CSP> {
+            CommitSender { psks, ..self }
         }
 
         #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -1906,7 +1889,7 @@ mod tests {
                     &self.cipher_suite_provider,
                     self.tree,
                     None,
-                    &self.psk_storage,
+                    &self.psks,
                 )
                 .await?;
 
@@ -2779,6 +2762,7 @@ mod tests {
             alice,
             test_cipher_suite_provider(TEST_CIPHER_SUITE),
         )
+        .with_psks(vec![JustPreSharedKeyID::External(b"foo".to_vec().into())])
         .receive([psk_proposal.clone(), psk_proposal])
         .await;
 
@@ -2792,6 +2776,7 @@ mod tests {
         let psk_proposal = Proposal::Psk(new_external_psk(b"foo"));
 
         let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+            .with_psks(vec![JustPreSharedKeyID::External(b"foo".to_vec().into())])
             .with_additional([psk_proposal.clone(), psk_proposal])
             .send()
             .await;
@@ -2814,6 +2799,7 @@ mod tests {
 
         let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+                .with_psks(vec![JustPreSharedKeyID::External(b"foo".to_vec().into())])
                 .cache(
                     proposal_info[0].proposal_ref().unwrap().clone(),
                     proposal.clone(),
@@ -3675,21 +3661,6 @@ mod tests {
     }
 
     #[cfg(feature = "psk")]
-    #[derive(Debug)]
-    struct AlwaysNotFoundPskStorage;
-
-    #[cfg(feature = "psk")]
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    #[cfg_attr(mls_build_async, maybe_async::must_be_async)]
-    impl PreSharedKeyStorage for AlwaysNotFoundPskStorage {
-        type Error = Infallible;
-
-        async fn get(&self, _: &ExternalPskId) -> Result<Option<PreSharedKey>, Self::Error> {
-            Ok(None)
-        }
-    }
-
-    #[cfg(feature = "psk")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn receiving_external_psk_with_unknown_id_fails() {
         let (alice, tree) = new_tree("alice").await;
@@ -3700,7 +3671,7 @@ mod tests {
             alice,
             test_cipher_suite_provider(TEST_CIPHER_SUITE),
         )
-        .with_psk_storage(AlwaysNotFoundPskStorage)
+        .with_psks(vec![])
         .receive([Proposal::Psk(new_external_psk(b"abc"))])
         .await;
 
@@ -3713,7 +3684,7 @@ mod tests {
         let (alice, tree) = new_tree("alice").await;
 
         let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
-            .with_psk_storage(AlwaysNotFoundPskStorage)
+            .with_psks(vec![])
             .with_additional([Proposal::Psk(new_external_psk(b"abc"))])
             .send()
             .await;
@@ -3730,7 +3701,7 @@ mod tests {
 
         let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
-                .with_psk_storage(AlwaysNotFoundPskStorage)
+                .with_psks(vec![])
                 .cache(
                     proposal_info.proposal_ref().unwrap().clone(),
                     proposal.clone(),
@@ -3792,7 +3763,8 @@ mod tests {
                 committer,
                 alice,
                 test_cipher_suite_provider(TEST_CIPHER_SUITE),
-            );
+            )
+            .with_psks(vec![JustPreSharedKeyID::External(b"ted".to_vec().into())]);
 
             #[cfg(feature = "by_ref_proposal")]
             let extensions: ExtensionList =

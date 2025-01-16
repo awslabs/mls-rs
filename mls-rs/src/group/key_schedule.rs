@@ -587,10 +587,7 @@ mod tests {
     #[cfg(all(not(mls_build_async), feature = "rfc_compliant"))]
     use crate::{
         crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider},
-        group::{
-            key_schedule::KeyScheduleDerivationResult, test_utils::random_bytes, InitSecret,
-            PskSecret,
-        },
+        group::{key_schedule::KeyScheduleDerivationResult, test_utils::random_bytes, InitSecret},
     };
 
     #[cfg(all(not(mls_build_async), feature = "rfc_compliant"))]
@@ -602,6 +599,9 @@ mod tests {
 
     use super::test_utils::get_test_key_schedule;
     use super::KeySchedule;
+
+    #[cfg(feature = "psk")]
+    use crate::psk::secret::PskSecret;
 
     #[derive(serde::Deserialize, serde::Serialize)]
     struct TestCase {

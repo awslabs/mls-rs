@@ -11,13 +11,9 @@ use crate::{
     ExtensionList,
 };
 use alloc::vec::Vec;
-use mls_rs_core::{
-    crypto::CryptoProvider, group::GroupStateStorage, identity::IdentityProvider,
-    psk::PreSharedKeyStorage,
-};
+use mls_rs_core::{crypto::CryptoProvider, group::GroupStateStorage, identity::IdentityProvider};
 
 pub trait ClientConfig: Send + Sync + Clone {
-    type PskStore: PreSharedKeyStorage + Clone;
     type GroupStateStorage: GroupStateStorage + Clone;
     type IdentityProvider: IdentityProvider + Clone;
     type MlsRules: MlsRules + Clone;
@@ -29,7 +25,6 @@ pub trait ClientConfig: Send + Sync + Clone {
 
     fn mls_rules(&self) -> Self::MlsRules;
 
-    fn secret_store(&self) -> Self::PskStore;
     fn group_state_storage(&self) -> Self::GroupStateStorage;
     fn identity_provider(&self) -> Self::IdentityProvider;
     fn crypto_provider(&self) -> Self::CryptoProvider;
