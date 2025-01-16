@@ -3739,7 +3739,6 @@ mod tests {
             .await
             .unwrap();
 
-        // This fails due to not having the secrets for by reference psk
         let commit = alice
             .commit_builder()
             .apply_external_psk(psk_id_external.clone(), psk_external.clone())
