@@ -50,12 +50,14 @@ use crate::group::{
     message_hash::MessageHash,
     message_processor::{path_update_required, MessageProcessor},
     message_signature::AuthenticatedContent,
-    mls_rules::CommitDirection,
     proposal::Proposal,
     CommitEffect, CommitMessageDescription, EncryptedGroupSecrets, EpochSecrets, ExportedTree,
     Group, GroupContext, GroupInfo, GroupState, InterimTranscriptHash, NewEpoch,
     PendingCommitSnapshot, Welcome,
 };
+
+#[cfg(feature = "by_ref_proposal")]
+use crate::group::mls_rules::CommitDirection;
 
 #[cfg(feature = "custom_proposal")]
 use crate::group::proposal::CustomProposal;

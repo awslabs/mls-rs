@@ -18,10 +18,13 @@ use crate::{
         CommitEffect, CommitMessageDescription, ConfirmationTag, Content, EventOrContent,
         InterimTranscriptHash, MessageProcessor, NewEpoch,
     },
-    mls_rules::{CommitDirection, CommitSource, ProposalBundle},
+    mls_rules::{CommitSource, ProposalBundle},
     tree_kem::{leaf_node::LeafNode, node::LeafIndex, validate_update_path, UpdatePath},
     Group, MlsMessage,
 };
+
+#[cfg(feature = "by_ref_proposal")]
+use crate::mls_rules::CommitDirection;
 
 #[cfg(feature = "psk")]
 use mls_rs_core::psk::{ExternalPskId, PreSharedKey};

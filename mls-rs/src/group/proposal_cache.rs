@@ -5,9 +5,7 @@
 use alloc::vec::Vec;
 
 use super::{
-    message_processor::ProvisionalState,
-    mls_rules::{CommitDirection, CommitSource},
-    GroupState, ProposalOrRef,
+    message_processor::ProvisionalState, mls_rules::CommitSource, GroupState, ProposalOrRef,
 };
 use crate::{
     client::MlsError,
@@ -27,6 +25,7 @@ use crate::{
         message_hash::MessageHash, Proposal, ProposalMessageDescription, ProposalRef,
         ProtocolVersion,
     },
+    mls_rules::CommitDirection,
     MlsMessage,
 };
 
