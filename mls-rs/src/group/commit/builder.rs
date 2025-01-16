@@ -229,6 +229,40 @@ where
         Ok(self.with_proposal(proposal))
     }
 
+    /// Add an external PSK that can be used to fulfil PSK requirements that were
+    /// established via a [`PreSharedKeyProposal`](crate::group::proposal::PreSharedKeyProposal)
+    /// from another client during the current epoch.
+    pub fn apply_external_psk(self, id: ExternalPskId, psk: crate::psk::PreSharedKey) -> Self {
+        self.apply_psk(JustPreSharedKeyID::External(id), psk)
+    }
+
+    /// Add an resumption PSK that can be used to fulfil PSK requirements that were
+    /// established via a [`PreSharedKeyProposal`](crate::group::proposal::PreSharedKeyProposal)
+    /// from another client during the current epoch.
+    pub fn apply_resumption_psk(self, id: ResumptionPsk, psk: crate::psk::PreSharedKey) -> Self {
+        self.apply_psk(JustPreSharedKeyID::Resumption(id), psk)
+    }
+
+    #[cfg(feature = "psk")]
+    fn apply_psk(mut self, id: JustPreSharedKeyID, psk: crate::psk::PreSharedKey) -> Self {
+        if let Some(secret_input) = self
+            .proposals
+            .psks
+            .iter()
+            .filter(|proposal| proposal.is_by_reference())
+            .find_map(|p| {
+                (p.proposal.psk.key_id == id).then(|| PskSecretInput {
+                    id: p.proposal.psk.clone(),
+                    psk: psk.clone(),
+                })
+            })
+        {
+            self.psks.push(secret_input);
+        }
+
+        self
+    }
+
     /// Insert a
     /// [`PreSharedKeyProposal`](crate::group::proposal::PreSharedKeyProposal) with
     /// an external PSK into the current commit that is being built.

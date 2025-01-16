@@ -382,21 +382,13 @@ where
         #[cfg(not(feature = "std"))]
         let is_new_id = !ids_seen.contains(&p.proposal.psk);
 
-        let external_id_is_valid = match &p.proposal.psk.key_id {
-            JustPreSharedKeyID::External(id) => {
-                if psks.iter().any(
-                    |one_id| matches!(one_id, JustPreSharedKeyID::External(ext_id) if ext_id == id),
-                ) {
-                    Ok(())
-                } else {
-                    Err(MlsError::MissingRequiredPsk)
-                }
-            }
-            JustPreSharedKeyID::Resumption(_) => Ok(()),
-        };
+        let has_required_psk_secret = psks
+            .contains(&p.proposal.psk.key_id)
+            .then_some(())
+            .ok_or_else(|| MlsError::MissingRequiredPsk);
 
         #[cfg(not(feature = "psk"))]
-        let external_id_is_valid = Ok(());
+        let has_required_psk_secret = Ok(());
 
         #[cfg(not(feature = "by_ref_proposal"))]
         if !valid {
@@ -405,8 +397,8 @@ where
             return Err(MlsError::InvalidPskNonceLength);
         } else if !is_new_id {
             return Err(MlsError::DuplicatePskIds);
-        } else if external_id_is_valid.is_err() {
-            return external_id_is_valid;
+        } else if has_required_psk_secret.is_err() {
+            return has_required_psk_secret;
         }
 
         #[cfg(feature = "by_ref_proposal")]
@@ -418,7 +410,7 @@ where
             } else if !is_new_id {
                 Err(MlsError::DuplicatePskIds)
             } else {
-                external_id_is_valid
+                has_required_psk_secret
             };
 
             if !apply_strategy(strategy, p.is_by_reference(), res)? {

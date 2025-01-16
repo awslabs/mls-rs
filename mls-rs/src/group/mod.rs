@@ -3675,7 +3675,7 @@ mod tests {
 
     #[cfg(feature = "psk")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn can_process_with_psk() {
+    async fn can_process_commit_with_psk_by_value() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let (mut bob, _) = alice.join("bob").await;
 
@@ -3698,6 +3698,67 @@ mod tests {
             .add_resumption_psk(psk_epoch, psk_resumption.clone())
             .unwrap()
             .build()
+            .await
+            .unwrap();
+
+        bob.commit_processor(commit.commit_message)
+            .await
+            .unwrap()
+            .with_external_psk(psk_id_external, psk_external)
+            .with_resumption_psk(psk_id_resumption, psk_resumption)
+            .process()
+            .await
+            .unwrap();
+    }
+
+    #[cfg(feature = "psk")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn can_process_commit_with_psk_by_reference() {
+        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (mut bob, _) = alice.join("bob").await;
+
+        let psk_id_external = ExternalPskId::new(vec![0]);
+        let psk_external = PreSharedKey::from(vec![1]);
+        let psk_epoch = bob.context().epoch;
+
+        let psk_id_resumption = ResumptionPsk {
+            usage: ResumptionPSKUsage::Application,
+            psk_group_id: bob.context().group_id.clone().into(),
+            psk_epoch,
+        };
+
+        let psk_resumption = bob.resumption_secret(psk_epoch).await.unwrap();
+
+        let psk_external_proposal = alice
+            .propose_external_psk(psk_id_external.clone(), Vec::new())
+            .await
+            .unwrap();
+
+        let psk_resumption_proposal = alice
+            .propose_resumption_psk(psk_epoch, Vec::new())
+            .await
+            .unwrap();
+
+        // This fails due to not having the secrets for by reference psk
+        let commit = alice
+            .commit_builder()
+            .apply_external_psk(psk_id_external.clone(), psk_external.clone())
+            .apply_resumption_psk(psk_id_resumption.clone(), psk_resumption.clone())
+            .build()
+            .await
+            .unwrap();
+
+        let commit_changes = alice.apply_pending_commit().await.unwrap();
+
+        // Make sure the proposals are actually in the commit to verify the rest of the test is
+        // working as expected
+        assert_matches!(commit_changes.effect, CommitEffect::NewEpoch(epoch) if epoch.unused_proposals.is_empty());
+
+        bob.process_incoming_message(psk_external_proposal)
+            .await
+            .unwrap();
+
+        bob.process_incoming_message(psk_resumption_proposal)
             .await
             .unwrap();
 
