@@ -625,6 +625,7 @@ where
                 &self.config.identity_provider(),
                 &self.cipher_suite_provider,
                 time,
+                #[cfg(feature = "by_ref_proposal")]
                 CommitDirection::Send,
                 #[cfg(feature = "psk")]
                 &psks

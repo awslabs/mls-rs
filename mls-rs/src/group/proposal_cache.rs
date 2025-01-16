@@ -231,7 +231,7 @@ impl GroupState {
         identity_provider: &C,
         cipher_suite_provider: &CSP,
         commit_time: Option<MlsTime>,
-        direction: CommitDirection,
+        #[cfg(feature = "by_ref_proposal")] direction: CommitDirection,
         #[cfg(feature = "psk")] psks: &[JustPreSharedKeyID],
         sender: &CommitSource,
     ) -> Result<ProvisionalState, MlsError>
@@ -517,7 +517,9 @@ pub(crate) mod test_utils {
                     identity_provider,
                     cipher_suite_provider,
                     None,
+                    #[cfg(feature = "by_ref_proposal")]
                     CommitDirection::Receive,
+                    #[cfg(feature = "psk")]
                     psks,
                     &committer,
                 )
@@ -565,7 +567,9 @@ pub(crate) mod test_utils {
                     identity_provider,
                     cipher_suite_provider,
                     None,
+                    #[cfg(feature = "by_ref_proposal")]
                     CommitDirection::Send,
+                    #[cfg(feature = "psk")]
                     psks,
                     &committer,
                 )

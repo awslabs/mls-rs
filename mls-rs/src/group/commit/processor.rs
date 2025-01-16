@@ -146,6 +146,7 @@ pub(crate) async fn process_commit<P: MessageProcessor>(
             &id_provider,
             &cs_provider,
             commit_processor.time_sent,
+            #[cfg(feature = "by_ref_proposal")]
             CommitDirection::Receive,
             #[cfg(feature = "psk")]
             &commit_processor
