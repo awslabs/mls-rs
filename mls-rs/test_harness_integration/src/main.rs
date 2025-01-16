@@ -18,9 +18,7 @@ use mls_rs::{
     },
     crypto::SignatureSecretKey,
     external_client::ExternalClient,
-    group::{
-        CommitBuilder, CommitEffect, ExportedTree, GroupContext, Member, ReceivedMessage, Roster,
-    },
+    group::{CommitEffect, ExportedTree, GroupContext, Member, ReceivedMessage, Roster},
     identity::{
         basic::{BasicCredential, BasicIdentityProvider},
         Credential, SigningIdentity,
@@ -33,7 +31,7 @@ use mls_rs::{
 };
 
 #[cfg(feature = "psk")]
-use mls_rs::error::MlsError;
+use mls_rs::{error::MlsError, group::CommitBuilder};
 
 #[cfg(feature = "by_ref_proposal")]
 use mls_rs::external_client::builder::ExternalBaseConfig;
