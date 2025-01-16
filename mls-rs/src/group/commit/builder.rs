@@ -232,6 +232,7 @@ where
     /// Add an external PSK that can be used to fulfil PSK requirements that were
     /// established via a [`PreSharedKeyProposal`](crate::group::proposal::PreSharedKeyProposal)
     /// from another client during the current epoch.
+    #[cfg(feature = "psk")]
     pub fn apply_external_psk(self, id: ExternalPskId, psk: crate::psk::PreSharedKey) -> Self {
         self.apply_psk(JustPreSharedKeyID::External(id), psk)
     }
@@ -239,6 +240,7 @@ where
     /// Add an resumption PSK that can be used to fulfil PSK requirements that were
     /// established via a [`PreSharedKeyProposal`](crate::group::proposal::PreSharedKeyProposal)
     /// from another client during the current epoch.
+    #[cfg(feature = "psk")]
     pub fn apply_resumption_psk(self, id: ResumptionPsk, psk: crate::psk::PreSharedKey) -> Self {
         self.apply_psk(JustPreSharedKeyID::Resumption(id), psk)
     }

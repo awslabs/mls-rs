@@ -49,8 +49,8 @@ pub struct ExternalCommitBuilder<C: ClientConfig> {
     config: C,
     tree_data: Option<ExportedTree<'static>>,
     to_remove: Option<u32>,
-    external_psks: Vec<(ExternalPskId, PreSharedKey)>,
     #[cfg(feature = "psk")]
+    external_psks: Vec<(ExternalPskId, PreSharedKey)>,
     authenticated_data: Vec<u8>,
     #[cfg(feature = "custom_proposal")]
     custom_proposals: Vec<Proposal>,
@@ -79,6 +79,7 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
             custom_proposals: Vec::new(),
             #[cfg(feature = "custom_proposal")]
             received_custom_proposals: Vec::new(),
+            #[cfg(feature = "psk")]
             external_psks: Default::default(),
         }
     }
