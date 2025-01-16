@@ -5,6 +5,7 @@
 use alloc::boxed::Box;
 use alloc::{vec, vec::Vec};
 
+#[cfg(feature = "psk")]
 use itertools::Itertools;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::{crypto::SignatureSecretKey, error::IntoAnyError};
@@ -250,8 +251,6 @@ where
 
     #[cfg(feature = "psk")]
     fn apply_psk(mut self, id: JustPreSharedKeyID, psk: crate::psk::PreSharedKey) -> Self {
-        use itertools::Itertools;
-
         if let Some((i, proposal)) = self
             .proposals
             .psks
