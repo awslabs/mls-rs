@@ -3717,8 +3717,9 @@ mod tests {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let (mut bob, _) = alice.join("bob").await;
 
-        let psk_id_external = ExternalPskId::new(vec![0]);
-        let psk_external = PreSharedKey::from(vec![1]);
+        let psk_id_external1 = ExternalPskId::new(vec![0]);
+        let psk_id_external2 = ExternalPskId::new(vec![1]);
+        let psk_external = PreSharedKey::from(vec![2]);
         let psk_epoch = bob.context().epoch;
 
         let psk_id_resumption = ResumptionPsk {
@@ -3730,7 +3731,7 @@ mod tests {
         let psk_resumption = bob.resumption_secret(psk_epoch).await.unwrap();
 
         let psk_external_proposal = alice
-            .propose_external_psk(psk_id_external.clone(), Vec::new())
+            .propose_external_psk(psk_id_external1.clone(), Vec::new())
             .await
             .unwrap();
 
@@ -3741,7 +3742,9 @@ mod tests {
 
         let commit = alice
             .commit_builder()
-            .apply_external_psk(psk_id_external.clone(), psk_external.clone())
+            .apply_external_psk(psk_id_external1.clone(), psk_external.clone())
+            .add_external_psk(psk_id_external2.clone(), psk_external.clone())
+            .unwrap()
             .apply_resumption_psk(psk_id_resumption.clone(), psk_resumption.clone())
             .build()
             .await
@@ -3764,7 +3767,8 @@ mod tests {
         bob.commit_processor(commit.commit_message)
             .await
             .unwrap()
-            .with_external_psk(psk_id_external, psk_external)
+            .with_external_psk(psk_id_external2.clone(), psk_external.clone())
+            .with_external_psk(psk_id_external1, psk_external)
             .with_resumption_psk(psk_id_resumption, psk_resumption)
             .process()
             .await

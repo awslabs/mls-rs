@@ -5,6 +5,7 @@
 use alloc::boxed::Box;
 use alloc::{vec, vec::Vec};
 
+use itertools::Itertools;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::{crypto::SignatureSecretKey, error::IntoAnyError};
 
@@ -184,7 +185,7 @@ where
     new_signing_identity: Option<SigningIdentity>,
     new_leaf_node_extensions: Option<ExtensionList>,
     #[cfg(feature = "psk")]
-    psks: Vec<PskSecretInput>,
+    psks: Vec<Option<PskSecretInput>>,
     sender: Sender,
 }
 
@@ -249,19 +250,18 @@ where
 
     #[cfg(feature = "psk")]
     fn apply_psk(mut self, id: JustPreSharedKeyID, psk: crate::psk::PreSharedKey) -> Self {
-        if let Some(secret_input) = self
+        use itertools::Itertools;
+
+        if let Some((i, proposal)) = self
             .proposals
             .psks
             .iter()
             .filter(|proposal| proposal.is_by_reference())
-            .find_map(|p| {
-                (p.proposal.psk.key_id == id).then(|| PskSecretInput {
-                    id: p.proposal.psk.clone(),
-                    psk: psk.clone(),
-                })
-            })
+            .find_position(|p| p.proposal.psk.key_id == id)
         {
-            self.psks.push(secret_input);
+            let id = proposal.proposal.psk.clone();
+            let secret_input = PskSecretInput { id, psk };
+            self.psks[i] = Some(secret_input);
         }
 
         self
@@ -281,10 +281,10 @@ where
         let key_id = JustPreSharedKeyID::External(id);
         let id = PreSharedKeyID::new(key_id, &self.group.cipher_suite_provider)?;
 
-        self.psks.push(PskSecretInput {
+        self.psks.push(Some(PskSecretInput {
             id: id.clone(),
             psk,
-        });
+        }));
 
         let proposal = Proposal::Psk(PreSharedKeyProposal { psk: id });
         Ok(self.with_proposal(proposal))
@@ -324,10 +324,10 @@ where
         let key_id = JustPreSharedKeyID::Resumption(psk_id);
         let id = PreSharedKeyID::new(key_id, &self.group.cipher_suite_provider)?;
 
-        self.psks.push(PskSecretInput {
+        self.psks.push(Some(PskSecretInput {
             id: id.clone(),
             psk,
-        });
+        }));
 
         let proposal = Proposal::Psk(PreSharedKeyProposal { psk: id });
         Ok(self.with_proposal(proposal))
@@ -438,6 +438,13 @@ where
     /// [proposal rules](crate::client_builder::ClientBuilder::mls_rules).
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn build(self) -> Result<CommitOutput, MlsError> {
+        #[cfg(feature = "psk")]
+        let psks = self
+            .psks
+            .into_iter()
+            .map(|psk| psk.ok_or(MlsError::MissingRequiredPsk))
+            .try_collect()?;
+
         let (output, pending_commit) = self
             .group
             .commit_internal(
@@ -449,7 +456,7 @@ where
                 self.new_signing_identity,
                 self.new_leaf_node_extensions,
                 #[cfg(feature = "psk")]
-                self.psks,
+                psks,
                 self.sender,
             )
             .await?;
@@ -465,6 +472,13 @@ where
     /// A detached commit can be applied using `Group::apply_detached_commit`.
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn build_detached(self) -> Result<(CommitOutput, CommitSecrets), MlsError> {
+        #[cfg(feature = "psk")]
+        let psks = self
+            .psks
+            .into_iter()
+            .map(|psk| psk.ok_or(MlsError::MissingRequiredPsk))
+            .try_collect()?;
+
         let (output, pending_commit) = self
             .group
             .commit_internal(
@@ -476,7 +490,7 @@ where
                 self.new_signing_identity,
                 self.new_leaf_node_extensions,
                 #[cfg(feature = "psk")]
-                self.psks,
+                psks,
                 self.sender,
             )
             .await?;
@@ -560,11 +574,16 @@ where
     /// Create a new commit builder that can include proposals
     /// by-value.
     pub fn commit_builder(&mut self) -> CommitBuilder<C> {
+        #[cfg(feature = "by_ref_proposal")]
+        let proposals = self.state.proposals.prepare_commit();
+
+        #[cfg(not(feature = "by_ref_proposal"))]
+        let proposals = Default::default();
+
         CommitBuilder {
-            #[cfg(feature = "by_ref_proposal")]
-            proposals: self.state.proposals.prepare_commit(),
-            #[cfg(not(feature = "by_ref_proposal"))]
-            proposals: Default::default(),
+            #[cfg(feature = "psk")]
+            psks: vec![None; proposals.psk_proposals().len()],
+            proposals,
             sender: Sender::Member(*self.private_tree.self_index),
             group: self,
             authenticated_data: Default::default(),
@@ -572,8 +591,6 @@ where
             new_signer: Default::default(),
             new_signing_identity: Default::default(),
             new_leaf_node_extensions: Default::default(),
-            #[cfg(feature = "psk")]
-            psks: Default::default(),
         }
     }
 
