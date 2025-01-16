@@ -875,6 +875,7 @@ impl MlsClientImpl {
 
         let commit = MlsMessage::from_bytes(&request.commit).map_err(abort)?;
 
+        #[cfg(feature = "psk")]
         let group_clone = group.clone();
 
         let processor = group.commit_processor(commit).map_err(abort)?;
