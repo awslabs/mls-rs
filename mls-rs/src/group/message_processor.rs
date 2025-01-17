@@ -224,7 +224,7 @@ pub enum ReceivedMessageOrProcessor<'a, C: ClientConfig> {
 impl<'a, C: ClientConfig> Debug for ReceivedMessageOrProcessor<'a, C> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Self::ReceivedMessage(m) => f.write_str(&format!("ReceivedMessage({m:?})")),
+            Self::ReceivedMessage(m) => f.write_str(&alloc::format!("ReceivedMessage({m:?})")),
             Self::CommitProcessor(_) => f.write_str("CommitProcessor"),
         }
     }
