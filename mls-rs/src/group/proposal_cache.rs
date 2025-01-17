@@ -22,10 +22,9 @@ use crate::psk::JustPreSharedKeyID;
 #[cfg(feature = "by_ref_proposal")]
 use crate::{
     group::{
-        message_hash::MessageHash, Proposal, ProposalMessageDescription, ProposalRef,
-        ProtocolVersion,
+        message_hash::MessageHash, proposal_filter::CommitDirection, Proposal,
+        ProposalMessageDescription, ProposalRef, ProtocolVersion,
     },
-    mls_rules::CommitDirection,
     MlsMessage,
 };
 
@@ -342,8 +341,8 @@ pub(crate) mod test_utils {
         client::test_utils::TEST_PROTOCOL_VERSION,
         group::{
             confirmation_tag::ConfirmationTag,
-            mls_rules::CommitDirection,
             proposal::{Proposal, ProposalOrRef},
+            proposal_filter::CommitDirection,
             proposal_ref::ProposalRef,
             state::GroupState,
             test_utils::{get_test_group_context, TEST_GROUP},

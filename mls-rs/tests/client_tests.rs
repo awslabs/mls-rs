@@ -704,7 +704,7 @@ async fn reinit_works() {
         .unwrap();
 
     let (mut alice_group, welcome) = alice2
-        .commit(vec![kp.key_package_message], Default::default())
+        .commit(vec![kp.key_package_message], Default::default(), true, true)
         .await
         .unwrap();
 

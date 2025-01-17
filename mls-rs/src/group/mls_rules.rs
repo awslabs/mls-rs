@@ -17,12 +17,6 @@ use mls_rs_core::{error::IntoAnyError, group::Member, identity::SigningIdentity}
 
 use super::GroupContext;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum CommitDirection {
-    Send,
-    Receive,
-}
-
 /// The source of the commit: either a current member or a new member joining
 /// via external commit.
 #[derive(Clone, Debug, PartialEq, Eq)]

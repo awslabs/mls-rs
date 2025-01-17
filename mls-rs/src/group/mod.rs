@@ -2667,7 +2667,12 @@ mod tests {
         .unwrap();
 
         let (mut alice_sub_group, welcome) = alice
-            .branch(b"subgroup".to_vec(), vec![new_key_pkg.key_package_message])
+            .branch(
+                b"subgroup".to_vec(),
+                vec![new_key_pkg.key_package_message],
+                true,
+                true,
+            )
             .await
             .unwrap();
 

@@ -26,7 +26,7 @@ use crate::{
 };
 
 #[cfg(feature = "by_ref_proposal")]
-use crate::mls_rules::CommitDirection;
+use crate::group::proposal_filter::CommitDirection;
 
 #[cfg(feature = "psk")]
 use mls_rs_core::psk::{ExternalPskId, PreSharedKey};

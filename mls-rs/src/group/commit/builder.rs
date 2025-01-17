@@ -59,7 +59,7 @@ use crate::group::{
 };
 
 #[cfg(feature = "by_ref_proposal")]
-use crate::group::mls_rules::CommitDirection;
+use crate::group::proposal_filter::CommitDirection;
 
 #[cfg(feature = "custom_proposal")]
 use crate::group::proposal::CustomProposal;

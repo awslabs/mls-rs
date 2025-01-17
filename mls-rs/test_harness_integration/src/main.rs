@@ -23,7 +23,7 @@ use mls_rs::{
         basic::{BasicCredential, BasicIdentityProvider},
         Credential, SigningIdentity,
     },
-    mls_rules::{CommitOptions, EncryptionOptions},
+    mls_rules::EncryptionOptions,
     psk::ExternalPskId,
     storage_provider::in_memory::{InMemoryKeyPackageStorage, InMemoryPreSharedKeyStorage},
     CipherSuite, CipherSuiteProvider, Client, CryptoProvider, Extension, ExtensionList, Group,
@@ -143,14 +143,14 @@ struct ExternalClientDetails {
 
 #[derive(Clone, Debug)]
 struct TestMlsRules {
-    commit_options: Arc<std::sync::Mutex<CommitOptions>>,
+    //commit_options: Arc<std::sync::Mutex<CommitOptions>>,
     encryption_options: Arc<std::sync::Mutex<EncryptionOptions>>,
 }
 
 impl TestMlsRules {
     fn new() -> Self {
         Self {
-            commit_options: Arc::new(std::sync::Mutex::new(Default::default())),
+            // commit_options: Arc::new(std::sync::Mutex::new(Default::default())),
             encryption_options: Arc::new(std::sync::Mutex::new(Default::default())),
         }
     }
@@ -755,18 +755,15 @@ impl MlsClientImpl {
             group.process_incoming_message(proposal).map_err(abort)?;
         }
 
-        {
-            let mut commit_options = client.mls_rules.commit_options.lock().unwrap();
-            commit_options.path_required = request.force_path;
-            commit_options.ratchet_tree_extension = !request.external_tree;
-        };
-
         let roster = group.roster().members();
 
         #[cfg(feature = "psk")]
         let group_clone = group.clone();
 
-        let commit_builder = group.commit_builder();
+        let commit_builder = group
+            .commit_builder()
+            .path_required(request.force_path)
+            .ratchet_tree_extension(!request.external_tree);
 
         #[cfg(feature = "psk")]
         let commit_builder = self

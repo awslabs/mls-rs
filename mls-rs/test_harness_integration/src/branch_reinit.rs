@@ -170,14 +170,10 @@ pub(crate) mod inner {
                 .collect::<Result<_, _>>()
                 .map_err(abort)?;
 
-            {
-                let mut mls_rules = client.mls_rules.commit_options.lock().unwrap();
-                mls_rules.path_required = force_path;
-                mls_rules.ratchet_tree_extension = !external_tree;
-            };
-
             let (new_group, welcome) = if let Some(id) = subgroup_id {
-                group.branch(id, new_key_pkgs).map_err(abort)?
+                group
+                    .branch(id, new_key_pkgs, force_path, !external_tree)
+                    .map_err(abort)?
             } else {
                 let client = group
                     .clone()
@@ -188,7 +184,7 @@ pub(crate) mod inner {
                     .map_err(abort)?;
 
                 client
-                    .commit(new_key_pkgs, Default::default())
+                    .commit(new_key_pkgs, Default::default(), force_path, !external_tree)
                     .map_err(abort)?
             };
 

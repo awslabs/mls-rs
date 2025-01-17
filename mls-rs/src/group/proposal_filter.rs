@@ -21,3 +21,9 @@ pub(crate) use filtering::proposer_can_propose;
 
 #[cfg(feature = "custom_proposal")]
 pub(crate) use filtering_common::filter_out_unsupported_custom_proposals;
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum CommitDirection {
+    Send,
+    Receive,
+}
