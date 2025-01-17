@@ -135,6 +135,8 @@ pub(crate) mod inner {
                 .join_subgroup(&welcome, tree, key_package_data)
                 .map_err(abort)?;
 
+            // x
+
             let resp = HandleBranchResponse {
                 state_id: request.state_id,
                 epoch_authenticator: new_group.epoch_authenticator().map_err(abort)?.to_vec(),
