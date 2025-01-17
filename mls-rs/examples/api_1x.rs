@@ -42,7 +42,10 @@ fn main() -> Result<(), MlsError> {
 
     // Alice and bob can chat
     let msg = alice_group.encrypt_application_message(b"hello world", Default::default())?;
-    let msg = bob_group.process_incoming_message(msg)?;
+
+    let msg = bob_group
+        .process_incoming_message(msg)?
+        .into_received_message();
 
     println!("Received message: {:?}", msg);
 

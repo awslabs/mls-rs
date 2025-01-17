@@ -207,18 +207,19 @@ async fn interop_passive_client() {
         for epoch in test_case.epochs {
             for proposal in epoch.proposals.iter() {
                 let message = MlsMessage::from_bytes(&proposal.0).unwrap();
-
-                group
-                    .process_incoming_message_with_time(message, MlsTime::now())
-                    .await
-                    .unwrap();
+                group.process_incoming_message(message).await.unwrap();
             }
 
             let message = MlsMessage::from_bytes(&epoch.commit).unwrap();
 
             let group_clone = group.clone();
 
-            let mut processor = group.commit_processor(message).await.unwrap();
+            let mut processor = group
+                .process_incoming_message(message)
+                .await
+                .unwrap()
+                .into_processor()
+                .unwrap();
 
             processor = test_case
                 .external_psks
@@ -242,7 +243,7 @@ async fn interop_passive_client() {
                 );
             }
 
-            processor.process().await.unwrap();
+            processor.time_sent(MlsTime::now()).process().await.unwrap();
 
             assert_eq!(
                 epoch.epoch_authenticator,

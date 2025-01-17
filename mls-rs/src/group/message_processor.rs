@@ -10,11 +10,11 @@ use super::{
     },
     message_signature::AuthenticatedContent,
     mls_rules::MlsRules,
-    process_commit,
     proposal_filter::ProposalBundle,
     state::GroupState,
     transcript_hash::InterimTranscriptHash,
-    validate_group_info_member, GroupContext, GroupInfo, ReInitProposal, RemoveProposal, Welcome,
+    validate_group_info_member, CommitProcessor, Group, GroupContext, GroupInfo,
+    InternalCommitProcessor, ReInitProposal, RemoveProposal, Welcome,
 };
 
 #[cfg(feature = "psk")]
@@ -22,8 +22,8 @@ use crate::psk::secret::PskSecretInput;
 
 use crate::{
     client::MlsError,
+    client_config::ClientConfig,
     key_package::validate_key_package_properties,
-    time::MlsTime,
     tree_kem::{
         leaf_node_validator::{LeafNodeValidator, ValidationContext},
         node::LeafIndex,
@@ -194,14 +194,11 @@ impl MlsDecode for CommitEffect {
     }
 }
 
-#[cfg_attr(
-    all(feature = "ffi", not(test)),
-    safer_ffi_gen::ffi_type(clone, opaque)
-)]
-#[derive(Debug, Clone)]
+#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::ffi_type(opaque))]
 #[allow(clippy::large_enum_variant)]
 /// An event generated as a result of processing a message for a group with
 /// [`Group::process_incoming_message`](crate::group::Group::process_incoming_message).
+#[derive(Clone, Debug)]
 pub enum ReceivedMessage {
     /// An application message was decrypted.
     ApplicationMessage(ApplicationMessageDescription),
@@ -217,11 +214,59 @@ pub enum ReceivedMessage {
     KeyPackage(KeyPackage),
 }
 
-impl TryFrom<ApplicationMessageDescription> for ReceivedMessage {
+pub enum ReceivedMessageOrProcessor<'a, C: ClientConfig> {
+    /// An application message was decrypted.
+    ReceivedMessage(Box<ReceivedMessage>),
+    /// A new commit can be processed to create a new group state.
+    CommitProcessor(Box<CommitProcessor<'a, C>>),
+}
+
+impl<C: ClientConfig> Debug for ReceivedMessageOrProcessor<'_, C> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::ReceivedMessage(m) => f.write_str(&alloc::format!("ReceivedMessage({m:?})")),
+            Self::CommitProcessor(_) => f.write_str("CommitProcessor"),
+        }
+    }
+}
+
+impl<'a, C: ClientConfig> ReceivedMessageOrProcessor<'a, C> {
+    pub fn into_received_message(self) -> Option<ReceivedMessage> {
+        match self {
+            ReceivedMessageOrProcessor::ReceivedMessage(m) => Some(*m),
+            _ => None,
+        }
+    }
+
+    pub fn into_processor(self) -> Option<CommitProcessor<'a, C>> {
+        match self {
+            ReceivedMessageOrProcessor::CommitProcessor(c) => Some(*c),
+            _ => None,
+        }
+    }
+}
+
+impl<C: ClientConfig, T: Into<ReceivedMessage>> From<T> for ReceivedMessageOrProcessor<'_, C> {
+    fn from(value: T) -> Self {
+        Self::ReceivedMessage(Box::new(value.into()))
+    }
+}
+
+impl<C: ClientConfig> TryFrom<ApplicationMessageDescription> for ReceivedMessageOrProcessor<'_, C> {
     type Error = MlsError;
 
     fn try_from(value: ApplicationMessageDescription) -> Result<Self, Self::Error> {
-        Ok(ReceivedMessage::ApplicationMessage(value))
+        Ok(ReceivedMessageOrProcessor::ReceivedMessage(
+            ReceivedMessage::ApplicationMessage(value).into(),
+        ))
+    }
+}
+
+impl<'a, C: ClientConfig> From<InternalCommitProcessor<'a, Group<C>>>
+    for ReceivedMessageOrProcessor<'a, C>
+{
+    fn from(value: InternalCommitProcessor<'a, Group<C>>) -> Self {
+        ReceivedMessageOrProcessor::CommitProcessor(CommitProcessor(value).into())
     }
 }
 
@@ -468,9 +513,12 @@ pub(crate) enum EventOrContent<E> {
     all(not(target_arch = "wasm32"), mls_build_async),
     maybe_async::must_be_async
 )]
-pub(crate) trait MessageProcessor: Send + Sync + Sized {
+pub(crate) trait MessageProcessor<'a>: Send + Sync + Sized
+where
+    Self: 'a,
+{
     type OutputType: TryFrom<ApplicationMessageDescription, Error = MlsError>
-        + From<CommitMessageDescription>
+        + From<InternalCommitProcessor<'a, Self>>
         + From<ProposalMessageDescription>
         + From<GroupInfo>
         + From<Welcome>
@@ -482,24 +530,9 @@ pub(crate) trait MessageProcessor: Send + Sync + Sized {
     type CipherSuiteProvider: CipherSuiteProvider;
 
     async fn process_incoming_message(
-        &mut self,
+        &'a mut self,
         message: MlsMessage,
         #[cfg(feature = "by_ref_proposal")] cache_proposal: bool,
-    ) -> Result<Self::OutputType, MlsError> {
-        self.process_incoming_message_with_time(
-            message,
-            #[cfg(feature = "by_ref_proposal")]
-            cache_proposal,
-            None,
-        )
-        .await
-    }
-
-    async fn process_incoming_message_with_time(
-        &mut self,
-        message: MlsMessage,
-        #[cfg(feature = "by_ref_proposal")] cache_proposal: bool,
-        time_sent: Option<MlsTime>,
     ) -> Result<Self::OutputType, MlsError> {
         let event_or_content = self.get_event_from_incoming_message(message).await?;
 
@@ -507,7 +540,6 @@ pub(crate) trait MessageProcessor: Send + Sync + Sized {
             event_or_content,
             #[cfg(feature = "by_ref_proposal")]
             cache_proposal,
-            time_sent,
         )
         .await
     }
@@ -550,10 +582,9 @@ pub(crate) trait MessageProcessor: Send + Sync + Sized {
     }
 
     async fn process_event_or_content(
-        &mut self,
+        &'a mut self,
         event_or_content: EventOrContent<Self::OutputType>,
         #[cfg(feature = "by_ref_proposal")] cache_proposal: bool,
-        time_sent: Option<MlsTime>,
     ) -> Result<Self::OutputType, MlsError> {
         let msg = match event_or_content {
             EventOrContent::Event(event) => event,
@@ -562,7 +593,6 @@ pub(crate) trait MessageProcessor: Send + Sync + Sized {
                     content,
                     #[cfg(feature = "by_ref_proposal")]
                     cache_proposal,
-                    time_sent,
                 )
                 .await?
             }
@@ -572,10 +602,9 @@ pub(crate) trait MessageProcessor: Send + Sync + Sized {
     }
 
     async fn process_auth_content(
-        &mut self,
+        &'a mut self,
         auth_content: AuthenticatedContent,
         #[cfg(feature = "by_ref_proposal")] cache_proposal: bool,
-        time_sent: Option<MlsTime>,
     ) -> Result<Self::OutputType, MlsError> {
         let event = match auth_content.content.content {
             #[cfg(feature = "private_message")]
@@ -586,11 +615,9 @@ pub(crate) trait MessageProcessor: Send + Sync + Sized {
                 self.process_application_message(data, sender, authenticated_data)
                     .and_then(Self::OutputType::try_from)
             }
-            Content::Commit(_) => {
-                let mut processor = commit_processor_from_content(self, auth_content).await?;
-                processor.time_sent = time_sent;
-                process_commit(processor).await.map(Self::OutputType::from)
-            }
+            Content::Commit(_) => commit_processor_from_content(self, auth_content)
+                .await
+                .map(Self::OutputType::from),
             #[cfg(feature = "by_ref_proposal")]
             Content::Proposal(ref proposal) => self
                 .process_proposal(&auth_content, proposal, cache_proposal)
@@ -811,7 +838,7 @@ pub(crate) async fn validate_key_package<C: CipherSuiteProvider, I: IdentityProv
     let validator = LeafNodeValidator::new(cs, id, MemberValidationContext::None);
 
     #[cfg(feature = "std")]
-    let context = Some(MlsTime::now());
+    let context = Some(crate::time::MlsTime::now());
 
     #[cfg(not(feature = "std"))]
     let context = None;

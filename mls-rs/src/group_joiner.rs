@@ -355,7 +355,7 @@ mod tests {
             .0;
 
         group_bob
-            .process_incoming_message(commit2.commit_message)
+            .process_incoming_message_oneshot(commit2.commit_message)
             .await
             .unwrap();
 

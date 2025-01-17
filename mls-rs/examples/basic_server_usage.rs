@@ -60,9 +60,12 @@ impl BasicServer {
         let mut group = server.load_group(group_state)?;
 
         let proposal_msg = MlsMessage::from_bytes(&proposal)?;
-        let res = group.process_incoming_message(proposal_msg)?;
 
-        let ExternalReceivedMessage::Proposal(proposal_desc) = res else {
+        let res = group
+            .process_incoming_message(proposal_msg)?
+            .into_received_message();
+
+        let Some(ExternalReceivedMessage::Proposal(proposal_desc)) = res else {
             panic!("expected proposal message!")
         };
 
@@ -86,9 +89,12 @@ impl BasicServer {
         }
 
         let commit_msg = MlsMessage::from_bytes(&commit)?;
-        let res = group.process_incoming_message(commit_msg)?;
 
-        let ExternalReceivedMessage::Commit(_commit_desc) = res else {
+        let res = group
+            .process_incoming_message(commit_msg)?
+            .into_received_message();
+
+        let Some(ExternalReceivedMessage::Commit(_commit_desc)) = res else {
             panic!("expected commit message!")
         };
 
@@ -184,7 +190,10 @@ fn main() -> Result<(), MlsError> {
     // Bob downloads the commit
     let message = server.download_messages(1).first().unwrap();
 
-    let res = bob_group.process_incoming_message(MlsMessage::from_bytes(message)?)?;
+    let res = bob_group
+        .process_incoming_message(MlsMessage::from_bytes(message)?)?
+        .into_received_message()
+        .unwrap();
 
     let ReceivedMessage::Commit(commit_desc) = res else {
         panic!("expected commit message")

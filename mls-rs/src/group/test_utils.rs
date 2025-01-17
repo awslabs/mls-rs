@@ -134,7 +134,7 @@ impl TestGroup {
         &mut self,
         message: MlsMessage,
     ) -> Result<ReceivedMessage, MlsError> {
-        self.process_incoming_message(message).await
+        self.process_incoming_message_oneshot(message).await
     }
 
     #[cfg(feature = "private_message")]
@@ -153,6 +153,18 @@ impl TestGroup {
         .unwrap();
 
         self.format_for_wire(auth_content).await.unwrap()
+    }
+
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn commit_processor(
+        &mut self,
+        commit: MlsMessage,
+    ) -> CommitProcessor<'_, TestClientConfig> {
+        self.process_incoming_message(commit)
+            .await
+            .unwrap()
+            .into_processor()
+            .unwrap()
     }
 }
 
@@ -310,7 +322,7 @@ pub(crate) async fn get_test_groups_with_features(
     n: usize,
     extensions: ExtensionList,
     leaf_extensions: ExtensionList,
-) -> Vec<Group<TestClientConfig>> {
+) -> Vec<TestGroup> {
     let mut clients = Vec::new();
 
     for i in 0..n {
@@ -330,7 +342,7 @@ pub(crate) async fn get_test_groups_with_features(
         .await
         .unwrap();
 
-    let mut groups = vec![group];
+    let mut groups = vec![TestGroup { group }];
 
     for client in clients.iter().skip(1) {
         let key_package = client
@@ -350,18 +362,18 @@ pub(crate) async fn get_test_groups_with_features(
 
         for group in groups.iter_mut().skip(1) {
             group
-                .process_incoming_message(commit_output.commit_message.clone())
+                .process_message(commit_output.commit_message.clone())
                 .await
                 .unwrap();
         }
 
-        groups.push(
-            client
+        groups.push(TestGroup {
+            group: client
                 .join_group(None, &commit_output.welcome_messages[0])
                 .await
                 .unwrap()
                 .0,
-        );
+        });
     }
 
     groups
@@ -413,11 +425,12 @@ impl GroupWithoutKeySchedule {
     all(not(target_arch = "wasm32"), mls_build_async),
     maybe_async::must_be_async
 )]
-impl MessageProcessor for GroupWithoutKeySchedule {
-    type CipherSuiteProvider = <Group<TestClientConfig> as MessageProcessor>::CipherSuiteProvider;
-    type OutputType = <Group<TestClientConfig> as MessageProcessor>::OutputType;
-    type IdentityProvider = <Group<TestClientConfig> as MessageProcessor>::IdentityProvider;
-    type MlsRules = <Group<TestClientConfig> as MessageProcessor>::MlsRules;
+impl<'a> MessageProcessor<'a> for GroupWithoutKeySchedule {
+    type CipherSuiteProvider =
+        <Group<TestClientConfig> as MessageProcessor<'a>>::CipherSuiteProvider;
+    type OutputType = <Group<TestClientConfig> as MessageProcessor<'a>>::OutputType;
+    type IdentityProvider = <Group<TestClientConfig> as MessageProcessor<'a>>::IdentityProvider;
+    type MlsRules = <Group<TestClientConfig> as MessageProcessor<'a>>::MlsRules;
 
     fn group_state(&self) -> &GroupState {
         self.inner.group_state()
@@ -488,5 +501,27 @@ impl MessageProcessor for GroupWithoutKeySchedule {
         self.provisional_public_state = Some(provisional_public_state);
         self.secrets = secrets;
         Ok(())
+    }
+}
+
+impl<'a> From<InternalCommitProcessor<'a, GroupWithoutKeySchedule>>
+    for ReceivedMessageOrProcessor<'a, TestClientConfig>
+{
+    fn from(value: InternalCommitProcessor<'a, GroupWithoutKeySchedule>) -> Self {
+        let value = InternalCommitProcessor {
+            processor: &mut value.processor.inner,
+            path: value.path,
+            proposals: value.proposals,
+            committer: value.committer,
+            authenticated_data: value.authenticated_data,
+            interim_transcript_hash: value.interim_transcript_hash,
+            confirmation_tag: value.confirmation_tag,
+            confirmed_transcript_hash: value.confirmed_transcript_hash,
+            time_sent: value.time_sent,
+            #[cfg(feature = "psk")]
+            psks: value.psks,
+        };
+
+        ReceivedMessageOrProcessor::CommitProcessor(CommitProcessor(value).into())
     }
 }

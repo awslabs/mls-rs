@@ -5,13 +5,13 @@
 use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt::{self, Debug};
+use message_processor::ReceivedMessageOrProcessor;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
 use mls_rs_core::identity::MemberValidationContext;
 #[cfg(feature = "psk")]
 use mls_rs_core::psk::PreSharedKey;
 use mls_rs_core::secret::Secret;
-use mls_rs_core::time::MlsTime;
 use snapshot::PendingCommitSnapshot;
 
 use crate::cipher_suite::CipherSuite;
@@ -1164,18 +1164,21 @@ where
     /// [`GroupStateStorage`](crate::GroupStateStorage)
     /// in use by this group until [`Group::write_to_storage`] is called.
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     #[inline(never)]
     pub async fn process_incoming_message(
         &mut self,
         message: MlsMessage,
-    ) -> Result<ReceivedMessage, MlsError> {
+    ) -> Result<ReceivedMessageOrProcessor<'_, C>, MlsError> {
         if let Some(pending) = self.pending_commit.commit_hash()? {
             let message_hash = MessageHash::compute(&self.cipher_suite_provider, &message).await?;
 
             if message_hash == pending {
                 let message_description = self.apply_pending_commit().await?;
 
-                return Ok(ReceivedMessage::Commit(message_description));
+                return Ok(ReceivedMessageOrProcessor::ReceivedMessage(
+                    ReceivedMessage::Commit(message_description).into(),
+                ));
             }
         }
 
@@ -1188,7 +1191,9 @@ where
                 .await?;
 
             if let Some(cached) = cached_own_proposal {
-                return Ok(ReceivedMessage::Proposal(cached));
+                return Ok(ReceivedMessageOrProcessor::ReceivedMessage(
+                    ReceivedMessage::Proposal(cached).into(),
+                ));
             }
         }
 
@@ -1201,36 +1206,20 @@ where
         .await
     }
 
-    /// Process an inbound message for this group, providing additional context
-    /// with a message timestamp.
-    ///
-    /// Providing a timestamp is useful when the
-    /// [`IdentityProvider`](crate::IdentityProvider)
-    /// in use by the group can determine validity based on a timestamp.
-    /// For example, this allows for checking X.509 certificate expiration
-    /// at the time when `message` was received by a server rather than when
-    /// a specific client asynchronously received `message`
-    ///
-    /// # Warning
-    ///
-    /// Changes to the group's state as a result of processing `message` will
-    /// not be persisted by the
-    /// [`GroupStateStorage`](crate::GroupStateStorage)
-    /// in use by this group until [`Group::write_to_storage`] is called.
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn process_incoming_message_with_time(
+    pub async fn process_incoming_message_oneshot(
         &mut self,
         message: MlsMessage,
-        time: MlsTime,
     ) -> Result<ReceivedMessage, MlsError> {
-        MessageProcessor::process_incoming_message_with_time(
-            self,
-            message,
-            #[cfg(feature = "by_ref_proposal")]
-            true,
-            Some(time),
-        )
-        .await
+        let received_message = self.process_incoming_message(message).await?;
+
+        match received_message {
+            ReceivedMessageOrProcessor::CommitProcessor(p) => {
+                p.process().await.map(ReceivedMessage::Commit)
+            }
+            ReceivedMessageOrProcessor::ReceivedMessage(m) => Ok(*m),
+        }
     }
 
     /// Find a group member by
@@ -1562,13 +1551,13 @@ where
     all(not(target_arch = "wasm32"), mls_build_async),
     maybe_async::must_be_async
 )]
-impl<C> MessageProcessor for Group<C>
+impl<'a, C> MessageProcessor<'a> for Group<C>
 where
-    C: ClientConfig + Clone,
+    C: 'a + ClientConfig + Clone,
 {
     type MlsRules = C::MlsRules;
     type IdentityProvider = C::IdentityProvider;
-    type OutputType = ReceivedMessage;
+    type OutputType = ReceivedMessageOrProcessor<'a, C>;
     type CipherSuiteProvider = <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider;
 
     #[cfg(feature = "private_message")]
@@ -2707,7 +2696,7 @@ mod tests {
         let (_carol, commit) = alice.join("carol").await;
 
         // Apply the commit that adds carol
-        bob.process_incoming_message(commit).await.unwrap();
+        bob.process_incoming_message_oneshot(commit).await.unwrap();
 
         let bob_identity = bob.current_member_signing_identity().unwrap().clone();
         let signer = bob.signer.clone();
@@ -2749,7 +2738,7 @@ mod tests {
         let commit_output = alice_sub_group.commit(vec![]).await.unwrap();
 
         bob_sub_group
-            .process_incoming_message(commit_output.commit_message)
+            .process_incoming_message_oneshot(commit_output.commit_message)
             .await
             .unwrap();
     }
@@ -2816,7 +2805,7 @@ mod tests {
         let received_by_alice = alice_group.process_incoming_message(msg).await.unwrap();
 
         assert_matches!(
-            received_by_alice,
+            received_by_alice.into_received_message().unwrap(),
             ReceivedMessage::ApplicationMessage(ApplicationMessageDescription { sender_index, .. })
                 if sender_index == bob_group.current_member_index()
         );
@@ -2850,7 +2839,7 @@ mod tests {
             .unwrap();
 
         assert_matches!(
-            received_message,
+            received_message.into_received_message().unwrap(),
             ReceivedMessage::ApplicationMessage(m) if m.data() == b"foobar"
         );
 
@@ -3097,7 +3086,7 @@ mod tests {
         let commit_output = groups[0].commit(vec![]).await.unwrap();
 
         let res = groups[1]
-            .process_incoming_message(commit_output.commit_message)
+            .process_message(commit_output.commit_message)
             .await;
 
         assert_matches!(res, Err(MlsError::UnsupportedGroupExtension(EXT_TYPE)));
@@ -3125,7 +3114,7 @@ mod tests {
         let commit_output = groups[0].commit(vec![]).await.unwrap();
 
         let res = groups[2]
-            .process_incoming_message(commit_output.commit_message)
+            .process_message(commit_output.commit_message)
             .await;
 
         assert!(res.is_err());
@@ -3158,7 +3147,7 @@ mod tests {
         let commit_output = groups[0].commit(vec![]).await.unwrap();
 
         let res = groups[2]
-            .process_incoming_message(commit_output.commit_message)
+            .process_message(commit_output.commit_message)
             .await;
 
         assert_matches!(res, Err(MlsError::CredentialTypeOfNewLeafIsUnsupported));
@@ -3179,7 +3168,7 @@ mod tests {
         let commit_output = groups[0].commit(vec![]).await.unwrap();
 
         let res = groups[2]
-            .process_incoming_message(commit_output.commit_message)
+            .process_message(commit_output.commit_message)
             .await;
 
         assert_matches!(res, Err(MlsError::InUseCredentialTypeUnsupportedByNewLeaf));
@@ -3207,7 +3196,7 @@ mod tests {
         let commit_output = groups[0].commit(vec![]).await.unwrap();
 
         let res = groups[2]
-            .process_incoming_message(commit_output.commit_message)
+            .process_message(commit_output.commit_message)
             .await;
 
         assert_matches!(res, Err(MlsError::RequiredCredentialNotFound(_)));
@@ -3288,7 +3277,10 @@ mod tests {
         };
 
         let commit = alice.commit(vec![]).await.unwrap();
-        let res = bob.process_incoming_message(commit.commit_message).await;
+
+        let res = bob
+            .process_incoming_message_oneshot(commit.commit_message)
+            .await;
 
         assert_matches!(
             res,
@@ -3552,8 +3544,15 @@ mod tests {
             MlsTime::from_duration_since_epoch(core::time::Duration::from_secs(future_time));
 
         groups[1].process_incoming_message(proposal).await.unwrap();
+
         let res = groups[1]
-            .process_incoming_message_with_time(commit, future_time)
+            .process_incoming_message(commit)
+            .await
+            .unwrap()
+            .into_processor()
+            .unwrap()
+            .time_sent(future_time)
+            .process()
             .await;
 
         assert_matches!(res, Err(MlsError::InvalidLifetime));
@@ -3597,7 +3596,7 @@ mod tests {
         let ReceivedMessage::Commit(CommitMessageDescription {
             effect: CommitEffect::NewEpoch(new_epoch),
             ..
-        }) = bob.process_incoming_message(commit).await.unwrap()
+        }) = bob.process_incoming_message_oneshot(commit).await.unwrap()
         else {
             panic!("unexpected commit effect");
         };
@@ -3622,7 +3621,12 @@ mod tests {
             .await
             .unwrap();
 
-        let recv_prop = bob.process_incoming_message(proposal).await.unwrap();
+        let recv_prop = bob
+            .process_incoming_message(proposal)
+            .await
+            .unwrap()
+            .into_received_message()
+            .unwrap();
 
         assert_matches!(recv_prop, ReceivedMessage::Proposal(ProposalMessageDescription { proposal: Proposal::Custom(c), ..})
             if c == custom_proposal);
@@ -3632,7 +3636,12 @@ mod tests {
         let ReceivedMessage::Commit(CommitMessageDescription {
             effect: CommitEffect::NewEpoch(new_epoch),
             ..
-        }) = bob.process_incoming_message(commit).await.unwrap()
+        }) = bob
+            .process_incoming_message(commit)
+            .await
+            .unwrap()
+            .into_received_message()
+            .unwrap()
         else {
             panic!("unexpected commit effect");
         };
@@ -3703,7 +3712,6 @@ mod tests {
 
         bob.commit_processor(commit.commit_message)
             .await
-            .unwrap()
             .with_external_psk(psk_id_external, psk_external)
             .with_resumption_psk(psk_id_resumption, psk_resumption)
             .process()
@@ -3766,7 +3774,6 @@ mod tests {
 
         bob.commit_processor(commit.commit_message)
             .await
-            .unwrap()
             .with_external_psk(psk_id_external2.clone(), psk_external.clone())
             .with_external_psk(psk_id_external1, psk_external)
             .with_resumption_psk(psk_id_resumption, psk_resumption)
@@ -4101,6 +4108,8 @@ mod tests {
         let update = group
             .process_incoming_message(commit.commit_message)
             .await
+            .unwrap()
+            .into_received_message()
             .unwrap();
 
         let ReceivedMessage::Commit(update) = update else {
@@ -4117,7 +4126,10 @@ mod tests {
         let commit = groups[0].commit(vec![]).await.unwrap().commit_message;
         groups[1].commit(vec![]).await.unwrap();
 
-        groups[1].process_incoming_message(commit).await.unwrap();
+        groups[1]
+            .process_incoming_message_oneshot(commit)
+            .await
+            .unwrap();
 
         let res = groups[1].apply_pending_commit().await;
         assert_matches!(res, Err(MlsError::PendingCommitNotFound));
@@ -4163,7 +4175,11 @@ mod tests {
 
         bob.process_incoming_message(upd).await.unwrap();
         let commit = bob.commit(vec![]).await.unwrap().commit_message;
-        let update = alice.process_incoming_message(commit).await.unwrap();
+
+        let update = alice
+            .process_incoming_message_oneshot(commit)
+            .await
+            .unwrap();
 
         let ReceivedMessage::Commit(CommitMessageDescription {
             effect: CommitEffect::NewEpoch(new_epoch),
