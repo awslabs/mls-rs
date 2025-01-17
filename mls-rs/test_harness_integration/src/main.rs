@@ -507,10 +507,11 @@ impl MlsClient for MlsClientImpl {
             .as_mut()
             .ok_or_else(|| Status::aborted("no group with such index."))?
             .process_incoming_message(ciphertext)
-            .map_err(abort)?;
+            .map_err(abort)?
+            .into_received_message();
 
         let app_msg = match message {
-            ReceivedMessage::ApplicationMessage(app_msg) => app_msg,
+            Some(ReceivedMessage::ApplicationMessage(app_msg)) => app_msg,
             _ => return Err(Status::aborted("message type is not application data.")),
         };
 
@@ -914,11 +915,11 @@ impl MlsClientImpl {
         #[cfg(feature = "psk")]
         let group_clone = group.clone();
 
-        let ReceivedMessage::CommitProcessor(processor) =
-            group.process_incoming_message(commit).map_err(abort)?
-        else {
-            return Err(Status::aborted("expected commit message"));
-        };
+        let processor = group
+            .process_incoming_message(commit)
+            .map_err(abort)?
+            .into_processor()
+            .ok_or(Status::aborted("expected commit message"))?;
 
         #[cfg(feature = "psk")]
         let required_external_psks = processor

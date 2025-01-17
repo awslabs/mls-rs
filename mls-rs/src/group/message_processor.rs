@@ -36,7 +36,6 @@ use itertools::Itertools;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 
 use alloc::boxed::Box;
-use alloc::format;
 use alloc::vec::Vec;
 use core::fmt::{self, Debug};
 use mls_rs_core::{
@@ -199,7 +198,8 @@ impl MlsDecode for CommitEffect {
 #[allow(clippy::large_enum_variant)]
 /// An event generated as a result of processing a message for a group with
 /// [`Group::process_incoming_message`](crate::group::Group::process_incoming_message).
-pub enum ReceivedMessage<'a, C: ClientConfig> {
+#[derive(Clone, Debug)]
+pub enum ReceivedMessage {
     /// An application message was decrypted.
     ApplicationMessage(ApplicationMessageDescription),
     /// A new commit was processed creating a new group state.
@@ -212,65 +212,91 @@ pub enum ReceivedMessage<'a, C: ClientConfig> {
     Welcome,
     /// Validated key package
     KeyPackage(KeyPackage),
+}
+
+pub enum ReceivedMessageOrProcessor<'a, C: ClientConfig> {
+    /// An application message was decrypted.
+    ReceivedMessage(ReceivedMessage),
     /// A new commit can be processed to create a new group state.
     CommitProcessor(CommitProcessor<'a, C>),
 }
 
-impl<C: ClientConfig> Debug for ReceivedMessage<'_, C> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl<'a, C: ClientConfig> Debug for ReceivedMessageOrProcessor<'a, C> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            ReceivedMessage::ApplicationMessage(value) => {
-                f.write_str(&format!("ApplicationMessage({value:?})"))
-            }
-            ReceivedMessage::Commit(value) => f.write_str(&format!("Commit({value:?})")),
-            ReceivedMessage::Proposal(value) => f.write_str(&format!("Proposal({value:?})")),
-            ReceivedMessage::GroupInfo(value) => f.write_str(&format!("GroupInfo({value:?})")),
-            ReceivedMessage::KeyPackage(value) => f.write_str(&format!("KeyPackage({value:?})")),
-            ReceivedMessage::Welcome => f.write_str("Welcome"),
-            ReceivedMessage::CommitProcessor(_) => f.write_str("CommitProcessor"),
+            Self::ReceivedMessage(m) => f.write_str(&format!("ReceivedMessage({m:?})")),
+            Self::CommitProcessor(_) => f.write_str("CommitProcessor"),
         }
     }
 }
 
-impl<C: ClientConfig> TryFrom<ApplicationMessageDescription> for ReceivedMessage<'_, C> {
+impl<'a, C: ClientConfig> ReceivedMessageOrProcessor<'a, C> {
+    pub fn into_received_message(self) -> Option<ReceivedMessage> {
+        match self {
+            ReceivedMessageOrProcessor::ReceivedMessage(m) => Some(m),
+            _ => None,
+        }
+    }
+
+    pub fn into_processor(self) -> Option<CommitProcessor<'a, C>> {
+        match self {
+            ReceivedMessageOrProcessor::CommitProcessor(c) => Some(c),
+            _ => None,
+        }
+    }
+}
+
+impl<'a, C: ClientConfig, T: Into<ReceivedMessage>> From<T> for ReceivedMessageOrProcessor<'a, C> {
+    fn from(value: T) -> Self {
+        Self::ReceivedMessage(value.into())
+    }
+}
+
+impl<'a, C: ClientConfig> TryFrom<ApplicationMessageDescription>
+    for ReceivedMessageOrProcessor<'a, C>
+{
     type Error = MlsError;
 
     fn try_from(value: ApplicationMessageDescription) -> Result<Self, Self::Error> {
-        Ok(ReceivedMessage::ApplicationMessage(value))
+        Ok(ReceivedMessageOrProcessor::ReceivedMessage(
+            ReceivedMessage::ApplicationMessage(value),
+        ))
     }
 }
 
-impl<'a, C: ClientConfig> From<InternalCommitProcessor<'a, Group<C>>> for ReceivedMessage<'a, C> {
+impl<'a, C: ClientConfig> From<InternalCommitProcessor<'a, Group<C>>>
+    for ReceivedMessageOrProcessor<'a, C>
+{
     fn from(value: InternalCommitProcessor<'a, Group<C>>) -> Self {
-        ReceivedMessage::CommitProcessor(CommitProcessor(value))
+        ReceivedMessageOrProcessor::CommitProcessor(CommitProcessor(value))
     }
 }
 
-impl<C: ClientConfig> From<CommitMessageDescription> for ReceivedMessage<'_, C> {
+impl From<CommitMessageDescription> for ReceivedMessage {
     fn from(value: CommitMessageDescription) -> Self {
         ReceivedMessage::Commit(value)
     }
 }
 
-impl<C: ClientConfig> From<ProposalMessageDescription> for ReceivedMessage<'_, C> {
+impl From<ProposalMessageDescription> for ReceivedMessage {
     fn from(value: ProposalMessageDescription) -> Self {
         ReceivedMessage::Proposal(value)
     }
 }
 
-impl<C: ClientConfig> From<GroupInfo> for ReceivedMessage<'_, C> {
+impl From<GroupInfo> for ReceivedMessage {
     fn from(value: GroupInfo) -> Self {
         ReceivedMessage::GroupInfo(value)
     }
 }
 
-impl<C: ClientConfig> From<Welcome> for ReceivedMessage<'_, C> {
+impl From<Welcome> for ReceivedMessage {
     fn from(_: Welcome) -> Self {
         ReceivedMessage::Welcome
     }
 }
 
-impl<C: ClientConfig> From<KeyPackage> for ReceivedMessage<'_, C> {
+impl From<KeyPackage> for ReceivedMessage {
     fn from(value: KeyPackage) -> Self {
         ReceivedMessage::KeyPackage(value)
     }

@@ -2,6 +2,8 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
+use core::fmt::Debug;
+
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
@@ -359,7 +361,7 @@ mod tests {
     use crate::{
         client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         crypto::test_utils::TestCryptoProvider,
-        group::{ReceivedMessage, Sender},
+        group::Sender,
         mls_rules::{CommitSource, ProposalInfo},
         test_utils::get_test_groups,
     };
@@ -388,11 +390,12 @@ mod tests {
 
         let member_0 = groups[0].roster().member_with_index(0).unwrap();
 
-        let ReceivedMessage::CommitProcessor(processor) =
-            groups[1].process_incoming_message(commit).await.unwrap()
-        else {
-            panic!("expected commit processor")
-        };
+        let processor = groups[1]
+            .process_incoming_message(commit)
+            .await
+            .unwrap()
+            .into_processor()
+            .unwrap();
 
         assert_eq!(
             &processor.proposals().removals,

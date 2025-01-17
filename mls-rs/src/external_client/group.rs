@@ -2,7 +2,7 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use core::fmt::{self, Debug};
+use core::fmt::Debug;
 
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::{
@@ -85,9 +85,9 @@ use alloc::boxed::Box;
 
 /// The result of processing an [ExternalGroup](ExternalGroup) message using
 /// [process_incoming_message](ExternalGroup::process_incoming_message)
-#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::ffi_type(opaque))]
 #[allow(clippy::large_enum_variant)]
-pub enum ExternalReceivedMessage<'a, C: ExternalClientConfig> {
+#[derive(Clone, Debug)]
+pub enum ExternalReceivedMessage {
     /// A new commit was processed creating a new group state.
     Commit(CommitMessageDescription),
     /// A proposal was received.
@@ -100,30 +100,12 @@ pub enum ExternalReceivedMessage<'a, C: ExternalClientConfig> {
     Welcome,
     /// Validated key package
     KeyPackage(KeyPackage),
-    /// A new commit can be processed to create a new group state.
-    CommitProcessor(ExternalCommitProcessor<'a, C>),
 }
 
-impl<C: ExternalClientConfig> Debug for ExternalReceivedMessage<'_, C> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ExternalReceivedMessage::Commit(value) => f.write_str(&format!("Commit({value:?})")),
-            ExternalReceivedMessage::Proposal(value) => {
-                f.write_str(&format!("Proposal({value:?})"))
-            }
-            ExternalReceivedMessage::Ciphertext(value) => {
-                f.write_str(&format!("Ciphertext({value:?})"))
-            }
-            ExternalReceivedMessage::GroupInfo(value) => {
-                f.write_str(&format!("GroupInfo({value:?})"))
-            }
-            ExternalReceivedMessage::KeyPackage(value) => {
-                f.write_str(&format!("KeyPackage({value:?})"))
-            }
-            ExternalReceivedMessage::Welcome => f.write_str("Welcome"),
-            ExternalReceivedMessage::CommitProcessor(_) => f.write_str("CommitProcessor"),
-        }
-    }
+pub enum ExternalReceivedMessageOrProcessor<'a, C: ExternalClientConfig> {
+    ReceivedMessage(ExternalReceivedMessage),
+    /// A new commit can be processed to create a new group state.
+    CommitProcessor(ExternalCommitProcessor<'a, C>),
 }
 
 /// A handle to an observed group that can track plaintext control messages
@@ -214,7 +196,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     pub async fn process_incoming_message(
         &mut self,
         message: MlsMessage,
-    ) -> Result<ExternalReceivedMessage<'_, C>, MlsError> {
+    ) -> Result<ExternalReceivedMessageOrProcessor<'_, C>, MlsError> {
         MessageProcessor::process_incoming_message(
             self,
             message,
@@ -228,7 +210,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     pub async fn process_incoming_message_oneshot(
         &mut self,
         message: MlsMessage,
-    ) -> Result<ExternalReceivedMessage<'_, C>, MlsError> {
+    ) -> Result<ExternalReceivedMessage, MlsError> {
         let received_message = MessageProcessor::process_incoming_message(
             self,
             message,
@@ -238,10 +220,10 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         .await?;
 
         match received_message {
-            ExternalReceivedMessage::CommitProcessor(p) => {
+            ExternalReceivedMessageOrProcessor::CommitProcessor(p) => {
                 p.process().await.map(ExternalReceivedMessage::Commit)
             }
-            other => Ok(other),
+            ExternalReceivedMessageOrProcessor::ReceivedMessage(m) => Ok(m),
         }
     }
 
@@ -630,7 +612,7 @@ where
 {
     type MlsRules = C::MlsRules;
     type IdentityProvider = C::IdentityProvider;
-    type OutputType = ExternalReceivedMessage<'a, C>;
+    type OutputType = ExternalReceivedMessageOrProcessor<'a, C>;
     type CipherSuiteProvider = <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider;
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -654,9 +636,11 @@ where
         &mut self,
         cipher_text: &PrivateMessage,
     ) -> Result<EventOrContent<Self::OutputType>, MlsError> {
-        Ok(EventOrContent::Event(ExternalReceivedMessage::Ciphertext(
-            cipher_text.content_type,
-        )))
+        Ok(EventOrContent::Event(
+            ExternalReceivedMessageOrProcessor::ReceivedMessage(
+                ExternalReceivedMessage::Ciphertext(cipher_text.content_type),
+            ),
+        ))
     }
 
     async fn update_key_schedule(
@@ -791,8 +775,24 @@ where
     }
 }
 
+impl<'a, C: ExternalClientConfig> ExternalReceivedMessageOrProcessor<'a, C> {
+    pub fn into_received_message(self) -> Option<ExternalReceivedMessage> {
+        match self {
+            ExternalReceivedMessageOrProcessor::ReceivedMessage(m) => Some(m),
+            _ => None,
+        }
+    }
+
+    pub fn into_processor(self) -> Option<ExternalCommitProcessor<'a, C>> {
+        match self {
+            ExternalReceivedMessageOrProcessor::CommitProcessor(c) => Some(c),
+            _ => None,
+        }
+    }
+}
+
 impl<C: ExternalClientConfig> TryFrom<ApplicationMessageDescription>
-    for ExternalReceivedMessage<'_, C>
+    for ExternalReceivedMessageOrProcessor<'_, C>
 {
     type Error = MlsError;
 
@@ -802,38 +802,46 @@ impl<C: ExternalClientConfig> TryFrom<ApplicationMessageDescription>
 }
 
 impl<'a, C: ExternalClientConfig> From<InternalCommitProcessor<'a, ExternalGroup<C>>>
-    for ExternalReceivedMessage<'a, C>
+    for ExternalReceivedMessageOrProcessor<'a, C>
 {
     fn from(value: InternalCommitProcessor<'a, ExternalGroup<C>>) -> Self {
-        ExternalReceivedMessage::CommitProcessor(ExternalCommitProcessor(value))
+        ExternalReceivedMessageOrProcessor::CommitProcessor(ExternalCommitProcessor(value))
     }
 }
 
-impl<C: ExternalClientConfig> From<CommitMessageDescription> for ExternalReceivedMessage<'_, C> {
+impl<'a, C: ExternalClientConfig, T: Into<ExternalReceivedMessage>> From<T>
+    for ExternalReceivedMessageOrProcessor<'a, C>
+{
+    fn from(value: T) -> Self {
+        Self::ReceivedMessage(value.into())
+    }
+}
+
+impl From<CommitMessageDescription> for ExternalReceivedMessage {
     fn from(value: CommitMessageDescription) -> Self {
         ExternalReceivedMessage::Commit(value)
     }
 }
 
-impl<C: ExternalClientConfig> From<ProposalMessageDescription> for ExternalReceivedMessage<'_, C> {
+impl From<ProposalMessageDescription> for ExternalReceivedMessage {
     fn from(value: ProposalMessageDescription) -> Self {
         ExternalReceivedMessage::Proposal(value)
     }
 }
 
-impl<C: ExternalClientConfig> From<GroupInfo> for ExternalReceivedMessage<'_, C> {
+impl From<GroupInfo> for ExternalReceivedMessage {
     fn from(value: GroupInfo) -> Self {
         ExternalReceivedMessage::GroupInfo(value)
     }
 }
 
-impl<C: ExternalClientConfig> From<Welcome> for ExternalReceivedMessage<'_, C> {
+impl From<Welcome> for ExternalReceivedMessage {
     fn from(_: Welcome) -> Self {
         ExternalReceivedMessage::Welcome
     }
 }
 
-impl<C: ExternalClientConfig> From<KeyPackage> for ExternalReceivedMessage<'_, C> {
+impl From<KeyPackage> for ExternalReceivedMessage {
     fn from(value: KeyPackage) -> Self {
         ExternalReceivedMessage::KeyPackage(value)
     }
@@ -842,6 +850,15 @@ impl<C: ExternalClientConfig> From<KeyPackage> for ExternalReceivedMessage<'_, C
 pub struct ExternalCommitProcessor<'a, C: ExternalClientConfig>(
     InternalCommitProcessor<'a, ExternalGroup<C>>,
 );
+
+impl<'a, C: ExternalClientConfig> Debug for ExternalReceivedMessageOrProcessor<'a, C> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::ReceivedMessage(m) => f.write_str(&format!("ExternalReceivedMessage({m:?})")),
+            Self::CommitProcessor(_) => f.write_str("CommitProcessor"),
+        }
+    }
+}
 
 impl<C: ExternalClientConfig> ExternalCommitProcessor<'_, C> {
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]

@@ -958,7 +958,7 @@ mod tests {
             .unwrap();
 
         assert_matches!(
-            message,
+            message.into_received_message().unwrap(),
             ReceivedMessage::Proposal(ProposalMessageDescription {
                 proposal: Proposal::Add(p), ..}
             ) if p.key_package.leaf_node.signing_identity == bob_identity

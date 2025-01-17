@@ -20,7 +20,7 @@ use rand::{seq::IteratorRandom, Rng, SeedableRng};
 use crate::{
     client_builder::{ClientBuilder, MlsConfig},
     crypto::test_utils::TestCryptoProvider,
-    group::{ClientConfig, CommitBuilder, ExportedTree, ReceivedMessage},
+    group::{ClientConfig, CommitBuilder, ExportedTree},
     identity::basic::BasicIdentityProvider,
     mls_rules::CommitOptions,
     test_utils::{
@@ -214,11 +214,12 @@ async fn interop_passive_client() {
 
             let group_clone = group.clone();
 
-            let ReceivedMessage::CommitProcessor(mut processor) =
-                group.process_incoming_message(message).await.unwrap()
-            else {
-                panic!("expected  commit")
-            };
+            let mut processor = group
+                .process_incoming_message(message)
+                .await
+                .unwrap()
+                .into_processor()
+                .unwrap();
 
             processor = test_case
                 .external_psks

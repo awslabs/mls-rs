@@ -5,6 +5,7 @@
 use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt::{self, Debug};
+use message_processor::ReceivedMessageOrProcessor;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
 use mls_rs_core::identity::MemberValidationContext;
@@ -1168,14 +1169,16 @@ where
     pub async fn process_incoming_message(
         &mut self,
         message: MlsMessage,
-    ) -> Result<ReceivedMessage<'_, C>, MlsError> {
+    ) -> Result<ReceivedMessageOrProcessor<'_, C>, MlsError> {
         if let Some(pending) = self.pending_commit.commit_hash()? {
             let message_hash = MessageHash::compute(&self.cipher_suite_provider, &message).await?;
 
             if message_hash == pending {
                 let message_description = self.apply_pending_commit().await?;
 
-                return Ok(ReceivedMessage::Commit(message_description));
+                return Ok(ReceivedMessageOrProcessor::ReceivedMessage(
+                    ReceivedMessage::Commit(message_description),
+                ));
             }
         }
 
@@ -1188,7 +1191,9 @@ where
                 .await?;
 
             if let Some(cached) = cached_own_proposal {
-                return Ok(ReceivedMessage::Proposal(cached));
+                return Ok(ReceivedMessageOrProcessor::ReceivedMessage(
+                    ReceivedMessage::Proposal(cached),
+                ));
             }
         }
 
@@ -1206,12 +1211,14 @@ where
     pub async fn process_incoming_message_oneshot(
         &mut self,
         message: MlsMessage,
-    ) -> Result<ReceivedMessage<'_, C>, MlsError> {
+    ) -> Result<ReceivedMessage, MlsError> {
         let received_message = self.process_incoming_message(message).await?;
 
         match received_message {
-            ReceivedMessage::CommitProcessor(p) => p.process().await.map(ReceivedMessage::Commit),
-            other => Ok(other),
+            ReceivedMessageOrProcessor::CommitProcessor(p) => {
+                p.process().await.map(ReceivedMessage::Commit)
+            }
+            ReceivedMessageOrProcessor::ReceivedMessage(m) => Ok(m),
         }
     }
 
@@ -1550,7 +1557,7 @@ where
 {
     type MlsRules = C::MlsRules;
     type IdentityProvider = C::IdentityProvider;
-    type OutputType = ReceivedMessage<'a, C>;
+    type OutputType = ReceivedMessageOrProcessor<'a, C>;
     type CipherSuiteProvider = <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider;
 
     #[cfg(feature = "private_message")]
@@ -2798,7 +2805,7 @@ mod tests {
         let received_by_alice = alice_group.process_incoming_message(msg).await.unwrap();
 
         assert_matches!(
-            received_by_alice,
+            received_by_alice.into_received_message().unwrap(),
             ReceivedMessage::ApplicationMessage(ApplicationMessageDescription { sender_index, .. })
                 if sender_index == bob_group.current_member_index()
         );
@@ -2832,7 +2839,7 @@ mod tests {
             .unwrap();
 
         assert_matches!(
-            received_message,
+            received_message.into_received_message().unwrap(),
             ReceivedMessage::ApplicationMessage(m) if m.data() == b"foobar"
         );
 
@@ -3538,13 +3545,15 @@ mod tests {
 
         groups[1].process_incoming_message(proposal).await.unwrap();
 
-        let received_message = groups[1].process_incoming_message(commit).await.unwrap();
-
-        let ReceivedMessage::CommitProcessor(p) = received_message else {
-            panic!("expected commit processor");
-        };
-
-        let res = p.time_sent(future_time).process().await;
+        let res = groups[1]
+            .process_incoming_message(commit)
+            .await
+            .unwrap()
+            .into_processor()
+            .unwrap()
+            .time_sent(future_time)
+            .process()
+            .await;
 
         assert_matches!(res, Err(MlsError::InvalidLifetime));
     }
@@ -3612,7 +3621,12 @@ mod tests {
             .await
             .unwrap();
 
-        let recv_prop = bob.process_incoming_message(proposal).await.unwrap();
+        let recv_prop = bob
+            .process_incoming_message(proposal)
+            .await
+            .unwrap()
+            .into_received_message()
+            .unwrap();
 
         assert_matches!(recv_prop, ReceivedMessage::Proposal(ProposalMessageDescription { proposal: Proposal::Custom(c), ..})
             if c == custom_proposal);
@@ -3622,7 +3636,12 @@ mod tests {
         let ReceivedMessage::Commit(CommitMessageDescription {
             effect: CommitEffect::NewEpoch(new_epoch),
             ..
-        }) = bob.process_incoming_message(commit).await.unwrap()
+        }) = bob
+            .process_incoming_message(commit)
+            .await
+            .unwrap()
+            .into_received_message()
+            .unwrap()
         else {
             panic!("unexpected commit effect");
         };
@@ -4089,6 +4108,8 @@ mod tests {
         let update = group
             .process_incoming_message(commit.commit_message)
             .await
+            .unwrap()
+            .into_received_message()
             .unwrap();
 
         let ReceivedMessage::Commit(update) = update else {

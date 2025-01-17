@@ -376,6 +376,8 @@ async fn test_application_messages(
                     let decrypted = g
                         .process_incoming_message(ciphertext.clone())
                         .await
+                        .unwrap()
+                        .into_received_message()
                         .unwrap();
 
                     assert_matches!(decrypted, ReceivedMessage::ApplicationMessage(m) if m.data() == test_message);
@@ -435,6 +437,8 @@ async fn test_out_of_order_application_messages() {
         let res = bob_group
             .process_incoming_message(ciphertexts[i].clone())
             .await
+            .unwrap()
+            .into_received_message()
             .unwrap();
 
         assert_matches!(
@@ -467,12 +471,9 @@ async fn processing_message_from_self_returns_error(
         .await
         .unwrap();
 
-    let error = creator_group
-        .process_incoming_message(msg)
-        .await
-        .unwrap_err();
+    let res = creator_group.process_incoming_message(msg).await;
 
-    assert_matches!(error, MlsError::CantProcessMessageFromSelf);
+    assert_matches!(res, Err(MlsError::CantProcessMessageFromSelf));
 }
 
 #[cfg(feature = "private_message")]
@@ -542,6 +543,8 @@ async fn external_commits_work(
             let processed = group
                 .process_incoming_message(message.clone())
                 .await
+                .unwrap()
+                .into_received_message()
                 .unwrap();
 
             if let ReceivedMessage::Proposal(p) = &processed {

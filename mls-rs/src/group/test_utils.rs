@@ -133,7 +133,7 @@ impl TestGroup {
     pub(crate) async fn process_message(
         &mut self,
         message: MlsMessage,
-    ) -> Result<ReceivedMessage<'_, TestClientConfig>, MlsError> {
+    ) -> Result<ReceivedMessage, MlsError> {
         self.process_incoming_message_oneshot(message).await
     }
 
@@ -160,10 +160,11 @@ impl TestGroup {
         &mut self,
         commit: MlsMessage,
     ) -> CommitProcessor<'_, TestClientConfig> {
-        match self.process_incoming_message(commit).await.unwrap() {
-            ReceivedMessage::CommitProcessor(p) => p,
-            _ => panic!("expected commit"),
-        }
+        self.process_incoming_message(commit)
+            .await
+            .unwrap()
+            .into_processor()
+            .unwrap()
     }
 }
 
@@ -504,7 +505,7 @@ impl<'a> MessageProcessor<'a> for GroupWithoutKeySchedule {
 }
 
 impl<'a> From<InternalCommitProcessor<'a, GroupWithoutKeySchedule>>
-    for ReceivedMessage<'a, TestClientConfig>
+    for ReceivedMessageOrProcessor<'a, TestClientConfig>
 {
     fn from(value: InternalCommitProcessor<'a, GroupWithoutKeySchedule>) -> Self {
         let value = InternalCommitProcessor {
@@ -521,6 +522,6 @@ impl<'a> From<InternalCommitProcessor<'a, GroupWithoutKeySchedule>>
             psks: value.psks,
         };
 
-        ReceivedMessage::CommitProcessor(CommitProcessor(value))
+        ReceivedMessageOrProcessor::CommitProcessor(CommitProcessor(value))
     }
 }
