@@ -1780,14 +1780,13 @@ pub(crate) mod test_utils;
 mod tests {
     use crate::{
         client::test_utils::{
-            test_client_with_key_pkg, TestClientBuilder, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION,
+            test_client, TestClientBuilder, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION,
         },
         client_builder::test_utils::TestClientConfig,
         crypto::test_utils::TestCryptoProvider,
         group::proposal_filter::ProposalInfo,
         identity::test_utils::get_test_signing_identity,
         key_package::test_utils::test_key_package_message,
-        mls_rules::CommitOptions,
         tree_kem::{
             leaf_node::{test_utils::get_test_capabilities, LeafNodeSource},
             UpdatePathNode,
@@ -1797,9 +1796,7 @@ mod tests {
     #[cfg(feature = "by_ref_proposal")]
     use crate::{
         client::test_utils::{test_client_with_key_pkg_custom, TEST_CUSTOM_PROPOSAL_TYPE},
-        client_builder::{ClientBuilder, MlsConfig},
-        group::proposal_filter::ProposalBundle,
-        identity::basic::BasicIdentityProvider,
+        client_builder::ClientBuilder,
         identity::test_utils::BasicWithCustomProvider,
     };
 
@@ -1933,7 +1930,6 @@ mod tests {
             TEST_CIPHER_SUITE,
             vec![42.into()],
             Some(extension_list.clone()),
-            None,
         )
         .await;
 
@@ -1994,7 +1990,7 @@ mod tests {
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn update_proposal_with_bad_key_package_is_ignored_when_committing() {
         let (mut alice_group, mut bob_group) =
-            test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, true).await;
+            test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
         let mut proposal = alice_group.update_proposal().await;
 
@@ -2049,64 +2045,50 @@ mod tests {
     async fn test_two_member_group(
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
-        tree_ext: bool,
     ) -> (TestGroup, TestGroup) {
-        let mut test_group = test_group_custom(
-            protocol_version,
-            cipher_suite,
-            Default::default(),
-            None,
-            Some(CommitOptions::new().with_ratchet_tree_extension(tree_ext)),
-        )
-        .await;
-
+        let mut test_group = test_group(protocol_version, cipher_suite).await;
         let (bob_test_group, _) = test_group.join("bob").await;
-
         assert!(Group::equal_group_state(&test_group, &bob_test_group));
 
         (test_group, bob_test_group)
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn test_welcome_processing_exported_tree() {
-        test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, false).await;
+    async fn test_welcome_processing_with_tree_ext() {
+        test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn test_welcome_processing_tree_extension() {
-        test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, true).await;
-    }
-
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn test_welcome_processing_missing_tree() {
-        let mut test_group = test_group_custom(
-            TEST_PROTOCOL_VERSION,
-            TEST_CIPHER_SUITE,
-            Default::default(),
-            None,
-            Some(CommitOptions::new().with_ratchet_tree_extension(false)),
-        )
-        .await;
-
-        let (bob_client, bob_key_package) =
-            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
+    async fn test_welcome_processing_without_tree_ext() {
+        let mut test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (bob_client, bob_key_package) = test_client("bob").await;
 
         // Add bob to the group
         let commit_output = test_group
             .commit_builder()
             .add_member(bob_key_package)
             .unwrap()
+            .ratchet_tree_extension(false)
             .build()
             .await
             .unwrap();
 
         // Group from Bob's perspective
-        let bob_group = bob_client
+        let res = bob_client
             .join_group(None, &commit_output.welcome_messages[0])
             .await
             .map(|_| ());
 
-        assert_matches!(bob_group, Err(MlsError::RatchetTreeNotFound));
+        assert_matches!(res, Err(MlsError::RatchetTreeNotFound));
+
+        // Group from Bob's perspective
+        bob_client
+            .join_group(
+                commit_output.ratchet_tree,
+                &commit_output.welcome_messages[0],
+            )
+            .await
+            .unwrap();
     }
 
     #[cfg(feature = "last_resort_key_package_ext")]
@@ -2182,7 +2164,7 @@ mod tests {
         let cipher_suite = TEST_CIPHER_SUITE;
 
         let mut test_group =
-            test_group_custom(protocol_version, cipher_suite, vec![42.into()], None, None).await;
+            test_group_custom(protocol_version, cipher_suite, vec![42.into()], None).await;
 
         let commit = test_group
             .commit_builder()
@@ -2243,7 +2225,7 @@ mod tests {
     async fn make_group_with_required_capabilities(
         required_caps: RequiredCapabilitiesExt,
     ) -> Result<Group<TestClientConfig>, MlsError> {
-        test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "alice")
+        test_client("alice")
             .await
             .0
             .create_group(
@@ -2311,13 +2293,12 @@ mod tests {
             .into_extension()
             .unwrap();
 
-        let group_creation =
-            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "alice")
-                .await
-                .0
-                .create_group(core::iter::once(ext_senders).collect(), Default::default())
-                .await
-                .map(|_| ());
+        let group_creation = test_client("alice")
+            .await
+            .0
+            .create_group(core::iter::once(ext_senders).collect(), Default::default())
+            .await
+            .map(|_| ());
 
         assert_matches!(
             group_creation,
@@ -2393,25 +2374,21 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_commit_via_commit_options_round_trip() {
-        let mut group = test_group_custom(
-            TEST_PROTOCOL_VERSION,
-            TEST_CIPHER_SUITE,
-            vec![],
-            None,
-            CommitOptions::default()
-                .with_allow_external_commit(true)
-                .into(),
-        )
-        .await;
+        let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
-        let commit_output = group.commit(vec![]).await.unwrap();
+        let commit_output = group
+            .commit_builder()
+            .allow_external_commit(true)
+            .build()
+            .await
+            .unwrap();
 
-        let (test_client, _) =
-            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
+        let (test_client, _) = test_client("bob").await;
 
         test_client
             .external_commit_builder(commit_output.external_commit_group_info.unwrap())
             .unwrap()
+            .allow_external_commit(true)
             .build()
             .await
             .unwrap();
@@ -2422,21 +2399,12 @@ mod tests {
         let protocol_version = TEST_PROTOCOL_VERSION;
         let cipher_suite = TEST_CIPHER_SUITE;
 
-        let mut test_group = test_group_custom(
-            protocol_version,
-            cipher_suite,
-            Default::default(),
-            None,
-            Some(CommitOptions::new()),
-        )
-        .await;
+        let mut group = test_group(protocol_version, cipher_suite).await;
+        let key_package = test_key_package_message(protocol_version, cipher_suite, "alice").await;
 
-        let test_key_package =
-            test_key_package_message(protocol_version, cipher_suite, "alice").await;
-
-        let has_path = test_group
+        let has_path = group
             .commit_builder()
-            .add_member(test_key_package.clone())
+            .add_member(key_package.clone())
             .unwrap()
             .build()
             .await
@@ -2444,20 +2412,13 @@ mod tests {
             .contains_update_path;
 
         assert!(!has_path);
+        group.clear_pending_commit();
 
-        let mut test_group = test_group_custom(
-            protocol_version,
-            cipher_suite,
-            Default::default(),
-            None,
-            Some(CommitOptions::new().with_path_required(true)),
-        )
-        .await;
-
-        let has_path = test_group
+        let has_path = group
             .commit_builder()
-            .add_member(test_key_package)
+            .add_member(key_package)
             .unwrap()
+            .path_required(true)
             .build()
             .await
             .unwrap()
@@ -2468,24 +2429,8 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_path_update_preference_override() {
-        let protocol_version = TEST_PROTOCOL_VERSION;
-        let cipher_suite = TEST_CIPHER_SUITE;
-
-        let mut test_group = test_group_custom(
-            protocol_version,
-            cipher_suite,
-            Default::default(),
-            None,
-            Some(CommitOptions::new()),
-        )
-        .await;
-
-        let has_path = test_group
-            .commit(vec![])
-            .await
-            .unwrap()
-            .contains_update_path;
-
+        let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let has_path = group.commit(vec![]).await.unwrap().contains_update_path;
         assert!(has_path);
     }
 
@@ -2582,7 +2527,7 @@ mod tests {
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_membership_tag_from_non_member() {
         let (mut alice_group, mut bob_group) =
-            test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, true).await;
+            test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
         let mut commit_output = alice_group.commit(vec![]).await.unwrap();
 
@@ -2622,20 +2567,13 @@ mod tests {
         assert!(commit.path.is_none());
     }
 
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn group_with_path_required() -> TestGroup {
-        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
-
-        alice.config.0.mls_rules.commit_options.path_required = true;
-
-        alice
-    }
-
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn old_hpke_secrets_are_removed() {
-        let mut alice = group_with_path_required().await;
+        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         alice.join("bob").await;
         alice.join("charlie").await;
+        alice.commit(vec![]).await.unwrap();
+        alice.apply_pending_commit().await.unwrap();
 
         alice
             .commit_builder()
@@ -2652,9 +2590,16 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn old_hpke_secrets_of_removed_are_removed() {
-        let mut alice = group_with_path_required().await;
+        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         alice.join("bob").await;
         let (mut charlie, _) = alice.join("charlie").await;
+        let commit = alice.commit(vec![]).await.unwrap();
+        alice.apply_pending_commit().await.unwrap();
+
+        charlie
+            .process_message(commit.commit_message)
+            .await
+            .unwrap();
 
         let commit = charlie
             .commit_builder()
@@ -2672,10 +2617,20 @@ mod tests {
     #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn old_hpke_secrets_of_updated_are_removed() {
-        let mut alice = group_with_path_required().await;
+        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let (mut bob, _) = alice.join("bob").await;
         let (mut charlie, commit) = alice.join("charlie").await;
         bob.process_message(commit).await.unwrap();
+
+        let commit = alice.commit(vec![]).await.unwrap();
+        alice.apply_pending_commit().await.unwrap();
+
+        for group in [&mut charlie, &mut bob] {
+            group
+                .process_message(commit.commit_message.clone())
+                .await
+                .unwrap();
+        }
 
         let update = bob.propose_update(vec![]).await.unwrap();
         charlie.process_message(update.clone()).await.unwrap();
@@ -2854,7 +2809,6 @@ mod tests {
             TEST_PROTOCOL_VERSION,
             TEST_CIPHER_SUITE,
             vec![17.into()],
-            None,
             None,
         )
         .await;
@@ -3309,8 +3263,7 @@ mod tests {
             .await
             .unwrap();
 
-        let (_, bob_key_pkg) =
-            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
+        let (_, bob_key_pkg) = test_client("bob").await;
 
         let commit = alice
             .commit_builder()
@@ -3341,8 +3294,7 @@ mod tests {
             .await
             .unwrap();
 
-        let (_, bob_key_pkg) =
-            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
+        let (_, bob_key_pkg) = test_client("bob").await;
 
         alice
             .commit_builder()
@@ -3659,8 +3611,7 @@ mod tests {
     async fn can_join_with_psk() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
-        let (bob, key_pkg) =
-            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
+        let (bob, key_pkg) = test_client("bob").await;
 
         let psk_id = ExternalPskId::new(vec![0]);
         let psk = PreSharedKey::from(vec![1]);
@@ -3928,65 +3879,8 @@ mod tests {
 
     #[cfg(feature = "custom_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn custom_proposal_may_enforce_path() {
-        test_custom_proposal_mls_rules(true).await;
-    }
-
-    #[cfg(feature = "custom_proposal")]
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn custom_proposal_need_not_enforce_path() {
-        test_custom_proposal_mls_rules(false).await;
-    }
-
-    #[cfg(feature = "custom_proposal")]
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn test_custom_proposal_mls_rules(path_required_for_custom: bool) {
-        let mls_rules = CustomMlsRules {
-            path_required_for_custom,
-        };
-
-        let mut alice = client_with_custom_rules(b"alice", mls_rules.clone())
-            .await
-            .create_group(Default::default(), Default::default())
-            .await
-            .unwrap();
-
-        let alice_pub_before = alice.current_user_leaf_node().unwrap().public_key.clone();
-
-        let kp = client_with_custom_rules(b"bob", mls_rules)
-            .await
-            .generate_key_package()
-            .await
-            .unwrap();
-
-        alice
-            .commit_builder()
-            .custom_proposal(CustomProposal::new(TEST_CUSTOM_PROPOSAL_TYPE, vec![]))
-            .add_member(kp)
-            .unwrap()
-            .build()
-            .await
-            .unwrap();
-
-        alice.apply_pending_commit().await.unwrap();
-
-        let alice_pub_after = &alice.current_user_leaf_node().unwrap().public_key;
-
-        if path_required_for_custom {
-            assert_ne!(alice_pub_after, &alice_pub_before);
-        } else {
-            assert_eq!(alice_pub_after, &alice_pub_before);
-        }
-    }
-
-    #[cfg(feature = "custom_proposal")]
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn custom_proposal_by_value_in_external_join_may_be_allowed() {
-        let mls_rules = CustomMlsRules {
-            path_required_for_custom: true,
-        };
-
-        let mut alice = client_with_custom_rules(b"alice", mls_rules.clone())
+        let mut alice = client_with_custom_proposal(b"alice")
             .await
             .create_group(Default::default(), Default::default())
             .await
@@ -3997,7 +3891,7 @@ mod tests {
             .await
             .unwrap();
 
-        let commit = client_with_custom_rules(b"bob", mls_rules)
+        let commit = client_with_custom_proposal(b"bob")
             .await
             .external_commit_builder(group_info)
             .unwrap()
@@ -4012,11 +3906,7 @@ mod tests {
     #[cfg(feature = "custom_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn custom_proposal_by_ref_in_external_join() {
-        let mls_rules = CustomMlsRules {
-            path_required_for_custom: true,
-        };
-
-        let mut alice = client_with_custom_rules(b"alice", mls_rules.clone())
+        let mut alice = client_with_custom_proposal(b"alice")
             .await
             .create_group(Default::default(), Default::default())
             .await
@@ -4030,7 +3920,7 @@ mod tests {
             .await
             .unwrap();
 
-        let (_, commit) = client_with_custom_rules(b"bob", mls_rules)
+        let (_, commit) = client_with_custom_proposal(b"bob")
             .await
             .external_commit_builder(group_info)
             .unwrap()
@@ -4044,59 +3934,20 @@ mod tests {
 
     #[cfg(feature = "custom_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn client_with_custom_rules(
+    async fn client_with_custom_proposal(
         name: &[u8],
-        mls_rules: CustomMlsRules,
-    ) -> crate::test_utils::TestClient<impl MlsConfig> {
+    ) -> crate::test_utils::TestClient<impl crate::client_builder::MlsConfig> {
         let (signing_identity, signer) = get_test_signing_identity(TEST_CIPHER_SUITE, name).await;
 
         ClientBuilder::new()
             .crypto_provider(TestCryptoProvider::new())
-            .identity_provider(BasicWithCustomProvider::new(BasicIdentityProvider::new()))
+            .identity_provider(BasicWithCustomProvider::new(
+                crate::identity::basic::BasicIdentityProvider::new(),
+            ))
             .signing_identity(signing_identity, signer, TEST_CIPHER_SUITE)
             .custom_proposal_type(TEST_CUSTOM_PROPOSAL_TYPE)
-            .mls_rules(mls_rules)
             .build()
             .into()
-    }
-
-    #[derive(Debug, Clone)]
-    struct CustomMlsRules {
-        path_required_for_custom: bool,
-    }
-
-    #[cfg(feature = "custom_proposal")]
-    impl ProposalBundle {
-        fn has_test_custom_proposal(&self) -> bool {
-            self.custom_proposal_types()
-                .any(|t| t == TEST_CUSTOM_PROPOSAL_TYPE)
-        }
-    }
-
-    #[cfg(feature = "custom_proposal")]
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    #[cfg_attr(mls_build_async, maybe_async::must_be_async)]
-    impl crate::MlsRules for CustomMlsRules {
-        type Error = MlsError;
-
-        fn commit_options(
-            &self,
-            _: &Roster,
-            _: &GroupContext,
-            proposals: &ProposalBundle,
-        ) -> Result<CommitOptions, MlsError> {
-            Ok(CommitOptions::default().with_path_required(
-                !proposals.has_test_custom_proposal() || self.path_required_for_custom,
-            ))
-        }
-
-        fn encryption_options(
-            &self,
-            _: &Roster,
-            _: &GroupContext,
-        ) -> Result<crate::mls_rules::EncryptionOptions, MlsError> {
-            Ok(Default::default())
-        }
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]

@@ -818,6 +818,11 @@ pub(crate) mod test_utils {
     pub const TEST_CUSTOM_PROPOSAL_TYPE: ProposalType = ProposalType::new(65001);
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn test_client(identity: &str) -> (TestClient<TestClientConfig>, MlsMessage) {
+        test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, identity).await
+    }
+
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn test_client_with_key_pkg(
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
@@ -1144,8 +1149,7 @@ mod tests {
             .await
             .group;
 
-        let (bob, kp) =
-            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
+        let (bob, kp) = test_client("bob").await;
 
         let commit = alice
             .commit_builder()
@@ -1194,9 +1198,7 @@ mod tests {
             .await
             .group;
 
-        let bob = test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob")
-            .await
-            .0;
+        let bob = test_client("bob").await.0;
 
         let group_info = alice.group_info_message(false).await.unwrap();
         let alice_signer = alice.current_member_signing_identity().unwrap().clone();

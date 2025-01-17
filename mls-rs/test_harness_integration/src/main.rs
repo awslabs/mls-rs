@@ -23,7 +23,7 @@ use mls_rs::{
         basic::{BasicCredential, BasicIdentityProvider},
         Credential, SigningIdentity,
     },
-    mls_rules::{CommitOptions, EncryptionOptions, ProposalBundle},
+    mls_rules::{CommitOptions, EncryptionOptions},
     psk::ExternalPskId,
     storage_provider::in_memory::{InMemoryKeyPackageStorage, InMemoryPreSharedKeyStorage},
     CipherSuite, CipherSuiteProvider, Client, CryptoProvider, Extension, ExtensionList, Group,
@@ -158,15 +158,6 @@ impl TestMlsRules {
 
 impl MlsRules for TestMlsRules {
     type Error = Infallible;
-
-    fn commit_options(
-        &self,
-        _: &Roster,
-        _: &GroupContext,
-        _: &ProposalBundle,
-    ) -> Result<CommitOptions, Self::Error> {
-        Ok(*self.commit_options.lock().unwrap())
-    }
 
     fn encryption_options(
         &self,

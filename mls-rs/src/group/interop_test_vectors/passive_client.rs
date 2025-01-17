@@ -22,7 +22,6 @@ use crate::{
     crypto::test_utils::TestCryptoProvider,
     group::{ClientConfig, CommitBuilder, ExportedTree},
     identity::basic::BasicIdentityProvider,
-    mls_rules::CommitOptions,
     test_utils::{
         all_process_message, generate_basic_client, get_test_basic_credential, get_test_groups,
         make_test_ext_psk, TestClient, TEST_EXT_PSK_ID,
@@ -259,6 +258,8 @@ async fn invite_passive_client<P: CipherSuiteProvider, C: MlsConfig>(
     groups: &mut [Group<C>],
     with_psk: bool,
     cs: &P,
+    path_required: bool,
+    ratchet_tree_ext: bool,
 ) -> TestCase {
     let crypto_provider = TestCryptoProvider::new();
 
@@ -285,7 +286,9 @@ async fn invite_passive_client<P: CipherSuiteProvider, C: MlsConfig>(
     let mut commit_builder = groups[0]
         .commit_builder()
         .add_member(key_pckg.key_package_message.clone())
-        .unwrap();
+        .unwrap()
+        .path_required(path_required)
+        .ratchet_tree_extension(ratchet_tree_ext);
 
     let external_psk = TestExternalPsk {
         psk_id: TEST_EXT_PSK_ID.to_vec(),
@@ -331,9 +334,9 @@ pub async fn generate_passive_client_proposal_tests() -> Vec<TestCase> {
         };
 
         let mut groups =
-            get_test_groups(VERSION, cs.cipher_suite(), 7, None, false, &crypto_provider).await;
+            get_test_groups(VERSION, cs.cipher_suite(), 7, false, &crypto_provider).await;
 
-        let mut partial_test_case = invite_passive_client(&mut groups, true, &cs).await;
+        let mut partial_test_case = invite_passive_client(&mut groups, true, &cs, true, true).await;
 
         // Create a new epoch s.t. the passive member can process resumption PSK from the current one
         let commit = groups[0].commit(vec![]).await.unwrap();
@@ -522,7 +525,7 @@ where
 #[cfg_attr(coverage_nightly, coverage(off))]
 async fn create_key_package(cs: CipherSuite) -> MlsMessage {
     let client =
-        generate_basic_client(cs, VERSION, 0xbeef, None, false, &TestCryptoProvider::new()).await;
+        generate_basic_client(cs, VERSION, 0xbeef, false, &TestCryptoProvider::new()).await;
 
     client.generate_key_package().await.unwrap()
 }
@@ -538,30 +541,21 @@ pub async fn generate_passive_client_welcome_tests() -> Vec<TestCase> {
             continue;
         };
 
-        for with_tree_in_extension in [true, false] {
+        for with_tree_in_ext in [true, false] {
             for (with_psk, with_path) in [false, true].into_iter().cartesian_product([true, false])
             {
-                let options = CommitOptions::new()
-                    .with_path_required(with_path)
-                    .with_ratchet_tree_extension(with_tree_in_extension);
-
-                let mut groups = get_test_groups(
-                    VERSION,
-                    cs.cipher_suite(),
-                    16,
-                    Some(options),
-                    false,
-                    &crypto_provider,
-                )
-                .await;
+                let mut groups =
+                    get_test_groups(VERSION, cs.cipher_suite(), 16, false, &crypto_provider).await;
 
                 // Remove a member s.t. the passive member joins in their place
                 let proposal = groups[0].propose_remove(7, vec![]).await.unwrap();
                 all_process_message(&mut groups, &proposal, 0, false).await;
 
-                let mut test_case = invite_passive_client(&mut groups, with_psk, &cs).await;
+                let mut test_case =
+                    invite_passive_client(&mut groups, with_psk, &cs, with_path, with_tree_in_ext)
+                        .await;
 
-                if !with_tree_in_extension {
+                if !with_tree_in_ext {
                     let tree = groups[0].export_tree().to_bytes().unwrap();
                     test_case.ratchet_tree = Some(TestRatchetTree(tree));
                 }
@@ -585,7 +579,7 @@ pub async fn generate_passive_client_random_tests() -> Vec<TestCase> {
             continue;
         };
 
-        let creator = generate_basic_client(cs, VERSION, 0, None, false, &crypto).await;
+        let creator = generate_basic_client(cs, VERSION, 0, false, &crypto).await;
 
         let creator_group = creator
             .create_group(Default::default(), Default::default())
@@ -597,12 +591,12 @@ pub async fn generate_passive_client_random_tests() -> Vec<TestCase> {
         let mut new_clients = Vec::new();
 
         for i in 0..10 {
-            new_clients.push(generate_basic_client(cs, VERSION, i + 1, None, false, &crypto).await)
+            new_clients.push(generate_basic_client(cs, VERSION, i + 1, false, &crypto).await)
         }
 
         add_random_members(0, &mut groups, new_clients, None).await;
 
-        let mut test_case = invite_passive_client(&mut groups, false, &csp).await;
+        let mut test_case = invite_passive_client(&mut groups, false, &csp, true, true).await;
 
         let passive_client_index = 11;
 
@@ -634,8 +628,7 @@ pub async fn generate_passive_client_random_tests() -> Vec<TestCase> {
 
             for i in 0..num_added {
                 new_clients.push(
-                    generate_basic_client(cs, VERSION, next_free_idx + i, None, false, &crypto)
-                        .await,
+                    generate_basic_client(cs, VERSION, next_free_idx + i, false, &crypto).await,
                 );
             }
 

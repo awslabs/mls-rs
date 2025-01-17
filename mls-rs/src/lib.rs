@@ -168,9 +168,7 @@ pub use mls_rs_core::{
 /// Dependencies of [`MlsRules`].
 pub mod mls_rules {
     pub use crate::group::{
-        mls_rules::{
-            CommitDirection, CommitOptions, CommitSource, DefaultMlsRules, EncryptionOptions,
-        },
+        mls_rules::{CommitDirection, CommitSource, DefaultMlsRules, EncryptionOptions},
         proposal_filter::{ProposalBundle, ProposalInfo, ProposalSource},
     };
 

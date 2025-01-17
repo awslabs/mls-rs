@@ -372,7 +372,6 @@ mod tests {
             TEST_PROTOCOL_VERSION,
             TEST_CIPHER_SUITE,
             3,
-            None,
             false,
             &TestCryptoProvider::new(),
         )

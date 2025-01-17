@@ -9,7 +9,6 @@ use mls_rs::error::MlsError;
 use mls_rs::group::proposal::Proposal;
 use mls_rs::group::ReceivedMessage;
 use mls_rs::identity::SigningIdentity;
-use mls_rs::mls_rules::CommitOptions;
 use mls_rs::CryptoProvider;
 use mls_rs::ExtensionList;
 use mls_rs::MlsMessage;
@@ -43,7 +42,6 @@ async fn generate_client(
         cipher_suite,
         protocol_version,
         id,
-        None,
         encrypt_controls,
         &TestCryptoProvider::default(),
     )
@@ -61,7 +59,6 @@ pub async fn get_test_groups(
         version,
         cipher_suite,
         num_participants,
-        None,
         encrypt_controls,
         &TestCryptoProvider::default(),
     )
@@ -841,18 +838,18 @@ async fn external_info_from_commit_allows_to_join() {
     let cs = CipherSuite::P256_AES128;
     let version = ProtocolVersion::MLS_10;
 
-    let mut alice = mls_rs::test_utils::get_test_groups(
-        version,
-        cs,
-        1,
-        Some(CommitOptions::new().with_allow_external_commit(true)),
-        false,
-        &TestCryptoProvider::default(),
-    )
-    .await
-    .remove(0);
+    let mut alice =
+        mls_rs::test_utils::get_test_groups(version, cs, 1, false, &TestCryptoProvider::default())
+            .await
+            .remove(0);
 
-    let commit = alice.commit(vec![]).await.unwrap();
+    let commit = alice
+        .commit_builder()
+        .allow_external_commit(true)
+        .build()
+        .await
+        .unwrap();
+
     alice.apply_pending_commit().await.unwrap();
     let bob = generate_client(cs, version, 0xdead, false).await;
 

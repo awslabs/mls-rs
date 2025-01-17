@@ -20,7 +20,6 @@ use crate::{
     crypto::test_utils::test_cipher_suite_provider,
     extension::ExtensionType,
     identity::test_utils::get_test_signing_identity,
-    mls_rules::{CommitOptions, DefaultMlsRules},
 };
 
 use crate::extension::RequiredCapabilitiesExt;
@@ -226,14 +225,11 @@ pub(crate) async fn test_group_custom(
     cipher_suite: CipherSuite,
     extension_types: Vec<ExtensionType>,
     leaf_extensions: Option<ExtensionList>,
-    commit_options: Option<CommitOptions>,
 ) -> TestGroup {
     let leaf_extensions = leaf_extensions.unwrap_or_default();
-    let commit_options = commit_options.unwrap_or_default();
 
     let (signing_identity, secret_key) = get_test_signing_identity(cipher_suite, b"member").await;
     let group = TestClientBuilder::new_for_test()
-        .mls_rules(DefaultMlsRules::default().with_commit_options(commit_options))
         .extension_types(extension_types)
         .protocol_versions(ProtocolVersion::all())
         .used_protocol_version(protocol_version)
@@ -251,14 +247,7 @@ pub(crate) async fn test_group(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
 ) -> TestGroup {
-    test_group_custom(
-        protocol_version,
-        cipher_suite,
-        Default::default(),
-        None,
-        None,
-    )
-    .await
+    test_group_custom(protocol_version, cipher_suite, Default::default(), None).await
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]

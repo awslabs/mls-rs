@@ -216,7 +216,7 @@ mod tests {
     use super::*;
     use crate::{
         client::{
-            test_utils::{test_client_with_key_pkg, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
+            test_utils::{test_client, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
             MlsError,
         },
         client_builder::test_utils::TestClientConfig,
@@ -224,7 +224,7 @@ mod tests {
         group::{
             membership_tag::MembershipTag,
             message_signature::{AuthenticatedContent, MessageSignature},
-            test_utils::{test_group_custom, TestGroup},
+            test_utils::TestGroup,
             Group, PublicMessage,
         },
     };
@@ -277,17 +277,8 @@ mod tests {
     impl TestEnv {
         #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
         async fn new() -> Self {
-            let mut alice = test_group_custom(
-                TEST_PROTOCOL_VERSION,
-                TEST_CIPHER_SUITE,
-                Default::default(),
-                None,
-                None,
-            )
-            .await;
-
-            let (bob_client, bob_key_pkg) =
-                test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
+            let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+            let (bob_client, bob_key_pkg) = test_client("bob").await;
 
             let commit_output = alice
                 .commit_builder()

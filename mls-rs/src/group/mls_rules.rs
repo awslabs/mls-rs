@@ -4,7 +4,7 @@
 
 use crate::{
     error::MlsError,
-    group::{proposal_filter::ProposalBundle, Roster, Sender},
+    group::{Roster, Sender},
     tree_kem::{leaf_node::LeafNode, TreeKemPublic},
 };
 
@@ -54,61 +54,6 @@ impl CommitSource {
     }
 }
 
-/// Options controlling commit generation
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[non_exhaustive]
-pub struct CommitOptions {
-    pub path_required: bool,
-    pub ratchet_tree_extension: bool,
-    pub single_welcome_message: bool,
-    pub allow_external_commit: bool,
-}
-
-impl Default for CommitOptions {
-    fn default() -> Self {
-        CommitOptions {
-            path_required: false,
-            ratchet_tree_extension: true,
-            single_welcome_message: true,
-            allow_external_commit: false,
-        }
-    }
-}
-
-impl CommitOptions {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn with_path_required(self, path_required: bool) -> Self {
-        Self {
-            path_required,
-            ..self
-        }
-    }
-
-    pub fn with_ratchet_tree_extension(self, ratchet_tree_extension: bool) -> Self {
-        Self {
-            ratchet_tree_extension,
-            ..self
-        }
-    }
-
-    pub fn with_single_welcome_message(self, single_welcome_message: bool) -> Self {
-        Self {
-            single_welcome_message,
-            ..self
-        }
-    }
-
-    pub fn with_allow_external_commit(self, allow_external_commit: bool) -> Self {
-        Self {
-            allow_external_commit,
-            ..self
-        }
-    }
-}
-
 /// Options controlling encryption of control and application messages
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]
@@ -142,19 +87,6 @@ impl EncryptionOptions {
 pub trait MlsRules: Send + Sync {
     type Error: IntoAnyError;
 
-    /// This is called when preparing a commit to determine various options: whether to enforce an update
-    /// path in case it is not mandated by MLS, whether to include the ratchet tree in the welcome
-    /// message (if the commit adds members) and whether to generate a single welcome message, or one
-    /// welcome message for each added member.
-    ///
-    /// The `new_roster` and `new_extension_list` describe the group state after the commit.
-    fn commit_options(
-        &self,
-        new_roster: &Roster,
-        new_context: &GroupContext,
-        proposals: &ProposalBundle,
-    ) -> Result<CommitOptions, Self::Error>;
-
     /// This is called when sending any packet. For proposals and commits, this determines whether to
     /// encrypt them. For any encrypted packet, this determines the padding mode used.
     ///
@@ -174,15 +106,6 @@ macro_rules! delegate_mls_rules {
         impl<T: MlsRules + ?Sized> MlsRules for $implementer {
             type Error = T::Error;
 
-            fn commit_options(
-                &self,
-                roster: &Roster,
-                context: &GroupContext,
-                proposals: &ProposalBundle,
-            ) -> Result<CommitOptions, Self::Error> {
-                (**self).commit_options(roster, context, proposals)
-            }
-
             fn encryption_options(
                 &self,
                 roster: &Roster,
@@ -201,7 +124,6 @@ delegate_mls_rules!(&T);
 #[non_exhaustive]
 /// Default MLS rules with pass-through proposal filter and customizable options.
 pub struct DefaultMlsRules {
-    pub commit_options: CommitOptions,
     pub encryption_options: EncryptionOptions,
 }
 
@@ -212,20 +134,9 @@ impl DefaultMlsRules {
         Default::default()
     }
 
-    /// Set commit options.
-    pub fn with_commit_options(self, commit_options: CommitOptions) -> Self {
-        Self {
-            commit_options,
-            encryption_options: self.encryption_options,
-        }
-    }
-
     /// Set encryption options.
     pub fn with_encryption_options(self, encryption_options: EncryptionOptions) -> Self {
-        Self {
-            commit_options: self.commit_options,
-            encryption_options,
-        }
+        Self { encryption_options }
     }
 }
 
@@ -233,15 +144,6 @@ impl DefaultMlsRules {
 #[cfg_attr(mls_build_async, maybe_async::must_be_async)]
 impl MlsRules for DefaultMlsRules {
     type Error = Infallible;
-
-    fn commit_options(
-        &self,
-        _: &Roster,
-        _: &GroupContext,
-        _: &ProposalBundle,
-    ) -> Result<CommitOptions, Self::Error> {
-        Ok(self.commit_options)
-    }
 
     fn encryption_options(
         &self,

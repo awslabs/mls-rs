@@ -62,7 +62,6 @@ async fn generate_test_cases(cs: CipherSuite) -> Vec<MlsMessage> {
             ProtocolVersion::MLS_10,
             cs,
             size,
-            None,
             false,
             &MlsCryptoProvider::new(),
         )
@@ -110,7 +109,6 @@ pub async fn join_group(cs: CipherSuite, group_info: MlsMessage) -> GroupStates<
         cs,
         ProtocolVersion::MLS_10,
         99999999999,
-        None,
         false,
         &MlsCryptoProvider::new(),
     );
@@ -121,7 +119,6 @@ pub async fn join_group(cs: CipherSuite, group_info: MlsMessage) -> GroupStates<
         cs,
         ProtocolVersion::MLS_10,
         99999999998,
-        None,
         false,
         &MlsCryptoProvider::new(),
     );
