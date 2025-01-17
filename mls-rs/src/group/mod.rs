@@ -1177,7 +1177,7 @@ where
                 let message_description = self.apply_pending_commit().await?;
 
                 return Ok(ReceivedMessageOrProcessor::ReceivedMessage(
-                    ReceivedMessage::Commit(message_description),
+                    ReceivedMessage::Commit(message_description).into(),
                 ));
             }
         }
@@ -1192,7 +1192,7 @@ where
 
             if let Some(cached) = cached_own_proposal {
                 return Ok(ReceivedMessageOrProcessor::ReceivedMessage(
-                    ReceivedMessage::Proposal(cached),
+                    ReceivedMessage::Proposal(cached).into(),
                 ));
             }
         }
@@ -1218,7 +1218,7 @@ where
             ReceivedMessageOrProcessor::CommitProcessor(p) => {
                 p.process().await.map(ReceivedMessage::Commit)
             }
-            ReceivedMessageOrProcessor::ReceivedMessage(m) => Ok(m),
+            ReceivedMessageOrProcessor::ReceivedMessage(m) => Ok(*m),
         }
     }
 

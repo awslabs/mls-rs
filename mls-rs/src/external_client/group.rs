@@ -103,9 +103,9 @@ pub enum ExternalReceivedMessage {
 }
 
 pub enum ExternalReceivedMessageOrProcessor<'a, C: ExternalClientConfig> {
-    ReceivedMessage(ExternalReceivedMessage),
+    ReceivedMessage(Box<ExternalReceivedMessage>),
     /// A new commit can be processed to create a new group state.
-    CommitProcessor(ExternalCommitProcessor<'a, C>),
+    CommitProcessor(Box<ExternalCommitProcessor<'a, C>>),
 }
 
 /// A handle to an observed group that can track plaintext control messages
@@ -223,7 +223,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             ExternalReceivedMessageOrProcessor::CommitProcessor(p) => {
                 p.process().await.map(ExternalReceivedMessage::Commit)
             }
-            ExternalReceivedMessageOrProcessor::ReceivedMessage(m) => Ok(m),
+            ExternalReceivedMessageOrProcessor::ReceivedMessage(m) => Ok(*m),
         }
     }
 
@@ -638,7 +638,7 @@ where
     ) -> Result<EventOrContent<Self::OutputType>, MlsError> {
         Ok(EventOrContent::Event(
             ExternalReceivedMessageOrProcessor::ReceivedMessage(
-                ExternalReceivedMessage::Ciphertext(cipher_text.content_type),
+                ExternalReceivedMessage::Ciphertext(cipher_text.content_type).into(),
             ),
         ))
     }
@@ -778,14 +778,14 @@ where
 impl<'a, C: ExternalClientConfig> ExternalReceivedMessageOrProcessor<'a, C> {
     pub fn into_received_message(self) -> Option<ExternalReceivedMessage> {
         match self {
-            ExternalReceivedMessageOrProcessor::ReceivedMessage(m) => Some(m),
+            ExternalReceivedMessageOrProcessor::ReceivedMessage(m) => Some(*m),
             _ => None,
         }
     }
 
     pub fn into_processor(self) -> Option<ExternalCommitProcessor<'a, C>> {
         match self {
-            ExternalReceivedMessageOrProcessor::CommitProcessor(c) => Some(c),
+            ExternalReceivedMessageOrProcessor::CommitProcessor(c) => Some(*c),
             _ => None,
         }
     }
@@ -805,15 +805,15 @@ impl<'a, C: ExternalClientConfig> From<InternalCommitProcessor<'a, ExternalGroup
     for ExternalReceivedMessageOrProcessor<'a, C>
 {
     fn from(value: InternalCommitProcessor<'a, ExternalGroup<C>>) -> Self {
-        ExternalReceivedMessageOrProcessor::CommitProcessor(ExternalCommitProcessor(value))
+        ExternalReceivedMessageOrProcessor::CommitProcessor(ExternalCommitProcessor(value).into())
     }
 }
 
-impl<'a, C: ExternalClientConfig, T: Into<ExternalReceivedMessage>> From<T>
-    for ExternalReceivedMessageOrProcessor<'a, C>
+impl<C: ExternalClientConfig, T: Into<ExternalReceivedMessage>> From<T>
+    for ExternalReceivedMessageOrProcessor<'_, C>
 {
     fn from(value: T) -> Self {
-        Self::ReceivedMessage(value.into())
+        Self::ReceivedMessage(Box::new(value.into()))
     }
 }
 
@@ -851,7 +851,7 @@ pub struct ExternalCommitProcessor<'a, C: ExternalClientConfig>(
     InternalCommitProcessor<'a, ExternalGroup<C>>,
 );
 
-impl<'a, C: ExternalClientConfig> Debug for ExternalReceivedMessageOrProcessor<'a, C> {
+impl<C: ExternalClientConfig> Debug for ExternalReceivedMessageOrProcessor<'_, C> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::ReceivedMessage(m) => f.write_str(&format!("ExternalReceivedMessage({m:?})")),

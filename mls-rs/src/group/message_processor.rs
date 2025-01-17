@@ -216,12 +216,12 @@ pub enum ReceivedMessage {
 
 pub enum ReceivedMessageOrProcessor<'a, C: ClientConfig> {
     /// An application message was decrypted.
-    ReceivedMessage(ReceivedMessage),
+    ReceivedMessage(Box<ReceivedMessage>),
     /// A new commit can be processed to create a new group state.
-    CommitProcessor(CommitProcessor<'a, C>),
+    CommitProcessor(Box<CommitProcessor<'a, C>>),
 }
 
-impl<'a, C: ClientConfig> Debug for ReceivedMessageOrProcessor<'a, C> {
+impl<C: ClientConfig> Debug for ReceivedMessageOrProcessor<'_, C> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::ReceivedMessage(m) => f.write_str(&alloc::format!("ReceivedMessage({m:?})")),
@@ -233,33 +233,31 @@ impl<'a, C: ClientConfig> Debug for ReceivedMessageOrProcessor<'a, C> {
 impl<'a, C: ClientConfig> ReceivedMessageOrProcessor<'a, C> {
     pub fn into_received_message(self) -> Option<ReceivedMessage> {
         match self {
-            ReceivedMessageOrProcessor::ReceivedMessage(m) => Some(m),
+            ReceivedMessageOrProcessor::ReceivedMessage(m) => Some(*m),
             _ => None,
         }
     }
 
     pub fn into_processor(self) -> Option<CommitProcessor<'a, C>> {
         match self {
-            ReceivedMessageOrProcessor::CommitProcessor(c) => Some(c),
+            ReceivedMessageOrProcessor::CommitProcessor(c) => Some(*c),
             _ => None,
         }
     }
 }
 
-impl<'a, C: ClientConfig, T: Into<ReceivedMessage>> From<T> for ReceivedMessageOrProcessor<'a, C> {
+impl<C: ClientConfig, T: Into<ReceivedMessage>> From<T> for ReceivedMessageOrProcessor<'_, C> {
     fn from(value: T) -> Self {
-        Self::ReceivedMessage(value.into())
+        Self::ReceivedMessage(Box::new(value.into()))
     }
 }
 
-impl<'a, C: ClientConfig> TryFrom<ApplicationMessageDescription>
-    for ReceivedMessageOrProcessor<'a, C>
-{
+impl<C: ClientConfig> TryFrom<ApplicationMessageDescription> for ReceivedMessageOrProcessor<'_, C> {
     type Error = MlsError;
 
     fn try_from(value: ApplicationMessageDescription) -> Result<Self, Self::Error> {
         Ok(ReceivedMessageOrProcessor::ReceivedMessage(
-            ReceivedMessage::ApplicationMessage(value),
+            ReceivedMessage::ApplicationMessage(value).into(),
         ))
     }
 }
@@ -268,7 +266,7 @@ impl<'a, C: ClientConfig> From<InternalCommitProcessor<'a, Group<C>>>
     for ReceivedMessageOrProcessor<'a, C>
 {
     fn from(value: InternalCommitProcessor<'a, Group<C>>) -> Self {
-        ReceivedMessageOrProcessor::CommitProcessor(CommitProcessor(value))
+        ReceivedMessageOrProcessor::CommitProcessor(CommitProcessor(value).into())
     }
 }
 

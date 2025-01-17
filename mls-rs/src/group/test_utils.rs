@@ -522,6 +522,6 @@ impl<'a> From<InternalCommitProcessor<'a, GroupWithoutKeySchedule>>
             psks: value.psks,
         };
 
-        ReceivedMessageOrProcessor::CommitProcessor(CommitProcessor(value))
+        ReceivedMessageOrProcessor::CommitProcessor(CommitProcessor(value).into())
     }
 }
