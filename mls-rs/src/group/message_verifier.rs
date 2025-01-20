@@ -224,6 +224,7 @@ mod tests {
         group::{
             membership_tag::MembershipTag,
             message_signature::{AuthenticatedContent, MessageSignature},
+            test_utils::test_group,
             test_utils::TestGroup,
             Group, PublicMessage,
         },
@@ -250,10 +251,7 @@ mod tests {
     use alloc::boxed::Box;
 
     #[cfg(feature = "by_ref_proposal")]
-    use crate::group::{
-        test_utils::{test_group, test_member},
-        Sender,
-    };
+    use crate::group::{test_utils::test_member, Sender};
 
     #[cfg(feature = "by_ref_proposal")]
     use crate::identity::test_utils::get_test_signing_identity;

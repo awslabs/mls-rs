@@ -119,6 +119,8 @@ struct ClientDetails {
     group: Option<Group<TestClientConfig>>,
     signing_identity: SigningIdentity,
     signer: SignatureSecretKey,
+    // TODO follow up PR removes this field
+    #[allow(unused)]
     mls_rules: TestMlsRules,
 }
 
