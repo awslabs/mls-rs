@@ -272,10 +272,11 @@ mod test {
             CipherSuiteProvider,
         },
         group::{
-            framing::{ApplicationData, Content, Sender, WireFormat},
+            framing::{ApplicationData, Content, Sender},
             message_signature::AuthenticatedContent,
             padding::PaddingMode,
-            test_utils::{random_bytes, test_group, TestGroup},
+            test_utils::{random_bytes, test_group_custom, TestGroup},
+            EncryptionMode,
         },
         tree_kem::node::LeafIndex,
     };
@@ -301,7 +302,13 @@ mod test {
     async fn test_data(cipher_suite: CipherSuite) -> TestData {
         let provider = test_cipher_suite_provider(cipher_suite);
 
-        let group = test_group(TEST_PROTOCOL_VERSION, cipher_suite).await;
+        let group = test_group_custom(
+            TEST_PROTOCOL_VERSION,
+            cipher_suite,
+            Default::default(),
+            None,
+        )
+        .await;
 
         let content = AuthenticatedContent::new_signed(
             &provider,
@@ -309,7 +316,7 @@ mod test {
             Sender::Member(0),
             Content::Application(ApplicationData::from(b"test".to_vec())),
             &group.signer,
-            WireFormat::PrivateMessage,
+            EncryptionMode::PrivateMessage(Default::default()),
             vec![],
         )
         .await

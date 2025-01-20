@@ -1278,7 +1278,7 @@ mod tests {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         let kem_output = vec![0; cipher_suite_provider.kdf_extract_size()];
-        let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let group = test_group().await;
         let public_tree = &group.state.public_tree;
 
         let res = cache
@@ -1317,7 +1317,7 @@ mod tests {
             Sender::Member(test_sender()),
         );
 
-        let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let group = test_group().await;
         let public_tree = &group.state.public_tree;
 
         let res = cache
@@ -1341,7 +1341,7 @@ mod tests {
         let cache = make_proposal_cache();
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let kem_output = vec![0; cipher_suite_provider.kdf_extract_size()];
-        let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let group = test_group().await;
         let public_tree = &group.state.public_tree;
 
         let res = cache
@@ -1376,7 +1376,7 @@ mod tests {
         let cache = make_proposal_cache();
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let kem_output = vec![0; cipher_suite_provider.kdf_extract_size()];
-        let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let group = test_group().await;
         let public_tree = &group.state.public_tree;
 
         cache
@@ -1419,7 +1419,7 @@ mod tests {
         let cache = make_proposal_cache();
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let kem_output = vec![0; cipher_suite_provider.kdf_extract_size()];
-        let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let group = test_group().await;
         let group_extensions = group.context().extensions.clone();
         let mut public_tree = group.group.state.public_tree;
 
@@ -1472,7 +1472,7 @@ mod tests {
         let cache = make_proposal_cache();
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let kem_output = vec![0; cipher_suite_provider.kdf_extract_size()];
-        let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let group = test_group().await;
         let group_extensions = group.context().extensions.clone();
         let mut public_tree = group.group.state.public_tree;
 
@@ -1520,7 +1520,7 @@ mod tests {
         let cache = make_proposal_cache();
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let kem_output = vec![0; cipher_suite_provider.kdf_extract_size()];
-        let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let group = test_group().await;
         let group_extensions = group.context().extensions.clone();
         let mut public_tree = group.group.state.public_tree;
 
@@ -1614,7 +1614,7 @@ mod tests {
     async fn new_member_commit_must_contain_an_external_init_proposal() {
         let cache = make_proposal_cache();
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
-        let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let group = test_group().await;
         let public_tree = &group.state.public_tree;
 
         let res = cache

@@ -18,6 +18,7 @@ use crate::cipher_suite::CipherSuite;
 use crate::client::MlsError;
 use crate::client_config::ClientConfig;
 use crate::crypto::{HpkeCiphertext, HpkeSecretKey, SignatureSecretKey};
+use crate::extension::ExternalPubExt;
 use crate::extension::RatchetTreeExt;
 use crate::identity::SigningIdentity;
 use crate::key_package::{KeyPackage, KeyPackageRef};
@@ -39,11 +40,10 @@ pub use state::GroupState;
 #[cfg(feature = "by_ref_proposal")]
 use crate::crypto::HpkePublicKey;
 
-use crate::extension::ExternalPubExt;
+#[cfg(feature = "private_message")]
+use padding::PaddingMode;
 
 use self::message_hash::MessageHash;
-#[cfg(feature = "private_message")]
-use self::mls_rules::{EncryptionOptions, MlsRules};
 
 #[cfg(feature = "psk")]
 pub use self::resumption::ReinitClient;
@@ -73,6 +73,8 @@ pub(crate) use self::commit::test_utils::CommitModifiers;
 
 #[cfg(all(test, feature = "private_message"))]
 pub use self::framing::PrivateMessage;
+
+pub use self::framing::EncryptionMode;
 
 use self::proposal_filter::ProposalInfo;
 
@@ -497,13 +499,17 @@ where
         self.group_state().member_at_index(index)
     }
 
+    // TODO make builder
     #[cfg(feature = "by_ref_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn proposal_message(
         &mut self,
         proposal: Proposal,
         authenticated_data: Vec<u8>,
+        //encryption_mode: EncryptionMode,
     ) -> Result<MlsMessage, MlsError> {
+        // TODO
+        let encryption_mode = EncryptionMode::PublicMessage;
         let sender = Sender::Member(*self.private_tree.self_index);
 
         let auth_content = AuthenticatedContent::new_signed(
@@ -512,10 +518,7 @@ where
             sender,
             Content::Proposal(alloc::boxed::Box::new(proposal.clone())),
             &self.signer,
-            #[cfg(feature = "private_message")]
-            self.encryption_options()?.control_wire_format(sender),
-            #[cfg(not(feature = "private_message"))]
-            WireFormat::PublicMessage,
+            encryption_mode,
             authenticated_data,
         )
         .await?;
@@ -526,7 +529,7 @@ where
             ProposalMessageDescription::new(&self.cipher_suite_provider, &auth_content, proposal)
                 .await?;
 
-        let message = self.format_for_wire(auth_content).await?;
+        let message = self.format_for_wire(auth_content, encryption_mode).await?;
 
         self.state
             .proposals
@@ -936,12 +939,16 @@ where
     pub(crate) async fn format_for_wire(
         &mut self,
         content: AuthenticatedContent,
+        #[cfg(feature = "private_message")] mode: EncryptionMode,
     ) -> Result<MlsMessage, MlsError> {
         #[cfg(feature = "private_message")]
-        let payload = if content.wire_format == WireFormat::PrivateMessage {
-            MlsMessagePayload::Cipher(self.create_ciphertext(content).await?)
-        } else {
-            MlsMessagePayload::Plain(self.create_plaintext(content).await?)
+        let payload = match mode {
+            EncryptionMode::PrivateMessage(padding) => {
+                MlsMessagePayload::Cipher(self.create_ciphertext(content, padding).await?)
+            }
+            EncryptionMode::PublicMessage => {
+                MlsMessagePayload::Plain(self.create_plaintext(content).await?)
+            }
         };
         #[cfg(not(feature = "private_message"))]
         let payload = MlsMessagePayload::Plain(self.create_plaintext(content).await?);
@@ -977,9 +984,8 @@ where
     async fn create_ciphertext(
         &mut self,
         auth_content: AuthenticatedContent,
+        padding_mode: PaddingMode,
     ) -> Result<PrivateMessage, MlsError> {
-        let padding_mode = self.encryption_options()?.padding_mode;
-
         let mut encryptor = CiphertextProcessor::new(self, self.cipher_suite_provider.clone());
 
         encryptor.seal(auth_content, padding_mode).await
@@ -996,6 +1002,23 @@ where
         message: &[u8],
         authenticated_data: Vec<u8>,
     ) -> Result<MlsMessage, MlsError> {
+        self.encrypt_application_message_with_padding(
+            message,
+            authenticated_data,
+            Default::default(),
+        )
+        .await
+    }
+
+    // TODO make a builder
+    #[cfg(feature = "private_message")]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn encrypt_application_message_with_padding(
+        &mut self,
+        message: &[u8],
+        authenticated_data: Vec<u8>,
+        padding: PaddingMode,
+    ) -> Result<MlsMessage, MlsError> {
         // A group member that has observed one or more proposals within an epoch MUST send a Commit message
         // before sending application data
         #[cfg(feature = "by_ref_proposal")]
@@ -1003,18 +1026,20 @@ where
             return Err(MlsError::CommitRequired);
         }
 
+        let mode = EncryptionMode::PrivateMessage(padding);
+
         let auth_content = AuthenticatedContent::new_signed(
             &self.cipher_suite_provider,
             self.context(),
             Sender::Member(*self.private_tree.self_index),
             Content::Application(message.to_vec().into()),
             &self.signer,
-            WireFormat::PrivateMessage,
+            mode,
             authenticated_data,
         )
         .await?;
 
-        self.format_for_wire(auth_content).await
+        self.format_for_wire(auth_content, mode).await
     }
 
     #[cfg(feature = "private_message")]
@@ -1383,14 +1408,6 @@ where
     ///
     pub fn equal_group_state(a: &Group<C>, b: &Group<C>) -> bool {
         a.state == b.state && a.key_schedule == b.key_schedule && a.epoch_secrets == b.epoch_secrets
-    }
-
-    #[cfg(feature = "private_message")]
-    pub(crate) fn encryption_options(&self) -> Result<EncryptionOptions, MlsError> {
-        self.config
-            .mls_rules()
-            .encryption_options(&self.roster(), self.group_context())
-            .map_err(|e| MlsError::MlsRulesError(e.into_any_error()))
     }
 
     #[cfg(feature = "secret_tree_access")]
@@ -1800,9 +1817,6 @@ mod tests {
         identity::test_utils::BasicWithCustomProvider,
     };
 
-    #[cfg(any(feature = "private_message", feature = "custom_proposal"))]
-    use crate::group::mls_rules::DefaultMlsRules;
-
     #[cfg(feature = "prior_epoch")]
     use crate::group::padding::PaddingMode;
 
@@ -1858,7 +1872,8 @@ mod tests {
                 .into_iter()
                 .map(move |cs| (p, cs))
         }) {
-            let group = test_group(protocol_version, cipher_suite).await;
+            let group =
+                test_group_custom(protocol_version, cipher_suite, Default::default(), None).await;
 
             assert_eq!(group.cipher_suite(), cipher_suite);
             assert_eq!(group.state.context.epoch, 0);
@@ -1888,7 +1903,7 @@ mod tests {
     #[cfg(feature = "private_message")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_pending_proposals_application_data() {
-        let mut test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut test_group = test_group().await;
 
         // Create a proposal
         let bob_key_package =
@@ -1964,7 +1979,7 @@ mod tests {
     #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_invalid_commit_self_update() {
-        let mut test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut test_group = test_group().await;
 
         // Create an update proposal
         let proposal_msg = test_group.propose_update(vec![]).await.unwrap();
@@ -1989,8 +2004,7 @@ mod tests {
     #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn update_proposal_with_bad_key_package_is_ignored_when_committing() {
-        let (mut alice_group, mut bob_group) =
-            test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (mut alice_group, mut bob_group) = test_two_member_group().await;
 
         let mut proposal = alice_group.update_proposal().await;
 
@@ -2042,11 +2056,8 @@ mod tests {
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn test_two_member_group(
-        protocol_version: ProtocolVersion,
-        cipher_suite: CipherSuite,
-    ) -> (TestGroup, TestGroup) {
-        let mut test_group = test_group(protocol_version, cipher_suite).await;
+    async fn test_two_member_group() -> (TestGroup, TestGroup) {
+        let mut test_group = test_group().await;
         let (bob_test_group, _) = test_group.join("bob").await;
         assert!(Group::equal_group_state(&test_group, &bob_test_group));
 
@@ -2055,12 +2066,12 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_welcome_processing_with_tree_ext() {
-        test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        test_two_member_group().await;
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_welcome_processing_without_tree_ext() {
-        let mut test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut test_group = test_group().await;
         let (bob_client, bob_key_package) = test_client("bob").await;
 
         // Add bob to the group
@@ -2094,7 +2105,7 @@ mod tests {
     #[cfg(feature = "last_resort_key_package_ext")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_last_resort_key_package() -> Result<(), MlsError> {
-        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut alice_group = test_group().await;
         let (bob_client, bob_key_package) = test_client_with_key_pkg_custom(
             TEST_PROTOCOL_VERSION,
             TEST_CIPHER_SUITE,
@@ -2104,7 +2115,7 @@ mod tests {
             |_| {},
         )
         .await;
-        let mut carla_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut carla_group = test_group().await;
 
         // Alice adds Bob to her group.
         let commit_output = alice_group
@@ -2140,7 +2151,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_group_context_ext_proposal_create() {
-        let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let test_group = test_group().await;
 
         let mut extension_list = ExtensionList::new();
         extension_list
@@ -2309,16 +2320,13 @@ mod tests {
     #[cfg(all(not(target_arch = "wasm32"), feature = "private_message"))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_group_encrypt_plaintext_padding() {
-        let protocol_version = TEST_PROTOCOL_VERSION;
         // This test requires a cipher suite whose signatures are not variable in length.
-        let cipher_suite = CipherSuite::CURVE25519_AES128;
-
-        let mut test_group = test_group_custom_config(protocol_version, cipher_suite, |b| {
-            b.mls_rules(
-                DefaultMlsRules::default()
-                    .with_encryption_options(EncryptionOptions::new(true, PaddingMode::None)),
-            )
-        })
+        let mut test_group = test_group_custom(
+            TEST_PROTOCOL_VERSION,
+            CipherSuite::CURVE25519_AES128,
+            Default::default(),
+            None,
+        )
         .await;
 
         let without_padding = test_group
@@ -2326,16 +2334,12 @@ mod tests {
             .await
             .unwrap();
 
-        let mut test_group =
-            test_group_custom_config(protocol_version, cipher_suite, |b| {
-                b.mls_rules(DefaultMlsRules::default().with_encryption_options(
-                    EncryptionOptions::new(true, PaddingMode::StepFunction),
-                ))
-            })
-            .await;
-
         let with_padding = test_group
-            .encrypt_application_message(&random_bytes(150), vec![])
+            .encrypt_application_message_with_padding(
+                &random_bytes(150),
+                vec![],
+                PaddingMode::StepFunction,
+            )
             .await
             .unwrap();
 
@@ -2345,8 +2349,7 @@ mod tests {
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_commit_requires_external_pub_extension() {
         let protocol_version = TEST_PROTOCOL_VERSION;
-        let cipher_suite = TEST_CIPHER_SUITE;
-        let group = test_group(protocol_version, cipher_suite).await;
+        let group = test_group().await;
 
         let info = group
             .group_info_message(true)
@@ -2374,7 +2377,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_commit_via_commit_options_round_trip() {
-        let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut group = test_group().await;
 
         let commit_output = group
             .commit_builder()
@@ -2399,7 +2402,7 @@ mod tests {
         let protocol_version = TEST_PROTOCOL_VERSION;
         let cipher_suite = TEST_CIPHER_SUITE;
 
-        let mut group = test_group(protocol_version, cipher_suite).await;
+        let mut group = test_group().await;
         let key_package = test_key_package_message(protocol_version, cipher_suite, "alice").await;
 
         let has_path = group
@@ -2429,7 +2432,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_path_update_preference_override() {
-        let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut group = test_group().await;
         let has_path = group.commit(vec![]).await.unwrap().contains_update_path;
         assert!(has_path);
     }
@@ -2437,10 +2440,7 @@ mod tests {
     #[cfg(feature = "private_message")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn group_rejects_unencrypted_application_message() {
-        let protocol_version = TEST_PROTOCOL_VERSION;
-        let cipher_suite = TEST_CIPHER_SUITE;
-
-        let mut alice = test_group(protocol_version, cipher_suite).await;
+        let mut alice = test_group().await;
         let (mut bob, _) = alice.join("bob").await;
 
         let message = alice
@@ -2454,8 +2454,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn commit_description_external_commit() {
-        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
-
+        let mut alice_group = test_group().await;
         let (bob_identity, secret_key) = get_test_signing_identity(TEST_CIPHER_SUITE, b"bob").await;
 
         let bob = TestClientBuilder::new_for_test()
@@ -2500,7 +2499,7 @@ mod tests {
     async fn can_join_new_group_externally() {
         use crate::client::test_utils::TestClientBuilder;
 
-        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut alice_group = test_group().await;
 
         let (bob_identity, secret_key) = get_test_signing_identity(TEST_CIPHER_SUITE, b"bob").await;
 
@@ -2526,9 +2525,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_membership_tag_from_non_member() {
-        let (mut alice_group, mut bob_group) =
-            test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
-
+        let (mut alice_group, mut bob_group) = test_two_member_group().await;
         let mut commit_output = alice_group.commit(vec![]).await.unwrap();
 
         let plaintext = match commit_output.commit_message.payload {
@@ -2547,10 +2544,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_partial_commits() {
-        let protocol_version = TEST_PROTOCOL_VERSION;
-        let cipher_suite = TEST_CIPHER_SUITE;
-
-        let mut alice = test_group(protocol_version, cipher_suite).await;
+        let mut alice = test_group().await;
         let (mut bob, _) = alice.join("bob").await;
         let (mut charlie, commit) = alice.join("charlie").await;
         bob.process_message(commit).await.unwrap();
@@ -2569,7 +2563,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn old_hpke_secrets_are_removed() {
-        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut alice = test_group().await;
         alice.join("bob").await;
         alice.join("charlie").await;
         alice.commit(vec![]).await.unwrap();
@@ -2590,7 +2584,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn old_hpke_secrets_of_removed_are_removed() {
-        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut alice = test_group().await;
         alice.join("bob").await;
         let (mut charlie, _) = alice.join("charlie").await;
         let commit = alice.commit(vec![]).await.unwrap();
@@ -2617,7 +2611,7 @@ mod tests {
     #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn old_hpke_secrets_of_updated_are_removed() {
-        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut alice = test_group().await;
         let (mut bob, _) = alice.join("bob").await;
         let (mut charlie, commit) = alice.join("charlie").await;
         bob.process_message(commit).await.unwrap();
@@ -2646,7 +2640,7 @@ mod tests {
     #[cfg(feature = "psk")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn only_selected_members_of_the_original_group_can_join_subgroup() {
-        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut alice = test_group().await;
         let (mut bob, _) = alice.join("bob").await;
         let (_carol, commit) = alice.join("carol").await;
 
@@ -2710,7 +2704,7 @@ mod tests {
     where
         F: FnMut(&mut TestClientConfig),
     {
-        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut alice_group = test_group().await;
         alice_group.join_with_custom_config("alice", false, f).await
     }
 
@@ -2752,7 +2746,7 @@ mod tests {
     #[cfg(feature = "private_message")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn member_can_see_sender_creds() {
-        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut alice_group = test_group().await;
         let (mut bob_group, _) = alice_group.join("bob").await;
 
         let bob_msg = b"I'm Bob";
@@ -2773,7 +2767,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn members_of_a_group_have_identical_authentication_secrets() {
-        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut alice_group = test_group().await;
         let (bob_group, _) = alice_group.join("bob").await;
 
         assert_eq!(
@@ -2785,7 +2779,7 @@ mod tests {
     #[cfg(feature = "private_message")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn member_cannot_decrypt_same_message_twice() {
-        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut alice_group = test_group().await;
         let (mut bob_group, _) = alice_group.join("bob").await;
 
         let message = alice_group
@@ -3614,7 +3608,7 @@ mod tests {
     #[cfg(feature = "psk")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn can_join_with_psk() {
-        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut alice = test_group().await;
 
         let (bob, key_pkg) = test_client("bob").await;
 
@@ -3641,7 +3635,7 @@ mod tests {
     #[cfg(feature = "psk")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn can_process_commit_with_psk_by_value() {
-        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut alice = test_group().await;
         let (mut bob, _) = alice.join("bob").await;
 
         let psk_id_external = ExternalPskId::new(vec![0]);
@@ -3678,7 +3672,7 @@ mod tests {
     #[cfg(feature = "psk")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn can_process_commit_with_psk_by_reference() {
-        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut alice = test_group().await;
         let (mut bob, _) = alice.join("bob").await;
 
         let psk_id_external1 = ExternalPskId::new(vec![0]);
@@ -3957,7 +3951,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn group_can_receive_commit_from_self() {
-        let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut group = test_group().await;
 
         let commit = group.commit(vec![]).await.unwrap();
 
@@ -4069,7 +4063,7 @@ mod tests {
     #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn commit_required_is_true_when_proposals_pending() {
-        let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut group = test_group().await;
 
         assert!(!group.commit_required());
 
@@ -4094,7 +4088,7 @@ mod tests {
     #[cfg(feature = "std")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn can_be_stored_without_tree() {
-        let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut group = test_group().await;
         let storage = group.config.group_state_storage().inner;
 
         group.write_to_storage().await.unwrap();
@@ -4123,7 +4117,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn delete_exporter() {
-        let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut group = test_group().await;
 
         group.export_secret(b"123", b"", 15).await.unwrap();
 

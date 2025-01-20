@@ -4,18 +4,16 @@
 
 use crate::{
     error::MlsError,
-    group::{Roster, Sender},
+    group::Sender,
     tree_kem::{leaf_node::LeafNode, TreeKemPublic},
 };
 
 #[cfg(feature = "private_message")]
-use crate::{group::padding::PaddingMode, WireFormat};
+use crate::group::padding::PaddingMode;
 
 use alloc::boxed::Box;
 use core::convert::Infallible;
 use mls_rs_core::{error::IntoAnyError, group::Member, identity::SigningIdentity};
-
-use super::GroupContext;
 
 /// The source of the commit: either a current member or a new member joining
 /// via external commit.
@@ -66,13 +64,6 @@ impl EncryptionOptions {
             padding_mode,
         }
     }
-
-    pub(crate) fn control_wire_format(&self, sender: Sender) -> WireFormat {
-        match sender {
-            Sender::Member(_) if self.encrypt_control_messages => WireFormat::PrivateMessage,
-            _ => WireFormat::PublicMessage,
-        }
-    }
 }
 
 /// A set of user controlled rules that customize the behavior of MLS.
@@ -80,17 +71,6 @@ impl EncryptionOptions {
 #[cfg_attr(mls_build_async, maybe_async::must_be_async)]
 pub trait MlsRules: Send + Sync {
     type Error: IntoAnyError;
-
-    /// This is called when sending any packet. For proposals and commits, this determines whether to
-    /// encrypt them. For any encrypted packet, this determines the padding mode used.
-    ///
-    /// Note that for commits, the `current_roster` and `current_extension_list` describe the group state
-    /// before the commit, unlike in [commit_options](MlsRules::commit_options).
-    fn encryption_options(
-        &self,
-        current_roster: &Roster,
-        current_context: &GroupContext,
-    ) -> Result<EncryptionOptions, Self::Error>;
 }
 
 macro_rules! delegate_mls_rules {
@@ -99,14 +79,6 @@ macro_rules! delegate_mls_rules {
         #[cfg_attr(mls_build_async, maybe_async::must_be_async)]
         impl<T: MlsRules + ?Sized> MlsRules for $implementer {
             type Error = T::Error;
-
-            fn encryption_options(
-                &self,
-                roster: &Roster,
-                context: &GroupContext,
-            ) -> Result<EncryptionOptions, Self::Error> {
-                (**self).encryption_options(roster, context)
-            }
         }
     };
 }
@@ -138,12 +110,4 @@ impl DefaultMlsRules {
 #[cfg_attr(mls_build_async, maybe_async::must_be_async)]
 impl MlsRules for DefaultMlsRules {
     type Error = Infallible;
-
-    fn encryption_options(
-        &self,
-        _: &Roster,
-        _: &GroupContext,
-    ) -> Result<EncryptionOptions, Self::Error> {
-        Ok(self.encryption_options)
-    }
 }

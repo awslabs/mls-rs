@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use super::framing::Content;
+use super::EncryptionMode;
 use crate::client::MlsError;
 use crate::crypto::SignatureSecretKey;
 use crate::group::framing::{ContentType, FramedContent, PublicMessage, Sender, WireFormat};
@@ -116,10 +117,15 @@ impl AuthenticatedContent {
         sender: Sender,
         content: Content,
         signer: &SignatureSecretKey,
-        wire_format: WireFormat,
+        encryption_mode: EncryptionMode,
         authenticated_data: Vec<u8>,
     ) -> Result<AuthenticatedContent, MlsError> {
-        // Construct an MlsPlaintext object containing the content
+        let wire_format = match encryption_mode {
+            EncryptionMode::PublicMessage => WireFormat::PublicMessage,
+            #[cfg(feature = "private_message")]
+            EncryptionMode::PrivateMessage(_) => WireFormat::PrivateMessage,
+        };
+
         let mut plaintext =
             AuthenticatedContent::new(context, sender, content, authenticated_data, wire_format);
 

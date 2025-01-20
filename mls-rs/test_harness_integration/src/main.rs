@@ -18,7 +18,7 @@ use mls_rs::{
     },
     crypto::SignatureSecretKey,
     external_client::ExternalClient,
-    group::{CommitEffect, ExportedTree, GroupContext, Member, ReceivedMessage, Roster},
+    group::{CommitEffect, ExportedTree, Member, ReceivedMessage},
     identity::{
         basic::{BasicCredential, BasicIdentityProvider},
         Credential, SigningIdentity,
@@ -160,14 +160,6 @@ impl TestMlsRules {
 
 impl MlsRules for TestMlsRules {
     type Error = Infallible;
-
-    fn encryption_options(
-        &self,
-        _: &Roster,
-        _: &GroupContext,
-    ) -> Result<EncryptionOptions, Self::Error> {
-        Ok(*self.encryption_options.lock().unwrap())
-    }
 }
 
 #[tonic::async_trait]

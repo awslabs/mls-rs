@@ -46,16 +46,13 @@ use crate::{
 use crate::psk::secret::PskSecretInput;
 
 #[cfg(feature = "by_ref_proposal")]
-use crate::{
-    group::{
-        framing::{Content, MlsMessagePayload},
-        message_processor::CachedProposal,
-        message_signature::AuthenticatedContent,
-        proposal::Proposal,
-        proposal_ref::ProposalRef,
-        Sender,
-    },
-    WireFormat,
+use crate::group::{
+    framing::{Content, MlsMessagePayload},
+    message_processor::CachedProposal,
+    message_signature::AuthenticatedContent,
+    proposal::Proposal,
+    proposal_ref::ProposalRef,
+    Sender,
 };
 
 #[cfg(all(feature = "by_ref_proposal", feature = "custom_proposal"))]
@@ -464,6 +461,8 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         proposal: Proposal,
         authenticated_data: Vec<u8>,
     ) -> Result<MlsMessage, MlsError> {
+        use crate::group::EncryptionMode;
+
         let SigningData {
             signing_key,
             signing_identity,
@@ -491,7 +490,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             sender,
             Content::Proposal(Box::new(proposal.clone())),
             signing_key,
-            WireFormat::PublicMessage,
+            EncryptionMode::PublicMessage,
             authenticated_data,
         )
         .await?;
@@ -939,12 +938,11 @@ pub(crate) mod test_utils {
 mod tests {
     use super::test_utils::make_external_group;
     use crate::{
-        cipher_suite::CipherSuite,
         client::{
             test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
             MlsError,
         },
-        crypto::{test_utils::TestCryptoProvider, SignatureSecretKey},
+        crypto::SignatureSecretKey,
         extension::ExternalSendersExt,
         external_client::{
             group::test_utils::make_external_group_with_config,
@@ -971,8 +969,8 @@ mod tests {
     use mls_rs_core::identity::SigningData;
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn test_group_with_one_commit(v: ProtocolVersion, cs: CipherSuite) -> TestGroup {
-        let mut group = test_group(v, cs).await;
+    async fn test_group_with_one_commit() -> TestGroup {
+        let mut group = test_group().await;
         group.commit(Vec::new()).await.unwrap();
         group.process_pending_commit().await.unwrap();
         group
@@ -980,13 +978,12 @@ mod tests {
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn test_group_two_members(
-        v: ProtocolVersion,
-        cs: CipherSuite,
         #[cfg(feature = "by_ref_proposal")] ext_identity: Option<SigningIdentity>,
     ) -> TestGroup {
-        let mut group = test_group_with_one_commit(v, cs).await;
+        let mut group = test_group_with_one_commit().await;
 
-        let bob_key_package = test_key_package_message(v, cs, "bob").await;
+        let bob_key_package =
+            test_key_package_message(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
 
         let mut commit_builder = group.commit_builder().add_member(bob_key_package).unwrap();
 
@@ -1011,18 +1008,12 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_group_can_be_created() {
-        for (v, cs) in ProtocolVersion::all().flat_map(|v| {
-            TestCryptoProvider::all_supported_cipher_suites()
-                .into_iter()
-                .map(move |cs| (v, cs))
-        }) {
-            make_external_group(&test_group_with_one_commit(v, cs).await).await;
-        }
+        make_external_group(&test_group_with_one_commit().await).await;
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_group_can_process_commit() {
-        let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut alice = test_group_with_one_commit().await;
         let mut server = make_external_group(&alice).await;
         let commit_output = alice.commit(Vec::new()).await.unwrap();
         alice.apply_pending_commit().await.unwrap();
@@ -1037,7 +1028,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_group_can_process_proposals_by_reference() {
-        let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut alice = test_group_with_one_commit().await;
         let mut server = make_external_group(&alice).await;
 
         let bob_key_package =
@@ -1086,7 +1077,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_group_can_process_commit_adding_member() {
-        let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut alice = test_group_with_one_commit().await;
         let mut server = make_external_group(&alice).await;
         let (_, commit) = alice.join("bob").await;
 
@@ -1120,7 +1111,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_group_rejects_commit_not_for_current_epoch() {
-        let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut alice = test_group_with_one_commit().await;
         let mut server = make_external_group(&alice).await;
 
         let mut commit_output = alice.commit(vec![]).await.unwrap();
@@ -1139,7 +1130,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_group_can_reject_message_with_invalid_signature() {
-        let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut alice = test_group_with_one_commit().await;
 
         let mut server = make_external_group_with_config(
             &alice,
@@ -1163,7 +1154,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_group_rejects_unencrypted_application_message() {
-        let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut alice = test_group_with_one_commit().await;
         let mut server = make_external_group(&alice).await;
 
         let plaintext = alice
@@ -1177,7 +1168,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_group_will_reject_unsupported_cipher_suites() {
-        let alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let alice = test_group_with_one_commit().await;
 
         let config =
             TestExternalClientBuilder::new_for_test_disabling_cipher_suite(TEST_CIPHER_SUITE)
@@ -1203,7 +1194,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_group_will_reject_unsupported_protocol_versions() {
-        let alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let alice = test_group_with_one_commit().await;
 
         let config = TestExternalClientBuilder::new_for_test().build_config();
 
@@ -1233,12 +1224,8 @@ mod tests {
         let (server_identity, server_key) =
             get_test_signing_identity(TEST_CIPHER_SUITE, b"server").await;
 
-        let alice = test_group_two_members(
-            TEST_PROTOCOL_VERSION,
-            TEST_CIPHER_SUITE,
-            extern_proposals_allowed.then(|| server_identity.clone()),
-        )
-        .await;
+        let alice =
+            test_group_two_members(extern_proposals_allowed.then(|| server_identity.clone())).await;
 
         (server_identity, server_key, alice)
     }
@@ -1357,15 +1344,11 @@ mod tests {
         let (server_identity, server_key) =
             get_test_signing_identity(TEST_CIPHER_SUITE, b"server").await;
 
-        let alice = test_group_two_members(
-            TEST_PROTOCOL_VERSION,
-            TEST_CIPHER_SUITE,
-            Some(
-                get_test_signing_identity(TEST_CIPHER_SUITE, b"not server")
-                    .await
-                    .0,
-            ),
-        )
+        let alice = test_group_two_members(Some(
+            get_test_signing_identity(TEST_CIPHER_SUITE, b"not server")
+                .await
+                .0,
+        ))
         .await;
 
         let mut server = make_external_group(&alice).await;
@@ -1383,7 +1366,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_group_errors_on_old_epoch() {
-        let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut alice = test_group_with_one_commit().await;
 
         let mut server = make_external_group_with_config(
             &alice,
@@ -1414,7 +1397,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn proposals_can_be_cached_externally() {
-        let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut alice = test_group_with_one_commit().await;
 
         let mut server = make_external_group_with_config(
             &alice,
@@ -1443,7 +1426,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_group_can_observe_since_creation() {
-        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut alice = test_group().await;
 
         let info = alice
             .group_info_message_allowing_ext_commit(true)
@@ -1466,8 +1449,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_group_can_be_serialized_to_tls_encoding() {
-        let server =
-            make_external_group(&test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await).await;
+        let server = make_external_group(&test_group().await).await;
 
         let snapshot = server.snapshot().mls_encode_to_vec().unwrap();
         let snapshot_restored = ExternalSnapshot::mls_decode(&mut snapshot.as_slice()).unwrap();
@@ -1482,7 +1464,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_group_can_validate_info() {
-        let alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let alice = test_group_with_one_commit().await;
         let mut server = make_external_group(&alice).await;
 
         let info = alice
@@ -1501,7 +1483,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_group_can_validate_key_package() {
-        let alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let alice = test_group_with_one_commit().await;
         let mut server = make_external_group(&alice).await;
 
         let kp = test_key_package_message(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "john").await;
@@ -1517,7 +1499,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_group_can_validate_welcome() {
-        let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut alice = test_group_with_one_commit().await;
         let mut server = make_external_group(&alice).await;
 
         let [welcome] = alice
@@ -1543,8 +1525,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_group_can_be_stored_without_tree() {
-        let mut server =
-            make_external_group(&test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await).await;
+        let mut server = make_external_group(&test_group().await).await;
 
         let snapshot_with_tree = server.snapshot().mls_encode_to_vec().unwrap();
 

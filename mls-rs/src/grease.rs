@@ -161,10 +161,7 @@ mod tests {
 
     use mls_rs_core::extension::ExtensionList;
 
-    use crate::{
-        client::test_utils::{test_client, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
-        group::test_utils::test_group,
-    };
+    use crate::{client::test_utils::test_client, group::test_utils::test_group};
 
     use super::grease_functions::GREASE_VALUES;
 
@@ -186,7 +183,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn group_info_is_greased() {
-        let group_info = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
+        let group_info = test_group()
             .await
             .group
             .group_info_message_allowing_ext_commit(false)
@@ -200,7 +197,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn public_api_is_not_greased() {
-        let member = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
+        let member = test_group()
             .await
             .group
             .roster()

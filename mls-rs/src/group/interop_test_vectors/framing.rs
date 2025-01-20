@@ -13,14 +13,14 @@ use crate::{
     group::{
         confirmation_tag::ConfirmationTag,
         epoch::EpochSecrets,
-        framing::{Content, WireFormat},
+        framing::Content,
         message_processor::{EventOrContent, MessageProcessor},
         mls_rules::EncryptionOptions,
         padding::PaddingMode,
         proposal::{Proposal, RemoveProposal},
         secret_tree::test_utils::get_test_tree,
         test_utils::{random_bytes, test_group_custom_config},
-        AuthenticatedContent, Commit, Group, GroupContext, MlsMessage, Sender,
+        AuthenticatedContent, Commit, EncryptionMode, Group, GroupContext, MlsMessage, Sender,
     },
     mls_rules::DefaultMlsRules,
     test_utils::is_edwards,
@@ -251,24 +251,30 @@ async fn framing_commit() {
                 signature_priv.extend(test_case.signature_pub.iter());
             }
 
-            let mut auth_content = AuthenticatedContent::new_signed(
-                &cs,
-                &test_case.context.clone().into(),
-                Sender::Member(1),
-                Content::Commit(alloc::boxed::Box::new(commit.clone())),
-                &signature_priv.into(),
-                WireFormat::PublicMessage,
-                vec![],
-            )
-            .await
-            .unwrap();
-
-            auth_content.auth.confirmation_tag = Some(ConfirmationTag::empty(&cs).await);
-
             for enable_encryption in [true, false] {
+                let mode = if enable_encryption {
+                    EncryptionMode::PrivateMessage(Default::default())
+                } else {
+                    EncryptionMode::PublicMessage
+                };
+
+                let mut auth_content = AuthenticatedContent::new_signed(
+                    &cs,
+                    &test_case.context.clone().into(),
+                    Sender::Member(1),
+                    Content::Commit(alloc::boxed::Box::new(commit.clone())),
+                    &signature_priv.clone().into(),
+                    mode,
+                    vec![],
+                )
+                .await
+                .unwrap();
+
+                auth_content.auth.confirmation_tag = Some(ConfirmationTag::empty(&cs).await);
+
                 let built = make_group(&test_case, true, enable_encryption, &cs)
                     .await
-                    .format_for_wire(auth_content.clone())
+                    .format_for_wire(auth_content.clone(), mode)
                     .await
                     .unwrap()
                     .mls_encode_to_vec()
@@ -345,7 +351,7 @@ async fn generate_framing_test_vector() -> Vec<FramingTestCase> {
             Sender::Member(1),
             Content::Commit(alloc::boxed::Box::new(commit.clone())),
             &group.signer,
-            WireFormat::PublicMessage,
+            EncryptionMode::PublicMessage,
             vec![],
         )
         .await
@@ -354,8 +360,14 @@ async fn generate_framing_test_vector() -> Vec<FramingTestCase> {
         auth_content.auth.confirmation_tag = Some(ConfirmationTag::empty(&cs).await);
 
         let mut group = make_group(&test_case, true, false, &cs).await;
-        let commit_pub = group.format_for_wire(auth_content.clone()).await.unwrap();
+
+        let commit_pub = group
+            .format_for_wire(auth_content.clone(), EncryptionMode::PublicMessage)
+            .await
+            .unwrap();
+
         test_case.commit_pub = commit_pub.mls_encode_to_vec().unwrap();
+        let mode = EncryptionMode::PrivateMessage(Default::default());
 
         let mut auth_content = AuthenticatedContent::new_signed(
             &cs,
@@ -363,7 +375,7 @@ async fn generate_framing_test_vector() -> Vec<FramingTestCase> {
             Sender::Member(1),
             Content::Commit(alloc::boxed::Box::new(commit)),
             &group.signer,
-            WireFormat::PrivateMessage,
+            mode,
             vec![],
         )
         .await
@@ -372,7 +384,12 @@ async fn generate_framing_test_vector() -> Vec<FramingTestCase> {
         auth_content.auth.confirmation_tag = Some(ConfirmationTag::empty(&cs).await);
 
         let mut group = make_group(&test_case, true, true, &cs).await;
-        let commit_priv = group.format_for_wire(auth_content.clone()).await.unwrap();
+
+        let commit_priv = group
+            .format_for_wire(auth_content.clone(), mode)
+            .await
+            .unwrap();
+
         test_case.commit_priv = commit_priv.mls_encode_to_vec().unwrap();
 
         test_vector.push(test_case);

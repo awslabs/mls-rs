@@ -145,13 +145,15 @@ impl TestGroup {
             Sender::Member(*self.private_tree.self_index),
             content,
             &self.signer,
-            WireFormat::PublicMessage,
+            EncryptionMode::PublicMessage,
             Vec::new(),
         )
         .await
         .unwrap();
 
-        self.format_for_wire(auth_content).await.unwrap()
+        self.format_for_wire(auth_content, EncryptionMode::PublicMessage)
+            .await
+            .unwrap()
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -243,11 +245,14 @@ pub(crate) async fn test_group_custom(
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-pub(crate) async fn test_group(
-    protocol_version: ProtocolVersion,
-    cipher_suite: CipherSuite,
-) -> TestGroup {
-    test_group_custom(protocol_version, cipher_suite, Default::default(), None).await
+pub(crate) async fn test_group() -> TestGroup {
+    test_group_custom(
+        TEST_PROTOCOL_VERSION,
+        TEST_CIPHER_SUITE,
+        Default::default(),
+        None,
+    )
+    .await
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -279,7 +284,7 @@ pub(crate) async fn test_n_member_group(
     cipher_suite: CipherSuite,
     num_members: usize,
 ) -> Vec<TestGroup> {
-    let group = test_group(protocol_version, cipher_suite).await;
+    let group = test_group_custom(protocol_version, cipher_suite, Default::default(), None).await;
 
     let mut groups = vec![group];
 
@@ -401,7 +406,9 @@ impl GroupWithoutKeySchedule {
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn new(cs: CipherSuite) -> Self {
         Self {
-            inner: test_group(TEST_PROTOCOL_VERSION, cs).await.group,
+            inner: test_group_custom(TEST_PROTOCOL_VERSION, cs, Default::default(), None)
+                .await
+                .group,
             secrets: None,
             provisional_public_state: None,
         }

@@ -10,6 +10,7 @@ use itertools::Itertools;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::crypto::SignatureSecretKey;
 
+use crate::group::EncryptionMode;
 use crate::mls_rules::{ProposalBundle, ProposalSource};
 use crate::{
     cipher_suite::CipherSuite,
@@ -177,6 +178,7 @@ pub(crate) struct CommitOptions {
     pub allow_external_commit: bool,
     pub authenticated_data: Vec<u8>,
     pub sender: Sender,
+    pub encryption_mode: EncryptionMode,
 }
 
 /// Build a commit with multiple proposals by-value.
@@ -436,6 +438,11 @@ where
         self
     }
 
+    pub fn encryption_mode(mut self, encryption_mode: EncryptionMode) -> Self {
+        self.options.encryption_mode = encryption_mode;
+        self
+    }
+
     /// Change the committer's leaf node extensions as part of making this commit.
     pub fn set_leaf_node_extensions(self, new_leaf_node_extensions: ExtensionList) -> Self {
         Self {
@@ -619,6 +626,7 @@ where
                 single_welcome_message: true,
                 allow_external_commit: false,
                 authenticated_data: Default::default(),
+                encryption_mode: Default::default(),
             },
             group: self,
             group_info_extensions: Default::default(),
@@ -795,11 +803,7 @@ where
             options.sender,
             Content::Commit(Box::new(commit)),
             old_signer,
-            #[cfg(feature = "private_message")]
-            self.encryption_options()?
-                .control_wire_format(options.sender),
-            #[cfg(not(feature = "private_message"))]
-            WireFormat::PublicMessage,
+            options.encryption_mode,
             options.authenticated_data,
         )
         .await?;
@@ -962,7 +966,9 @@ where
                     .collect()
             };
 
-        let commit_message = self.format_for_wire(auth_content.clone()).await?;
+        let commit_message = self
+            .format_for_wire(auth_content.clone(), options.encryption_mode)
+            .await?;
 
         // TODO is it necessary to clone the tree here? or can we just output serialized bytes?
         let ratchet_tree = (!options.ratchet_tree_extension)
@@ -1438,7 +1444,7 @@ mod tests {
     #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_commit_builder_multiple_welcome_messages() {
-        let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut group = test_group().await;
         let (alice, alice_kp) = test_client("a").await;
         let (bob, bob_kp) = test_client("b").await;
 
@@ -1519,7 +1525,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn commit_includes_tree_if_no_ratchet_tree_ext() {
-        let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut group = test_group().await;
 
         let commit = group
             .commit_builder()
@@ -1537,7 +1543,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn commit_does_not_include_tree_if_ratchet_tree_ext() {
-        let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut group = test_group().await;
 
         let commit = group
             .commit_builder()
@@ -1551,7 +1557,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn commit_includes_external_commit_group_info_if_requested() {
-        let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut group = test_group().await;
 
         let commit = group
             .commit_builder()
@@ -1573,7 +1579,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn commit_includes_external_commit_and_tree_if_requested() {
-        let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut group = test_group().await;
 
         let commit = group
             .commit_builder()
@@ -1595,7 +1601,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn commit_does_not_include_external_commit_group_info_if_not_requested() {
-        let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut group = test_group().await;
 
         let commit = group
             .commit_builder()
@@ -1808,7 +1814,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn detached_commit() {
-        let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut group = test_group().await;
 
         let (_commit, secrets) = group.commit_builder().build_detached().await.unwrap();
         assert!(group.pending_commit.is_none());

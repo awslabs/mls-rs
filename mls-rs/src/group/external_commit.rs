@@ -79,6 +79,7 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
                 single_welcome_message: true,
                 allow_external_commit: false,
                 authenticated_data: Default::default(),
+                encryption_mode: Default::default(),
             },
             leaf_node_extensions: Default::default(),
             to_remove: Default::default(),
