@@ -88,13 +88,11 @@ pub(crate) mod inner {
 
             self.send_proposal(request.state_id, move |group| {
                 group
-                    .propose_reinit(
-                        Some(request.group_id),
-                        ProtocolVersion::MLS_10,
-                        (request.cipher_suite as u16).into(),
-                        parse_extensions(request.extensions),
-                        vec![],
-                    )
+                    .proposal_builder_reinit()
+                    .group_id(request.group_id)
+                    .cipher_suite((request.cipher_suite as u16).into())
+                    .extensions(parse_extensions(request.extensions))
+                    .build()
                     .map_err(abort)
             })
             .await
@@ -113,9 +111,7 @@ pub(crate) mod inner {
             self.send_proposal(request.state_id, move |group| {
                 let epoch_id = request.epoch_id;
 
-                group
-                    .propose_resumption_psk(epoch_id, vec![])
-                    .map_err(abort)
+                group.propose_resumption_psk(epoch_id).map_err(abort)
             })
             .await
         }

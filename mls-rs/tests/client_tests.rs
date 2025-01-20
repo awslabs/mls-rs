@@ -10,7 +10,6 @@ use mls_rs::group::proposal::Proposal;
 use mls_rs::group::ReceivedMessage;
 use mls_rs::identity::SigningIdentity;
 use mls_rs::CryptoProvider;
-use mls_rs::ExtensionList;
 use mls_rs::MlsMessage;
 use mls_rs::ProtocolVersion;
 use mls_rs::{CipherSuite, Group};
@@ -625,13 +624,9 @@ async fn reinit_works() {
 
     // Alice proposes reinit
     let reinit_proposal_message = alice_group
-        .propose_reinit(
-            None,
-            ProtocolVersion::MLS_10,
-            suite2,
-            ExtensionList::default(),
-            Vec::new(),
-        )
+        .proposal_builder_reinit()
+        .cipher_suite(suite2)
+        .build()
         .await
         .unwrap();
 

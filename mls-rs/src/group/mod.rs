@@ -499,46 +499,6 @@ where
         self.group_state().member_at_index(index)
     }
 
-    // TODO make builder
-    #[cfg(feature = "by_ref_proposal")]
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn proposal_message(
-        &mut self,
-        proposal: Proposal,
-        authenticated_data: Vec<u8>,
-        //encryption_mode: EncryptionMode,
-    ) -> Result<MlsMessage, MlsError> {
-        // TODO
-        let encryption_mode = EncryptionMode::PublicMessage;
-        let sender = Sender::Member(*self.private_tree.self_index);
-
-        let auth_content = AuthenticatedContent::new_signed(
-            &self.cipher_suite_provider,
-            self.context(),
-            sender,
-            Content::Proposal(alloc::boxed::Box::new(proposal.clone())),
-            &self.signer,
-            encryption_mode,
-            authenticated_data,
-        )
-        .await?;
-
-        let sender = auth_content.content.sender;
-
-        let proposal_desc =
-            ProposalMessageDescription::new(&self.cipher_suite_provider, &auth_content, proposal)
-                .await?;
-
-        let message = self.format_for_wire(auth_content, encryption_mode).await?;
-
-        self.state
-            .proposals
-            .insert_own(proposal_desc, &message, sender, &self.cipher_suite_provider)
-            .await?;
-
-        Ok(message)
-    }
-
     /// Unique identifier for this group.
     pub fn group_id(&self) -> &[u8] {
         &self.context().group_id
@@ -659,10 +619,28 @@ where
     pub async fn propose_add(
         &mut self,
         key_package: MlsMessage,
-        authenticated_data: Vec<u8>,
+        _authenticated_data: Vec<u8>,
     ) -> Result<MlsMessage, MlsError> {
-        let proposal = self.add_proposal(key_package)?;
-        self.proposal_message(proposal, authenticated_data).await
+        self.proposal_builder_add(key_package)?.build().await
+    }
+
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
+    #[cfg(feature = "by_ref_proposal")]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn proposal_builder_add(
+        &mut self,
+        key_package: MlsMessage,
+    ) -> Result<ProposalBuilder<'_, C, AddProposal>, MlsError> {
+        let key_package = key_package
+            .into_key_package()
+            .ok_or(MlsError::UnexpectedMessageType)?;
+
+        let proposal = AddProposal { key_package };
+
+        Ok(ProposalBuilder::new(
+            self,
+            ProposalInput::Other { proposal },
+        ))
     }
 
     fn add_proposal(&self, key_package: MlsMessage) -> Result<Proposal, MlsError> {
@@ -685,42 +663,15 @@ where
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn propose_update(
         &mut self,
-        authenticated_data: Vec<u8>,
+        _authenticated_data: Vec<u8>,
     ) -> Result<MlsMessage, MlsError> {
-        let proposal = self.update_proposal(None, None, None).await?;
-        self.proposal_message(proposal, authenticated_data).await
+        self.proposal_builder_update().build().await
     }
 
-    /// Create a proposal message that updates your own public keys
-    /// as well as your credential.
-    ///
-    /// This proposal is useful for contributing additional forward secrecy
-    /// and post-compromise security to the group without having to perform
-    /// the necessary computation of a [`Group::commit`].
-    ///
-    /// Identity updates are allowed by the group by default assuming that the
-    /// new identity provided is considered
-    /// [valid](crate::IdentityProvider::validate_member)
-    /// by and matches the output of the
-    /// [identity](crate::IdentityProvider)
-    /// function of the current
-    /// [`IdentityProvider`](crate::IdentityProvider).
-    ///
-    /// `authenticated_data` will be sent unencrypted along with the contents
-    /// of the proposal message.
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     #[cfg(feature = "by_ref_proposal")]
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn propose_update_with_identity(
-        &mut self,
-        signer: SignatureSecretKey,
-        signing_identity: SigningIdentity,
-        authenticated_data: Vec<u8>,
-    ) -> Result<MlsMessage, MlsError> {
-        let proposal = self
-            .update_proposal(Some(signer), Some(signing_identity), None)
-            .await?;
-
-        self.proposal_message(proposal, authenticated_data).await
+    pub fn proposal_builder_update(&mut self) -> ProposalBuilder<C, UpdateProposal> {
+        ProposalBuilder::new(self, ProposalInput::Update)
     }
 
     #[cfg(feature = "by_ref_proposal")]
@@ -771,21 +722,22 @@ where
     pub async fn propose_remove(
         &mut self,
         index: u32,
-        authenticated_data: Vec<u8>,
+        _authenticated_data: Vec<u8>,
     ) -> Result<MlsMessage, MlsError> {
-        let proposal = self.remove_proposal(index)?;
-        self.proposal_message(proposal, authenticated_data).await
+        self.proposal_builder_remove(index).build().await
     }
 
-    fn remove_proposal(&self, index: u32) -> Result<Proposal, MlsError> {
-        let leaf_index = LeafIndex(index);
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
+    #[cfg(feature = "by_ref_proposal")]
+    pub fn proposal_builder_remove(
+        &mut self,
+        to_remove: u32,
+    ) -> ProposalBuilder<C, RemoveProposal> {
+        let proposal = RemoveProposal {
+            to_remove: LeafIndex(to_remove),
+        };
 
-        // Verify that this leaf is actually in the tree
-        self.current_epoch_tree().get_leaf_node(leaf_index)?;
-
-        Ok(Proposal::Remove(RemoveProposal {
-            to_remove: leaf_index,
-        }))
+        ProposalBuilder::new(self, ProposalInput::Other { proposal })
     }
 
     /// Create a proposal message that adds an external pre shared key to the group.
@@ -803,17 +755,19 @@ where
     pub async fn propose_external_psk(
         &mut self,
         psk: ExternalPskId,
-        authenticated_data: Vec<u8>,
+        _authenticated_data: Vec<u8>,
     ) -> Result<MlsMessage, MlsError> {
-        let proposal = self.psk_proposal(JustPreSharedKeyID::External(psk))?;
-        self.proposal_message(proposal, authenticated_data).await
+        self.proposal_builder_external_psk(psk).build().await
     }
 
-    #[cfg(feature = "psk")]
-    fn psk_proposal(&self, key_id: JustPreSharedKeyID) -> Result<Proposal, MlsError> {
-        Ok(Proposal::Psk(PreSharedKeyProposal {
-            psk: PreSharedKeyID::new(key_id, &self.cipher_suite_provider)?,
-        }))
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
+    #[cfg(all(feature = "by_ref_proposal", feature = "psk"))]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub fn proposal_builder_external_psk(
+        &mut self,
+        psk_id: ExternalPskId,
+    ) -> ProposalBuilder<'_, C, PreSharedKeyProposal> {
+        ProposalBuilder::new(self, ProposalInput::ExternalPsk { psk_id })
     }
 
     /// Create a proposal message that adds a pre shared key from a previous
@@ -827,19 +781,26 @@ where
     /// of the proposal message.
     #[cfg(all(feature = "by_ref_proposal", feature = "psk"))]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn propose_resumption_psk(
+    pub async fn propose_resumption_psk(&mut self, psk_epoch: u64) -> Result<MlsMessage, MlsError> {
+        self.proposal_builder_resumption_psk(psk_epoch)
+            .build()
+            .await
+    }
+
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
+    #[cfg(all(feature = "by_ref_proposal", feature = "psk"))]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub fn proposal_builder_resumption_psk(
         &mut self,
         psk_epoch: u64,
-        authenticated_data: Vec<u8>,
-    ) -> Result<MlsMessage, MlsError> {
-        let key_id = ResumptionPsk {
+    ) -> ProposalBuilder<'_, C, PreSharedKeyProposal> {
+        let psk_id = ResumptionPsk {
             psk_epoch,
             usage: ResumptionPSKUsage::Application,
             psk_group_id: PskGroupId(self.group_id().to_vec()),
         };
 
-        let proposal = self.psk_proposal(JustPreSharedKeyID::Resumption(key_id))?;
-        self.proposal_message(proposal, authenticated_data).await
+        ProposalBuilder::new(self, ProposalInput::ResumptionPsk { psk_id })
     }
 
     /// Create a proposal message that requests for this group to be
@@ -853,16 +814,15 @@ where
     /// of the proposal message.
     #[cfg(feature = "by_ref_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn propose_reinit(
-        &mut self,
-        group_id: Option<Vec<u8>>,
-        version: ProtocolVersion,
-        cipher_suite: CipherSuite,
-        extensions: ExtensionList,
-        authenticated_data: Vec<u8>,
-    ) -> Result<MlsMessage, MlsError> {
-        let proposal = self.reinit_proposal(group_id, version, cipher_suite, extensions)?;
-        self.proposal_message(proposal, authenticated_data).await
+    pub async fn propose_reinit(&mut self) -> Result<MlsMessage, MlsError> {
+        self.proposal_builder_reinit().build().await
+    }
+
+    #[cfg(feature = "by_ref_proposal")]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
+    pub async fn proposal_builder_reinit(&mut self) -> ProposalBuilder<'_, C, ReInitProposal> {
+        ProposalBuilder::new(self, ProposalInput::ReInit)
     }
 
     fn reinit_proposal(
@@ -904,14 +864,25 @@ where
     pub async fn propose_group_context_extensions(
         &mut self,
         extensions: ExtensionList,
-        authenticated_data: Vec<u8>,
+        _authenticated_data: Vec<u8>,
     ) -> Result<MlsMessage, MlsError> {
-        let proposal = self.group_context_extensions_proposal(extensions);
-        self.proposal_message(proposal, authenticated_data).await
+        self.proposal_builder_group_context_extensions(extensions)
+            .build()
+            .await
     }
 
-    fn group_context_extensions_proposal(&self, extensions: ExtensionList) -> Proposal {
-        Proposal::GroupContextExtensions(extensions)
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
+    #[cfg(feature = "by_ref_proposal")]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn proposal_builder_group_context_extensions(
+        &mut self,
+        extensions: ExtensionList,
+    ) -> ProposalBuilder<'_, C, ExtensionList> {
+        let proposal = ProposalInput::Other {
+            proposal: extensions,
+        };
+
+        ProposalBuilder::new(self, proposal).await
     }
 
     /// Create a custom proposal message.
@@ -923,10 +894,19 @@ where
     pub async fn propose_custom(
         &mut self,
         proposal: CustomProposal,
-        authenticated_data: Vec<u8>,
+        _authenticated_data: Vec<u8>,
     ) -> Result<MlsMessage, MlsError> {
-        self.proposal_message(Proposal::Custom(proposal), authenticated_data)
-            .await
+        self.proposal_builder_custom(proposal).build().await
+    }
+
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
+    #[cfg(all(feature = "custom_proposal", feature = "by_ref_proposal"))]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn proposal_builder_custom(
+        &mut self,
+        proposal: CustomProposal,
+    ) -> ProposalBuilder<'_, C, CustomProposal> {
+        ProposalBuilder::new(self, ProposalInput::Other { proposal })
     }
 
     /// Delete all sent and received proposals cached for commit.
@@ -1005,7 +985,7 @@ where
         self.encrypt_application_message_with_padding(
             message,
             authenticated_data,
-            Default::default(),
+            PaddingMode::None,
         )
         .await
     }
@@ -1909,8 +1889,10 @@ mod tests {
         let bob_key_package =
             test_key_package_message(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
 
-        let proposal = test_group.add_proposal(bob_key_package).unwrap();
-        test_group.proposal_message(proposal, vec![]).await.unwrap();
+        test_group
+            .propose_add(bob_key_package, vec![])
+            .await
+            .unwrap();
 
         // We should not be able to send application messages until a commit happens
         let res = test_group
@@ -2006,7 +1988,9 @@ mod tests {
     async fn update_proposal_with_bad_key_package_is_ignored_when_committing() {
         let (mut alice_group, mut bob_group) = test_two_member_group().await;
 
-        let mut proposal = alice_group.update_proposal().await;
+        let mut proposal_builder = alice_group.proposal_builder_update().await;
+
+        let mut proposal = proposal_builder.proposal().await.unwrap();
 
         if let Proposal::Update(ref mut update) = proposal {
             update.leaf_node.signature = random_bytes(32);
@@ -2014,8 +1998,8 @@ mod tests {
             panic!("Invalid update proposal")
         }
 
-        let proposal_message = alice_group
-            .proposal_message(proposal.clone(), vec![])
+        let proposal_message = proposal_builder
+            .proposal_message(proposal.clone())
             .await
             .unwrap();
 
@@ -2147,24 +2131,6 @@ mod tests {
             .await?;
 
         Ok(())
-    }
-
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn test_group_context_ext_proposal_create() {
-        let test_group = test_group().await;
-
-        let mut extension_list = ExtensionList::new();
-        extension_list
-            .set_from(RequiredCapabilitiesExt {
-                extensions: vec![42.into()],
-                proposals: vec![],
-                credentials: vec![],
-            })
-            .unwrap();
-
-        let proposal = test_group.group_context_extensions_proposal(extension_list.clone());
-
-        assert_matches!(proposal, Proposal::GroupContextExtensions(ext) if ext == extension_list);
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -3437,7 +3403,10 @@ mod tests {
         let (identity, secret_key) = get_test_signing_identity(TEST_CIPHER_SUITE, b"member").await;
 
         let update = groups[0]
-            .propose_update_with_identity(secret_key, identity.clone(), vec![])
+            .proposal_builder_update()
+            .signer(secret_key)
+            .signing_identity(identity.clone())
+            .build()
             .await
             .unwrap();
 
@@ -3693,10 +3662,7 @@ mod tests {
             .await
             .unwrap();
 
-        let psk_resumption_proposal = alice
-            .propose_resumption_psk(psk_epoch, Vec::new())
-            .await
-            .unwrap();
+        let psk_resumption_proposal = alice.propose_resumption_psk(psk_epoch).await.unwrap();
 
         let commit = alice
             .commit_builder()

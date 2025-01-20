@@ -403,11 +403,7 @@ mod tests {
     async fn snapshot_with_pending_updates_can_be_serialized_to_json() {
         let mut group = test_group().await;
 
-        // Creating the update proposal will add it to pending updates
-        let update_proposal = group.update_proposal().await;
-
-        // This will insert the proposal into the internal proposal cache
-        let _ = group.proposal_message(update_proposal, vec![]).await;
+        group.propose_update(vec![]).await.unwrap();
 
         snapshot_restore(group).await
     }

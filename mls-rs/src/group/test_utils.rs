@@ -49,12 +49,6 @@ impl DerefMut for TestGroup {
 }
 
 impl TestGroup {
-    #[cfg(feature = "external_client")]
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub(crate) async fn propose(&mut self, proposal: Proposal) -> MlsMessage {
-        self.proposal_message(proposal, vec![]).await.unwrap()
-    }
-
     #[cfg(feature = "by_ref_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn update_proposal(&mut self) -> Proposal {

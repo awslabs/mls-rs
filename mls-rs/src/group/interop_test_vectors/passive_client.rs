@@ -449,11 +449,7 @@ pub async fn generate_passive_client_proposal_tests() -> Vec<TestCase> {
 
         let last_ep = groups[3].current_epoch() - 1;
 
-        let res_psk = groups[3]
-            .propose_resumption_psk(last_ep, vec![])
-            .await
-            .unwrap();
-
+        let res_psk = groups[3].propose_resumption_psk(last_ep).await.unwrap();
         let res_psk = (res_psk, 3);
 
         let grp_ext = groups[4]

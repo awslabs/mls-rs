@@ -958,7 +958,7 @@ mod tests {
             CommitMessageDescription, ExportedTree, ProposalMessageDescription,
         },
         identity::{test_utils::get_test_signing_identity, SigningIdentity},
-        key_package::test_utils::{test_key_package, test_key_package_message},
+        key_package::test_utils::test_key_package_message,
         protocol_version::ProtocolVersion,
         ExtensionList, MlsMessage,
     };
@@ -1032,13 +1032,13 @@ mod tests {
         let mut server = make_external_group(&alice).await;
 
         let bob_key_package =
-            test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
+            test_key_package_message(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
 
         let add_proposal = Proposal::Add(Box::new(AddProposal {
-            key_package: bob_key_package,
+            key_package: bob_key_package.clone().into_key_package().unwrap(),
         }));
 
-        let packet = alice.propose(add_proposal.clone()).await;
+        let packet = alice.propose_add(bob_key_package, vec![]).await.unwrap();
 
         let proposal_process = server
             .process_incoming_message_oneshot(packet)

@@ -10,7 +10,7 @@ use itertools::Itertools;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::crypto::SignatureSecretKey;
 
-use crate::group::EncryptionMode;
+use crate::group::{EncryptionMode, RemoveProposal};
 use crate::mls_rules::{ProposalBundle, ProposalSource};
 use crate::{
     cipher_suite::CipherSuite,
@@ -233,8 +233,11 @@ where
 
     /// Insert a [`RemoveProposal`](crate::group::proposal::RemoveProposal) into
     /// the current commit that is being built.
-    pub fn remove_member(self, index: u32) -> Result<Self, MlsError> {
-        let proposal = self.group.remove_proposal(index)?;
+    pub fn remove_member(self, to_remove: u32) -> Result<Self, MlsError> {
+        let proposal = Proposal::Remove(RemoveProposal {
+            to_remove: LeafIndex(to_remove),
+        });
+
         Ok(self.with_proposal(proposal))
     }
 
@@ -242,7 +245,7 @@ where
     /// [`GroupContextExtensions`](crate::group::proposal::Proposal::GroupContextExtensions)
     /// into the current commit that is being built.
     pub fn set_group_context_ext(self, extensions: ExtensionList) -> Result<Self, MlsError> {
-        let proposal = self.group.group_context_extensions_proposal(extensions);
+        let proposal = Proposal::GroupContextExtensions(extensions);
         Ok(self.with_proposal(proposal))
     }
 
@@ -1282,7 +1285,9 @@ mod tests {
             .await
             .unwrap();
 
-        let expected_remove = group.remove_proposal(1).unwrap();
+        let expected_remove = Proposal::Remove(RemoveProposal {
+            to_remove: LeafIndex(1),
+        });
 
         assert_commit_builder_output(group, commit_output, vec![expected_remove], 0);
     }
@@ -1305,7 +1310,10 @@ mod tests {
             .unwrap();
 
         let key_id = JustPreSharedKeyID::External(test_psk);
-        let expected_psk = group.psk_proposal(key_id).unwrap();
+
+        let expected_psk = Proposal::Psk(PreSharedKeyProposal {
+            psk: PreSharedKeyID::new(key_id, &group.cipher_suite_provider).unwrap(),
+        });
 
         assert_commit_builder_output(group, commit_output, vec![expected_psk], 0)
     }
@@ -1326,7 +1334,7 @@ mod tests {
             .await
             .unwrap();
 
-        let expected_ext = group.group_context_extensions_proposal(test_ext);
+        let expected_ext = Proposal::GroupContextExtensions(test_ext);
 
         assert_commit_builder_output(group, commit_output, vec![expected_ext], 0);
     }

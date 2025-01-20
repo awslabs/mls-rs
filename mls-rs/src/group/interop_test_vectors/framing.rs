@@ -20,7 +20,8 @@ use crate::{
         proposal::{Proposal, RemoveProposal},
         secret_tree::test_utils::get_test_tree,
         test_utils::{random_bytes, test_group_custom_config},
-        AuthenticatedContent, Commit, EncryptionMode, Group, GroupContext, MlsMessage, Sender,
+        AuthenticatedContent, Commit, EncryptionMode, Group, GroupContext, MlsMessage,
+        ProposalBuilder, ProposalInput, Sender, UpdateProposal,
     },
     mls_rules::DefaultMlsRules,
     test_utils::is_edwards,
@@ -131,6 +132,10 @@ impl From<InteropGroupContext> for GroupContext {
     }
 }
 
+fn arbitrary_proposal_input() -> ProposalInput<UpdateProposal> {
+    ProposalInput::Update
+}
+
 // The test vector can be found here:
 // https://github.com/mlswg/mls-implementations/blob/main/test-vectors/message-protection.json
 #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -160,10 +165,10 @@ async fn framing_proposal() {
         #[cfg(not(target_arch = "wasm32"))]
         for enable_encryption in [true, false] {
             let proposal = Proposal::mls_decode(&mut &*test_case.proposal).unwrap();
+            let mut group = make_group(&test_case, true, enable_encryption, &cs).await;
 
-            let built = make_group(&test_case, true, enable_encryption, &cs)
-                .await
-                .proposal_message(proposal, vec![])
+            let built = ProposalBuilder::new(&mut group, arbitrary_proposal_input())
+                .proposal_message(proposal)
                 .await
                 .unwrap()
                 .mls_encode_to_vec()
@@ -330,11 +335,20 @@ async fn generate_framing_test_vector() -> Vec<FramingTestCase> {
         test_case.proposal = proposal.mls_encode_to_vec().unwrap();
 
         let mut group = make_group(&test_case, true, false, &cs).await;
-        let proposal_pub = group.proposal_message(proposal.clone(), vec![]).await;
+
+        let proposal_pub = ProposalBuilder::new(&mut group, arbitrary_proposal_input())
+            .proposal_message(proposal.clone())
+            .await;
+
         test_case.proposal_pub = proposal_pub.unwrap().mls_encode_to_vec().unwrap();
 
         let mut group = make_group(&test_case, true, true, &cs).await;
-        let proposal_priv = group.proposal_message(proposal, vec![]).await.unwrap();
+
+        let proposal_priv = ProposalBuilder::new(&mut group, arbitrary_proposal_input())
+            .proposal_message(proposal)
+            .await
+            .unwrap();
+
         test_case.proposal_priv = proposal_priv.mls_encode_to_vec().unwrap();
 
         // Generate private and public commit message
