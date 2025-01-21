@@ -598,6 +598,8 @@ pub(crate) use builder::ProposalInput;
 
 #[cfg(feature = "by_ref_proposal")]
 mod builder {
+    use alloc::vec::Vec;
+
     use mls_rs_core::{
         crypto::{CipherSuite, CipherSuiteProvider, SignatureSecretKey},
         error::IntoAnyError,
