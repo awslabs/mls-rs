@@ -427,14 +427,14 @@ pub async fn generate_passive_client_proposal_tests() -> Vec<TestCase> {
 
         // Create by reference proposals
         let add = groups[0]
-            .propose_add(create_key_package(cs.cipher_suite()).await, vec![])
+            .propose_add(create_key_package(cs.cipher_suite()).await)
             .await
             .unwrap();
 
         let add = (add, 0);
 
-        let update = (groups[1].propose_update(vec![]).await.unwrap(), 1);
-        let remove = (groups[2].propose_remove(2, vec![]).await.unwrap(), 2);
+        let update = (groups[1].propose_update().await.unwrap(), 1);
+        let remove = (groups[2].propose_remove(2).await.unwrap(), 2);
 
         let ext_psk = groups[3]
             .propose_external_psk(psk.clone(), vec![])
@@ -449,7 +449,7 @@ pub async fn generate_passive_client_proposal_tests() -> Vec<TestCase> {
         let res_psk = (res_psk, 3);
 
         let grp_ext = groups[4]
-            .propose_group_context_extensions(Default::default(), vec![])
+            .propose_group_context_extensions(Default::default())
             .await
             .unwrap();
 
@@ -538,7 +538,7 @@ pub async fn generate_passive_client_welcome_tests() -> Vec<TestCase> {
                     get_test_groups(VERSION, cs.cipher_suite(), 16, &crypto_provider).await;
 
                 // Remove a member s.t. the passive member joins in their place
-                let proposal = groups[0].propose_remove(7, vec![]).await.unwrap();
+                let proposal = groups[0].propose_remove(7).await.unwrap();
                 all_process_message(&mut groups, &proposal, 0, false).await;
 
                 let mut test_case =
@@ -654,12 +654,7 @@ pub async fn add_random_members<C: MlsConfig>(
     let committer_group = &mut groups[committer];
 
     for key_package in key_packages {
-        add_proposals.push(
-            committer_group
-                .propose_add(key_package, vec![])
-                .await
-                .unwrap(),
-        );
+        add_proposals.push(committer_group.propose_add(key_package).await.unwrap());
     }
 
     for p in &add_proposals {

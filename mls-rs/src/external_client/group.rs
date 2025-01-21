@@ -1036,7 +1036,7 @@ mod tests {
             key_package: bob_key_package.clone().into_key_package().unwrap(),
         }));
 
-        let packet = alice.propose_add(bob_key_package, vec![]).await.unwrap();
+        let packet = alice.propose_add(bob_key_package).await.unwrap();
 
         let proposal_process = server
             .process_incoming_message_oneshot(packet)
@@ -1405,7 +1405,7 @@ mod tests {
         )
         .await;
 
-        let proposal = alice.propose_update(vec![]).await.unwrap();
+        let proposal = alice.propose_update().await.unwrap();
 
         let commit_output = alice.commit(vec![]).await.unwrap();
 

@@ -69,10 +69,7 @@ pub(crate) mod inner {
 
             self.send_proposal(request.state_id, move |group| {
                 let ext = parse_extensions(request.extensions);
-
-                group
-                    .propose_group_context_extensions(ext, vec![])
-                    .map_err(abort)
+                group.propose_group_context_extensions(ext).map_err(abort)
             })
             .await
         }
@@ -168,7 +165,7 @@ pub(crate) mod inner {
                 let removed_cred = Credential::Basic(BasicCredential::new(request.removed_id));
                 let removed_index = find_member(&group.roster().members(), &removed_cred)?;
 
-                group.propose_remove(removed_index, vec![]).map_err(abort)
+                group.propose_remove(removed_index).map_err(abort)
             })
             .await
         }
@@ -183,7 +180,7 @@ pub(crate) mod inner {
             let request = request.into_inner();
 
             self.send_proposal(request.state_id, move |group| {
-                group.propose_update(vec![]).map_err(abort)
+                group.propose_update().map_err(abort)
             })
             .await
         }
@@ -199,7 +196,7 @@ pub(crate) mod inner {
             let key_package = MlsMessage::from_bytes(&request.key_package).map_err(abort)?;
 
             self.send_proposal(request.state_id, move |group| {
-                group.propose_add(key_package, vec![]).map_err(abort)
+                group.propose_add(key_package).map_err(abort)
             })
             .await
         }
@@ -233,7 +230,7 @@ pub(crate) mod inner {
                     .map_err(abort)?;
 
                 group
-                    .propose_group_context_extensions(extensions, vec![])
+                    .propose_group_context_extensions(extensions)
                     .map_err(abort)
             })
             .await

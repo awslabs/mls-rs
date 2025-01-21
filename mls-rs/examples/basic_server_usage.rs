@@ -167,7 +167,7 @@ fn main() -> Result<(), MlsError> {
 
     // Bob uploads a proposal
     let proposal = bob_group
-        .propose_group_context_extensions(ExtensionList::new(), Vec::new())?
+        .propose_group_context_extensions(ExtensionList::new())?
         .to_bytes()?;
 
     server.upload_proposal(proposal)?;

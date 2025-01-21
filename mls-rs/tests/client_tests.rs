@@ -534,7 +534,7 @@ async fn external_commits_work(
         .all(|group| group.roster().members_iter().count() == PARTICIPANT_COUNT));
 
     for i in 0..groups.len() {
-        let message = groups[i].propose_remove(0, Vec::new()).await.unwrap();
+        let message = groups[i].propose_remove(0).await.unwrap();
 
         for (_, group) in groups.iter_mut().enumerate().filter(|&(j, _)| i != j) {
             let processed = group
@@ -768,7 +768,7 @@ async fn external_joiner_can_process_siblings_update() {
     groups.remove(1);
 
     // New client's sibling proposes an update to blank their common parent
-    let p = groups[0].propose_update(Vec::new()).await.unwrap();
+    let p = groups[0].propose_update().await.unwrap();
     all_process_message(&mut groups, &p, 0, false).await;
     group.process_incoming_message(p).await.unwrap();
 

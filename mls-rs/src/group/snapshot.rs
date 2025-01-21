@@ -403,7 +403,7 @@ mod tests {
     async fn snapshot_with_pending_updates_can_be_serialized_to_json() {
         let mut group = test_group().await;
 
-        group.propose_update(vec![]).await.unwrap();
+        group.propose_update().await.unwrap();
 
         snapshot_restore(group).await
     }

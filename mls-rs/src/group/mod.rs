@@ -618,11 +618,7 @@ where
     /// of the proposal message.
     #[cfg(feature = "by_ref_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn propose_add(
-        &mut self,
-        key_package: MlsMessage,
-        _authenticated_data: Vec<u8>,
-    ) -> Result<MlsMessage, MlsError> {
+    pub async fn propose_add(&mut self, key_package: MlsMessage) -> Result<MlsMessage, MlsError> {
         self.add_proposal_builder(key_package)?.build().await
     }
 
@@ -662,10 +658,7 @@ where
     /// of the proposal message.
     #[cfg(feature = "by_ref_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn propose_update(
-        &mut self,
-        _authenticated_data: Vec<u8>,
-    ) -> Result<MlsMessage, MlsError> {
+    pub async fn propose_update(&mut self) -> Result<MlsMessage, MlsError> {
         self.update_proposal_builder().build().await
     }
 
@@ -720,11 +713,7 @@ where
     /// of the proposal message.
     #[cfg(feature = "by_ref_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn propose_remove(
-        &mut self,
-        index: u32,
-        _authenticated_data: Vec<u8>,
-    ) -> Result<MlsMessage, MlsError> {
+    pub async fn propose_remove(&mut self, index: u32) -> Result<MlsMessage, MlsError> {
         self.remove_proposal_builder(index).build().await
     }
 
@@ -864,7 +853,6 @@ where
     pub async fn propose_group_context_extensions(
         &mut self,
         extensions: ExtensionList,
-        _authenticated_data: Vec<u8>,
     ) -> Result<MlsMessage, MlsError> {
         self.group_context_extensions_proposal_builder(extensions)
             .build()
@@ -893,7 +881,6 @@ where
     pub async fn propose_custom(
         &mut self,
         proposal: CustomProposal,
-        _authenticated_data: Vec<u8>,
     ) -> Result<MlsMessage, MlsError> {
         self.custom_proposal_builder(proposal).build().await
     }
@@ -1885,10 +1872,7 @@ mod tests {
         let bob_key_package =
             test_key_package_message(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
 
-        test_group
-            .propose_add(bob_key_package, vec![])
-            .await
-            .unwrap();
+        test_group.propose_add(bob_key_package).await.unwrap();
 
         // We should not be able to send application messages until a commit happens
         let res = test_group
@@ -1960,7 +1944,7 @@ mod tests {
         let mut test_group = test_group().await;
 
         // Create an update proposal
-        let proposal_msg = test_group.propose_update(vec![]).await.unwrap();
+        let proposal_msg = test_group.propose_update().await.unwrap();
 
         let proposal = match proposal_msg.into_plaintext().unwrap().content.content {
             Content::Proposal(p) => p,
@@ -2585,7 +2569,7 @@ mod tests {
                 .unwrap();
         }
 
-        let update = bob.propose_update(vec![]).await.unwrap();
+        let update = bob.propose_update().await.unwrap();
         charlie.process_message(update.clone()).await.unwrap();
         alice.process_message(update).await.unwrap();
 
@@ -3441,7 +3425,7 @@ mod tests {
         let key_package =
             test_key_package_message(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "foobar").await;
 
-        let proposal = groups[0].propose_add(key_package, vec![]).await.unwrap();
+        let proposal = groups[0].propose_add(key_package).await.unwrap();
 
         let commit = groups[0].commit(vec![]).await.unwrap().commit_message;
 
@@ -3523,11 +3507,7 @@ mod tests {
         let (mut alice, mut bob) = custom_proposal_setup().await;
 
         let custom_proposal = CustomProposal::new(TEST_CUSTOM_PROPOSAL_TYPE, vec![0, 1, 2]);
-
-        let proposal = alice
-            .propose_custom(custom_proposal.clone(), vec![])
-            .await
-            .unwrap();
+        let proposal = alice.propose_custom(custom_proposal.clone()).await.unwrap();
 
         let recv_prop = bob
             .process_incoming_message(proposal)
@@ -3777,9 +3757,9 @@ mod tests {
             .0;
 
         // Bob's updated leaf does not support the mandatory extension.
-        let bob_update = bob.propose_update(Vec::new()).await.unwrap();
-        let carol_update = carol.propose_update(Vec::new()).await.unwrap();
-        let dave_update = dave.propose_update(Vec::new()).await.unwrap();
+        let bob_update = bob.propose_update().await.unwrap();
+        let carol_update = carol.propose_update().await.unwrap();
+        let dave_update = dave.propose_update().await.unwrap();
 
         // Alice receives the update proposals to be committed.
         alice.process_incoming_message(bob_update).await.unwrap();
@@ -3866,7 +3846,7 @@ mod tests {
             .unwrap();
 
         let by_ref = CustomProposal::new(TEST_CUSTOM_PROPOSAL_TYPE, vec![]);
-        let by_ref = alice.propose_custom(by_ref, vec![]).await.unwrap();
+        let by_ref = alice.propose_custom(by_ref).await.unwrap();
 
         let group_info = alice
             .group_info_message_allowing_ext_commit(true)
@@ -4009,7 +3989,7 @@ mod tests {
     async fn commit_clears_proposals() {
         let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 2).await;
 
-        groups[0].propose_update(vec![]).await.unwrap();
+        groups[0].propose_update().await.unwrap();
 
         assert_eq!(groups[0].state.proposals.proposals.len(), 1);
         assert_eq!(groups[0].state.proposals.own_proposals.len(), 1);
@@ -4029,7 +4009,7 @@ mod tests {
         assert!(!group.commit_required());
 
         group
-            .propose_group_context_extensions(ExtensionList::new(), vec![])
+            .propose_group_context_extensions(ExtensionList::new())
             .await
             .unwrap();
 
