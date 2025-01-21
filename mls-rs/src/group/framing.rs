@@ -6,9 +6,7 @@ use core::ops::Deref;
 
 use crate::{client::MlsError, tree_kem::node::LeafIndex, KeyPackage, KeyPackageRef};
 
-use super::{
-    padding::PaddingMode, Commit, FramedContentAuthData, GroupInfo, MembershipTag, Welcome,
-};
+use super::{Commit, FramedContentAuthData, GroupInfo, MembershipTag, Welcome};
 
 #[cfg(feature = "by_ref_proposal")]
 use crate::{group::Proposal, group::ProposalRef};
@@ -24,6 +22,9 @@ use zeroize::ZeroizeOnDrop;
 
 #[cfg(feature = "private_message")]
 use alloc::boxed::Box;
+
+#[cfg(feature = "private_message")]
+use super::padding::PaddingMode;
 
 #[cfg(feature = "custom_proposal")]
 use crate::group::proposal::{CustomProposal, ProposalOrRef};

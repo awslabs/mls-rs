@@ -10,7 +10,9 @@ use itertools::Itertools;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::crypto::SignatureSecretKey;
 
-use crate::group::proposal_filter::{ProposalBundle, ProposalInfo, ProposalSource};
+#[cfg(feature = "by_ref_proposal")]
+use crate::group::proposal_filter::ProposalInfo;
+use crate::group::proposal_filter::{ProposalBundle, ProposalSource};
 use crate::group::{EncryptionMode, RemoveProposal};
 use crate::{
     cipher_suite::CipherSuite,
@@ -30,9 +32,6 @@ use super::{Commit, CommitSource};
 use {crate::iter::ParallelIteratorExt, rayon::prelude::*};
 
 use crate::tree_kem::leaf_node::LeafNode;
-
-#[cfg(not(feature = "private_message"))]
-use crate::WireFormat;
 
 #[cfg(feature = "psk")]
 use crate::{
@@ -969,7 +968,11 @@ where
             };
 
         let commit_message = self
-            .format_for_wire(auth_content.clone(), options.encryption_mode)
+            .format_for_wire(
+                auth_content.clone(),
+                #[cfg(feature = "private_message")]
+                options.encryption_mode,
+            )
             .await?;
 
         // TODO is it necessary to clone the tree here? or can we just output serialized bytes?

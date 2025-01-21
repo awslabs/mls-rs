@@ -88,9 +88,9 @@ pub use self::message_processor::{
     ProposalMessageDescription, ProposalSender, ReceivedMessage,
 };
 use self::message_processor::{EventOrContent, MessageProcessor, ProvisionalState};
-#[cfg(feature = "by_ref_proposal")]
-use self::proposal_ref::ProposalRef;
 use self::state_repo::GroupStateRepository;
+#[cfg(feature = "by_ref_proposal")]
+use self::{proposal::ProposalInput, proposal_ref::ProposalRef};
 pub use group_info::GroupInfo;
 
 pub use self::framing::{ContentType, Sender};
@@ -628,8 +628,7 @@ where
 
     #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     #[cfg(feature = "by_ref_proposal")]
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn proposal_builder_add(
+    pub fn proposal_builder_add(
         &mut self,
         key_package: MlsMessage,
     ) -> Result<ProposalBuilder<'_, C, AddProposal>, MlsError> {
@@ -821,9 +820,8 @@ where
     }
 
     #[cfg(feature = "by_ref_proposal")]
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
-    pub async fn proposal_builder_reinit(&mut self) -> ProposalBuilder<'_, C, ReInitProposal> {
+    pub fn proposal_builder_reinit(&mut self) -> ProposalBuilder<'_, C, ReInitProposal> {
         ProposalBuilder::new(self, ProposalInput::ReInit)
     }
 
@@ -875,8 +873,7 @@ where
 
     #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     #[cfg(feature = "by_ref_proposal")]
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn proposal_builder_group_context_extensions(
+    pub fn proposal_builder_group_context_extensions(
         &mut self,
         extensions: ExtensionList,
     ) -> ProposalBuilder<'_, C, ExtensionList> {
@@ -884,7 +881,7 @@ where
             proposal: extensions,
         };
 
-        ProposalBuilder::new(self, proposal).await
+        ProposalBuilder::new(self, proposal)
     }
 
     /// Create a custom proposal message.
@@ -903,8 +900,7 @@ where
 
     #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     #[cfg(all(feature = "custom_proposal", feature = "by_ref_proposal"))]
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn proposal_builder_custom(
+    pub fn proposal_builder_custom(
         &mut self,
         proposal: CustomProposal,
     ) -> ProposalBuilder<'_, C, CustomProposal> {
@@ -1987,9 +1983,7 @@ mod tests {
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn update_proposal_with_bad_key_package_is_ignored_when_committing() {
         let (mut alice_group, mut bob_group) = test_two_member_group().await;
-
-        let mut proposal_builder = alice_group.proposal_builder_update().await;
-
+        let mut proposal_builder = alice_group.proposal_builder_update();
         let mut proposal = proposal_builder.proposal().await.unwrap();
 
         if let Proposal::Update(ref mut update) = proposal {
