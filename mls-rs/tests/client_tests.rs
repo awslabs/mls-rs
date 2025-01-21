@@ -5,6 +5,7 @@
 use assert_matches::assert_matches;
 use cfg_if::cfg_if;
 use mls_rs::client_builder::MlsConfig;
+#[cfg(feature = "private_message")]
 use mls_rs::client_builder::PaddingMode;
 use mls_rs::error::MlsError;
 use mls_rs::group::proposal::Proposal;
@@ -148,12 +149,18 @@ where
     }
 }
 
+#[cfg(feature = "private_message")]
 fn encryption_mode(encrypt_controls: bool) -> EncryptionMode {
     if encrypt_controls {
         EncryptionMode::PrivateMessage(PaddingMode::None)
     } else {
         EncryptionMode::PublicMessage
     }
+}
+
+#[cfg(not(feature = "private_message"))]
+fn encryption_mode(_encrypt_controls: bool) -> EncryptionMode {
+    EncryptionMode::PublicMessage
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -245,7 +252,7 @@ async fn test_update_proposals(
     // Create an update from the ith member, have the ith + 1 member commit it
     for i in 0..groups.len() - 1 {
         let update_proposal_msg = groups[i]
-            .proposal_builder_update()
+            .update_proposal_builder()
             .encryption_mode(encryption_mode(encrypt_controls))
             .build()
             .await
@@ -304,7 +311,6 @@ async fn test_remove_proposals(
         let commit_output = groups[committer]
             .commit_builder()
             .remove_member(to_remove_index)
-            .unwrap()
             .encryption_mode(encryption_mode(encrypt_controls))
             .build()
             .await
@@ -564,17 +570,19 @@ async fn test_remove_nonexisting_leaf() {
     groups[0]
         .commit_builder()
         .remove_member(5)
-        .unwrap()
         .build()
         .await
         .unwrap();
+
     groups[0].apply_pending_commit().await.unwrap();
 
     // Leaf index out of bounds
-    assert!(groups[0].commit_builder().remove_member(13).is_err());
+    let res = groups[0].commit_builder().remove_member(13).build().await;
+    assert!(res.is_err());
 
     // Removing blank leaf causes error
-    assert!(groups[0].commit_builder().remove_member(5).is_err());
+    let res = groups[0].commit_builder().remove_member(5).build().await;
+    assert!(res.is_err());
 }
 
 #[cfg(feature = "psk")]
@@ -618,7 +626,7 @@ async fn reinit_works() {
 
     // Alice proposes reinit
     let reinit_proposal_message = alice_group
-        .proposal_builder_reinit()
+        .reinit_proposal_builder()
         .cipher_suite(suite2)
         .build()
         .await
@@ -739,7 +747,6 @@ async fn external_joiner_can_process_siblings_update() {
     let c = groups[0]
         .commit_builder()
         .remove_member(1)
-        .unwrap()
         .build()
         .await
         .unwrap();
@@ -780,7 +787,7 @@ async fn weird_tree_scenario() {
     let mut builder = groups[14].commit_builder();
 
     for idx in to_remove.iter() {
-        builder = builder.remove_member(*idx).unwrap();
+        builder = builder.remove_member(*idx);
     }
 
     let commit = builder.build().await.unwrap();
@@ -799,7 +806,7 @@ async fn weird_tree_scenario() {
             .unwrap()
     }
 
-    let commit = builder.remove_member(1).unwrap().build().await.unwrap();
+    let commit = builder.remove_member(1).build().await.unwrap();
 
     let idx = groups.last().unwrap().current_member_index() as usize;
 
@@ -846,7 +853,6 @@ async fn can_process_own_removal_if_pending_commit() {
     let commit = groups[1]
         .commit_builder()
         .remove_member(0)
-        .unwrap()
         .build()
         .await
         .unwrap();

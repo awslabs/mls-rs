@@ -379,7 +379,6 @@ mod tests {
         let commit = groups[0]
             .commit_builder()
             .remove_member(2)
-            .unwrap()
             .authenticated_data(b"auth data".into())
             .build()
             .await

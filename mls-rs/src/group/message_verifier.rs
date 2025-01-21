@@ -550,7 +550,6 @@ mod tests {
         test_group
             .commit_builder()
             .set_group_context_ext(extensions)
-            .unwrap()
             .build()
             .await
             .unwrap();

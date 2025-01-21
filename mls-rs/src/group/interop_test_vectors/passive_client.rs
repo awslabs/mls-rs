@@ -361,7 +361,7 @@ pub async fn generate_passive_client_proposal_tests() -> Vec<TestCase> {
 
         let test_case = commit_by_value(
             &mut groups[3].clone(),
-            |b| b.remove_member(5).unwrap(),
+            |b| b.remove_member(5),
             partial_test_case.clone(),
         )
         .await;
@@ -397,7 +397,7 @@ pub async fn generate_passive_client_proposal_tests() -> Vec<TestCase> {
 
         let test_case = commit_by_value(
             &mut groups[2].clone(),
-            |b| b.set_group_context_ext(Default::default()).unwrap(),
+            |b| b.set_group_context_ext(Default::default()),
             partial_test_case.clone(),
         )
         .await;
@@ -413,13 +413,11 @@ pub async fn generate_passive_client_proposal_tests() -> Vec<TestCase> {
                 b.add_member(key_pckg)
                     .unwrap()
                     .remove_member(5)
-                    .unwrap()
                     .add_external_psk(psk.clone(), make_test_ext_psk().into())
                     .unwrap()
                     .add_resumption_psk(epoch_to_resume, resumption_psk)
                     .unwrap()
                     .set_group_context_ext(Default::default())
-                    .unwrap()
             },
             partial_test_case.clone(),
         )
@@ -709,7 +707,7 @@ pub async fn remove_members<C: MlsConfig>(
     let mut commit_builder = groups[committer].commit_builder();
 
     for index in remove_indexes {
-        commit_builder = commit_builder.remove_member(index).unwrap();
+        commit_builder = commit_builder.remove_member(index);
     }
 
     let commit = commit_builder.build().await.unwrap().commit_message;

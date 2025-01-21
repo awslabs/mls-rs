@@ -88,7 +88,7 @@ pub(crate) mod inner {
 
             self.send_proposal(request.state_id, move |group| {
                 group
-                    .proposal_builder_reinit()
+                    .reinit_proposal_builder()
                     .group_id(request.group_id)
                     .cipher_suite((request.cipher_suite as u16).into())
                     .extensions(parse_extensions(request.extensions))

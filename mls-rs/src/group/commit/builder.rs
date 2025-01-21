@@ -231,20 +231,20 @@ where
 
     /// Insert a [`RemoveProposal`](crate::group::proposal::RemoveProposal) into
     /// the current commit that is being built.
-    pub fn remove_member(self, to_remove: u32) -> Result<Self, MlsError> {
+    pub fn remove_member(self, to_remove: u32) -> Self {
         let proposal = Proposal::Remove(RemoveProposal {
             to_remove: LeafIndex(to_remove),
         });
 
-        Ok(self.with_proposal(proposal))
+        self.with_proposal(proposal)
     }
 
     /// Insert a
     /// [`GroupContextExtensions`](crate::group::proposal::Proposal::GroupContextExtensions)
     /// into the current commit that is being built.
-    pub fn set_group_context_ext(self, extensions: ExtensionList) -> Result<Self, MlsError> {
+    pub fn set_group_context_ext(self, extensions: ExtensionList) -> Self {
         let proposal = Proposal::GroupContextExtensions(extensions);
-        Ok(self.with_proposal(proposal))
+        self.with_proposal(proposal)
     }
 
     /// Add an external PSK that can be used to fulfil PSK requirements that were
@@ -1282,7 +1282,6 @@ mod tests {
         let commit_output = group
             .commit_builder()
             .remove_member(1)
-            .unwrap()
             .build()
             .await
             .unwrap();
@@ -1331,7 +1330,6 @@ mod tests {
         let commit_output = group
             .commit_builder()
             .set_group_context_ext(test_ext.clone())
-            .unwrap()
             .build()
             .await
             .unwrap();
@@ -1643,7 +1641,6 @@ mod tests {
             .add_member(bob_kp)
             .unwrap()
             .set_group_context_ext(extension_list.clone())
-            .unwrap()
             .build()
             .await;
 
@@ -1656,7 +1653,6 @@ mod tests {
             .add_member(alex.generate_key_package().await.unwrap())
             .unwrap()
             .set_group_context_ext(extension_list.clone())
-            .unwrap()
             .build()
             .await
             .unwrap();
@@ -1688,7 +1684,6 @@ mod tests {
         let res = alice
             .commit_builder()
             .set_group_context_ext(alex_extensions)
-            .unwrap()
             .build()
             .await;
 
@@ -1707,7 +1702,6 @@ mod tests {
         alice
             .commit_builder()
             .set_group_context_ext(bob_extensions)
-            .unwrap()
             .build()
             .await
             .unwrap();

@@ -623,12 +623,12 @@ where
         key_package: MlsMessage,
         _authenticated_data: Vec<u8>,
     ) -> Result<MlsMessage, MlsError> {
-        self.proposal_builder_add(key_package)?.build().await
+        self.add_proposal_builder(key_package)?.build().await
     }
 
     #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     #[cfg(feature = "by_ref_proposal")]
-    pub fn proposal_builder_add(
+    pub fn add_proposal_builder(
         &mut self,
         key_package: MlsMessage,
     ) -> Result<ProposalBuilder<'_, C, AddProposal>, MlsError> {
@@ -666,12 +666,12 @@ where
         &mut self,
         _authenticated_data: Vec<u8>,
     ) -> Result<MlsMessage, MlsError> {
-        self.proposal_builder_update().build().await
+        self.update_proposal_builder().build().await
     }
 
     #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     #[cfg(feature = "by_ref_proposal")]
-    pub fn proposal_builder_update(&mut self) -> ProposalBuilder<C, UpdateProposal> {
+    pub fn update_proposal_builder(&mut self) -> ProposalBuilder<C, UpdateProposal> {
         ProposalBuilder::new(self, ProposalInput::Update)
     }
 
@@ -725,12 +725,12 @@ where
         index: u32,
         _authenticated_data: Vec<u8>,
     ) -> Result<MlsMessage, MlsError> {
-        self.proposal_builder_remove(index).build().await
+        self.remove_proposal_builder(index).build().await
     }
 
     #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     #[cfg(feature = "by_ref_proposal")]
-    pub fn proposal_builder_remove(
+    pub fn remove_proposal_builder(
         &mut self,
         to_remove: u32,
     ) -> ProposalBuilder<C, RemoveProposal> {
@@ -758,13 +758,13 @@ where
         psk: ExternalPskId,
         _authenticated_data: Vec<u8>,
     ) -> Result<MlsMessage, MlsError> {
-        self.proposal_builder_external_psk(psk).build().await
+        self.external_psk_proposal_builder(psk).build().await
     }
 
     #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     #[cfg(all(feature = "by_ref_proposal", feature = "psk"))]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub fn proposal_builder_external_psk(
+    pub fn external_psk_proposal_builder(
         &mut self,
         psk_id: ExternalPskId,
     ) -> ProposalBuilder<'_, C, PreSharedKeyProposal> {
@@ -783,7 +783,7 @@ where
     #[cfg(all(feature = "by_ref_proposal", feature = "psk"))]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn propose_resumption_psk(&mut self, psk_epoch: u64) -> Result<MlsMessage, MlsError> {
-        self.proposal_builder_resumption_psk(psk_epoch)
+        self.resumption_psk_proposal_builder(psk_epoch)
             .build()
             .await
     }
@@ -791,7 +791,7 @@ where
     #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     #[cfg(all(feature = "by_ref_proposal", feature = "psk"))]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub fn proposal_builder_resumption_psk(
+    pub fn resumption_psk_proposal_builder(
         &mut self,
         psk_epoch: u64,
     ) -> ProposalBuilder<'_, C, PreSharedKeyProposal> {
@@ -816,12 +816,12 @@ where
     #[cfg(feature = "by_ref_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn propose_reinit(&mut self) -> Result<MlsMessage, MlsError> {
-        self.proposal_builder_reinit().build().await
+        self.reinit_proposal_builder().build().await
     }
 
     #[cfg(feature = "by_ref_proposal")]
     #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
-    pub fn proposal_builder_reinit(&mut self) -> ProposalBuilder<'_, C, ReInitProposal> {
+    pub fn reinit_proposal_builder(&mut self) -> ProposalBuilder<'_, C, ReInitProposal> {
         ProposalBuilder::new(self, ProposalInput::ReInit)
     }
 
@@ -866,14 +866,14 @@ where
         extensions: ExtensionList,
         _authenticated_data: Vec<u8>,
     ) -> Result<MlsMessage, MlsError> {
-        self.proposal_builder_group_context_extensions(extensions)
+        self.group_context_extensions_proposal_builder(extensions)
             .build()
             .await
     }
 
     #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     #[cfg(feature = "by_ref_proposal")]
-    pub fn proposal_builder_group_context_extensions(
+    pub fn group_context_extensions_proposal_builder(
         &mut self,
         extensions: ExtensionList,
     ) -> ProposalBuilder<'_, C, ExtensionList> {
@@ -895,12 +895,12 @@ where
         proposal: CustomProposal,
         _authenticated_data: Vec<u8>,
     ) -> Result<MlsMessage, MlsError> {
-        self.proposal_builder_custom(proposal).build().await
+        self.custom_proposal_builder(proposal).build().await
     }
 
     #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     #[cfg(all(feature = "custom_proposal", feature = "by_ref_proposal"))]
-    pub fn proposal_builder_custom(
+    pub fn custom_proposal_builder(
         &mut self,
         proposal: CustomProposal,
     ) -> ProposalBuilder<'_, C, CustomProposal> {
@@ -1983,7 +1983,7 @@ mod tests {
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn update_proposal_with_bad_key_package_is_ignored_when_committing() {
         let (mut alice_group, mut bob_group) = test_two_member_group().await;
-        let mut proposal_builder = alice_group.proposal_builder_update();
+        let mut proposal_builder = alice_group.update_proposal_builder();
         let mut proposal = proposal_builder.proposal().await.unwrap();
 
         if let Proposal::Update(ref mut update) = proposal {
@@ -2142,7 +2142,6 @@ mod tests {
         let commit = test_group
             .commit_builder()
             .set_group_context_ext(ext_list)
-            .unwrap()
             .build()
             .await
             .map(|commit_output| commit_output.commit_message);
@@ -2534,7 +2533,6 @@ mod tests {
         alice
             .commit_builder()
             .remove_member(1)
-            .unwrap()
             .build()
             .await
             .unwrap();
@@ -2560,7 +2558,6 @@ mod tests {
         let commit = charlie
             .commit_builder()
             .remove_member(1)
-            .unwrap()
             .build()
             .await
             .unwrap();
@@ -2786,7 +2783,6 @@ mod tests {
                 .try_into()
                 .unwrap(),
             )
-            .unwrap()
             .build()
             .await
             .unwrap();
@@ -2806,7 +2802,6 @@ mod tests {
             .add_member(test_key_package.clone())
             .unwrap()
             .set_group_context_ext(Default::default())
-            .unwrap()
             .build()
             .await
             .unwrap();
@@ -3276,7 +3271,6 @@ mod tests {
         let res = alice
             .commit_builder()
             .set_group_context_ext(core::iter::once(ext_senders).collect())
-            .unwrap()
             .build()
             .await;
 
@@ -3320,7 +3314,6 @@ mod tests {
         let commit_output = groups[0]
             .commit_builder()
             .remove_member(1)
-            .unwrap()
             .build()
             .await
             .unwrap();
@@ -3363,7 +3356,6 @@ mod tests {
         let commit_output = groups[0]
             .commit_builder()
             .remove_member(1)
-            .unwrap()
             .build()
             .await
             .unwrap();
@@ -3399,7 +3391,7 @@ mod tests {
         let (identity, secret_key) = get_test_signing_identity(TEST_CIPHER_SUITE, b"member").await;
 
         let update = groups[0]
-            .proposal_builder_update()
+            .update_proposal_builder()
             .signer(secret_key)
             .signing_identity(identity.clone())
             .build()
@@ -3984,7 +3976,7 @@ mod tests {
         };
 
         let upd = alice
-            .proposal_builder_update()
+            .update_proposal_builder()
             .encryption_mode(mode)
             .build()
             .await

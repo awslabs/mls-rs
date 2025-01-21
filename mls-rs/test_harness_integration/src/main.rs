@@ -731,10 +731,7 @@ impl MlsClientImpl {
                 }
                 PROPOSAL_DESC_REMOVE => {
                     let cred = Credential::Basic(BasicCredential::new(proposal.removed_id.clone()));
-
-                    commit_builder = commit_builder
-                        .remove_member(find_member(&roster, &cred)?)
-                        .map_err(abort)?;
+                    commit_builder = commit_builder.remove_member(find_member(&roster, &cred)?);
                 }
                 #[cfg(feature = "psk")]
                 PROPOSAL_DESC_EXTERNAL_PSK => {
@@ -762,8 +759,7 @@ impl MlsClientImpl {
                 }
                 PROPOSAL_DESC_GCE => {
                     commit_builder = commit_builder
-                        .set_group_context_ext(parse_extensions(proposal.extensions.clone()))
-                        .map_err(abort)?;
+                        .set_group_context_ext(parse_extensions(proposal.extensions.clone()));
                 }
                 _ => (),
             }

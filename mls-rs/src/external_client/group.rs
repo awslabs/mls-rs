@@ -285,7 +285,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             .ok_or(MlsError::UnexpectedMessageType)?;
 
         self.propose(
-            Proposal::Add(alloc::boxed::Box::new(AddProposal { key_package })),
+            Proposal::Add(AddProposal { key_package }.into()),
             authenticated_data,
         )
         .await
@@ -995,7 +995,7 @@ mod tests {
                 })
                 .unwrap();
 
-            commit_builder = commit_builder.set_group_context_ext(ext_list).unwrap();
+            commit_builder = commit_builder.set_group_context_ext(ext_list);
         }
 
         commit_builder.build().await.unwrap();
