@@ -11,7 +11,7 @@ use super::{
 };
 
 #[cfg(feature = "by_ref_proposal")]
-use crate::{group::Proposal, mls_rules::ProposalRef};
+use crate::{group::Proposal, group::ProposalRef};
 
 use alloc::vec::Vec;
 use core::fmt::{self, Debug};

@@ -1,9 +1,10 @@
 #[cfg(feature = "psk")]
 pub(crate) mod inner {
     use mls_rs::{
-        group::CommitEffect, identity::SigningIdentity, mls_rs_codec::MlsEncode,
-        mls_rules::ProposalInfo, CipherSuiteProvider, CryptoProvider, MlsMessage,
-        MlsMessageDescription,
+        group::{CommitEffect, ProposalInfo},
+        identity::SigningIdentity,
+        mls_rs_codec::MlsEncode,
+        CipherSuiteProvider, CryptoProvider, MlsMessage, MlsMessageDescription,
     };
     use mls_rs_crypto_openssl::OpensslCryptoProvider;
     use tonic::{Request, Response, Status};

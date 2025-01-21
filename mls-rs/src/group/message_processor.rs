@@ -9,7 +9,6 @@ use super::{
         ApplicationData, Content, ContentType, MlsMessage, MlsMessagePayload, PublicMessage, Sender,
     },
     message_signature::AuthenticatedContent,
-    mls_rules::MlsRules,
     proposal_filter::ProposalBundle,
     state::GroupState,
     transcript_hash::InterimTranscriptHash,
@@ -525,7 +524,6 @@ where
         + From<KeyPackage>
         + Send;
 
-    type MlsRules: MlsRules;
     type IdentityProvider: IdentityProvider;
     type CipherSuiteProvider: CipherSuiteProvider;
 

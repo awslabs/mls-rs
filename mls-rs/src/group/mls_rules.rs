@@ -15,37 +15,6 @@ use alloc::boxed::Box;
 use core::convert::Infallible;
 use mls_rs_core::{error::IntoAnyError, group::Member, identity::SigningIdentity};
 
-/// The source of the commit: either a current member or a new member joining
-/// via external commit.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum CommitSource {
-    ExistingMember(Member),
-    NewMember(SigningIdentity),
-}
-
-impl CommitSource {
-    pub(crate) fn new(
-        sender: &Sender,
-        public_tree: &TreeKemPublic,
-        external_leaf: Option<&LeafNode>,
-    ) -> Result<Self, MlsError> {
-        match sender {
-            Sender::Member(index) => Ok(CommitSource::ExistingMember(
-                public_tree.roster().member_with_index(*index)?,
-            )),
-            #[cfg(feature = "by_ref_proposal")]
-            Sender::NewMemberProposal => Err(MlsError::InvalidSender),
-            #[cfg(feature = "by_ref_proposal")]
-            Sender::External(_) => Err(MlsError::InvalidSender),
-            Sender::NewMemberCommit => Ok(CommitSource::NewMember(
-                external_leaf
-                    .map(|l| l.signing_identity.clone())
-                    .ok_or(MlsError::ExternalCommitMustHaveNewLeaf)?,
-            )),
-        }
-    }
-}
-
 /// Options controlling encryption of control and application messages
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]

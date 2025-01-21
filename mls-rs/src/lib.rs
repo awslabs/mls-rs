@@ -165,24 +165,12 @@ pub use mls_rs_core::{
     psk::PreSharedKeyStorage,
 };
 
-/// Dependencies of [`MlsRules`].
-pub mod mls_rules {
-    pub use crate::group::{
-        mls_rules::{CommitSource, DefaultMlsRules, EncryptionOptions},
-        proposal_filter::{ProposalBundle, ProposalInfo, ProposalSource},
-    };
-
-    #[cfg(feature = "by_ref_proposal")]
-    pub use crate::group::proposal_ref::ProposalRef;
-}
-
 pub use mls_rs_core::extension::{Extension, ExtensionList};
 
 pub use crate::{
     client::Client,
     group::{
         framing::{MlsMessage, MlsMessageDescription, WireFormat},
-        mls_rules::MlsRules,
         Group,
     },
     key_package::{KeyPackage, KeyPackageRef},

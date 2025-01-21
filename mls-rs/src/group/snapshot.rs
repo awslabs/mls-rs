@@ -333,7 +333,7 @@ mod tests {
     use mls_rs_core::group::{GroupState, GroupStateStorage};
 
     use crate::{
-        client::test_utils::{TestClientBuilder, TEST_CIPHER_SUITE},
+        client::test_utils::TestClientBuilder,
         group::{
             test_utils::{test_group, TestGroup},
             Group,
@@ -418,7 +418,10 @@ mod tests {
     #[cfg(feature = "serde")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn serde() {
-        let snapshot = super::test_utils::get_test_snapshot(TEST_CIPHER_SUITE, 5).await;
+        let snapshot =
+            super::test_utils::get_test_snapshot(crate::client::test_utils::TEST_CIPHER_SUITE, 5)
+                .await;
+
         let json = serde_json::to_string_pretty(&snapshot).unwrap();
         let recovered = serde_json::from_str(&json).unwrap();
         assert_eq!(snapshot, recovered);

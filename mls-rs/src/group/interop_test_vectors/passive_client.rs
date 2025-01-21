@@ -333,9 +333,7 @@ pub async fn generate_passive_client_proposal_tests() -> Vec<TestCase> {
             continue;
         };
 
-        let mut groups =
-            get_test_groups(VERSION, cs.cipher_suite(), 7, false, &crypto_provider).await;
-
+        let mut groups = get_test_groups(VERSION, cs.cipher_suite(), 7, &crypto_provider).await;
         let mut partial_test_case = invite_passive_client(&mut groups, true, &cs, true, true).await;
 
         // Create a new epoch s.t. the passive member can process resumption PSK from the current one
@@ -520,9 +518,7 @@ where
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 async fn create_key_package(cs: CipherSuite) -> MlsMessage {
-    let client =
-        generate_basic_client(cs, VERSION, 0xbeef, false, &TestCryptoProvider::new()).await;
-
+    let client = generate_basic_client(cs, VERSION, 0xbeef, &TestCryptoProvider::new()).await;
     client.generate_key_package().await.unwrap()
 }
 
@@ -541,7 +537,7 @@ pub async fn generate_passive_client_welcome_tests() -> Vec<TestCase> {
             for (with_psk, with_path) in [false, true].into_iter().cartesian_product([true, false])
             {
                 let mut groups =
-                    get_test_groups(VERSION, cs.cipher_suite(), 16, false, &crypto_provider).await;
+                    get_test_groups(VERSION, cs.cipher_suite(), 16, &crypto_provider).await;
 
                 // Remove a member s.t. the passive member joins in their place
                 let proposal = groups[0].propose_remove(7, vec![]).await.unwrap();
@@ -575,7 +571,7 @@ pub async fn generate_passive_client_random_tests() -> Vec<TestCase> {
             continue;
         };
 
-        let creator = generate_basic_client(cs, VERSION, 0, false, &crypto).await;
+        let creator = generate_basic_client(cs, VERSION, 0, &crypto).await;
 
         let creator_group = creator
             .create_group(Default::default(), Default::default())
@@ -587,7 +583,7 @@ pub async fn generate_passive_client_random_tests() -> Vec<TestCase> {
         let mut new_clients = Vec::new();
 
         for i in 0..10 {
-            new_clients.push(generate_basic_client(cs, VERSION, i + 1, false, &crypto).await)
+            new_clients.push(generate_basic_client(cs, VERSION, i + 1, &crypto).await)
         }
 
         add_random_members(0, &mut groups, new_clients, None).await;
@@ -623,9 +619,8 @@ pub async fn generate_passive_client_random_tests() -> Vec<TestCase> {
             let mut new_clients = Vec::new();
 
             for i in 0..num_added {
-                new_clients.push(
-                    generate_basic_client(cs, VERSION, next_free_idx + i, false, &crypto).await,
-                );
+                new_clients
+                    .push(generate_basic_client(cs, VERSION, next_free_idx + i, &crypto).await);
             }
 
             add_random_members(sender, &mut groups, new_clients, Some(&mut test_case)).await;

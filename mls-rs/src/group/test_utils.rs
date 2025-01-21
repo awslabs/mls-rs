@@ -420,7 +420,6 @@ impl<'a> MessageProcessor<'a> for GroupWithoutKeySchedule {
         <Group<TestClientConfig> as MessageProcessor<'a>>::CipherSuiteProvider;
     type OutputType = <Group<TestClientConfig> as MessageProcessor<'a>>::OutputType;
     type IdentityProvider = <Group<TestClientConfig> as MessageProcessor<'a>>::IdentityProvider;
-    type MlsRules = <Group<TestClientConfig> as MessageProcessor<'a>>::MlsRules;
 
     fn group_state(&self) -> &GroupState {
         self.inner.group_state()

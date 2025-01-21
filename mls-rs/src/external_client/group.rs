@@ -28,15 +28,14 @@ use crate::{
         },
         process_commit,
         proposal::RemoveProposal,
-        proposal_filter::ProposalInfo,
+        proposal_filter::{ProposalBundle, ProposalInfo},
         snapshot::RawGroupState,
         state::GroupState,
         transcript_hash::InterimTranscriptHash,
-        validate_tree_and_info_joiner, ContentType, ExportedTree, GroupContext, GroupInfo,
-        InternalCommitProcessor, Roster, Welcome,
+        validate_tree_and_info_joiner, CommitSource, ContentType, ExportedTree, GroupContext,
+        GroupInfo, InternalCommitProcessor, Roster, Welcome,
     },
     identity::SigningIdentity,
-    mls_rules::{CommitSource, ProposalBundle},
     protocol_version::ProtocolVersion,
     tree_kem::{leaf_node::LeafNode, node::LeafIndex, path_secret::PathSecret, TreeKemPrivate},
     CryptoProvider, KeyPackage, MlsMessage,
@@ -609,7 +608,6 @@ impl<'a, C> MessageProcessor<'a> for ExternalGroup<C>
 where
     C: 'a + ExternalClientConfig + Clone,
 {
-    type MlsRules = C::MlsRules;
     type IdentityProvider = C::IdentityProvider;
     type OutputType = ExternalReceivedMessageOrProcessor<'a, C>;
     type CipherSuiteProvider = <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider;

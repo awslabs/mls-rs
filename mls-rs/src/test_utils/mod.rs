@@ -24,13 +24,9 @@ use crate::{
     group::{framing::MlsMessageDescription, ExportedTree, NewMemberInfo},
     group_joiner::GroupJoiner,
     identity::basic::BasicIdentityProvider,
-    mls_rules::DefaultMlsRules,
     storage_provider::in_memory::InMemoryKeyPackageStorage,
     Client, Group, KeyPackageRef, MlsMessage,
 };
-
-#[cfg(feature = "private_message")]
-use crate::group::{mls_rules::EncryptionOptions, padding::PaddingMode};
 
 use alloc::{vec, vec::Vec};
 
@@ -181,8 +177,6 @@ pub async fn generate_basic_client<C: CryptoProvider + Clone>(
     cipher_suite: CipherSuite,
     protocol_version: ProtocolVersion,
     id: usize,
-    #[cfg(feature = "private_message")] encrypt_controls: bool,
-    #[cfg(not(feature = "private_message"))] _encrypt_controls: bool,
     crypto: &C,
 ) -> TestClient<impl MlsConfig> {
     let cs = crypto.cipher_suite_provider(cipher_suite).unwrap();
@@ -192,19 +186,9 @@ pub async fn generate_basic_client<C: CryptoProvider + Clone>(
 
     let identity = SigningIdentity::new(credential, public_key);
 
-    let mls_rules = DefaultMlsRules::default();
-
-    #[cfg(feature = "private_message")]
-    let mls_rules = if encrypt_controls {
-        mls_rules.with_encryption_options(EncryptionOptions::new(true, PaddingMode::None))
-    } else {
-        mls_rules
-    };
-
     let builder = ClientBuilder::new()
         .crypto_provider(crypto.clone())
         .identity_provider(BasicIdentityProvider::new())
-        .mls_rules(mls_rules)
         .used_protocol_version(protocol_version)
         .signing_identity(identity, secret_key, cipher_suite);
 
@@ -217,12 +201,10 @@ pub async fn get_test_groups<C: CryptoProvider + Clone>(
     version: ProtocolVersion,
     cipher_suite: CipherSuite,
     num_participants: usize,
-    //commit_options: Option<CommitOptions>,
-    encrypt_controls: bool,
     crypto: &C,
 ) -> Vec<Group<impl MlsConfig>> {
     // Create the group with Alice as the group initiator
-    let creator = generate_basic_client(cipher_suite, version, 0, encrypt_controls, crypto).await;
+    let creator = generate_basic_client(cipher_suite, version, 0, crypto).await;
 
     let mut creator_group = creator
         .create_group(Default::default(), Default::default())
@@ -233,8 +215,7 @@ pub async fn get_test_groups<C: CryptoProvider + Clone>(
     let mut commit_builder = creator_group.commit_builder();
 
     for i in 1..num_participants {
-        let client =
-            generate_basic_client(cipher_suite, version, i, encrypt_controls, crypto).await;
+        let client = generate_basic_client(cipher_suite, version, i, crypto).await;
         let kp = client.generate_key_package().await.unwrap();
 
         receiver_clients.push(client);

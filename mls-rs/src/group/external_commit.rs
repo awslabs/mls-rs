@@ -15,7 +15,6 @@ use crate::{
         proposal::{ExternalInit, Proposal},
         EpochSecrets, ExternalPubExt, LeafNode, MlsError, TreeKemPrivate,
     },
-    mls_rules::{ProposalBundle, ProposalSource},
     Group, MlsMessage,
 };
 
@@ -38,7 +37,10 @@ use crate::group::{
     PreSharedKeyProposal, {JustPreSharedKeyID, PreSharedKeyID},
 };
 
-use super::{validate_tree_and_info_joiner, CommitOptions, ExportedTree, Sender};
+use super::{
+    proposal_filter::{ProposalBundle, ProposalSource},
+    validate_tree_and_info_joiner, CommitOptions, ExportedTree, Sender,
+};
 
 /// A builder that aids with the construction of an external commit.
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::ffi_type(opaque))]

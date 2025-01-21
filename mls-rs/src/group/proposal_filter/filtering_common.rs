@@ -4,9 +4,9 @@
 
 use crate::{
     client::MlsError,
+    group::commit::CommitSource,
     group::{proposal_filter::ProposalBundle, GroupContext},
     key_package::{validate_key_package_properties, KeyPackage},
-    mls_rules::CommitSource,
     time::MlsTime,
     tree_kem::{
         leaf_node_validator::{LeafNodeValidator, ValidationContext},

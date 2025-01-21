@@ -76,8 +76,6 @@ pub use self::framing::PrivateMessage;
 
 pub use self::framing::EncryptionMode;
 
-use self::proposal_filter::ProposalInfo;
-
 #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
 use secret_tree::*;
 
@@ -120,7 +118,6 @@ pub(crate) mod message_hash;
 pub(crate) mod message_processor;
 pub(crate) mod message_signature;
 pub(crate) mod message_verifier;
-pub mod mls_rules;
 #[cfg(feature = "private_message")]
 pub(crate) mod padding;
 /// Proposals to evolve a MLS [`Group`]
@@ -160,6 +157,11 @@ mod interop_test_vectors;
 mod exported_tree;
 
 pub use exported_tree::ExportedTree;
+
+pub use self::{
+    commit::CommitSource,
+    proposal_filter::{ProposalBundle, ProposalInfo, ProposalSource},
+};
 
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 pub(crate) struct GroupSecrets {
@@ -1552,7 +1554,6 @@ impl<'a, C> MessageProcessor<'a> for Group<C>
 where
     C: 'a + ClientConfig + Clone,
 {
-    type MlsRules = C::MlsRules;
     type IdentityProvider = C::IdentityProvider;
     type OutputType = ReceivedMessageOrProcessor<'a, C>;
     type CipherSuiteProvider = <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider;
@@ -1792,8 +1793,7 @@ mod tests {
 
     #[cfg(feature = "by_ref_proposal")]
     use crate::{
-        client::test_utils::{test_client_with_key_pkg_custom, TEST_CUSTOM_PROPOSAL_TYPE},
-        client_builder::ClientBuilder,
+        client::test_utils::TEST_CUSTOM_PROPOSAL_TYPE, client_builder::ClientBuilder,
         identity::test_utils::BasicWithCustomProvider,
     };
 
@@ -2090,15 +2090,17 @@ mod tests {
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_last_resort_key_package() -> Result<(), MlsError> {
         let mut alice_group = test_group().await;
-        let (bob_client, bob_key_package) = test_client_with_key_pkg_custom(
-            TEST_PROTOCOL_VERSION,
-            TEST_CIPHER_SUITE,
-            "bob",
-            vec![LastResortKeyPackageExt.into_extension().unwrap()].into(),
-            Default::default(),
-            |_| {},
-        )
-        .await;
+
+        let (bob_client, bob_key_package) =
+            crate::client::test_utils::test_client_with_key_pkg_custom(
+                TEST_PROTOCOL_VERSION,
+                TEST_CIPHER_SUITE,
+                "bob",
+                vec![LastResortKeyPackageExt.into_extension().unwrap()].into(),
+                Default::default(),
+                |_| {},
+            )
+            .await;
         let mut carla_group = test_group().await;
 
         // Alice adds Bob to her group.
@@ -3966,15 +3968,10 @@ mod tests {
     #[cfg(feature = "by_ref_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn can_process_own_proposal(encrypt_proposal: bool) {
-        let (alice, _) = test_client_with_key_pkg_custom(
-            TEST_PROTOCOL_VERSION,
-            TEST_CIPHER_SUITE,
-            "alice",
-            Default::default(),
-            Default::default(),
-            |c| c.0.mls_rules.encryption_options.encrypt_control_messages = encrypt_proposal,
-        )
-        .await;
+        use crate::client::test_utils::test_client_with_key_pkg;
+
+        let (alice, _) =
+            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "alice").await;
 
         let mut alice = TestGroup {
             group: alice
@@ -3986,7 +3983,19 @@ mod tests {
         let mut bob = alice.join("bob").await.0;
         let mut alice = alice;
 
-        let upd = alice.propose_update(vec![]).await.unwrap();
+        let mode = if encrypt_proposal {
+            EncryptionMode::PrivateMessage(Default::default())
+        } else {
+            EncryptionMode::PublicMessage
+        };
+
+        let upd = alice
+            .proposal_builder_update()
+            .encryption_mode(mode)
+            .build()
+            .await
+            .unwrap();
+
         alice.process_incoming_message(upd.clone()).await.unwrap();
 
         bob.process_incoming_message(upd).await.unwrap();

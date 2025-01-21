@@ -29,9 +29,8 @@ use mls_rs::{
     error::MlsError,
     group::{
         proposal::{MlsCustomProposal, Proposal},
-        GroupContext, Sender,
+        GroupContext, ProposalBundle, ProposalSource, Sender,
     },
-    mls_rules::{ProposalBundle, ProposalSource},
     CipherSuite, CipherSuiteProvider, Client, CryptoProvider, ExtensionList, IdentityProvider,
 };
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};

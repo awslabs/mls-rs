@@ -4,9 +4,7 @@
 
 use alloc::vec::Vec;
 
-use super::{
-    message_processor::ProvisionalState, mls_rules::CommitSource, GroupState, ProposalOrRef,
-};
+use super::{message_processor::ProvisionalState, CommitSource, GroupState, ProposalOrRef};
 use crate::{
     client::MlsError,
     group::{
@@ -22,7 +20,7 @@ use crate::psk::JustPreSharedKeyID;
 #[cfg(feature = "by_ref_proposal")]
 use crate::{
     group::{
-        message_hash::MessageHash, proposal_filter::CommitDirection, Proposal,
+        message_hash::MessageHash, proposal_filter::CommitDirection, Proposal, ProposalInfo,
         ProposalMessageDescription, ProposalRef, ProtocolVersion,
     },
     MlsMessage,
@@ -320,7 +318,7 @@ fn has_ref(proposals: &ProposalBundle, reference: &ProposalRef) -> bool {
 fn unused_proposals(
     all_proposals: ProposalBundle,
     accepted_proposals: &ProposalBundle,
-) -> Vec<crate::mls_rules::ProposalInfo<Proposal>> {
+) -> Vec<ProposalInfo<Proposal>> {
     all_proposals
         .into_proposals()
         .filter(|p| {
@@ -342,14 +340,14 @@ pub(crate) mod test_utils {
         group::{
             confirmation_tag::ConfirmationTag,
             proposal::{Proposal, ProposalOrRef},
-            proposal_filter::CommitDirection,
+            proposal_filter::{CommitDirection, ProposalSource},
             proposal_ref::ProposalRef,
             state::GroupState,
             test_utils::{get_test_group_context, TEST_GROUP},
-            GroupContext, LeafIndex, LeafNode, ProvisionalState, Sender, TreeKemPublic,
+            CommitSource, GroupContext, LeafIndex, LeafNode, ProvisionalState, Sender,
+            TreeKemPublic,
         },
         identity::{basic::BasicIdentityProvider, test_utils::BasicWithCustomProvider},
-        mls_rules::{CommitSource, ProposalSource},
     };
 
     use super::{CachedProposal, JustPreSharedKeyID, MlsError, ProposalCache};

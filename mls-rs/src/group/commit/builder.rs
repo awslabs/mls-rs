@@ -10,22 +10,21 @@ use itertools::Itertools;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::crypto::SignatureSecretKey;
 
+use crate::group::proposal_filter::{ProposalBundle, ProposalInfo, ProposalSource};
 use crate::group::{EncryptionMode, RemoveProposal};
-use crate::mls_rules::{ProposalBundle, ProposalSource};
 use crate::{
     cipher_suite::CipherSuite,
     client::MlsError,
     client_config::ClientConfig,
     extension::RatchetTreeExt,
     identity::SigningIdentity,
-    mls_rules::CommitSource,
     protocol_version::ProtocolVersion,
     signer::Signable,
     tree_kem::{kem::TreeKem, node::LeafIndex, path_secret::PathSecret, TreeKemPrivate},
     ExtensionList,
 };
 
-use super::Commit;
+use super::{Commit, CommitSource};
 
 #[cfg(all(not(mls_build_async), feature = "rayon"))]
 use {crate::iter::ParallelIteratorExt, rayon::prelude::*};
@@ -126,7 +125,7 @@ pub struct CommitOutput {
     pub external_commit_group_info: Option<MlsMessage>,
     /// Proposals that were received in the prior epoch but not included in the following commit.
     #[cfg(feature = "by_ref_proposal")]
-    pub unused_proposals: Vec<crate::mls_rules::ProposalInfo<Proposal>>,
+    pub unused_proposals: Vec<ProposalInfo<Proposal>>,
     /// Indicator that the commit contains a path update
     pub contains_update_path: bool,
 }
@@ -163,7 +162,7 @@ impl CommitOutput {
 
     /// Proposals that were received in the prior epoch but not included in the following commit.
     #[cfg(all(feature = "ffi", feature = "by_ref_proposal"))]
-    pub fn unused_proposals(&self) -> &[crate::mls_rules::ProposalInfo<Proposal>] {
+    pub fn unused_proposals(&self) -> &[ProposalInfo<Proposal>] {
         &self.unused_proposals
     }
 }

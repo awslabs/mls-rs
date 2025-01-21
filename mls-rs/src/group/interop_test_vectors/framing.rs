@@ -9,21 +9,19 @@ use mls_rs_core::crypto::{CipherSuite, CipherSuiteProvider, SignaturePublicKey};
 
 use crate::{
     client::test_utils::{TestClientConfig, TEST_PROTOCOL_VERSION},
+    client_builder::PaddingMode,
     crypto::test_utils::{test_cipher_suite_provider, try_test_cipher_suite_provider},
     group::{
         confirmation_tag::ConfirmationTag,
         epoch::EpochSecrets,
         framing::Content,
         message_processor::{EventOrContent, MessageProcessor},
-        mls_rules::EncryptionOptions,
-        padding::PaddingMode,
         proposal::{Proposal, RemoveProposal},
         secret_tree::test_utils::get_test_tree,
-        test_utils::{random_bytes, test_group_custom_config},
+        test_utils::{random_bytes, test_group_custom},
         AuthenticatedContent, Commit, EncryptionMode, Group, GroupContext, MlsMessage,
         ProposalBuilder, ProposalInput, Sender, UpdateProposal,
     },
-    mls_rules::DefaultMlsRules,
     test_utils::is_edwards,
     tree_kem::{leaf_node::test_utils::get_basic_test_node, node::LeafIndex},
 };
@@ -163,11 +161,15 @@ async fn framing_proposal() {
         let mut to_check = to_check;
 
         #[cfg(not(target_arch = "wasm32"))]
-        for enable_encryption in [true, false] {
+        for encryption_mode in [
+            EncryptionMode::PublicMessage,
+            EncryptionMode::PrivateMessage(PaddingMode::None),
+        ] {
             let proposal = Proposal::mls_decode(&mut &*test_case.proposal).unwrap();
-            let mut group = make_group(&test_case, true, enable_encryption, &cs).await;
+            let mut group = make_group(&test_case, true, &cs).await;
 
             let built = ProposalBuilder::new(&mut group, arbitrary_proposal_input())
+                .encryption_mode(encryption_mode)
                 .proposal_message(proposal)
                 .await
                 .unwrap()
@@ -207,7 +209,7 @@ async fn framing_application() {
             continue;
         };
 
-        let built_priv = make_group(&test_case, true, true, &cs)
+        let built_priv = make_group(&test_case, true, &cs)
             .await
             .encrypt_application_message(&test_case.application, vec![])
             .await
@@ -256,20 +258,17 @@ async fn framing_commit() {
                 signature_priv.extend(test_case.signature_pub.iter());
             }
 
-            for enable_encryption in [true, false] {
-                let mode = if enable_encryption {
-                    EncryptionMode::PrivateMessage(Default::default())
-                } else {
-                    EncryptionMode::PublicMessage
-                };
-
+            for encryption_mode in [
+                EncryptionMode::PublicMessage,
+                EncryptionMode::PrivateMessage(PaddingMode::None),
+            ] {
                 let mut auth_content = AuthenticatedContent::new_signed(
                     &cs,
                     &test_case.context.clone().into(),
                     Sender::Member(1),
-                    Content::Commit(alloc::boxed::Box::new(commit.clone())),
+                    Content::Commit(commit.clone().into()),
                     &signature_priv.clone().into(),
-                    mode,
+                    encryption_mode,
                     vec![],
                 )
                 .await
@@ -277,9 +276,9 @@ async fn framing_commit() {
 
                 auth_content.auth.confirmation_tag = Some(ConfirmationTag::empty(&cs).await);
 
-                let built = make_group(&test_case, true, enable_encryption, &cs)
+                let built = make_group(&test_case, true, &cs)
                     .await
-                    .format_for_wire(auth_content.clone(), mode)
+                    .format_for_wire(auth_content.clone(), encryption_mode)
                     .await
                     .unwrap()
                     .mls_encode_to_vec()
@@ -319,7 +318,7 @@ async fn generate_framing_test_vector() -> Vec<FramingTestCase> {
         // Generate private application message
         test_case.application = cs.random_bytes_vec(42).unwrap();
 
-        let application_priv = make_group(&test_case, true, true, &cs)
+        let application_priv = make_group(&test_case, true, &cs)
             .await
             .encrypt_application_message(&test_case.application, vec![])
             .await
@@ -334,7 +333,7 @@ async fn generate_framing_test_vector() -> Vec<FramingTestCase> {
 
         test_case.proposal = proposal.mls_encode_to_vec().unwrap();
 
-        let mut group = make_group(&test_case, true, false, &cs).await;
+        let mut group = make_group(&test_case, true, &cs).await;
 
         let proposal_pub = ProposalBuilder::new(&mut group, arbitrary_proposal_input())
             .proposal_message(proposal.clone())
@@ -342,9 +341,10 @@ async fn generate_framing_test_vector() -> Vec<FramingTestCase> {
 
         test_case.proposal_pub = proposal_pub.unwrap().mls_encode_to_vec().unwrap();
 
-        let mut group = make_group(&test_case, true, true, &cs).await;
+        let mut group = make_group(&test_case, true, &cs).await;
 
         let proposal_priv = ProposalBuilder::new(&mut group, arbitrary_proposal_input())
+            .encryption_mode(EncryptionMode::PrivateMessage(PaddingMode::None))
             .proposal_message(proposal)
             .await
             .unwrap();
@@ -373,7 +373,7 @@ async fn generate_framing_test_vector() -> Vec<FramingTestCase> {
 
         auth_content.auth.confirmation_tag = Some(ConfirmationTag::empty(&cs).await);
 
-        let mut group = make_group(&test_case, true, false, &cs).await;
+        let mut group = make_group(&test_case, true, &cs).await;
 
         let commit_pub = group
             .format_for_wire(auth_content.clone(), EncryptionMode::PublicMessage)
@@ -397,7 +397,7 @@ async fn generate_framing_test_vector() -> Vec<FramingTestCase> {
 
         auth_content.auth.confirmation_tag = Some(ConfirmationTag::empty(&cs).await);
 
-        let mut group = make_group(&test_case, true, true, &cs).await;
+        let mut group = make_group(&test_case, true, &cs).await;
 
         let commit_priv = group
             .format_for_wire(auth_content.clone(), mode)
@@ -416,19 +416,9 @@ async fn generate_framing_test_vector() -> Vec<FramingTestCase> {
 async fn make_group<P: CipherSuiteProvider>(
     test_case: &FramingTestCase,
     for_send: bool,
-    control_encryption_enabled: bool,
     cs: &P,
 ) -> Group<TestClientConfig> {
-    let mut group =
-        test_group_custom_config(
-            TEST_PROTOCOL_VERSION,
-            test_case.context.cipher_suite.into(),
-            |b| {
-                b.mls_rules(DefaultMlsRules::default().with_encryption_options(
-                    EncryptionOptions::new(control_encryption_enabled, PaddingMode::None),
-                ))
-            },
-        )
+    let mut group = test_group_custom(TEST_PROTOCOL_VERSION, cs.cipher_suite(), vec![], None)
         .await
         .group;
 
@@ -481,7 +471,7 @@ async fn process_message<P: CipherSuiteProvider>(
     cs: &P,
 ) -> Content {
     // Enabling encryption doesn't matter for processing
-    let mut group = make_group(test_case, false, true, cs).await;
+    let mut group = make_group(test_case, false, cs).await;
     let message = MlsMessage::mls_decode(&mut &*message).unwrap();
     let evt_or_cont = group.get_event_from_incoming_message(message);
 
