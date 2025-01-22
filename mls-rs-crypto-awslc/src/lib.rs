@@ -248,14 +248,14 @@ impl AwsLcCipherSuiteBuilder {
 
         let ecdh = dhkem(classical_cipher_suite);
 
-        let hpke = ecdh.and_then(|ecdh| {
+        let hpke = ecdh.map(|ecdh| {
             let kem = CombinedKem::new_xwing(ml_kem, ecdh, hash, AwsLcShake128);
 
-            Some(AwsLcHpke::Combined(Hpke::new(
+            AwsLcHpke::Combined(Hpke::new(
                 kem,
                 AwsLcHkdf(kdf),
                 Some(AwsLcAead(aead)),
-            )))
+            ))
         });
 
         Self { hpke, ..self }
@@ -278,7 +278,7 @@ impl AwsLcCipherSuiteBuilder {
 
         let signing = self.signing.or_else(|| AwsLcEcdsa::new(classical_cs))?;
 
-        let mac_algo = self.mac_algo.or_else(|| match classical_cs {
+        let mac_algo = self.mac_algo.or(match classical_cs {
             CipherSuite::CURVE25519_AES128
             | CipherSuite::CURVE25519_CHACHA
             | CipherSuite::P256_AES128 => Some(hmac::HMAC_SHA256),
