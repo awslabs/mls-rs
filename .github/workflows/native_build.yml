@@ -43,6 +43,9 @@ jobs:
           curl -o C:/cacert.pem https://curl.se/ca/cacert.pem
           echo "SSL_CERT_FILE=C:/cacert.pem" | Out-File -FilePath $env:GITHUB_ENV -Append
         if: runner.os == 'Windows'
+      - run: |
+          sudo apt-get install -y libsqlite3-dev
+        if: runner.os == 'Linux'
       - name: Test Full RFC Compliance
         # Don't test AWS LC on all features as it makes it build both FIPS and non-FIPS versions
         run: cargo test --all-features --verbose --workspace --exclude mls-rs-crypto-aws-lc
