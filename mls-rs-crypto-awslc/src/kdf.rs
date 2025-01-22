@@ -14,7 +14,7 @@ use mls_rs_crypto_traits::{Hash, KdfId};
 use crate::AwsLcCryptoError;
 
 #[derive(Clone, Copy)]
-pub struct AwsLcHkdf(KdfId);
+pub struct AwsLcHkdf(pub(crate) KdfId);
 
 impl AwsLcHkdf {
     pub fn new(cipher_suite: CipherSuite) -> Option<Self> {
@@ -93,7 +93,7 @@ impl mls_rs_crypto_traits::KdfType for AwsLcHkdf {
 
 #[derive(Clone, Copy, Debug)]
 pub struct AwsLcHash {
-    algo: &'static digest::Algorithm,
+    pub(crate) algo: &'static digest::Algorithm,
 }
 
 impl AwsLcHash {

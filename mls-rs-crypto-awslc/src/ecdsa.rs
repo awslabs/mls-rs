@@ -25,7 +25,7 @@ use crate::{
 };
 
 #[derive(Clone)]
-pub struct AwsLcEcdsa(Curve);
+pub struct AwsLcEcdsa(pub(crate) Curve);
 
 impl Deref for AwsLcEcdsa {
     type Target = Curve;
