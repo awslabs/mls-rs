@@ -37,6 +37,9 @@ jobs:
           curl -o C:/cacert.pem https://curl.se/ca/cacert.pem
           echo "SSL_CERT_FILE=C:/cacert.pem" | Out-File -FilePath $env:GITHUB_ENV -Append
         if: runner.os == 'Windows'
+      - run: |
+          apt-get install -y libsqlite3-dev
+        if: runner.os == 'Ubuntu'
       - name: Test Full RFC Compliance
         run: cargo test --all-features --verbose --workspace
       - name: Test Bare Bones
