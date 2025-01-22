@@ -4,9 +4,7 @@
 
 use alloc::vec::Vec;
 
-use super::{
-    message_processor::ProvisionalState, mls_rules::CommitSource, GroupState, ProposalOrRef,
-};
+use super::{message_processor::ProvisionalState, CommitSource, GroupState, ProposalOrRef};
 use crate::{
     client::MlsError,
     group::{
@@ -22,10 +20,9 @@ use crate::psk::JustPreSharedKeyID;
 #[cfg(feature = "by_ref_proposal")]
 use crate::{
     group::{
-        message_hash::MessageHash, Proposal, ProposalMessageDescription, ProposalRef,
-        ProtocolVersion,
+        message_hash::MessageHash, proposal_filter::CommitDirection, Proposal, ProposalInfo,
+        ProposalMessageDescription, ProposalRef, ProtocolVersion,
     },
-    mls_rules::CommitDirection,
     MlsMessage,
 };
 
@@ -321,7 +318,7 @@ fn has_ref(proposals: &ProposalBundle, reference: &ProposalRef) -> bool {
 fn unused_proposals(
     all_proposals: ProposalBundle,
     accepted_proposals: &ProposalBundle,
-) -> Vec<crate::mls_rules::ProposalInfo<Proposal>> {
+) -> Vec<ProposalInfo<Proposal>> {
     all_proposals
         .into_proposals()
         .filter(|p| {
@@ -342,15 +339,15 @@ pub(crate) mod test_utils {
         client::test_utils::TEST_PROTOCOL_VERSION,
         group::{
             confirmation_tag::ConfirmationTag,
-            mls_rules::CommitDirection,
             proposal::{Proposal, ProposalOrRef},
+            proposal_filter::{CommitDirection, ProposalSource},
             proposal_ref::ProposalRef,
             state::GroupState,
             test_utils::{get_test_group_context, TEST_GROUP},
-            GroupContext, LeafIndex, LeafNode, ProvisionalState, Sender, TreeKemPublic,
+            CommitSource, GroupContext, LeafIndex, LeafNode, ProvisionalState, Sender,
+            TreeKemPublic,
         },
         identity::{basic::BasicIdentityProvider, test_utils::BasicWithCustomProvider},
-        mls_rules::{CommitSource, ProposalSource},
     };
 
     use super::{CachedProposal, JustPreSharedKeyID, MlsError, ProposalCache};
@@ -584,7 +581,7 @@ mod tests {
 
     use super::test_utils::{make_proposal_cache, CommitReceiver};
     use super::{CachedProposal, ProposalCache};
-    use crate::client::test_utils::test_client_with_key_pkg;
+    use crate::client::test_utils::test_client;
     use crate::client::MlsError;
     use crate::group::message_processor::ProvisionalState;
     use crate::group::proposal_filter::{ProposalBundle, ProposalInfo, ProposalSource};
@@ -1279,7 +1276,7 @@ mod tests {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         let kem_output = vec![0; cipher_suite_provider.kdf_extract_size()];
-        let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let group = test_group().await;
         let public_tree = &group.state.public_tree;
 
         let res = cache
@@ -1318,7 +1315,7 @@ mod tests {
             Sender::Member(test_sender()),
         );
 
-        let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let group = test_group().await;
         let public_tree = &group.state.public_tree;
 
         let res = cache
@@ -1342,7 +1339,7 @@ mod tests {
         let cache = make_proposal_cache();
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let kem_output = vec![0; cipher_suite_provider.kdf_extract_size()];
-        let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let group = test_group().await;
         let public_tree = &group.state.public_tree;
 
         let res = cache
@@ -1377,7 +1374,7 @@ mod tests {
         let cache = make_proposal_cache();
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let kem_output = vec![0; cipher_suite_provider.kdf_extract_size()];
-        let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let group = test_group().await;
         let public_tree = &group.state.public_tree;
 
         cache
@@ -1420,7 +1417,7 @@ mod tests {
         let cache = make_proposal_cache();
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let kem_output = vec![0; cipher_suite_provider.kdf_extract_size()];
-        let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let group = test_group().await;
         let group_extensions = group.context().extensions.clone();
         let mut public_tree = group.group.state.public_tree;
 
@@ -1473,7 +1470,7 @@ mod tests {
         let cache = make_proposal_cache();
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let kem_output = vec![0; cipher_suite_provider.kdf_extract_size()];
-        let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let group = test_group().await;
         let group_extensions = group.context().extensions.clone();
         let mut public_tree = group.group.state.public_tree;
 
@@ -1521,7 +1518,7 @@ mod tests {
         let cache = make_proposal_cache();
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let kem_output = vec![0; cipher_suite_provider.kdf_extract_size()];
-        let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let group = test_group().await;
         let group_extensions = group.context().extensions.clone();
         let mut public_tree = group.group.state.public_tree;
 
@@ -1615,7 +1612,7 @@ mod tests {
     async fn new_member_commit_must_contain_an_external_init_proposal() {
         let cache = make_proposal_cache();
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
-        let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let group = test_group().await;
         let public_tree = &group.state.public_tree;
 
         let res = cache
@@ -3457,8 +3454,7 @@ mod tests {
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn unsupported_credential_key_package(name: &str) -> KeyPackage {
-        let (client, _) =
-            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, name).await;
+        let (client, _) = test_client(name).await;
 
         let mut kp_builder = client.key_package_builder(None).unwrap();
 

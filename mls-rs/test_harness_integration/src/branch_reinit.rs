@@ -1,9 +1,10 @@
 #[cfg(feature = "psk")]
 pub(crate) mod inner {
     use mls_rs::{
-        group::CommitEffect, identity::SigningIdentity, mls_rs_codec::MlsEncode,
-        mls_rules::ProposalInfo, CipherSuiteProvider, CryptoProvider, MlsMessage,
-        MlsMessageDescription,
+        group::{CommitEffect, ProposalInfo},
+        identity::SigningIdentity,
+        mls_rs_codec::MlsEncode,
+        CipherSuiteProvider, CryptoProvider, MlsMessage, MlsMessageDescription,
     };
     use mls_rs_crypto_openssl::OpensslCryptoProvider;
     use tonic::{Request, Response, Status};
@@ -170,14 +171,10 @@ pub(crate) mod inner {
                 .collect::<Result<_, _>>()
                 .map_err(abort)?;
 
-            {
-                let mut mls_rules = client.mls_rules.commit_options.lock().unwrap();
-                mls_rules.path_required = force_path;
-                mls_rules.ratchet_tree_extension = !external_tree;
-            };
-
             let (new_group, welcome) = if let Some(id) = subgroup_id {
-                group.branch(id, new_key_pkgs).map_err(abort)?
+                group
+                    .branch(id, new_key_pkgs, force_path, !external_tree)
+                    .map_err(abort)?
             } else {
                 let client = group
                     .clone()
@@ -188,7 +185,7 @@ pub(crate) mod inner {
                     .map_err(abort)?;
 
                 client
-                    .commit(new_key_pkgs, Default::default())
+                    .commit(new_key_pkgs, Default::default(), force_path, !external_tree)
                     .map_err(abort)?
             };
 

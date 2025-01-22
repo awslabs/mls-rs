@@ -13,21 +13,18 @@ use by_ref_proposal::ByRefProposalSender;
 mod branch_reinit;
 
 use mls_rs::{
-    client_builder::{
-        BaseInMemoryConfig, ClientBuilder, WithCryptoProvider, WithIdentityProvider, WithMlsRules,
-    },
+    client_builder::{BaseInMemoryConfig, ClientBuilder, WithCryptoProvider, WithIdentityProvider},
     crypto::SignatureSecretKey,
     external_client::ExternalClient,
-    group::{CommitEffect, ExportedTree, GroupContext, Member, ReceivedMessage, Roster},
+    group::{CommitEffect, ExportedTree, Member, ReceivedMessage},
     identity::{
         basic::{BasicCredential, BasicIdentityProvider},
         Credential, SigningIdentity,
     },
-    mls_rules::{CommitOptions, EncryptionOptions, ProposalBundle},
     psk::ExternalPskId,
     storage_provider::in_memory::{InMemoryKeyPackageStorage, InMemoryPreSharedKeyStorage},
     CipherSuite, CipherSuiteProvider, Client, CryptoProvider, Extension, ExtensionList, Group,
-    MlsMessage, MlsMessageDescription, MlsRules,
+    MlsMessage, MlsMessageDescription,
 };
 
 #[cfg(feature = "psk")]
@@ -39,7 +36,7 @@ use mls_rs::external_client::builder::ExternalBaseConfig;
 use mls_rs_crypto_openssl::OpensslCryptoProvider;
 
 use clap::Parser;
-use std::{collections::HashMap, convert::Infallible, net::IpAddr, sync::Arc};
+use std::{collections::HashMap, net::IpAddr};
 use tokio::sync::Mutex;
 use tonic::{transport::Server, Request, Response, Status};
 
@@ -86,7 +83,7 @@ const PROPOSAL_DESC_REINIT: &[u8] = b"reinit";
 
 type TestClientConfig = WithIdentityProvider<
     BasicIdentityProvider,
-    WithCryptoProvider<OpensslCryptoProvider, WithMlsRules<TestMlsRules, BaseInMemoryConfig>>,
+    WithCryptoProvider<OpensslCryptoProvider, BaseInMemoryConfig>,
 >;
 
 #[cfg(feature = "by_ref_proposal")]
@@ -119,62 +116,11 @@ struct ClientDetails {
     group: Option<Group<TestClientConfig>>,
     signing_identity: SigningIdentity,
     signer: SignatureSecretKey,
-    mls_rules: TestMlsRules,
-}
-
-impl ClientDetails {
-    #[cfg(feature = "private_message")]
-    async fn set_enc_controls(&self, enc_controls: bool) {
-        self.mls_rules
-            .encryption_options
-            .lock()
-            .unwrap()
-            .encrypt_control_messages = enc_controls;
-    }
-
-    #[cfg(not(feature = "private_message"))]
-    async fn set_enc_controls(&self, _: bool) {}
 }
 
 struct ExternalClientDetails {
     #[cfg(feature = "by_ref_proposal")]
     ext_client: ExternalClient<TestExternalClientConfig>,
-}
-
-#[derive(Clone, Debug)]
-struct TestMlsRules {
-    commit_options: Arc<std::sync::Mutex<CommitOptions>>,
-    encryption_options: Arc<std::sync::Mutex<EncryptionOptions>>,
-}
-
-impl TestMlsRules {
-    fn new() -> Self {
-        Self {
-            commit_options: Arc::new(std::sync::Mutex::new(Default::default())),
-            encryption_options: Arc::new(std::sync::Mutex::new(Default::default())),
-        }
-    }
-}
-
-impl MlsRules for TestMlsRules {
-    type Error = Infallible;
-
-    fn commit_options(
-        &self,
-        _: &Roster,
-        _: &GroupContext,
-        _: &ProposalBundle,
-    ) -> Result<CommitOptions, Self::Error> {
-        Ok(*self.commit_options.lock().unwrap())
-    }
-
-    fn encryption_options(
-        &self,
-        _: &Roster,
-        _: &GroupContext,
-    ) -> Result<EncryptionOptions, Self::Error> {
-        Ok(*self.encryption_options.lock().unwrap())
-    }
 }
 
 #[tonic::async_trait]
@@ -202,7 +148,6 @@ impl MlsClient for MlsClientImpl {
         request: Request<CreateGroupRequest>,
     ) -> Result<Response<CreateGroupResponse>, Status> {
         let request = request.into_inner();
-
         let mut client = create_client(request.cipher_suite as u16, &request.identity).await?;
 
         let group = client
@@ -215,8 +160,6 @@ impl MlsClient for MlsClientImpl {
             .map_err(abort)?;
 
         client.group = Some(group);
-        client.set_enc_controls(request.encrypt_handshake).await;
-
         let state_id = self.insert_client(client).await;
 
         Ok(Response::new(CreateGroupResponse { state_id }))
@@ -332,7 +275,6 @@ impl MlsClient for MlsClientImpl {
 
         let epoch_authenticator = group.epoch_authenticator().map_err(abort)?.to_vec();
         client.group = Some(group);
-        client.set_enc_controls(request.encrypt_handshake).await;
 
         Ok(Response::new(JoinGroupResponse {
             state_id: request.transaction_id,
@@ -354,8 +296,6 @@ impl MlsClient for MlsClientImpl {
             .ok_or_else(|| Status::aborted("ciphersuite not found"))?;
 
         let mut client = create_client(cipher_suite.into(), &request.identity).await?;
-
-        client.set_enc_controls(request.encrypt_handshake).await;
 
         for psk in request.psks.clone().into_iter() {
             client
@@ -764,18 +704,15 @@ impl MlsClientImpl {
             group.process_incoming_message(proposal).map_err(abort)?;
         }
 
-        {
-            let mut commit_options = client.mls_rules.commit_options.lock().unwrap();
-            commit_options.path_required = request.force_path;
-            commit_options.ratchet_tree_extension = !request.external_tree;
-        };
-
         let roster = group.roster().members();
 
         #[cfg(feature = "psk")]
         let group_clone = group.clone();
 
-        let commit_builder = group.commit_builder();
+        let commit_builder = group
+            .commit_builder()
+            .path_required(request.force_path)
+            .ratchet_tree_extension(!request.external_tree);
 
         #[cfg(feature = "psk")]
         let commit_builder = self
@@ -794,10 +731,7 @@ impl MlsClientImpl {
                 }
                 PROPOSAL_DESC_REMOVE => {
                     let cred = Credential::Basic(BasicCredential::new(proposal.removed_id.clone()));
-
-                    commit_builder = commit_builder
-                        .remove_member(find_member(&roster, &cred)?)
-                        .map_err(abort)?;
+                    commit_builder = commit_builder.remove_member(find_member(&roster, &cred)?);
                 }
                 #[cfg(feature = "psk")]
                 PROPOSAL_DESC_EXTERNAL_PSK => {
@@ -825,8 +759,7 @@ impl MlsClientImpl {
                 }
                 PROPOSAL_DESC_GCE => {
                     commit_builder = commit_builder
-                        .set_group_context_ext(parse_extensions(proposal.extensions.clone()))
-                        .map_err(abort)?;
+                        .set_group_context_ext(parse_extensions(proposal.extensions.clone()));
                 }
                 _ => (),
             }
@@ -982,12 +915,10 @@ async fn create_client(cipher_suite: u16, identity: &[u8]) -> Result<ClientDetai
 
     let psk_store = InMemoryPreSharedKeyStorage::default();
     let key_package_repo = InMemoryKeyPackageStorage::new();
-    let mls_rules = TestMlsRules::new();
 
     let client = ClientBuilder::new()
         .crypto_provider(OpensslCryptoProvider::default())
         .identity_provider(BasicIdentityProvider::new())
-        .mls_rules(mls_rules.clone())
         .signing_identity(signing_identity.clone(), secret_key.clone(), cipher_suite)
         .build();
 
@@ -998,7 +929,6 @@ async fn create_client(cipher_suite: u16, identity: &[u8]) -> Result<ClientDetai
         signing_identity,
         signer: secret_key,
         key_package_repo,
-        mls_rules,
     })
 }
 

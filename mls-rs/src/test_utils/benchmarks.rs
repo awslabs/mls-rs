@@ -58,17 +58,10 @@ async fn generate_test_cases(cs: CipherSuite) -> Vec<MlsMessage> {
     let mut cases = Vec::new();
 
     for size in [16, 64, 128] {
-        let group = get_test_groups(
-            ProtocolVersion::MLS_10,
-            cs,
-            size,
-            None,
-            false,
-            &MlsCryptoProvider::new(),
-        )
-        .await
-        .pop()
-        .unwrap();
+        let group = get_test_groups(ProtocolVersion::MLS_10, cs, size, &MlsCryptoProvider::new())
+            .await
+            .pop()
+            .unwrap();
 
         let group_info = group
             .group_info_message_allowing_ext_commit(true)
@@ -106,25 +99,10 @@ pub fn load_group_states(cs: CipherSuite) -> Vec<GroupStates<impl MlsConfig>> {
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 pub async fn join_group(cs: CipherSuite, group_info: MlsMessage) -> GroupStates<impl MlsConfig> {
-    let client = generate_basic_client(
-        cs,
-        ProtocolVersion::MLS_10,
-        99999999999,
-        None,
-        false,
-        &MlsCryptoProvider::new(),
-    );
-
+    let version = ProtocolVersion::MLS_10;
+    let client = generate_basic_client(cs, version, 99999999999, &MlsCryptoProvider::new());
     let mut sender = client.commit_external(group_info).await.unwrap().0;
-
-    let client = generate_basic_client(
-        cs,
-        ProtocolVersion::MLS_10,
-        99999999998,
-        None,
-        false,
-        &MlsCryptoProvider::new(),
-    );
+    let client = generate_basic_client(cs, version, 99999999998, &MlsCryptoProvider::new());
 
     let group_info = sender
         .group_info_message_allowing_ext_commit(true)

@@ -9,7 +9,6 @@ use mls_rs::{
         basic::{BasicCredential, BasicIdentityProvider},
         SigningIdentity,
     },
-    mls_rules::{CommitOptions, DefaultMlsRules},
     test_utils::TestClient,
     CipherSuite, CipherSuiteProvider, Client, CryptoProvider,
 };
@@ -45,6 +44,7 @@ fn bench(c: &mut Criterion) {
                             .fold(alice.commit_builder(), |builder, key_package| {
                                 builder.add_member(key_package).unwrap()
                             })
+                            .ratchet_tree_extension(false)
                             .build()
                             .unwrap();
                     },
@@ -72,10 +72,6 @@ fn make_client(name: &str) -> TestClient<impl MlsConfig> {
     Client::builder()
         .crypto_provider(crypto_provider)
         .identity_provider(BasicIdentityProvider)
-        .mls_rules(
-            DefaultMlsRules::new()
-                .with_commit_options(CommitOptions::new().with_ratchet_tree_extension(false)),
-        )
         .signing_identity(
             SigningIdentity::new(
                 BasicCredential::new(name.as_bytes().to_vec()).into_credential(),

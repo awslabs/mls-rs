@@ -4,7 +4,7 @@
 
 use crate::{
     extension::ExtensionType,
-    group::{mls_rules::MlsRules, proposal::ProposalType},
+    group::proposal::ProposalType,
     identity::CredentialType,
     protocol_version::ProtocolVersion,
     tree_kem::{leaf_node::ConfigProperties, Capabilities, Lifetime},
@@ -16,14 +16,11 @@ use mls_rs_core::{crypto::CryptoProvider, group::GroupStateStorage, identity::Id
 pub trait ClientConfig: Send + Sync + Clone {
     type GroupStateStorage: GroupStateStorage + Clone;
     type IdentityProvider: IdentityProvider + Clone;
-    type MlsRules: MlsRules + Clone;
     type CryptoProvider: CryptoProvider + Clone;
 
     fn supported_extensions(&self) -> Vec<ExtensionType>;
     fn supported_custom_proposals(&self) -> Vec<ProposalType>;
     fn supported_protocol_versions(&self) -> Vec<ProtocolVersion>;
-
-    fn mls_rules(&self) -> Self::MlsRules;
 
     fn group_state_storage(&self) -> Self::GroupStateStorage;
     fn identity_provider(&self) -> Self::IdentityProvider;

@@ -10,7 +10,6 @@ use crate::{
         AddProposal, ProposalType, RemoveProposal, Sender, UpdateProposal,
     },
     iter::wrap_iter,
-    mls_rules::CommitDirection,
     protocol_version::ProtocolVersion,
     time::MlsTime,
     tree_kem::{
@@ -22,7 +21,7 @@ use crate::{
 
 use super::{
     filtering_common::{filter_out_invalid_psks, ApplyProposalsOutput, ProposalApplier},
-    ProposalSource,
+    CommitDirection, ProposalSource,
 };
 
 #[cfg(feature = "by_ref_proposal")]

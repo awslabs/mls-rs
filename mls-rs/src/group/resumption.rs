@@ -53,6 +53,9 @@ where
         &self,
         sub_group_id: Vec<u8>,
         new_key_packages: Vec<MlsMessage>,
+        // TODO make builder
+        path_required: bool,
+        ratchet_tree_extension: bool,
     ) -> Result<(Group<C>, Vec<MlsMessage>), MlsError> {
         let new_group_params = ResumptionGroupParameters {
             group_id: &sub_group_id,
@@ -72,6 +75,8 @@ where
             current_leaf_node_extensions,
             #[cfg(any(feature = "private_message", feature = "psk"))]
             self.resumption_psk_input(ResumptionPSKUsage::Branch)?,
+            path_required,
+            ratchet_tree_extension,
         )
         .await
     }
@@ -193,6 +198,9 @@ impl<C: ClientConfig + Clone> ReinitClient<C> {
         self,
         new_key_packages: Vec<MlsMessage>,
         new_leaf_node_extensions: ExtensionList,
+        // TODO output builder
+        path_required: bool,
+        ratchet_tree_extension: bool,
     ) -> Result<(Group<C>, Vec<MlsMessage>), MlsError> {
         let new_group_params = ResumptionGroupParameters {
             group_id: self.reinit.group_id(),
@@ -211,6 +219,8 @@ impl<C: ClientConfig + Clone> ReinitClient<C> {
             &new_leaf_node_extensions,
             #[cfg(any(feature = "private_message", feature = "psk"))]
             self.psk_input,
+            path_required,
+            ratchet_tree_extension,
         )
         .await
     }
@@ -248,6 +258,8 @@ impl<C: ClientConfig + Clone> ReinitClient<C> {
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+// TODO
+#[allow(clippy::too_many_arguments)]
 async fn resumption_create_group<C: ClientConfig + Clone>(
     config: C,
     new_key_packages: Vec<MlsMessage>,
@@ -256,6 +268,8 @@ async fn resumption_create_group<C: ClientConfig + Clone>(
     signer: SignatureSecretKey,
     leaf_node_extensions: &ExtensionList,
     psk_input: PskSecretInput,
+    path_required: bool,
+    ratchet_tree_extension: bool,
 ) -> Result<(Group<C>, Vec<MlsMessage>), MlsError> {
     // Create a new group with new parameters
     let mut group = Group::new(
@@ -274,7 +288,10 @@ async fn resumption_create_group<C: ClientConfig + Clone>(
     group.previous_psk = Some(psk_input);
 
     // Create a commit that adds new key packages and uses the resumption PSK
-    let mut commit = group.commit_builder();
+    let mut commit = group
+        .commit_builder()
+        .path_required(path_required)
+        .ratchet_tree_extension(ratchet_tree_extension);
 
     for kp in new_key_packages.into_iter() {
         commit = commit.add_member(kp)?;

@@ -589,3 +589,298 @@ impl From<ProposalRef> for ProposalOrRef {
         Self::Reference(r)
     }
 }
+
+#[cfg(feature = "by_ref_proposal")]
+pub use builder::ProposalBuilder;
+
+#[cfg(feature = "by_ref_proposal")]
+pub(crate) use builder::ProposalInput;
+
+#[cfg(feature = "by_ref_proposal")]
+mod builder {
+    use alloc::vec::Vec;
+
+    use mls_rs_core::{
+        crypto::{CipherSuite, CipherSuiteProvider, SignatureSecretKey},
+        error::IntoAnyError,
+        extension::ExtensionList,
+        identity::SigningIdentity,
+        protocol_version::ProtocolVersion,
+    };
+
+    use crate::{
+        client_config::ClientConfig,
+        error::MlsError,
+        group::{
+            AuthenticatedContent, Content, EncryptionMode, ProposalMessageDescription, Sender,
+        },
+        Group, MlsMessage,
+    };
+
+    #[cfg(feature = "custom_proposal")]
+    use super::CustomProposal;
+    #[cfg(feature = "psk")]
+    use super::PreSharedKeyProposal;
+    #[cfg(feature = "psk")]
+    use crate::psk::{ExternalPskId, JustPreSharedKeyID, PreSharedKeyID, ResumptionPsk};
+
+    use super::{
+        AddProposal, ExternalInit, Proposal, ReInitProposal, RemoveProposal, UpdateProposal,
+    };
+
+    /// Build a proposal.
+    pub struct ProposalBuilder<'a, C: ClientConfig, P> {
+        group: &'a mut Group<C>,
+        proposal_input: ProposalInput<P>,
+        authenticated_data: Vec<u8>,
+        encryption_mode: EncryptionMode,
+
+        // Update
+        signer: Option<SignatureSecretKey>,
+        signing_identity: Option<SigningIdentity>,
+        leaf_node_extensions: Option<ExtensionList>,
+
+        // Reinit
+        group_id: Option<Vec<u8>>,
+        version: ProtocolVersion,
+        cipher_suite: CipherSuite,
+        extensions: ExtensionList,
+    }
+
+    pub(crate) enum ProposalInput<P> {
+        Update,
+        #[cfg(feature = "psk")]
+        ExternalPsk {
+            psk_id: ExternalPskId,
+        },
+        #[cfg(feature = "psk")]
+        ResumptionPsk {
+            psk_id: ResumptionPsk,
+        },
+        ReInit,
+        Other {
+            proposal: P,
+        },
+    }
+
+    impl<'a, C: ClientConfig, P: Into<Proposal> + Clone> ProposalBuilder<'a, C, P> {
+        pub(crate) fn new(group: &'a mut Group<C>, proposal_input: ProposalInput<P>) -> Self {
+            ProposalBuilder {
+                group_id: None,
+                version: group.protocol_version(),
+                cipher_suite: group.cipher_suite(),
+                extensions: Default::default(),
+                group,
+                proposal_input,
+                authenticated_data: Default::default(),
+                encryption_mode: Default::default(),
+                signer: Default::default(),
+                signing_identity: Default::default(),
+                leaf_node_extensions: Default::default(),
+            }
+        }
+
+        pub fn authenticated_data(self, authenticated_data: Vec<u8>) -> Self {
+            Self {
+                authenticated_data,
+                ..self
+            }
+        }
+
+        pub fn encryption_mode(self, encryption_mode: EncryptionMode) -> Self {
+            Self {
+                encryption_mode,
+                ..self
+            }
+        }
+
+        #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+        pub async fn build(mut self) -> Result<MlsMessage, MlsError> {
+            let proposal = self.proposal().await?;
+            self.proposal_message(proposal).await
+        }
+
+        #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+        pub(crate) async fn proposal_message(
+            self,
+            proposal: Proposal,
+        ) -> Result<MlsMessage, MlsError> {
+            let group = self.group;
+            let sender = Sender::Member(*group.private_tree.self_index);
+
+            let auth_content = AuthenticatedContent::new_signed(
+                &group.cipher_suite_provider,
+                group.context(),
+                sender,
+                Content::Proposal(proposal.clone().into()),
+                &group.signer,
+                self.encryption_mode,
+                self.authenticated_data,
+            )
+            .await?;
+
+            let sender = auth_content.content.sender;
+
+            let proposal_desc = ProposalMessageDescription::new(
+                &group.cipher_suite_provider,
+                &auth_content,
+                proposal,
+            )
+            .await?;
+
+            let message = group
+                .format_for_wire(
+                    auth_content,
+                    #[cfg(feature = "private_message")]
+                    self.encryption_mode,
+                )
+                .await?;
+
+            group
+                .state
+                .proposals
+                .insert_own(
+                    proposal_desc,
+                    &message,
+                    sender,
+                    &group.cipher_suite_provider,
+                )
+                .await?;
+
+            Ok(message)
+        }
+
+        #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+        pub(crate) async fn proposal(&mut self) -> Result<Proposal, MlsError> {
+            match &mut self.proposal_input {
+                ProposalInput::Other { proposal } => Ok(proposal.clone().into()),
+                ProposalInput::Update => {
+                    self.group
+                        .update_proposal(
+                            self.signer.take(),
+                            self.signing_identity.take(),
+                            self.leaf_node_extensions.take(),
+                        )
+                        .await
+                }
+                #[cfg(feature = "psk")]
+                ProposalInput::ExternalPsk { psk_id } => Ok(Proposal::Psk(PreSharedKeyProposal {
+                    psk: PreSharedKeyID::new(
+                        JustPreSharedKeyID::External(psk_id.clone()),
+                        &self.group.cipher_suite_provider,
+                    )?,
+                })),
+                #[cfg(feature = "psk")]
+                ProposalInput::ResumptionPsk { psk_id } => {
+                    Ok(Proposal::Psk(PreSharedKeyProposal {
+                        psk: PreSharedKeyID::new(
+                            JustPreSharedKeyID::Resumption(psk_id.clone()),
+                            &self.group.cipher_suite_provider,
+                        )?,
+                    }))
+                }
+                ProposalInput::ReInit => {
+                    let group_id = self.group_id.take().map(Ok).unwrap_or_else(|| {
+                        self.group
+                            .cipher_suite_provider
+                            .random_bytes_vec(self.group.cipher_suite_provider.kdf_extract_size())
+                            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
+                    })?;
+
+                    Ok(Proposal::ReInit(ReInitProposal {
+                        group_id,
+                        version: self.version,
+                        cipher_suite: self.cipher_suite,
+                        extensions: core::mem::take(&mut self.extensions),
+                    }))
+                }
+            }
+        }
+    }
+
+    impl<C: ClientConfig> ProposalBuilder<'_, C, UpdateProposal> {
+        pub fn signer(self, signer: SignatureSecretKey) -> Self {
+            Self {
+                signer: Some(signer),
+                ..self
+            }
+        }
+
+        /// Create a proposal message that updates your own public keys
+        /// as well as your credential.
+        ///
+        /// This proposal is useful for contributing additional forward secrecy
+        /// and post-compromise security to the group without having to perform
+        /// the necessary computation of a [`Group::commit`].
+        ///
+        /// Identity updates are allowed by the group by default assuming that the
+        /// new identity provided is considered
+        /// [valid](crate::IdentityProvider::validate_member)
+        /// by and matches the output of the
+        /// [identity](crate::IdentityProvider)
+        /// function of the current
+        /// [`IdentityProvider`](crate::IdentityProvider).
+        ///
+        /// `authenticated_data` will be sent unencrypted along with the contents
+        /// of the proposal message.
+        pub fn signing_identity(self, signing_identity: SigningIdentity) -> Self {
+            Self {
+                signing_identity: Some(signing_identity),
+                ..self
+            }
+        }
+
+        pub fn leaf_node_extensions(self, leaf_node_extensions: ExtensionList) -> Self {
+            Self {
+                leaf_node_extensions: Some(leaf_node_extensions),
+                ..self
+            }
+        }
+    }
+
+    #[cfg(feature = "by_ref_proposal")]
+    impl<C: ClientConfig> ProposalBuilder<'_, C, ReInitProposal> {
+        pub fn group_id(self, group_id: Vec<u8>) -> Self {
+            Self {
+                group_id: Some(group_id),
+                ..self
+            }
+        }
+
+        pub fn version(self, version: ProtocolVersion) -> Self {
+            Self { version, ..self }
+        }
+
+        pub fn cipher_suite(self, cipher_suite: CipherSuite) -> Self {
+            Self {
+                cipher_suite,
+                ..self
+            }
+        }
+
+        pub fn extensions(self, extensions: ExtensionList) -> Self {
+            Self { extensions, ..self }
+        }
+    }
+
+    macro_rules! impl_into_proposal {
+        ($ty:ty, $proposal_type:ident) => {
+            impl From<$ty> for Proposal {
+                fn from(value: $ty) -> Self {
+                    Proposal::$proposal_type(value.into())
+                }
+            }
+        };
+    }
+
+    #[cfg(feature = "custom_proposal")]
+    impl_into_proposal!(CustomProposal, Custom);
+    impl_into_proposal!(AddProposal, Add);
+    impl_into_proposal!(UpdateProposal, Update);
+    impl_into_proposal!(RemoveProposal, Remove);
+    #[cfg(feature = "psk")]
+    impl_into_proposal!(PreSharedKeyProposal, Psk);
+    impl_into_proposal!(ExternalInit, ExternalInit);
+    impl_into_proposal!(ReInitProposal, ReInit);
+    impl_into_proposal!(ExtensionList, GroupContextExtensions);
+}

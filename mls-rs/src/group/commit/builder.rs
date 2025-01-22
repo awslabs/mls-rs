@@ -8,31 +8,30 @@ use alloc::{vec, vec::Vec};
 #[cfg(feature = "psk")]
 use itertools::Itertools;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
-use mls_rs_core::{crypto::SignatureSecretKey, error::IntoAnyError};
+use mls_rs_core::crypto::SignatureSecretKey;
 
-use crate::mls_rules::{ProposalBundle, ProposalSource};
+#[cfg(feature = "by_ref_proposal")]
+use crate::group::proposal_filter::ProposalInfo;
+use crate::group::proposal_filter::{ProposalBundle, ProposalSource};
+use crate::group::{EncryptionMode, RemoveProposal};
 use crate::{
     cipher_suite::CipherSuite,
     client::MlsError,
     client_config::ClientConfig,
     extension::RatchetTreeExt,
     identity::SigningIdentity,
-    mls_rules::CommitSource,
     protocol_version::ProtocolVersion,
     signer::Signable,
     tree_kem::{kem::TreeKem, node::LeafIndex, path_secret::PathSecret, TreeKemPrivate},
-    ExtensionList, MlsRules,
+    ExtensionList,
 };
 
-use super::Commit;
+use super::{Commit, CommitSource};
 
 #[cfg(all(not(mls_build_async), feature = "rayon"))]
 use {crate::iter::ParallelIteratorExt, rayon::prelude::*};
 
 use crate::tree_kem::leaf_node::LeafNode;
-
-#[cfg(not(feature = "private_message"))]
-use crate::WireFormat;
 
 #[cfg(feature = "psk")]
 use crate::{
@@ -59,7 +58,7 @@ use crate::group::{
 };
 
 #[cfg(feature = "by_ref_proposal")]
-use crate::group::mls_rules::CommitDirection;
+use crate::group::proposal_filter::CommitDirection;
 
 #[cfg(feature = "custom_proposal")]
 use crate::group::proposal::CustomProposal;
@@ -125,7 +124,7 @@ pub struct CommitOutput {
     pub external_commit_group_info: Option<MlsMessage>,
     /// Proposals that were received in the prior epoch but not included in the following commit.
     #[cfg(feature = "by_ref_proposal")]
-    pub unused_proposals: Vec<crate::mls_rules::ProposalInfo<Proposal>>,
+    pub unused_proposals: Vec<ProposalInfo<Proposal>>,
     /// Indicator that the commit contains a path update
     pub contains_update_path: bool,
 }
@@ -162,9 +161,22 @@ impl CommitOutput {
 
     /// Proposals that were received in the prior epoch but not included in the following commit.
     #[cfg(all(feature = "ffi", feature = "by_ref_proposal"))]
-    pub fn unused_proposals(&self) -> &[crate::mls_rules::ProposalInfo<Proposal>] {
+    pub fn unused_proposals(&self) -> &[ProposalInfo<Proposal>] {
         &self.unused_proposals
     }
+}
+
+/// Options controlling commit generation
+#[derive(Clone, Debug)]
+#[non_exhaustive]
+pub(crate) struct CommitOptions {
+    pub path_required: bool,
+    pub ratchet_tree_extension: bool,
+    pub single_welcome_message: bool,
+    pub allow_external_commit: bool,
+    pub authenticated_data: Vec<u8>,
+    pub sender: Sender,
+    pub encryption_mode: EncryptionMode,
 }
 
 /// Build a commit with multiple proposals by-value.
@@ -180,14 +192,13 @@ where
 {
     group: &'a mut Group<C>,
     proposals: ProposalBundle,
-    authenticated_data: Vec<u8>,
     group_info_extensions: ExtensionList,
     new_signer: Option<SignatureSecretKey>,
     new_signing_identity: Option<SigningIdentity>,
     new_leaf_node_extensions: Option<ExtensionList>,
+    pub(crate) options: CommitOptions,
     #[cfg(feature = "psk")]
     psks: Vec<Option<PskSecretInput>>,
-    sender: Sender,
 }
 
 impl<'a, C> CommitBuilder<'a, C>
@@ -220,17 +231,20 @@ where
 
     /// Insert a [`RemoveProposal`](crate::group::proposal::RemoveProposal) into
     /// the current commit that is being built.
-    pub fn remove_member(self, index: u32) -> Result<Self, MlsError> {
-        let proposal = self.group.remove_proposal(index)?;
-        Ok(self.with_proposal(proposal))
+    pub fn remove_member(self, to_remove: u32) -> Self {
+        let proposal = Proposal::Remove(RemoveProposal {
+            to_remove: LeafIndex(to_remove),
+        });
+
+        self.with_proposal(proposal)
     }
 
     /// Insert a
     /// [`GroupContextExtensions`](crate::group::proposal::Proposal::GroupContextExtensions)
     /// into the current commit that is being built.
-    pub fn set_group_context_ext(self, extensions: ExtensionList) -> Result<Self, MlsError> {
-        let proposal = self.group.group_context_extensions_proposal(extensions);
-        Ok(self.with_proposal(proposal))
+    pub fn set_group_context_ext(self, extensions: ExtensionList) -> Self {
+        let proposal = Proposal::GroupContextExtensions(extensions);
+        self.with_proposal(proposal)
     }
 
     /// Add an external PSK that can be used to fulfil PSK requirements that were
@@ -371,7 +385,7 @@ where
 
     fn with_proposal(mut self, proposal: Proposal) -> Self {
         self.proposals
-            .add(proposal, self.sender, ProposalSource::ByValue);
+            .add(proposal, self.options.sender, ProposalSource::ByValue);
 
         self
     }
@@ -381,11 +395,9 @@ where
     /// # Warning
     ///
     /// The data provided here is always sent unencrypted.
-    pub fn authenticated_data(self, authenticated_data: Vec<u8>) -> Self {
-        Self {
-            authenticated_data,
-            ..self
-        }
+    pub fn authenticated_data(mut self, authenticated_data: Vec<u8>) -> Self {
+        self.options.authenticated_data = authenticated_data;
+        self
     }
 
     /// Change the committer's signing identity as part of making this commit.
@@ -405,6 +417,31 @@ where
             new_signing_identity: Some(signing_identity),
             ..self
         }
+    }
+
+    pub fn path_required(mut self, path_required: bool) -> Self {
+        self.options.path_required = path_required;
+        self
+    }
+
+    pub fn ratchet_tree_extension(mut self, ratchet_tree_extension: bool) -> Self {
+        self.options.ratchet_tree_extension = ratchet_tree_extension;
+        self
+    }
+
+    pub fn single_welcome_message(mut self, single_welcome_message: bool) -> Self {
+        self.options.single_welcome_message = single_welcome_message;
+        self
+    }
+
+    pub fn allow_external_commit(mut self, allow_external_commit: bool) -> Self {
+        self.options.allow_external_commit = allow_external_commit;
+        self
+    }
+
+    pub fn encryption_mode(mut self, encryption_mode: EncryptionMode) -> Self {
+        self.options.encryption_mode = encryption_mode;
+        self
     }
 
     /// Change the committer's leaf node extensions as part of making this commit.
@@ -449,14 +486,13 @@ where
             .commit_internal(
                 self.proposals,
                 None,
-                self.authenticated_data,
                 self.group_info_extensions,
                 self.new_signer,
                 self.new_signing_identity,
                 self.new_leaf_node_extensions,
+                self.options,
                 #[cfg(feature = "psk")]
                 psks,
-                self.sender,
             )
             .await?;
 
@@ -483,14 +519,13 @@ where
             .commit_internal(
                 self.proposals,
                 None,
-                self.authenticated_data,
                 self.group_info_extensions,
                 self.new_signer,
                 self.new_signing_identity,
                 self.new_leaf_node_extensions,
+                self.options,
                 #[cfg(feature = "psk")]
                 psks,
-                self.sender,
             )
             .await?;
 
@@ -585,9 +620,16 @@ where
             #[cfg(all(not(feature = "by_ref_proposal"), feature = "psk"))]
             psks: vec![],
             proposals,
-            sender: Sender::Member(*self.private_tree.self_index),
+            options: CommitOptions {
+                sender: Sender::Member(*self.private_tree.self_index),
+                path_required: false,
+                ratchet_tree_extension: true,
+                single_welcome_message: true,
+                allow_external_commit: false,
+                authenticated_data: Default::default(),
+                encryption_mode: Default::default(),
+            },
             group: self,
-            authenticated_data: Default::default(),
             group_info_extensions: Default::default(),
             new_signer: Default::default(),
             new_signing_identity: Default::default(),
@@ -603,13 +645,12 @@ where
         &mut self,
         proposals: ProposalBundle,
         external_leaf: Option<&LeafNode>,
-        authenticated_data: Vec<u8>,
         mut welcome_group_info_extensions: ExtensionList,
         new_signer: Option<SignatureSecretKey>,
         new_signing_identity: Option<SigningIdentity>,
         new_leaf_node_extensions: Option<ExtensionList>,
+        options: CommitOptions,
         #[cfg(feature = "psk")] psks: Vec<PskSecretInput>,
-        sender: Sender,
     ) -> Result<(CommitOutput, PendingCommit), MlsError> {
         if !self.pending_commit.is_none() {
             return Err(MlsError::ExistingPendingCommit);
@@ -618,8 +659,6 @@ where
         if self.state.pending_reinit.is_some() {
             return Err(MlsError::GroupUsedAfterReInit);
         }
-
-        let mls_rules = self.config.mls_rules();
 
         let is_external = external_leaf.is_some();
 
@@ -635,7 +674,7 @@ where
         #[cfg(not(feature = "std"))]
         let time = None;
 
-        let committer = CommitSource::new(&sender, &self.state.public_tree, external_leaf)?;
+        let committer = CommitSource::new(&options.sender, &self.state.public_tree, external_leaf)?;
 
         let mut provisional_state = self
             .state
@@ -670,16 +709,8 @@ where
         // Decide whether to populate the path field: If the path field is required based on the
         // proposals that are in the commit (see above), then it MUST be populated. Otherwise, the
         // sender MAY omit the path field at its discretion.
-        let commit_options = mls_rules
-            .commit_options(
-                &provisional_state.public_tree.roster(),
-                &provisional_state.group_context,
-                &provisional_state.applied_proposals,
-            )
-            .map_err(|e| MlsError::MlsRulesError(e.into_any_error()))?;
-
-        let perform_path_update = commit_options.path_required
-            || path_update_required(&provisional_state.applied_proposals);
+        let perform_path_update =
+            options.path_required || path_update_required(&provisional_state.applied_proposals);
 
         let (update_path, path_secrets, commit_secret) = if perform_path_update {
             // If populating the path field: Create an UpdatePath using the new tree. Any new
@@ -770,14 +801,11 @@ where
         let mut auth_content = AuthenticatedContent::new_signed(
             &self.cipher_suite_provider,
             self.context(),
-            sender,
+            options.sender,
             Content::Commit(Box::new(commit)),
             old_signer,
-            #[cfg(feature = "private_message")]
-            self.encryption_options()?.control_wire_format(sender),
-            #[cfg(not(feature = "private_message"))]
-            WireFormat::PublicMessage,
-            authenticated_data,
+            options.encryption_mode,
+            options.authenticated_data,
         )
         .await?;
 
@@ -819,14 +847,12 @@ where
 
         auth_content.auth.confirmation_tag = Some(confirmation_tag.clone());
 
-        let ratchet_tree_ext = commit_options
-            .ratchet_tree_extension
-            .then(|| RatchetTreeExt {
-                tree_data: ExportedTree::new(provisional_state.public_tree.nodes.clone()),
-            });
+        let ratchet_tree_ext = options.ratchet_tree_extension.then(|| RatchetTreeExt {
+            tree_data: ExportedTree::new(provisional_state.public_tree.nodes.clone()),
+        });
 
         // Generate external commit group info if required by commit_options
-        let external_commit_group_info = match commit_options.allow_external_commit {
+        let external_commit_group_info = match options.allow_external_commit {
             true => {
                 let mut extensions = ExtensionList::new();
 
@@ -932,7 +958,7 @@ where
         };
 
         let welcome_messages =
-            if commit_options.single_welcome_message && !encrypted_path_secrets.is_empty() {
+            if options.single_welcome_message && !encrypted_path_secrets.is_empty() {
                 vec![self.make_welcome_message(encrypted_path_secrets, encrypted_group_info)]
             } else {
                 encrypted_path_secrets
@@ -941,10 +967,16 @@ where
                     .collect()
             };
 
-        let commit_message = self.format_for_wire(auth_content.clone()).await?;
+        let commit_message = self
+            .format_for_wire(
+                auth_content.clone(),
+                #[cfg(feature = "private_message")]
+                options.encryption_mode,
+            )
+            .await?;
 
         // TODO is it necessary to clone the tree here? or can we just output serialized bytes?
-        let ratchet_tree = (!commit_options.ratchet_tree_extension)
+        let ratchet_tree = (!options.ratchet_tree_extension)
             .then(|| ExportedTree::new(provisional_state.public_tree.nodes.clone()));
 
         let pending_reinit = provisional_state
@@ -1081,7 +1113,7 @@ mod tests {
     };
 
     use crate::{
-        client::test_utils::{test_client_with_key_pkg, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
+        client::test_utils::{test_client, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         client_builder::{
             test_utils::TestClientConfig, BaseConfig, ClientBuilder, WithCryptoProvider,
             WithIdentityProvider,
@@ -1091,16 +1123,13 @@ mod tests {
         extension::test_utils::{TestExtension, TEST_EXTENSION_TYPE},
         group::{
             proposal::ProposalType,
-            test_utils::{
-                test_group, test_group_custom, test_group_custom_config, test_n_member_group,
-            },
+            test_utils::{test_group, test_group_custom_config, test_n_member_group},
         },
         identity::{
             basic::BasicIdentityProvider,
             test_utils::{get_test_basic_credential, get_test_signing_identity},
         },
         key_package::test_utils::test_key_package_message,
-        mls_rules::CommitOptions,
         test_utils::TestClient,
     };
     use crate::{extension::RequiredCapabilitiesExt, group::ProposalOrRef};
@@ -1109,8 +1138,6 @@ mod tests {
     use crate::crypto::test_utils::test_cipher_suite_provider;
     #[cfg(feature = "by_ref_proposal")]
     use crate::extension::ExternalSendersExt;
-    #[cfg(feature = "by_ref_proposal")]
-    use crate::group::mls_rules::DefaultMlsRules;
 
     #[cfg(feature = "psk")]
     use crate::{
@@ -1207,8 +1234,7 @@ mod tests {
     async fn test_commit_builder_add_with_ext() {
         let mut group = test_commit_builder_group().await;
 
-        let (bob_client, bob_key_package) =
-            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
+        let (bob_client, bob_key_package) = test_client("bob").await;
 
         let ext = TestExtension { foo: 42 };
         let mut extension_list = ExtensionList::default();
@@ -1256,12 +1282,13 @@ mod tests {
         let commit_output = group
             .commit_builder()
             .remove_member(1)
-            .unwrap()
             .build()
             .await
             .unwrap();
 
-        let expected_remove = group.remove_proposal(1).unwrap();
+        let expected_remove = Proposal::Remove(RemoveProposal {
+            to_remove: LeafIndex(1),
+        });
 
         assert_commit_builder_output(group, commit_output, vec![expected_remove], 0);
     }
@@ -1284,7 +1311,10 @@ mod tests {
             .unwrap();
 
         let key_id = JustPreSharedKeyID::External(test_psk);
-        let expected_psk = group.psk_proposal(key_id).unwrap();
+
+        let expected_psk = Proposal::Psk(PreSharedKeyProposal {
+            psk: PreSharedKeyID::new(key_id, &group.cipher_suite_provider).unwrap(),
+        });
 
         assert_commit_builder_output(group, commit_output, vec![expected_psk], 0)
     }
@@ -1300,12 +1330,11 @@ mod tests {
         let commit_output = group
             .commit_builder()
             .set_group_context_ext(test_ext.clone())
-            .unwrap()
             .build()
             .await
             .unwrap();
 
-        let expected_ext = group.group_context_extensions_proposal(test_ext);
+        let expected_ext = Proposal::GroupContextExtensions(test_ext);
 
         assert_commit_builder_output(group, commit_output, vec![expected_ext], 0);
     }
@@ -1423,23 +1452,21 @@ mod tests {
     #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_commit_builder_multiple_welcome_messages() {
-        let mut group = test_group_custom_config(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, |b| {
-            let options = CommitOptions::new().with_single_welcome_message(false);
-            b.mls_rules(DefaultMlsRules::new().with_commit_options(options))
-        })
-        .await;
+        let mut group = test_group().await;
+        let (alice, alice_kp) = test_client("a").await;
+        let (bob, bob_kp) = test_client("b").await;
 
-        let (alice, alice_kp) =
-            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "a").await;
+        let output = group
+            .commit_builder()
+            .add_member(alice_kp.clone())
+            .unwrap()
+            .add_member(bob_kp.clone())
+            .unwrap()
+            .single_welcome_message(false)
+            .build()
+            .await
+            .unwrap();
 
-        let (bob, bob_kp) =
-            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "b").await;
-
-        group.propose_add(alice_kp.clone(), vec![]).await.unwrap();
-
-        group.propose_add(bob_kp.clone(), vec![]).await.unwrap();
-
-        let output = group.commit(Vec::new()).await.unwrap();
         let welcomes = output.welcome_messages;
 
         let cs = test_cipher_suite_provider(TEST_CIPHER_SUITE);
@@ -1506,16 +1533,14 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn commit_includes_tree_if_no_ratchet_tree_ext() {
-        let mut group = test_group_custom(
-            TEST_PROTOCOL_VERSION,
-            TEST_CIPHER_SUITE,
-            Default::default(),
-            None,
-            Some(CommitOptions::new().with_ratchet_tree_extension(false)),
-        )
-        .await;
+        let mut group = test_group().await;
 
-        let commit = group.commit(vec![]).await.unwrap();
+        let commit = group
+            .commit_builder()
+            .ratchet_tree_extension(false)
+            .build()
+            .await
+            .unwrap();
 
         group.apply_pending_commit().await.unwrap();
 
@@ -1526,36 +1551,29 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn commit_does_not_include_tree_if_ratchet_tree_ext() {
-        let mut group = test_group_custom(
-            TEST_PROTOCOL_VERSION,
-            TEST_CIPHER_SUITE,
-            Default::default(),
-            None,
-            Some(CommitOptions::new().with_ratchet_tree_extension(true)),
-        )
-        .await;
+        let mut group = test_group().await;
 
-        let commit = group.commit(vec![]).await.unwrap();
+        let commit = group
+            .commit_builder()
+            .ratchet_tree_extension(true)
+            .build()
+            .await
+            .unwrap();
 
         assert!(commit.ratchet_tree.is_none());
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn commit_includes_external_commit_group_info_if_requested() {
-        let mut group = test_group_custom(
-            TEST_PROTOCOL_VERSION,
-            TEST_CIPHER_SUITE,
-            Default::default(),
-            None,
-            Some(
-                CommitOptions::new()
-                    .with_allow_external_commit(true)
-                    .with_ratchet_tree_extension(false),
-            ),
-        )
-        .await;
+        let mut group = test_group().await;
 
-        let commit = group.commit(vec![]).await.unwrap();
+        let commit = group
+            .commit_builder()
+            .ratchet_tree_extension(false)
+            .allow_external_commit(true)
+            .build()
+            .await
+            .unwrap();
 
         let info = commit
             .external_commit_group_info
@@ -1569,20 +1587,15 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn commit_includes_external_commit_and_tree_if_requested() {
-        let mut group = test_group_custom(
-            TEST_PROTOCOL_VERSION,
-            TEST_CIPHER_SUITE,
-            Default::default(),
-            None,
-            Some(
-                CommitOptions::new()
-                    .with_allow_external_commit(true)
-                    .with_ratchet_tree_extension(true),
-            ),
-        )
-        .await;
+        let mut group = test_group().await;
 
-        let commit = group.commit(vec![]).await.unwrap();
+        let commit = group
+            .commit_builder()
+            .ratchet_tree_extension(true)
+            .allow_external_commit(true)
+            .build()
+            .await
+            .unwrap();
 
         let info = commit
             .external_commit_group_info
@@ -1596,16 +1609,14 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn commit_does_not_include_external_commit_group_info_if_not_requested() {
-        let mut group = test_group_custom(
-            TEST_PROTOCOL_VERSION,
-            TEST_CIPHER_SUITE,
-            Default::default(),
-            None,
-            Some(CommitOptions::new().with_allow_external_commit(false)),
-        )
-        .await;
+        let mut group = test_group().await;
 
-        let commit = group.commit(vec![]).await.unwrap();
+        let commit = group
+            .commit_builder()
+            .allow_external_commit(false)
+            .build()
+            .await
+            .unwrap();
 
         assert!(commit.external_commit_group_info.is_none());
     }
@@ -1630,7 +1641,6 @@ mod tests {
             .add_member(bob_kp)
             .unwrap()
             .set_group_context_ext(extension_list.clone())
-            .unwrap()
             .build()
             .await;
 
@@ -1643,7 +1653,6 @@ mod tests {
             .add_member(alex.generate_key_package().await.unwrap())
             .unwrap()
             .set_group_context_ext(extension_list.clone())
-            .unwrap()
             .build()
             .await
             .unwrap();
@@ -1675,7 +1684,6 @@ mod tests {
         let res = alice
             .commit_builder()
             .set_group_context_ext(alex_extensions)
-            .unwrap()
             .build()
             .await;
 
@@ -1694,7 +1702,6 @@ mod tests {
         alice
             .commit_builder()
             .set_group_context_ext(bob_extensions)
-            .unwrap()
             .build()
             .await
             .unwrap();
@@ -1811,7 +1818,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn detached_commit() {
-        let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut group = test_group().await;
 
         let (_commit, secrets) = group.commit_builder().build_detached().await.unwrap();
         assert!(group.pending_commit.is_none());

@@ -132,7 +132,7 @@ mod tests {
             Commit, LeafIndex, Sender,
         },
         mls_rs_codec::MlsEncode,
-        CipherSuite, CipherSuiteProvider, WireFormat,
+        CipherSuite, CipherSuiteProvider,
     };
 
     #[cfg(not(mls_build_async))]
@@ -197,6 +197,8 @@ mod tests {
     #[cfg(not(mls_build_async))]
     #[cfg_attr(coverage_nightly, coverage(off))]
     fn generate_test_vector() -> Vec<TestCase> {
+        use crate::group::EncryptionMode;
+
         CipherSuite::all().fold(vec![], |mut test_cases, cs| {
             let cs = test_cipher_suite_provider(cs);
 
@@ -221,7 +223,7 @@ mod tests {
                 Sender::Member(0),
                 Content::Commit(alloc::boxed::Box::new(commit)),
                 &signer,
-                WireFormat::PublicMessage,
+                EncryptionMode::PublicMessage,
                 vec![],
             )
             .unwrap();

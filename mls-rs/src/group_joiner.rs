@@ -315,17 +315,14 @@ mod tests {
     use mls_rs_core::psk::{ExternalPskId, PreSharedKey};
 
     use crate::{
-        client::test_utils::{test_client_with_key_pkg, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
+        client::test_utils::{test_client, TEST_CIPHER_SUITE},
         psk::{PskGroupId, ResumptionPSKUsage, ResumptionPsk},
     };
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn outputs_correct_join_info() {
-        let (alice, _kp_alice) =
-            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "alice").await;
-
-        let (bob, kp_bob) =
-            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
+        let (alice, _kp_alice) = test_client("alice").await;
+        let (bob, kp_bob) = test_client("bob").await;
 
         let mut group_alice = alice
             .create_group(Default::default(), Default::default())

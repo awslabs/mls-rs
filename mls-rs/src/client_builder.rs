@@ -11,10 +11,7 @@ use crate::{
     client::Client,
     client_config::ClientConfig,
     extension::ExtensionType,
-    group::{
-        mls_rules::{DefaultMlsRules, MlsRules},
-        proposal::ProposalType,
-    },
+    group::proposal::ProposalType,
     identity::CredentialType,
     identity::SigningIdentity,
     protocol_version::ProtocolVersion,
@@ -38,16 +35,16 @@ use mls_rs_provider_sqlite::{
 pub use crate::group::padding::PaddingMode;
 
 /// Base client configuration type when instantiating `ClientBuilder`
-pub type BaseConfig = Config<InMemoryGroupStateStorage, Missing, DefaultMlsRules, Missing>;
+pub type BaseConfig = Config<InMemoryGroupStateStorage, Missing, Missing>;
 
 /// Base client configuration type when instantiating `ClientBuilder`
-pub type BaseInMemoryConfig = Config<InMemoryGroupStateStorage, Missing, Missing, Missing>;
+pub type BaseInMemoryConfig = Config<InMemoryGroupStateStorage, Missing, Missing>;
 
-pub type EmptyConfig = Config<Missing, Missing, Missing, Missing>;
+pub type EmptyConfig = Config<Missing, Missing, Missing>;
 
 /// Base client configuration that is backed by SQLite storage.
 #[cfg(feature = "sqlite")]
-pub type BaseSqlConfig = Config<SqLiteGroupStateStorage, Missing, DefaultMlsRules, Missing>;
+pub type BaseSqlConfig = Config<SqLiteGroupStateStorage, Missing, Missing>;
 
 /// Builder for [`Client`]
 ///
@@ -169,7 +166,6 @@ impl ClientBuilder<BaseConfig> {
             settings: Default::default(),
             group_state_storage: Default::default(),
             identity_provider: Missing,
-            mls_rules: DefaultMlsRules::new(),
             crypto_provider: Missing,
             signer: Default::default(),
             signing_identity: Default::default(),
@@ -184,7 +180,6 @@ impl ClientBuilder<EmptyConfig> {
             settings: Default::default(),
             group_state_storage: Missing,
             identity_provider: Missing,
-            mls_rules: Missing,
             crypto_provider: Missing,
             signer: Default::default(),
             signing_identity: Default::default(),
@@ -203,7 +198,6 @@ impl ClientBuilder<BaseSqlConfig> {
             settings: Default::default(),
             group_state_storage: storage.group_state_storage()?,
             identity_provider: Missing,
-            mls_rules: DefaultMlsRules::new(),
             crypto_provider: Missing,
             signer: Default::default(),
             signing_identity: Default::default(),
@@ -288,7 +282,6 @@ impl<C: IntoConfig> ClientBuilder<C> {
             group_state_storage,
             identity_provider: c.identity_provider,
             crypto_provider: c.crypto_provider,
-            mls_rules: c.mls_rules,
             signer: c.signer,
             signing_identity: c.signing_identity,
             version: c.version,
@@ -309,7 +302,6 @@ impl<C: IntoConfig> ClientBuilder<C> {
             settings: c.settings,
             group_state_storage: c.group_state_storage,
             identity_provider,
-            mls_rules: c.mls_rules,
             crypto_provider: c.crypto_provider,
             signer: c.signer,
             signing_identity: c.signing_identity,
@@ -331,33 +323,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
             settings: c.settings,
             group_state_storage: c.group_state_storage,
             identity_provider: c.identity_provider,
-            mls_rules: c.mls_rules,
             crypto_provider,
-            signer: c.signer,
-            signing_identity: c.signing_identity,
-            version: c.version,
-        }))
-    }
-
-    /// Set the user-defined proposal rules to be used by the client.
-    ///
-    /// User-defined rules are used when sending and receiving commits before
-    /// enforcing general MLS protocol rules. If the rule set returns an error when
-    /// receiving a commit, the entire commit is considered invalid. If the
-    /// rule set would return an error when sending a commit, individual proposals
-    /// may be filtered out to compensate.
-    pub fn mls_rules<Pr>(self, mls_rules: Pr) -> ClientBuilder<WithMlsRules<Pr, C>>
-    where
-        Pr: MlsRules,
-    {
-        let Config(c) = self.0.into_config();
-
-        ClientBuilder(Config(ConfigInner {
-            settings: c.settings,
-            group_state_storage: c.group_state_storage,
-            identity_provider: c.identity_provider,
-            mls_rules,
-            crypto_provider: c.crypto_provider,
             signer: c.signer,
             signing_identity: c.signing_identity,
             version: c.version,
@@ -400,7 +366,6 @@ impl<C: IntoConfig> ClientBuilder<C>
 where
     C::GroupStateStorage: GroupStateStorage + Clone,
     C::IdentityProvider: IdentityProvider + Clone,
-    C::MlsRules: MlsRules + Clone,
     C::CryptoProvider: CryptoProvider + Clone,
 {
     pub(crate) fn build_config(self) -> IntoConfigOutput<C> {
@@ -434,48 +399,25 @@ pub struct Missing;
 /// Change the group state storage used by a client configuration.
 ///
 /// See [`ClientBuilder::group_state_storage`].
-pub type WithGroupStateStorage<G, C> = Config<
-    G,
-    <C as IntoConfig>::IdentityProvider,
-    <C as IntoConfig>::MlsRules,
-    <C as IntoConfig>::CryptoProvider,
->;
+pub type WithGroupStateStorage<G, C> =
+    Config<G, <C as IntoConfig>::IdentityProvider, <C as IntoConfig>::CryptoProvider>;
 
 /// Change the identity validator used by a client configuration.
 ///
 /// See [`ClientBuilder::identity_provider`].
-pub type WithIdentityProvider<I, C> = Config<
-    <C as IntoConfig>::GroupStateStorage,
-    I,
-    <C as IntoConfig>::MlsRules,
-    <C as IntoConfig>::CryptoProvider,
->;
-
-/// Change the proposal rules used by a client configuration.
-///
-/// See [`ClientBuilder::mls_rules`].
-pub type WithMlsRules<Pr, C> = Config<
-    <C as IntoConfig>::GroupStateStorage,
-    <C as IntoConfig>::IdentityProvider,
-    Pr,
-    <C as IntoConfig>::CryptoProvider,
->;
+pub type WithIdentityProvider<I, C> =
+    Config<<C as IntoConfig>::GroupStateStorage, I, <C as IntoConfig>::CryptoProvider>;
 
 /// Change the crypto provider used by a client configuration.
 ///
 /// See [`ClientBuilder::crypto_provider`].
-pub type WithCryptoProvider<Cp, C> = Config<
-    <C as IntoConfig>::GroupStateStorage,
-    <C as IntoConfig>::IdentityProvider,
-    <C as IntoConfig>::MlsRules,
-    Cp,
->;
+pub type WithCryptoProvider<Cp, C> =
+    Config<<C as IntoConfig>::GroupStateStorage, <C as IntoConfig>::IdentityProvider, Cp>;
 
 /// Helper alias for `Config`.
 pub type IntoConfigOutput<C> = Config<
     <C as IntoConfig>::GroupStateStorage,
     <C as IntoConfig>::IdentityProvider,
-    <C as IntoConfig>::MlsRules,
     <C as IntoConfig>::CryptoProvider,
 >;
 
@@ -483,20 +425,17 @@ pub type IntoConfigOutput<C> = Config<
 pub type MakeConfig<C> = Config<
     <C as ClientConfig>::GroupStateStorage,
     <C as ClientConfig>::IdentityProvider,
-    <C as ClientConfig>::MlsRules,
     <C as ClientConfig>::CryptoProvider,
 >;
 
-impl<Gss, Ip, Pr, Cp> ClientConfig for ConfigInner<Gss, Ip, Pr, Cp>
+impl<Gss, Ip, Cp> ClientConfig for ConfigInner<Gss, Ip, Cp>
 where
     Gss: GroupStateStorage + Clone,
     Ip: IdentityProvider + Clone,
-    Pr: MlsRules + Clone,
     Cp: CryptoProvider + Clone,
 {
     type GroupStateStorage = Gss;
     type IdentityProvider = Ip;
-    type MlsRules = Pr;
     type CryptoProvider = Cp;
 
     fn supported_extensions(&self) -> Vec<ExtensionType> {
@@ -505,10 +444,6 @@ where
 
     fn supported_protocol_versions(&self) -> Vec<ProtocolVersion> {
         self.settings.protocol_versions.clone()
-    }
-
-    fn mls_rules(&self) -> Self::MlsRules {
-        self.mls_rules.clone()
     }
 
     fn group_state_storage(&self) -> Self::GroupStateStorage {
@@ -541,16 +476,15 @@ where
     }
 }
 
-impl<Gss, Ip, Pr, Cp> Sealed for Config<Gss, Ip, Pr, Cp> {}
+impl<Gss, Ip, Cp> Sealed for Config<Gss, Ip, Cp> {}
 
-impl<Gss, Ip, Pr, Cp> MlsConfig for Config<Gss, Ip, Pr, Cp>
+impl<Gss, Ip, Cp> MlsConfig for Config<Gss, Ip, Cp>
 where
     Gss: GroupStateStorage + Clone,
     Ip: IdentityProvider + Clone,
-    Pr: MlsRules + Clone,
     Cp: CryptoProvider + Clone,
 {
-    type Output = ConfigInner<Gss, Ip, Pr, Cp>;
+    type Output = ConfigInner<Gss, Ip, Cp>;
 
     fn get(&self) -> &Self::Output {
         &self.0
@@ -572,7 +506,6 @@ pub trait MlsConfig: Clone + Send + Sync + Sealed {
 impl<T: MlsConfig> ClientConfig for T {
     type GroupStateStorage = <T::Output as ClientConfig>::GroupStateStorage;
     type IdentityProvider = <T::Output as ClientConfig>::IdentityProvider;
-    type MlsRules = <T::Output as ClientConfig>::MlsRules;
     type CryptoProvider = <T::Output as ClientConfig>::CryptoProvider;
 
     fn supported_extensions(&self) -> Vec<ExtensionType> {
@@ -585,10 +518,6 @@ impl<T: MlsConfig> ClientConfig for T {
 
     fn supported_protocol_versions(&self) -> Vec<ProtocolVersion> {
         self.get().supported_protocol_versions()
-    }
-
-    fn mls_rules(&self) -> Self::MlsRules {
-        self.get().mls_rules()
     }
 
     fn group_state_storage(&self) -> Self::GroupStateStorage {
@@ -657,7 +586,6 @@ pub(crate) fn recreate_config<T: ClientConfig>(
         },
         group_state_storage: c.group_state_storage(),
         identity_provider: c.identity_provider(),
-        mls_rules: c.mls_rules(),
         crypto_provider: c.crypto_provider(),
         signer,
         signing_identity,
@@ -677,14 +605,13 @@ mod private {
     use crate::client_builder::{IntoConfigOutput, Settings};
 
     #[derive(Clone, Debug)]
-    pub struct Config<Gss, Ip, Pr, Cp>(pub(crate) ConfigInner<Gss, Ip, Pr, Cp>);
+    pub struct Config<Gss, Ip, Cp>(pub(crate) ConfigInner<Gss, Ip, Cp>);
 
     #[derive(Clone, Debug)]
-    pub struct ConfigInner<Gss, Ip, Pr, Cp> {
+    pub struct ConfigInner<Gss, Ip, Cp> {
         pub(crate) settings: Settings,
         pub(crate) group_state_storage: Gss,
         pub(crate) identity_provider: Ip,
-        pub(crate) mls_rules: Pr,
         pub(crate) crypto_provider: Cp,
         pub(crate) signer: Option<SignatureSecretKey>,
         pub(crate) signing_identity: Option<(SigningIdentity, CipherSuite)>,
@@ -694,16 +621,14 @@ mod private {
     pub trait IntoConfig {
         type GroupStateStorage;
         type IdentityProvider;
-        type MlsRules;
         type CryptoProvider;
 
         fn into_config(self) -> IntoConfigOutput<Self>;
     }
 
-    impl<Gss, Ip, Pr, Cp> IntoConfig for Config<Gss, Ip, Pr, Cp> {
+    impl<Gss, Ip, Cp> IntoConfig for Config<Gss, Ip, Cp> {
         type GroupStateStorage = Gss;
         type IdentityProvider = Ip;
-        type MlsRules = Pr;
         type CryptoProvider = Cp;
 
         fn into_config(self) -> Self {

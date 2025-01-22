@@ -10,7 +10,6 @@ use mls_rs::{
         basic::{BasicCredential, BasicIdentityProvider},
         SigningIdentity,
     },
-    mls_rules::{CommitOptions, DefaultMlsRules},
     CipherSuite, CipherSuiteProvider, Client, CryptoProvider, Group,
 };
 
@@ -74,6 +73,7 @@ fn make_groups_best_case<P: CryptoProvider + Clone>(
             .last_mut()
             .unwrap()
             .commit_builder()
+            .path_required(true)
             .add_member(bob_kpkg.key_package_message)?
             .build()?;
 
@@ -110,7 +110,7 @@ fn make_groups_worst_case<P: CryptoProvider + Clone>(
         .collect::<Result<Vec<_>, _>>()?;
 
     // Alice adds all Bob's clients in a single commit.
-    let mut commit_builder = alice_group.commit_builder();
+    let mut commit_builder = alice_group.commit_builder().path_required(true);
     let mut kpkgs = vec![];
 
     for bob_client in &bob_clients {
@@ -152,10 +152,6 @@ fn make_client<P: CryptoProvider + Clone>(
     Ok(Client::builder()
         .identity_provider(BasicIdentityProvider)
         .crypto_provider(crypto_provider)
-        .mls_rules(
-            DefaultMlsRules::new()
-                .with_commit_options(CommitOptions::new().with_path_required(true)),
-        )
         .signing_identity(signing_identity, secret, CIPHERSUITE)
         .build())
 }

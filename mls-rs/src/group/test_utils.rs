@@ -20,7 +20,6 @@ use crate::{
     crypto::test_utils::test_cipher_suite_provider,
     extension::ExtensionType,
     identity::test_utils::get_test_signing_identity,
-    mls_rules::{CommitOptions, DefaultMlsRules},
 };
 
 use crate::extension::RequiredCapabilitiesExt;
@@ -50,12 +49,6 @@ impl DerefMut for TestGroup {
 }
 
 impl TestGroup {
-    #[cfg(feature = "external_client")]
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub(crate) async fn propose(&mut self, proposal: Proposal) -> MlsMessage {
-        self.proposal_message(proposal, vec![]).await.unwrap()
-    }
-
     #[cfg(feature = "by_ref_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn update_proposal(&mut self) -> Proposal {
@@ -146,13 +139,15 @@ impl TestGroup {
             Sender::Member(*self.private_tree.self_index),
             content,
             &self.signer,
-            WireFormat::PublicMessage,
+            EncryptionMode::PublicMessage,
             Vec::new(),
         )
         .await
         .unwrap();
 
-        self.format_for_wire(auth_content).await.unwrap()
+        self.format_for_wire(auth_content, EncryptionMode::PublicMessage)
+            .await
+            .unwrap()
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -226,14 +221,11 @@ pub(crate) async fn test_group_custom(
     cipher_suite: CipherSuite,
     extension_types: Vec<ExtensionType>,
     leaf_extensions: Option<ExtensionList>,
-    commit_options: Option<CommitOptions>,
 ) -> TestGroup {
     let leaf_extensions = leaf_extensions.unwrap_or_default();
-    let commit_options = commit_options.unwrap_or_default();
 
     let (signing_identity, secret_key) = get_test_signing_identity(cipher_suite, b"member").await;
     let group = TestClientBuilder::new_for_test()
-        .mls_rules(DefaultMlsRules::default().with_commit_options(commit_options))
         .extension_types(extension_types)
         .protocol_versions(ProtocolVersion::all())
         .used_protocol_version(protocol_version)
@@ -247,15 +239,11 @@ pub(crate) async fn test_group_custom(
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-pub(crate) async fn test_group(
-    protocol_version: ProtocolVersion,
-    cipher_suite: CipherSuite,
-) -> TestGroup {
+pub(crate) async fn test_group() -> TestGroup {
     test_group_custom(
-        protocol_version,
-        cipher_suite,
+        TEST_PROTOCOL_VERSION,
+        TEST_CIPHER_SUITE,
         Default::default(),
-        None,
         None,
     )
     .await
@@ -290,7 +278,7 @@ pub(crate) async fn test_n_member_group(
     cipher_suite: CipherSuite,
     num_members: usize,
 ) -> Vec<TestGroup> {
-    let group = test_group(protocol_version, cipher_suite).await;
+    let group = test_group_custom(protocol_version, cipher_suite, Default::default(), None).await;
 
     let mut groups = vec![group];
 
@@ -412,7 +400,9 @@ impl GroupWithoutKeySchedule {
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn new(cs: CipherSuite) -> Self {
         Self {
-            inner: test_group(TEST_PROTOCOL_VERSION, cs).await.group,
+            inner: test_group_custom(TEST_PROTOCOL_VERSION, cs, Default::default(), None)
+                .await
+                .group,
             secrets: None,
             provisional_public_state: None,
         }
@@ -430,7 +420,6 @@ impl<'a> MessageProcessor<'a> for GroupWithoutKeySchedule {
         <Group<TestClientConfig> as MessageProcessor<'a>>::CipherSuiteProvider;
     type OutputType = <Group<TestClientConfig> as MessageProcessor<'a>>::OutputType;
     type IdentityProvider = <Group<TestClientConfig> as MessageProcessor<'a>>::IdentityProvider;
-    type MlsRules = <Group<TestClientConfig> as MessageProcessor<'a>>::MlsRules;
 
     fn group_state(&self) -> &GroupState {
         self.inner.group_state()

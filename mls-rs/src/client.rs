@@ -11,7 +11,7 @@ use crate::group::{cipher_suite_provider, validate_group_info_joiner, GroupInfo,
 use crate::group::{framing::MlsMessagePayload, snapshot::Snapshot, ExportedTree, Group};
 #[cfg(feature = "by_ref_proposal")]
 use crate::group::{
-    framing::{Content, PublicMessage, Sender, WireFormat},
+    framing::{Content, PublicMessage, Sender},
     message_signature::AuthenticatedContent,
     proposal::{AddProposal, Proposal},
 };
@@ -727,7 +727,7 @@ where
         authenticated_data: Vec<u8>,
         key_package_bytes: &[u8],
     ) -> Result<MlsMessage, MlsError> {
-        use crate::KeyPackage;
+        use crate::{group::EncryptionMode, KeyPackage};
 
         let protocol_version = group_info.version;
 
@@ -764,7 +764,7 @@ where
                 key_package: KeyPackage::mls_decode(&mut &*key_package_bytes)?,
             })))),
             self.signer()?,
-            WireFormat::PublicMessage,
+            EncryptionMode::PublicMessage,
             authenticated_data,
         )
         .await?;
@@ -816,6 +816,11 @@ pub(crate) mod test_utils {
     pub const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::MLS_10;
     pub const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::P256_AES128;
     pub const TEST_CUSTOM_PROPOSAL_TYPE: ProposalType = ProposalType::new(65001);
+
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn test_client(identity: &str) -> (TestClient<TestClientConfig>, MlsMessage) {
+        test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, identity).await
+    }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn test_client_with_key_pkg(
@@ -927,7 +932,7 @@ mod tests {
     #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn new_member_add_proposal_adds_to_group() {
-        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut alice_group = test_group().await;
 
         let (bob_identity, secret_key) = get_test_signing_identity(TEST_CIPHER_SUITE, b"bob").await;
 
@@ -986,7 +991,7 @@ mod tests {
         let psk = PreSharedKey::from(b"psk".to_vec());
         let psk_id = ExternalPskId::new(b"psk id".to_vec());
 
-        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut alice_group = test_group().await;
 
         let (mut bob_group, _) = alice_group.join("bob").await;
 
@@ -1099,8 +1104,8 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_commit_with_invalid_group_info_fails() {
-        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
-        let mut bob_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut alice_group = test_group().await;
+        let mut bob_group = test_group().await;
 
         bob_group.commit(vec![]).await.unwrap();
         bob_group.apply_pending_commit().await.unwrap();
@@ -1140,12 +1145,9 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn examine_welcome_message() {
-        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
-            .await
-            .group;
+        let mut alice = test_group().await.group;
 
-        let (bob, kp) =
-            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
+        let (bob, kp) = test_client("bob").await;
 
         let commit = alice
             .commit_builder()
@@ -1190,13 +1192,9 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn validate_group_info() {
-        let alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
-            .await
-            .group;
+        let alice = test_group().await.group;
 
-        let bob = test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob")
-            .await
-            .0;
+        let bob = test_client("bob").await.0;
 
         let group_info = alice.group_info_message(false).await.unwrap();
         let alice_signer = alice.current_member_signing_identity().unwrap().clone();

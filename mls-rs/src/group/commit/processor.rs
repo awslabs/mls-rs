@@ -16,23 +16,24 @@ use crate::{
     client_config::ClientConfig,
     error::MlsError,
     group::{
-        message_processor::path_update_required, transcript_hashes, AuthenticatedContent,
-        CommitEffect, CommitMessageDescription, ConfirmationTag, Content, InterimTranscriptHash,
-        MessageProcessor, NewEpoch,
+        message_processor::path_update_required, proposal_filter::ProposalBundle,
+        transcript_hashes, AuthenticatedContent, CommitEffect, CommitMessageDescription,
+        ConfirmationTag, Content, InterimTranscriptHash, MessageProcessor, NewEpoch,
     },
-    mls_rules::{CommitSource, ProposalBundle},
     tree_kem::{leaf_node::LeafNode, node::LeafIndex, validate_update_path, UpdatePath},
     Group,
 };
 
 #[cfg(feature = "by_ref_proposal")]
-use crate::mls_rules::CommitDirection;
+use crate::group::proposal_filter::CommitDirection;
 
 #[cfg(feature = "psk")]
 use mls_rs_core::psk::{ExternalPskId, PreSharedKey};
 
 #[cfg(feature = "psk")]
 use crate::psk::{secret::PskSecretInput, JustPreSharedKeyID, ResumptionPsk};
+
+use super::CommitSource;
 
 #[derive(Debug)]
 pub(crate) struct InternalCommitProcessor<'a, P: MessageProcessor<'a>> {
@@ -361,8 +362,7 @@ mod tests {
     use crate::{
         client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         crypto::test_utils::TestCryptoProvider,
-        group::Sender,
-        mls_rules::{CommitSource, ProposalInfo},
+        group::{proposal_filter::ProposalInfo, CommitSource, Sender},
         test_utils::get_test_groups,
     };
 
@@ -372,8 +372,6 @@ mod tests {
             TEST_PROTOCOL_VERSION,
             TEST_CIPHER_SUITE,
             3,
-            None,
-            false,
             &TestCryptoProvider::new(),
         )
         .await;
@@ -381,7 +379,6 @@ mod tests {
         let commit = groups[0]
             .commit_builder()
             .remove_member(2)
-            .unwrap()
             .authenticated_data(b"auth data".into())
             .build()
             .await

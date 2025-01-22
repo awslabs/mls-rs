@@ -216,7 +216,7 @@ mod tests {
     use super::*;
     use crate::{
         client::{
-            test_utils::{test_client_with_key_pkg, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
+            test_utils::{test_client, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
             MlsError,
         },
         client_builder::test_utils::TestClientConfig,
@@ -224,7 +224,8 @@ mod tests {
         group::{
             membership_tag::MembershipTag,
             message_signature::{AuthenticatedContent, MessageSignature},
-            test_utils::{test_group_custom, TestGroup},
+            test_utils::test_group,
+            test_utils::TestGroup,
             Group, PublicMessage,
         },
     };
@@ -243,17 +244,14 @@ mod tests {
             Content,
         },
         signer::Signable,
-        MlsMessage, WireFormat,
+        MlsMessage,
     };
 
     #[cfg(feature = "by_ref_proposal")]
     use alloc::boxed::Box;
 
     #[cfg(feature = "by_ref_proposal")]
-    use crate::group::{
-        test_utils::{test_group, test_member},
-        Sender,
-    };
+    use crate::group::{test_utils::test_member, Sender};
 
     #[cfg(feature = "by_ref_proposal")]
     use crate::identity::test_utils::get_test_signing_identity;
@@ -277,17 +275,8 @@ mod tests {
     impl TestEnv {
         #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
         async fn new() -> Self {
-            let mut alice = test_group_custom(
-                TEST_PROTOCOL_VERSION,
-                TEST_CIPHER_SUITE,
-                Default::default(),
-                None,
-                None,
-            )
-            .await;
-
-            let (bob_client, bob_key_pkg) =
-                test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
+            let mut alice = test_group().await;
+            let (bob_client, bob_key_pkg) = test_client("bob").await;
 
             let commit_output = alice
                 .commit_builder()
@@ -419,6 +408,8 @@ mod tests {
     where
         F: FnMut(&mut AuthenticatedContent),
     {
+        use crate::group::EncryptionMode;
+
         let mut content = AuthenticatedContent::new_signed(
             &test_group.cipher_suite_provider,
             test_group.context(),
@@ -427,7 +418,7 @@ mod tests {
                 key_package: key_pkg.into_key_package().unwrap(),
             })))),
             signer,
-            WireFormat::PublicMessage,
+            EncryptionMode::PublicMessage,
             vec![],
         )
         .await
@@ -455,7 +446,7 @@ mod tests {
     #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn valid_proposal_from_new_member_is_verified() {
-        let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let test_group = test_group().await;
         let (key_pkg_gen, signer) =
             test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
         let message = test_new_member_proposal(key_pkg_gen, &signer, &test_group, |_| {}).await;
@@ -473,7 +464,7 @@ mod tests {
     #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn proposal_from_new_member_must_not_have_membership_tag() {
-        let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let test_group = test_group().await;
         let (key_pkg_gen, signer) =
             test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
 
@@ -494,7 +485,7 @@ mod tests {
     #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn new_member_proposal_sender_must_be_add_proposal() {
-        let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let test_group = test_group().await;
         let (key_pkg_gen, signer) =
             test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
 
@@ -519,7 +510,7 @@ mod tests {
     #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn new_member_commit_must_be_external_commit() {
-        let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let test_group = test_group().await;
         let (key_pkg_gen, signer) =
             test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
 
@@ -547,7 +538,7 @@ mod tests {
 
         let (ted_signing, ted_secret) = get_test_signing_identity(TEST_CIPHER_SUITE, b"ted").await;
 
-        let mut test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut test_group = test_group().await;
         let mut extensions = ExtensionList::default();
 
         extensions
@@ -559,7 +550,6 @@ mod tests {
         test_group
             .commit_builder()
             .set_group_context_ext(extensions)
-            .unwrap()
             .build()
             .await
             .unwrap();
@@ -587,7 +577,7 @@ mod tests {
         let (bob_key_pkg_gen, _) =
             test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
         let (_, ted_secret) = get_test_signing_identity(TEST_CIPHER_SUITE, b"ted").await;
-        let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let test_group = test_group().await;
 
         let message = test_new_member_proposal(bob_key_pkg_gen, &ted_secret, &test_group, |msg| {
             msg.content.sender = Sender::External(0)
@@ -613,7 +603,7 @@ mod tests {
 
         let (_, ted_secret) = get_test_signing_identity(TEST_CIPHER_SUITE, b"ted").await;
 
-        let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let test_group = test_group().await;
 
         let mut message =
             test_new_member_proposal(bob_key_pkg_gen, &ted_secret, &test_group, |_| {}).await;

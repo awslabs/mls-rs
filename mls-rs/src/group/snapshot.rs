@@ -333,7 +333,7 @@ mod tests {
     use mls_rs_core::group::{GroupState, GroupStateStorage};
 
     use crate::{
-        client::test_utils::{TestClientBuilder, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
+        client::test_utils::TestClientBuilder,
         group::{
             test_utils::{test_group, TestGroup},
             Group,
@@ -392,7 +392,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn snapshot_with_pending_commit_can_be_serialized_to_json() {
-        let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut group = test_group().await;
         group.commit(vec![]).await.unwrap();
 
         snapshot_restore(group).await
@@ -401,20 +401,16 @@ mod tests {
     #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn snapshot_with_pending_updates_can_be_serialized_to_json() {
-        let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut group = test_group().await;
 
-        // Creating the update proposal will add it to pending updates
-        let update_proposal = group.update_proposal().await;
-
-        // This will insert the proposal into the internal proposal cache
-        let _ = group.proposal_message(update_proposal, vec![]).await;
+        group.propose_update().await.unwrap();
 
         snapshot_restore(group).await
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn snapshot_can_be_serialized_to_json_with_internals() {
-        let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let group = test_group().await;
 
         snapshot_restore(group).await
     }
@@ -422,7 +418,10 @@ mod tests {
     #[cfg(feature = "serde")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn serde() {
-        let snapshot = super::test_utils::get_test_snapshot(TEST_CIPHER_SUITE, 5).await;
+        let snapshot =
+            super::test_utils::get_test_snapshot(crate::client::test_utils::TEST_CIPHER_SUITE, 5)
+                .await;
+
         let json = serde_json::to_string_pretty(&snapshot).unwrap();
         let recovered = serde_json::from_str(&json).unwrap();
         assert_eq!(snapshot, recovered);

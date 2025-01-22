@@ -9,7 +9,7 @@ use crate::{client::MlsError, tree_kem::node::LeafIndex, KeyPackage, KeyPackageR
 use super::{Commit, FramedContentAuthData, GroupInfo, MembershipTag, Welcome};
 
 #[cfg(feature = "by_ref_proposal")]
-use crate::{group::Proposal, mls_rules::ProposalRef};
+use crate::{group::Proposal, group::ProposalRef};
 
 use alloc::vec::Vec;
 use core::fmt::{self, Debug};
@@ -23,6 +23,9 @@ use zeroize::ZeroizeOnDrop;
 #[cfg(feature = "private_message")]
 use alloc::boxed::Box;
 
+#[cfg(feature = "private_message")]
+use super::padding::PaddingMode;
+
 #[cfg(feature = "custom_proposal")]
 use crate::group::proposal::{CustomProposal, ProposalOrRef};
 
@@ -35,6 +38,14 @@ pub enum ContentType {
     #[cfg(feature = "by_ref_proposal")]
     Proposal = 2u8,
     Commit = 3u8,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+pub enum EncryptionMode {
+    #[default]
+    PublicMessage,
+    #[cfg(feature = "private_message")]
+    PrivateMessage(PaddingMode),
 }
 
 impl From<&Content> for ContentType {
@@ -791,7 +802,7 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn message_description() {
-        let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut group = test_group().await;
 
         let message = group.commit(vec![]).await.unwrap();
 

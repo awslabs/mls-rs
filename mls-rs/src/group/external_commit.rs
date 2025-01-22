@@ -15,7 +15,6 @@ use crate::{
         proposal::{ExternalInit, Proposal},
         EpochSecrets, ExternalPubExt, LeafNode, MlsError, TreeKemPrivate,
     },
-    mls_rules::{ProposalBundle, ProposalSource},
     Group, MlsMessage,
 };
 
@@ -38,7 +37,10 @@ use crate::group::{
     PreSharedKeyProposal, {JustPreSharedKeyID, PreSharedKeyID},
 };
 
-use super::{validate_tree_and_info_joiner, ExportedTree, Sender};
+use super::{
+    proposal_filter::{ProposalBundle, ProposalSource},
+    validate_tree_and_info_joiner, CommitOptions, ExportedTree, Sender,
+};
 
 /// A builder that aids with the construction of an external commit.
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::ffi_type(opaque))]
@@ -51,12 +53,12 @@ pub struct ExternalCommitBuilder<C: ClientConfig> {
     to_remove: Option<u32>,
     #[cfg(feature = "psk")]
     external_psks: Vec<(ExternalPskId, PreSharedKey)>,
-    authenticated_data: Vec<u8>,
     #[cfg(feature = "custom_proposal")]
     custom_proposals: Vec<Proposal>,
     #[cfg(feature = "custom_proposal")]
     received_custom_proposals: Vec<MlsMessage>,
     group_info: MlsMessage,
+    options: CommitOptions,
 }
 
 impl<C: ClientConfig> ExternalCommitBuilder<C> {
@@ -72,7 +74,15 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
             config,
             group_info,
             tree_data: None,
-            authenticated_data: Vec::new(),
+            options: CommitOptions {
+                sender: Sender::NewMemberCommit,
+                path_required: false,
+                ratchet_tree_extension: true,
+                single_welcome_message: true,
+                allow_external_commit: false,
+                authenticated_data: Default::default(),
+                encryption_mode: Default::default(),
+            },
             leaf_node_extensions: Default::default(),
             to_remove: Default::default(),
             #[cfg(feature = "custom_proposal")]
@@ -106,11 +116,9 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
 
     #[must_use]
     /// Add plaintext authenticated data to the resulting commit message.
-    pub fn with_authenticated_data(self, data: Vec<u8>) -> Self {
-        Self {
-            authenticated_data: data,
-            ..self
-        }
+    pub fn with_authenticated_data(mut self, data: Vec<u8>) -> Self {
+        self.options.authenticated_data = data;
+        self
     }
 
     #[cfg(feature = "psk")]
@@ -148,6 +156,11 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
             leaf_node_extensions,
             ..self
         }
+    }
+
+    pub fn allow_external_commit(mut self, allow_external_commit: bool) -> Self {
+        self.options.allow_external_commit = allow_external_commit;
+        self
     }
 
     /// Build the external commit using a GroupInfo message provided by an existing group member.
@@ -272,14 +285,13 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
             .commit_internal(
                 proposal_bundle,
                 Some(&leaf_node),
-                self.authenticated_data,
                 Default::default(),
                 None,
                 None,
                 None,
+                self.options,
                 #[cfg(feature = "psk")]
                 psks,
-                Sender::NewMemberCommit,
             )
             .await?;
 

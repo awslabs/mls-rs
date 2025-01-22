@@ -12,10 +12,10 @@ use crate::{
     client::MlsError,
     client_builder::{BaseConfig, WithCryptoProvider, WithIdentityProvider},
     group::{
-        framing::{Content, MlsMessage, Sender, WireFormat},
+        framing::{Content, MlsMessage, Sender},
         message_processor::MessageProcessor,
         message_signature::AuthenticatedContent,
-        Commit, Group,
+        Commit, EncryptionMode, Group,
     },
     identity::{basic::BasicIdentityProvider, SigningIdentity},
     Client,
@@ -68,10 +68,10 @@ pub fn create_fuzz_commit_message(
     context.epoch = epoch;
 
     #[cfg(feature = "private_message")]
-    let wire_format = WireFormat::PrivateMessage;
+    let mode = EncryptionMode::PrivateMessage(Default::default());
 
     #[cfg(not(feature = "private_message"))]
-    let wire_format = WireFormat::PublicMessage;
+    let mode = EncryptionMode::PublicMessage;
 
     let auth_content = AuthenticatedContent::new_signed(
         &group.cipher_suite_provider(),
@@ -82,11 +82,15 @@ pub fn create_fuzz_commit_message(
             path: None,
         })),
         &group.signer,
-        wire_format,
+        mode,
         authenticated_data,
     )?;
 
-    group.format_for_wire(auth_content)
+    group.format_for_wire(
+        auth_content,
+        #[cfg(feature = "private_message")]
+        mode,
+    )
 }
 
 fn make_client(cipher_suite: CipherSuite, name: &str) -> TestClient<TestClientConfig> {
