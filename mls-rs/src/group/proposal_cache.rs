@@ -530,6 +530,7 @@ mod tests {
     use crate::group::proposal_filter::{ProposalBundle, ProposalSource};
     use crate::group::proposal_ref::test_utils::auth_content_from_proposal;
     use crate::group::proposal_ref::ProposalRef;
+    use crate::group::test_utils::random_bytes;
     use crate::group::{
         AddProposal, AuthenticatedContent, Content, ExternalInit, Proposal, ProposalOrRef,
         ReInitProposal, RemoveProposal, Sender, UpdateProposal,
@@ -783,16 +784,8 @@ mod tests {
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn make_proposal_ref<S>(p: &Proposal, sender: S) -> ProposalRef
-    where
-        S: Into<Sender>,
-    {
-        ProposalRef::from_content(
-            &test_cipher_suite_provider(TEST_CIPHER_SUITE),
-            &auth_content_from_proposal(p.clone(), sender),
-        )
-        .await
-        .unwrap()
+    async fn make_proposal_ref() -> ProposalRef {
+        ProposalRef::new_fake(random_bytes(15))
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -957,7 +950,7 @@ mod tests {
         } = test_proposals(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
         let update = Proposal::Update(make_update_proposal("foo").await);
-        let update_proposal_ref = make_proposal_ref(&update, LeafIndex(1)).await;
+        let update_proposal_ref = make_proposal_ref();
         let mut cache = test_proposal_cache_setup(test_proposals).await;
 
         cache.insert(update_proposal_ref.clone(), update, Sender::Member(1));
@@ -997,7 +990,7 @@ mod tests {
         });
 
         let proposer = test_sender();
-        let test_proposal_ref = make_proposal_ref(&test_proposal, LeafIndex(proposer)).await;
+        let test_proposal_ref = make_proposal_ref();
         cache.insert(test_proposal_ref, test_proposal, Sender::Member(proposer));
 
         assert!(!cache.is_empty())
@@ -1140,7 +1133,7 @@ mod tests {
             Proposal::ExternalInit(ExternalInit { kem_output })
         };
 
-        let proposal_ref = make_proposal_ref(&proposal, test_sender()).await;
+        let proposal_ref = make_proposal_ref();
 
         cache.insert(
             proposal_ref.clone(),
@@ -1495,7 +1488,7 @@ mod tests {
         let mut proposals = ProposalBundle::default();
         let sender = Sender::Member(2);
         let update = Proposal::Update(make_update_proposal("bar").await);
-        let reference = ProposalSource::ByReference(make_proposal_ref(&update, sender)).await;
+        let reference = ProposalSource::ByReference(make_proposal_ref());
         proposals.add(update, sender, reference);
 
         assert!(path_update_required(&proposals))
@@ -1777,7 +1770,7 @@ mod tests {
             leaf_node: get_basic_test_node(TEST_CIPHER_SUITE, "alice").await,
         });
 
-        let proposal_ref = make_proposal_ref(&proposal, bob).await;
+        let proposal_ref = make_proposal_ref();
 
         let res = CommitReceiver::new(
             &tree,
@@ -1992,7 +1985,7 @@ mod tests {
     async fn receiving_update_for_committer_fails() {
         let (alice, tree) = new_tree("alice").await;
         let update = Proposal::Update(make_update_proposal("alice").await);
-        let update_ref = make_proposal_ref(&update, alice).await;
+        let update_ref = make_proposal_ref();
 
         let res = CommitReceiver::new(
             &tree,
@@ -2053,10 +2046,10 @@ mod tests {
         let bob = add_member(&mut tree, "bob").await;
 
         let update = Proposal::Update(make_update_proposal("bob").await);
-        let update_ref = make_proposal_ref(&update, bob).await;
+        let update_ref = make_proposal_ref();
 
         let remove = Proposal::Remove(RemoveProposal { to_remove: bob });
-        let remove_ref = make_proposal_ref(&remove, bob).await;
+        let remove_ref = make_proposal_ref();
 
         let res = CommitReceiver::new(
             &tree,
@@ -2119,7 +2112,7 @@ mod tests {
         let bob = add_member(&mut tree, "bob").await;
 
         let update = Proposal::Update(make_update_proposal_custom("carol", 1).await);
-        let update_ref = make_proposal_ref(&update, bob).await;
+        let update_ref = make_proposal_ref();
 
         let res = CommitReceiver::new(
             &tree,
@@ -2693,7 +2686,7 @@ mod tests {
 
             let receiver = receiver.with_extensions(extensions);
 
-            let proposal_ref = make_proposal_ref(proposal, proposer).await;
+            let proposal_ref = make_proposal_ref();
             let receiver = receiver.cache(proposal_ref.clone(), proposal.clone(), proposer);
             let proposals = vec![ProposalOrRef::from(proposal_ref.clone())];
             let source = ProposalSource::ByReference(proposal_ref);
