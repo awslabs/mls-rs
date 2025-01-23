@@ -527,7 +527,7 @@ mod tests {
     use crate::client::test_utils::test_client;
     use crate::client::MlsError;
     use crate::group::message_processor::ProvisionalState;
-    use crate::group::proposal_filter::{ProposalBundle, ProposalInfo, ProposalSource};
+    use crate::group::proposal_filter::{ProposalBundle, ProposalSource};
     use crate::group::proposal_ref::test_utils::auth_content_from_proposal;
     use crate::group::proposal_ref::ProposalRef;
     use crate::group::{
@@ -1653,14 +1653,6 @@ mod tests {
             }
         }
 
-        fn cache<S>(mut self, r: ProposalRef, p: Proposal, proposer: S) -> Self
-        where
-            S: Into<Sender>,
-        {
-            self.cache.insert(r, p, proposer.into());
-            self
-        }
-
         fn with_additional<I>(mut self, proposals: I) -> Self
         where
             I: IntoIterator<Item = Proposal>,
@@ -2547,26 +2539,17 @@ mod tests {
     async fn sending_custom_proposal_with_member_not_supporting_fails() {
         let (alice, tree) = new_tree("alice").await;
 
-        let custom_proposal = Proposal::Custom(CustomProposal::new(ProposalType::new(42), vec![]));
-
-        let custom_info = ProposalInfo {
-            proposal: custom_proposal.clone(),
-            sender: alice.into(),
-            source: ProposalSource::Local,
-        };
+        let proposal_type = ProposalType::new(42);
+        let custom_proposal = Proposal::Custom(CustomProposal::new(proposal_type, vec![]));
 
         let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
-            .cache(
-                custom_info.proposal_ref().unwrap().clone(),
-                custom_proposal.clone(),
-                alice,
-            )
+            .with_additional(vec![custom_proposal])
             .send()
             .await;
 
         assert_matches!(
             res,
-            Err(MlsError::UnsupportedCustomProposal(c)) if c == custom_proposal.proposal_type()
+            Err(MlsError::UnsupportedCustomProposal(c)) if c == proposal_type
         );
     }
 
