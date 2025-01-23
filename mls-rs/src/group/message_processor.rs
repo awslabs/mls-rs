@@ -58,7 +58,6 @@ pub(crate) struct ProvisionalState {
     pub(crate) group_context: GroupContext,
     pub(crate) external_init_index: Option<LeafIndex>,
     pub(crate) indexes_of_added_kpkgs: Vec<LeafIndex>,
-    pub(crate) unused_proposals: Vec<ProposalInfo<Proposal>>,
 }
 
 //By default, the path field of a Commit MUST be populated. The path field MAY be omitted if
@@ -92,7 +91,6 @@ pub struct NewEpoch {
     pub epoch: u64,
     pub prior_state: GroupState,
     pub applied_proposals: Vec<ProposalInfo<Proposal>>,
-    pub unused_proposals: Vec<ProposalInfo<Proposal>>,
 }
 
 impl NewEpoch {
@@ -100,7 +98,6 @@ impl NewEpoch {
         NewEpoch {
             epoch: provisional_state.group_context.epoch,
             prior_state,
-            unused_proposals: provisional_state.unused_proposals.clone(),
             applied_proposals: provisional_state
                 .applied_proposals
                 .clone()
@@ -123,10 +120,6 @@ impl NewEpoch {
 
     pub fn applied_proposals(&self) -> &[ProposalInfo<Proposal>] {
         &self.applied_proposals
-    }
-
-    pub fn unused_proposals(&self) -> &[ProposalInfo<Proposal>] {
-        &self.unused_proposals
     }
 }
 
@@ -878,7 +871,6 @@ mod tests {
                 confirmation_tag: Default::default(),
             },
             applied_proposals: vec![],
-            unused_proposals: vec![],
         };
 
         let effects = vec![

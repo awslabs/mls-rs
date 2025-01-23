@@ -24,9 +24,6 @@ use crate::{
     Group,
 };
 
-#[cfg(feature = "by_ref_proposal")]
-use crate::group::proposal_filter::CommitDirection;
-
 #[cfg(feature = "psk")]
 use mls_rs_core::psk::{ExternalPskId, PreSharedKey};
 
@@ -136,8 +133,6 @@ pub(crate) async fn process_commit<'a, P: MessageProcessor<'a>>(
             &id_provider,
             &cs_provider,
             commit_processor.time_sent,
-            #[cfg(feature = "by_ref_proposal")]
-            CommitDirection::Receive,
             #[cfg(feature = "psk")]
             &commit_processor
                 .psks

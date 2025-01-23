@@ -206,7 +206,6 @@ impl From<mls_rs::group::proposal::Proposal> for Proposal {
 pub enum CommitEffect {
     NewEpoch {
         applied_proposals: Vec<Arc<Proposal>>,
-        unused_proposals: Vec<Arc<Proposal>>,
     },
     ReInit,
     Removed,
@@ -221,12 +220,7 @@ impl From<mls_rs::group::CommitEffect> for CommitEffect {
                     .into_iter()
                     .map(|p| Arc::new(p.proposal.into()))
                     .collect(),
-                unused_proposals: new_epoch
-                    .unused_proposals
-                    .into_iter()
-                    .map(|p| Arc::new(p.proposal.into()))
-                    .collect(),
-            },
+                            },
             group::CommitEffect::Removed {
                 new_epoch: _,
                 remover: _,
@@ -382,10 +376,7 @@ impl Client {
     /// See [`mls_rs::Client::generate_key_package_message`] for
     /// details.
     pub async fn generate_key_package_message(&self) -> Result<Message, Error> {
-        let message = self
-            .inner
-            .generate_key_package()
-            .await?;
+        let message = self.inner.generate_key_package().await?;
         Ok(message.into())
     }
 
@@ -499,8 +490,6 @@ pub struct CommitOutput {
     /// A group info that can be provided to new members in order to
     /// enable external commit functionality.
     pub group_info: Option<Arc<Message>>,
-    // TODO(mgeisler): decide if we should expose unused_proposals()
-    // as well.
 }
 
 impl TryFrom<mls_rs::group::CommitOutput> for CommitOutput {

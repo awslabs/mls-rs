@@ -16,6 +16,10 @@ members = [
     "mls-rs-provider-sqlite",
     "mls-rs-codec",
     "mls-rs-codec-derive",
+]
+
+exclude = [
+    "mls-rs-uniffi",
     "mls-rs-uniffi/uniffi-bindgen",
 ]
 
