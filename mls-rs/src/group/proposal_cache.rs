@@ -783,8 +783,7 @@ mod tests {
         contents
     }
 
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn make_proposal_ref() -> ProposalRef {
+    fn make_proposal_ref() -> ProposalRef {
         ProposalRef::new_fake(random_bytes(15))
     }
 
