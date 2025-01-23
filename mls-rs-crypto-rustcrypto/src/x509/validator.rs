@@ -142,9 +142,11 @@ fn verify_time(cert: &Certificate, time: MlsTime) -> Result<(), X509Error> {
     let not_before = validity.not_before.to_unix_duration().as_secs();
     let not_after = validity.not_after.to_unix_duration().as_secs();
 
-    (not_before <= now && now <= not_after)
-        .then_some(())
-        .ok_or_else(|| X509Error::ValidityError(now, format!("{cert:?}")))
+    if not_before <= now && now <= not_after {
+        Ok(())
+    } else {
+        Err(X509Error::ValidityError(now, format!("{cert:?}")))
+    }
 }
 
 fn verify_cert(
