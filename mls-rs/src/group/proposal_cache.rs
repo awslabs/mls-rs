@@ -938,8 +938,9 @@ mod tests {
     // [FIXME] This test does not make sense anymore, as it requires us to filter out update instead of remove.
     // In the follow-up we'll have a convenience method that deletes invalid proposals, and this test will test
     // that method. No need to generate real proposals.
-    #[ignore]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    #[ignore]
+    #[cfg(not(mls_build_async))]
     async fn test_proposal_cache_removal_override_update() {
         let TestProposals {
             test_sender,
