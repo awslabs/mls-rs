@@ -281,8 +281,7 @@ impl Extend<(ProposalRef, CachedProposal)> for ProposalCache {
     }
 }
 
-// TODO add tests for lite version of filtering
-#[cfg(all(feature = "by_ref_proposal", test))]
+#[cfg(test)]
 pub(crate) mod test_utils {
     use mls_rs_core::{
         crypto::CipherSuiteProvider, extension::ExtensionList, identity::IdentityProvider,
@@ -523,8 +522,7 @@ pub(crate) mod test_utils {
     }
 }
 
-// TODO add tests for lite version of filtering
-#[cfg(all(feature = "by_ref_proposal", test))]
+#[cfg(test)]
 mod tests {
     use alloc::{boxed::Box, vec, vec::Vec};
 
@@ -971,7 +969,10 @@ mod tests {
         assert_matches!(res, Err(MlsError::InvalidProposalTypeForSender));
     }
 
-    #[ignore = "FIXME"]
+    // [FIXME] This test does not make sense anymore, as it requires us to filter out update instead of remove.
+    // In the follow-up we'll have a convenience method that deletes invalid proposals, and this test will test
+    // that method. No need to generate real proposals.
+    #[ignore]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_proposal_cache_removal_override_update() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
@@ -1528,39 +1529,15 @@ mod tests {
         assert!(path_update_required(&effects.applied_proposals))
     }
 
-    #[ignore = "FIXME"]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_path_update_required_updates() {
-        let mut cache = make_proposal_cache();
+        let mut proposals = ProposalBundle::default();
+        let sender = Sender::Member(2);
         let update = Proposal::Update(make_update_proposal("bar").await);
-        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+        let reference = ProposalSource::ByReference(make_proposal_ref(&update, sender)).await;
+        proposals.add(update, sender, reference);
 
-        cache.insert(
-            make_proposal_ref(&update, LeafIndex(2)).await,
-            update,
-            Sender::Member(2),
-        );
-
-        let mut tree = TreeKemPublic::new();
-        add_member(&mut tree, "alice").await;
-        add_member(&mut tree, "bob").await;
-        add_member(&mut tree, "carol").await;
-
-        let effects = cache
-            .prepare_commit_default(
-                Sender::Member(test_sender()),
-                Vec::new(),
-                &get_test_group_context(1, TEST_CIPHER_SUITE).await,
-                &BasicIdentityProvider,
-                &cipher_suite_provider,
-                &tree,
-                None,
-                &[],
-            )
-            .await
-            .unwrap();
-
-        assert!(path_update_required(&effects.applied_proposals))
+        assert!(path_update_required(&proposals))
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
