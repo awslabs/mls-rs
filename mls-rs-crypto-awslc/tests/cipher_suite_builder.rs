@@ -8,7 +8,7 @@ use aws_lc_rs::hmac;
 fn custom_cipher_suite() {
     let cs = AwsLcCipherSuiteBuilder::new()
         .aead(AeadId::Aes128Gcm)
-        .hash(AwsLcHash::new(CipherSuite::CURVE448_AES256).unwrap())
+        .hash(AwsLcHash::new(CipherSuite::P256_AES128).unwrap())
         .kdf(KdfId::HkdfSha384)
         .mac_algo(hmac::HMAC_SHA384)
         .signing(Curve::P521)
@@ -31,11 +31,7 @@ fn custom_pq_cipher_suite() {
     let hash = AwsLcHash::new_sha3(Sha3::SHA3_384).unwrap();
 
     let cs = AwsLcCipherSuiteBuilder::new()
-        .aead(AeadId::Aes128Gcm)
         .hash(hash)
-        .kdf(KdfId::HkdfSha384)
-        .mac_algo(hmac::HMAC_SHA384)
-        .signing(Curve::P521)
         .combined_hpke(
             CipherSuite::CURVE25519_AES128,
             MlKem::MlKem1024,
@@ -43,6 +39,7 @@ fn custom_pq_cipher_suite() {
             AeadId::Aes256Gcm,
             hash,
         )
+        .fallback_cipher_suite(CipherSuite::P521_AES256)
         .build(CipherSuite::new(12345))
         .unwrap();
 

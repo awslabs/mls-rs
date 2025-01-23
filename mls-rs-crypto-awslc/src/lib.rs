@@ -166,6 +166,7 @@ pub struct AwsLcCipherSuiteBuilder {
     hpke: Option<AwsLcHpke>,
     mac_algo: Option<hmac::Algorithm>,
     hash: Option<AwsLcHash>,
+    fallback_cipher_suite: Option<CipherSuite>,
 }
 
 impl AwsLcCipherSuiteBuilder {
@@ -215,6 +216,13 @@ impl AwsLcCipherSuiteBuilder {
         }
     }
 
+    pub fn fallback_cipher_suite(self, cipher_suite: CipherSuite) -> Self {
+        Self {
+            fallback_cipher_suite: Some(cipher_suite),
+            ..self
+        }
+    }
+
     #[cfg(feature = "post-quantum")]
     pub fn pq_hpke(self, ml_kem: MlKem, kdf: KdfId, aead: AeadId) -> Self {
         let ml_kem = MlKemKem {
@@ -251,34 +259,20 @@ impl AwsLcCipherSuiteBuilder {
         let hpke = ecdh.map(|ecdh| {
             let kem = CombinedKem::new_xwing(ml_kem, ecdh, hash, AwsLcShake128);
 
-            AwsLcHpke::Combined(Hpke::new(
-                kem,
-                AwsLcHkdf(kdf),
-                Some(AwsLcAead(aead)),
-            ))
+            AwsLcHpke::Combined(Hpke::new(kem, AwsLcHkdf(kdf), Some(AwsLcAead(aead))))
         });
 
         Self { hpke, ..self }
     }
 
     pub fn build(self, cipher_suite: CipherSuite) -> Option<AwsLcCipherSuite> {
-        let classical_cs = match cipher_suite {
-            #[cfg(feature = "post-quantum")]
-            CipherSuite::ML_KEM_1024 => CipherSuite::P384_AES256,
-            #[cfg(feature = "post-quantum")]
-            CipherSuite::ML_KEM_512 | CipherSuite::ML_KEM_768 | CipherSuite::ML_KEM_768_X25519 => {
-                CipherSuite::CURVE25519_AES128
-            }
-            _ => cipher_suite,
-        };
+        let fallback_cs = self.fallback_cipher_suite.unwrap_or(cipher_suite);
+        let hpke = self.hpke.or_else(|| classical_hpke(fallback_cs))?;
+        let kdf = self.kdf.or_else(|| AwsLcHkdf::new(fallback_cs))?;
+        let aead = self.aead.or_else(|| AwsLcAead::new(fallback_cs))?;
+        let signing = self.signing.or_else(|| AwsLcEcdsa::new(fallback_cs))?;
 
-        let hpke = self.hpke.or_else(|| classical_hpke(cipher_suite))?;
-        let kdf = self.kdf.or_else(|| AwsLcHkdf::new(classical_cs))?;
-        let aead = self.aead.or_else(|| AwsLcAead::new(classical_cs))?;
-
-        let signing = self.signing.or_else(|| AwsLcEcdsa::new(classical_cs))?;
-
-        let mac_algo = self.mac_algo.or(match classical_cs {
+        let mac_algo = self.mac_algo.or(match fallback_cs {
             CipherSuite::CURVE25519_AES128
             | CipherSuite::CURVE25519_CHACHA
             | CipherSuite::P256_AES128 => Some(hmac::HMAC_SHA256),
@@ -287,7 +281,7 @@ impl AwsLcCipherSuiteBuilder {
             _ => None,
         })?;
 
-        let hash = self.hash.or_else(|| AwsLcHash::new(classical_cs))?;
+        let hash = self.hash.or_else(|| AwsLcHash::new(fallback_cs))?;
 
         Some(AwsLcCipherSuite {
             cipher_suite,
