@@ -451,8 +451,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     /// Issue an external proposal.
     ///
     /// This function is useful for reissuing external proposals that
-    /// are returned in [crate::group::NewEpoch::unused_proposals]
-    /// after a commit is processed.
+    /// were not consumed by a commit.
     #[cfg(feature = "by_ref_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn propose(
@@ -1405,7 +1404,10 @@ mod tests {
         )
         .await;
 
-        let proposal = alice.propose_update().await.unwrap();
+        let proposal = alice
+            .propose_group_context_extensions(Default::default())
+            .await
+            .unwrap();
 
         let commit_output = alice.commit(vec![]).await.unwrap();
 

@@ -6,7 +6,6 @@ use alloc::vec;
 use alloc::vec::Vec;
 #[cfg(feature = "std")]
 use core::fmt::Display;
-use itertools::Itertools;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::extension::ExtensionList;
 
@@ -22,12 +21,6 @@ use self::leaf_node::LeafNode;
 
 use crate::client::MlsError;
 use crate::crypto::{self, CipherSuiteProvider, HpkeSecretKey};
-
-#[cfg(feature = "by_ref_proposal")]
-use crate::group::proposal::{AddProposal, UpdateProposal};
-
-#[cfg(any(test, feature = "by_ref_proposal"))]
-use crate::group::proposal::RemoveProposal;
 
 use crate::group::proposal_filter::ProposalBundle;
 use crate::tree_kem::tree_hash::TreeHashes;
@@ -329,194 +322,8 @@ impl TreeKemPublic {
         Ok(())
     }
 
-    #[cfg(feature = "by_ref_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn batch_edit<I, CP>(
-        &mut self,
-        proposal_bundle: &mut ProposalBundle,
-        extensions: &ExtensionList,
-        id_provider: &I,
-        cipher_suite_provider: &CP,
-        filter: bool,
-    ) -> Result<Vec<LeafIndex>, MlsError>
-    where
-        I: IdentityProvider,
-        CP: CipherSuiteProvider,
-    {
-        // Apply removes (they commute with updates because they don't touch the same leaves)
-        for i in (0..proposal_bundle.remove_proposals().len()).rev() {
-            let index = proposal_bundle.remove_proposals()[i].proposal.to_remove;
-            let res = self.nodes.blank_leaf_node(index);
-
-            if res.is_ok() {
-                // This shouldn't fail if `blank_leaf_node` succedded.
-                self.nodes.blank_direct_path(index)?;
-            }
-
-            #[cfg(feature = "tree_index")]
-            if let Ok(old_leaf) = &res {
-                // If this fails, it's not because the proposal is bad.
-                let identity =
-                    identity(&old_leaf.signing_identity, id_provider, extensions).await?;
-
-                self.index.remove(old_leaf, &identity);
-            }
-
-            if proposal_bundle.remove_proposals()[i].is_by_value() || !filter {
-                res?;
-            } else if res.is_err() {
-                proposal_bundle.remove::<RemoveProposal>(i);
-            }
-        }
-
-        // Remove from the tree old leaves from updates
-        let mut partial_updates = vec![];
-        let senders = proposal_bundle.update_senders.iter().copied();
-
-        for (i, (p, index)) in proposal_bundle.updates.iter().zip(senders).enumerate() {
-            let new_leaf = p.proposal.leaf_node.clone();
-
-            match self.nodes.blank_leaf_node(index) {
-                Ok(old_leaf) => {
-                    #[cfg(feature = "tree_index")]
-                    let old_id =
-                        identity(&old_leaf.signing_identity, id_provider, extensions).await?;
-
-                    #[cfg(feature = "tree_index")]
-                    self.index.remove(&old_leaf, &old_id);
-
-                    partial_updates.push((index, old_leaf, new_leaf, i));
-                }
-                _ => {
-                    if !filter || !p.is_by_reference() {
-                        return Err(MlsError::UpdatingNonExistingMember);
-                    }
-                }
-            }
-        }
-
-        #[cfg(feature = "tree_index")]
-        let index_clone = self.index.clone();
-
-        let mut removed_leaves = vec![];
-        let mut updated_indices = vec![];
-        let mut bad_indices = vec![];
-
-        // Apply updates one by one. If there's an update which we can't apply or revert, we revert
-        // all updates.
-        for (index, old_leaf, new_leaf, i) in partial_updates.into_iter() {
-            #[cfg(feature = "tree_index")]
-            let res =
-                index_insert(&mut self.index, &new_leaf, index, id_provider, extensions).await;
-
-            #[cfg(not(feature = "tree_index"))]
-            let res = index_insert(&self.nodes, &new_leaf, index, id_provider, extensions).await;
-
-            let err = res.is_err();
-
-            if !filter {
-                res?;
-            }
-
-            if !err {
-                self.nodes.insert_leaf(index, new_leaf);
-                removed_leaves.push(old_leaf);
-                updated_indices.push(index);
-            } else {
-                #[cfg(feature = "tree_index")]
-                let res =
-                    index_insert(&mut self.index, &old_leaf, index, id_provider, extensions).await;
-
-                #[cfg(not(feature = "tree_index"))]
-                let res =
-                    index_insert(&self.nodes, &old_leaf, index, id_provider, extensions).await;
-
-                if res.is_ok() {
-                    self.nodes.insert_leaf(index, old_leaf);
-                    bad_indices.push(i);
-                } else {
-                    // Revert all updates and stop. We're already in the "filter" case, so we don't throw an error.
-                    #[cfg(feature = "tree_index")]
-                    {
-                        self.index = index_clone;
-                    }
-
-                    removed_leaves
-                        .into_iter()
-                        .zip(updated_indices.iter())
-                        .for_each(|(leaf, index)| self.nodes.insert_leaf(*index, leaf));
-
-                    updated_indices = vec![];
-                    break;
-                }
-            }
-        }
-
-        // If we managed to update something, blank direct paths
-        updated_indices
-            .iter()
-            .try_for_each(|index| self.nodes.blank_direct_path(*index).map(|_| ()))?;
-
-        // Remove rejected updates from applied proposals
-        if updated_indices.is_empty() {
-            // This takes care of the "revert all" scenario
-            proposal_bundle.updates = vec![];
-        } else {
-            for i in bad_indices.into_iter().rev() {
-                proposal_bundle.remove::<UpdateProposal>(i);
-                proposal_bundle.update_senders.remove(i);
-            }
-        }
-
-        // Apply adds
-        let mut start = LeafIndex(0);
-        let mut added = vec![];
-        let mut bad_indexes = vec![];
-
-        for i in 0..proposal_bundle.additions.len() {
-            let leaf = proposal_bundle.additions[i]
-                .proposal
-                .key_package
-                .leaf_node
-                .clone();
-
-            let res = self
-                .add_leaf(leaf, id_provider, extensions, Some(start))
-                .await;
-
-            if let Ok(index) = res {
-                start = index;
-                added.push(start);
-            } else if proposal_bundle.additions[i].is_by_value() || !filter {
-                res?;
-            } else {
-                bad_indexes.push(i);
-            }
-        }
-
-        for i in bad_indexes.into_iter().rev() {
-            proposal_bundle.remove::<AddProposal>(i);
-        }
-
-        self.nodes.trim();
-
-        let updated_leaves = proposal_bundle
-            .remove_proposals()
-            .iter()
-            .map(|p| p.proposal.to_remove)
-            .chain(updated_indices)
-            .chain(added.iter().copied())
-            .collect_vec();
-
-        self.update_hashes(&updated_leaves, cipher_suite_provider)
-            .await?;
-
-        Ok(added)
-    }
-
-    #[cfg(not(feature = "by_ref_proposal"))]
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn batch_edit_lite<I, CP>(
         &mut self,
         proposal_bundle: &ProposalBundle,
         extensions: &ExtensionList,
@@ -527,47 +334,83 @@ impl TreeKemPublic {
         I: IdentityProvider,
         CP: CipherSuiteProvider,
     {
-        // Apply removes
-        for p in &proposal_bundle.removals {
+        let mut updated_leaves = vec![];
+
+        // Apply removes (they commute with updates because they don't touch the same leaves)
+        for p in proposal_bundle.removals.iter() {
             let index = p.proposal.to_remove;
+
+            #[cfg(feature = "tree_index")]
+            let old_leaf = self.nodes.blank_leaf_node(index)?;
+
+            #[cfg(not(feature = "tree_index"))]
+            self.nodes.blank_leaf_node(index)?;
+
+            self.nodes.blank_direct_path(index);
 
             #[cfg(feature = "tree_index")]
             {
                 // If this fails, it's not because the proposal is bad.
-                let old_leaf = self.nodes.blank_leaf_node(index)?;
-
                 let identity =
                     identity(&old_leaf.signing_identity, id_provider, extensions).await?;
 
                 self.index.remove(&old_leaf, &identity);
             }
 
-            #[cfg(not(feature = "tree_index"))]
-            self.nodes.blank_leaf_node(index)?;
-
-            self.nodes.blank_direct_path(index)?;
+            updated_leaves.push(index);
         }
 
+        #[cfg(feature = "by_ref_proposal")]
+        {
+            // Remove from the tree old leaves from updates
+            for (p, &index) in proposal_bundle
+                .updates
+                .iter()
+                .zip(proposal_bundle.update_senders.iter())
+            {
+                let new_leaf = p.proposal.leaf_node.clone();
+
+                let old_leaf = self
+                    .nodes
+                    .blank_leaf_node(index)
+                    .map_err(|_| MlsError::UpdatingNonExistingMember)?;
+
+                #[cfg(feature = "tree_index")]
+                {
+                    let old_id =
+                        identity(&old_leaf.signing_identity, id_provider, extensions).await?;
+
+                    self.index.remove(&old_leaf, &old_id);
+
+                    index_insert(&mut self.index, &new_leaf, index, id_provider, extensions)
+                        .await?;
+                }
+
+                #[cfg(not(feature = "tree_index"))]
+                index_insert(&self.nodes, &new_leaf, index, id_provider, extensions).await?;
+
+                self.nodes.insert_leaf(index, new_leaf);
+                self.nodes.blank_direct_path(index);
+
+                updated_leaves.push(index);
+            }
+        };
+
         // Apply adds
-        let mut start = LeafIndex(0);
+        let mut start = None;
         let mut added = vec![];
 
-        for p in &proposal_bundle.additions {
+        for p in proposal_bundle.additions.iter() {
             let leaf = p.proposal.key_package.leaf_node.clone();
-            start = self
-                .add_leaf(leaf, id_provider, extensions, Some(start))
-                .await?;
-            added.push(start);
+
+            let new_leaf_index = self.add_leaf(leaf, id_provider, extensions, start).await?;
+
+            updated_leaves.push(new_leaf_index);
+            added.push(new_leaf_index);
+            start = Some(new_leaf_index);
         }
 
         self.nodes.trim();
-
-        let updated_leaves = proposal_bundle
-            .remove_proposals()
-            .iter()
-            .map(|p| p.proposal.to_remove)
-            .chain(added.iter().copied())
-            .collect_vec();
 
         self.update_hashes(&updated_leaves, cipher_suite_provider)
             .await?;
@@ -619,7 +462,11 @@ impl Display for TreeKemPublic {
 }
 
 #[cfg(test)]
-use crate::group::{proposal::Proposal, proposal_filter::ProposalSource, Sender};
+use crate::group::{
+    proposal::{Proposal, RemoveProposal},
+    proposal_filter::ProposalSource,
+    Sender,
+};
 
 #[cfg(test)]
 impl TreeKemPublic {
@@ -636,6 +483,8 @@ impl TreeKemPublic {
         I: IdentityProvider,
         CP: CipherSuiteProvider,
     {
+        use crate::group::proposal::UpdateProposal;
+
         let p = Proposal::Update(UpdateProposal { leaf_node });
 
         let mut bundle = ProposalBundle::default();
@@ -643,11 +492,10 @@ impl TreeKemPublic {
         bundle.update_senders = vec![LeafIndex(leaf_index)];
 
         self.batch_edit(
-            &mut bundle,
+            &bundle,
             &Default::default(),
             identity_provider,
             cipher_suite_provider,
-            true,
         )
         .await?;
 
@@ -678,18 +526,7 @@ impl TreeKemPublic {
             bundle.add(p, Sender::Member(0), ProposalSource::ByValue);
         }
 
-        #[cfg(feature = "by_ref_proposal")]
         self.batch_edit(
-            &mut bundle,
-            &Default::default(),
-            identity_provider,
-            cipher_suite_provider,
-            true,
-        )
-        .await?;
-
-        #[cfg(not(feature = "by_ref_proposal"))]
-        self.batch_edit_lite(
             &bundle,
             &Default::default(),
             identity_provider,
@@ -836,11 +673,7 @@ pub(crate) mod test_utils {
         #[cfg(feature = "rfc_compliant")]
         #[cfg_attr(coverage_nightly, coverage(off))]
         pub fn remove_member(&mut self, member: u32) {
-            self.tree
-                .nodes
-                .blank_direct_path(LeafIndex(member))
-                .unwrap();
-
+            self.tree.nodes.blank_direct_path(LeafIndex(member));
             self.tree.nodes.blank_leaf_node(LeafIndex(member)).unwrap();
 
             *self
@@ -1440,11 +1273,10 @@ mod tests {
         bundle.add(remove, Sender::Member(0), ProposalSource::ByValue);
 
         tree.batch_edit(
-            &mut bundle,
+            &bundle,
             &Default::default(),
             &BasicIdentityProvider,
             &cipher_suite_provider,
-            true,
         )
         .await
         .unwrap();

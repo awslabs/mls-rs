@@ -10,8 +10,6 @@ use itertools::Itertools;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::crypto::SignatureSecretKey;
 
-#[cfg(feature = "by_ref_proposal")]
-use crate::group::proposal_filter::ProposalInfo;
 use crate::group::proposal_filter::{ProposalBundle, ProposalSource};
 use crate::group::{EncryptionMode, RemoveProposal};
 use crate::{
@@ -56,9 +54,6 @@ use crate::group::{
     Group, GroupContext, GroupInfo, GroupState, InterimTranscriptHash, NewEpoch,
     PendingCommitSnapshot, Welcome,
 };
-
-#[cfg(feature = "by_ref_proposal")]
-use crate::group::proposal_filter::CommitDirection;
 
 #[cfg(feature = "custom_proposal")]
 use crate::group::proposal::CustomProposal;
@@ -122,9 +117,6 @@ pub struct CommitOutput {
     /// functionality. This value is set if [`MlsRules::commit_options`] returns
     /// `allow_external_commit` set to true.
     pub external_commit_group_info: Option<MlsMessage>,
-    /// Proposals that were received in the prior epoch but not included in the following commit.
-    #[cfg(feature = "by_ref_proposal")]
-    pub unused_proposals: Vec<ProposalInfo<Proposal>>,
     /// Indicator that the commit contains a path update
     pub contains_update_path: bool,
 }
@@ -157,12 +149,6 @@ impl CommitOutput {
     #[cfg(feature = "ffi")]
     pub fn external_commit_group_info(&self) -> Option<&MlsMessage> {
         self.external_commit_group_info.as_ref()
-    }
-
-    /// Proposals that were received in the prior epoch but not included in the following commit.
-    #[cfg(all(feature = "ffi", feature = "by_ref_proposal"))]
-    pub fn unused_proposals(&self) -> &[ProposalInfo<Proposal>] {
-        &self.unused_proposals
     }
 }
 
@@ -369,16 +355,12 @@ where
         self.with_proposal(Proposal::Custom(proposal))
     }
 
-    /// Insert a proposal that was previously constructed such as when a
-    /// proposal is returned from
-    /// [`NewEpoch::unused_proposals`](super::NewEpoch::unused_proposals).
+    /// Insert a proposal that was previously not consumed by a commit
     pub fn raw_proposal(self, proposal: Proposal) -> Self {
         self.with_proposal(proposal)
     }
 
-    /// Insert proposals that were previously constructed such as when a
-    /// proposal is returned from
-    /// [`NewEpoch::unused_proposals`](super::NewEpoch::unused_proposals).
+    /// Insert proposals that were previously not consumed by a commit
     pub fn raw_proposals(self, proposals: Vec<Proposal>) -> Self {
         proposals.into_iter().fold(self, |b, p| b.with_proposal(p))
     }
@@ -684,8 +666,6 @@ where
                 &self.config.identity_provider(),
                 &self.cipher_suite_provider,
                 time,
-                #[cfg(feature = "by_ref_proposal")]
-                CommitDirection::Send,
                 #[cfg(feature = "psk")]
                 &psks
                     .iter()
@@ -1025,8 +1005,6 @@ where
             ratchet_tree,
             external_commit_group_info,
             contains_update_path: perform_path_update,
-            #[cfg(feature = "by_ref_proposal")]
-            unused_proposals: provisional_state.unused_proposals,
         };
 
         Ok((output, pending_commit))

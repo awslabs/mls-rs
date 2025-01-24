@@ -260,14 +260,12 @@ impl NodeVec {
         }
     }
 
-    pub fn blank_direct_path(&mut self, leaf: LeafIndex) -> Result<(), MlsError> {
+    pub fn blank_direct_path(&mut self, leaf: LeafIndex) {
         for i in self.direct_copath(leaf) {
             if let Some(n) = self.get_mut(i.path as usize) {
                 *n = None
             }
         }
-
-        Ok(())
     }
 
     // Remove elements until the last node is non-blank

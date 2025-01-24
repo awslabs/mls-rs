@@ -20,8 +20,8 @@ use crate::psk::JustPreSharedKeyID;
 #[cfg(feature = "by_ref_proposal")]
 use crate::{
     group::{
-        message_hash::MessageHash, proposal_filter::CommitDirection, Proposal, ProposalInfo,
-        ProposalMessageDescription, ProposalRef, ProtocolVersion,
+        message_hash::MessageHash, Proposal, ProposalMessageDescription, ProposalRef,
+        ProtocolVersion,
     },
     MlsMessage,
 };
@@ -227,7 +227,6 @@ impl GroupState {
         identity_provider: &C,
         cipher_suite_provider: &CSP,
         commit_time: Option<MlsTime>,
-        #[cfg(feature = "by_ref_proposal")] direction: CommitDirection,
         #[cfg(feature = "psk")] psks: &[JustPreSharedKeyID],
         sender: &CommitSource,
     ) -> Result<ProvisionalState, MlsError>
@@ -235,9 +234,6 @@ impl GroupState {
         C: IdentityProvider,
         CSP: CipherSuiteProvider,
     {
-        #[cfg(feature = "by_ref_proposal")]
-        let all_proposals = proposals.clone();
-
         #[cfg(feature = "custom_proposal")]
         crate::group::proposal_filter::filter_out_unsupported_custom_proposals(
             &proposals,
@@ -254,27 +250,9 @@ impl GroupState {
             psks,
         );
 
-        #[cfg(feature = "by_ref_proposal")]
         let applier_output = applier
-            .apply_proposals(direction.into(), sender, proposals, commit_time)
+            .apply_proposals(sender, proposals, commit_time)
             .await?;
-
-        #[cfg(not(feature = "by_ref_proposal"))]
-        let applier_output = applier
-            .apply_proposals(sender, &proposals, commit_time)
-            .await?;
-
-        #[cfg(feature = "by_ref_proposal")]
-        let unused_proposals = unused_proposals(
-            match direction {
-                CommitDirection::Send => all_proposals,
-                CommitDirection::Receive => self.proposals.proposals.iter().collect(),
-            },
-            &applier_output.applied_proposals,
-        );
-
-        #[cfg(not(feature = "by_ref_proposal"))]
-        let unused_proposals = alloc::vec::Vec::default();
 
         let mut group_context = self.context.clone();
         group_context.epoch += 1;
@@ -283,16 +261,12 @@ impl GroupState {
             group_context.extensions = ext;
         }
 
-        #[cfg(feature = "by_ref_proposal")]
-        let proposals = applier_output.applied_proposals;
-
         Ok(ProvisionalState {
             public_tree: applier_output.new_tree,
             group_context,
-            applied_proposals: proposals,
+            applied_proposals: applier_output.applied_proposals,
             external_init_index: applier_output.external_init_index,
             indexes_of_added_kpkgs: applier_output.indexes_of_added_kpkgs,
-            unused_proposals,
         })
     }
 }
@@ -307,28 +281,6 @@ impl Extend<(ProposalRef, CachedProposal)> for ProposalCache {
     }
 }
 
-#[cfg(feature = "by_ref_proposal")]
-fn has_ref(proposals: &ProposalBundle, reference: &ProposalRef) -> bool {
-    proposals
-        .iter_proposals()
-        .any(|p| matches!(&p.source, ProposalSource::ByReference(r) if r == reference))
-}
-
-#[cfg(feature = "by_ref_proposal")]
-fn unused_proposals(
-    all_proposals: ProposalBundle,
-    accepted_proposals: &ProposalBundle,
-) -> Vec<ProposalInfo<Proposal>> {
-    all_proposals
-        .into_proposals()
-        .filter(|p| {
-            matches!(p.source, ProposalSource::ByReference(ref r) if !has_ref(accepted_proposals, r)
-            )
-        })
-        .collect()
-}
-
-// TODO add tests for lite version of filtering
 #[cfg(all(feature = "by_ref_proposal", test))]
 pub(crate) mod test_utils {
     use mls_rs_core::{
@@ -336,11 +288,12 @@ pub(crate) mod test_utils {
     };
 
     use crate::{
-        client::test_utils::TEST_PROTOCOL_VERSION,
+        client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
+        crypto::test_utils::test_cipher_suite_provider,
         group::{
             confirmation_tag::ConfirmationTag,
             proposal::{Proposal, ProposalOrRef},
-            proposal_filter::{CommitDirection, ProposalSource},
+            proposal_filter::ProposalSource,
             proposal_ref::ProposalRef,
             state::GroupState,
             test_utils::{get_test_group_context, TEST_GROUP},
@@ -401,7 +354,6 @@ pub(crate) mod test_utils {
         C: IdentityProvider,
         CSP: CipherSuiteProvider,
     {
-        #[cfg(feature = "by_ref_proposal")]
         pub fn with_identity_provider<V>(self, validator: V) -> CommitReceiver<'a, V, CSP>
         where
             V: IdentityProvider,
@@ -513,8 +465,6 @@ pub(crate) mod test_utils {
                     identity_provider,
                     cipher_suite_provider,
                     None,
-                    #[cfg(feature = "by_ref_proposal")]
-                    CommitDirection::Receive,
                     #[cfg(feature = "psk")]
                     psks,
                     &committer,
@@ -522,28 +472,23 @@ pub(crate) mod test_utils {
                 .await
         }
 
-        #[allow(clippy::too_many_arguments)]
         #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-        pub async fn prepare_commit_default<C, CSP>(
+        pub async fn prepare_commit_default<I: IdentityProvider>(
             &self,
             sender: Sender,
             additional_proposals: Vec<Proposal>,
             context: &GroupContext,
-            identity_provider: &C,
-            cipher_suite_provider: &CSP,
+            identity_provider: &I,
             public_tree: &TreeKemPublic,
-            external_leaf: Option<&LeafNode>,
             #[cfg(feature = "psk")] psks: &[JustPreSharedKeyID],
-        ) -> Result<ProvisionalState, MlsError>
-        where
-            C: IdentityProvider,
-            CSP: CipherSuiteProvider,
-        {
+        ) -> Result<ProvisionalState, MlsError> {
+            let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+
             let state = GroupState::new(
                 context.clone(),
                 public_tree.clone(),
                 Vec::new().into(),
-                ConfirmationTag::empty(cipher_suite_provider).await,
+                ConfirmationTag::empty(&cipher_suite_provider).await,
             );
 
             let proposals =
@@ -554,17 +499,15 @@ pub(crate) mod test_utils {
                         proposals
                     });
 
-            let committer = CommitSource::new(&sender, public_tree, external_leaf)?;
+            let committer = CommitSource::new(&sender, public_tree, None)?;
 
             state
                 .apply_resolved(
                     proposals,
-                    external_leaf,
-                    identity_provider,
-                    cipher_suite_provider,
                     None,
-                    #[cfg(feature = "by_ref_proposal")]
-                    CommitDirection::Send,
+                    identity_provider,
+                    &cipher_suite_provider,
+                    None,
                     #[cfg(feature = "psk")]
                     psks,
                     &committer,
@@ -574,7 +517,7 @@ pub(crate) mod test_utils {
     }
 }
 
-// TODO add tests for lite version of filtering
+// FIXME some of these tests do not belong here
 #[cfg(all(feature = "by_ref_proposal", test))]
 mod tests {
     use alloc::{boxed::Box, vec, vec::Vec};
@@ -584,9 +527,10 @@ mod tests {
     use crate::client::test_utils::test_client;
     use crate::client::MlsError;
     use crate::group::message_processor::ProvisionalState;
-    use crate::group::proposal_filter::{ProposalBundle, ProposalInfo, ProposalSource};
+    use crate::group::proposal_filter::{ProposalBundle, ProposalSource};
     use crate::group::proposal_ref::test_utils::auth_content_from_proposal;
     use crate::group::proposal_ref::ProposalRef;
+    use crate::group::test_utils::random_bytes;
     use crate::group::{
         AddProposal, AuthenticatedContent, Content, ExternalInit, Proposal, ProposalOrRef,
         ReInitProposal, RemoveProposal, Sender, UpdateProposal,
@@ -609,15 +553,12 @@ mod tests {
         identity::basic::BasicIdentityProvider,
         identity::test_utils::{get_test_signing_identity, BasicWithCustomProvider},
         key_package::test_utils::test_key_package,
-        tree_kem::{
-            leaf_node::{
-                test_utils::{
-                    default_properties, get_basic_test_node, get_basic_test_node_capabilities,
-                    get_basic_test_node_sig_key, get_test_capabilities,
-                },
-                ConfigProperties, LeafNodeSigningContext, LeafNodeSource,
+        tree_kem::leaf_node::{
+            test_utils::{
+                default_properties, get_basic_test_node, get_basic_test_node_capabilities,
+                get_basic_test_node_sig_key, get_test_capabilities,
             },
-            Lifetime,
+            LeafNodeSigningContext,
         },
     };
 
@@ -795,11 +736,10 @@ mod tests {
 
         expected_tree
             .batch_edit(
-                &mut bundle,
+                &bundle,
                 &Default::default(),
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
-                true,
             )
             .await
             .unwrap();
@@ -809,7 +749,6 @@ mod tests {
             group_context: get_test_group_context(1, cipher_suite).await,
             external_init_index: None,
             indexes_of_added_kpkgs: vec![LeafIndex(1)],
-            unused_proposals: vec![],
             applied_proposals: bundle,
         };
 
@@ -844,29 +783,8 @@ mod tests {
         contents
     }
 
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn make_proposal_ref<S>(p: &Proposal, sender: S) -> ProposalRef
-    where
-        S: Into<Sender>,
-    {
-        ProposalRef::from_content(
-            &test_cipher_suite_provider(TEST_CIPHER_SUITE),
-            &auth_content_from_proposal(p.clone(), sender),
-        )
-        .await
-        .unwrap()
-    }
-
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn make_proposal_info<S>(p: &Proposal, sender: S) -> ProposalInfo<Proposal>
-    where
-        S: Into<Sender> + Clone,
-    {
-        ProposalInfo {
-            proposal: p.clone(),
-            sender: sender.clone().into(),
-            source: ProposalSource::ByReference(make_proposal_ref(p, sender).await),
-        }
+    fn make_proposal_ref() -> ProposalRef {
+        ProposalRef::new_fake(random_bytes(15))
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -908,14 +826,10 @@ mod tests {
         );
 
         assert_eq!(expected_state.public_tree, state.public_tree);
-
-        assert_eq!(expected_state.unused_proposals, state.unused_proposals);
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_proposal_cache_commit_all_cached() {
-        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
-
         let TestProposals {
             test_sender,
             test_proposals,
@@ -932,9 +846,7 @@ mod tests {
                 vec![],
                 &get_test_group_context(0, TEST_CIPHER_SUITE).await,
                 &BasicIdentityProvider,
-                &cipher_suite_provider,
                 &tree,
-                None,
                 &[],
             )
             .await
@@ -970,9 +882,7 @@ mod tests {
                 vec![Proposal::Add(Box::new(additional.clone()))],
                 &get_test_group_context(0, TEST_CIPHER_SUITE).await,
                 &BasicIdentityProvider,
-                &cipher_suite_provider,
                 &tree,
-                None,
                 &[],
             )
             .await
@@ -999,8 +909,6 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_proposal_cache_update_filter() {
-        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
-
         let TestProposals {
             test_proposals,
             tree,
@@ -1019,9 +927,7 @@ mod tests {
                 additional,
                 &get_test_group_context(0, TEST_CIPHER_SUITE).await,
                 &BasicIdentityProvider,
-                &cipher_suite_provider,
                 &tree,
-                None,
                 &[],
             )
             .await;
@@ -1029,10 +935,13 @@ mod tests {
         assert_matches!(res, Err(MlsError::InvalidProposalTypeForSender));
     }
 
+    // [FIXME] This test does not make sense anymore, as it requires us to filter out update instead of remove.
+    // In the follow-up we'll have a convenience method that deletes invalid proposals, and this test will test
+    // that method. No need to generate real proposals.
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    #[ignore]
+    #[cfg(not(mls_build_async))]
     async fn test_proposal_cache_removal_override_update() {
-        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
-
         let TestProposals {
             test_sender,
             test_proposals,
@@ -1041,7 +950,7 @@ mod tests {
         } = test_proposals(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
         let update = Proposal::Update(make_update_proposal("foo").await);
-        let update_proposal_ref = make_proposal_ref(&update, LeafIndex(1)).await;
+        let update_proposal_ref = make_proposal_ref();
         let mut cache = test_proposal_cache_setup(test_proposals).await;
 
         cache.insert(update_proposal_ref.clone(), update, Sender::Member(1));
@@ -1052,9 +961,7 @@ mod tests {
                 vec![],
                 &get_test_group_context(0, TEST_CIPHER_SUITE).await,
                 &BasicIdentityProvider,
-                &cipher_suite_provider,
                 &tree,
-                None,
                 &[],
             )
             .await
@@ -1072,81 +979,6 @@ mod tests {
             .contains(&ProposalOrRef::Reference(update_proposal_ref)))
     }
 
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn test_proposal_cache_filter_duplicates_insert() {
-        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
-
-        let TestProposals {
-            test_sender,
-            test_proposals,
-            expected_effects,
-            tree,
-            ..
-        } = test_proposals(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
-
-        let mut cache = test_proposal_cache_setup(test_proposals.clone()).await;
-        cache.extend(filter_proposals(TEST_CIPHER_SUITE, test_proposals.clone()).await);
-
-        let provisional_state = cache
-            .prepare_commit_default(
-                Sender::Member(test_sender),
-                vec![],
-                &get_test_group_context(0, TEST_CIPHER_SUITE).await,
-                &BasicIdentityProvider,
-                &cipher_suite_provider,
-                &tree,
-                None,
-                &[],
-            )
-            .await
-            .unwrap();
-
-        assert_matches(expected_effects, provisional_state)
-    }
-
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn test_proposal_cache_filter_duplicates_additional() {
-        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
-
-        let TestProposals {
-            test_proposals,
-            expected_effects,
-            tree,
-            ..
-        } = test_proposals(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
-
-        let mut cache = test_proposal_cache_setup(test_proposals.clone()).await;
-
-        // Updates from different senders will be allowed so we test duplicates for add / remove
-        let additional = test_proposals
-            .clone()
-            .into_iter()
-            .filter_map(|plaintext| match plaintext.content.content {
-                Content::Proposal(p) if p.proposal_type() == ProposalType::UPDATE => None,
-                Content::Proposal(_) => Some(plaintext),
-                _ => None,
-            })
-            .collect::<Vec<_>>();
-
-        cache.extend(filter_proposals(TEST_CIPHER_SUITE, additional).await);
-
-        let provisional_state = cache
-            .prepare_commit_default(
-                Sender::Member(2),
-                Vec::new(),
-                &get_test_group_context(0, TEST_CIPHER_SUITE).await,
-                &BasicIdentityProvider,
-                &cipher_suite_provider,
-                &tree,
-                None,
-                &[],
-            )
-            .await
-            .unwrap();
-
-        assert_matches(expected_effects, provisional_state)
-    }
-
     #[cfg(feature = "private_message")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_proposal_cache_is_empty() {
@@ -1158,7 +990,7 @@ mod tests {
         });
 
         let proposer = test_sender();
-        let test_proposal_ref = make_proposal_ref(&test_proposal, LeafIndex(proposer)).await;
+        let test_proposal_ref = make_proposal_ref();
         cache.insert(test_proposal_ref, test_proposal, Sender::Member(proposer));
 
         assert!(!cache.is_empty())
@@ -1189,9 +1021,7 @@ mod tests {
                 additional,
                 &get_test_group_context(0, TEST_CIPHER_SUITE).await,
                 &BasicIdentityProvider,
-                &cipher_suite_provider,
                 &tree,
-                None,
                 &[],
             )
             .await
@@ -1222,8 +1052,6 @@ mod tests {
     #[cfg(feature = "psk")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn proposal_cache_filters_duplicate_psk_ids() {
-        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
-
         let (alice, tree) = new_tree("alice").await;
         let cache = make_proposal_cache();
 
@@ -1240,9 +1068,7 @@ mod tests {
                 vec![proposal.clone(), proposal],
                 &get_test_group_context(0, TEST_CIPHER_SUITE).await,
                 &BasicIdentityProvider,
-                &cipher_suite_provider,
                 &tree,
-                None,
                 &[JustPreSharedKeyID::External(psk_id.to_vec().into())],
             )
             .await;
@@ -1307,7 +1133,7 @@ mod tests {
             Proposal::ExternalInit(ExternalInit { kem_output })
         };
 
-        let proposal_ref = make_proposal_ref(&proposal, test_sender()).await;
+        let proposal_ref = make_proposal_ref();
 
         cache.insert(
             proposal_ref.clone(),
@@ -1637,7 +1463,6 @@ mod tests {
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_path_update_required_empty() {
         let cache = make_proposal_cache();
-        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         let mut tree = TreeKemPublic::new();
         add_member(&mut tree, "alice").await;
@@ -1649,9 +1474,7 @@ mod tests {
                 vec![],
                 &get_test_group_context(1, TEST_CIPHER_SUITE).await,
                 &BasicIdentityProvider,
-                &cipher_suite_provider,
                 &tree,
-                None,
                 &[],
             )
             .await
@@ -1662,36 +1485,13 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_path_update_required_updates() {
-        let mut cache = make_proposal_cache();
+        let mut proposals = ProposalBundle::default();
+        let sender = Sender::Member(2);
         let update = Proposal::Update(make_update_proposal("bar").await);
-        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+        let reference = ProposalSource::ByReference(make_proposal_ref());
+        proposals.add(update, sender, reference);
 
-        cache.insert(
-            make_proposal_ref(&update, LeafIndex(2)).await,
-            update,
-            Sender::Member(2),
-        );
-
-        let mut tree = TreeKemPublic::new();
-        add_member(&mut tree, "alice").await;
-        add_member(&mut tree, "bob").await;
-        add_member(&mut tree, "carol").await;
-
-        let effects = cache
-            .prepare_commit_default(
-                Sender::Member(test_sender()),
-                Vec::new(),
-                &get_test_group_context(1, TEST_CIPHER_SUITE).await,
-                &BasicIdentityProvider,
-                &cipher_suite_provider,
-                &tree,
-                None,
-                &[],
-            )
-            .await
-            .unwrap();
-
-        assert!(path_update_required(&effects.applied_proposals))
+        assert!(path_update_required(&proposals))
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -1731,9 +1531,7 @@ mod tests {
                 vec![remove],
                 &get_test_group_context(1, TEST_CIPHER_SUITE).await,
                 &BasicIdentityProvider,
-                &cipher_suite_provider,
                 &tree,
-                None,
                 &[],
             )
             .await
@@ -1746,7 +1544,7 @@ mod tests {
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_path_update_not_required() {
         let (alice, tree) = new_tree("alice").await;
-        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+
         let cache = make_proposal_cache();
         let psk_id = JustPreSharedKeyID::External(ExternalPskId::new(vec![]));
 
@@ -1768,9 +1566,7 @@ mod tests {
                 vec![psk, add],
                 &get_test_group_context(1, TEST_CIPHER_SUITE).await,
                 &BasicIdentityProvider,
-                &cipher_suite_provider,
                 &tree,
-                None,
                 &[psk_id],
             )
             .await
@@ -1781,7 +1577,6 @@ mod tests {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn path_update_is_not_required_for_re_init() {
-        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let (alice, tree) = new_tree("alice").await;
         let cache = make_proposal_cache();
 
@@ -1798,9 +1593,7 @@ mod tests {
                 vec![reinit],
                 &get_test_group_context(1, TEST_CIPHER_SUITE).await,
                 &BasicIdentityProvider,
-                &cipher_suite_provider,
                 &tree,
-                None,
                 &[],
             )
             .await
@@ -1838,7 +1631,6 @@ mod tests {
         C: IdentityProvider,
         CSP: CipherSuiteProvider,
     {
-        #[cfg(feature = "by_ref_proposal")]
         fn with_identity_provider<V>(self, identity_provider: V) -> CommitSender<'a, V, CSP>
         where
             V: IdentityProvider,
@@ -1852,14 +1644,6 @@ mod tests {
                 additional_proposals: self.additional_proposals,
                 psks: self.psks,
             }
-        }
-
-        fn cache<S>(mut self, r: ProposalRef, p: Proposal, proposer: S) -> Self
-        where
-            S: Into<Sender>,
-        {
-            self.cache.insert(r, p, proposer.into());
-            self
         }
 
         fn with_additional<I>(mut self, proposals: I) -> Self
@@ -1883,9 +1667,7 @@ mod tests {
                     self.additional_proposals.clone(),
                     &get_test_group_context(1, TEST_CIPHER_SUITE).await,
                     &self.identity_provider,
-                    &self.cipher_suite_provider,
                     self.tree,
-                    None,
                     &self.psks,
                 )
                 .await?;
@@ -1963,32 +1745,6 @@ mod tests {
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn sending_add_with_invalid_key_package_filters_it_out() {
-        let (alice, tree) = new_tree("alice").await;
-
-        let proposal = Proposal::Add(Box::new(AddProposal {
-            key_package: key_package_with_invalid_signature().await,
-        }));
-
-        let proposal_info = make_proposal_info(&proposal, alice).await;
-
-        let processed_proposals =
-            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
-                .cache(
-                    proposal_info.proposal_ref().unwrap().clone(),
-                    proposal.clone(),
-                    alice,
-                )
-                .send()
-                .await
-                .unwrap();
-
-        assert_eq!(processed_proposals.0, Vec::new());
-
-        assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
-    }
-
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn sending_add_with_hpke_key_of_another_member_fails() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -2006,35 +1762,6 @@ mod tests {
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn sending_add_with_hpke_key_of_another_member_filters_it_out() {
-        let (alice, tree) = new_tree("alice").await;
-
-        let proposal = Proposal::Add(Box::new(AddProposal {
-            key_package: key_package_with_public_key(
-                tree.get_leaf_node(alice).unwrap().public_key.clone(),
-            )
-            .await,
-        }));
-
-        let proposal_info = make_proposal_info(&proposal, alice).await;
-
-        let processed_proposals =
-            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
-                .cache(
-                    proposal_info.proposal_ref().unwrap().clone(),
-                    proposal.clone(),
-                    alice,
-                )
-                .send()
-                .await
-                .unwrap();
-
-        assert_eq!(processed_proposals.0, Vec::new());
-
-        assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
-    }
-
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn receiving_update_with_invalid_leaf_node_fails() {
         let (alice, mut tree) = new_tree("alice").await;
         let bob = add_member(&mut tree, "bob").await;
@@ -2043,7 +1770,7 @@ mod tests {
             leaf_node: get_basic_test_node(TEST_CIPHER_SUITE, "alice").await,
         });
 
-        let proposal_ref = make_proposal_ref(&proposal, bob).await;
+        let proposal_ref = make_proposal_ref();
 
         let res = CommitReceiver::new(
             &tree,
@@ -2056,29 +1783,6 @@ mod tests {
         .await;
 
         assert_matches!(res, Err(MlsError::InvalidLeafNodeSource));
-    }
-
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn sending_update_with_invalid_leaf_node_filters_it_out() {
-        let (alice, mut tree) = new_tree("alice").await;
-        let bob = add_member(&mut tree, "bob").await;
-
-        let proposal = Proposal::Update(UpdateProposal {
-            leaf_node: get_basic_test_node(TEST_CIPHER_SUITE, "alice").await,
-        });
-
-        let proposal_info = make_proposal_info(&proposal, bob).await;
-
-        let processed_proposals =
-            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
-                .cache(proposal_info.proposal_ref().unwrap().clone(), proposal, bob)
-                .send()
-                .await
-                .unwrap();
-
-        assert_eq!(processed_proposals.0, Vec::new());
-
-        assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -2111,32 +1815,6 @@ mod tests {
             .await;
 
         assert_matches!(res, Err(MlsError::InvalidNodeIndex(20)));
-    }
-
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn sending_remove_with_invalid_index_filters_it_out() {
-        let (alice, tree) = new_tree("alice").await;
-
-        let proposal = Proposal::Remove(RemoveProposal {
-            to_remove: LeafIndex(10),
-        });
-
-        let proposal_info = make_proposal_info(&proposal, alice).await;
-
-        let processed_proposals =
-            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
-                .cache(
-                    proposal_info.proposal_ref().unwrap().clone(),
-                    proposal.clone(),
-                    alice,
-                )
-                .send()
-                .await
-                .unwrap();
-
-        assert_eq!(processed_proposals.0, Vec::new());
-
-        assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
     }
 
     #[cfg(feature = "psk")]
@@ -2196,31 +1874,6 @@ mod tests {
     }
 
     #[cfg(feature = "psk")]
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn sending_psk_with_invalid_nonce_filters_it_out() {
-        let invalid_nonce = PskNonce(vec![0, 1, 2]);
-        let (alice, tree) = new_tree("alice").await;
-        let proposal = Proposal::Psk(make_external_psk(b"foo", invalid_nonce));
-
-        let proposal_info = make_proposal_info(&proposal, alice).await;
-
-        let processed_proposals =
-            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
-                .cache(
-                    proposal_info.proposal_ref().unwrap().clone(),
-                    proposal.clone(),
-                    alice,
-                )
-                .send()
-                .await
-                .unwrap();
-
-        assert_eq!(processed_proposals.0, Vec::new());
-
-        assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
-    }
-
-    #[cfg(feature = "psk")]
     fn make_resumption_psk(usage: ResumptionPSKUsage) -> PreSharedKeyProposal {
         PreSharedKeyProposal {
             psk: PreSharedKeyID {
@@ -2266,29 +1919,6 @@ mod tests {
     }
 
     #[cfg(feature = "psk")]
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn sending_resumption_psk_with_bad_usage_filters_it_out(usage: ResumptionPSKUsage) {
-        let (alice, tree) = new_tree("alice").await;
-        let proposal = Proposal::Psk(make_resumption_psk(usage));
-        let proposal_info = make_proposal_info(&proposal, alice).await;
-
-        let processed_proposals =
-            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
-                .cache(
-                    proposal_info.proposal_ref().unwrap().clone(),
-                    proposal.clone(),
-                    alice,
-                )
-                .send()
-                .await
-                .unwrap();
-
-        assert_eq!(processed_proposals.0, Vec::new());
-
-        assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
-    }
-
-    #[cfg(feature = "psk")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn receiving_resumption_psk_with_reinit_usage_fails() {
         receiving_resumption_psk_with_bad_usage_fails(ResumptionPSKUsage::Reinit).await;
@@ -2302,12 +1932,6 @@ mod tests {
 
     #[cfg(feature = "psk")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn sending_resumption_psk_with_reinit_usage_filters_it_out() {
-        sending_resumption_psk_with_bad_usage_filters_it_out(ResumptionPSKUsage::Reinit).await;
-    }
-
-    #[cfg(feature = "psk")]
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn receiving_resumption_psk_with_branch_usage_fails() {
         receiving_resumption_psk_with_bad_usage_fails(ResumptionPSKUsage::Branch).await;
     }
@@ -2316,12 +1940,6 @@ mod tests {
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn sending_additional_resumption_psk_with_branch_usage_fails() {
         sending_additional_resumption_psk_with_bad_usage_fails(ResumptionPSKUsage::Branch).await;
-    }
-
-    #[cfg(feature = "psk")]
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn sending_resumption_psk_with_branch_usage_filters_it_out() {
-        sending_resumption_psk_with_bad_usage_filters_it_out(ResumptionPSKUsage::Branch).await;
     }
 
     fn make_reinit(version: ProtocolVersion) -> ReInitProposal {
@@ -2364,33 +1982,10 @@ mod tests {
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn sending_reinit_downgrading_version_filters_it_out() {
-        let smaller_protocol_version = ProtocolVersion::from(0);
-        let (alice, tree) = new_tree("alice").await;
-        let proposal = Proposal::ReInit(make_reinit(smaller_protocol_version));
-        let proposal_info = make_proposal_info(&proposal, alice).await;
-
-        let processed_proposals =
-            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
-                .cache(
-                    proposal_info.proposal_ref().unwrap().clone(),
-                    proposal.clone(),
-                    alice,
-                )
-                .send()
-                .await
-                .unwrap();
-
-        assert_eq!(processed_proposals.0, Vec::new());
-
-        assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
-    }
-
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn receiving_update_for_committer_fails() {
         let (alice, tree) = new_tree("alice").await;
         let update = Proposal::Update(make_update_proposal("alice").await);
-        let update_ref = make_proposal_ref(&update, alice).await;
+        let update_ref = make_proposal_ref();
 
         let res = CommitReceiver::new(
             &tree,
@@ -2415,28 +2010,6 @@ mod tests {
             .await;
 
         assert_matches!(res, Err(MlsError::InvalidProposalTypeForSender));
-    }
-
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn sending_update_for_committer_filters_it_out() {
-        let (alice, tree) = new_tree("alice").await;
-        let proposal = Proposal::Update(make_update_proposal("alice").await);
-        let proposal_info = make_proposal_info(&proposal, alice).await;
-
-        let processed_proposals =
-            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
-                .cache(
-                    proposal_info.proposal_ref().unwrap().clone(),
-                    proposal.clone(),
-                    alice,
-                )
-                .send()
-                .await
-                .unwrap();
-
-        assert_eq!(processed_proposals.0, Vec::new());
-
-        assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -2468,37 +2041,15 @@ mod tests {
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn sending_remove_for_committer_filters_it_out() {
-        let (alice, tree) = new_tree("alice").await;
-        let proposal = Proposal::Remove(RemoveProposal { to_remove: alice });
-        let proposal_info = make_proposal_info(&proposal, alice).await;
-
-        let processed_proposals =
-            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
-                .cache(
-                    proposal_info.proposal_ref().unwrap().clone(),
-                    proposal.clone(),
-                    alice,
-                )
-                .send()
-                .await
-                .unwrap();
-
-        assert_eq!(processed_proposals.0, Vec::new());
-
-        assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
-    }
-
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn receiving_update_and_remove_for_same_leaf_fails() {
         let (alice, mut tree) = new_tree("alice").await;
         let bob = add_member(&mut tree, "bob").await;
 
         let update = Proposal::Update(make_update_proposal("bob").await);
-        let update_ref = make_proposal_ref(&update, bob).await;
+        let update_ref = make_proposal_ref();
 
         let remove = Proposal::Remove(RemoveProposal { to_remove: bob });
-        let remove_ref = make_proposal_ref(&remove, bob).await;
+        let remove_ref = make_proposal_ref();
 
         let res = CommitReceiver::new(
             &tree,
@@ -2512,34 +2063,6 @@ mod tests {
         .await;
 
         assert_matches!(res, Err(MlsError::UpdatingNonExistingMember));
-    }
-
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn sending_update_and_remove_for_same_leaf_filters_update_out() {
-        let (alice, mut tree) = new_tree("alice").await;
-        let bob = add_member(&mut tree, "bob").await;
-
-        let update = Proposal::Update(make_update_proposal("bob").await);
-        let update_info = make_proposal_info(&update, alice).await;
-
-        let remove = Proposal::Remove(RemoveProposal { to_remove: bob });
-        let remove_ref = make_proposal_ref(&remove, alice).await;
-
-        let processed_proposals =
-            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
-                .cache(
-                    update_info.proposal_ref().unwrap().clone(),
-                    update.clone(),
-                    alice,
-                )
-                .cache(remove_ref.clone(), remove, alice)
-                .send()
-                .await
-                .unwrap();
-
-        assert_eq!(processed_proposals.0, vec![remove_ref.into()]);
-
-        assert_eq!(processed_proposals.1.unused_proposals, vec![update_info]);
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -2584,43 +2107,12 @@ mod tests {
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn sending_add_proposals_for_same_client_keeps_only_one() {
-        let (alice, tree) = new_tree("alice").await;
-
-        let add_one = Proposal::Add(make_add_proposal().await);
-        let add_two = Proposal::Add(make_add_proposal().await);
-        let add_ref_one = make_proposal_ref(&add_one, alice).await;
-        let add_ref_two = make_proposal_ref(&add_two, alice).await;
-
-        let processed_proposals =
-            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
-                .cache(add_ref_one.clone(), add_one.clone(), alice)
-                .cache(add_ref_two.clone(), add_two.clone(), alice)
-                .send()
-                .await
-                .unwrap();
-
-        let committed_add_ref = match &*processed_proposals.0 {
-            [ProposalOrRef::Reference(add_ref)] => add_ref,
-            _ => panic!("committed proposals list does not contain exactly one reference"),
-        };
-
-        let add_refs = [add_ref_one, add_ref_two];
-        assert!(add_refs.contains(committed_add_ref));
-
-        assert_matches!(
-            &*processed_proposals.1.unused_proposals,
-            [rejected_add_info] if committed_add_ref != rejected_add_info.proposal_ref().unwrap() && add_refs.contains(rejected_add_info.proposal_ref().unwrap())
-        );
-    }
-
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn receiving_update_for_different_identity_fails() {
         let (alice, mut tree) = new_tree("alice").await;
         let bob = add_member(&mut tree, "bob").await;
 
         let update = Proposal::Update(make_update_proposal_custom("carol", 1).await);
-        let update_ref = make_proposal_ref(&update, bob).await;
+        let update_ref = make_proposal_ref();
 
         let res = CommitReceiver::new(
             &tree,
@@ -2633,28 +2125,6 @@ mod tests {
         .await;
 
         assert_matches!(res, Err(MlsError::InvalidSuccessor));
-    }
-
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn sending_update_for_different_identity_filters_it_out() {
-        let (alice, mut tree) = new_tree("alice").await;
-        let bob = add_member(&mut tree, "bob").await;
-
-        let update = Proposal::Update(make_update_proposal("carol").await);
-        let update_info = make_proposal_info(&update, bob).await;
-
-        let processed_proposals =
-            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
-                .cache(update_info.proposal_ref().unwrap().clone(), update, bob)
-                .send()
-                .await
-                .unwrap();
-
-        assert_eq!(processed_proposals.0, Vec::new());
-
-        // Bob proposed the update, so it is not listed as rejected when Alice commits it because
-        // she didn't propose it.
-        assert_eq!(processed_proposals.1.unused_proposals, vec![update_info]);
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -2711,42 +2181,6 @@ mod tests {
         assert_matches!(res, Err(MlsError::DuplicateLeafData(1)));
     }
 
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn sending_add_for_same_client_as_existing_member_filters_it_out() {
-        let (alice, public_tree) = new_tree("alice").await;
-        let add = Proposal::Add(make_add_proposal().await);
-
-        let ProvisionalState { public_tree, .. } = CommitReceiver::new(
-            &public_tree,
-            alice,
-            alice,
-            test_cipher_suite_provider(TEST_CIPHER_SUITE),
-        )
-        .receive([add.clone()])
-        .await
-        .unwrap();
-
-        let proposal_info = make_proposal_info(&add, alice).await;
-
-        let processed_proposals = CommitSender::new(
-            &public_tree,
-            alice,
-            test_cipher_suite_provider(TEST_CIPHER_SUITE),
-        )
-        .cache(
-            proposal_info.proposal_ref().unwrap().clone(),
-            add.clone(),
-            alice,
-        )
-        .send()
-        .await
-        .unwrap();
-
-        assert_eq!(processed_proposals.0, Vec::new());
-
-        assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
-    }
-
     #[cfg(feature = "psk")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn receiving_psk_proposals_with_same_psk_id_fails() {
@@ -2779,62 +2213,6 @@ mod tests {
             .await;
 
         assert_matches!(res, Err(MlsError::DuplicatePskIds));
-    }
-
-    #[cfg(feature = "psk")]
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn sending_psk_proposals_with_same_psk_id_keeps_only_one() {
-        let (alice, mut tree) = new_tree("alice").await;
-        let bob = add_member(&mut tree, "bob").await;
-
-        let proposal = Proposal::Psk(new_external_psk(b"foo"));
-
-        let proposal_info = [
-            make_proposal_info(&proposal, alice).await,
-            make_proposal_info(&proposal, bob).await,
-        ];
-
-        let processed_proposals =
-            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
-                .with_psks(vec![JustPreSharedKeyID::External(b"foo".to_vec().into())])
-                .cache(
-                    proposal_info[0].proposal_ref().unwrap().clone(),
-                    proposal.clone(),
-                    alice,
-                )
-                .cache(
-                    proposal_info[1].proposal_ref().unwrap().clone(),
-                    proposal,
-                    bob,
-                )
-                .send()
-                .await
-                .unwrap();
-
-        let committed_info = match processed_proposals
-            .1
-            .applied_proposals
-            .clone()
-            .into_proposals()
-            .collect_vec()
-            .as_slice()
-        {
-            [r] => r.clone(),
-            _ => panic!("Expected single proposal reference in {processed_proposals:?}"),
-        };
-
-        assert!(proposal_info.contains(&committed_info));
-
-        match &*processed_proposals.1.unused_proposals {
-            [r] => {
-                assert_ne!(*r, committed_info);
-                assert!(proposal_info.contains(r));
-            }
-            _ => panic!(
-                "Expected one proposal reference in {:?}",
-                processed_proposals.1.unused_proposals
-            ),
-        }
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -2881,87 +2259,6 @@ mod tests {
         vec![TestExtension { foo: something }.into_extension().unwrap()].into()
     }
 
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn sending_multiple_group_context_extensions_keeps_only_one() {
-        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
-
-        let (alice, tree) = {
-            let (signing_identity, signature_key) =
-                get_test_signing_identity(TEST_CIPHER_SUITE, b"alice").await;
-
-            let properties = ConfigProperties {
-                capabilities: Capabilities {
-                    extensions: vec![42.into()],
-                    ..Capabilities::default()
-                },
-                extensions: Default::default(),
-            };
-
-            let (leaf, secret) = LeafNode::generate(
-                &cipher_suite_provider,
-                properties,
-                signing_identity,
-                &signature_key,
-                Lifetime::years(1).unwrap(),
-            )
-            .await
-            .unwrap();
-
-            let (pub_tree, priv_tree) =
-                TreeKemPublic::derive(leaf, secret, &BasicIdentityProvider, &Default::default())
-                    .await
-                    .unwrap();
-
-            (priv_tree.self_index, pub_tree)
-        };
-
-        let proposals = [
-            Proposal::GroupContextExtensions(make_extension_list(0)),
-            Proposal::GroupContextExtensions(make_extension_list(1)),
-        ];
-
-        let gce_info = [
-            make_proposal_info(&proposals[0], alice).await,
-            make_proposal_info(&proposals[1], alice).await,
-        ];
-
-        let processed_proposals =
-            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
-                .cache(
-                    gce_info[0].proposal_ref().unwrap().clone(),
-                    proposals[0].clone(),
-                    alice,
-                )
-                .cache(
-                    gce_info[1].proposal_ref().unwrap().clone(),
-                    proposals[1].clone(),
-                    alice,
-                )
-                .send()
-                .await
-                .unwrap();
-
-        let committed_gce_info = match processed_proposals
-            .1
-            .applied_proposals
-            .clone()
-            .into_proposals()
-            .collect_vec()
-            .as_slice()
-        {
-            [gce_info] => gce_info.clone(),
-            _ => panic!("committed proposals list does not contain exactly one reference"),
-        };
-
-        assert!(gce_info.contains(&committed_gce_info));
-
-        assert_matches!(
-            &*processed_proposals.1.unused_proposals,
-            [rejected_gce_info] if committed_gce_info != *rejected_gce_info && gce_info.contains(rejected_gce_info)
-        );
-    }
-
-    #[cfg(feature = "by_ref_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn make_external_senders_extension() -> ExtensionList {
         let identity = get_test_signing_identity(TEST_CIPHER_SUITE, b"alice")
@@ -2974,7 +2271,6 @@ mod tests {
         .into()
     }
 
-    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn receiving_invalid_external_senders_extension_fails() {
         let (alice, tree) = new_tree("alice").await;
@@ -2994,7 +2290,6 @@ mod tests {
         assert_matches!(res, Err(MlsError::IdentityProviderError(_)));
     }
 
-    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn sending_additional_invalid_external_senders_extension_fails() {
         let (alice, tree) = new_tree("alice").await;
@@ -3008,32 +2303,6 @@ mod tests {
             .await;
 
         assert_matches!(res, Err(MlsError::IdentityProviderError(_)));
-    }
-
-    #[cfg(feature = "by_ref_proposal")]
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn sending_invalid_external_senders_extension_filters_it_out() {
-        let (alice, tree) = new_tree("alice").await;
-
-        let proposal = Proposal::GroupContextExtensions(make_external_senders_extension().await);
-
-        let proposal_info = make_proposal_info(&proposal, alice).await;
-
-        let processed_proposals =
-            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
-                .with_identity_provider(FailureIdentityProvider::new())
-                .cache(
-                    proposal_info.proposal_ref().unwrap().clone(),
-                    proposal.clone(),
-                    alice,
-                )
-                .send()
-                .await
-                .unwrap();
-
-        assert_eq!(processed_proposals.0, Vec::new());
-
-        assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -3071,31 +2340,6 @@ mod tests {
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn sending_reinit_with_other_proposals_filters_it_out() {
-        let (alice, tree) = new_tree("alice").await;
-        let reinit = Proposal::ReInit(make_reinit(TEST_PROTOCOL_VERSION));
-        let reinit_info = make_proposal_info(&reinit, alice).await;
-        let add = Proposal::Add(make_add_proposal().await);
-        let add_ref = make_proposal_ref(&add, alice).await;
-
-        let processed_proposals =
-            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
-                .cache(
-                    reinit_info.proposal_ref().unwrap().clone(),
-                    reinit.clone(),
-                    alice,
-                )
-                .cache(add_ref.clone(), add, alice)
-                .send()
-                .await
-                .unwrap();
-
-        assert_eq!(processed_proposals.0, vec![add_ref.into()]);
-
-        assert_eq!(processed_proposals.1.unused_proposals, vec![reinit_info]);
-    }
-
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn receiving_multiple_reinits_fails() {
         let (alice, tree) = new_tree("alice").await;
 
@@ -3127,44 +2371,6 @@ mod tests {
             .await;
 
         assert_matches!(res, Err(MlsError::OtherProposalWithReInit));
-    }
-
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn sending_multiple_reinits_keeps_only_one() {
-        let (alice, tree) = new_tree("alice").await;
-        let reinit = Proposal::ReInit(make_reinit(TEST_PROTOCOL_VERSION));
-        let reinit_ref = make_proposal_ref(&reinit, alice).await;
-        let other_reinit = Proposal::ReInit(ReInitProposal {
-            group_id: b"other_group".to_vec(),
-            ..make_reinit(TEST_PROTOCOL_VERSION)
-        });
-        let other_reinit_ref = make_proposal_ref(&other_reinit, alice).await;
-
-        let processed_proposals =
-            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
-                .cache(reinit_ref.clone(), reinit.clone(), alice)
-                .cache(other_reinit_ref.clone(), other_reinit.clone(), alice)
-                .send()
-                .await
-                .unwrap();
-
-        let processed_ref = match &*processed_proposals.0 {
-            [ProposalOrRef::Reference(r)] => r,
-            p => panic!("Expected single proposal reference but found {p:?}"),
-        };
-
-        assert!(*processed_ref == reinit_ref || *processed_ref == other_reinit_ref);
-
-        {
-            let (rejected_ref, unused_proposal) = match &*processed_proposals.1.unused_proposals {
-                [r] => (r.proposal_ref().unwrap().clone(), r.proposal.clone()),
-                p => panic!("Expected single proposal but found {p:?}"),
-            };
-
-            assert_ne!(rejected_ref, *processed_ref);
-            assert!(rejected_ref == reinit_ref || rejected_ref == other_reinit_ref);
-            assert!(unused_proposal == reinit || unused_proposal == other_reinit);
-        }
     }
 
     fn make_external_init() -> ExternalInit {
@@ -3199,31 +2405,6 @@ mod tests {
             .await;
 
         assert_matches!(res, Err(MlsError::InvalidProposalTypeForSender));
-    }
-
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn sending_external_init_from_member_filters_it_out() {
-        let (alice, tree) = new_tree("alice").await;
-        let external_init = Proposal::ExternalInit(make_external_init());
-        let external_init_info = make_proposal_info(&external_init, alice).await;
-
-        let processed_proposals =
-            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
-                .cache(
-                    external_init_info.proposal_ref().unwrap().clone(),
-                    external_init.clone(),
-                    alice,
-                )
-                .send()
-                .await
-                .unwrap();
-
-        assert_eq!(processed_proposals.0, Vec::new());
-
-        assert_eq!(
-            processed_proposals.1.unused_proposals,
-            vec![external_init_info]
-        );
     }
 
     fn required_capabilities_proposal(extension: u16) -> Proposal {
@@ -3268,187 +2449,6 @@ mod tests {
         assert_matches!(
             res,
             Err(MlsError::RequiredExtensionNotFound(v)) if v == 33.into()
-        );
-    }
-
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn sending_additional_required_capabilities_not_supported_by_member_filters_it_out() {
-        let (alice, tree) = new_tree("alice").await;
-
-        let proposal = required_capabilities_proposal(33);
-        let proposal_info = make_proposal_info(&proposal, alice).await;
-
-        let processed_proposals =
-            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
-                .cache(
-                    proposal_info.proposal_ref().unwrap().clone(),
-                    proposal.clone(),
-                    alice,
-                )
-                .send()
-                .await
-                .unwrap();
-
-        assert_eq!(processed_proposals.0, Vec::new());
-
-        assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
-    }
-
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn committing_update_from_pk1_to_pk2_and_update_from_pk2_to_pk3_works() {
-        let (alice_leaf, alice_secret, alice_signer) =
-            get_basic_test_node_sig_key(TEST_CIPHER_SUITE, "alice").await;
-
-        let (mut tree, priv_tree) = TreeKemPublic::derive(
-            alice_leaf.clone(),
-            alice_secret,
-            &BasicIdentityProvider,
-            &Default::default(),
-        )
-        .await
-        .unwrap();
-
-        let alice = priv_tree.self_index;
-
-        let bob = add_member(&mut tree, "bob").await;
-        let carol = add_member(&mut tree, "carol").await;
-
-        let bob_current_leaf = tree.get_leaf_node(bob).unwrap();
-
-        let mut alice_new_leaf = LeafNode {
-            public_key: bob_current_leaf.public_key.clone(),
-            leaf_node_source: LeafNodeSource::Update,
-            ..alice_leaf
-        };
-
-        alice_new_leaf
-            .sign(
-                &test_cipher_suite_provider(TEST_CIPHER_SUITE),
-                &alice_signer,
-                &(TEST_GROUP, 0).into(),
-            )
-            .await
-            .unwrap();
-
-        let bob_new_leaf = update_leaf_node("bob", 1).await;
-
-        let pk1_to_pk2 = Proposal::Update(UpdateProposal {
-            leaf_node: alice_new_leaf.clone(),
-        });
-
-        let pk1_to_pk2_ref = make_proposal_ref(&pk1_to_pk2, alice).await;
-
-        let pk2_to_pk3 = Proposal::Update(UpdateProposal {
-            leaf_node: bob_new_leaf.clone(),
-        });
-
-        let pk2_to_pk3_ref = make_proposal_ref(&pk2_to_pk3, bob).await;
-
-        let effects = CommitReceiver::new(
-            &tree,
-            carol,
-            carol,
-            test_cipher_suite_provider(TEST_CIPHER_SUITE),
-        )
-        .cache(pk1_to_pk2_ref.clone(), pk1_to_pk2, alice)
-        .cache(pk2_to_pk3_ref.clone(), pk2_to_pk3, bob)
-        .receive([pk1_to_pk2_ref, pk2_to_pk3_ref])
-        .await
-        .unwrap();
-
-        assert_eq!(effects.applied_proposals.update_senders, vec![alice, bob]);
-
-        assert_eq!(
-            effects
-                .applied_proposals
-                .updates
-                .into_iter()
-                .map(|p| p.proposal.leaf_node)
-                .collect_vec(),
-            vec![alice_new_leaf, bob_new_leaf]
-        );
-    }
-
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn committing_update_from_pk1_to_pk2_and_removal_of_pk2_works() {
-        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
-
-        let (alice_leaf, alice_secret, alice_signer) =
-            get_basic_test_node_sig_key(TEST_CIPHER_SUITE, "alice").await;
-
-        let (mut tree, priv_tree) = TreeKemPublic::derive(
-            alice_leaf.clone(),
-            alice_secret,
-            &BasicIdentityProvider,
-            &Default::default(),
-        )
-        .await
-        .unwrap();
-
-        let alice = priv_tree.self_index;
-
-        let bob = add_member(&mut tree, "bob").await;
-        let carol = add_member(&mut tree, "carol").await;
-
-        let bob_current_leaf = tree.get_leaf_node(bob).unwrap();
-
-        let mut alice_new_leaf = LeafNode {
-            public_key: bob_current_leaf.public_key.clone(),
-            leaf_node_source: LeafNodeSource::Update,
-            ..alice_leaf
-        };
-
-        alice_new_leaf
-            .sign(
-                &cipher_suite_provider,
-                &alice_signer,
-                &(TEST_GROUP, 0).into(),
-            )
-            .await
-            .unwrap();
-
-        let pk1_to_pk2 = Proposal::Update(UpdateProposal {
-            leaf_node: alice_new_leaf.clone(),
-        });
-
-        let pk1_to_pk2_ref = make_proposal_ref(&pk1_to_pk2, alice).await;
-
-        let remove_pk2 = Proposal::Remove(RemoveProposal { to_remove: bob });
-
-        let remove_pk2_ref = make_proposal_ref(&remove_pk2, bob).await;
-
-        let effects = CommitReceiver::new(
-            &tree,
-            carol,
-            carol,
-            test_cipher_suite_provider(TEST_CIPHER_SUITE),
-        )
-        .cache(pk1_to_pk2_ref.clone(), pk1_to_pk2, alice)
-        .cache(remove_pk2_ref.clone(), remove_pk2, bob)
-        .receive([pk1_to_pk2_ref, remove_pk2_ref])
-        .await
-        .unwrap();
-
-        assert_eq!(effects.applied_proposals.update_senders, vec![alice]);
-
-        assert_eq!(
-            effects
-                .applied_proposals
-                .updates
-                .into_iter()
-                .map(|p| p.proposal.leaf_node)
-                .collect_vec(),
-            vec![alice_new_leaf]
-        );
-
-        assert_eq!(
-            effects
-                .applied_proposals
-                .removals
-                .into_iter()
-                .map(|p| p.proposal.to_remove)
-                .collect_vec(),
-            vec![bob]
         );
     }
 
@@ -3507,28 +2507,6 @@ mod tests {
         assert_matches!(res, Err(MlsError::InUseCredentialTypeUnsupportedByNewLeaf));
     }
 
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn sending_add_with_leaf_not_supporting_credential_type_of_other_leaf_filters_it_out() {
-        let (alice, tree) = new_tree("alice").await;
-
-        let add = Proposal::Add(Box::new(AddProposal {
-            key_package: unsupported_credential_key_package("bob").await,
-        }));
-
-        let add_info = make_proposal_info(&add, alice).await;
-
-        let processed_proposals =
-            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
-                .cache(add_info.proposal_ref().unwrap().clone(), add.clone(), alice)
-                .send()
-                .await
-                .unwrap();
-
-        assert_eq!(processed_proposals.0, Vec::new());
-
-        assert_eq!(processed_proposals.1.unused_proposals, vec![add_info]);
-    }
-
     #[cfg(feature = "custom_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn sending_custom_proposal_with_member_not_supporting_proposal_type_fails() {
@@ -3554,22 +2532,17 @@ mod tests {
     async fn sending_custom_proposal_with_member_not_supporting_fails() {
         let (alice, tree) = new_tree("alice").await;
 
-        let custom_proposal = Proposal::Custom(CustomProposal::new(ProposalType::new(42), vec![]));
-
-        let custom_info = make_proposal_info(&custom_proposal, alice).await;
+        let proposal_type = ProposalType::new(42);
+        let custom_proposal = Proposal::Custom(CustomProposal::new(proposal_type, vec![]));
 
         let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
-            .cache(
-                custom_info.proposal_ref().unwrap().clone(),
-                custom_proposal.clone(),
-                alice,
-            )
+            .with_additional(vec![custom_proposal])
             .send()
             .await;
 
         assert_matches!(
             res,
-            Err(MlsError::UnsupportedCustomProposal(c)) if c == custom_proposal.proposal_type()
+            Err(MlsError::UnsupportedCustomProposal(c)) if c == proposal_type
         );
     }
 
@@ -3633,29 +2606,6 @@ mod tests {
         );
     }
 
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn sending_group_extension_unsupported_by_leaf_filters_it_out() {
-        let (alice, tree) = new_tree("alice").await;
-
-        let proposal = Proposal::GroupContextExtensions(make_extension_list(0));
-        let proposal_info = make_proposal_info(&proposal, alice).await;
-
-        let processed_proposals =
-            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
-                .cache(
-                    proposal_info.proposal_ref().unwrap().clone(),
-                    proposal.clone(),
-                    alice,
-                )
-                .send()
-                .await
-                .unwrap();
-
-        assert_eq!(processed_proposals.0, Vec::new());
-
-        assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
-    }
-
     #[cfg(feature = "psk")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn receiving_external_psk_with_unknown_id_fails() {
@@ -3688,41 +2638,15 @@ mod tests {
         assert_matches!(res, Err(MlsError::MissingRequiredPsk));
     }
 
-    #[cfg(feature = "psk")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn sending_external_psk_with_unknown_id_filters_it_out() {
-        let (alice, tree) = new_tree("alice").await;
-        let proposal = Proposal::Psk(new_external_psk(b"abc"));
-        let proposal_info = make_proposal_info(&proposal, alice).await;
-
-        let processed_proposals =
-            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
-                .with_psks(vec![])
-                .cache(
-                    proposal_info.proposal_ref().unwrap().clone(),
-                    proposal.clone(),
-                    alice,
-                )
-                .send()
-                .await
-                .unwrap();
-
-        assert_eq!(processed_proposals.0, Vec::new());
-
-        assert_eq!(processed_proposals.1.unused_proposals, vec![proposal_info]);
-    }
-
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn proposers_are_verified() {
+    async fn by_ref_proposers_are_verified() {
         let (alice, mut tree) = new_tree("alice").await;
         let bob = add_member(&mut tree, "bob").await;
 
-        #[cfg(feature = "by_ref_proposal")]
         let identity = get_test_signing_identity(TEST_CIPHER_SUITE, b"carol")
             .await
             .0;
 
-        #[cfg(feature = "by_ref_proposal")]
         let external_senders = ExternalSendersExt::new(vec![identity]);
 
         let proposals: &[Proposal] = &[
@@ -3741,17 +2665,12 @@ mod tests {
 
         let proposers = [
             Sender::Member(*alice),
-            #[cfg(feature = "by_ref_proposal")]
             Sender::External(0),
             Sender::NewMemberCommit,
             Sender::NewMemberProposal,
         ];
 
-        for ((proposer, proposal), by_ref) in proposers
-            .into_iter()
-            .cartesian_product(proposals)
-            .cartesian_product([true])
-        {
+        for (proposer, proposal) in proposers.into_iter().cartesian_product(proposals) {
             let committer = Sender::Member(*alice);
 
             let receiver = CommitReceiver::new(
@@ -3762,30 +2681,15 @@ mod tests {
             )
             .with_psks(vec![JustPreSharedKeyID::External(b"ted".to_vec().into())]);
 
-            #[cfg(feature = "by_ref_proposal")]
             let extensions: ExtensionList =
                 vec![external_senders.clone().into_extension().unwrap()].into();
 
-            #[cfg(feature = "by_ref_proposal")]
             let receiver = receiver.with_extensions(extensions);
 
-            let (receiver, proposals, proposer, source) = if by_ref {
-                let proposal_ref = make_proposal_ref(proposal, proposer).await;
-                let receiver = receiver.cache(proposal_ref.clone(), proposal.clone(), proposer);
-                (
-                    receiver,
-                    vec![ProposalOrRef::from(proposal_ref.clone())],
-                    proposer,
-                    ProposalSource::ByReference(proposal_ref),
-                )
-            } else {
-                (
-                    receiver,
-                    vec![proposal.clone().into()],
-                    committer,
-                    ProposalSource::Local,
-                )
-            };
+            let proposal_ref = make_proposal_ref();
+            let receiver = receiver.cache(proposal_ref.clone(), proposal.clone(), proposer);
+            let proposals = vec![ProposalOrRef::from(proposal_ref.clone())];
+            let source = ProposalSource::ByReference(proposal_ref);
 
             let res = receiver.receive(proposals).await;
 
@@ -3793,7 +2697,6 @@ mod tests {
                 assert_matches!(res, Err(MlsError::InvalidProposalTypeForSender));
             } else {
                 let is_self_update = proposal.proposal_type() == ProposalType::UPDATE
-                    && by_ref
                     && matches!(proposer, Sender::Member(_));
 
                 if !is_self_update {
@@ -3815,35 +2718,5 @@ mod tests {
         UpdateProposal {
             leaf_node: update_leaf_node(name, leaf_index).await,
         }
-    }
-
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn when_receiving_commit_unused_proposals_are_proposals_in_cache_but_not_in_commit() {
-        let (alice, tree) = new_tree("alice").await;
-
-        let proposal = Proposal::GroupContextExtensions(Default::default());
-        let proposal_ref = make_proposal_ref(&proposal, alice).await;
-
-        let state = CommitReceiver::new(
-            &tree,
-            alice,
-            alice,
-            test_cipher_suite_provider(TEST_CIPHER_SUITE),
-        )
-        .cache(proposal_ref.clone(), proposal, alice)
-        .receive([Proposal::Add(Box::new(AddProposal {
-            key_package: test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await,
-        }))])
-        .await
-        .unwrap();
-
-        let [p] = &state.unused_proposals[..] else {
-            panic!(
-                "Expected single unused proposal but got {:?}",
-                state.unused_proposals
-            );
-        };
-
-        assert_eq!(p.proposal_ref(), Some(&proposal_ref));
     }
 }

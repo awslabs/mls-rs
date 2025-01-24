@@ -32,9 +32,6 @@ use mls_rs_core::identity::IdentityProvider;
 
 use crate::group::{ExternalInit, ProposalType, RemoveProposal};
 
-#[cfg(all(feature = "by_ref_proposal", feature = "psk"))]
-use crate::group::proposal::PreSharedKeyProposal;
-
 #[cfg(feature = "psk")]
 use crate::group::{JustPreSharedKeyID, ResumptionPSKUsage, ResumptionPsk};
 
@@ -42,7 +39,7 @@ use crate::group::{JustPreSharedKeyID, ResumptionPSKUsage, ResumptionPsk};
 use std::collections::HashSet;
 
 #[cfg(feature = "by_ref_proposal")]
-use super::filtering::{apply_strategy, filter_out_invalid_proposers, FilterStrategy};
+use super::filtering::filter_out_invalid_proposers;
 
 #[derive(Debug)]
 pub(crate) struct ProposalApplier<'a, C, CSP> {
@@ -60,7 +57,6 @@ pub(crate) struct ApplyProposalsOutput {
     pub(crate) new_tree: TreeKemPublic,
     pub(crate) indexes_of_added_kpkgs: Vec<LeafIndex>,
     pub(crate) external_init_index: Option<LeafIndex>,
-    #[cfg(feature = "by_ref_proposal")]
     pub(crate) applied_proposals: ProposalBundle,
     pub(crate) new_context_extensions: Option<ExtensionList>,
 }
@@ -93,22 +89,14 @@ where
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn apply_proposals(
         &self,
-        #[cfg(feature = "by_ref_proposal")] strategy: FilterStrategy,
         commit_sender: &CommitSource,
-        #[cfg(not(feature = "by_ref_proposal"))] proposals: &ProposalBundle,
-        #[cfg(feature = "by_ref_proposal")] proposals: ProposalBundle,
+        proposals: ProposalBundle,
         commit_time: Option<MlsTime>,
     ) -> Result<ApplyProposalsOutput, MlsError> {
         let output = match commit_sender {
             CommitSource::ExistingMember(sender) => {
-                self.apply_proposals_from_member(
-                    #[cfg(feature = "by_ref_proposal")]
-                    strategy,
-                    LeafIndex(sender.index),
-                    proposals,
-                    commit_time,
-                )
-                .await
+                self.apply_proposals_from_member(LeafIndex(sender.index), proposals, commit_time)
+                    .await
             }
             CommitSource::NewMember(_) => {
                 self.apply_proposals_from_new_member(proposals, commit_time)
@@ -124,8 +112,7 @@ where
     #[allow(clippy::needless_borrow)]
     async fn apply_proposals_from_new_member(
         &self,
-        #[cfg(not(feature = "by_ref_proposal"))] proposals: &ProposalBundle,
-        #[cfg(feature = "by_ref_proposal")] proposals: ProposalBundle,
+        proposals: ProposalBundle,
         commit_time: Option<MlsTime>,
     ) -> Result<ApplyProposalsOutput, MlsError> {
         let external_leaf = self
@@ -147,29 +134,12 @@ where
         ensure_no_proposal_by_ref(&proposals)?;
 
         #[cfg(feature = "by_ref_proposal")]
-        let mut proposals = filter_out_invalid_proposers(FilterStrategy::IgnoreNone, proposals)?;
+        filter_out_invalid_proposers(&proposals)?;
 
-        filter_out_invalid_psks(
-            #[cfg(feature = "by_ref_proposal")]
-            FilterStrategy::IgnoreNone,
-            self.cipher_suite_provider,
-            #[cfg(feature = "by_ref_proposal")]
-            &mut proposals,
-            #[cfg(not(feature = "by_ref_proposal"))]
-            proposals,
-            #[cfg(feature = "psk")]
-            self.psks,
-        )
-        .await?;
+        #[cfg(feature = "psk")]
+        filter_out_invalid_psks(self.cipher_suite_provider, &proposals, self.psks).await?;
 
-        let mut output = self
-            .apply_proposal_changes(
-                #[cfg(feature = "by_ref_proposal")]
-                FilterStrategy::IgnoreNone,
-                proposals,
-                commit_time,
-            )
-            .await?;
+        let mut output = self.apply_proposal_changes(proposals, commit_time).await?;
 
         output.external_init_index = Some(
             insert_external_leaf(
@@ -187,23 +157,16 @@ where
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(super) async fn apply_proposals_with_new_capabilities(
         &self,
-        #[cfg(feature = "by_ref_proposal")] strategy: FilterStrategy,
-        #[cfg(not(feature = "by_ref_proposal"))] proposals: &ProposalBundle,
-        #[cfg(feature = "by_ref_proposal")] proposals: ProposalBundle,
+        proposals: ProposalBundle,
         group_context_extensions_proposal: ProposalInfo<ExtensionList>,
         commit_time: Option<MlsTime>,
     ) -> Result<ApplyProposalsOutput, MlsError>
     where
         C: IdentityProvider,
     {
-        #[cfg(feature = "by_ref_proposal")]
-        let mut proposals_clone = proposals.clone();
-
         // Apply adds, updates etc. in the context of new extensions
         let output = self
             .apply_tree_changes(
-                #[cfg(feature = "by_ref_proposal")]
-                strategy,
                 proposals,
                 &group_context_extensions_proposal.proposal,
                 commit_time,
@@ -223,7 +186,7 @@ where
                 .proposal
                 .has_extension(ExternalSendersExt::extension_type());
 
-        let new_capabilities_supported = if must_check {
+        if must_check {
             let member_validation_context = MemberValidationContext::ForCommit {
                 current_context: self.original_context,
                 new_extensions: &group_context_extensions_proposal.proposal,
@@ -244,13 +207,11 @@ where
                     #[cfg(feature = "by_ref_proposal")]
                     leaf_validator.validate_external_senders_ext_credentials(leaf)?;
 
-                    Ok(())
-                })
-        } else {
-            Ok(())
-        };
+                    Ok::<_, MlsError>(())
+                })?;
+        }
 
-        let new_extensions_supported = group_context_extensions_proposal
+        group_context_extensions_proposal
             .proposal
             .iter()
             .map(|extension| extension.extension_type)
@@ -261,36 +222,9 @@ where
                     .non_empty_leaves()
                     .all(|(_, leaf)| leaf.capabilities.extensions.contains(ext_type))
             })
-            .map_or(Ok(()), |ext| Err(MlsError::UnsupportedGroupExtension(ext)));
+            .map_or(Ok(()), |ext| Err(MlsError::UnsupportedGroupExtension(ext)))?;
 
-        #[cfg(not(feature = "by_ref_proposal"))]
-        {
-            new_capabilities_supported.and(new_extensions_supported)?;
-            Ok(output)
-        }
-
-        #[cfg(feature = "by_ref_proposal")]
-        // If extensions are good, return `Ok`. If not and the strategy is to filter, remove the group
-        // context extensions proposal and try applying all proposals again in the context of the old
-        // extensions. Else, return an error.
-        match new_capabilities_supported.and(new_extensions_supported) {
-            Ok(()) => Ok(output),
-            Err(e) => {
-                if strategy.ignore(group_context_extensions_proposal.is_by_reference()) {
-                    proposals_clone.group_context_extensions.clear();
-
-                    self.apply_tree_changes(
-                        strategy,
-                        proposals_clone,
-                        &self.original_context.extensions,
-                        commit_time,
-                    )
-                    .await
-                } else {
-                    Err(e)
-                }
-            }
-        }
+        Ok(output)
     }
 
     #[cfg(any(mls_build_async, not(feature = "rayon")))]
@@ -341,11 +275,9 @@ where
 #[cfg(feature = "psk")]
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 pub(crate) async fn filter_out_invalid_psks<CP>(
-    #[cfg(feature = "by_ref_proposal")] strategy: FilterStrategy,
     cipher_suite_provider: &CP,
-    #[cfg(not(feature = "by_ref_proposal"))] proposals: &ProposalBundle,
-    #[cfg(feature = "by_ref_proposal")] proposals: &mut ProposalBundle,
-    #[cfg(feature = "psk")] psks: &[crate::psk::JustPreSharedKeyID],
+    proposals: &ProposalBundle,
+    psks: &[crate::psk::JustPreSharedKeyID],
 ) -> Result<(), MlsError>
 where
     CP: CipherSuiteProvider,
@@ -358,90 +290,42 @@ where
     #[cfg(not(feature = "std"))]
     let mut ids_seen = Vec::new();
 
-    #[cfg(feature = "by_ref_proposal")]
-    let mut bad_indices = Vec::new();
-
     for i in 0..proposals.psk_proposals().len() {
         let p = &proposals.psks[i];
 
-        let valid = matches!(
+        if !matches!(
             p.proposal.psk.key_id,
             JustPreSharedKeyID::External(_)
                 | JustPreSharedKeyID::Resumption(ResumptionPsk {
                     usage: ResumptionPSKUsage::Application,
                     ..
                 })
-        );
-
-        let nonce_length = p.proposal.psk.psk_nonce.0.len();
-        let nonce_valid = nonce_length == kdf_extract_size;
-
-        #[cfg(feature = "std")]
-        let is_new_id = ids_seen.insert(p.proposal.psk.clone());
-
-        #[cfg(not(feature = "std"))]
-        let is_new_id = !ids_seen.contains(&p.proposal.psk);
-
-        let has_required_psk_secret = psks
-            .contains(&p.proposal.psk.key_id)
-            .then_some(())
-            .ok_or_else(|| MlsError::MissingRequiredPsk);
-
-        #[cfg(not(feature = "psk"))]
-        let has_required_psk_secret = Ok(());
-
-        #[cfg(not(feature = "by_ref_proposal"))]
-        if !valid {
+        ) {
             return Err(MlsError::InvalidTypeOrUsageInPreSharedKeyProposal);
-        } else if !nonce_valid {
+        };
+
+        if p.proposal.psk.psk_nonce.0.len() != kdf_extract_size {
             return Err(MlsError::InvalidPskNonceLength);
-        } else if !is_new_id {
-            return Err(MlsError::DuplicatePskIds);
-        } else if has_required_psk_secret.is_err() {
-            return has_required_psk_secret;
         }
 
-        #[cfg(feature = "by_ref_proposal")]
-        {
-            let res = if !valid {
-                Err(MlsError::InvalidTypeOrUsageInPreSharedKeyProposal)
-            } else if !nonce_valid {
-                Err(MlsError::InvalidPskNonceLength)
-            } else if !is_new_id {
-                Err(MlsError::DuplicatePskIds)
-            } else {
-                has_required_psk_secret
-            };
+        #[cfg(feature = "std")]
+        if !ids_seen.insert(p.proposal.psk.clone()) {
+            return Err(MlsError::DuplicatePskIds);
+        }
 
-            if !apply_strategy(strategy, p.is_by_reference(), res)? {
-                bad_indices.push(i)
-            }
+        #[cfg(not(feature = "std"))]
+        if ids_seen.contains(&p.proposal.psk) {
+            return Err(MlsError::DuplicatePskIds);
+        }
+
+        if !psks.contains(&p.proposal.psk.key_id) {
+            return Err(MlsError::MissingRequiredPsk);
         }
 
         #[cfg(not(feature = "std"))]
         ids_seen.push(p.proposal.psk.clone());
     }
 
-    #[cfg(feature = "by_ref_proposal")]
-    bad_indices
-        .into_iter()
-        .rev()
-        .for_each(|i| proposals.remove::<PreSharedKeyProposal>(i));
-
-    Ok(())
-}
-
-#[cfg(not(feature = "psk"))]
-#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-pub(crate) async fn filter_out_invalid_psks<CP>(
-    #[cfg(feature = "by_ref_proposal")] _: FilterStrategy,
-    _: &CP,
-    #[cfg(not(feature = "by_ref_proposal"))] _: &ProposalBundle,
-    #[cfg(feature = "by_ref_proposal")] _: &mut ProposalBundle,
-) -> Result<(), MlsError>
-where
-    CP: CipherSuiteProvider,
-{
     Ok(())
 }
 
