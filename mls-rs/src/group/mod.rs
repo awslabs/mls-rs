@@ -615,8 +615,10 @@ where
         associated_data: Option<&[u8]>,
         plaintext: &[u8],
     ) -> Result<HpkeCiphertext, MlsError> {
-        let member_leaf_node =
-            self.group_state().public_tree.get_leaf_node(LeafIndex(recipient_index))?;
+        let member_leaf_node = self
+            .group_state()
+            .public_tree
+            .get_leaf_node(LeafIndex(recipient_index))?;
         let member_public_key = &member_leaf_node.public_key;
         let hpke_ciphertext = self
             .cipher_suite_provider
@@ -637,8 +639,9 @@ where
         associated_data: Option<&[u8]>,
         hpke_ciphertext: HpkeCiphertext,
     ) -> Result<Vec<u8>, MlsError> {
-        let self_private_key =
-            &self.private_tree.secret_keys[0].as_ref().ok_or(MlsError::InvalidTreeKemPrivateKey)?;
+        let self_private_key = &self.private_tree.secret_keys[0]
+            .as_ref()
+            .ok_or(MlsError::InvalidTreeKemPrivateKey)?;
         let self_public_key = &self.current_user_leaf_node()?.public_key;
         let plaintext = self
             .cipher_suite_provider
@@ -2362,11 +2365,18 @@ mod tests {
         let receiver_index = alice_group.current_member_index();
         let sender_index = bob_group.current_member_index();
 
-        let context_info: Vec<u8> = vec![receiver_index.try_into().unwrap(), sender_index.try_into().unwrap()];
+        let context_info: Vec<u8> = vec![
+            receiver_index.try_into().unwrap(),
+            sender_index.try_into().unwrap(),
+        ];
         let plaintext = b"message";
 
-        let hpke_ciphertext = bob_group.hpke_encrypt_to_recipient(receiver_index, &context_info, None, plaintext).unwrap();
-        let hpke_decrypted = alice_group.hpke_decrypt_for_current_member(&context_info, None, hpke_ciphertext).unwrap();
+        let hpke_ciphertext = bob_group
+            .hpke_encrypt_to_recipient(receiver_index, &context_info, None, plaintext)
+            .unwrap();
+        let hpke_decrypted = alice_group
+            .hpke_decrypt_for_current_member(&context_info, None, hpke_ciphertext)
+            .unwrap();
 
         assert_eq!(plaintext.to_vec(), hpke_decrypted);
     }
@@ -2383,13 +2393,19 @@ mod tests {
         let receiver_index = alice.current_member_index();
         let sender_index = bob.current_member_index();
 
-        let context_info: Vec<u8> = vec![receiver_index.try_into().unwrap(), sender_index.try_into().unwrap()];
+        let context_info: Vec<u8> = vec![
+            receiver_index.try_into().unwrap(),
+            sender_index.try_into().unwrap(),
+        ];
         let plaintext = b"message";
 
-        let hpke_ciphertext = bob.hpke_encrypt_to_recipient(receiver_index, &context_info, None, plaintext).unwrap();
+        let hpke_ciphertext = bob
+            .hpke_encrypt_to_recipient(receiver_index, &context_info, None, plaintext)
+            .unwrap();
 
         // different recipient tries to decrypt
-        let hpke_decrypted = carol.hpke_decrypt_for_current_member(&context_info, None, hpke_ciphertext);
+        let hpke_decrypted =
+            carol.hpke_decrypt_for_current_member(&context_info, None, hpke_ciphertext);
 
         // should fail because carol can't decrypt the message encrypted for alice
         assert_matches!(hpke_decrypted, Err(MlsError::CryptoProviderError(_)));
@@ -2399,22 +2415,34 @@ mod tests {
     async fn test_hpke_can_decrypt_after_group_changes() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let (mut bob, _) = alice.join("bob").await;
-        
+
         let receiver_index = alice.current_member_index();
         let sender_index = bob.current_member_index();
-        let context_info: Vec<u8> = vec![receiver_index.try_into().unwrap(), sender_index.try_into().unwrap()];
+        let context_info: Vec<u8> = vec![
+            receiver_index.try_into().unwrap(),
+            sender_index.try_into().unwrap(),
+        ];
         let associated_data: Vec<u8> = vec![1, 2, 3, 4];
         let plaintext = b"message";
 
         // encrypt the message to alice
-        let hpke_ciphertext = bob.hpke_encrypt_to_recipient(receiver_index, &context_info, Some(&associated_data), plaintext).unwrap();
+        let hpke_ciphertext = bob
+            .hpke_encrypt_to_recipient(
+                receiver_index,
+                &context_info,
+                Some(&associated_data),
+                plaintext,
+            )
+            .unwrap();
 
         // add carol to the group
         let (_carol, commit) = alice.join("carol").await;
         bob.process_incoming_message(commit).await.unwrap();
 
         // make sure alice can still decrypt
-        let hpke_decrypted = alice.hpke_decrypt_for_current_member(&context_info, Some(&associated_data), hpke_ciphertext).unwrap();
+        let hpke_decrypted = alice
+            .hpke_decrypt_for_current_member(&context_info, Some(&associated_data), hpke_ciphertext)
+            .unwrap();
         assert_eq!(plaintext.to_vec(), hpke_decrypted);
     }
 
