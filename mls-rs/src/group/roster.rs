@@ -2,6 +2,8 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
+use crate::tree_kem::node::NodeVec;
+
 use super::*;
 
 pub use mls_rs_core::group::Member;
@@ -21,7 +23,7 @@ pub(crate) fn member_from_leaf_node(leaf_node: &LeafNode, leaf_index: LeafIndex)
 )]
 #[derive(Clone, Debug)]
 pub struct Roster<'a> {
-    pub(crate) public_tree: &'a TreeKemPublic,
+    pub(crate) public_tree: &'a NodeVec,
 }
 
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
@@ -60,7 +62,7 @@ impl<'a> Roster<'a> {
         let index = LeafIndex(index);
 
         self.public_tree
-            .get_leaf_node(index)
+            .borrow_as_leaf(index)
             .map(|l| member_from_leaf_node(l, index))
     }
 
@@ -81,6 +83,8 @@ impl<'a> Roster<'a> {
 
 impl TreeKemPublic {
     pub(crate) fn roster(&self) -> Roster {
-        Roster { public_tree: self }
+        Roster {
+            public_tree: &self.nodes,
+        }
     }
 }
