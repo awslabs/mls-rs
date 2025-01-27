@@ -19,8 +19,8 @@ use crate::{check_non_null, kdf::AwsLcHkdf, AwsLcCryptoError};
 
 #[derive(Clone)]
 pub struct MlKemKem {
-    kdf: AwsLcHkdf,
-    ml_kem: MlKem,
+    pub(crate) kdf: AwsLcHkdf,
+    pub(crate) ml_kem: MlKem,
 }
 
 impl MlKemKem {

@@ -9,7 +9,7 @@ use mls_rs_crypto_traits::AeadId;
 use crate::AwsLcCryptoError;
 
 #[derive(Clone, Copy)]
-pub struct AwsLcAead(AeadId);
+pub struct AwsLcAead(pub(crate) AeadId);
 
 impl AwsLcAead {
     pub fn new(cipher_suite: CipherSuite) -> Option<Self> {
