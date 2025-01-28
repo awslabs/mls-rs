@@ -608,6 +608,7 @@ where
     /// Returns `ciphertext` and `kem_output` inside `HpkeCiphertext`.
     ///
     /// WARNING: The message sender is not authenticated.
+    #[cfg(feature = "non_domain_separated_hpke_encrypt_decrypt")]
     pub fn hpke_encrypt_to_recipient(
         &self,
         recipient_index: u32,
@@ -633,6 +634,7 @@ where
     /// current member.
     ///
     /// WARNING: The message sender is not authenticated.
+    #[cfg(feature = "non_domain_separated_hpke_encrypt_decrypt")]
     pub fn hpke_decrypt_for_current_member(
         &self,
         context_info: &[u8],
@@ -2358,6 +2360,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "non_domain_separated_hpke_encrypt_decrypt")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_hpke_encrypt_decrypt() {
         let (alice_group, bob_group) =
@@ -2381,6 +2384,7 @@ mod tests {
         assert_eq!(plaintext.to_vec(), hpke_decrypted);
     }
 
+    #[cfg(feature = "non_domain_separated_hpke_encrypt_decrypt")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_hpke_non_recipient_cant_decrypt() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
@@ -2411,6 +2415,7 @@ mod tests {
         assert_matches!(hpke_decrypted, Err(MlsError::CryptoProviderError(_)));
     }
 
+    #[cfg(feature = "non_domain_separated_hpke_encrypt_decrypt")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_hpke_can_decrypt_after_group_changes() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
