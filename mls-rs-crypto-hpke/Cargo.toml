@@ -31,7 +31,7 @@ hex = { version = "^0.4.3", features = ["serde"] }
 mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", features = ["mock"], version = "0.13.0" }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
-wasm-bindgen-test = { version = "=0.3.26", default-features = false }
+wasm-bindgen-test = { version = "0.3" }
 getrandom = { version = "0.2", features = ["js"] }
 
 [target.'cfg(mls_build_async)'.dependencies]
