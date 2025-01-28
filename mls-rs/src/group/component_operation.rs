@@ -1,4 +1,5 @@
 use crate::client::MlsError;
+use alloc::vec::Vec;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 
 pub type ComponentID = u32;
