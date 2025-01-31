@@ -39,6 +39,8 @@ pub enum EcPrivateKey {
 pub enum EcError {
     #[cfg_attr(feature = "std", error("p256 error: {0:?}"))]
     P256Error(p256::elliptic_curve::Error),
+    #[cfg_attr(feature = "std", error("p384 error: {0:?}"))]
+    P384Error(p384::elliptic_curve::Error),
     #[cfg_attr(feature = "std", error("unsupported curve type"))]
     UnsupportedCurve,
     #[cfg_attr(feature = "std", error("invalid public key data"))]
