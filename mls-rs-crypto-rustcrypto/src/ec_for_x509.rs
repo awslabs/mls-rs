@@ -22,6 +22,7 @@ use crate::{
 pub const X25519_OID: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.3.101.110");
 pub const ED25519_OID: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.3.101.112");
 pub const P256_OID: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.3.1.7");
+pub const P384_OID: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.3.132.0.34");
 
 #[derive(Debug)]
 #[cfg_attr(feature = "std", derive(thiserror::Error))]
@@ -68,6 +69,8 @@ pub fn curve_from_algorithm(algorithm: &AlgorithmIdentifier<Any>) -> Result<Curv
         Ok(Curve::X25519)
     } else if borrowed.parameters_oid() == Ok(P256_OID) {
         Ok(Curve::P256)
+    } else if borrowed.parameters_oid() == Ok(P384_OID) {
+        Ok(Curve::P384)
     } else {
         Err(EcX509Error::UnsupportedPublicKeyAlgorithm(format!(
             "{:?}",
@@ -82,7 +85,7 @@ pub fn signer_from_algorithm(
     let curve = curve_from_algorithm(algorithm)?;
 
     match curve {
-        Curve::Ed25519 | Curve::P256 => Ok(EcSigner::new_from_curve(curve)),
+        Curve::Ed25519 | Curve::P256 | Curve::P384 => Ok(EcSigner::new_from_curve(curve)),
         _ => Err(EcX509Error::UnsupportedPublicKeyAlgorithm(format!(
             "{:?}",
             algorithm.oid
@@ -120,6 +123,9 @@ pub fn pub_key_from_spki(
         Curve::P256 => p256::PublicKey::from_sec1_bytes(spki.subject_public_key.raw_bytes())
             .map_err(|e| EcX509Error::from(EcError::P256Error(e)))
             .map(EcPublicKey::P256),
+        Curve::P384 => p384::PublicKey::from_sec1_bytes(spki.subject_public_key.raw_bytes())
+            .map_err(|e| EcX509Error::from(EcError::P384Error(e)))
+            .map(EcPublicKey::P384),
         _ => Err(EcError::UnsupportedCurve.into()),
     }
 }
