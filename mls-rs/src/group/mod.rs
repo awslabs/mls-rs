@@ -668,8 +668,7 @@ where
         associated_data: Option<&[u8]>,
         plaintext: &[u8],
     ) -> Result<HpkeCiphertext, MlsError> {
-        let component_operation_label =
-            ComponentOperationLabel::new(component_id, context.to_vec());
+        let component_operation_label = ComponentOperationLabel::new(component_id, context);
         self.hpke_encrypt_to_recipient_with_generic_context(
             recipient_index,
             &component_operation_label.get_bytes()?,
@@ -743,8 +742,7 @@ where
         associated_data: Option<&[u8]>,
         hpke_ciphertext: HpkeCiphertext,
     ) -> Result<Vec<u8>, MlsError> {
-        let component_operation_label =
-            ComponentOperationLabel::new(component_id, context.to_vec());
+        let component_operation_label = ComponentOperationLabel::new(component_id, context);
         self.hpke_decrypt_for_current_member_with_generic_context(
             &component_operation_label.get_bytes()?,
             associated_data,
