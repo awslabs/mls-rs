@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1738057735487,
+  "lastUpdate": 1738693247120,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -20183,6 +20183,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 126232,
             "range": "± 1129",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mgeisler@google.com",
+            "name": "Martin Geisler",
+            "username": "mgeisler"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7087fc8016d73416090176a1d9fcecf5e879f00f",
+          "message": "Add support for P384 public key algorithm (#251)\n\n* Add support for P384 public key algorithm\r\n\r\nI found that I could not use root certificates which use a P384 public\r\nkey algorithm. More specifically, passing in a certificate with\r\n\r\n```\r\n$ openssl x509 -noout -text -in root.der\r\n…\r\n        Subject Public Key Info:\r\n            Public Key Algorithm: id-ecPublicKey\r\n                Public-Key: (384 bit)\r\n                pub:\r\n                    …\r\n                ASN1 OID: secp384r1\r\n                NIST CURVE: P-384\r\n…\r\n```\r\n\r\ngives me\r\n\r\n```\r\nEcX509Error(UnsupportedPublicKeyAlgorithm(\"ObjectIdentifier(1.2.840.10045.2.1)\"))\r\n```\r\n\r\nback. The changes here seem to fix this, but I’ll admit that they were\r\nmade very mechanically based on the existing code.\r\n\r\nThis would be a continuation of the work in #190.\r\n\r\n* Add P384 certificate test\r\n\r\nThe test certificate was generated using certificatetools.com, which I\r\nbelieve is where the others were generated as well.",
+          "timestamp": "2025-02-04T19:16:31+01:00",
+          "tree_id": "2a17f784f06f1319b96885f1b989e3fcce377413",
+          "url": "https://github.com/awslabs/mls-rs/commit/7087fc8016d73416090176a1d9fcecf5e879f00f"
+        },
+        "date": 1738693246297,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 527773,
+            "range": "± 14016",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 537311,
+            "range": "± 6722",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 597153,
+            "range": "± 7514",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1257136,
+            "range": "± 28359",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7581551,
+            "range": "± 51749",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2609231,
+            "range": "± 33247",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7045379,
+            "range": "± 97158",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13157265,
+            "range": "± 142179",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 769783,
+            "range": "± 18748",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 859366,
+            "range": "± 10299",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 983019,
+            "range": "± 8918",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 20266,
+            "range": "± 364",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 66528,
+            "range": "± 1127",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 127687,
+            "range": "± 1447",
             "unit": "ns/iter"
           }
         ]
