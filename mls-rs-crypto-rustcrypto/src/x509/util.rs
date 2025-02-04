@@ -261,6 +261,10 @@ pub(crate) mod test_utils {
         DerCertificate::from(include_bytes!("../../test_data/x509/ca.der").to_vec())
     }
 
+    pub fn load_test_p384_ca() -> DerCertificate {
+        DerCertificate::from(include_bytes!("../../test_data/x509/p384_ca.der").to_vec())
+    }
+
     pub fn load_test_cert_chain() -> CertificateChain {
         let entry0 = include_bytes!("../../test_data/x509/leaf.der").to_vec();
         let entry1 = include_bytes!("../../test_data/x509/intermediate.der").to_vec();

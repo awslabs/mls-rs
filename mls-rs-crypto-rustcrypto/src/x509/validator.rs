@@ -227,7 +227,7 @@ mod tests {
         x509::{
             util::test_utils::{
                 load_another_ca, load_test_ca, load_test_cert_chain, load_test_invalid_ca_chain,
-                load_test_invalid_chain,
+                load_test_invalid_chain, load_test_p384_ca,
             },
             X509Error,
         },
@@ -276,6 +276,16 @@ mod tests {
         validator.allow_self_signed(true);
 
         let chain = vec![load_test_ca()].into();
+
+        X509CredentialValidator::validate_chain(&validator, &chain, Some(MlsTime::now())).unwrap();
+    }
+
+    #[test]
+    fn can_validate_p384_cert() {
+        let mut validator = X509Validator::new(vec![]).unwrap();
+        validator.allow_self_signed(true);
+
+        let chain = vec![load_test_p384_ca()].into();
 
         X509CredentialValidator::validate_chain(&validator, &chain, Some(MlsTime::now())).unwrap();
     }
