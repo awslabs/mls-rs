@@ -1,6 +1,6 @@
 [package]
 name = "mls-rs-provider-sqlite"
-version = "0.14.1"
+version = "0.15.0"
 edition = "2021"
 description = "SQLite based state storage for mls-rs"
 homepage = "https://github.com/awslabs/mls-rs"
@@ -9,7 +9,7 @@ keywords = ["mls", "mls-rs"]
 license = "Apache-2.0 OR MIT"
 
 [dependencies]
-mls-rs-core = { path = "../mls-rs-core", version = "0.20.0" }
+mls-rs-core = { path = "../mls-rs-core", version = "0.21.0" }
 thiserror = "1.0.40"
 wasm-bindgen = { version = "0.2", optional = true }
 zeroize = { version = "1", features = ["zeroize_derive"] }

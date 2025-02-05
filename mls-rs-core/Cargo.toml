@@ -1,6 +1,6 @@
 [package]
 name = "mls-rs-core"
-version = "0.20.2"
+version = "0.21.0"
 edition = "2021"
 description = "Core components and traits for mls-rs"
 homepage = "https://github.com/awslabs/mls-rs"
@@ -24,7 +24,7 @@ last_resort_key_package_ext = []
 post-quantum = []
 
 [dependencies]
-mls-rs-codec = { version = "0.5", path = "../mls-rs-codec", default-features = false}
+mls-rs-codec = { version = "0.6", path = "../mls-rs-codec", default-features = false}
 zeroize = { version = "1", default-features = false, features = ["alloc", "zeroize_derive"] }
 arbitrary = { version = "1", features = ["derive"], optional = true }
 thiserror = { version = "1.0.40", optional = true }
