@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1738693247120,
+  "lastUpdate": 1738741893878,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -20291,6 +20291,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 127687,
             "range": "± 1447",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ellen.arteca@gmail.com",
+            "name": "Ellen Arteca",
+            "username": "emarteca"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "44cec5b0dc87849273b2eda36c9ba56d740d0927",
+          "message": "Group API to encrypt/decrypt using the leaf-node HPKE keys (#248)\n\n* Adding functionality for a group member to HPKE encrypt a message to another member\r\n\r\n* formatting\r\n\r\n* adding a flag \"non_domain_separated_hpke_encrypt_decrypt\" to gate out the non-domain-separated HPKE encrypt/decrypt for members of a group\r\n\r\n* implementing safe encrypt/decrypt with context\r\n\r\n* adding comments\r\n\r\n* refactoring into helper functionsto avoid duplicating logic\r\n\r\n* fixing componentoperation\r\n\r\n* fixing the async build, fixing nostd build, fixing `the trait `FfiType` is not implemented for `HpkeCiphertext``\r\n\r\n* fixing various build errors\r\n\r\n* efficiency refactor of componentoperationlabel\r\n\r\n* update version number\r\n\r\n---------\r\n\r\nCo-authored-by: Ellen Arteca <emarteca@google.com>",
+          "timestamp": "2025-02-05T08:47:24+01:00",
+          "tree_id": "039adc3861f422b363edf3ac11e55623b8a3934f",
+          "url": "https://github.com/awslabs/mls-rs/commit/44cec5b0dc87849273b2eda36c9ba56d740d0927"
+        },
+        "date": 1738741893229,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 525990,
+            "range": "± 10286",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 533479,
+            "range": "± 7220",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 596126,
+            "range": "± 5578",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1280438,
+            "range": "± 50034",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7520127,
+            "range": "± 50625",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2618537,
+            "range": "± 106935",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7010624,
+            "range": "± 103046",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13061045,
+            "range": "± 150252",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 769457,
+            "range": "± 71869",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 851482,
+            "range": "± 10686",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 976185,
+            "range": "± 89044",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 20180,
+            "range": "± 193",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 65891,
+            "range": "± 941",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 127570,
+            "range": "± 971",
             "unit": "ns/iter"
           }
         ]
