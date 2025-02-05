@@ -1,6 +1,6 @@
 [package]
 name = "mls-rs-crypto-cryptokit"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 description = "CryptoKit based CryptoProvider for mls-rs"
 homepage = "https://github.com/awslabs/mls-rs"
