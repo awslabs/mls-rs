@@ -1,6 +1,6 @@
 [package]
 name = "mls-rs-identity-x509"
-version = "0.14.0"
+version = "0.15.0"
 edition = "2021"
 description = "X509 Identity utilities for mls-rs"
 homepage = "https://github.com/awslabs/mls-rs"
@@ -13,7 +13,7 @@ default = ["std"]
 std = ["mls-rs-core/std", "dep:thiserror"]
 
 [dependencies]
-mls-rs-core = { path = "../mls-rs-core", default-features = false, features = ["x509"], version = "0.20.0" }
+mls-rs-core = { path = "../mls-rs-core", default-features = false, features = ["x509"], version = "0.21.0" }
 maybe-async = "0.2.10"
 thiserror = { version = "1.0.40", optional = true }
 
