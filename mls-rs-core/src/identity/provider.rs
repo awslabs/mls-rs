@@ -68,8 +68,13 @@ pub trait IdentityProvider: Send + Sync {
 
     /// A unique identifier for `signing_identity`.
     ///
-    /// The MLS protocol requires that each member of a group has a unique
-    /// set of identifiers according to the application.
+    /// The MLS protocol requires that each member of a group has a
+    /// unique identifiers, which is determined by the application.
+    /// The identity must be stable over the lifetime of the group.
+    ///
+    /// The identity does not need to be consistent for different
+    /// group members: Alice might use `b"bob-123"` as the identity
+    /// for Bob, while Bob on his side could use `b"Bob"` for himself.
     async fn identity(
         &self,
         signing_identity: &SigningIdentity,
