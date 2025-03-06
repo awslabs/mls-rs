@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1741284462952,
+  "lastUpdate": 1741284486087,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -20831,6 +20831,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 129961,
             "range": "± 1523",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mgeisler@google.com",
+            "name": "Martin Geisler",
+            "username": "mgeisler"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9c369346ab2b34e2bf0ab53c4b92baa76a1d6a1b",
+          "message": "Expand `IdentityProvider::identity` docstring (#257)\n\nMake it more explicit what the requirements are to the bytes returned\nby the method.\n\nCo-authored-by: Tom Leavy <tomleavy@amazon.com>",
+          "timestamp": "2025-03-06T13:03:55-05:00",
+          "tree_id": "4c800a2971c6ded989602a41538fa46fb3c3585c",
+          "url": "https://github.com/awslabs/mls-rs/commit/9c369346ab2b34e2bf0ab53c4b92baa76a1d6a1b"
+        },
+        "date": 1741284484850,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 529341,
+            "range": "± 9535",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 537912,
+            "range": "± 6958",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 603525,
+            "range": "± 19096",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1260462,
+            "range": "± 28287",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7570106,
+            "range": "± 34209",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2634906,
+            "range": "± 103978",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7048245,
+            "range": "± 189578",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13226697,
+            "range": "± 141661",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 776169,
+            "range": "± 35246",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 864381,
+            "range": "± 9899",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 1000342,
+            "range": "± 38165",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 20572,
+            "range": "± 661",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 67961,
+            "range": "± 1261",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 129992,
+            "range": "± 1684",
             "unit": "ns/iter"
           }
         ]
