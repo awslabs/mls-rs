@@ -1,6 +1,6 @@
 [package]
 name = "mls-rs"
-version = "0.45.0"
+version = "0.45.1"
 edition = "2021"
 description = "An implementation of Messaging Layer Security (RFC 9420)"
 homepage = "https://github.com/awslabs/mls-rs"
@@ -78,7 +78,7 @@ serde = { version = "1.0", default-features = false, features = ["alloc", "deriv
 hex = { version = "^0.4.3", default-features = false, features = ["serde", "alloc"], optional = true }
 
 # Only for benchmarks
-mls-rs-crypto-awslc = { path = "../mls-rs-crypto-awslc", optional = true, version = "0.15" }
+mls-rs-crypto-awslc = { path = "../mls-rs-crypto-awslc", optional = true, version = "0.16" }
 
 # Async mode dependencies
 [target.'cfg(mls_build_async)'.dependencies]
