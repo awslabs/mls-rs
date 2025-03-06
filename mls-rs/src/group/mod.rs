@@ -631,12 +631,9 @@ where
     /// Returns `ciphertext` and `kem_output` inside `HpkeCiphertext`.
     ///
     /// WARNING: The message sender is not authenticated.
-    #[cfg(all(feature = "non_domain_separated_hpke_encrypt_decrypt", feature = "ffi"))]
-    #[cfg_attr(
-        not(mls_build_async),
-        maybe_async::must_be_sync,
-        safer_ffi_gen::safer_ffi_gen_ignore
-    )]
+    #[cfg(feature = "non_domain_separated_hpke_encrypt_decrypt")]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    #[cfg_attr(feature = "ffi", safer_ffi_gen::safer_ffi_gen_ignore)]
     pub async fn hpke_encrypt_to_recipient(
         &self,
         recipient_index: u32,
@@ -709,13 +706,9 @@ where
     /// current member.
     ///
     /// WARNING: The message sender is not authenticated.
-    #[cfg(all(feature = "non_domain_separated_hpke_encrypt_decrypt", feature = "ffi"))]
-    #[cfg_attr(
-        not(mls_build_async),
-        // all(feature = "ffi", not(test)),
-        maybe_async::must_be_sync,
-        safer_ffi_gen::safer_ffi_gen_ignore
-    )]
+    #[cfg(feature = "non_domain_separated_hpke_encrypt_decrypt")]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    #[cfg_attr(feature = "ffi", safer_ffi_gen::safer_ffi_gen_ignore)]
     pub async fn hpke_decrypt_for_current_member(
         &self,
         context_info: &[u8],

@@ -226,7 +226,7 @@ pub fn private_key_ecdh(
 ) -> Result<Vec<u8>, ErrorStack> {
     let mut ecdh_derive = Deriver::new(private_key)?;
     ecdh_derive.set_peer(remote_public)?;
-    ecdh_derive.derive_to_vec().map_err(Into::into)
+    ecdh_derive.derive_to_vec()
 }
 
 pub fn curve_from_nid(nid: Nid) -> Option<Curve> {
