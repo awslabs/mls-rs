@@ -78,7 +78,7 @@ impl MlsDecode for VarInt {
             .ok_or(Error::InvalidVarIntPrefix(prefix))?;
 
         let n = (1..count).try_fold(u32::from(first & 0x3f), |n, _| {
-            u8::mls_decode(reader).map(|b| n << 8 | u32::from(b))
+            u8::mls_decode(reader).map(|b| (n << 8) | u32::from(b))
         })?;
 
         let n = VarInt(n);
