@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1741284456137,
+  "lastUpdate": 1741284462952,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -20723,6 +20723,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 129791,
             "range": "± 2787",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ellen.arteca@gmail.com",
+            "name": "Ellen Arteca",
+            "username": "emarteca"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "930bde0d757c54c4c0aa9740374c194794d91f07",
+          "message": "Cleaning up `non_domain_separated_hpke_encrypt_decrypt` cfgs (#254)\n\n* Cleaning up the cfgs so users can use non_domain_separated_hpke_encrypt_decrypt without ffi feature enabled\n\n* patch number bump\n\n---------\n\nCo-authored-by: Ellen Arteca <emarteca@google.com>",
+          "timestamp": "2025-03-06T13:03:33-05:00",
+          "tree_id": "2eed6fbde8963c1102b9f0ef4ae6fb1115fc49f5",
+          "url": "https://github.com/awslabs/mls-rs/commit/930bde0d757c54c4c0aa9740374c194794d91f07"
+        },
+        "date": 1741284462285,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 529334,
+            "range": "± 6898",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 537525,
+            "range": "± 11220",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 599701,
+            "range": "± 7803",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1271065,
+            "range": "± 43227",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7564934,
+            "range": "± 32332",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2630625,
+            "range": "± 87546",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7099593,
+            "range": "± 97749",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13211863,
+            "range": "± 269661",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 772615,
+            "range": "± 6591",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 861266,
+            "range": "± 13023",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 995737,
+            "range": "± 10637",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 20531,
+            "range": "± 238",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 68090,
+            "range": "± 1143",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 129961,
+            "range": "± 1523",
             "unit": "ns/iter"
           }
         ]
