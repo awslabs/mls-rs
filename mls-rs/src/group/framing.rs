@@ -342,6 +342,45 @@ impl From<&PrivateMessage> for PrivateContentAAD {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum MlsMessageDescription<'a> {
+    Welcome {
+        key_package_refs: Vec<&'a KeyPackageRef>,
+        cipher_suite: CipherSuite,
+    },
+    ProtocolMessage {
+        group_id: &'a [u8],
+        epoch_id: u64,
+        content_type: ContentType, // commit, proposal, or application
+    },
+    GroupInfo,
+    KeyPackage,
+}
+
+impl MlsMessage {
+    pub fn description(&self) -> MlsMessageDescription<'_> {
+        match &self.payload {
+            MlsMessagePayload::Welcome(w) => MlsMessageDescription::Welcome {
+                key_package_refs: w.secrets.iter().map(|s| &s.new_member).collect(),
+                cipher_suite: w.cipher_suite,
+            },
+            MlsMessagePayload::Plain(p) => MlsMessageDescription::ProtocolMessage {
+                group_id: &p.content.group_id,
+                epoch_id: p.content.epoch,
+                content_type: p.content.content_type(),
+            },
+            #[cfg(feature = "private_message")]
+            MlsMessagePayload::Cipher(c) => MlsMessageDescription::ProtocolMessage {
+                group_id: &c.group_id,
+                epoch_id: c.epoch,
+                content_type: c.content_type,
+            },
+            MlsMessagePayload::GroupInfo(_) => MlsMessageDescription::GroupInfo,
+            MlsMessagePayload::KeyPackage(_) => MlsMessageDescription::KeyPackage,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(
     all(feature = "ffi", not(test)),
@@ -675,6 +714,7 @@ pub(crate) mod test_utils {
 #[cfg(feature = "private_message")]
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
     use assert_matches::assert_matches;
 
     use crate::{
@@ -682,8 +722,10 @@ mod tests {
         crypto::test_utils::test_cipher_suite_provider,
         group::{
             framing::test_utils::get_test_ciphertext_content,
-            proposal_ref::test_utils::auth_content_from_proposal, RemoveProposal,
+            proposal_ref::test_utils::auth_content_from_proposal, test_utils::test_group,
+            RemoveProposal,
         },
+        key_package::test_utils::test_key_package_message,
     };
 
     use super::*;
@@ -744,5 +786,47 @@ mod tests {
             .unwrap();
 
         assert_eq!(computed_ref, expected_ref.to_vec());
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn message_description() {
+        let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+
+        let message = group.commit(vec![]).await.unwrap();
+
+        let expected = MlsMessageDescription::ProtocolMessage {
+            group_id: group.group_id(),
+            epoch_id: group.context().epoch,
+            content_type: ContentType::Commit,
+        };
+
+        assert_eq!(message.commit_message.description(), expected);
+
+        group.apply_pending_commit().await.unwrap();
+
+        let message = group
+            .encrypt_application_message(b"123", vec![])
+            .await
+            .unwrap();
+
+        let expected = MlsMessageDescription::ProtocolMessage {
+            group_id: group.group_id(),
+            epoch_id: group.context().epoch,
+            content_type: ContentType::Application,
+        };
+
+        assert_eq!(message.description(), expected);
+
+        let group_info = group
+            .group_info_message_allowing_ext_commit(true)
+            .await
+            .unwrap();
+
+        assert_eq!(group_info.description(), MlsMessageDescription::GroupInfo);
+
+        let key_package =
+            test_key_package_message(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "something").await;
+
+        assert_eq!(key_package.description(), MlsMessageDescription::KeyPackage);
     }
 }
