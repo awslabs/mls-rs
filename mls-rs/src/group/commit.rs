@@ -716,7 +716,9 @@ where
                 })?;
 
                 if let Some(ref ratchet_tree_ext) = ratchet_tree_ext {
-                    extensions.set_from(ratchet_tree_ext.clone())?;
+                    if !commit_options.always_out_of_band_ratchet_tree {
+                        extensions.set_from(ratchet_tree_ext.clone())?;
+                    }
                 }
 
                 let info = self
@@ -822,7 +824,8 @@ where
         let commit_message = self.format_for_wire(auth_content.clone()).await?;
 
         // TODO is it necessary to clone the tree here? or can we just output serialized bytes?
-        let ratchet_tree = (!commit_options.ratchet_tree_extension)
+        let ratchet_tree = (!commit_options.ratchet_tree_extension
+            || commit_options.always_out_of_band_ratchet_tree)
             .then(|| ExportedTree::new(provisional_state.public_tree.nodes.clone()));
 
         let pending_reinit = provisional_state
@@ -1485,6 +1488,66 @@ mod tests {
         let commit = group.commit(vec![]).await.unwrap();
 
         assert!(commit.external_commit_group_info.is_none());
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn commit_includes_tree_out_of_bounds_and_not_in_external_group_info_if_requested_tree_ext_off(
+    ) {
+        let mut group = test_group_custom(
+            TEST_PROTOCOL_VERSION,
+            TEST_CIPHER_SUITE,
+            Default::default(),
+            None,
+            Some(
+                CommitOptions::new()
+                    .with_always_out_of_band_ratchet_tree(true)
+                    .with_ratchet_tree_extension(false)
+                    .with_allow_external_commit(true),
+            ),
+        )
+        .await;
+
+        let commit = group.commit(vec![]).await.unwrap();
+
+        assert!(commit.ratchet_tree.is_some());
+
+        let info = commit
+            .external_commit_group_info
+            .unwrap()
+            .into_group_info()
+            .unwrap();
+
+        assert!(!info.extensions.has_extension(ExtensionType::RATCHET_TREE));
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn commit_includes_tree_out_of_bounds_and_not_in_external_group_info_if_requested_tree_ext_on(
+    ) {
+        let mut group = test_group_custom(
+            TEST_PROTOCOL_VERSION,
+            TEST_CIPHER_SUITE,
+            Default::default(),
+            None,
+            Some(
+                CommitOptions::new()
+                    .with_always_out_of_band_ratchet_tree(true)
+                    .with_ratchet_tree_extension(true)
+                    .with_allow_external_commit(true),
+            ),
+        )
+        .await;
+
+        let commit = group.commit(vec![]).await.unwrap();
+
+        assert!(commit.ratchet_tree.is_some());
+
+        let info = commit
+            .external_commit_group_info
+            .unwrap()
+            .into_group_info()
+            .unwrap();
+
+        assert!(!info.extensions.has_extension(ExtensionType::RATCHET_TREE));
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
