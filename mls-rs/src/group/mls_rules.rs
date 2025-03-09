@@ -38,6 +38,9 @@ pub struct CommitOptions {
     pub ratchet_tree_extension: bool,
     pub single_welcome_message: bool,
     pub allow_external_commit: bool,
+    /// Include the ratchet tree out of band and not in the external group info, regardless
+    /// of the presence of the ratchet tree extension (doesn't affect commits/welcome).
+    pub always_out_of_band_ratchet_tree: bool,
 }
 
 impl Default for CommitOptions {
@@ -47,6 +50,7 @@ impl Default for CommitOptions {
             ratchet_tree_extension: true,
             single_welcome_message: true,
             allow_external_commit: false,
+            always_out_of_band_ratchet_tree: false,
         }
     }
 }
@@ -80,6 +84,16 @@ impl CommitOptions {
     pub fn with_allow_external_commit(self, allow_external_commit: bool) -> Self {
         Self {
             allow_external_commit,
+            ..self
+        }
+    }
+
+    pub fn with_always_out_of_band_ratchet_tree(
+        self,
+        always_out_of_band_ratchet_tree: bool,
+    ) -> Self {
+        Self {
+            always_out_of_band_ratchet_tree,
             ..self
         }
     }
