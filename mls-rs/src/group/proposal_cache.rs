@@ -4060,7 +4060,7 @@ mod tests {
             .send()
             .await;
 
-        assert_matches!(res, Err(MlsError::InvalidProposalTypeForSender { .. }))
+        assert_matches!(res, Err(MlsError::InvalidProposalTypeForSender))
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]

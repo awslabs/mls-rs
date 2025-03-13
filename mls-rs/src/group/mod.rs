@@ -3023,12 +3023,27 @@ mod tests {
             })
             .await;
 
-        let with_padding = test_group
+        let with_step_function_padding = test_group
             .encrypt_application_message(&random_bytes(150), vec![])
             .await
             .unwrap();
 
-        assert!(with_padding.mls_encoded_len() > without_padding.mls_encoded_len());
+        assert!(with_step_function_padding.mls_encoded_len() > without_padding.mls_encoded_len());
+
+        let mut test_group = test_group_custom_config(protocol_version, cipher_suite, |b| {
+            b.mls_rules(
+                DefaultMlsRules::default()
+                    .with_encryption_options(EncryptionOptions::new(true, PaddingMode::Padme)),
+            )
+        })
+        .await;
+
+        let with_padme_padding = test_group
+            .encrypt_application_message(&random_bytes(150), vec![])
+            .await
+            .unwrap();
+
+        assert!(with_padme_padding.mls_encoded_len() > without_padding.mls_encoded_len());
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
