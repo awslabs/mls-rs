@@ -321,23 +321,29 @@ mod test {
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_encrypt_decrypt() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
-            let mut test_data = test_data(cipher_suite).await;
-            let mut receiver_group = test_data.group.clone();
+            for padding in [
+                PaddingMode::None,
+                PaddingMode::StepFunction,
+                PaddingMode::Padme,
+            ] {
+                let mut test_data = test_data(cipher_suite).await;
+                let mut receiver_group = test_data.group.clone();
 
-            let mut ciphertext_processor = test_processor(&mut test_data.group, cipher_suite);
+                let mut ciphertext_processor = test_processor(&mut test_data.group, cipher_suite);
 
-            let ciphertext = ciphertext_processor
-                .seal(test_data.content.clone(), PaddingMode::StepFunction)
-                .await
-                .unwrap();
+                let ciphertext = ciphertext_processor
+                    .seal(test_data.content.clone(), padding)
+                    .await
+                    .unwrap();
 
-            receiver_group.private_tree.self_index = LeafIndex::new(1);
+                receiver_group.private_tree.self_index = LeafIndex::new(1);
 
-            let mut receiver_processor = test_processor(&mut receiver_group, cipher_suite);
+                let mut receiver_processor = test_processor(&mut receiver_group, cipher_suite);
 
-            let decrypted = receiver_processor.open(&ciphertext).await.unwrap();
+                let decrypted = receiver_processor.open(&ciphertext).await.unwrap();
 
-            assert_eq!(decrypted, test_data.content);
+                assert_eq!(decrypted, test_data.content);
+            }
         }
     }
 
@@ -357,6 +363,13 @@ mod test {
             .unwrap();
 
         assert!(ciphertext_step.ciphertext.len() > ciphertext_no_pad.ciphertext.len());
+
+        let ciphertext_padme = ciphertext_processor
+            .seal(test_data.content.clone(), PaddingMode::Padme)
+            .await
+            .unwrap();
+
+        assert!(ciphertext_padme.ciphertext.len() > ciphertext_no_pad.ciphertext.len());
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -395,16 +408,22 @@ mod test {
         let mut receiver_group = test_data.group.clone();
         let mut ciphertext_processor = test_processor(&mut test_data.group, TEST_CIPHER_SUITE);
 
-        let mut ciphertext = ciphertext_processor
-            .seal(test_data.content.clone(), PaddingMode::StepFunction)
-            .await
-            .unwrap();
+        for padding in [
+            PaddingMode::None,
+            PaddingMode::StepFunction,
+            PaddingMode::Padme,
+        ] {
+            let mut ciphertext = ciphertext_processor
+                .seal(test_data.content.clone(), padding)
+                .await
+                .unwrap();
 
-        ciphertext.ciphertext = random_bytes(ciphertext.ciphertext.len());
-        receiver_group.private_tree.self_index = LeafIndex::new(1);
+            ciphertext.ciphertext = random_bytes(ciphertext.ciphertext.len());
+            receiver_group.private_tree.self_index = LeafIndex::new(1);
 
-        let res = ciphertext_processor.open(&ciphertext).await;
+            let res = ciphertext_processor.open(&ciphertext).await;
 
-        assert!(res.is_err());
+            assert!(res.is_err());
+        }
     }
 }
