@@ -1201,6 +1201,56 @@ where
             .await
     }
 
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn validate_public_message(
+        &mut self,
+        msg: MlsMessage,
+    ) -> Result<AuthenticatedContent, MlsError> {
+        // self.check_metadata(&msg)?;
+        let plaintext = match msg.payload {
+            MlsMessagePayload::Plain(ref plaintext) => plaintext.clone(),
+            _ => return Err(MlsError::UnexpectedMessageType),
+        };
+        let epoch_id = msg.epoch().ok_or(MlsError::EpochNotFound)?;
+        let auth_content = if epoch_id == self.context().epoch {
+            let auth_content = verify_plaintext_authentication(
+                &self.cipher_suite_provider,
+                plaintext,
+                Some(&self.key_schedule.membership_key),
+                &self.state.context,
+                SignaturePublicKeysContainer::RatchetTree(&self.state.public_tree),
+            )
+            .await?;
+
+            Ok::<_, MlsError>(auth_content)
+        } else {
+            #[cfg(feature = "prior_epoch")]
+            {
+                let epoch = self
+                    .state_repo
+                    .get_epoch_mut(epoch_id)
+                    .await?
+                    .ok_or(MlsError::EpochNotFound)?;
+
+                let auth_content = verify_plaintext_authentication(
+                    &self.cipher_suite_provider,
+                    plaintext,
+                    Some(&epoch.membership_key),
+                    &epoch.context,
+                    SignaturePublicKeysContainer::List(&epoch.signature_public_keys),
+                )
+                .await?;
+
+                Ok(auth_content)
+            }
+
+            #[cfg(not(feature = "prior_epoch"))]
+            Err(MlsError::EpochNotFound)
+        }?;
+
+        Ok(auth_content)
+    }
+
     /// Delete all sent and received proposals cached for commit.
     #[cfg(feature = "by_ref_proposal")]
     pub fn clear_proposal_cache(&mut self) {
@@ -1971,7 +2021,8 @@ where
             &self.cipher_suite_provider,
             message,
             Some(&self.key_schedule.membership_key),
-            &self.state,
+            &self.state.context,
+            SignaturePublicKeysContainer::RatchetTree(&self.state.public_tree),
         )
         .await?;
 
@@ -2668,6 +2719,29 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(plaintext.to_vec(), hpke_decrypted);
+    }
+
+    #[cfg(feature = "prior_epoch")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_can_validate_proposal_from_past_epoch() {
+        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (mut bob, _) = alice.join("bob").await;
+
+        let custom_proposal = CustomProposal::new(TEST_CUSTOM_PROPOSAL_TYPE, vec![0, 1, 2]);
+        let proposal = alice
+            .propose_custom(custom_proposal.clone(), vec![])
+            .await
+            .unwrap();
+        // let key_package =
+        //     test_key_package_message(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "foobar").await;
+
+        // let proposal = groups[0].propose_add(key_package, vec![]).await.unwrap();
+
+        // add carol to the group
+        let (_carol, commit) = alice.join("carol").await;
+        bob.process_incoming_message(commit).await.unwrap();
+
+        let auth_content = bob.validate_public_message(proposal).await.unwrap();
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]

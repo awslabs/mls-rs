@@ -37,16 +37,14 @@ pub(crate) async fn verify_plaintext_authentication<P: CipherSuiteProvider>(
     cipher_suite_provider: &P,
     plaintext: PublicMessage,
     membership_key: Option<&[u8]>,
-    state: &GroupState,
+    context: &GroupContext,
+    signature_keys_container: SignaturePublicKeysContainer<'_>,
 ) -> Result<AuthenticatedContent, MlsError> {
     let tag = plaintext.membership_tag.clone();
     let auth_content = AuthenticatedContent::from(plaintext);
-    let context = &state.context;
 
     #[cfg(feature = "by_ref_proposal")]
     let external_signers = external_signers(context);
-
-    let current_tree = &state.public_tree;
 
     // Verify the membership tag if needed
     match &auth_content.content.sender {
@@ -78,7 +76,7 @@ pub(crate) async fn verify_plaintext_authentication<P: CipherSuiteProvider>(
     // from the credential stored at the leaf in the tree indicated by the sender field.
     verify_auth_content_signature(
         cipher_suite_provider,
-        SignaturePublicKeysContainer::RatchetTree(current_tree),
+        signature_keys_container,
         context,
         &auth_content,
         #[cfg(feature = "by_ref_proposal")]
@@ -329,7 +327,8 @@ mod tests {
             &env.bob.cipher_suite_provider,
             message,
             Some(&env.bob.key_schedule.membership_key),
-            &env.bob.state,
+            &env.bob.state.context,
+            super::SignaturePublicKeysContainer::RatchetTree(&env.bob.state.public_tree),
         )
         .await
         .unwrap();
@@ -375,7 +374,8 @@ mod tests {
             &env.bob.cipher_suite_provider,
             message,
             Some(&env.bob.key_schedule.membership_key),
-            &env.bob.state,
+            &env.bob.state.context,
+            SignaturePublicKeysContainer::RatchetTree(&env.bob.state.public_tree),
         )
         .await;
 
@@ -392,7 +392,8 @@ mod tests {
             &env.bob.cipher_suite_provider,
             message,
             Some(&env.bob.key_schedule.membership_key),
-            &env.bob.state,
+            &env.bob.state.context,
+            SignaturePublicKeysContainer::RatchetTree(&env.bob.state.public_tree),
         )
         .await;
 
@@ -409,7 +410,8 @@ mod tests {
             &env.bob.cipher_suite_provider,
             message,
             Some(&env.bob.key_schedule.membership_key),
-            &env.bob.state,
+            &env.bob.state.context,
+            SignaturePublicKeysContainer::RatchetTree(&env.bob.state.public_tree),
         )
         .await;
 
@@ -472,7 +474,8 @@ mod tests {
             &test_group.cipher_suite_provider,
             message,
             Some(&test_group.key_schedule.membership_key),
-            &test_group.state,
+            &test_group.state.context,
+            SignaturePublicKeysContainer::RatchetTree(&test_group.state.public_tree),
         )
         .await
         .unwrap();
@@ -492,7 +495,8 @@ mod tests {
             &test_group.cipher_suite_provider,
             message,
             Some(&test_group.key_schedule.membership_key),
-            &test_group.state,
+            &test_group.state.context,
+            SignaturePublicKeysContainer::RatchetTree(&test_group.state.public_tree),
         )
         .await;
 
@@ -517,7 +521,8 @@ mod tests {
             &test_group.cipher_suite_provider,
             message,
             Some(&test_group.key_schedule.membership_key),
-            &test_group.state,
+            &test_group.state.context,
+            SignaturePublicKeysContainer::RatchetTree(&test_group.state.public_tree),
         )
         .await;
 
@@ -540,7 +545,8 @@ mod tests {
             &test_group.cipher_suite_provider,
             message,
             Some(&test_group.key_schedule.membership_key),
-            &test_group.state,
+            &test_group.state.context,
+            SignaturePublicKeysContainer::RatchetTree(&test_group.state.public_tree),
         )
         .await;
 
@@ -583,7 +589,8 @@ mod tests {
             &test_group.cipher_suite_provider,
             message,
             Some(&test_group.key_schedule.membership_key),
-            &test_group.state,
+            &test_group.state.context,
+            SignaturePublicKeysContainer::RatchetTree(&test_group.state.public_tree),
         )
         .await
         .unwrap();
@@ -606,7 +613,8 @@ mod tests {
             &test_group.cipher_suite_provider,
             message,
             Some(&test_group.key_schedule.membership_key),
-            &test_group.state,
+            &test_group.state.context,
+            SignaturePublicKeysContainer::RatchetTree(&test_group.state.public_tree),
         )
         .await;
 
@@ -632,7 +640,8 @@ mod tests {
             &test_group.cipher_suite_provider,
             message,
             Some(&test_group.key_schedule.membership_key),
-            &test_group.state,
+            &test_group.state.context,
+            SignaturePublicKeysContainer::RatchetTree(&test_group.state.public_tree),
         )
         .await;
 
