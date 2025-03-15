@@ -1201,10 +1201,31 @@ where
             .await
     }
 
+    /// Validate a custom proposal message, verifying its signature and membership
+    /// tag. Can be a proposal from the current or a prior epoch.
+    /// Returns the `data` inside the custom proposal, or an error if it fails to
+    /// validate or if the message is not a custom proposal.
+    #[cfg(any(feature = "prior_epoch", feature = "custom_proposal"))]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn validate_custom_proposal(
+        &mut self,
+        msg: &MlsMessage,
+    ) -> Result<Vec<u8>, MlsError> {
+        let auth_content = self.validate_public_message(msg).await?;
+        let proposal = match auth_content.content.content {
+            Content::Proposal(p) => p,
+            _ => return Err(MlsError::UnexpectedMessageType),
+        };
+        match *proposal {
+            Proposal::Custom(c) => Ok(c.data().to_vec()),
+            _ => Err(MlsError::UnexpectedMessageType),
+        }
+    }
+
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn validate_public_message(
         &mut self,
-        msg: MlsMessage,
+        msg: &MlsMessage,
     ) -> Result<AuthenticatedContent, MlsError> {
         // self.check_metadata(&msg)?;
         let plaintext = match msg.payload {
@@ -2723,11 +2744,12 @@ mod tests {
 
     #[cfg(any(feature = "prior_epoch", feature = "custom_proposal"))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn test_can_validate_custom_proposal_from_past_epoch() {
+    async fn test_can_validate_and_get_data_custom_proposal_from_past_epoch() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let (mut bob, _) = alice.join("bob").await;
 
-        let custom_proposal = CustomProposal::new(TEST_CUSTOM_PROPOSAL_TYPE, vec![0, 1, 2]);
+        let data = vec![1, 2, 3];
+        let custom_proposal = CustomProposal::new(TEST_CUSTOM_PROPOSAL_TYPE, data.clone());
         let proposal = alice
             .propose_custom(custom_proposal.clone(), vec![])
             .await
@@ -2736,8 +2758,25 @@ mod tests {
         // add carol to the group
         let (_carol, commit) = alice.join("carol").await;
         bob.process_incoming_message(commit).await.unwrap();
+        let validated_data = bob.validate_custom_proposal(&proposal).await.unwrap();
+        assert_eq!(data, validated_data);
+    }
 
-        bob.validate_public_message(proposal).await.unwrap();
+    #[cfg(any(feature = "prior_epoch", feature = "custom_proposal"))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_can_validate_and_get_data_custom_proposal_from_current_epoch() {
+        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (mut bob, _) = alice.join("bob").await;
+
+        let data = vec![1, 2, 3];
+        let custom_proposal = CustomProposal::new(TEST_CUSTOM_PROPOSAL_TYPE, data.clone());
+        let proposal = alice
+            .propose_custom(custom_proposal.clone(), vec![])
+            .await
+            .unwrap();
+
+        let validated_data = bob.validate_custom_proposal(&proposal).await.unwrap();
+        assert_eq!(data, validated_data);
     }
 
     #[cfg(any(feature = "prior_epoch"))]
@@ -2752,7 +2791,23 @@ mod tests {
         let (_carol, commit) = alice.join("carol").await;
         bob.process_incoming_message(commit).await.unwrap();
 
-        bob.validate_public_message(proposal).await.unwrap();
+        bob.validate_public_message(&proposal).await.unwrap();
+    }
+
+    #[cfg(any(feature = "prior_epoch"))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_cannot_validate_custom_proposal_for_non_custom_proposal() {
+        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (mut bob, _) = alice.join("bob").await;
+
+        let proposal = alice.propose_update(Vec::new()).await.unwrap();
+
+        // add carol to the group
+        let (_carol, commit) = alice.join("carol").await;
+        bob.process_incoming_message(commit).await.unwrap();
+
+        let data_err = bob.validate_custom_proposal(&proposal).await;
+        assert_matches!(data_err, Err(MlsError::UnexpectedMessageType));
     }
 
     #[cfg(any(feature = "prior_epoch"))]
@@ -2773,7 +2828,7 @@ mod tests {
         let (_carol, commit) = alice.join("carol").await;
         bob.process_incoming_message(commit).await.unwrap();
 
-        bob.validate_public_message(old_commit_output.commit_message)
+        bob.validate_public_message(&old_commit_output.commit_message)
             .await
             .unwrap();
     }
@@ -2790,7 +2845,7 @@ mod tests {
             .await
             .unwrap();
 
-        bob.validate_public_message(proposal).await.unwrap();
+        bob.validate_public_message(&proposal).await.unwrap();
     }
 
     #[cfg(any(feature = "prior_epoch"))]
@@ -2804,7 +2859,7 @@ mod tests {
             .await
             .unwrap();
 
-        let auth_content = bob.validate_public_message(res).await;
+        let auth_content = bob.validate_public_message(&res).await;
         assert_matches!(auth_content, Err(MlsError::UnexpectedMessageType));
     }
 
