@@ -17,10 +17,7 @@ use crate::{
 #[cfg(feature = "by_ref_proposal")]
 use crate::{extension::ExternalSendersExt, identity::SigningIdentity};
 
-use super::{
-    message_signature::{AuthenticatedContent, MessageSigningContext},
-    state::GroupState,
-};
+use super::message_signature::{AuthenticatedContent, MessageSigningContext};
 
 #[cfg(feature = "by_ref_proposal")]
 use super::proposal::Proposal;
