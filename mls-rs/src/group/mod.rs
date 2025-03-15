@@ -2760,7 +2760,6 @@ mod tests {
         feature = "by_ref_proposal",
         feature = "validate_public_message_prior_epoch"
     ))]
-    #[cfg_attr(feature = "ffi", safer_ffi_gen::safer_ffi_gen_ignore)]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_can_validate_and_get_data_custom_proposal_from_past_epoch() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
@@ -2786,7 +2785,6 @@ mod tests {
         feature = "by_ref_proposal",
         feature = "validate_public_message_prior_epoch"
     ))]
-    #[cfg_attr(feature = "ffi", safer_ffi_gen::safer_ffi_gen_ignore)]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_can_validate_and_get_data_custom_proposal_from_current_epoch() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
@@ -2807,7 +2805,6 @@ mod tests {
         feature = "prior_epoch",
         feature = "validate_public_message_prior_epoch"
     ))]
-    #[cfg_attr(feature = "ffi", safer_ffi_gen::safer_ffi_gen_ignore)]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_can_validate_non_custom_proposal_from_past_epoch() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
@@ -2827,7 +2824,6 @@ mod tests {
         feature = "by_ref_proposal",
         feature = "validate_public_message_prior_epoch"
     ))]
-    #[cfg_attr(feature = "ffi", safer_ffi_gen::safer_ffi_gen_ignore)]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_cannot_validate_custom_proposal_for_non_custom_proposal() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
@@ -2847,7 +2843,6 @@ mod tests {
         feature = "prior_epoch",
         feature = "validate_public_message_prior_epoch"
     ))]
-    #[cfg_attr(feature = "ffi", safer_ffi_gen::safer_ffi_gen_ignore)]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_can_validate_commit_from_past_epoch() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
@@ -2875,7 +2870,6 @@ mod tests {
         feature = "custom_proposal",
         feature = "validate_public_message_prior_epoch"
     ))]
-    #[cfg_attr(feature = "ffi", safer_ffi_gen::safer_ffi_gen_ignore)]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_can_validate_custom_proposal_from_current_epoch() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
@@ -2894,7 +2888,6 @@ mod tests {
         feature = "prior_epoch",
         feature = "validate_public_message_prior_epoch"
     ))]
-    #[cfg_attr(feature = "ffi", safer_ffi_gen::safer_ffi_gen_ignore)]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_cannot_validate_non_public_message() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
