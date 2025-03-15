@@ -1203,7 +1203,7 @@ where
 
     /// Validate a custom proposal message, verifying its signature and membership
     /// tag. Can be a proposal from the current or a prior epoch.
-    /// Returns the `data` inside the custom proposal, or an error if it fails to
+    /// Returns the `authenticated_data` of the custom proposal, or an error if it fails to
     /// validate or if the message is not a custom proposal.
     #[cfg(all(
         feature = "custom_proposal",
@@ -1221,10 +1221,10 @@ where
             Content::Proposal(p) => p,
             _ => return Err(MlsError::UnexpectedMessageType),
         };
-        match *proposal {
-            Proposal::Custom(c) => Ok(c.data().to_vec()),
-            _ => Err(MlsError::UnexpectedMessageType),
+        if !matches!(*proposal, Proposal::Custom(_)) {
+            return Err(MlsError::UnexpectedMessageType);
         }
+        Ok(auth_content.content.authenticated_data)
     }
 
     // Only used for custom proposals right now; consider removing this feature flag
@@ -2766,9 +2766,9 @@ mod tests {
         let (mut bob, _) = alice.join("bob").await;
 
         let data = vec![1, 2, 3];
-        let custom_proposal = CustomProposal::new(TEST_CUSTOM_PROPOSAL_TYPE, data.clone());
+        let custom_proposal = CustomProposal::new(TEST_CUSTOM_PROPOSAL_TYPE, vec![4, 5, 6]);
         let proposal = alice
-            .propose_custom(custom_proposal.clone(), vec![])
+            .propose_custom(custom_proposal.clone(), data.clone())
             .await
             .unwrap();
 
@@ -2791,9 +2791,9 @@ mod tests {
         let (mut bob, _) = alice.join("bob").await;
 
         let data = vec![1, 2, 3];
-        let custom_proposal = CustomProposal::new(TEST_CUSTOM_PROPOSAL_TYPE, data.clone());
+        let custom_proposal = CustomProposal::new(TEST_CUSTOM_PROPOSAL_TYPE, vec![3, 4, 5]);
         let proposal = alice
-            .propose_custom(custom_proposal.clone(), vec![])
+            .propose_custom(custom_proposal.clone(), data.clone())
             .await
             .unwrap();
 
