@@ -8,7 +8,7 @@ use alloc::{vec, vec::Vec};
 use crate::{
     client::MlsError,
     crypto::SignaturePublicKey,
-    group::{GroupContext, PublicMessage, Sender},
+    group::{GroupContext, MembershipTag, PublicMessage, Sender},
     signer::Signable,
     tree_kem::{node::LeafIndex, TreeKemPublic},
     CipherSuiteProvider,
@@ -18,7 +18,6 @@ use crate::{
 use crate::{extension::ExternalSendersExt, identity::SigningIdentity};
 
 use super::{
-    key_schedule::KeySchedule,
     message_signature::{AuthenticatedContent, MessageSigningContext},
     state::GroupState,
 };
@@ -37,7 +36,7 @@ pub(crate) enum SignaturePublicKeysContainer<'a> {
 pub(crate) async fn verify_plaintext_authentication<P: CipherSuiteProvider>(
     cipher_suite_provider: &P,
     plaintext: PublicMessage,
-    key_schedule: Option<&KeySchedule>,
+    membership_key: Option<&[u8]>,
     state: &GroupState,
 ) -> Result<AuthenticatedContent, MlsError> {
     let tag = plaintext.membership_tag.clone();
@@ -52,14 +51,18 @@ pub(crate) async fn verify_plaintext_authentication<P: CipherSuiteProvider>(
     // Verify the membership tag if needed
     match &auth_content.content.sender {
         Sender::Member(_) => {
-            if let Some(key_schedule) = key_schedule {
-                let expected_tag = &key_schedule
-                    .get_membership_tag(&auth_content, context, cipher_suite_provider)
-                    .await?;
+            if let Some(membership_key) = membership_key {
+                let expected_tag = MembershipTag::create(
+                    &auth_content,
+                    context,
+                    membership_key,
+                    cipher_suite_provider,
+                )
+                .await?;
 
                 let plaintext_tag = tag.as_ref().ok_or(MlsError::InvalidMembershipTag)?;
 
-                if expected_tag != plaintext_tag {
+                if &expected_tag != plaintext_tag {
                     return Err(MlsError::InvalidMembershipTag);
                 }
             }
@@ -325,7 +328,7 @@ mod tests {
         verify_plaintext_authentication(
             &env.bob.cipher_suite_provider,
             message,
-            Some(&env.bob.key_schedule),
+            Some(&env.bob.key_schedule.membership_key),
             &env.bob.state,
         )
         .await
@@ -371,7 +374,7 @@ mod tests {
         let res = verify_plaintext_authentication(
             &env.bob.cipher_suite_provider,
             message,
-            Some(&env.bob.key_schedule),
+            Some(&env.bob.key_schedule.membership_key),
             &env.bob.state,
         )
         .await;
@@ -388,7 +391,7 @@ mod tests {
         let res = verify_plaintext_authentication(
             &env.bob.cipher_suite_provider,
             message,
-            Some(&env.bob.key_schedule),
+            Some(&env.bob.key_schedule.membership_key),
             &env.bob.state,
         )
         .await;
@@ -405,7 +408,7 @@ mod tests {
         let res = verify_plaintext_authentication(
             &env.bob.cipher_suite_provider,
             message,
-            Some(&env.bob.key_schedule),
+            Some(&env.bob.key_schedule.membership_key),
             &env.bob.state,
         )
         .await;
@@ -468,7 +471,7 @@ mod tests {
         verify_plaintext_authentication(
             &test_group.cipher_suite_provider,
             message,
-            Some(&test_group.key_schedule),
+            Some(&test_group.key_schedule.membership_key),
             &test_group.state,
         )
         .await
@@ -488,7 +491,7 @@ mod tests {
         let res = verify_plaintext_authentication(
             &test_group.cipher_suite_provider,
             message,
-            Some(&test_group.key_schedule),
+            Some(&test_group.key_schedule.membership_key),
             &test_group.state,
         )
         .await;
@@ -513,7 +516,7 @@ mod tests {
         let res: Result<AuthenticatedContent, MlsError> = verify_plaintext_authentication(
             &test_group.cipher_suite_provider,
             message,
-            Some(&test_group.key_schedule),
+            Some(&test_group.key_schedule.membership_key),
             &test_group.state,
         )
         .await;
@@ -536,7 +539,7 @@ mod tests {
         let res = verify_plaintext_authentication(
             &test_group.cipher_suite_provider,
             message,
-            Some(&test_group.key_schedule),
+            Some(&test_group.key_schedule.membership_key),
             &test_group.state,
         )
         .await;
@@ -579,7 +582,7 @@ mod tests {
         verify_plaintext_authentication(
             &test_group.cipher_suite_provider,
             message,
-            Some(&test_group.key_schedule),
+            Some(&test_group.key_schedule.membership_key),
             &test_group.state,
         )
         .await
@@ -602,7 +605,7 @@ mod tests {
         let res = verify_plaintext_authentication(
             &test_group.cipher_suite_provider,
             message,
-            Some(&test_group.key_schedule),
+            Some(&test_group.key_schedule.membership_key),
             &test_group.state,
         )
         .await;
@@ -628,7 +631,7 @@ mod tests {
         let res = verify_plaintext_authentication(
             &test_group.cipher_suite_provider,
             message,
-            Some(&test_group.key_schedule),
+            Some(&test_group.key_schedule.membership_key),
             &test_group.state,
         )
         .await;

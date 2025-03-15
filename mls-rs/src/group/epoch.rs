@@ -30,6 +30,7 @@ pub(crate) struct PriorEpoch {
     pub(crate) self_index: LeafIndex,
     pub(crate) secrets: EpochSecrets,
     pub(crate) signature_public_keys: Vec<Option<SignaturePublicKey>>,
+    pub(crate) membership_key: Vec<u8>,
 }
 
 #[cfg(feature = "prior_epoch")]
@@ -160,6 +161,7 @@ pub(crate) mod test_utils {
             self_index: LeafIndex(0),
             secrets: get_test_epoch_secrets(cipher_suite),
             signature_public_keys: Default::default(),
+            membership_key: Default::default(),
         }
     }
 }

@@ -1900,6 +1900,7 @@ impl<C: ClientConfig> Group<C> {
             self_index: self.private_tree.self_index,
             secrets: self.epoch_secrets.clone(),
             signature_public_keys,
+            membership_key: self.key_schedule.membership_key.to_vec(),
         };
 
         self.state_repo.insert(past_epoch).await?;
@@ -1969,7 +1970,7 @@ where
         let auth_content = verify_plaintext_authentication(
             &self.cipher_suite_provider,
             message,
-            Some(&self.key_schedule),
+            Some(&self.key_schedule.membership_key),
             &self.state,
         )
         .await?;
