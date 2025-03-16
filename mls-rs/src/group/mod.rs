@@ -1203,8 +1203,8 @@ where
 
     /// Validate a custom proposal message, verifying its signature and membership
     /// tag. Can be a proposal from the current or a prior epoch.
-    /// Returns the `authenticated_data` of the custom proposal, or an error if it fails to
-    /// validate or if the message is not a custom proposal.
+    /// Returns the `authenticated_data` and sender of the custom proposal, or an error if
+    /// it fails to validate or if the message is not a custom proposal.
     #[cfg(all(
         feature = "custom_proposal",
         feature = "by_ref_proposal",
@@ -1215,7 +1215,7 @@ where
     pub async fn validate_custom_proposal(
         &mut self,
         msg: &MlsMessage,
-    ) -> Result<Vec<u8>, MlsError> {
+    ) -> Result<(Vec<u8>, Sender), MlsError> {
         let auth_content = self.validate_public_message(msg).await?;
         let proposal = match auth_content.content.content {
             Content::Proposal(p) => p,
@@ -1224,7 +1224,10 @@ where
         if !matches!(*proposal, Proposal::Custom(_)) {
             return Err(MlsError::UnexpectedMessageType);
         }
-        Ok(auth_content.content.authenticated_data)
+        Ok((
+            auth_content.content.authenticated_data,
+            auth_content.content.sender,
+        ))
     }
 
     // Only used for custom proposals right now; consider removing this feature flag
@@ -2775,8 +2778,9 @@ mod tests {
         // add carol to the group
         let (_carol, commit) = alice.join("carol").await;
         bob.process_incoming_message(commit).await.unwrap();
-        let validated_data = bob.validate_custom_proposal(&proposal).await.unwrap();
+        let (validated_data, sender) = bob.validate_custom_proposal(&proposal).await.unwrap();
         assert_eq!(data, validated_data);
+        assert_eq!(sender, Sender::Member(0));
     }
 
     #[cfg(all(
@@ -2797,8 +2801,9 @@ mod tests {
             .await
             .unwrap();
 
-        let validated_data = bob.validate_custom_proposal(&proposal).await.unwrap();
+        let (validated_data, sender) = bob.validate_custom_proposal(&proposal).await.unwrap();
         assert_eq!(data, validated_data);
+        assert_eq!(sender, Sender::Member(0));
     }
 
     #[cfg(all(
