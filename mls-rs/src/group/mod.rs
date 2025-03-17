@@ -1203,6 +1203,7 @@ where
 
     /// Validate a custom proposal message, verifying its signature and membership
     /// tag. Can be a proposal from the current or a prior epoch.
+    /// Can also pass in a ProposalType to check the custom proposal against.
     /// Returns the `authenticated_data` and sender of the custom proposal, or an error if
     /// it fails to validate or if the message is not a custom proposal.
     #[cfg(all(
@@ -1215,14 +1216,20 @@ where
     pub async fn validate_custom_proposal(
         &mut self,
         msg: &MlsMessage,
+        proposal_type: Option<ProposalType>,
     ) -> Result<(Vec<u8>, Sender), MlsError> {
         let auth_content = self.validate_public_message(msg).await?;
         let proposal = match auth_content.content.content {
-            Content::Proposal(p) => p,
+            Content::Proposal(p) => match *p {
+                Proposal::Custom(c) => c,
+                _ => return Err(MlsError::UnexpectedMessageType),
+            },
             _ => return Err(MlsError::UnexpectedMessageType),
         };
-        if !matches!(*proposal, Proposal::Custom(_)) {
-            return Err(MlsError::UnexpectedMessageType);
+        if proposal_type.is_some() && Some(proposal.proposal_type()) != proposal_type {
+            return Err(MlsError::UnsupportedCustomProposal(
+                proposal.proposal_type(),
+            ));
         }
         Ok((
             auth_content.content.authenticated_data,
@@ -2778,7 +2785,10 @@ mod tests {
         // add carol to the group
         let (_carol, commit) = alice.join("carol").await;
         bob.process_incoming_message(commit).await.unwrap();
-        let (validated_data, sender) = bob.validate_custom_proposal(&proposal).await.unwrap();
+        let (validated_data, sender) = bob
+            .validate_custom_proposal(&proposal, Some(TEST_CUSTOM_PROPOSAL_TYPE))
+            .await
+            .unwrap();
         assert_eq!(data, validated_data);
         assert_eq!(sender, Sender::Member(0));
     }
@@ -2801,7 +2811,7 @@ mod tests {
             .await
             .unwrap();
 
-        let (validated_data, sender) = bob.validate_custom_proposal(&proposal).await.unwrap();
+        let (validated_data, sender) = bob.validate_custom_proposal(&proposal, None).await.unwrap();
         assert_eq!(data, validated_data);
         assert_eq!(sender, Sender::Member(0));
     }
@@ -2840,7 +2850,7 @@ mod tests {
         let (_carol, commit) = alice.join("carol").await;
         bob.process_incoming_message(commit).await.unwrap();
 
-        let data_err = bob.validate_custom_proposal(&proposal).await;
+        let data_err = bob.validate_custom_proposal(&proposal, None).await;
         assert_matches!(data_err, Err(MlsError::UnexpectedMessageType));
     }
 
