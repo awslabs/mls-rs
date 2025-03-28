@@ -1206,10 +1206,17 @@ where
     /// Can also pass in a ProposalType to check the custom proposal against.
     /// Returns the `authenticated_data` and sender of the custom proposal, or an error if
     /// it fails to validate or if the message is not a custom proposal.
+    ///
+    /// WARNING: This API is not recommend for general purpose usage as it reduces the guarantees of RFC9420.
+    /// Since prior epochs' membership keys are stored, an attacker that compromises a client's signature key
+    /// and membership key is able to send valid MLS PublicMessages appearing to originate from the compromised
+    /// client from prior epochs.
+    /// This API is used by the GSMA's Rich Communication Suite for certain types of messages. See section 7.6
+    /// for specifics https://www.gsma.com/solutions-and-impact/technologies/networks/wp-content/uploads/2025/03/RCC.16-v1.0.pdf.
     #[cfg(all(
         feature = "custom_proposal",
         feature = "by_ref_proposal",
-        feature = "validate_public_message_prior_epoch"
+        feature = "prior_epoch_membership_key"
     ))]
     #[cfg_attr(feature = "ffi", safer_ffi_gen::safer_ffi_gen_ignore)]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -1239,10 +1246,7 @@ where
 
     // Only used for custom proposals right now; consider removing this feature flag
     // if there are future use cases.
-    #[cfg(all(
-        feature = "custom_proposal",
-        feature = "validate_public_message_prior_epoch"
-    ))]
+    #[cfg(all(feature = "custom_proposal", feature = "prior_epoch_membership_key"))]
     #[cfg_attr(feature = "ffi", safer_ffi_gen::safer_ffi_gen_ignore)]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn validate_public_message(
@@ -1992,7 +1996,7 @@ impl<C: ClientConfig> Group<C> {
             self_index: self.private_tree.self_index,
             secrets: self.epoch_secrets.clone(),
             signature_public_keys,
-            #[cfg(feature = "validate_public_message_prior_epoch")]
+            #[cfg(feature = "prior_epoch_membership_key")]
             membership_key: self.key_schedule.membership_key.to_vec(),
         };
 
@@ -2768,7 +2772,7 @@ mod tests {
         feature = "prior_epoch",
         feature = "custom_proposal",
         feature = "by_ref_proposal",
-        feature = "validate_public_message_prior_epoch"
+        feature = "prior_epoch_membership_key"
     ))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_can_validate_and_get_data_custom_proposal_from_past_epoch() {
@@ -2797,7 +2801,7 @@ mod tests {
         feature = "prior_epoch",
         feature = "custom_proposal",
         feature = "by_ref_proposal",
-        feature = "validate_public_message_prior_epoch"
+        feature = "prior_epoch_membership_key"
     ))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_can_validate_and_get_data_custom_proposal_from_current_epoch() {
@@ -2816,10 +2820,7 @@ mod tests {
         assert_eq!(sender, Sender::Member(0));
     }
 
-    #[cfg(all(
-        feature = "prior_epoch",
-        feature = "validate_public_message_prior_epoch"
-    ))]
+    #[cfg(all(feature = "prior_epoch", feature = "prior_epoch_membership_key"))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_can_validate_non_custom_proposal_from_past_epoch() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
@@ -2837,7 +2838,7 @@ mod tests {
     #[cfg(all(
         feature = "prior_epoch",
         feature = "by_ref_proposal",
-        feature = "validate_public_message_prior_epoch"
+        feature = "prior_epoch_membership_key"
     ))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_cannot_validate_custom_proposal_for_non_custom_proposal() {
@@ -2854,10 +2855,7 @@ mod tests {
         assert_matches!(data_err, Err(MlsError::UnexpectedMessageType));
     }
 
-    #[cfg(all(
-        feature = "prior_epoch",
-        feature = "validate_public_message_prior_epoch"
-    ))]
+    #[cfg(all(feature = "prior_epoch", feature = "prior_epoch_membership_key"))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_can_validate_commit_from_past_epoch() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
@@ -2883,7 +2881,7 @@ mod tests {
     #[cfg(all(
         feature = "prior_epoch",
         feature = "custom_proposal",
-        feature = "validate_public_message_prior_epoch"
+        feature = "prior_epoch_membership_key"
     ))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_can_validate_custom_proposal_from_current_epoch() {
@@ -2899,10 +2897,7 @@ mod tests {
         bob.validate_public_message(&proposal).await.unwrap();
     }
 
-    #[cfg(all(
-        feature = "prior_epoch",
-        feature = "validate_public_message_prior_epoch"
-    ))]
+    #[cfg(all(feature = "prior_epoch", feature = "prior_epoch_membership_key"))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_cannot_validate_non_public_message() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
