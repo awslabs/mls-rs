@@ -590,7 +590,10 @@ where
             &self.cipher_suite_provider,
             message,
             None,
-            &self.state,
+            &self.state.context,
+            crate::group::message_verifier::SignaturePublicKeysContainer::RatchetTree(
+                &self.state.public_tree,
+            ),
         )
         .await?;
 
