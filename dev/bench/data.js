@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1742753348433,
+  "lastUpdate": 1743195549368,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -21155,6 +21155,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 130309,
             "range": "± 2215",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ellen.arteca@gmail.com",
+            "name": "Ellen Arteca",
+            "username": "emarteca"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6b39584085bdd8cb0e4e945065407ae038311ec0",
+          "message": "API to validate `CustomProposal` from prior epochs (#263)\n\n* adding membership tag to PriorEpoch, and making verify_plaintext_authentication work with any membership key\n\n* one test with custom proposal validates from old epoch. need to expand testing, and add support for public API to get into out of custom proposal\n\n* testing\n\n* validate and get data from custom proposals; and tests\n\n* fix external client call\n\n* clippy\n\n* featuring flagging\n\n* wild\n\n* unnecessary cfgs\n\n* return auth data not data in the custom proposal\n\n* adding sender to output\n\n* add option for validating proposal type\n\n* adding warning for API usage, and renaming feature flag\n\n---------\n\nCo-authored-by: Ellen Arteca <emarteca@google.com>",
+          "timestamp": "2025-03-28T21:54:45+01:00",
+          "tree_id": "fb380ed65e36e6fad5bba7fea61f48bf2977b611",
+          "url": "https://github.com/awslabs/mls-rs/commit/6b39584085bdd8cb0e4e945065407ae038311ec0"
+        },
+        "date": 1743195548035,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 529251,
+            "range": "± 6252",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 537159,
+            "range": "± 6702",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 599761,
+            "range": "± 7858",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1271678,
+            "range": "± 36839",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7527752,
+            "range": "± 32260",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2603842,
+            "range": "± 179640",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7000106,
+            "range": "± 104383",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13065982,
+            "range": "± 152133",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 775139,
+            "range": "± 17196",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 861703,
+            "range": "± 11764",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 992882,
+            "range": "± 5534",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 20593,
+            "range": "± 453",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 67712,
+            "range": "± 1181",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 129593,
+            "range": "± 2129",
             "unit": "ns/iter"
           }
         ]
