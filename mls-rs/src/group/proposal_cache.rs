@@ -145,6 +145,12 @@ impl ProposalCache {
         Ok(())
     }
 
+    pub(crate) fn has_own_self_remove(&self) -> bool {
+        self.own_proposals
+            .values()
+            .any(|p| matches!(p.proposal, Proposal::SelfRemove(_)))
+    }
+
     pub fn prepare_commit(
         &self,
         sender: Sender,

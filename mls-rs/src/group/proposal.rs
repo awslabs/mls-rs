@@ -232,6 +232,19 @@ impl Debug for ExternalInit {
     }
 }
 
+#[derive(Clone, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+/// A proposal to remove the current [`Member`](mls_rs_core::group::Member) of a
+/// [`Group`](crate::group::Group).
+pub struct SelfRemoveProposal {}
+
+impl Debug for SelfRemoveProposal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SelfRemoveProposal").finish()
+    }
+}
+
 #[cfg(feature = "custom_proposal")]
 #[derive(Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -332,6 +345,7 @@ pub enum Proposal {
     ReInit(ReInitProposal),
     ExternalInit(ExternalInit),
     GroupContextExtensions(ExtensionList),
+    SelfRemove(SelfRemoveProposal),
     #[cfg(feature = "custom_proposal")]
     Custom(CustomProposal),
 }
@@ -348,6 +362,7 @@ impl MlsSize for Proposal {
             Proposal::ReInit(p) => p.mls_encoded_len(),
             Proposal::ExternalInit(p) => p.mls_encoded_len(),
             Proposal::GroupContextExtensions(p) => p.mls_encoded_len(),
+            Proposal::SelfRemove(p) => p.mls_encoded_len(),
             #[cfg(feature = "custom_proposal")]
             Proposal::Custom(p) => mls_rs_codec::byte_vec::mls_encoded_len(&p.data),
         };
@@ -370,6 +385,7 @@ impl MlsEncode for Proposal {
             Proposal::ReInit(p) => p.mls_encode(writer),
             Proposal::ExternalInit(p) => p.mls_encode(writer),
             Proposal::GroupContextExtensions(p) => p.mls_encode(writer),
+            Proposal::SelfRemove(p) => p.mls_encode(writer),
             #[cfg(feature = "custom_proposal")]
             Proposal::Custom(p) => {
                 if p.proposal_type.raw_value() <= 7 {
@@ -407,6 +423,9 @@ impl MlsDecode for Proposal {
             ProposalType::GROUP_CONTEXT_EXTENSIONS => {
                 Proposal::GroupContextExtensions(ExtensionList::mls_decode(reader)?)
             }
+            ProposalType::SELF_REMOVE => {
+                Proposal::SelfRemove(SelfRemoveProposal::mls_decode(reader)?)
+            }
             #[cfg(feature = "custom_proposal")]
             custom => Proposal::Custom(CustomProposal {
                 proposal_type: custom,
@@ -431,6 +450,7 @@ impl Proposal {
             Proposal::ReInit(_) => ProposalType::RE_INIT,
             Proposal::ExternalInit(_) => ProposalType::EXTERNAL_INIT,
             Proposal::GroupContextExtensions(_) => ProposalType::GROUP_CONTEXT_EXTENSIONS,
+            Proposal::SelfRemove(_) => ProposalType::SELF_REMOVE,
             #[cfg(feature = "custom_proposal")]
             Proposal::Custom(c) => c.proposal_type,
         }
@@ -449,6 +469,7 @@ pub enum BorrowedProposal<'a> {
     ReInit(&'a ReInitProposal),
     ExternalInit(&'a ExternalInit),
     GroupContextExtensions(&'a ExtensionList),
+    SelfRemove(&'a SelfRemoveProposal),
     #[cfg(feature = "custom_proposal")]
     Custom(&'a CustomProposal),
 }
@@ -467,6 +488,7 @@ impl<'a> From<BorrowedProposal<'a>> for Proposal {
             BorrowedProposal::GroupContextExtensions(ext) => {
                 Proposal::GroupContextExtensions(ext.clone())
             }
+            BorrowedProposal::SelfRemove(self_remove) => Proposal::SelfRemove(self_remove.clone()),
             #[cfg(feature = "custom_proposal")]
             BorrowedProposal::Custom(custom) => Proposal::Custom(custom.clone()),
         }
@@ -485,6 +507,7 @@ impl BorrowedProposal<'_> {
             BorrowedProposal::ReInit(_) => ProposalType::RE_INIT,
             BorrowedProposal::ExternalInit(_) => ProposalType::EXTERNAL_INIT,
             BorrowedProposal::GroupContextExtensions(_) => ProposalType::GROUP_CONTEXT_EXTENSIONS,
+            BorrowedProposal::SelfRemove(_) => ProposalType::SELF_REMOVE,
             #[cfg(feature = "custom_proposal")]
             BorrowedProposal::Custom(c) => c.proposal_type,
         }
@@ -503,6 +526,7 @@ impl<'a> From<&'a Proposal> for BorrowedProposal<'a> {
             Proposal::ReInit(p) => BorrowedProposal::ReInit(p),
             Proposal::ExternalInit(p) => BorrowedProposal::ExternalInit(p),
             Proposal::GroupContextExtensions(p) => BorrowedProposal::GroupContextExtensions(p),
+            Proposal::SelfRemove(p) => BorrowedProposal::SelfRemove(p),
             #[cfg(feature = "custom_proposal")]
             Proposal::Custom(p) => BorrowedProposal::Custom(p),
         }
@@ -550,6 +574,12 @@ impl<'a> From<&'a ExternalInit> for BorrowedProposal<'a> {
 impl<'a> From<&'a ExtensionList> for BorrowedProposal<'a> {
     fn from(p: &'a ExtensionList) -> Self {
         Self::GroupContextExtensions(p)
+    }
+}
+
+impl<'a> From<&'a SelfRemoveProposal> for BorrowedProposal<'a> {
+    fn from(p: &'a SelfRemoveProposal) -> Self {
+        Self::SelfRemove(p)
     }
 }
 

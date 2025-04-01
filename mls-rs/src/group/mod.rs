@@ -1060,6 +1060,19 @@ where
         }))
     }
 
+    #[cfg(feature = "by_ref_proposal")]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn propose_self_remove(
+        &mut self,
+        authenticated_data: Vec<u8>,
+    ) -> Result<MlsMessage, MlsError> {
+        if self.state.proposals.has_own_self_remove() {
+            // TODO return error here
+        }
+        let proposal = Proposal::SelfRemove(SelfRemoveProposal {});
+        self.proposal_message(proposal, authenticated_data).await
+    }
+
     /// Create a proposal message that adds an external pre shared key to the group.
     ///
     /// Each group member will need to have the PSK associated with
@@ -2254,6 +2267,18 @@ where
             .removals
             .iter()
             .find(|p| p.proposal.to_remove == self.private_tree.self_index)
+            .cloned()
+    }
+
+    fn self_removal_proposal(
+        &self,
+        provisional_state: &ProvisionalState,
+    ) -> Option<ProposalInfo<SelfRemoveProposal>> {
+        provisional_state
+            .applied_proposals
+            .self_removes
+            .iter()
+            .find(|p| p.sender == Sender::Member(*self.private_tree.self_index))
             .cloned()
     }
 
@@ -4742,6 +4767,110 @@ mod tests {
             });
 
         assert!(all_members_are_in);
+    }
+
+    #[cfg(feature = "by_ref_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn self_remove_test() {
+        // let group_extensions = ExtensionList::from(vec![RequiredCapabilitiesExt {
+        //     extensions: vec![ProposalType::SELF_REMOVE],
+        //     ..Default::default()
+        // }
+        // .into_extension()
+        // .unwrap()]);
+        let group_extensions = ExtensionList::new();
+
+        // Alice creates a group requiring support for an extension
+        let mut alice = TestClientBuilder::new_for_test()
+            .with_random_signing_identity("alice", TEST_CIPHER_SUITE)
+            .await
+            .custom_proposal_type(ProposalType::SELF_REMOVE)
+            .build()
+            .create_group(group_extensions.clone(), Default::default())
+            .await
+            .unwrap();
+
+        let (bob_signing_identity, bob_secret_key) =
+            get_test_signing_identity(TEST_CIPHER_SUITE, b"bob").await;
+
+        let bob_client = TestClientBuilder::new_for_test()
+            .signing_identity(
+                bob_signing_identity.clone(),
+                bob_secret_key.clone(),
+                TEST_CIPHER_SUITE,
+            )
+            // .extension_type(ProposalType::SELF_REMOVE)
+            .custom_proposal_type(ProposalType::SELF_REMOVE)
+            .build();
+
+        let carol_client = TestClientBuilder::new_for_test()
+            .with_random_signing_identity("carol", TEST_CIPHER_SUITE)
+            .await
+            // .extension_type(ProposalType::SELF_REMOVE)
+            .custom_proposal_type(ProposalType::SELF_REMOVE)
+            .build();
+
+        // Alice adds Bob, Carol to the group. They all support the mandatory extension.
+        let commit = alice
+            .commit_builder()
+            .add_member(
+                bob_client
+                    .generate_key_package_message(Default::default(), Default::default())
+                    .await
+                    .unwrap(),
+            )
+            .unwrap()
+            .add_member(
+                carol_client
+                    .generate_key_package_message(Default::default(), Default::default())
+                    .await
+                    .unwrap(),
+            )
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+
+        alice.apply_pending_commit().await.unwrap();
+
+        let mut bob = bob_client
+            .join_group(None, &commit.welcome_messages[0])
+            .await
+            .unwrap()
+            .0;
+
+        bob.write_to_storage().await.unwrap();
+        let mut carol = carol_client
+            .join_group(None, &commit.welcome_messages[0])
+            .await
+            .unwrap()
+            .0;
+
+        let bob_self_remove = bob.propose_self_remove(Vec::new()).await.unwrap();
+        let bob_self_remove = bob.propose_remove(1, Vec::new()).await.unwrap();
+
+        // Alice receives the update proposals to be committed.
+        alice
+            .process_incoming_message(bob_self_remove)
+            .await
+            .unwrap();
+
+        // Alice commits.
+        alice.commit(Vec::new()).await.unwrap();
+        // alice.apply_pending_commit().await.unwrap();
+        let members = alice.roster();
+        let members = members
+            .members_iter()
+            .map(|m| {
+                m.signing_identity
+                    .credential
+                    .as_basic()
+                    .unwrap()
+                    .identifier
+                    .clone()
+            })
+            .collect::<Vec<Vec<u8>>>();
+        panic!("bro: {:?}", members);
     }
 
     #[cfg(feature = "custom_proposal")]

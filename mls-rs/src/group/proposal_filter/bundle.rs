@@ -12,7 +12,7 @@ use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use crate::{
     group::{
         AddProposal, BorrowedProposal, Proposal, ProposalOrRef, ProposalType, ReInitProposal,
-        RemoveProposal, Sender,
+        RemoveProposal, SelfRemoveProposal, Sender,
     },
     ExtensionList,
 };
@@ -45,6 +45,7 @@ pub struct ProposalBundle {
     pub(crate) reinitializations: Vec<ProposalInfo<ReInitProposal>>,
     pub(crate) external_initializations: Vec<ProposalInfo<ExternalInit>>,
     pub(crate) group_context_extensions: Vec<ProposalInfo<ExtensionList>>,
+    pub(crate) self_removes: Vec<ProposalInfo<SelfRemoveProposal>>,
     #[cfg(feature = "custom_proposal")]
     pub(crate) custom_proposals: Vec<ProposalInfo<CustomProposal>>,
 }
@@ -91,6 +92,11 @@ impl ProposalBundle {
                     source,
                 })
             }
+            Proposal::SelfRemove(proposal) => self.self_removes.push(ProposalInfo {
+                proposal,
+                sender,
+                source,
+            }),
             #[cfg(feature = "custom_proposal")]
             Proposal::Custom(proposal) => self.custom_proposals.push(ProposalInfo {
                 proposal,
@@ -371,6 +377,11 @@ impl ProposalBundle {
     /// Group context extension proposals in the bundle.
     pub fn group_context_ext_proposals(&self) -> &[ProposalInfo<ExtensionList>] {
         &self.group_context_extensions
+    }
+
+    /// Self-remove proposals in the bundle.
+    pub fn self_remove_proposals(&self) -> &[ProposalInfo<SelfRemoveProposal>] {
+        &self.self_removes
     }
 
     /// Custom proposals in the bundle.
@@ -664,6 +675,7 @@ impl_proposable!(RemoveProposal, REMOVE, removals);
 impl_proposable!(PreSharedKeyProposal, PSK, psks);
 impl_proposable!(ReInitProposal, RE_INIT, reinitializations);
 impl_proposable!(ExternalInit, EXTERNAL_INIT, external_initializations);
+impl_proposable!(SelfRemoveProposal, SELF_REMOVE, self_removes);
 impl_proposable!(
     ExtensionList,
     GROUP_CONTEXT_EXTENSIONS,

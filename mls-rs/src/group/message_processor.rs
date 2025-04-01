@@ -14,7 +14,7 @@ use super::{
     state::GroupState,
     transcript_hash::InterimTranscriptHash,
     transcript_hashes, validate_group_info_member, GroupContext, GroupInfo, ReInitProposal,
-    RemoveProposal, Welcome,
+    RemoveProposal, SelfRemoveProposal, Welcome,
 };
 use crate::{
     client::MlsError,
@@ -77,6 +77,9 @@ pub(crate) fn path_update_required(proposals: &ProposalBundle) -> bool {
 
     #[cfg(feature = "by_ref_proposal")]
     let res = res || !proposals.update_proposals().is_empty();
+
+    // TODO flag this out
+    let res = res || !proposals.self_removes.is_empty();
 
     res || proposals.length() == 0
         || proposals.group_context_extensions_proposal().is_some()
@@ -707,7 +710,13 @@ pub(crate) trait MessageProcessor: Send + Sync {
         }
 
         let self_removed = self.removal_proposal(&provisional_state);
-        let is_self_removed = self_removed.is_some();
+        let self_removed_by_self = self.self_removal_proposal(&provisional_state);
+
+        if self_removed.is_some() && self_removed_by_self.is_some() {
+            // TODO error here
+            // return Err(MlsError::MoreThanOneProposalForLeaf(self_removed.unwrap()))
+        }
+        let is_self_removed = self_removed.is_some() || self_removed_by_self.is_some();
 
         let update_path = match commit.path {
             Some(update_path) => Some(
@@ -799,6 +808,11 @@ pub(crate) trait MessageProcessor: Send + Sync {
         &self,
         provisional_state: &ProvisionalState,
     ) -> Option<ProposalInfo<RemoveProposal>>;
+
+    fn self_removal_proposal(
+        &self,
+        provisional_state: &ProvisionalState,
+    ) -> Option<ProposalInfo<SelfRemoveProposal>>;
 
     #[cfg(feature = "private_message")]
     fn min_epoch_available(&self) -> Option<u64>;

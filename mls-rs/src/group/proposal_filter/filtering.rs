@@ -7,7 +7,7 @@ use crate::{
     group::{
         proposal::ReInitProposal,
         proposal_filter::{ProposalBundle, ProposalInfo},
-        AddProposal, ProposalType, RemoveProposal, Sender, UpdateProposal,
+        AddProposal, ProposalType, RemoveProposal, SelfRemoveProposal, Sender, UpdateProposal,
     },
     iter::wrap_iter,
     mls_rules::CommitDirection,
@@ -88,6 +88,8 @@ where
             self.psk_storage,
         )
         .await?;
+
+        // TODO filter out multiple removals of the same node
 
         #[cfg(feature = "by_ref_proposal")]
         let proposals = filter_out_invalid_group_extensions(
@@ -324,11 +326,21 @@ fn filter_out_removal_of_committer(
     commit_sender: LeafIndex,
     mut proposals: ProposalBundle,
 ) -> Result<ProposalBundle, MlsError> {
+    // TODO also do this with SelfRemove
     proposals.retain_by_type::<RemoveProposal, _, _>(|p| {
         apply_strategy(
             strategy,
             p.is_by_reference(),
             (p.proposal.to_remove != commit_sender)
+                .then_some(())
+                .ok_or(MlsError::CommitterSelfRemoval),
+        )
+    })?;
+    proposals.retain_by_type::<SelfRemoveProposal, _, _>(|p| {
+        apply_strategy(
+            strategy,
+            p.is_by_reference(),
+            matches!(p.sender, Sender::Member(commit_sender))
                 .then_some(())
                 .ok_or(MlsError::CommitterSelfRemoval),
         )
