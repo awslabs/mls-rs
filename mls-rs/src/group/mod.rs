@@ -4847,7 +4847,7 @@ mod tests {
             .0;
 
         let bob_self_remove = bob.propose_self_remove(Vec::new()).await.unwrap();
-        let bob_self_remove = bob.propose_remove(1, Vec::new()).await.unwrap();
+        // let bob_self_remove = bob.propose_remove(1, Vec::new()).await.unwrap();
 
         // Alice receives the update proposals to be committed.
         alice
@@ -4857,7 +4857,7 @@ mod tests {
 
         // Alice commits.
         alice.commit(Vec::new()).await.unwrap();
-        // alice.apply_pending_commit().await.unwrap();
+        alice.apply_pending_commit().await.unwrap();
         let members = alice.roster();
         let members = members
             .members_iter()
