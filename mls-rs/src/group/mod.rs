@@ -4509,6 +4509,25 @@ mod tests {
         (alice, bob)
     }
 
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn self_remove_group_setup() -> (TestGroup, TestGroup) {
+        let mut alice = test_group_custom_config(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, |b| {
+            b.custom_proposal_type(ProposalType::SELF_REMOVE)
+        })
+        .await;
+
+        let (bob, _) = alice
+            .join_with_custom_config("bob", true, |c| {
+                c.0.settings
+                    .custom_proposal_types
+                    .push(ProposalType::SELF_REMOVE)
+            })
+            .await
+            .unwrap();
+
+        (alice, bob)
+    }
+
     #[cfg(feature = "custom_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn custom_proposal_by_value() {
@@ -4771,22 +4790,14 @@ mod tests {
 
     #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn self_remove_test() {
-        // let group_extensions = ExtensionList::from(vec![RequiredCapabilitiesExt {
-        //     extensions: vec![ProposalType::SELF_REMOVE],
-        //     ..Default::default()
-        // }
-        // .into_extension()
-        // .unwrap()]);
-        let group_extensions = ExtensionList::new();
-
-        // Alice creates a group requiring support for an extension
+    async fn client_can_self_remove_and_another_client_can_commit() {
+        // Alice creates a group that supports the self-remove proposal.
         let mut alice = TestClientBuilder::new_for_test()
             .with_random_signing_identity("alice", TEST_CIPHER_SUITE)
             .await
             .custom_proposal_type(ProposalType::SELF_REMOVE)
             .build()
-            .create_group(group_extensions.clone(), Default::default())
+            .create_group(ExtensionList::new(), Default::default())
             .await
             .unwrap();
 
@@ -4799,14 +4810,12 @@ mod tests {
                 bob_secret_key.clone(),
                 TEST_CIPHER_SUITE,
             )
-            // .extension_type(ProposalType::SELF_REMOVE)
             .custom_proposal_type(ProposalType::SELF_REMOVE)
             .build();
 
         let carol_client = TestClientBuilder::new_for_test()
             .with_random_signing_identity("carol", TEST_CIPHER_SUITE)
             .await
-            // .extension_type(ProposalType::SELF_REMOVE)
             .custom_proposal_type(ProposalType::SELF_REMOVE)
             .build();
 
@@ -4847,7 +4856,6 @@ mod tests {
             .0;
 
         let bob_self_remove = bob.propose_self_remove(Vec::new()).await.unwrap();
-        // let bob_self_remove = bob.propose_remove(1, Vec::new()).await.unwrap();
 
         // Alice receives the update proposals to be committed.
         alice
@@ -4858,19 +4866,70 @@ mod tests {
         // Alice commits.
         alice.commit(Vec::new()).await.unwrap();
         alice.apply_pending_commit().await.unwrap();
-        let members = alice.roster();
-        let members = members
-            .members_iter()
-            .map(|m| {
-                m.signing_identity
-                    .credential
-                    .as_basic()
-                    .unwrap()
-                    .identifier
-                    .clone()
-            })
-            .collect::<Vec<Vec<u8>>>();
-        panic!("bro: {:?}", members);
+
+        // now, Alice
+        let expected_members = vec![
+            alice.member_at_index(alice.current_member_index()).unwrap(),
+            carol.member_at_index(carol.current_member_index()).unwrap(),
+        ];
+        itertools::assert_equal(alice.roster().members_iter(), expected_members.into_iter());
+    }
+
+    #[cfg(feature = "custom_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn external_commit_can_have_self_remove() {
+        let (mut alice, mut bob) = self_remove_group_setup().await;
+
+        let carol_client = TestClientBuilder::new_for_test()
+            .with_random_signing_identity("carol", TEST_CIPHER_SUITE)
+            .await
+            .custom_proposal_type(ProposalType::SELF_REMOVE)
+            .build();
+
+        // Alice adds Carol.
+        let commit = alice
+            .commit_builder()
+            .add_member(
+                carol_client
+                    .generate_key_package_message(Default::default(), Default::default())
+                    .await
+                    .unwrap(),
+            )
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+        let mut carol = carol_client
+            .join_group(None, &commit.welcome_messages[0])
+            .await
+            .unwrap()
+            .0;
+        alice
+            .process_incoming_message(commit.commit_message.clone())
+            .await
+            .unwrap();
+        bob.process_incoming_message(commit.commit_message)
+            .await
+            .unwrap();
+
+        let bob_self_remove = bob.propose_self_remove(Vec::new()).await.unwrap();
+        // let bob_self_remove = bob.propose_custom(CustomProposal::new(TEST_CUSTOM_PROPOSAL_TYPE, vec![]), vec![]).await.unwrap();
+
+        let group_info = alice
+            .group_info_message_allowing_ext_commit(true)
+            .await
+            .unwrap();
+
+        let (_, commit) = carol_client
+            .external_commit_builder()
+            .unwrap()
+            .with_removal(carol.current_member_index())
+            .with_received_custom_proposal(bob_self_remove)
+            .build(group_info)
+            .await
+            .unwrap();
+
+        carol.process_incoming_message(commit).await.unwrap();
     }
 
     #[cfg(feature = "custom_proposal")]

@@ -502,6 +502,7 @@ fn ensure_proposals_in_external_commit_are_allowed(
         ProposalType::EXTERNAL_INIT,
         ProposalType::REMOVE,
         ProposalType::PSK,
+        ProposalType::SELF_REMOVE,
     ];
 
     let unsupported_proposal = proposals.iter_proposals().find(|proposal| {

@@ -56,7 +56,7 @@ impl ProposalType {
     pub const RE_INIT: ProposalType = ProposalType(5);
     pub const EXTERNAL_INIT: ProposalType = ProposalType(6);
     pub const GROUP_CONTEXT_EXTENSIONS: ProposalType = ProposalType(7);
-    pub const SELF_REMOVE: ProposalType = ProposalType(8);
+    pub const SELF_REMOVE: ProposalType = ProposalType(0xF003);
 
     /// Default proposal types defined
     /// in [RFC 9420](https://www.rfc-editor.org/rfc/rfc9420.html#name-leaf-node-contents)

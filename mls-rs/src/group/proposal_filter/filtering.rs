@@ -340,9 +340,12 @@ fn filter_out_removal_of_committer(
         apply_strategy(
             strategy,
             p.is_by_reference(),
-            matches!(p.sender, Sender::Member(commit_sender))
-                .then_some(())
-                .ok_or(MlsError::CommitterSelfRemoval),
+            match p.sender {
+                Sender::Member(sender) => commit_sender != LeafIndex(sender),
+                _ => false,
+            }
+            .then_some(())
+            .ok_or(MlsError::CommitterSelfRemoval),
         )
     })?;
     Ok(proposals)
