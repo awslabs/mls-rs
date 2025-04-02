@@ -12,6 +12,10 @@ pub enum PaddingMode {
     /// message.
     #[default]
     StepFunction,
+    /// Padme, which limits information leakage to O(log log M) bits while
+    /// retaining an overhead of max 11.11%, defined as Algorithm 1 in
+    /// https://www.petsymposium.org/2019/files/papers/issue4/popets-2019-0056.pdf.
+    Padme,
     /// No padding.
     None,
 }
@@ -30,6 +34,24 @@ impl PaddingMode {
                         - 3);
 
                 (content_size | (blind - 1)) + 1
+            }
+            PaddingMode::Padme => {
+                // Prevents log2(0), which is undefined.
+                if content_size < 2 {
+                    return content_size;
+                }
+
+                // E <- floor(log2(L))
+                // S <- floor(log2(E)) + 1
+                // z <- E - S
+                // m <- (1 << z) - 1
+                // len' <- (L + m) & ~m
+
+                let e: u32 = content_size.ilog2(); // l’s floating-point exponent
+                let s: u32 = e.ilog2() + 1; // number of bits to represent e
+                let num_zero_bits: u32 = e - s; // number of low bits to set to 0
+                let bitmask: usize = (1 << num_zero_bits) - 1; // create a bitmask of 1s
+                (content_size + bitmask) & !bitmask // len': round up to clear last num_zero_bits bits
             }
             PaddingMode::None => content_size,
         }
@@ -78,7 +100,7 @@ mod tests {
     }
 
     #[test]
-    fn test_padding_length() {
+    fn test_step_function() {
         assert_eq!(PaddingMode::StepFunction.padded_size(0), 32);
 
         // Short
@@ -104,6 +126,53 @@ mod tests {
                 test_case.output,
                 PaddingMode::StepFunction.padded_size(test_case.input)
             );
+        }
+    }
+
+    #[test]
+    fn test_padme_exceptions() {
+        assert_eq!(PaddingMode::Padme.padded_size(0), 0);
+        assert_eq!(PaddingMode::Padme.padded_size(1), 1);
+    }
+
+    // All values are computed using reference implementation found at
+    // https://lbarman.ch/blog/padme/#implementation.
+    #[test]
+    fn test_padme_powers_of_two() {
+        for i in 0u32..32 {
+            let val = 2usize.pow(i);
+            assert_eq!(PaddingMode::Padme.padded_size(val), val);
+        }
+    }
+    #[test]
+    fn test_padme_powers_of_ten() {
+        let res: [usize; 10] = [
+            1, 10, 104, 1024, 10240, 100352, 1015808, 10223616, 100663296, 1006632960,
+        ];
+        for (i, result) in res.iter().enumerate() {
+            assert_eq!(
+                PaddingMode::Padme.padded_size(10usize.pow(i as u32)),
+                *result
+            );
+        }
+    }
+
+    #[test]
+    fn test_padme_rand() {
+        let vec = [
+            (441181141, 444596224),
+            (942823001, 956301312),
+            (1017891638, 1023410176),
+            (1045008200, 1056964608),
+            (2068479553, 2080374784),
+            (2096246256, 2113929216),
+            (2523113277, 2550136832),
+            (3011885937, 3019898880),
+            (3212797841, 3221225472),
+            (3886482937, 3892314112),
+        ];
+        for (val, res) in vec.iter() {
+            assert_eq!(PaddingMode::Padme.padded_size(*val), *res);
         }
     }
 }
