@@ -27,7 +27,7 @@ use crate::group::{
     message_processor::{EventOrContent, MessageProcessor},
     message_signature::AuthenticatedContent,
     message_verifier::verify_plaintext_authentication,
-    CustomProposal,
+    CustomProposal, SignaturePublicKeysContainer,
 };
 
 use alloc::vec;
@@ -245,7 +245,14 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
             };
 
             let auth_content = AuthenticatedContent::from(plaintext.clone());
-            verify_plaintext_authentication(&cipher_suite, plaintext, None, &group.state).await?;
+            verify_plaintext_authentication(
+                &cipher_suite,
+                plaintext,
+                None,
+                &group.state.context,
+                SignaturePublicKeysContainer::RatchetTree(&group.state.public_tree),
+            )
+            .await?;
 
             group
                 .process_event_or_content(EventOrContent::Content(auth_content), true, None)

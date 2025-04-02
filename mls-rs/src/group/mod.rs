@@ -1201,6 +1201,102 @@ where
             .await
     }
 
+    /// Validate a custom proposal message, verifying its signature and membership
+    /// tag. Can be a proposal from the current or a prior epoch.
+    /// Can also pass in a ProposalType to check the custom proposal against.
+    /// Returns the `authenticated_data` and sender of the custom proposal, or an error if
+    /// it fails to validate or if the message is not a custom proposal.
+    ///
+    /// WARNING: This API is not recommend for general purpose usage as it reduces the guarantees of RFC9420.
+    /// Since prior epochs' membership keys are stored, an attacker that compromises a client's signature key
+    /// and membership key is able to send valid MLS PublicMessages appearing to originate from the compromised
+    /// client from prior epochs.
+    /// This API is used by the GSMA's Rich Communication Suite for certain types of messages. See section 7.6
+    /// for specifics https://www.gsma.com/solutions-and-impact/technologies/networks/wp-content/uploads/2025/03/RCC.16-v1.0.pdf.
+    #[cfg(all(
+        feature = "custom_proposal",
+        feature = "by_ref_proposal",
+        feature = "prior_epoch_membership_key"
+    ))]
+    #[cfg_attr(feature = "ffi", safer_ffi_gen::safer_ffi_gen_ignore)]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn validate_custom_proposal(
+        &mut self,
+        msg: &MlsMessage,
+        proposal_type: Option<ProposalType>,
+    ) -> Result<(Vec<u8>, Sender), MlsError> {
+        let auth_content = self.validate_public_message(msg).await?;
+        let proposal = match auth_content.content.content {
+            Content::Proposal(p) => match *p {
+                Proposal::Custom(c) => c,
+                _ => return Err(MlsError::UnexpectedMessageType),
+            },
+            _ => return Err(MlsError::UnexpectedMessageType),
+        };
+        if proposal_type.is_some() && Some(proposal.proposal_type()) != proposal_type {
+            return Err(MlsError::UnsupportedCustomProposal(
+                proposal.proposal_type(),
+            ));
+        }
+        Ok((
+            auth_content.content.authenticated_data,
+            auth_content.content.sender,
+        ))
+    }
+
+    // Only used for custom proposals right now; consider removing this feature flag
+    // if there are future use cases.
+    #[cfg(all(feature = "custom_proposal", feature = "prior_epoch_membership_key"))]
+    #[cfg_attr(feature = "ffi", safer_ffi_gen::safer_ffi_gen_ignore)]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn validate_public_message(
+        &mut self,
+        msg: &MlsMessage,
+    ) -> Result<AuthenticatedContent, MlsError> {
+        let plaintext = match msg.payload {
+            MlsMessagePayload::Plain(ref plaintext) => plaintext.clone(),
+            _ => return Err(MlsError::UnexpectedMessageType),
+        };
+        let epoch_id = msg.epoch().ok_or(MlsError::EpochNotFound)?;
+        let auth_content = if epoch_id == self.context().epoch {
+            let auth_content = verify_plaintext_authentication(
+                &self.cipher_suite_provider,
+                plaintext,
+                Some(&self.key_schedule.membership_key),
+                &self.state.context,
+                SignaturePublicKeysContainer::RatchetTree(&self.state.public_tree),
+            )
+            .await?;
+
+            Ok::<_, MlsError>(auth_content)
+        } else {
+            #[cfg(feature = "prior_epoch")]
+            {
+                let epoch = self
+                    .state_repo
+                    .get_epoch_mut(epoch_id)
+                    .await?
+                    .ok_or(MlsError::EpochNotFound)?;
+
+                let auth_content = verify_plaintext_authentication(
+                    &self.cipher_suite_provider,
+                    plaintext,
+                    Some(&epoch.membership_key),
+                    &epoch.context,
+                    SignaturePublicKeysContainer::List(&epoch.signature_public_keys),
+                )
+                .await?;
+
+                Ok(auth_content)
+            }
+
+            #[cfg(not(feature = "prior_epoch"))]
+            Err(MlsError::EpochNotFound)
+        }?;
+
+        Ok(auth_content)
+    }
+
     /// Delete all sent and received proposals cached for commit.
     #[cfg(feature = "by_ref_proposal")]
     pub fn clear_proposal_cache(&mut self) {
@@ -1900,6 +1996,8 @@ impl<C: ClientConfig> Group<C> {
             self_index: self.private_tree.self_index,
             secrets: self.epoch_secrets.clone(),
             signature_public_keys,
+            #[cfg(feature = "prior_epoch_membership_key")]
+            membership_key: self.key_schedule.membership_key.to_vec(),
         };
 
         self.state_repo.insert(past_epoch).await?;
@@ -1969,8 +2067,9 @@ where
         let auth_content = verify_plaintext_authentication(
             &self.cipher_suite_provider,
             message,
-            Some(&self.key_schedule),
-            &self.state,
+            Some(&self.key_schedule.membership_key),
+            &self.state.context,
+            SignaturePublicKeysContainer::RatchetTree(&self.state.public_tree),
         )
         .await?;
 
@@ -2667,6 +2766,150 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(plaintext.to_vec(), hpke_decrypted);
+    }
+
+    #[cfg(all(
+        feature = "prior_epoch",
+        feature = "custom_proposal",
+        feature = "by_ref_proposal",
+        feature = "prior_epoch_membership_key"
+    ))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_can_validate_and_get_data_custom_proposal_from_past_epoch() {
+        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (mut bob, _) = alice.join("bob").await;
+
+        let data = vec![1, 2, 3];
+        let custom_proposal = CustomProposal::new(TEST_CUSTOM_PROPOSAL_TYPE, vec![4, 5, 6]);
+        let proposal = alice
+            .propose_custom(custom_proposal.clone(), data.clone())
+            .await
+            .unwrap();
+
+        // add carol to the group
+        let (_carol, commit) = alice.join("carol").await;
+        bob.process_incoming_message(commit).await.unwrap();
+        let (validated_data, sender) = bob
+            .validate_custom_proposal(&proposal, Some(TEST_CUSTOM_PROPOSAL_TYPE))
+            .await
+            .unwrap();
+        assert_eq!(data, validated_data);
+        assert_eq!(sender, Sender::Member(0));
+    }
+
+    #[cfg(all(
+        feature = "prior_epoch",
+        feature = "custom_proposal",
+        feature = "by_ref_proposal",
+        feature = "prior_epoch_membership_key"
+    ))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_can_validate_and_get_data_custom_proposal_from_current_epoch() {
+        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (mut bob, _) = alice.join("bob").await;
+
+        let data = vec![1, 2, 3];
+        let custom_proposal = CustomProposal::new(TEST_CUSTOM_PROPOSAL_TYPE, vec![3, 4, 5]);
+        let proposal = alice
+            .propose_custom(custom_proposal.clone(), data.clone())
+            .await
+            .unwrap();
+
+        let (validated_data, sender) = bob.validate_custom_proposal(&proposal, None).await.unwrap();
+        assert_eq!(data, validated_data);
+        assert_eq!(sender, Sender::Member(0));
+    }
+
+    #[cfg(all(feature = "prior_epoch", feature = "prior_epoch_membership_key"))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_can_validate_non_custom_proposal_from_past_epoch() {
+        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (mut bob, _) = alice.join("bob").await;
+
+        let proposal = alice.propose_update(Vec::new()).await.unwrap();
+
+        // add carol to the group
+        let (_carol, commit) = alice.join("carol").await;
+        bob.process_incoming_message(commit).await.unwrap();
+
+        bob.validate_public_message(&proposal).await.unwrap();
+    }
+
+    #[cfg(all(
+        feature = "prior_epoch",
+        feature = "by_ref_proposal",
+        feature = "prior_epoch_membership_key"
+    ))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_cannot_validate_custom_proposal_for_non_custom_proposal() {
+        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (mut bob, _) = alice.join("bob").await;
+
+        let proposal = alice.propose_update(Vec::new()).await.unwrap();
+
+        // add carol to the group
+        let (_carol, commit) = alice.join("carol").await;
+        bob.process_incoming_message(commit).await.unwrap();
+
+        let data_err = bob.validate_custom_proposal(&proposal, None).await;
+        assert_matches!(data_err, Err(MlsError::UnexpectedMessageType));
+    }
+
+    #[cfg(all(feature = "prior_epoch", feature = "prior_epoch_membership_key"))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_can_validate_commit_from_past_epoch() {
+        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (mut bob, _) = alice.join("bob").await;
+
+        let old_commit_output = bob
+            .commit_builder()
+            .remove_member(0)
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+
+        // add carol to the group
+        let (_carol, commit) = alice.join("carol").await;
+        bob.process_incoming_message(commit).await.unwrap();
+
+        bob.validate_public_message(&old_commit_output.commit_message)
+            .await
+            .unwrap();
+    }
+
+    #[cfg(all(
+        feature = "prior_epoch",
+        feature = "custom_proposal",
+        feature = "prior_epoch_membership_key"
+    ))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_can_validate_custom_proposal_from_current_epoch() {
+        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (mut bob, _) = alice.join("bob").await;
+
+        let custom_proposal = CustomProposal::new(TEST_CUSTOM_PROPOSAL_TYPE, vec![0, 1, 2]);
+        let proposal = alice
+            .propose_custom(custom_proposal.clone(), vec![])
+            .await
+            .unwrap();
+
+        bob.validate_public_message(&proposal).await.unwrap();
+    }
+
+    #[cfg(all(feature = "prior_epoch", feature = "prior_epoch_membership_key"))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_cannot_validate_non_public_message() {
+        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (mut bob, _) = alice.join("bob").await;
+
+        let res = alice
+            .encrypt_application_message(b"test", vec![])
+            .await
+            .unwrap();
+
+        let auth_content = bob.validate_public_message(&res).await;
+        assert_matches!(auth_content, Err(MlsError::UnexpectedMessageType));
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]

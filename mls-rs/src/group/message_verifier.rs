@@ -8,7 +8,7 @@ use alloc::{vec, vec::Vec};
 use crate::{
     client::MlsError,
     crypto::SignaturePublicKey,
-    group::{GroupContext, PublicMessage, Sender},
+    group::{GroupContext, MembershipTag, PublicMessage, Sender},
     signer::Signable,
     tree_kem::{node::LeafIndex, TreeKemPublic},
     CipherSuiteProvider,
@@ -17,11 +17,7 @@ use crate::{
 #[cfg(feature = "by_ref_proposal")]
 use crate::{extension::ExternalSendersExt, identity::SigningIdentity};
 
-use super::{
-    key_schedule::KeySchedule,
-    message_signature::{AuthenticatedContent, MessageSigningContext},
-    state::GroupState,
-};
+use super::message_signature::{AuthenticatedContent, MessageSigningContext};
 
 #[cfg(feature = "by_ref_proposal")]
 use super::proposal::Proposal;
@@ -37,29 +33,31 @@ pub(crate) enum SignaturePublicKeysContainer<'a> {
 pub(crate) async fn verify_plaintext_authentication<P: CipherSuiteProvider>(
     cipher_suite_provider: &P,
     plaintext: PublicMessage,
-    key_schedule: Option<&KeySchedule>,
-    state: &GroupState,
+    membership_key: Option<&[u8]>,
+    context: &GroupContext,
+    signature_keys_container: SignaturePublicKeysContainer<'_>,
 ) -> Result<AuthenticatedContent, MlsError> {
     let tag = plaintext.membership_tag.clone();
     let auth_content = AuthenticatedContent::from(plaintext);
-    let context = &state.context;
 
     #[cfg(feature = "by_ref_proposal")]
     let external_signers = external_signers(context);
 
-    let current_tree = &state.public_tree;
-
     // Verify the membership tag if needed
     match &auth_content.content.sender {
         Sender::Member(_) => {
-            if let Some(key_schedule) = key_schedule {
-                let expected_tag = &key_schedule
-                    .get_membership_tag(&auth_content, context, cipher_suite_provider)
-                    .await?;
+            if let Some(membership_key) = membership_key {
+                let expected_tag = MembershipTag::create(
+                    &auth_content,
+                    context,
+                    membership_key,
+                    cipher_suite_provider,
+                )
+                .await?;
 
                 let plaintext_tag = tag.as_ref().ok_or(MlsError::InvalidMembershipTag)?;
 
-                if expected_tag != plaintext_tag {
+                if &expected_tag != plaintext_tag {
                     return Err(MlsError::InvalidMembershipTag);
                 }
             }
@@ -75,7 +73,7 @@ pub(crate) async fn verify_plaintext_authentication<P: CipherSuiteProvider>(
     // from the credential stored at the leaf in the tree indicated by the sender field.
     verify_auth_content_signature(
         cipher_suite_provider,
-        SignaturePublicKeysContainer::RatchetTree(current_tree),
+        signature_keys_container,
         context,
         &auth_content,
         #[cfg(feature = "by_ref_proposal")]
@@ -325,8 +323,9 @@ mod tests {
         verify_plaintext_authentication(
             &env.bob.cipher_suite_provider,
             message,
-            Some(&env.bob.key_schedule),
-            &env.bob.state,
+            Some(&env.bob.key_schedule.membership_key),
+            &env.bob.state.context,
+            super::SignaturePublicKeysContainer::RatchetTree(&env.bob.state.public_tree),
         )
         .await
         .unwrap();
@@ -371,8 +370,9 @@ mod tests {
         let res = verify_plaintext_authentication(
             &env.bob.cipher_suite_provider,
             message,
-            Some(&env.bob.key_schedule),
-            &env.bob.state,
+            Some(&env.bob.key_schedule.membership_key),
+            &env.bob.state.context,
+            SignaturePublicKeysContainer::RatchetTree(&env.bob.state.public_tree),
         )
         .await;
 
@@ -388,8 +388,9 @@ mod tests {
         let res = verify_plaintext_authentication(
             &env.bob.cipher_suite_provider,
             message,
-            Some(&env.bob.key_schedule),
-            &env.bob.state,
+            Some(&env.bob.key_schedule.membership_key),
+            &env.bob.state.context,
+            SignaturePublicKeysContainer::RatchetTree(&env.bob.state.public_tree),
         )
         .await;
 
@@ -405,8 +406,9 @@ mod tests {
         let res = verify_plaintext_authentication(
             &env.bob.cipher_suite_provider,
             message,
-            Some(&env.bob.key_schedule),
-            &env.bob.state,
+            Some(&env.bob.key_schedule.membership_key),
+            &env.bob.state.context,
+            SignaturePublicKeysContainer::RatchetTree(&env.bob.state.public_tree),
         )
         .await;
 
@@ -468,8 +470,9 @@ mod tests {
         verify_plaintext_authentication(
             &test_group.cipher_suite_provider,
             message,
-            Some(&test_group.key_schedule),
-            &test_group.state,
+            Some(&test_group.key_schedule.membership_key),
+            &test_group.state.context,
+            SignaturePublicKeysContainer::RatchetTree(&test_group.state.public_tree),
         )
         .await
         .unwrap();
@@ -488,8 +491,9 @@ mod tests {
         let res = verify_plaintext_authentication(
             &test_group.cipher_suite_provider,
             message,
-            Some(&test_group.key_schedule),
-            &test_group.state,
+            Some(&test_group.key_schedule.membership_key),
+            &test_group.state.context,
+            SignaturePublicKeysContainer::RatchetTree(&test_group.state.public_tree),
         )
         .await;
 
@@ -513,8 +517,9 @@ mod tests {
         let res: Result<AuthenticatedContent, MlsError> = verify_plaintext_authentication(
             &test_group.cipher_suite_provider,
             message,
-            Some(&test_group.key_schedule),
-            &test_group.state,
+            Some(&test_group.key_schedule.membership_key),
+            &test_group.state.context,
+            SignaturePublicKeysContainer::RatchetTree(&test_group.state.public_tree),
         )
         .await;
 
@@ -536,8 +541,9 @@ mod tests {
         let res = verify_plaintext_authentication(
             &test_group.cipher_suite_provider,
             message,
-            Some(&test_group.key_schedule),
-            &test_group.state,
+            Some(&test_group.key_schedule.membership_key),
+            &test_group.state.context,
+            SignaturePublicKeysContainer::RatchetTree(&test_group.state.public_tree),
         )
         .await;
 
@@ -579,8 +585,9 @@ mod tests {
         verify_plaintext_authentication(
             &test_group.cipher_suite_provider,
             message,
-            Some(&test_group.key_schedule),
-            &test_group.state,
+            Some(&test_group.key_schedule.membership_key),
+            &test_group.state.context,
+            SignaturePublicKeysContainer::RatchetTree(&test_group.state.public_tree),
         )
         .await
         .unwrap();
@@ -602,8 +609,9 @@ mod tests {
         let res = verify_plaintext_authentication(
             &test_group.cipher_suite_provider,
             message,
-            Some(&test_group.key_schedule),
-            &test_group.state,
+            Some(&test_group.key_schedule.membership_key),
+            &test_group.state.context,
+            SignaturePublicKeysContainer::RatchetTree(&test_group.state.public_tree),
         )
         .await;
 
@@ -628,8 +636,9 @@ mod tests {
         let res = verify_plaintext_authentication(
             &test_group.cipher_suite_provider,
             message,
-            Some(&test_group.key_schedule),
-            &test_group.state,
+            Some(&test_group.key_schedule.membership_key),
+            &test_group.state.context,
+            SignaturePublicKeysContainer::RatchetTree(&test_group.state.public_tree),
         )
         .await;
 
