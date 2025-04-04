@@ -101,7 +101,7 @@ pub struct NewEpoch {
 
 impl NewEpoch {
     pub(crate) fn new(prior_state: GroupState, provisional_state: &ProvisionalState) -> NewEpoch {
-        NewEpoch {
+        let res = NewEpoch {
             epoch: provisional_state.group_context.epoch,
             prior_state,
             unused_proposals: provisional_state.unused_proposals.clone(),
@@ -110,7 +110,8 @@ impl NewEpoch {
                 .clone()
                 .into_proposals()
                 .collect_vec(),
-        }
+        };
+        res
     }
 }
 
@@ -734,6 +735,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
             None => None,
         };
 
+        dbg!("yes");
         let commit_effect =
             if let Some(reinit) = provisional_state.applied_proposals.reinitializations.pop() {
                 self.group_state_mut().pending_reinit = Some(reinit.proposal.clone());
@@ -745,10 +747,11 @@ pub(crate) trait MessageProcessor: Send + Sync {
                     new_epoch: Box::new(new_epoch),
                 }
             } else {
-                CommitEffect::NewEpoch(Box::new(NewEpoch::new(
+                let res = CommitEffect::NewEpoch(Box::new(NewEpoch::new(
                     self.group_state().clone(),
                     &provisional_state,
-                )))
+                )));
+                res
             };
 
         let new_secrets = match update_path {
@@ -785,7 +788,6 @@ pub(crate) trait MessageProcessor: Send + Sync {
                 )
                 .await?;
             }
-
             Ok(CommitMessageDescription {
                 is_external: matches!(auth_content.content.sender, Sender::NewMemberCommit),
                 authenticated_data: auth_content.content.authenticated_data,

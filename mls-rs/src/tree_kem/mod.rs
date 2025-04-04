@@ -274,6 +274,7 @@ impl TreeKemPublic {
     {
         // Install the new leaf node
         let existing_leaf = self.nodes.borrow_as_leaf_mut(sender)?;
+        dbg!("pre-here");
 
         #[cfg(feature = "tree_index")]
         let original_leaf_node = existing_leaf.clone();
@@ -314,6 +315,8 @@ impl TreeKemPublic {
         // in the local tree
         self.update_parent_hashes(sender, true, cipher_suite_provider)
             .await?;
+
+        dbg!("here");
 
         Ok(())
     }

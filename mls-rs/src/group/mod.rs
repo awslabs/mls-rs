@@ -4856,15 +4856,20 @@ mod tests {
             .0;
 
         let bob_self_remove = bob.propose_self_remove(Vec::new()).await.unwrap();
+        // let bob_self_remove = bob.propose_remove(1, Vec::new()).await.unwrap();
 
         // Alice receives the update proposals to be committed.
         alice
+            .process_incoming_message(bob_self_remove.clone())
+            .await
+            .unwrap();
+        carol
             .process_incoming_message(bob_self_remove)
             .await
             .unwrap();
 
         // Alice commits.
-        alice.commit(Vec::new()).await.unwrap();
+        let commit = alice.commit(Vec::new()).await.unwrap();
         alice.apply_pending_commit().await.unwrap();
 
         // now, Alice
@@ -4873,6 +4878,9 @@ mod tests {
             carol.member_at_index(carol.current_member_index()).unwrap(),
         ];
         itertools::assert_equal(alice.roster().members_iter(), expected_members.into_iter());
+
+        carol.process_incoming_message(commit.commit_message).await.unwrap();
+        panic!("die");
     }
 
     #[cfg(feature = "custom_proposal")]
