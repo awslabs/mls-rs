@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
+use mls_rs_core::time::MlsTime;
 use mls_rs_core::{
     crypto::SignatureSecretKey, error::IntoAnyError, extension::ExtensionList, group::Member,
     identity::IdentityProvider,
@@ -187,6 +188,34 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             message,
             #[cfg(feature = "by_ref_proposal")]
             self.config.cache_proposals(),
+        )
+        .await
+    }
+
+    /// Process an inbound message for this group, providing additional context
+    /// with a message timestamp.
+    ///
+    /// Providing a timestamp is useful when the
+    /// [`IdentityProvider`](crate::IdentityProvider) in use by the group can
+    /// determine validity based on a timestamp. For example, this allows for
+    /// checking X.509 certificate expiration at the time when `message` was
+    /// received by a server rather than when a specific client asynchronously
+    /// received `message`
+    ///
+    /// See [`process_incoming_message`](Self::process_incoming_message) for
+    /// full details.
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn process_incoming_message_with_time(
+        &mut self,
+        message: MlsMessage,
+        time: MlsTime,
+    ) -> Result<ExternalReceivedMessage, MlsError> {
+        MessageProcessor::process_incoming_message_with_time(
+            self,
+            message,
+            #[cfg(feature = "by_ref_proposal")]
+            self.config.cache_proposals(),
+            Some(time),
         )
         .await
     }
