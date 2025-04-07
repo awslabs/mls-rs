@@ -4879,7 +4879,10 @@ mod tests {
         ];
         itertools::assert_equal(alice.roster().members_iter(), expected_members.into_iter());
 
-        carol.process_incoming_message(commit.commit_message).await.unwrap();
+        carol
+            .process_incoming_message(commit.commit_message)
+            .await
+            .unwrap();
         panic!("die");
     }
 

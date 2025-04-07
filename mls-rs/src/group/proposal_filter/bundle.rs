@@ -244,6 +244,11 @@ impl ProposalBundle {
                 self.reinitializations
                     .iter()
                     .map(|p| p.as_ref().map(BorrowedProposal::ReInit)),
+            )
+            .chain(
+                self.self_removes
+                    .iter()
+                    .map(|p| p.as_ref().map(BorrowedProposal::SelfRemove)),
             );
 
         #[cfg(feature = "by_ref_proposal")]
@@ -319,7 +324,12 @@ impl ProposalBundle {
         .chain(
             self.group_context_extensions
                 .into_iter()
-                .map(|p| p.map(Proposal::GroupContextExtensions)),
+                .map(|p| p.map(Proposal::GroupContextExtensions))
+                .chain(
+                    self.self_removes
+                        .into_iter()
+                        .map(|p| p.map(Proposal::SelfRemove)),
+                ),
         )
     }
 
