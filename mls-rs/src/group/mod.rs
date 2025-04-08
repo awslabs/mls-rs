@@ -1067,7 +1067,7 @@ where
         authenticated_data: Vec<u8>,
     ) -> Result<MlsMessage, MlsError> {
         if self.state.proposals.has_own_self_remove() {
-            // TODO return error here
+            return Err(MlsError::SelfRemoveAlreadyProposed);
         }
         let proposal = Proposal::SelfRemove(SelfRemoveProposal {});
         self.proposal_message(proposal, authenticated_data).await
@@ -4790,6 +4790,36 @@ mod tests {
 
     #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn client_cannot_self_remove_twice() {
+        let mut alice = TestClientBuilder::new_for_test()
+            .with_random_signing_identity("alice", TEST_CIPHER_SUITE)
+            .await
+            .custom_proposal_type(ProposalType::SELF_REMOVE)
+            .build()
+            .create_group(ExtensionList::new(), Default::default())
+            .await
+            .unwrap();
+
+        alice.propose_self_remove(Vec::new()).await.unwrap();
+        let again = alice.propose_self_remove(Vec::new()).await;
+        assert_matches!(again, Err(MlsError::SelfRemoveAlreadyProposed));
+    }
+
+    
+    #[cfg(feature = "custom_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn commit_with_both_remove_and_self_remove_for_same_client_works() {
+        // the self-remove takes precedence
+    }
+
+    #[cfg(feature = "custom_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn client_processing_commit_with_self_remove_without_processing_proposal_first_errors() {
+
+    }
+
+    #[cfg(feature = "by_ref_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn client_can_self_remove_and_another_client_can_commit() {
         // Alice creates a group that supports the self-remove proposal.
         let mut alice = TestClientBuilder::new_for_test()
@@ -4819,7 +4849,7 @@ mod tests {
             .custom_proposal_type(ProposalType::SELF_REMOVE)
             .build();
 
-        // Alice adds Bob, Carol to the group. They all support the mandatory extension.
+        // Alice adds Bob, Carol to the group.
         let commit = alice
             .commit_builder()
             .add_member(
@@ -4848,17 +4878,19 @@ mod tests {
             .unwrap()
             .0;
 
-        bob.write_to_storage().await.unwrap();
         let mut carol = carol_client
             .join_group(None, &commit.welcome_messages[0])
             .await
             .unwrap()
             .0;
 
+        // Bob proposes self-remove.
         let bob_self_remove = bob.propose_self_remove(Vec::new()).await.unwrap();
-        // let bob_self_remove = bob.propose_remove(1, Vec::new()).await.unwrap();
 
-        // Alice receives the update proposals to be committed.
+        // Alice receives the self-remove proposal to be committed.
+        // Carol also receives the self-remove proposal. Carol will need this in order
+        // to process the commit including the proposal, because self-remove proposals
+        // are included by reference.
         alice
             .process_incoming_message(bob_self_remove.clone())
             .await
@@ -4868,22 +4900,28 @@ mod tests {
             .await
             .unwrap();
 
-        // Alice commits.
+        // Alice commits Bob's self-remove.
         let commit = alice.commit(Vec::new()).await.unwrap();
         alice.apply_pending_commit().await.unwrap();
 
-        // now, Alice
+        // Assert that after applying the commit removing Bob, that Bob is no longer in the group.
         let expected_members = vec![
             alice.member_at_index(alice.current_member_index()).unwrap(),
             carol.member_at_index(carol.current_member_index()).unwrap(),
         ];
-        itertools::assert_equal(alice.roster().members_iter(), expected_members.into_iter());
+        itertools::assert_equal(alice.roster().members_iter(), expected_members.clone().into_iter());
 
+        // Assert that Carol can also process the commit and it removes Bob from the group.
         carol
+            .process_incoming_message(commit.commit_message.clone())
+            .await
+            .unwrap();
+        itertools::assert_equal(carol.roster().members_iter(), expected_members.clone().into_iter());
+        // Assert that Bob can process the commit.
+        bob
             .process_incoming_message(commit.commit_message)
             .await
             .unwrap();
-        panic!("die");
     }
 
     #[cfg(feature = "custom_proposal")]
@@ -4924,12 +4962,13 @@ mod tests {
             .unwrap();
 
         let bob_self_remove = bob.propose_self_remove(Vec::new()).await.unwrap();
-        // let bob_self_remove = bob.propose_custom(CustomProposal::new(TEST_CUSTOM_PROPOSAL_TYPE, vec![]), vec![]).await.unwrap();
 
         let group_info = alice
             .group_info_message_allowing_ext_commit(true)
             .await
             .unwrap();
+        carol.process_incoming_message(bob_self_remove.clone()).await.unwrap();
+        alice.process_incoming_message(bob_self_remove.clone()).await.unwrap();
 
         let (_, commit) = carol_client
             .external_commit_builder()
@@ -4940,7 +4979,21 @@ mod tests {
             .await
             .unwrap();
 
-        carol.process_incoming_message(commit).await.unwrap();
+        carol.process_incoming_message(commit.clone()).await.unwrap();
+        bob.process_incoming_message(commit.clone()).await.unwrap();
+        alice.process_incoming_message(commit).await.unwrap();
+    }
+
+    #[cfg(feature = "custom_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn external_commit_can_have_multiple_self_removes() {
+
+    }
+
+    #[cfg(feature = "custom_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn external_commit_cannot_remove_committer() {
+
     }
 
     #[cfg(feature = "custom_proposal")]

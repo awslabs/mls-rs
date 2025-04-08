@@ -340,6 +340,8 @@ pub enum MlsError {
     InvalidWelcomeMessage,
     #[cfg_attr(feature = "std", error("Exporter deleted"))]
     ExporterDeleted,
+    #[cfg_attr(feature = "std", error("Self-remove already proposed"))]
+    SelfRemoveAlreadyProposed,
 }
 
 impl IntoAnyError for MlsError {
