@@ -347,30 +347,7 @@ impl TreeKemPublic {
         CP: CipherSuiteProvider,
     {
         // Apply removes (they commute with updates because they don't touch the same leaves)
-        for i in (0..proposal_bundle.remove_proposals().len()).rev() {
-            let index = proposal_bundle.remove_proposals()[i].proposal.to_remove;
-            let res = self.nodes.blank_leaf_node(index);
-
-            if res.is_ok() {
-                // This shouldn't fail if `blank_leaf_node` succedded.
-                self.nodes.blank_direct_path(index)?;
-            }
-
-            #[cfg(feature = "tree_index")]
-            if let Ok(old_leaf) = &res {
-                // If this fails, it's not because the proposal is bad.
-                let identity =
-                    identity(&old_leaf.signing_identity, id_provider, extensions).await?;
-
-                self.index.remove(old_leaf, &identity);
-            }
-
-            if proposal_bundle.remove_proposals()[i].is_by_value() || !filter {
-                res?;
-            } else if res.is_err() {
-                proposal_bundle.remove::<RemoveProposal>(i);
-            }
-        }
+        // Self-removes take precedence
         for i in (0..proposal_bundle.self_removes.len()).rev() {
             let index = match proposal_bundle.self_removes[i].sender {
                 crate::group::Sender::Member(idx) => LeafIndex(idx),
@@ -396,6 +373,30 @@ impl TreeKemPublic {
                 res?;
             } else if res.is_err() {
                 proposal_bundle.remove::<SelfRemoveProposal>(i);
+            }
+        }
+        for i in (0..proposal_bundle.remove_proposals().len()).rev() {
+            let index = proposal_bundle.remove_proposals()[i].proposal.to_remove;
+            let res = self.nodes.blank_leaf_node(index);
+
+            if res.is_ok() {
+                // This shouldn't fail if `blank_leaf_node` succedded.
+                self.nodes.blank_direct_path(index)?;
+            }
+
+            #[cfg(feature = "tree_index")]
+            if let Ok(old_leaf) = &res {
+                // If this fails, it's not because the proposal is bad.
+                let identity =
+                    identity(&old_leaf.signing_identity, id_provider, extensions).await?;
+
+                self.index.remove(old_leaf, &identity);
+            }
+
+            if proposal_bundle.remove_proposals()[i].is_by_value() || !filter {
+                res?;
+            } else if res.is_err() {
+                proposal_bundle.remove::<RemoveProposal>(i);
             }
         }
 
