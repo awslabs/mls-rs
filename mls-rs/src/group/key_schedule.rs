@@ -40,7 +40,7 @@ pub struct KeySchedule {
     external_secret: Zeroizing<Vec<u8>>,
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::zeroizing_serde"))]
-    membership_key: Zeroizing<Vec<u8>>,
+    pub(crate) membership_key: Zeroizing<Vec<u8>>,
     init_secret: InitSecret,
 }
 
