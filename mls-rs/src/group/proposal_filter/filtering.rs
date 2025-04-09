@@ -7,7 +7,7 @@ use crate::{
     group::{
         proposal::ReInitProposal,
         proposal_filter::{ProposalBundle, ProposalInfo},
-        AddProposal, ProposalType, RemoveProposal, SelfRemoveProposal, Sender, UpdateProposal,
+        AddProposal, ProposalType, RemoveProposal, Sender, UpdateProposal,
     },
     iter::wrap_iter,
     mls_rules::CommitDirection,
@@ -28,6 +28,13 @@ use super::{
 
 #[cfg(feature = "by_ref_proposal")]
 use crate::extension::ExternalSendersExt;
+
+#[cfg(all(
+    feature = "by_ref_proposal",
+    feature = "custom_proposal",
+    feature = "self_remove_proposal"
+))]
+use crate::group::SelfRemoveProposal;
 
 use alloc::vec::Vec;
 use mls_rs_core::{
@@ -106,6 +113,11 @@ where
         let proposals = filter_out_reinit_if_other_proposals(strategy.is_ignore(), proposals)?;
         let proposals = filter_out_external_init(strategy, proposals)?;
 
+        #[cfg(all(
+            feature = "by_ref_proposal",
+            feature = "custom_proposal",
+            feature = "self_remove_proposal"
+        ))]
         check_for_remove_and_self_remove_same_leaf(&proposals)?;
 
         self.apply_proposal_changes(strategy, proposals, commit_time)
@@ -304,6 +316,11 @@ pub(crate) fn apply_strategy(
         .or_else(|error| strategy.ignore(by_ref).then_some(false).ok_or(error))
 }
 
+#[cfg(all(
+    feature = "by_ref_proposal",
+    feature = "custom_proposal",
+    feature = "self_remove_proposal"
+))]
 fn check_for_remove_and_self_remove_same_leaf(proposals: &ProposalBundle) -> Result<(), MlsError> {
     let removed_leaves: Vec<u32> = proposals
         .by_type::<RemoveProposal>()
@@ -356,6 +373,11 @@ fn filter_out_removal_of_committer(
                 .ok_or(MlsError::CommitterSelfRemoval),
         )
     })?;
+    #[cfg(all(
+        feature = "by_ref_proposal",
+        feature = "custom_proposal",
+        feature = "self_remove_proposal"
+    ))]
     proposals.retain_by_type::<SelfRemoveProposal, _, _>(|p| {
         apply_strategy(
             strategy,
@@ -495,37 +517,58 @@ pub(crate) fn proposer_can_propose(
     source: &ProposalSource,
 ) -> Result<(), MlsError> {
     let can_propose = match (proposer, source) {
-        (Sender::Member(_), ProposalSource::ByValue | ProposalSource::Local) => matches!(
-            proposal_type,
-            ProposalType::ADD
-                | ProposalType::REMOVE
-                | ProposalType::PSK
-                | ProposalType::RE_INIT
-                | ProposalType::GROUP_CONTEXT_EXTENSIONS
-                | ProposalType::SELF_REMOVE
-        ),
-        (Sender::Member(_), ProposalSource::ByReference(_)) => matches!(
-            proposal_type,
-            ProposalType::ADD
-                | ProposalType::UPDATE
-                | ProposalType::REMOVE
-                | ProposalType::PSK
-                | ProposalType::RE_INIT
-                | ProposalType::GROUP_CONTEXT_EXTENSIONS
-                | ProposalType::SELF_REMOVE
-        ),
+        (Sender::Member(_), ProposalSource::ByValue | ProposalSource::Local) => {
+            let can_propose = matches!(
+                proposal_type,
+                ProposalType::ADD
+                    | ProposalType::REMOVE
+                    | ProposalType::PSK
+                    | ProposalType::RE_INIT
+                    | ProposalType::GROUP_CONTEXT_EXTENSIONS
+            );
+            #[cfg(all(
+                feature = "by_ref_proposal",
+                feature = "custom_proposal",
+                feature = "self_remove_proposal"
+            ))]
+            let can_propose = can_propose || matches!(proposal_type, ProposalType::SELF_REMOVE);
+            can_propose
+        }
+        (Sender::Member(_), ProposalSource::ByReference(_)) => {
+            let can_propose = matches!(
+                proposal_type,
+                ProposalType::ADD
+                    | ProposalType::UPDATE
+                    | ProposalType::REMOVE
+                    | ProposalType::PSK
+                    | ProposalType::RE_INIT
+                    | ProposalType::GROUP_CONTEXT_EXTENSIONS
+            );
+            #[cfg(all(
+                feature = "by_ref_proposal",
+                feature = "custom_proposal",
+                feature = "self_remove_proposal"
+            ))]
+            let can_propose = can_propose || matches!(proposal_type, ProposalType::SELF_REMOVE);
+            can_propose
+        }
         #[cfg(feature = "by_ref_proposal")]
         (Sender::External(_), ProposalSource::ByValue) => false,
         #[cfg(feature = "by_ref_proposal")]
-        (Sender::External(_), _) => matches!(
-            proposal_type,
-            ProposalType::ADD
-                | ProposalType::REMOVE
-                | ProposalType::RE_INIT
-                | ProposalType::PSK
-                | ProposalType::GROUP_CONTEXT_EXTENSIONS
-                | ProposalType::SELF_REMOVE
-        ),
+        (Sender::External(_), _) => {
+            let can_propose = matches!(
+                proposal_type,
+                ProposalType::ADD
+                    | ProposalType::REMOVE
+                    | ProposalType::RE_INIT
+                    | ProposalType::PSK
+                    | ProposalType::GROUP_CONTEXT_EXTENSIONS
+            );
+
+            #[cfg(all(feature = "custom_proposal", feature = "self_remove_proposal"))]
+            let can_propose = can_propose || matches!(proposal_type, ProposalType::SELF_REMOVE);
+            can_propose
+        }
         (Sender::NewMemberCommit, ProposalSource::ByValue | ProposalSource::Local) => matches!(
             proposal_type,
             ProposalType::REMOVE | ProposalType::PSK | ProposalType::EXTERNAL_INIT
@@ -574,6 +617,11 @@ pub(crate) fn filter_out_invalid_proposers(
         }
     }
 
+    #[cfg(all(
+        feature = "by_ref_proposal",
+        feature = "custom_proposal",
+        feature = "self_remove_proposal"
+    ))]
     for i in (0..proposals.self_remove_proposals().len()).rev() {
         let p = &proposals.self_remove_proposals()[i];
         let res = proposer_can_propose(p.sender, ProposalType::SELF_REMOVE, &p.source);

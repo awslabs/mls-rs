@@ -12,10 +12,17 @@ use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use crate::{
     group::{
         AddProposal, BorrowedProposal, Proposal, ProposalOrRef, ProposalType, ReInitProposal,
-        RemoveProposal, SelfRemoveProposal, Sender,
+        RemoveProposal, Sender,
     },
     ExtensionList,
 };
+
+#[cfg(all(
+    feature = "by_ref_proposal",
+    feature = "custom_proposal",
+    feature = "self_remove_proposal"
+))]
+use crate::group::SelfRemoveProposal;
 
 #[cfg(feature = "by_ref_proposal")]
 use crate::group::{proposal_cache::CachedProposal, LeafIndex, ProposalRef, UpdateProposal};
@@ -45,6 +52,11 @@ pub struct ProposalBundle {
     pub(crate) reinitializations: Vec<ProposalInfo<ReInitProposal>>,
     pub(crate) external_initializations: Vec<ProposalInfo<ExternalInit>>,
     pub(crate) group_context_extensions: Vec<ProposalInfo<ExtensionList>>,
+    #[cfg(all(
+        feature = "by_ref_proposal",
+        feature = "custom_proposal",
+        feature = "self_remove_proposal"
+    ))]
     pub(crate) self_removes: Vec<ProposalInfo<SelfRemoveProposal>>,
     #[cfg(feature = "custom_proposal")]
     pub(crate) custom_proposals: Vec<ProposalInfo<CustomProposal>>,
@@ -92,6 +104,11 @@ impl ProposalBundle {
                     source,
                 })
             }
+            #[cfg(all(
+                feature = "by_ref_proposal",
+                feature = "custom_proposal",
+                feature = "self_remove_proposal"
+            ))]
             Proposal::SelfRemove(proposal) => self.self_removes.push(ProposalInfo {
                 proposal,
                 sender,
@@ -244,12 +261,17 @@ impl ProposalBundle {
                 self.reinitializations
                     .iter()
                     .map(|p| p.as_ref().map(BorrowedProposal::ReInit)),
-            )
-            .chain(
-                self.self_removes
-                    .iter()
-                    .map(|p| p.as_ref().map(BorrowedProposal::SelfRemove)),
             );
+        #[cfg(all(
+            feature = "by_ref_proposal",
+            feature = "custom_proposal",
+            feature = "self_remove_proposal"
+        ))]
+        let res = res.chain(
+            self.self_removes
+                .iter()
+                .map(|p| p.as_ref().map(BorrowedProposal::SelfRemove)),
+        );
 
         #[cfg(feature = "by_ref_proposal")]
         let res = res.chain(
@@ -310,18 +332,24 @@ impl ProposalBundle {
         #[cfg(feature = "by_ref_proposal")]
         let res = res.chain(self.updates.into_iter().map(|p| p.map(Proposal::Update)));
 
-        res.chain(
-            self.additions
-                .into_iter()
-                .map(|p| p.map(|p| Proposal::Add(alloc::boxed::Box::new(p)))),
-        )
-        .chain(self.removals.into_iter().map(|p| p.map(Proposal::Remove)))
-        .chain(
-            self.reinitializations
-                .into_iter()
-                .map(|p| p.map(Proposal::ReInit)),
-        )
-        .chain(
+        let res = res
+            .chain(
+                self.additions
+                    .into_iter()
+                    .map(|p| p.map(|p| Proposal::Add(alloc::boxed::Box::new(p)))),
+            )
+            .chain(self.removals.into_iter().map(|p| p.map(Proposal::Remove)))
+            .chain(
+                self.reinitializations
+                    .into_iter()
+                    .map(|p| p.map(Proposal::ReInit)),
+            );
+        #[cfg(all(
+            feature = "by_ref_proposal",
+            feature = "custom_proposal",
+            feature = "self_remove_proposal"
+        ))]
+        let res = res.chain(
             self.group_context_extensions
                 .into_iter()
                 .map(|p| p.map(Proposal::GroupContextExtensions))
@@ -330,7 +358,8 @@ impl ProposalBundle {
                         .into_iter()
                         .map(|p| p.map(Proposal::SelfRemove)),
                 ),
-        )
+        );
+        res
     }
 
     pub(crate) fn proposals_or_refs(&self) -> Vec<ProposalOrRef> {
@@ -390,6 +419,11 @@ impl ProposalBundle {
     }
 
     /// Self-remove proposals in the bundle.
+    #[cfg(all(
+        feature = "by_ref_proposal",
+        feature = "custom_proposal",
+        feature = "self_remove_proposal"
+    ))]
     pub fn self_remove_proposals(&self) -> &[ProposalInfo<SelfRemoveProposal>] {
         &self.self_removes
     }
@@ -685,6 +719,11 @@ impl_proposable!(RemoveProposal, REMOVE, removals);
 impl_proposable!(PreSharedKeyProposal, PSK, psks);
 impl_proposable!(ReInitProposal, RE_INIT, reinitializations);
 impl_proposable!(ExternalInit, EXTERNAL_INIT, external_initializations);
+#[cfg(all(
+    feature = "by_ref_proposal",
+    feature = "custom_proposal",
+    feature = "self_remove_proposal"
+))]
 impl_proposable!(SelfRemoveProposal, SELF_REMOVE, self_removes);
 impl_proposable!(
     ExtensionList,

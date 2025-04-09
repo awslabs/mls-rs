@@ -24,7 +24,14 @@ use crate::client::MlsError;
 use crate::crypto::{self, CipherSuiteProvider, HpkeSecretKey};
 
 #[cfg(feature = "by_ref_proposal")]
-use crate::group::proposal::{AddProposal, SelfRemoveProposal, UpdateProposal};
+use crate::group::proposal::{AddProposal, UpdateProposal};
+
+#[cfg(all(
+    feature = "by_ref_proposal",
+    feature = "custom_proposal",
+    feature = "self_remove_proposal"
+))]
+use crate::group::proposal::SelfRemoveProposal;
 
 #[cfg(any(test, feature = "by_ref_proposal"))]
 use crate::group::proposal::RemoveProposal;
@@ -345,6 +352,7 @@ impl TreeKemPublic {
     {
         // Apply removes (they commute with updates because they don't touch the same leaves)
         // Self-removes take precedence
+        #[cfg(all(feature = "custom_proposal", feature = "self_remove_proposal"))]
         for i in (0..proposal_bundle.self_removes.len()).rev() {
             let index = match proposal_bundle.self_removes[i].sender {
                 crate::group::Sender::Member(idx) => LeafIndex(idx),

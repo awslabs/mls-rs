@@ -2,6 +2,12 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
+#[cfg(all(
+    feature = "by_ref_proposal",
+    feature = "custom_proposal",
+    feature = "self_remove_proposal"
+))]
+use super::SelfRemoveProposal;
 use super::{
     commit_sender,
     confirmation_tag::ConfirmationTag,
@@ -14,7 +20,7 @@ use super::{
     state::GroupState,
     transcript_hash::InterimTranscriptHash,
     transcript_hashes, validate_group_info_member, GroupContext, GroupInfo, ReInitProposal,
-    RemoveProposal, SelfRemoveProposal, Welcome,
+    RemoveProposal, Welcome,
 };
 use crate::{
     client::MlsError,
@@ -78,7 +84,11 @@ pub(crate) fn path_update_required(proposals: &ProposalBundle) -> bool {
     #[cfg(feature = "by_ref_proposal")]
     let res = res || !proposals.update_proposals().is_empty();
 
-    // TODO flag this out
+    #[cfg(all(
+        feature = "by_ref_proposal",
+        feature = "custom_proposal",
+        feature = "self_remove_proposal"
+    ))]
     let res = res || !proposals.self_removes.is_empty();
 
     res || proposals.length() == 0
@@ -710,14 +720,30 @@ pub(crate) trait MessageProcessor: Send + Sync {
         }
 
         let self_removed = self.removal_proposal(&provisional_state);
+        #[cfg(all(
+            feature = "by_ref_proposal",
+            feature = "custom_proposal",
+            feature = "self_remove_proposal"
+        ))]
         let self_removed_by_self = self.self_removal_proposal(&provisional_state);
 
+        #[cfg(all(
+            feature = "by_ref_proposal",
+            feature = "custom_proposal",
+            feature = "self_remove_proposal"
+        ))]
         if let (Some(removed), Some(_)) = (&self_removed, &self_removed_by_self) {
             return Err(MlsError::MoreThanOneProposalForLeaf(
                 *removed.proposal.to_remove,
             ));
         }
-        let is_self_removed = self_removed.is_some() || self_removed_by_self.is_some();
+        let is_self_removed = self_removed.is_some();
+        #[cfg(all(
+            feature = "by_ref_proposal",
+            feature = "custom_proposal",
+            feature = "self_remove_proposal"
+        ))]
+        let is_self_removed = is_self_removed || self_removed_by_self.is_some();
 
         let update_path = match commit.path {
             Some(update_path) => Some(
@@ -809,6 +835,11 @@ pub(crate) trait MessageProcessor: Send + Sync {
         provisional_state: &ProvisionalState,
     ) -> Option<ProposalInfo<RemoveProposal>>;
 
+    #[cfg(all(
+        feature = "by_ref_proposal",
+        feature = "custom_proposal",
+        feature = "self_remove_proposal"
+    ))]
     fn self_removal_proposal(
         &self,
         provisional_state: &ProvisionalState,

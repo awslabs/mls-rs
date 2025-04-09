@@ -22,7 +22,7 @@ use crate::{
             ApplicationMessageDescription, CommitMessageDescription, EventOrContent,
             MessageProcessor, ProposalMessageDescription, ProvisionalState,
         },
-        proposal::{RemoveProposal, SelfRemoveProposal},
+        proposal::RemoveProposal,
         proposal_filter::ProposalInfo,
         snapshot::RawGroupState,
         state::GroupState,
@@ -36,6 +36,13 @@ use crate::{
     tree_kem::{node::LeafIndex, path_secret::PathSecret, TreeKemPrivate},
     CryptoProvider, KeyPackage, MlsMessage,
 };
+
+#[cfg(all(
+    feature = "by_ref_proposal",
+    feature = "custom_proposal",
+    feature = "self_remove_proposal"
+))]
+use crate::group::proposal::SelfRemoveProposal;
 
 #[cfg(feature = "by_ref_proposal")]
 use crate::{
@@ -679,6 +686,11 @@ where
         None
     }
 
+    #[cfg(all(
+        feature = "by_ref_proposal",
+        feature = "custom_proposal",
+        feature = "self_remove_proposal"
+    ))]
     fn self_removal_proposal(
         &self,
         _provisional_state: &ProvisionalState,

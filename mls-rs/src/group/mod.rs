@@ -1060,7 +1060,11 @@ where
         }))
     }
 
-    #[cfg(feature = "by_ref_proposal")]
+    #[cfg(all(
+        feature = "by_ref_proposal",
+        feature = "custom_proposal",
+        feature = "self_remove_proposal"
+    ))]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn propose_self_remove(
         &mut self,
@@ -2270,6 +2274,11 @@ where
             .cloned()
     }
 
+    #[cfg(all(
+        feature = "by_ref_proposal",
+        feature = "custom_proposal",
+        feature = "self_remove_proposal"
+    ))]
     fn self_removal_proposal(
         &self,
         provisional_state: &ProvisionalState,
@@ -4509,6 +4518,11 @@ mod tests {
         (alice, bob)
     }
 
+    #[cfg(all(
+        feature = "by_ref_proposal",
+        feature = "custom_proposal",
+        feature = "self_remove_proposal"
+    ))]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn self_remove_group_setup() -> (TestGroup, TestGroup) {
         let mut alice = test_group_custom_config(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, |b| {
@@ -4788,7 +4802,11 @@ mod tests {
         assert!(all_members_are_in);
     }
 
-    #[cfg(feature = "by_ref_proposal")]
+    #[cfg(all(
+        feature = "by_ref_proposal",
+        feature = "custom_proposal",
+        feature = "self_remove_proposal"
+    ))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn client_cannot_propose_self_remove_twice() {
         let mut alice = TestClientBuilder::new_for_test()
@@ -4805,7 +4823,11 @@ mod tests {
         assert_matches!(again, Err(MlsError::SelfRemoveAlreadyProposed));
     }
 
-    #[cfg(feature = "by_ref_proposal")]
+    #[cfg(all(
+        feature = "by_ref_proposal",
+        feature = "custom_proposal",
+        feature = "self_remove_proposal"
+    ))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn client_can_self_remove_and_another_client_can_commit() {
         // Alice creates a group that supports the self-remove proposal.
@@ -4916,7 +4938,11 @@ mod tests {
             .unwrap();
     }
 
-    #[cfg(feature = "custom_proposal")]
+    #[cfg(all(
+        feature = "by_ref_proposal",
+        feature = "custom_proposal",
+        feature = "self_remove_proposal"
+    ))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn commit_with_both_remove_and_self_remove_for_same_client_errors() {
         let (mut alice, mut bob) = self_remove_group_setup().await;
@@ -4938,7 +4964,11 @@ mod tests {
         assert_matches!(commit, Err(MlsError::MoreThanOneProposalForLeaf(1)));
     }
 
-    #[cfg(feature = "custom_proposal")]
+    #[cfg(all(
+        feature = "by_ref_proposal",
+        feature = "custom_proposal",
+        feature = "self_remove_proposal"
+    ))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn client_processing_commit_with_self_remove_without_processing_proposal_first_errors() {
         let (mut alice, mut bob) = self_remove_group_setup().await;
@@ -4997,7 +5027,11 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "custom_proposal")]
+    #[cfg(all(
+        feature = "by_ref_proposal",
+        feature = "custom_proposal",
+        feature = "self_remove_proposal"
+    ))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_commit_can_have_self_remove() {
         let (mut alice, mut bob) = self_remove_group_setup().await;
@@ -5094,7 +5128,11 @@ mod tests {
         assert!(carol_identity == carol_old_identity);
     }
 
-    #[cfg(feature = "custom_proposal")]
+    #[cfg(all(
+        feature = "by_ref_proposal",
+        feature = "custom_proposal",
+        feature = "self_remove_proposal"
+    ))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_commit_can_have_multiple_self_removes() {
         let (mut alice, mut bob) = self_remove_group_setup().await;

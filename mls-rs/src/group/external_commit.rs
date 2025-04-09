@@ -12,7 +12,7 @@ use crate::{
         cipher_suite_provider,
         epoch::SenderDataSecret,
         key_schedule::{InitSecret, KeySchedule},
-        proposal::{ExternalInit, Proposal, RemoveProposal, SelfRemoveProposal},
+        proposal::{ExternalInit, Proposal, RemoveProposal},
         EpochSecrets, ExternalPubExt, LeafIndex, LeafNode, MlsError, TreeKemPrivate,
     },
     Group, MlsMessage,
@@ -59,7 +59,6 @@ pub struct ExternalCommitBuilder<C: ClientConfig> {
     custom_proposals: Vec<Proposal>,
     #[cfg(feature = "custom_proposal")]
     received_custom_proposals: Vec<MlsMessage>,
-    self_remove_proposals: Vec<Proposal>,
 }
 
 impl<C: ClientConfig> ExternalCommitBuilder<C> {
@@ -82,7 +81,6 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
             custom_proposals: Vec::new(),
             #[cfg(feature = "custom_proposal")]
             received_custom_proposals: Vec::new(),
-            self_remove_proposals: Vec::new(),
         }
     }
 
@@ -128,12 +126,6 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
     /// Insert a [`CustomProposal`] into the current commit that is being built.
     pub fn with_custom_proposal(mut self, proposal: CustomProposal) -> Self {
         self.custom_proposals.push(Proposal::Custom(proposal));
-        self
-    }
-
-    pub fn with_self_remove_proposal(mut self, proposal: SelfRemoveProposal) -> Self {
-        self.self_remove_proposals
-            .push(Proposal::SelfRemove(proposal));
         self
     }
 
@@ -246,19 +238,16 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
             proposals.append(&mut custom_proposals);
         }
 
-        let mut self_remove_proposals = self.self_remove_proposals;
-        proposals.append(&mut self_remove_proposals);
-
         #[cfg(all(feature = "custom_proposal", feature = "by_ref_proposal"))]
-        for message in &self.received_custom_proposals {
-            let MlsMessagePayload::Plain(ref plaintext) = message.payload else {
+        for message in self.received_custom_proposals {
+            let MlsMessagePayload::Plain(plaintext) = message.payload else {
                 return Err(MlsError::UnexpectedMessageType);
             };
 
             let auth_content = AuthenticatedContent::from(plaintext.clone());
             verify_plaintext_authentication(
                 &cipher_suite,
-                plaintext.clone(),
+                plaintext,
                 None,
                 &group.state.context,
                 SignaturePublicKeysContainer::RatchetTree(&group.state.public_tree),
