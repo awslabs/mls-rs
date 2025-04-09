@@ -22,7 +22,7 @@ use crate::{
             ApplicationMessageDescription, CommitMessageDescription, EventOrContent,
             MessageProcessor, ProposalMessageDescription, ProvisionalState,
         },
-        proposal::RemoveProposal,
+        proposal::{RemoveProposal, SelfRemoveProposal},
         proposal_filter::ProposalInfo,
         snapshot::RawGroupState,
         state::GroupState,
@@ -676,6 +676,13 @@ where
         &self,
         _provisional_state: &ProvisionalState,
     ) -> Option<ProposalInfo<RemoveProposal>> {
+        None
+    }
+
+    fn self_removal_proposal(
+        &self,
+        _provisional_state: &ProvisionalState,
+    ) -> Option<ProposalInfo<SelfRemoveProposal>> {
         None
     }
 
