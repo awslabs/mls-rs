@@ -712,9 +712,9 @@ pub(crate) trait MessageProcessor: Send + Sync {
         let self_removed = self.removal_proposal(&provisional_state);
         let self_removed_by_self = self.self_removal_proposal(&provisional_state);
 
-        if self_removed.is_some() && self_removed_by_self.is_some() {
+        if let (Some(removed), Some(_)) = (&self_removed, &self_removed_by_self) {
             return Err(MlsError::MoreThanOneProposalForLeaf(
-                *self_removed.unwrap().proposal.to_remove,
+                *removed.proposal.to_remove,
             ));
         }
         let is_self_removed = self_removed.is_some() || self_removed_by_self.is_some();
