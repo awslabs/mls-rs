@@ -101,7 +101,7 @@ pub struct NewEpoch {
 
 impl NewEpoch {
     pub(crate) fn new(prior_state: GroupState, provisional_state: &ProvisionalState) -> NewEpoch {
-        let res = NewEpoch {
+        NewEpoch {
             epoch: provisional_state.group_context.epoch,
             prior_state,
             unused_proposals: provisional_state.unused_proposals.clone(),
@@ -110,8 +110,7 @@ impl NewEpoch {
                 .clone()
                 .into_proposals()
                 .collect_vec(),
-        };
-        res
+        }
     }
 }
 
@@ -714,8 +713,9 @@ pub(crate) trait MessageProcessor: Send + Sync {
         let self_removed_by_self = self.self_removal_proposal(&provisional_state);
 
         if self_removed.is_some() && self_removed_by_self.is_some() {
-            // TODO error here
-            // return Err(MlsError::MoreThanOneProposalForLeaf(self_removed.unwrap()))
+            return Err(MlsError::MoreThanOneProposalForLeaf(
+                *self_removed.unwrap().proposal.to_remove,
+            ));
         }
         let is_self_removed = self_removed.is_some() || self_removed_by_self.is_some();
 
@@ -735,7 +735,6 @@ pub(crate) trait MessageProcessor: Send + Sync {
             None => None,
         };
 
-        dbg!("yes");
         let commit_effect =
             if let Some(reinit) = provisional_state.applied_proposals.reinitializations.pop() {
                 self.group_state_mut().pending_reinit = Some(reinit.proposal.clone());
@@ -747,11 +746,10 @@ pub(crate) trait MessageProcessor: Send + Sync {
                     new_epoch: Box::new(new_epoch),
                 }
             } else {
-                let res = CommitEffect::NewEpoch(Box::new(NewEpoch::new(
+                CommitEffect::NewEpoch(Box::new(NewEpoch::new(
                     self.group_state().clone(),
                     &provisional_state,
-                )));
-                res
+                )))
             };
 
         let new_secrets = match update_path {

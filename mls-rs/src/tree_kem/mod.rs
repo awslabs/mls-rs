@@ -274,7 +274,6 @@ impl TreeKemPublic {
     {
         // Install the new leaf node
         let existing_leaf = self.nodes.borrow_as_leaf_mut(sender)?;
-        dbg!("pre-here");
 
         #[cfg(feature = "tree_index")]
         let original_leaf_node = existing_leaf.clone();
@@ -316,8 +315,6 @@ impl TreeKemPublic {
         self.update_parent_hashes(sender, true, cipher_suite_provider)
             .await?;
 
-        dbg!("here");
-
         Ok(())
     }
 
@@ -351,6 +348,7 @@ impl TreeKemPublic {
         for i in (0..proposal_bundle.self_removes.len()).rev() {
             let index = match proposal_bundle.self_removes[i].sender {
                 crate::group::Sender::Member(idx) => LeafIndex(idx),
+                crate::group::Sender::External(idx) => LeafIndex(idx),
                 _ => continue,
             };
             let res = self.nodes.blank_leaf_node(index);

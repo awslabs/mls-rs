@@ -5049,7 +5049,7 @@ mod tests {
             .await
             .unwrap();
 
-        let (_, commit) = carol_client
+        let (mut carol_new_group, commit) = carol_client
             .external_commit_builder()
             .unwrap()
             .with_removal(carol.current_member_index())
@@ -5057,35 +5057,41 @@ mod tests {
             .build(group_info)
             .await
             .unwrap();
-
-        carol
+        bob.process_incoming_message(commit.clone()).await.unwrap();
+        alice
             .process_incoming_message(commit.clone())
             .await
             .unwrap();
-        bob.process_incoming_message(commit.clone()).await.unwrap();
-        alice.process_incoming_message(commit).await.unwrap();
+
+        // Check that carol can decrypt a message in this new group
+        let encrypted_message = alice
+            .encrypt_application_message(b"test", vec![])
+            .await
+            .unwrap();
+        carol_new_group
+            .process_incoming_message(encrypted_message)
+            .await
+            .unwrap();
 
         // Assert that after applying the commit removing Bob, that Bob is no longer in the group.
-        let alice_identity = alice.current_member_signing_identity().await.unwrap();
-        let carol_identity = carol.current_member_signing_identity().await.unwrap();
-        let bob_identity = bob.current_member_signing_identity().await.unwrap();
-        let expected_member_identities = vec![
-            alice_identity.clone(),
-            carol_identity.clone(),
-        ];
+        let alice_identity = alice.current_member_signing_identity().unwrap();
+        let carol_identity = carol_new_group.current_member_signing_identity().unwrap();
+        let expected_member_identities = vec![alice_identity.clone(), carol_identity.clone()];
         itertools::assert_equal(
             alice.roster().members_iter().map(|m| m.signing_identity),
             expected_member_identities.clone().into_iter(),
         );
-        let expected_member_identities = vec![
-            alice_identity.clone(),
-            bob_identity.clone(),
-            carol_identity.clone(),
-        ];
         itertools::assert_equal(
-            carol.roster().members_iter().map(|m| m.signing_identity),
+            carol_new_group
+                .roster()
+                .members_iter()
+                .map(|m| m.signing_identity),
             expected_member_identities.clone().into_iter(),
         );
+
+        // Check that carol's signing identity has not changed.
+        let carol_old_identity = carol_new_group.current_member_signing_identity().unwrap();
+        assert!(carol_identity == carol_old_identity);
     }
 
     #[cfg(feature = "custom_proposal")]
@@ -5140,8 +5146,7 @@ mod tests {
             .process_incoming_message(bob_self_remove.clone())
             .await
             .unwrap();
-        bob
-            .process_incoming_message(alice_self_remove.clone())
+        bob.process_incoming_message(alice_self_remove.clone())
             .await
             .unwrap();
         carol
@@ -5149,7 +5154,7 @@ mod tests {
             .await
             .unwrap();
 
-        let (_, commit) = carol_client
+        let (carol_new_group, commit) = carol_client
             .external_commit_builder()
             .unwrap()
             .with_removal(carol.current_member_index())
@@ -5166,18 +5171,14 @@ mod tests {
         bob.process_incoming_message(commit.clone()).await.unwrap();
         alice.process_incoming_message(commit).await.unwrap();
 
-        // Assert that after applying the commit removing Bob, that Bob is no longer in the group.
-        let alice_identity = alice.current_member_signing_identity().await.unwrap();
-        let carol_identity = carol.current_member_signing_identity().await.unwrap();
-        let bob_identity = bob.current_member_signing_identity().await.unwrap();
-        let expected_member_identities = vec![
-            // alice_identity.clone(),
-            carol_identity.clone(),
-        ];
-        let pls: Vec<SigningIdentity> = carol.roster().members_iter().map(|m| m.signing_identity).collect();
-        panic!("ugh why: {:?}", pls);
+        // Assert that after applying the commit removing Bob, that Bob and Alice are no longer in the group.
+        let carol_identity = carol_new_group.current_member_signing_identity().unwrap();
+        let expected_member_identities = vec![carol_identity.clone()];
         itertools::assert_equal(
-            carol.roster().members_iter().map(|m| m.signing_identity),
+            carol_new_group
+                .roster()
+                .members_iter()
+                .map(|m| m.signing_identity),
             expected_member_identities.clone().into_iter(),
         );
     }

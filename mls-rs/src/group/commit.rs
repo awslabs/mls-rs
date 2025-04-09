@@ -493,7 +493,6 @@ where
         new_signing_identity: Option<SigningIdentity>,
         new_leaf_node_extensions: Option<ExtensionList>,
     ) -> Result<(CommitOutput, PendingCommit), MlsError> {
-        // dbg!("bruh: {:?}", proposals.clone());
         if !self.pending_commit.is_none() {
             return Err(MlsError::ExistingPendingCommit);
         }

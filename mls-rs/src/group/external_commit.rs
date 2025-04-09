@@ -290,7 +290,6 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
 
         group.pending_commit = pending_commit.try_into()?;
         group.apply_pending_commit().await?;
-        dbg!("uhhhh {:?}", &group.state);
 
         Ok((group, commit_output.commit_message))
     }
