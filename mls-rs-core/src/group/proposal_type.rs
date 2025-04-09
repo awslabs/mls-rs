@@ -56,10 +56,10 @@ impl ProposalType {
     pub const RE_INIT: ProposalType = ProposalType(5);
     pub const EXTERNAL_INIT: ProposalType = ProposalType(6);
     pub const GROUP_CONTEXT_EXTENSIONS: ProposalType = ProposalType(7);
-    #[cfg(all(feature = "rfc_self_remove_proposal", feature = "self_remove_proposal"))]
+    #[cfg(all(feature = "rcs_self_remove_proposal", feature = "self_remove_proposal"))]
     pub const SELF_REMOVE: ProposalType = ProposalType(0xF003);
     #[cfg(all(
-        not(feature = "rfc_self_remove_proposal"),
+        not(feature = "rcs_self_remove_proposal"),
         feature = "self_remove_proposal"
     ))]
     pub const SELF_REMOVE: ProposalType = ProposalType(8);
