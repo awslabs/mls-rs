@@ -332,34 +332,34 @@ impl ProposalBundle {
         #[cfg(feature = "by_ref_proposal")]
         let res = res.chain(self.updates.into_iter().map(|p| p.map(Proposal::Update)));
 
-        let res = res
-            .chain(
-                self.additions
-                    .into_iter()
-                    .map(|p| p.map(|p| Proposal::Add(alloc::boxed::Box::new(p)))),
-            )
-            .chain(self.removals.into_iter().map(|p| p.map(Proposal::Remove)))
-            .chain(
-                self.reinitializations
-                    .into_iter()
-                    .map(|p| p.map(Proposal::ReInit)),
-            );
+        let group_context_extensions_to_chain = self
+            .group_context_extensions
+            .into_iter()
+            .map(|p| p.map(Proposal::GroupContextExtensions));
+
         #[cfg(all(
             feature = "by_ref_proposal",
             feature = "custom_proposal",
             feature = "self_remove_proposal"
         ))]
-        let res = res.chain(
-            self.group_context_extensions
+        let group_context_extensions_to_chain = group_context_extensions_to_chain.chain(
+            self.self_removes
                 .into_iter()
-                .map(|p| p.map(Proposal::GroupContextExtensions))
-                .chain(
-                    self.self_removes
-                        .into_iter()
-                        .map(|p| p.map(Proposal::SelfRemove)),
-                ),
+                .map(|p| p.map(Proposal::SelfRemove)),
         );
-        res
+
+        res.chain(
+            self.additions
+                .into_iter()
+                .map(|p| p.map(|p| Proposal::Add(alloc::boxed::Box::new(p)))),
+        )
+        .chain(self.removals.into_iter().map(|p| p.map(Proposal::Remove)))
+        .chain(
+            self.reinitializations
+                .into_iter()
+                .map(|p| p.map(Proposal::ReInit)),
+        )
+        .chain(group_context_extensions_to_chain)
     }
 
     pub(crate) fn proposals_or_refs(&self) -> Vec<ProposalOrRef> {
