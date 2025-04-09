@@ -356,7 +356,6 @@ impl TreeKemPublic {
         for i in (0..proposal_bundle.self_removes.len()).rev() {
             let index = match proposal_bundle.self_removes[i].sender {
                 crate::group::Sender::Member(idx) => LeafIndex(idx),
-                crate::group::Sender::External(idx) => LeafIndex(idx),
                 _ => continue,
             };
             let res = self.nodes.blank_leaf_node(index);
