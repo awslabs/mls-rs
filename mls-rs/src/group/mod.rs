@@ -5213,7 +5213,7 @@ mod tests {
                 .roster()
                 .members_iter()
                 .map(|m| m.signing_identity),
-            expected_member_identities.clone().into_iter(),
+            expected_member_identities.clone(),
         );
     }
 
