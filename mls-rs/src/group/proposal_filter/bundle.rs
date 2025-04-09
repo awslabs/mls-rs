@@ -424,6 +424,7 @@ impl ProposalBundle {
         feature = "custom_proposal",
         feature = "self_remove_proposal"
     ))]
+    #[cfg_attr(feature = "ffi", safer_ffi_gen::safer_ffi_gen_ignore)]
     pub fn self_remove_proposals(&self) -> &[ProposalInfo<SelfRemoveProposal>] {
         &self.self_removes
     }

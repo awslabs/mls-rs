@@ -483,6 +483,7 @@ impl MessageProcessor for GroupWithoutKeySchedule {
         feature = "custom_proposal",
         feature = "self_remove_proposal"
     ))]
+    #[cfg_attr(feature = "ffi", safer_ffi_gen::safer_ffi_gen_ignore)]
     fn self_removal_proposal(
         &self,
         provisional_state: &ProvisionalState,

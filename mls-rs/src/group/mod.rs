@@ -1065,6 +1065,7 @@ where
         feature = "custom_proposal",
         feature = "self_remove_proposal"
     ))]
+    #[cfg_attr(feature = "ffi", safer_ffi_gen::safer_ffi_gen_ignore)]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn propose_self_remove(
         &mut self,
@@ -2279,6 +2280,7 @@ where
         feature = "custom_proposal",
         feature = "self_remove_proposal"
     ))]
+    #[cfg_attr(feature = "ffi", safer_ffi_gen::safer_ffi_gen_ignore)]
     fn self_removal_proposal(
         &self,
         provisional_state: &ProvisionalState,
@@ -4918,20 +4920,14 @@ mod tests {
             alice.member_at_index(alice.current_member_index()).unwrap(),
             carol.member_at_index(carol.current_member_index()).unwrap(),
         ];
-        itertools::assert_equal(
-            alice.roster().members_iter(),
-            expected_members.clone().into_iter(),
-        );
+        itertools::assert_equal(alice.roster().members_iter(), expected_members.clone());
 
         // Assert that Carol can also process the commit and it removes Bob from the group.
         carol
             .process_incoming_message(commit.commit_message.clone())
             .await
             .unwrap();
-        itertools::assert_equal(
-            carol.roster().members_iter(),
-            expected_members.clone().into_iter(),
-        );
+        itertools::assert_equal(carol.roster().members_iter(), expected_members.clone());
         // Assert that Bob can process the commit.
         bob.process_incoming_message(commit.commit_message)
             .await
@@ -5113,14 +5109,14 @@ mod tests {
         let expected_member_identities = vec![alice_identity.clone(), carol_identity.clone()];
         itertools::assert_equal(
             alice.roster().members_iter().map(|m| m.signing_identity),
-            expected_member_identities.clone().into_iter(),
+            expected_member_identities.clone(),
         );
         itertools::assert_equal(
             carol_new_group
                 .roster()
                 .members_iter()
                 .map(|m| m.signing_identity),
-            expected_member_identities.clone().into_iter(),
+            expected_member_identities.clone(),
         );
 
         // Check that carol's signing identity has not changed.
