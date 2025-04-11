@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1743195549368,
+  "lastUpdate": 1744383488561,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -21263,6 +21263,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 129593,
             "range": "± 2129",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mgeisler@google.com",
+            "name": "Martin Geisler",
+            "username": "mgeisler"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "75b0baefcb682b6c85d8760fa32b593174c07c94",
+          "message": "Add `process_incoming_message_with_time` to `ExternalGroup` (#264)\n\n* Add `process_incoming_message_with_time` to `ExternalGroup`\n\nThis allows validation of X.509 certificates when observing a group\nwith an external client.\n\n* Fix Clippy warning from Rust 1.86\n\n```\nwarning: struct pattern is not needed for a unit variant\n    --> mls-rs/src/group/proposal_cache.rs:4063:72\n     |\n4063 |         assert_matches!(res, Err(MlsError::InvalidProposalTypeForSender { .. }))\n     |                                                                        ^^^^^^^ help: remove the struct pattern\n     |\n     = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unneeded_struct_pattern\n     = note: `#[warn(clippy::unneeded_struct_pattern)]` on by default\n```\n\nTo be honest, the version of Rust and Clippy should probably be pinned\nto prevent such spurious errors in the future.",
+          "timestamp": "2025-04-11T10:53:50-04:00",
+          "tree_id": "49d88bd72a2abdece3a04ffee64f51ecd2e83211",
+          "url": "https://github.com/awslabs/mls-rs/commit/75b0baefcb682b6c85d8760fa32b593174c07c94"
+        },
+        "date": 1744383487807,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 529981,
+            "range": "± 7271",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 538464,
+            "range": "± 7737",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 599809,
+            "range": "± 35535",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1252834,
+            "range": "± 20117",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 9183275,
+            "range": "± 117505",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2623764,
+            "range": "± 18701",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7018890,
+            "range": "± 103817",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13198122,
+            "range": "± 316523",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 767210,
+            "range": "± 28291",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 858071,
+            "range": "± 10695",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 986364,
+            "range": "± 8749",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 20604,
+            "range": "± 281",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 68134,
+            "range": "± 1525",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 131209,
+            "range": "± 1369",
             "unit": "ns/iter"
           }
         ]
