@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1744634688625,
+  "lastUpdate": 1744640546103,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -21479,6 +21479,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 138655,
             "range": "± 3413",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "9029396+cindylindeed@users.noreply.github.com",
+            "name": "Cindy Lin",
+            "username": "cindylindeed"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "58778efae97a4cd7c2278c3cfff412674b3d82db",
+          "message": "Implement Padme padding mode. (#262)\n\nSee Algorithm 1 in https://www.petsymposium.org/2019/files/papers/issue4/popets-2019-0056.pdf.\n\nCo-authored-by: mulmarta <103590845+mulmarta@users.noreply.github.com>",
+          "timestamp": "2025-04-14T16:18:17+02:00",
+          "tree_id": "4dadf8ea4d870e84eb56a69d9acb9ec0d79977a8",
+          "url": "https://github.com/awslabs/mls-rs/commit/58778efae97a4cd7c2278c3cfff412674b3d82db"
+        },
+        "date": 1744640545474,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 527641,
+            "range": "± 6992",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 538938,
+            "range": "± 8535",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 599824,
+            "range": "± 22458",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1258193,
+            "range": "± 21685",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7494987,
+            "range": "± 289645",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2618619,
+            "range": "± 84897",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7078795,
+            "range": "± 99243",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13193899,
+            "range": "± 132469",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 771365,
+            "range": "± 37134",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 857401,
+            "range": "± 10148",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 984929,
+            "range": "± 24968",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 20477,
+            "range": "± 444",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 67087,
+            "range": "± 1632",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 128323,
+            "range": "± 2452",
             "unit": "ns/iter"
           }
         ]
