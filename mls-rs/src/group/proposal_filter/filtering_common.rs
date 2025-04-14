@@ -18,7 +18,7 @@ use crate::{
 
 use crate::tree_kem::leaf_node::LeafNode;
 
-use super::ProposalInfo;
+use super::{ProposalInfo, ProposalSource};
 
 use crate::extension::{MlsExtension, RequiredCapabilitiesExt};
 
@@ -493,7 +493,7 @@ fn ensure_exactly_one_external_init(proposals: &ProposalBundle) -> Result<(), Ml
         .ok_or(MlsError::ExternalCommitMustHaveExactlyOneExternalInit)
 }
 
-/// Non-default proposal types are by default allowed. Custom MlsRules may disallow
+/// Non-default and local proposal types are by default allowed. Custom MlsRules may disallow
 /// specific custom proposals in external commits
 fn ensure_proposals_in_external_commit_are_allowed(
     proposals: &ProposalBundle,
@@ -504,12 +504,16 @@ fn ensure_proposals_in_external_commit_are_allowed(
         ProposalType::PSK,
     ];
 
-    let unsupported_type = proposals
-        .proposal_types()
-        .find(|ty| !supported_default_types.contains(ty) && ProposalType::DEFAULT.contains(ty));
+    let unsupported_proposal = proposals.iter_proposals().find(|proposal| {
+        !supported_default_types.contains(&proposal.proposal.proposal_type())
+            && ProposalType::DEFAULT.contains(&proposal.proposal.proposal_type())
+            && proposal.source != ProposalSource::Local
+    });
 
-    match unsupported_type {
-        Some(kind) => Err(MlsError::InvalidProposalTypeInExternalCommit(kind)),
+    match unsupported_proposal {
+        Some(proposal) => Err(MlsError::InvalidProposalTypeInExternalCommit(
+            proposal.proposal.proposal_type(),
+        )),
         None => Ok(()),
     }
 }
@@ -525,7 +529,9 @@ async fn ensure_at_most_one_removal_for_self<C>(
 where
     C: IdentityProvider,
 {
-    let mut removals = proposals.by_type::<RemoveProposal>();
+    let mut removals = proposals
+        .by_type::<RemoveProposal>()
+        .filter(|proposal| proposal.source != ProposalSource::Local);
 
     match (removals.next(), removals.next()) {
         (Some(removal), None) => {
