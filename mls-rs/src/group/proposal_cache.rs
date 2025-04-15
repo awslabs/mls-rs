@@ -145,6 +145,17 @@ impl ProposalCache {
         Ok(())
     }
 
+    #[cfg(all(
+        feature = "by_ref_proposal",
+        feature = "custom_proposal",
+        feature = "self_remove_proposal"
+    ))]
+    pub(crate) fn has_own_self_remove(&self) -> bool {
+        self.own_proposals
+            .values()
+            .any(|p| matches!(p.proposal, Proposal::SelfRemove(_)))
+    }
+
     pub fn prepare_commit(
         &self,
         sender: Sender,

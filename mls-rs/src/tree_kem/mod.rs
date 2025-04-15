@@ -26,8 +26,15 @@ use crate::crypto::{self, CipherSuiteProvider, HpkeSecretKey};
 #[cfg(feature = "by_ref_proposal")]
 use crate::group::proposal::{AddProposal, UpdateProposal};
 
+#[cfg(all(
+    feature = "by_ref_proposal",
+    feature = "custom_proposal",
+    feature = "self_remove_proposal"
+))]
+use crate::group::proposal::SelfRemoveProposal;
+
 #[cfg(any(test, feature = "by_ref_proposal"))]
-use crate::group::proposal::RemoveProposal;
+use crate::group::{proposal::RemoveProposal, proposal_filter::bundle::Proposable};
 
 use crate::group::proposal_filter::ProposalBundle;
 use crate::tree_kem::tree_hash::TreeHashes;
@@ -329,6 +336,47 @@ impl TreeKemPublic {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
+    #[cfg(feature = "by_ref_proposal")]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn apply_remove<T, I>(
+        &mut self,
+        index: LeafIndex,
+        p_index: usize,
+        is_by_value: bool,
+        proposal_bundle: &mut ProposalBundle,
+        extensions: &ExtensionList,
+        id_provider: &I,
+        filter: bool,
+    ) -> Result<(), MlsError>
+    where
+        I: IdentityProvider,
+        T: Proposable,
+    {
+        let res = self.nodes.blank_leaf_node(index);
+
+        if res.is_ok() {
+            // This shouldn't fail if `blank_leaf_node` succedded.
+            self.nodes.blank_direct_path(index)?;
+        }
+
+        #[cfg(feature = "tree_index")]
+        if let Ok(old_leaf) = &res {
+            // If this fails, it's not because the proposal is bad.
+            let identity = identity(&old_leaf.signing_identity, id_provider, extensions).await?;
+
+            self.index.remove(old_leaf, &identity);
+        }
+
+        if is_by_value || !filter {
+            res?;
+        } else if res.is_err() {
+            proposal_bundle.remove::<T>(p_index);
+        }
+
+        Ok(())
+    }
+
     #[cfg(feature = "by_ref_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn batch_edit<I, CP>(
@@ -344,29 +392,36 @@ impl TreeKemPublic {
         CP: CipherSuiteProvider,
     {
         // Apply removes (they commute with updates because they don't touch the same leaves)
+        // Self-removes take precedence
+        #[cfg(all(feature = "custom_proposal", feature = "self_remove_proposal"))]
+        for i in (0..proposal_bundle.self_removes.len()).rev() {
+            let index = match proposal_bundle.self_removes[i].sender {
+                crate::group::Sender::Member(idx) => LeafIndex(idx),
+                _ => continue,
+            };
+            self.apply_remove::<SelfRemoveProposal, I>(
+                index,
+                i,
+                proposal_bundle.self_removes[i].is_by_value(),
+                proposal_bundle,
+                extensions,
+                id_provider,
+                filter,
+            )
+            .await?;
+        }
         for i in (0..proposal_bundle.remove_proposals().len()).rev() {
             let index = proposal_bundle.remove_proposals()[i].proposal.to_remove;
-            let res = self.nodes.blank_leaf_node(index);
-
-            if res.is_ok() {
-                // This shouldn't fail if `blank_leaf_node` succedded.
-                self.nodes.blank_direct_path(index)?;
-            }
-
-            #[cfg(feature = "tree_index")]
-            if let Ok(old_leaf) = &res {
-                // If this fails, it's not because the proposal is bad.
-                let identity =
-                    identity(&old_leaf.signing_identity, id_provider, extensions).await?;
-
-                self.index.remove(old_leaf, &identity);
-            }
-
-            if proposal_bundle.remove_proposals()[i].is_by_value() || !filter {
-                res?;
-            } else if res.is_err() {
-                proposal_bundle.remove::<RemoveProposal>(i);
-            }
+            self.apply_remove::<RemoveProposal, I>(
+                index,
+                i,
+                proposal_bundle.remove_proposals()[i].is_by_value(),
+                proposal_bundle,
+                extensions,
+                id_provider,
+                filter,
+            )
+            .await?;
         }
 
         // Remove from the tree old leaves from updates

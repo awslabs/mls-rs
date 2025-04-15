@@ -2,6 +2,12 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
+#[cfg(all(
+    feature = "by_ref_proposal",
+    feature = "custom_proposal",
+    feature = "self_remove_proposal"
+))]
+use super::SelfRemoveProposal;
 use super::{
     commit_sender,
     confirmation_tag::ConfirmationTag,
@@ -77,6 +83,13 @@ pub(crate) fn path_update_required(proposals: &ProposalBundle) -> bool {
 
     #[cfg(feature = "by_ref_proposal")]
     let res = res || !proposals.update_proposals().is_empty();
+
+    #[cfg(all(
+        feature = "by_ref_proposal",
+        feature = "custom_proposal",
+        feature = "self_remove_proposal"
+    ))]
+    let res = res || !proposals.self_removes.is_empty();
 
     res || proposals.length() == 0
         || proposals.group_context_extensions_proposal().is_some()
@@ -707,7 +720,20 @@ pub(crate) trait MessageProcessor: Send + Sync {
         }
 
         let self_removed = self.removal_proposal(&provisional_state);
+        #[cfg(all(
+            feature = "by_ref_proposal",
+            feature = "custom_proposal",
+            feature = "self_remove_proposal"
+        ))]
+        let self_removed_by_self = self.self_removal_proposal(&provisional_state);
+
         let is_self_removed = self_removed.is_some();
+        #[cfg(all(
+            feature = "by_ref_proposal",
+            feature = "custom_proposal",
+            feature = "self_remove_proposal"
+        ))]
+        let is_self_removed = is_self_removed || self_removed_by_self.is_some();
 
         let update_path = match commit.path {
             Some(update_path) => Some(
@@ -741,6 +767,21 @@ pub(crate) trait MessageProcessor: Send + Sync {
                     &provisional_state,
                 )))
             };
+
+        #[cfg(all(
+            feature = "by_ref_proposal",
+            feature = "custom_proposal",
+            feature = "self_remove_proposal"
+        ))]
+        let commit_effect = if let Some(self_remove_proposal) = self_removed_by_self {
+            let new_epoch = NewEpoch::new(self.group_state().clone(), &provisional_state);
+            CommitEffect::Removed {
+                remover: self_remove_proposal.sender,
+                new_epoch: Box::new(new_epoch),
+            }
+        } else {
+            commit_effect
+        };
 
         let new_secrets = match update_path {
             Some(update_path) if !is_self_removed => {
@@ -776,7 +817,6 @@ pub(crate) trait MessageProcessor: Send + Sync {
                 )
                 .await?;
             }
-
             Ok(CommitMessageDescription {
                 is_external: matches!(auth_content.content.sender, Sender::NewMemberCommit),
                 authenticated_data: auth_content.content.authenticated_data,
@@ -799,6 +839,17 @@ pub(crate) trait MessageProcessor: Send + Sync {
         &self,
         provisional_state: &ProvisionalState,
     ) -> Option<ProposalInfo<RemoveProposal>>;
+
+    #[cfg(all(
+        feature = "by_ref_proposal",
+        feature = "custom_proposal",
+        feature = "self_remove_proposal"
+    ))]
+    #[cfg_attr(feature = "ffi", safer_ffi_gen::safer_ffi_gen_ignore)]
+    fn self_removal_proposal(
+        &self,
+        provisional_state: &ProvisionalState,
+    ) -> Option<ProposalInfo<SelfRemoveProposal>>;
 
     #[cfg(feature = "private_message")]
     fn min_epoch_available(&self) -> Option<u64>;

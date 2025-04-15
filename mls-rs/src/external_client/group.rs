@@ -37,6 +37,13 @@ use crate::{
     CryptoProvider, KeyPackage, MlsMessage,
 };
 
+#[cfg(all(
+    feature = "by_ref_proposal",
+    feature = "custom_proposal",
+    feature = "self_remove_proposal"
+))]
+use crate::group::proposal::SelfRemoveProposal;
+
 #[cfg(feature = "by_ref_proposal")]
 use crate::{
     group::{
@@ -676,6 +683,19 @@ where
         &self,
         _provisional_state: &ProvisionalState,
     ) -> Option<ProposalInfo<RemoveProposal>> {
+        None
+    }
+
+    #[cfg(all(
+        feature = "by_ref_proposal",
+        feature = "custom_proposal",
+        feature = "self_remove_proposal"
+    ))]
+    #[cfg_attr(feature = "ffi", safer_ffi_gen::safer_ffi_gen_ignore)]
+    fn self_removal_proposal(
+        &self,
+        _provisional_state: &ProvisionalState,
+    ) -> Option<ProposalInfo<SelfRemoveProposal>> {
         None
     }
 
