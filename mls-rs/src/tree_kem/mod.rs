@@ -406,7 +406,8 @@ impl TreeKemPublic {
                 extensions,
                 id_provider,
                 filter,
-            ).await?;
+            )
+            .await?;
         }
         for i in (0..proposal_bundle.remove_proposals().len()).rev() {
             let index = proposal_bundle.remove_proposals()[i].proposal.to_remove;
@@ -418,7 +419,8 @@ impl TreeKemPublic {
                 extensions,
                 id_provider,
                 filter,
-            ).await?;
+            )
+            .await?;
         }
 
         // Remove from the tree old leaves from updates
