@@ -15,7 +15,7 @@ std = ["mls-rs-core/std", "mls-rs-crypto-traits/std", "dep:thiserror", "zeroize/
 test_utils = ["mls-rs-core/test_suite"]
 
 [dependencies]
-mls-rs-core = { path = "../mls-rs-core", default-features = false, version = "0.21.0" }
+mls-rs-core = { path = "../mls-rs-core", default-features = false, version = "0.22.0" }
 mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", default-features = false, version = "0.15.0" }
 thiserror = { version = "1.0.40", optional = true }
 zeroize = { version = "1", default-features = false, features = ["alloc", "zeroize_derive"] }
