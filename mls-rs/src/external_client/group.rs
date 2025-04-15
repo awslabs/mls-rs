@@ -696,7 +696,6 @@ where
 pub struct ExternalSnapshot {
     version: u16,
     pub(crate) state: RawGroupState,
-    signing_data: Option<(SignatureSecretKey, SigningIdentity)>,
 }
 
 impl ExternalSnapshot {
@@ -725,7 +724,6 @@ where
         ExternalSnapshot {
             state: RawGroupState::export(self.group_state()),
             version: 1,
-            signing_data: self.signing_data.clone(),
         }
     }
 
@@ -738,39 +736,11 @@ where
         let snapshot = ExternalSnapshot {
             state: RawGroupState::export(&self.state),
             version: 1,
-            signing_data: self.signing_data.clone(),
         };
 
         self.state.public_tree.nodes = tree;
 
         snapshot
-    }
-
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub(crate) async fn from_snapshot(
-        config: C,
-        snapshot: ExternalSnapshot,
-    ) -> Result<Self, MlsError> {
-        #[cfg(feature = "tree_index")]
-        let identity_provider = config.identity_provider();
-
-        let cipher_suite_provider = cipher_suite_provider(
-            config.crypto_provider(),
-            snapshot.state.context.cipher_suite,
-        )?;
-
-        Ok(ExternalGroup {
-            config,
-            signing_data: snapshot.signing_data,
-            state: snapshot
-                .state
-                .import(
-                    #[cfg(feature = "tree_index")]
-                    &identity_provider,
-                )
-                .await?,
-            cipher_suite_provider,
-        })
     }
 }
 
@@ -872,6 +842,7 @@ mod tests {
             message_processor::CommitEffect,
             proposal::{AddProposal, Proposal, ProposalOrRef},
             proposal_ref::ProposalRef,
+            snapshot::RawGroupState,
             test_utils::{test_group, TestGroup},
             CommitMessageDescription, ExportedTree, ProposalMessageDescription,
         },
@@ -881,7 +852,7 @@ mod tests {
         ExtensionList, MlsMessage,
     };
     use assert_matches::assert_matches;
-    use mls_rs_codec::{MlsDecode, MlsEncode};
+    use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn test_group_with_one_commit(v: ProtocolVersion, cs: CipherSuite) -> TestGroup {
@@ -1356,12 +1327,32 @@ mod tests {
         let snapshot = server.snapshot().mls_encode_to_vec().unwrap();
         let snapshot_restored = ExternalSnapshot::mls_decode(&mut snapshot.as_slice()).unwrap();
 
-        let server_restored =
-            ExternalGroup::from_snapshot(server.config.clone(), snapshot_restored)
-                .await
-                .unwrap();
+        assert_eq!(server.snapshot(), snapshot_restored);
+    }
 
-        assert_eq!(server.group_state(), server_restored.group_state());
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn legacy_snapshot_migration() {
+        #[derive(MlsSize, MlsEncode)]
+        struct LegacyExternalSnapshot {
+            version: u16,
+            state: RawGroupState,
+            signing_data: Option<(SignatureSecretKey, SigningIdentity)>,
+        }
+
+        let (server_identity, server_key, alice) = setup_extern_proposal_test(true).await;
+        let server = make_external_group(&alice).await;
+
+        let legacy_snapshot = LegacyExternalSnapshot {
+            version: *TEST_PROTOCOL_VERSION,
+            state: server.snapshot().state,
+            signing_data: Some((server_key, server_identity)),
+        };
+
+        let legacy_snapshot_bytes = legacy_snapshot.mls_encode_to_vec().unwrap();
+        let migrated_snapshot = ExternalSnapshot::mls_decode(&mut &*legacy_snapshot_bytes).unwrap();
+
+        assert_eq!(legacy_snapshot.state, migrated_snapshot.state);
+        assert_eq!(*TEST_PROTOCOL_VERSION, migrated_snapshot.version);
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
