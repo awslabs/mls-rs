@@ -31,10 +31,10 @@ use crate::group::proposal::{AddProposal, UpdateProposal};
     feature = "custom_proposal",
     feature = "self_remove_proposal"
 ))]
-use crate::group::{proposal::SelfRemoveProposal, proposal_filter::bundle::Proposable};
+use crate::group::proposal::SelfRemoveProposal;
 
 #[cfg(any(test, feature = "by_ref_proposal"))]
-use crate::group::proposal::RemoveProposal;
+use crate::group::{proposal::RemoveProposal, proposal_filter::bundle::Proposable};
 
 use crate::group::proposal_filter::ProposalBundle;
 use crate::tree_kem::tree_hash::TreeHashes;
