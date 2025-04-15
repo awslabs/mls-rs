@@ -29,7 +29,7 @@ std = [
 ]
 
 [dependencies]
-mls-rs-core = { path = "../mls-rs-core", default-features = false, version = "0.21.0" }
+mls-rs-core = { path = "../mls-rs-core", default-features = false, version = "0.22.0" }
 mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", default-features = false, version = "0.14.0" }
 mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", default-features = false, version = "0.15.0" }
 
@@ -70,7 +70,7 @@ hex = { version = "^0.4.3", features = ["serde"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "^1.0" }
 assert_matches = "1.5.0"
-mls-rs-core = { path = "../mls-rs-core", version = "0.21.0", features = ["test_suite"] }
+mls-rs-core = { path = "../mls-rs-core", version = "0.22.0", features = ["test_suite"] }
 mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", default-features = false, version = "0.14.0", features = ["test_utils"] }
 
 [target.'cfg(mls_build_async)'.dependencies]

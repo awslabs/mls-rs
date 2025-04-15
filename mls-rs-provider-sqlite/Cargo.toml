@@ -9,7 +9,7 @@ keywords = ["mls", "mls-rs"]
 license = "Apache-2.0 OR MIT"
 
 [dependencies]
-mls-rs-core = { path = "../mls-rs-core", version = "0.21.0" }
+mls-rs-core = { path = "../mls-rs-core", version = "0.22.0" }
 thiserror = "1.0.40"
 wasm-bindgen = { version = "0.2", optional = true }
 zeroize = { version = "1", features = ["zeroize_derive"] }
