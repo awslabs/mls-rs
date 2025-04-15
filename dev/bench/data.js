@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1744726579314,
+  "lastUpdate": 1744726601107,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -21695,6 +21695,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 128630,
             "range": "± 1374",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ellen.arteca@gmail.com",
+            "name": "Ellen Arteca",
+            "username": "emarteca"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "13f13ae3385928b21e19b8f9c15c210033922f80",
+          "message": "Implementing `SelfRemove` proposal MLS extension (#265)\n\n* initial commit. test broken, code builds\n\n* test works. cleanup and error handling needed\n\n* test with external commit, broken but builds\n\n* debugging\n\n* Take self remove proposals into account when listing proposals in a bundle\n\n* more tests\n\n* something else is broken\n\n* tests working. need to flag still\n\n* fix external client\n\n* clippy\n\n* flagging out self-remove proposal\n\n* un-flagging something that should not have been flagged, + changes to mls-rs-core\n\n* rename flag\n\n* lint (ffi safe gen)\n\n* more lint fix\n\n* delete leftover debug\n\n* addressing code review\n\n* clippy\n\n* clippy\n\n* more lint\n\n* lint again\n\n* clippy again\n\n---------\n\nCo-authored-by: Ellen Arteca <emarteca@google.com>\nCo-authored-by: Marta Mularczyk <mulmarta@amazon.com>",
+          "timestamp": "2025-04-15T16:12:30+02:00",
+          "tree_id": "c46364e62b323c72aa89f889a600ee2fd5037e73",
+          "url": "https://github.com/awslabs/mls-rs/commit/13f13ae3385928b21e19b8f9c15c210033922f80"
+        },
+        "date": 1744726600344,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 529389,
+            "range": "± 12902",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 534250,
+            "range": "± 14654",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 598444,
+            "range": "± 7756",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1249939,
+            "range": "± 20030",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7544748,
+            "range": "± 48603",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2634511,
+            "range": "± 176566",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7079497,
+            "range": "± 104273",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13198918,
+            "range": "± 133682",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 773044,
+            "range": "± 19646",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 861200,
+            "range": "± 13899",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 993552,
+            "range": "± 11623",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 20490,
+            "range": "± 277",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 67903,
+            "range": "± 1360",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 129053,
+            "range": "± 1591",
             "unit": "ns/iter"
           }
         ]
