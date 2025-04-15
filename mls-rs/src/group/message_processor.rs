@@ -727,16 +727,6 @@ pub(crate) trait MessageProcessor: Send + Sync {
         ))]
         let self_removed_by_self = self.self_removal_proposal(&provisional_state);
 
-        #[cfg(all(
-            feature = "by_ref_proposal",
-            feature = "custom_proposal",
-            feature = "self_remove_proposal"
-        ))]
-        if let (Some(removed), Some(_)) = (&self_removed, &self_removed_by_self) {
-            return Err(MlsError::MoreThanOneProposalForLeaf(
-                *removed.proposal.to_remove,
-            ));
-        }
         let is_self_removed = self_removed.is_some();
         #[cfg(all(
             feature = "by_ref_proposal",
@@ -777,6 +767,21 @@ pub(crate) trait MessageProcessor: Send + Sync {
                     &provisional_state,
                 )))
             };
+
+        #[cfg(all(
+            feature = "by_ref_proposal",
+            feature = "custom_proposal",
+            feature = "self_remove_proposal"
+        ))]
+        let commit_effect = if let Some(self_remove_proposal) = self_removed_by_self {
+            let new_epoch = NewEpoch::new(self.group_state().clone(), &provisional_state);
+            CommitEffect::Removed {
+                remover: self_remove_proposal.sender,
+                new_epoch: Box::new(new_epoch),
+            }
+        } else {
+            commit_effect
+        };
 
         let new_secrets = match update_path {
             Some(update_path) if !is_self_removed => {

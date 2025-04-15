@@ -118,7 +118,7 @@ where
             feature = "custom_proposal",
             feature = "self_remove_proposal"
         ))]
-        check_for_remove_and_self_remove_same_leaf(&proposals)?;
+        let proposals = filter_out_remove_if_self_remove_same_leaf(strategy, proposals)?;
 
         self.apply_proposal_changes(strategy, proposals, commit_time)
             .await
@@ -321,11 +321,10 @@ pub(crate) fn apply_strategy(
     feature = "custom_proposal",
     feature = "self_remove_proposal"
 ))]
-fn check_for_remove_and_self_remove_same_leaf(proposals: &ProposalBundle) -> Result<(), MlsError> {
-    let removed_leaves: Vec<u32> = proposals
-        .by_type::<RemoveProposal>()
-        .map(|p| p.proposal.to_remove.0)
-        .collect();
+fn filter_out_remove_if_self_remove_same_leaf(
+    strategy: FilterStrategy,
+    mut proposals: ProposalBundle,
+) -> Result<ProposalBundle, MlsError> {
     let self_removed_leaves: Vec<Option<u32>> = proposals
         .by_type::<SelfRemoveProposal>()
         .map(|p| match p.sender {
@@ -334,12 +333,16 @@ fn check_for_remove_and_self_remove_same_leaf(proposals: &ProposalBundle) -> Res
         })
         .collect();
 
-    for removed in removed_leaves.iter() {
-        if self_removed_leaves.contains(&Some(*removed)) {
-            return Err(MlsError::MoreThanOneProposalForLeaf(*removed));
-        }
-    }
-    Ok(())
+    proposals.retain_by_type::<RemoveProposal, _, _>(|p| {
+        apply_strategy(
+            strategy,
+            p.is_by_reference(),
+            (!self_removed_leaves.contains(&Some(p.proposal.to_remove.0)))
+                .then_some(())
+                .ok_or(MlsError::CommitterSelfRemoval),
+        )
+    })?;
+    Ok(proposals)
 }
 
 fn filter_out_update_for_committer(
@@ -517,7 +520,15 @@ pub(crate) fn proposer_can_propose(
     source: &ProposalSource,
 ) -> Result<(), MlsError> {
     let can_propose = match (proposer, source) {
-        (Sender::Member(_), ProposalSource::ByValue | ProposalSource::Local) => {
+        (Sender::Member(_), ProposalSource::ByValue) => matches!(
+            proposal_type,
+            ProposalType::ADD
+                | ProposalType::REMOVE
+                | ProposalType::PSK
+                | ProposalType::RE_INIT
+                | ProposalType::GROUP_CONTEXT_EXTENSIONS
+        ),
+        (Sender::Member(_), ProposalSource::Local) => {
             let can_propose = matches!(
                 proposal_type,
                 ProposalType::ADD
@@ -555,20 +566,14 @@ pub(crate) fn proposer_can_propose(
         #[cfg(feature = "by_ref_proposal")]
         (Sender::External(_), ProposalSource::ByValue) => false,
         #[cfg(feature = "by_ref_proposal")]
-        (Sender::External(_), _) => {
-            let can_propose = matches!(
-                proposal_type,
-                ProposalType::ADD
-                    | ProposalType::REMOVE
-                    | ProposalType::RE_INIT
-                    | ProposalType::PSK
-                    | ProposalType::GROUP_CONTEXT_EXTENSIONS
-            );
-
-            #[cfg(all(feature = "custom_proposal", feature = "self_remove_proposal"))]
-            let can_propose = can_propose || matches!(proposal_type, ProposalType::SELF_REMOVE);
-            can_propose
-        }
+        (Sender::External(_), _) => matches!(
+            proposal_type,
+            ProposalType::ADD
+                | ProposalType::REMOVE
+                | ProposalType::RE_INIT
+                | ProposalType::PSK
+                | ProposalType::GROUP_CONTEXT_EXTENSIONS
+        ),
         (Sender::NewMemberCommit, ProposalSource::ByValue | ProposalSource::Local) => matches!(
             proposal_type,
             ProposalType::REMOVE | ProposalType::PSK | ProposalType::EXTERNAL_INIT

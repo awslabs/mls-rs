@@ -4832,27 +4832,7 @@ mod tests {
     ))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn client_can_self_remove_and_another_client_can_commit() {
-        // Alice creates a group that supports the self-remove proposal.
-        let mut alice = TestClientBuilder::new_for_test()
-            .with_random_signing_identity("alice", TEST_CIPHER_SUITE)
-            .await
-            .custom_proposal_type(ProposalType::SELF_REMOVE)
-            .build()
-            .create_group(ExtensionList::new(), Default::default())
-            .await
-            .unwrap();
-
-        let (bob_signing_identity, bob_secret_key) =
-            get_test_signing_identity(TEST_CIPHER_SUITE, b"bob").await;
-
-        let bob_client = TestClientBuilder::new_for_test()
-            .signing_identity(
-                bob_signing_identity.clone(),
-                bob_secret_key.clone(),
-                TEST_CIPHER_SUITE,
-            )
-            .custom_proposal_type(ProposalType::SELF_REMOVE)
-            .build();
+        let (mut alice, mut bob) = self_remove_group_setup().await;
 
         let carol_client = TestClientBuilder::new_for_test()
             .with_random_signing_identity("carol", TEST_CIPHER_SUITE)
@@ -4860,16 +4840,9 @@ mod tests {
             .custom_proposal_type(ProposalType::SELF_REMOVE)
             .build();
 
-        // Alice adds Bob, Carol to the group.
+        // Alice adds Carol to the group.
         let commit = alice
             .commit_builder()
-            .add_member(
-                bob_client
-                    .generate_key_package_message(Default::default(), Default::default())
-                    .await
-                    .unwrap(),
-            )
-            .unwrap()
             .add_member(
                 carol_client
                     .generate_key_package_message(Default::default(), Default::default())
@@ -4882,12 +4855,9 @@ mod tests {
             .unwrap();
 
         alice.apply_pending_commit().await.unwrap();
-
-        let mut bob = bob_client
-            .join_group(None, &commit.welcome_messages[0])
+        bob.process_incoming_message(commit.commit_message)
             .await
-            .unwrap()
-            .0;
+            .unwrap();
 
         let mut carol = carol_client
             .join_group(None, &commit.welcome_messages[0])
@@ -4940,7 +4910,7 @@ mod tests {
         feature = "self_remove_proposal"
     ))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn commit_with_both_remove_and_self_remove_for_same_client_errors() {
+    async fn commit_with_both_remove_and_self_remove_for_same_client_leaves_remove_unused() {
         let (mut alice, mut bob) = self_remove_group_setup().await;
 
         // Bob proposes self-remove.
@@ -4955,9 +4925,19 @@ mod tests {
         // Alice also removes Bob with a regular remove proposal.
         alice.propose_remove(1, Vec::new()).await.unwrap();
 
-        // Alice commits Bob's self-remove and Alice's removal of Bob. This is an error.
-        let commit = alice.commit(Vec::new()).await;
-        assert_matches!(commit, Err(MlsError::MoreThanOneProposalForLeaf(1)));
+        // Alice commits Bob's self-remove and Alice's removal of Bob. This filters out the remove proposal.
+        let commit = alice.commit(Vec::new()).await.unwrap();
+        let unused = &commit.unused_proposals[0];
+        assert_matches!(
+            unused,
+            ProposalInfo {
+                proposal: Proposal::Remove(RemoveProposal {
+                    to_remove: LeafIndex(1)
+                }),
+                sender: Sender::Member(0),
+                ..
+            }
+        );
     }
 
     #[cfg(all(

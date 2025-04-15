@@ -232,7 +232,7 @@ impl Debug for ExternalInit {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
+#[derive(Clone, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode, Debug)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg(all(
@@ -243,17 +243,6 @@ impl Debug for ExternalInit {
 /// A proposal to remove the current [`Member`](mls_rs_core::group::Member) of a
 /// [`Group`](crate::group::Group).
 pub struct SelfRemoveProposal {}
-
-#[cfg(all(
-    feature = "by_ref_proposal",
-    feature = "custom_proposal",
-    feature = "self_remove_proposal"
-))]
-impl Debug for SelfRemoveProposal {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("SelfRemoveProposal").finish()
-    }
-}
 
 #[cfg(feature = "custom_proposal")]
 #[derive(Clone, PartialEq, Eq)]

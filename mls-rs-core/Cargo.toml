@@ -23,7 +23,6 @@ serde = ["dep:serde", "zeroize/serde", "hex/serde", "dep:serde_bytes"]
 last_resort_key_package_ext = []
 post-quantum = []
 self_remove_proposal = []
-rcs_self_remove_proposal = []
 
 [dependencies]
 mls-rs-codec = { version = "0.6", path = "../mls-rs-codec", default-features = false}
