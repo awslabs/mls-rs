@@ -14,9 +14,7 @@ use crate::{
         mls_rules::{DefaultMlsRules, MlsRules},
         proposal::ProposalType,
     },
-    identity::CredentialType,
     protocol_version::ProtocolVersion,
-    tree_kem::Capabilities,
     CryptoProvider, Sealed,
 };
 use std::{
@@ -134,14 +132,6 @@ impl<C: IntoConfig> ExternalClientBuilder<C> {
         let mut c = self.0.into_config();
         c.0.settings.extension_types.extend(types);
         ExternalClientBuilder(c)
-    }
-
-    /// Add a custom proposal type to the list of proposals types supported by the client.
-    pub fn custom_proposal_type(
-        self,
-        type_: ProposalType,
-    ) -> ExternalClientBuilder<IntoConfigOutput<C>> {
-        self.custom_proposal_types(Some(type_))
     }
 
     /// Add multiple custom proposal types to the list of proposal types supported by the client.
@@ -347,10 +337,6 @@ where
     type MlsRules = Pr;
     type CryptoProvider = Cp;
 
-    fn supported_extensions(&self) -> Vec<ExtensionType> {
-        self.settings.extension_types.clone()
-    }
-
     fn supported_protocol_versions(&self) -> Vec<ProtocolVersion> {
         self.settings.protocol_versions.clone()
     }
@@ -380,10 +366,6 @@ where
 
     fn cache_proposals(&self) -> bool {
         self.settings.cache_proposals
-    }
-
-    fn supported_custom_proposals(&self) -> Vec<ProposalType> {
-        self.settings.custom_proposal_types.clone()
     }
 }
 
@@ -421,16 +403,8 @@ impl<T: MlsConfig> ExternalClientConfig for T {
     type MlsRules = <T::Output as ExternalClientConfig>::MlsRules;
     type CryptoProvider = <T::Output as ExternalClientConfig>::CryptoProvider;
 
-    fn supported_extensions(&self) -> Vec<ExtensionType> {
-        self.get().supported_extensions()
-    }
-
     fn supported_protocol_versions(&self) -> Vec<ProtocolVersion> {
         self.get().supported_protocol_versions()
-    }
-
-    fn supported_custom_proposals(&self) -> Vec<ProposalType> {
-        self.get().supported_custom_proposals()
     }
 
     fn identity_provider(&self) -> Self::IdentityProvider {
@@ -457,16 +431,8 @@ impl<T: MlsConfig> ExternalClientConfig for T {
         self.get().max_epoch_jitter()
     }
 
-    fn capabilities(&self) -> Capabilities {
-        self.get().capabilities()
-    }
-
     fn version_supported(&self, version: ProtocolVersion) -> bool {
         self.get().version_supported(version)
-    }
-
-    fn supported_credentials(&self) -> Vec<CredentialType> {
-        self.get().supported_credentials()
     }
 }
 
