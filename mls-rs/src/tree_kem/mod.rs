@@ -336,6 +336,7 @@ impl TreeKemPublic {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "by_ref_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn apply_remove<T, I>(
