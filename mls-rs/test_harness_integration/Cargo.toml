@@ -25,10 +25,10 @@ by_ref_proposal = [ "mls-rs/by_ref_proposal" ]
 default = ["tree_index", "private_message", "prior_epoch", "out_of_order", "psk", "custom_proposal", "by_ref_proposal"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-mls-rs-crypto-rustcrypto = { path = "../../mls-rs-crypto-rustcrypto", features = ["browser"], version = "0.15.0" }
+mls-rs-crypto-rustcrypto = { path = "../../mls-rs-crypto-rustcrypto", features = ["browser"], version = "0.16.0" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-mls-rs-crypto-openssl = { path = "../../mls-rs-crypto-openssl", version = "0.14.0"}
+mls-rs-crypto-openssl = { path = "../../mls-rs-crypto-openssl", version = "0.15.0"}
 
 [build-dependencies]
 tonic-build = "0.10.2"
