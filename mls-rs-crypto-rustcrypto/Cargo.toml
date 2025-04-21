@@ -1,6 +1,6 @@
 [package]
 name = "mls-rs-crypto-rustcrypto"
-version = "0.15.0"
+version = "0.16.0"
 edition = "2021"
 description = "RustCrypto based CryptoProvider for mls-rs"
 homepage = "https://github.com/awslabs/mls-rs"
@@ -30,8 +30,8 @@ std = [
 
 [dependencies]
 mls-rs-core = { path = "../mls-rs-core", default-features = false, version = "0.22.0" }
-mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", default-features = false, version = "0.14.0" }
-mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", default-features = false, version = "0.15.0" }
+mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", default-features = false, version = "0.15.0" }
+mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", default-features = false, version = "0.16.0" }
 
 thiserror = { version = "1.0.40", optional = true }
 zeroize = { version = "1", default-features = false, features = ["alloc", "zeroize_derive"] }
@@ -59,7 +59,7 @@ ed25519-dalek = { version = "2", default-features = false, features = ["alloc", 
 sec1 = { version = "0.7", default-features = false, features = ["alloc"] }
 
 # X509 feature
-mls-rs-identity-x509 = { path = "../mls-rs-identity-x509", optional = true, version = "0.15.0" }
+mls-rs-identity-x509 = { path = "../mls-rs-identity-x509", optional = true, version = "0.16.0" }
 x509-cert = { version = "0.2", optional = true, features = ["std"] }
 spki = { version = "0.7", optional = true, features = ["std", "alloc"] }
 const-oid = { version = "0.9", optional = true, features = ["std"] }
@@ -71,7 +71,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "^1.0" }
 assert_matches = "1.5.0"
 mls-rs-core = { path = "../mls-rs-core", version = "0.22.0", features = ["test_suite"] }
-mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", default-features = false, version = "0.14.0", features = ["test_utils"] }
+mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", default-features = false, version = "0.15.0", features = ["test_utils"] }
 
 [target.'cfg(mls_build_async)'.dependencies]
 async-trait = "0.1.74"
