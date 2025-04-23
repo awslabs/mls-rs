@@ -2,7 +2,7 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use crate::{client::MlsError, time::MlsTime};
+use crate::{client::MlsError, time::{MlsTime, CurrentTimeProvider, DefaultCurrentTime}};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 
 #[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode, Default)]
@@ -22,9 +22,9 @@ impl Lifetime {
         }
     }
 
-    pub fn seconds(s: u64) -> Result<Self, MlsError> {
+    pub fn seconds<CT: CurrentTimeProvider>(s: u64, ct: &CT) -> Result<Self, MlsError> {
         #[cfg(feature = "std")]
-        let not_before = MlsTime::now().seconds_since_epoch();
+        let not_before = MlsTime::now::<CT>(ct).seconds_since_epoch();
         #[cfg(not(feature = "std"))]
         // There is no clock on no_std, this is here just so that we can run tests.
         let not_before = 3600u64;
@@ -38,12 +38,12 @@ impl Lifetime {
         })
     }
 
-    pub fn days(d: u32) -> Result<Self, MlsError> {
-        Self::seconds((d * 86400) as u64)
+    pub fn days<CT: CurrentTimeProvider>(d: u32, ct: &CT) -> Result<Self, MlsError> {
+        Self::seconds::<CT>((d * 86400) as u64, ct)
     }
 
-    pub fn years(y: u8) -> Result<Self, MlsError> {
-        Self::days(365 * y as u32)
+    pub fn years<CT: CurrentTimeProvider>(y: u8, ct: &CT) -> Result<Self, MlsError> {
+        Self::days::<CT>(365 * y as u32, ct)
     }
 
     pub(crate) fn within_lifetime(&self, time: MlsTime) -> bool {
@@ -61,21 +61,21 @@ mod tests {
 
     #[test]
     fn test_lifetime_overflow() {
-        let res = Lifetime::seconds(u64::MAX);
+        let res = Lifetime::seconds(u64::MAX, &DefaultCurrentTime{});
         assert_matches!(res, Err(MlsError::TimeOverflow))
     }
 
     #[test]
     fn test_seconds() {
         let seconds = 10;
-        let lifetime = Lifetime::seconds(seconds).unwrap();
+        let lifetime = Lifetime::seconds(seconds, &DefaultCurrentTime{}).unwrap();
         assert_eq!(lifetime.not_after - lifetime.not_before, 3610);
     }
 
     #[test]
     fn test_days() {
         let days = 2;
-        let lifetime = Lifetime::days(days).unwrap();
+        let lifetime = Lifetime::days(days, &DefaultCurrentTime{}).unwrap();
 
         assert_eq!(
             lifetime.not_after - lifetime.not_before,
@@ -86,7 +86,8 @@ mod tests {
     #[test]
     fn test_years() {
         let years = 2;
-        let lifetime = Lifetime::years(years).unwrap();
+        let ct = DefaultCurrentTime{};
+        let lifetime = Lifetime::years(years, &ct).unwrap();
 
         assert_eq!(
             lifetime.not_after - lifetime.not_before,

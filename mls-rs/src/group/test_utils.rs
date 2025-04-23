@@ -23,6 +23,7 @@ use crate::{
     key_package::{KeyPackageGeneration, KeyPackageGenerator},
     mls_rules::{CommitOptions, DefaultMlsRules},
     tree_kem::{leaf_node::test_utils::get_test_capabilities, Lifetime},
+    time::DefaultCurrentTime,
 };
 
 use crate::extension::RequiredCapabilitiesExt;
@@ -203,7 +204,7 @@ pub(crate) fn group_extensions() -> ExtensionList {
 }
 
 pub(crate) fn lifetime() -> Lifetime {
-    Lifetime::years(1).unwrap()
+    Lifetime::years(1, &DefaultCurrentTime{}).unwrap()
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -445,6 +446,7 @@ impl MessageProcessor for GroupWithoutKeySchedule {
     type PreSharedKeyStorage = <Group<TestClientConfig> as MessageProcessor>::PreSharedKeyStorage;
     type IdentityProvider = <Group<TestClientConfig> as MessageProcessor>::IdentityProvider;
     type MlsRules = <Group<TestClientConfig> as MessageProcessor>::MlsRules;
+    type CurrentTimeProvider = <Group<TestClientConfig> as MessageProcessor>::CurrentTimeProvider;
 
     fn group_state(&self) -> &GroupState {
         self.inner.group_state()
@@ -457,6 +459,10 @@ impl MessageProcessor for GroupWithoutKeySchedule {
 
     fn mls_rules(&self) -> Self::MlsRules {
         self.inner.mls_rules()
+    }
+
+    fn current_time(&self) -> Self::CurrentTimeProvider {
+        self.inner.current_time()
     }
 
     fn identity_provider(&self) -> Self::IdentityProvider {

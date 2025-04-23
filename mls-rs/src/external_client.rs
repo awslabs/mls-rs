@@ -162,6 +162,10 @@ where
     pub fn identity_provider(&self) -> <C as ExternalClientConfig>::IdentityProvider {
         self.config.identity_provider()
     }
+
+    pub fn current_time(&self) -> <C as ExternalClientConfig>::CurrentTimeProvider {
+        self.config.current_time()
+    }
 }
 
 #[cfg(test)]

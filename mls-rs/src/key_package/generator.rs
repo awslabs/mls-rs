@@ -155,6 +155,7 @@ mod tests {
             Lifetime,
         },
         ExtensionList,
+        time::DefaultCurrentTime,
     };
 
     use super::KeyPackageGenerator;
@@ -172,7 +173,7 @@ mod tests {
     }
 
     fn test_lifetime() -> Lifetime {
-        Lifetime::years(1).unwrap()
+        Lifetime::years(1, &DefaultCurrentTime{}).unwrap()
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]

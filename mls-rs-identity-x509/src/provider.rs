@@ -10,7 +10,7 @@ use mls_rs_core::{
     error::IntoAnyError,
     extension::ExtensionList,
     identity::{CredentialType, IdentityProvider, MemberValidationContext, SigningIdentity},
-    time::MlsTime,
+    time::{MlsTime, DefaultCurrentTime},
 };
 
 #[cfg(not(feature = "std"))]
@@ -217,7 +217,7 @@ mod tests {
 
         let test_signing_identity = test_signing_identity_with_chain(chain.clone());
 
-        let test_timestamp = MlsTime::now();
+        let test_timestamp = MlsTime::now(&DefaultCurrentTime{});
 
         let test_provider = test_setup(|_, validator| {
             let validation_result = test_signing_identity.signature_key.clone();

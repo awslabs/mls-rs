@@ -4,6 +4,10 @@
 
 use core::time::Duration;
 
+pub trait CurrentTimeProvider: std::marker::Sync + std::marker::Send {
+    fn get_current_time_seconds(&self) -> u64;
+}
+
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
@@ -29,19 +33,6 @@ impl MlsTime {
     }
 }
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "std"))]
-impl MlsTime {
-    /// Current system time.
-    pub fn now() -> Self {
-        Self {
-            seconds: std::time::SystemTime::now()
-                .duration_since(std::time::SystemTime::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs(),
-        }
-    }
-}
-
 impl From<u64> for MlsTime {
     fn from(value: u64) -> Self {
         Self { seconds: value }
@@ -57,11 +48,26 @@ extern "C" {
     fn date_now() -> f64;
 }
 
-#[cfg(target_arch = "wasm32")]
+
 impl MlsTime {
-    pub fn now() -> Self {
+    pub fn now<CT: CurrentTimeProvider>(ct: &CT) -> Self {
         Self {
-            seconds: (date_now() / 1000.0) as u64,
+            seconds: ct.get_current_time_seconds(),
         }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct DefaultCurrentTime{}
+impl CurrentTimeProvider for DefaultCurrentTime {
+    fn get_current_time_seconds(&self) -> u64 {
+        #[cfg(target_arch = "wasm32")]
+        let ret_val = (date_now() / 1000.0) as u64;
+        #[cfg(all(not(target_arch = "wasm32"), feature = "std"))]
+        let ret_val = std::time::SystemTime::now()
+                .duration_since(std::time::SystemTime::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+        ret_val
     }
 }

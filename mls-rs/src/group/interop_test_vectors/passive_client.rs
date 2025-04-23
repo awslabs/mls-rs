@@ -29,6 +29,7 @@ use crate::{
     },
     tree_kem::Lifetime,
     Client, Group, MlsMessage,
+    time::DefaultCurrentTime,
 };
 
 const VERSION: ProtocolVersion = ProtocolVersion::MLS_10;
@@ -207,7 +208,7 @@ async fn interop_passive_client() {
                 let message = MlsMessage::from_bytes(&proposal.0).unwrap();
 
                 group
-                    .process_incoming_message_with_time(message, MlsTime::now())
+                    .process_incoming_message_with_time(message, MlsTime::now(&DefaultCurrentTime{}))
                     .await
                     .unwrap();
             }
@@ -215,7 +216,7 @@ async fn interop_passive_client() {
             let message = MlsMessage::from_bytes(&epoch.commit).unwrap();
 
             group
-                .process_incoming_message_with_time(message, MlsTime::now())
+                .process_incoming_message_with_time(message, MlsTime::now(&DefaultCurrentTime{}))
                 .await
                 .unwrap();
 

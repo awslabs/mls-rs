@@ -25,7 +25,7 @@ use super::{
 use crate::{
     client::MlsError,
     key_package::validate_key_package_properties,
-    time::MlsTime,
+    time::{MlsTime, CurrentTimeProvider},
     tree_kem::{
         leaf_node_validator::{LeafNodeValidator, ValidationContext},
         node::LeafIndex,
@@ -494,6 +494,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
     type IdentityProvider: IdentityProvider;
     type CipherSuiteProvider: CipherSuiteProvider;
     type PreSharedKeyStorage: PreSharedKeyStorage;
+    type CurrentTimeProvider: CurrentTimeProvider;
 
     async fn process_incoming_message(
         &mut self,
@@ -833,6 +834,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
     fn mls_rules(&self) -> Self::MlsRules;
     fn identity_provider(&self) -> Self::IdentityProvider;
     fn cipher_suite_provider(&self) -> &Self::CipherSuiteProvider;
+    fn current_time(&self) -> Self::CurrentTimeProvider;
     fn psk_storage(&self) -> Self::PreSharedKeyStorage;
 
     fn removal_proposal(
@@ -951,8 +953,9 @@ pub(crate) trait MessageProcessor: Send + Sync {
     ) -> Result<(), MlsError> {
         let cs = self.cipher_suite_provider();
         let id = self.identity_provider();
+        let ct = self.current_time();
 
-        validate_key_package(key_package, version, cs, &id).await
+        validate_key_package(key_package, version, cs, &id, &ct).await
     }
 
     #[cfg(feature = "private_message")]
@@ -995,16 +998,17 @@ pub(crate) trait MessageProcessor: Send + Sync {
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-pub(crate) async fn validate_key_package<C: CipherSuiteProvider, I: IdentityProvider>(
+pub(crate) async fn validate_key_package<C: CipherSuiteProvider, I: IdentityProvider, CT: CurrentTimeProvider>(
     key_package: &KeyPackage,
     version: ProtocolVersion,
     cs: &C,
     id: &I,
+    ct: &CT,
 ) -> Result<(), MlsError> {
     let validator = LeafNodeValidator::new(cs, id, MemberValidationContext::None);
 
     #[cfg(feature = "std")]
-    let context = Some(MlsTime::now());
+    let context = Some(MlsTime::now::<CT>(ct));
 
     #[cfg(not(feature = "std"))]
     let context = None;

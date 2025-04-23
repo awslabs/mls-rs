@@ -2067,6 +2067,7 @@ where
     type PreSharedKeyStorage = C::PskStore;
     type OutputType = ReceivedMessage;
     type CipherSuiteProvider = <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider;
+    type CurrentTimeProvider = C::CurrentTimeProvider;
 
     #[cfg(feature = "private_message")]
     async fn process_ciphertext(
@@ -2263,6 +2264,10 @@ where
         &mut self.state
     }
 
+    fn current_time(&self) -> Self::CurrentTimeProvider {
+        self.config.current_time()
+    }
+
     fn removal_proposal(
         &self,
         provisional_state: &ProvisionalState,
@@ -2322,6 +2327,7 @@ mod tests {
             leaf_node::{test_utils::get_test_capabilities, LeafNodeSource},
             UpdatePathNode,
         },
+        time::DefaultCurrentTime,
     };
 
     #[cfg(feature = "by_ref_proposal")]
@@ -4487,7 +4493,7 @@ mod tests {
         let commit = groups[0].commit(vec![]).await.unwrap().commit_message;
 
         // 10 years from now
-        let future_time = MlsTime::now().seconds_since_epoch() + 10 * 365 * 24 * 3600;
+        let future_time = MlsTime::now(&DefaultCurrentTime{}).seconds_since_epoch() + 10 * 365 * 24 * 3600;
 
         let future_time =
             MlsTime::from_duration_since_epoch(core::time::Duration::from_secs(future_time));

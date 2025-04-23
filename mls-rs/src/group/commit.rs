@@ -502,6 +502,7 @@ where
         }
 
         let mls_rules = self.config.mls_rules();
+        let ct = self.config.current_time();
 
         let is_external = external_leaf.is_some();
 
@@ -518,7 +519,7 @@ where
         let old_signer = &self.signer;
 
         #[cfg(feature = "std")]
-        let time = Some(crate::time::MlsTime::now());
+        let time = Some(crate::time::MlsTime::now(&ct));
 
         #[cfg(not(feature = "std"))]
         let time = None;

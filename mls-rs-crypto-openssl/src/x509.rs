@@ -573,7 +573,7 @@ mod tests {
     use assert_matches::assert_matches;
     use mls_rs_core::{
         crypto::{CipherSuite, SignaturePublicKey, SignatureSecretKey},
-        time::MlsTime,
+        time::{MlsTime, DefaultCurrentTime},
     };
     use mls_rs_identity_x509::{
         CertificateChain, CertificateRequestParameters, DerCertificateRequest, SubjectAltName,
@@ -627,7 +627,7 @@ mod tests {
         let system_validator = X509Validator::new(vec![]).unwrap().with_system_ca();
 
         validator
-            .validate_chain(&chain, Some(MlsTime::now()))
+            .validate_chain(&chain, Some(MlsTime::now(&DefaultCurrentTime{})))
             .unwrap();
 
         assert_matches!(
@@ -641,7 +641,7 @@ mod tests {
         let validator = X509Validator::new(vec![]).unwrap();
         let empty: Vec<Vec<u8>> = Vec::new();
 
-        let res = validator.validate_chain(&CertificateChain::from(empty), Some(MlsTime::now()));
+        let res = validator.validate_chain(&CertificateChain::from(empty), Some(MlsTime::now(&DefaultCurrentTime{})));
 
         assert_matches!(res, Err(X509Error::EmptyCertificateChain));
     }
@@ -672,7 +672,7 @@ mod tests {
         let chain = load_test_invalid_chain();
         let validator = X509Validator::new(vec![load_test_ca()]).unwrap();
 
-        let res = validator.validate_chain(&chain, Some(MlsTime::now()));
+        let res = validator.validate_chain(&chain, Some(MlsTime::now(&DefaultCurrentTime{})));
 
         assert_matches!(res, Err(X509Error::ChainValidationFailure(_)));
     }
@@ -681,7 +681,7 @@ mod tests {
     fn will_fail_on_invalid_ca() {
         let chain = load_test_invalid_ca_chain();
         let validator = X509Validator::new(vec![load_another_ca()]).unwrap();
-        let res = validator.validate_chain(&chain, Some(MlsTime::now()));
+        let res = validator.validate_chain(&chain, Some(MlsTime::now(&DefaultCurrentTime{})));
 
         assert_matches!(res, Err(X509Error::ChainValidationFailure(_)));
     }

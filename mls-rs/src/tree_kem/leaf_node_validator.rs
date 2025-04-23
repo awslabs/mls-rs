@@ -237,6 +237,7 @@ mod tests {
     use crate::client::test_utils::TEST_PROTOCOL_VERSION;
     use crate::crypto::test_utils::try_test_cipher_suite_provider;
     use crate::extension::MlsExtension;
+    use crate::time::DefaultCurrentTime;
     use alloc::vec;
     use assert_matches::assert_matches;
     #[cfg(feature = "std")]
@@ -637,7 +638,7 @@ mod tests {
         let test_validator =
             LeafNodeValidator::new_for_test(&cipher_suite_provider, &BasicIdentityProvider);
 
-        let good_lifetime = MlsTime::now();
+        let good_lifetime = MlsTime::now(&DefaultCurrentTime{});
 
         let over_one_year = good_lifetime.seconds_since_epoch() + (86400 * 366);
 

@@ -27,7 +27,7 @@ use crate::{
 };
 
 #[cfg(feature = "std")]
-use crate::time::MlsTime;
+use crate::time::{MlsTime, DefaultCurrentTime, CurrentTimeProvider};
 
 use alloc::vec::Vec;
 
@@ -51,6 +51,7 @@ pub type BaseConfig = Config<
     Missing,
     DefaultMlsRules,
     Missing,
+    DefaultCurrentTime,
 >;
 
 /// Base client configuration type when instantiating `ClientBuilder`
@@ -61,9 +62,10 @@ pub type BaseInMemoryConfig = Config<
     Missing,
     Missing,
     Missing,
+    DefaultCurrentTime,
 >;
 
-pub type EmptyConfig = Config<Missing, Missing, Missing, Missing, Missing, Missing>;
+pub type EmptyConfig = Config<Missing, Missing, Missing, Missing, Missing, Missing, DefaultCurrentTime>;
 
 /// Base client configuration that is backed by SQLite storage.
 #[cfg(feature = "sqlite")]
@@ -74,6 +76,7 @@ pub type BaseSqlConfig = Config<
     Missing,
     DefaultMlsRules,
     Missing,
+    DefaultCurrentTime,
 >;
 
 /// Builder for [`Client`]
@@ -203,6 +206,7 @@ impl ClientBuilder<BaseConfig> {
             signer: Default::default(),
             signing_identity: Default::default(),
             version: ProtocolVersion::MLS_10,
+            current_time: DefaultCurrentTime{},
         }))
     }
 }
@@ -220,6 +224,7 @@ impl ClientBuilder<EmptyConfig> {
             signer: Default::default(),
             signing_identity: Default::default(),
             version: ProtocolVersion::MLS_10,
+            current_time: DefaultCurrentTime{},
         }))
     }
 }
@@ -241,6 +246,7 @@ impl ClientBuilder<BaseSqlConfig> {
             signer: Default::default(),
             signing_identity: Default::default(),
             version: ProtocolVersion::MLS_10,
+            current_time: Default::default(),
         })))
     }
 }
@@ -324,7 +330,31 @@ impl<C: IntoConfig> ClientBuilder<C> {
             signer: c.signer,
             signing_identity: c.signing_identity,
             version: c.version,
+            current_time: c.current_time,
         }))
+    }
+
+    /// Set the current time accessor to be used by the client.
+    ///
+    /// By default, an implementation using the SystemTime::now (except for WASM) is used.
+    pub fn current_time<CT>(self, current_time: CT) -> ClientBuilder<WithCurrentTime<CT, C>> 
+    where CT: CurrentTimeProvider,
+    {
+        let Config(c) = self.0.into_config();
+
+        ClientBuilder(Config(ConfigInner {
+            settings: c.settings,
+            key_package_repo: c.key_package_repo,
+            psk_store: c.psk_store,
+            group_state_storage: c.group_state_storage,
+            identity_provider: c.identity_provider,
+            mls_rules: c.mls_rules,
+            crypto_provider: c.crypto_provider,
+            signer: c.signer,
+            signing_identity: c.signing_identity,
+            version: c.version,
+            current_time,
+        }))    
     }
 
     /// Set the PSK store to be used by the client.
@@ -347,6 +377,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
             signer: c.signer,
             signing_identity: c.signing_identity,
             version: c.version,
+            current_time: c.current_time,
         }))
     }
 
@@ -373,6 +404,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
             signer: c.signer,
             signing_identity: c.signing_identity,
             version: c.version,
+            current_time: c.current_time,
         }))
     }
 
@@ -397,6 +429,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
             signer: c.signer,
             signing_identity: c.signing_identity,
             version: c.version,
+            current_time: c.current_time,
         }))
     }
 
@@ -421,6 +454,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
             signer: c.signer,
             signing_identity: c.signing_identity,
             version: c.version,
+            current_time: c.current_time,
         }))
     }
 
@@ -448,6 +482,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
             signer: c.signer,
             signing_identity: c.signing_identity,
             version: c.version,
+            current_time: c.current_time,
         }))
     }
 
@@ -501,6 +536,7 @@ where
     C::IdentityProvider: IdentityProvider + Clone,
     C::MlsRules: MlsRules + Clone,
     C::CryptoProvider: CryptoProvider + Clone,
+    C::CurrentTimeProvider: CurrentTimeProvider + Clone,
 {
     pub(crate) fn build_config(self) -> IntoConfigOutput<C> {
         let mut c = self.0.into_config();
@@ -553,6 +589,17 @@ pub type WithKeyPackageRepo<K, C> = Config<
     <C as IntoConfig>::IdentityProvider,
     <C as IntoConfig>::MlsRules,
     <C as IntoConfig>::CryptoProvider,
+    <C as IntoConfig>::CurrentTimeProvider,
+>;
+
+pub type WithCurrentTime<CT, C> = Config<
+    <C as IntoConfig>::KeyPackageRepository,
+    <C as IntoConfig>::PskStore,
+    <C as IntoConfig>::GroupStateStorage,
+    <C as IntoConfig>::IdentityProvider,
+    <C as IntoConfig>::MlsRules,
+    <C as IntoConfig>::CryptoProvider,
+    CT,
 >;
 
 /// Change the PSK store used by a client configuration.
@@ -565,6 +612,7 @@ pub type WithPskStore<P, C> = Config<
     <C as IntoConfig>::IdentityProvider,
     <C as IntoConfig>::MlsRules,
     <C as IntoConfig>::CryptoProvider,
+    <C as IntoConfig>::CurrentTimeProvider,
 >;
 
 /// Change the group state storage used by a client configuration.
@@ -577,6 +625,7 @@ pub type WithGroupStateStorage<G, C> = Config<
     <C as IntoConfig>::IdentityProvider,
     <C as IntoConfig>::MlsRules,
     <C as IntoConfig>::CryptoProvider,
+    <C as IntoConfig>::CurrentTimeProvider,
 >;
 
 /// Change the identity validator used by a client configuration.
@@ -589,6 +638,7 @@ pub type WithIdentityProvider<I, C> = Config<
     I,
     <C as IntoConfig>::MlsRules,
     <C as IntoConfig>::CryptoProvider,
+    <C as IntoConfig>::CurrentTimeProvider,
 >;
 
 /// Change the proposal rules used by a client configuration.
@@ -601,6 +651,7 @@ pub type WithMlsRules<Pr, C> = Config<
     <C as IntoConfig>::IdentityProvider,
     Pr,
     <C as IntoConfig>::CryptoProvider,
+    <C as IntoConfig>::CurrentTimeProvider,
 >;
 
 /// Change the crypto provider used by a client configuration.
@@ -613,6 +664,7 @@ pub type WithCryptoProvider<Cp, C> = Config<
     <C as IntoConfig>::IdentityProvider,
     <C as IntoConfig>::MlsRules,
     Cp,
+    <C as IntoConfig>::CurrentTimeProvider,
 >;
 
 /// Helper alias for `Config`.
@@ -623,6 +675,7 @@ pub type IntoConfigOutput<C> = Config<
     <C as IntoConfig>::IdentityProvider,
     <C as IntoConfig>::MlsRules,
     <C as IntoConfig>::CryptoProvider,
+    <C as IntoConfig>::CurrentTimeProvider,
 >;
 
 /// Helper alias to make a `Config` from a `ClientConfig`
@@ -633,9 +686,10 @@ pub type MakeConfig<C> = Config<
     <C as ClientConfig>::IdentityProvider,
     <C as ClientConfig>::MlsRules,
     <C as ClientConfig>::CryptoProvider,
+    <C as ClientConfig>::CurrentTimeProvider,
 >;
 
-impl<Kpr, Ps, Gss, Ip, Pr, Cp> ClientConfig for ConfigInner<Kpr, Ps, Gss, Ip, Pr, Cp>
+impl<Kpr, Ps, Gss, Ip, Pr, Cp, CT> ClientConfig for ConfigInner<Kpr, Ps, Gss, Ip, Pr, Cp, CT>
 where
     Kpr: KeyPackageStorage + Clone,
     Ps: PreSharedKeyStorage + Clone,
@@ -643,6 +697,7 @@ where
     Ip: IdentityProvider + Clone,
     Pr: MlsRules + Clone,
     Cp: CryptoProvider + Clone,
+    CT: CurrentTimeProvider + Clone,
 {
     type KeyPackageRepository = Kpr;
     type PskStore = Ps;
@@ -650,6 +705,7 @@ where
     type IdentityProvider = Ip;
     type MlsRules = Pr;
     type CryptoProvider = Cp;
+    type CurrentTimeProvider = CT;
 
     fn supported_extensions(&self) -> Vec<ExtensionType> {
         self.settings.extension_types.clone()
@@ -683,9 +739,13 @@ where
         self.crypto_provider.clone()
     }
 
+    fn current_time(&self) -> Self::CurrentTimeProvider {
+        self.current_time.clone()
+    }
+
     fn lifetime(&self) -> Lifetime {
         #[cfg(feature = "std")]
-        let now_timestamp = MlsTime::now().seconds_since_epoch();
+        let now_timestamp = MlsTime::now(&self.current_time()).seconds_since_epoch();
 
         #[cfg(not(feature = "std"))]
         let now_timestamp = 0;
@@ -707,9 +767,9 @@ where
     }
 }
 
-impl<Kpr, Ps, Gss, Ip, Pr, Cp> Sealed for Config<Kpr, Ps, Gss, Ip, Pr, Cp> {}
+impl<Kpr, Ps, Gss, Ip, Pr, Cp, CT> Sealed for Config<Kpr, Ps, Gss, Ip, Pr, Cp, CT> {}
 
-impl<Kpr, Ps, Gss, Ip, Pr, Cp> MlsConfig for Config<Kpr, Ps, Gss, Ip, Pr, Cp>
+impl<Kpr, Ps, Gss, Ip, Pr, Cp, CT> MlsConfig for Config<Kpr, Ps, Gss, Ip, Pr, Cp, CT>
 where
     Kpr: KeyPackageStorage + Clone,
 
@@ -718,8 +778,9 @@ where
     Ip: IdentityProvider + Clone,
     Pr: MlsRules + Clone,
     Cp: CryptoProvider + Clone,
+    CT: CurrentTimeProvider + Clone,
 {
-    type Output = ConfigInner<Kpr, Ps, Gss, Ip, Pr, Cp>;
+    type Output = ConfigInner<Kpr, Ps, Gss, Ip, Pr, Cp, CT>;
 
     fn get(&self) -> &Self::Output {
         &self.0
@@ -745,6 +806,7 @@ impl<T: MlsConfig> ClientConfig for T {
     type IdentityProvider = <T::Output as ClientConfig>::IdentityProvider;
     type MlsRules = <T::Output as ClientConfig>::MlsRules;
     type CryptoProvider = <T::Output as ClientConfig>::CryptoProvider;
+    type CurrentTimeProvider = <T::Output as ClientConfig>::CurrentTimeProvider;
 
     fn supported_extensions(&self) -> Vec<ExtensionType> {
         self.get().supported_extensions()
@@ -760,6 +822,10 @@ impl<T: MlsConfig> ClientConfig for T {
 
     fn key_package_repo(&self) -> Self::KeyPackageRepository {
         self.get().key_package_repo()
+    }
+
+    fn current_time(&self) -> Self::CurrentTimeProvider {
+        self.get().current_time()
     }
 
     fn mls_rules(&self) -> Self::MlsRules {
@@ -849,6 +915,7 @@ pub(crate) fn recreate_config<T: ClientConfig>(
         signer,
         signing_identity,
         version,
+        current_time: c.current_time(),
     })
 }
 
@@ -864,10 +931,10 @@ mod private {
     use crate::client_builder::{IntoConfigOutput, Settings};
 
     #[derive(Clone, Debug)]
-    pub struct Config<Kpr, Ps, Gss, Ip, Pr, Cp>(pub(crate) ConfigInner<Kpr, Ps, Gss, Ip, Pr, Cp>);
+    pub struct Config<Kpr, Ps, Gss, Ip, Pr, Cp, CT>(pub(crate) ConfigInner<Kpr, Ps, Gss, Ip, Pr, Cp, CT>);
 
     #[derive(Clone, Debug)]
-    pub struct ConfigInner<Kpr, Ps, Gss, Ip, Pr, Cp> {
+    pub struct ConfigInner<Kpr, Ps, Gss, Ip, Pr, Cp, CT> {
         pub(crate) settings: Settings,
         pub(crate) key_package_repo: Kpr,
         pub(crate) psk_store: Ps,
@@ -878,6 +945,7 @@ mod private {
         pub(crate) signer: Option<SignatureSecretKey>,
         pub(crate) signing_identity: Option<(SigningIdentity, CipherSuite)>,
         pub(crate) version: ProtocolVersion,
+        pub(crate) current_time: CT,
     }
 
     pub trait IntoConfig {
@@ -887,17 +955,19 @@ mod private {
         type IdentityProvider;
         type MlsRules;
         type CryptoProvider;
+        type CurrentTimeProvider;
 
         fn into_config(self) -> IntoConfigOutput<Self>;
     }
 
-    impl<Kpr, Ps, Gss, Ip, Pr, Cp> IntoConfig for Config<Kpr, Ps, Gss, Ip, Pr, Cp> {
+    impl<Kpr, Ps, Gss, Ip, Pr, Cp, CT> IntoConfig for Config<Kpr, Ps, Gss, Ip, Pr, Cp, CT> {
         type KeyPackageRepository = Kpr;
         type PskStore = Ps;
         type GroupStateStorage = Gss;
         type IdentityProvider = Ip;
         type MlsRules = Pr;
         type CryptoProvider = Cp;
+        type CurrentTimeProvider = CT;
 
         fn into_config(self) -> Self {
             self

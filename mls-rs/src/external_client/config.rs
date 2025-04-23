@@ -6,16 +6,18 @@ use mls_rs_core::identity::IdentityProvider;
 
 use crate::{
     crypto::SignaturePublicKey, group::mls_rules::MlsRules, protocol_version::ProtocolVersion,
-    CryptoProvider,
+    CryptoProvider, time::CurrentTimeProvider
 };
 
 pub trait ExternalClientConfig: Send + Sync + Clone {
     type IdentityProvider: IdentityProvider + Clone;
     type MlsRules: MlsRules + Clone;
     type CryptoProvider: CryptoProvider;
+    type CurrentTimeProvider: CurrentTimeProvider;
 
     fn supported_protocol_versions(&self) -> Vec<ProtocolVersion>;
     fn identity_provider(&self) -> Self::IdentityProvider;
+    fn current_time(&self) -> Self::CurrentTimeProvider;
     fn crypto_provider(&self) -> Self::CryptoProvider;
     fn external_signing_key(&self, external_key_id: &[u8]) -> Option<SignaturePublicKey>;
     fn mls_rules(&self) -> Self::MlsRules;

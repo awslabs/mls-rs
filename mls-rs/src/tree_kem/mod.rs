@@ -784,6 +784,7 @@ pub(crate) mod test_utils {
         crypto::{HpkeSecretKey, SignatureSecretKey},
         identity::basic::BasicIdentityProvider,
         tree_kem::leaf_node::test_utils::get_basic_test_node_sig_key,
+        time::DefaultCurrentTime,
     };
 
     use super::leaf_node::{ConfigProperties, LeafNodeSigningContext};
@@ -978,7 +979,7 @@ pub(crate) mod test_utils {
             properties,
             signing_identity,
             &signature_key,
-            Lifetime::years(1).unwrap(),
+            Lifetime::years(1, &DefaultCurrentTime{}).unwrap(),
         )
         .await
         .unwrap();

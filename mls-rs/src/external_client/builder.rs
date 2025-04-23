@@ -16,6 +16,7 @@ use crate::{
     },
     protocol_version::ProtocolVersion,
     CryptoProvider, Sealed,
+    time::{CurrentTimeProvider, DefaultCurrentTime}
 };
 use std::{
     collections::HashMap,
@@ -111,6 +112,7 @@ impl ExternalClientBuilder<ExternalBaseConfig> {
             mls_rules: DefaultMlsRules::new(),
             crypto_provider: Missing,
             signing_data: None,
+            current_time: DefaultCurrentTime{},
         }))
     }
 }
@@ -215,6 +217,26 @@ impl<C: IntoConfig> ExternalClientBuilder<C> {
             mls_rules: c.mls_rules,
             crypto_provider: c.crypto_provider,
             signing_data: c.signing_data,
+            current_time: c.current_time,
+        }))
+    }
+
+    /// Set the current time accessor to be used by the client.
+    pub fn current_time<I>(
+        self,
+        current_time: CT,
+    ) -> ExternalClientBuilder<WithCurrentTime<CT, C>>
+    where
+        CT: CurrentTimeProvider,
+    {
+        let Config(c) = self.0.into_config();
+        ExternalClientBuilder(Config(ConfigInner {
+            settings: c.settings,
+            identity_provider: c.identity_provider,
+            mls_rules: c.mls_rules,
+            crypto_provider: c.crypto_provider,
+            signing_data: c.signing_data,
+            current_time,
         }))
     }
 
@@ -306,36 +328,41 @@ pub struct Missing;
 ///
 /// See [`ExternalClientBuilder::identity_provider`].
 pub type WithIdentityProvider<I, C> =
-    Config<I, <C as IntoConfig>::MlsRules, <C as IntoConfig>::CryptoProvider>;
+    Config<I, <C as IntoConfig>::MlsRules, <C as IntoConfig>::CryptoProvider, <C as IntoConfig>::CurrentTimeProvider>;
+
+pub type WithCurrentTime<CT, C> = Config<<C as IntoConfig>::IdentityProvider, <C as IntoConfig>::MlsRules, <C as IntoConfig>::CryptoProvider, CT>;
 
 /// Change the proposal filter used by a client configuration.
 ///
 /// See [`ExternalClientBuilder::mls_rules`].
 pub type WithMlsRules<Pr, C> =
-    Config<<C as IntoConfig>::IdentityProvider, Pr, <C as IntoConfig>::CryptoProvider>;
+    Config<<C as IntoConfig>::IdentityProvider, Pr, <C as IntoConfig>::CryptoProvider, <C as IntoConfig>::CurrentTimeProvider>;
 
 /// Change the crypto provider used by a client configuration.
 ///
 /// See [`ExternalClientBuilder::crypto_provider`].
 pub type WithCryptoProvider<Cp, C> =
-    Config<<C as IntoConfig>::IdentityProvider, <C as IntoConfig>::MlsRules, Cp>;
+    Config<<C as IntoConfig>::IdentityProvider, <C as IntoConfig>::MlsRules, Cp, <C as IntoConfig>::CurrentTimeProvider>;
 
 /// Helper alias for `Config`.
 pub type IntoConfigOutput<C> = Config<
     <C as IntoConfig>::IdentityProvider,
     <C as IntoConfig>::MlsRules,
     <C as IntoConfig>::CryptoProvider,
+    <C as IntoConfig>::CurrentTimeProvider,
 >;
 
-impl<Ip, Pr, Cp> ExternalClientConfig for ConfigInner<Ip, Pr, Cp>
+impl<Ip, Pr, Cp, CT> ExternalClientConfig for ConfigInner<Ip, Pr, Cp, CT>
 where
     Ip: IdentityProvider + Clone,
     Pr: MlsRules + Clone,
     Cp: CryptoProvider + Clone,
+    CT: CurrentTimeProvider + Clone,
 {
     type IdentityProvider = Ip;
     type MlsRules = Pr;
     type CryptoProvider = Cp;
+    type CurrentTimeProvider = CT;
 
     fn supported_protocol_versions(&self) -> Vec<ProtocolVersion> {
         self.settings.protocol_versions.clone()
@@ -360,6 +387,10 @@ where
         self.mls_rules.clone()
     }
 
+    fn current_time(&self) -> Self::CurrentTimeProvider {
+        self.current_time.clone()
+    }
+
     fn max_epoch_jitter(&self) -> Option<u64> {
         self.settings.max_epoch_jitter
     }
@@ -369,13 +400,14 @@ where
     }
 }
 
-impl<Ip, Mpf, Cp> Sealed for Config<Ip, Mpf, Cp> {}
+impl<Ip, Mpf, Cp, CT> Sealed for Config<Ip, Mpf, Cp, CT> {}
 
-impl<Ip, Pr, Cp> MlsConfig for Config<Ip, Pr, Cp>
+impl<Ip, Pr, Cp, CT> MlsConfig for Config<Ip, Pr, Cp, CT>
 where
     Ip: IdentityProvider + Clone,
     Pr: MlsRules + Clone,
     Cp: CryptoProvider + Clone,
+    CT: CurrentTimeProvider + Clone,
 {
     type Output = ConfigInner<Ip, Pr, Cp>;
 
@@ -402,6 +434,7 @@ impl<T: MlsConfig> ExternalClientConfig for T {
     type IdentityProvider = <T::Output as ExternalClientConfig>::IdentityProvider;
     type MlsRules = <T::Output as ExternalClientConfig>::MlsRules;
     type CryptoProvider = <T::Output as ExternalClientConfig>::CryptoProvider;
+    type CurrentTimeProvider = <T::Output as ExternalClientConfig>::CurrentTimeProvider;
 
     fn supported_protocol_versions(&self) -> Vec<ProtocolVersion> {
         self.get().supported_protocol_versions()
@@ -425,6 +458,10 @@ impl<T: MlsConfig> ExternalClientConfig for T {
 
     fn cache_proposals(&self) -> bool {
         self.get().cache_proposals()
+    }
+
+    fn current_time(&self) -> Self::CurrentTimeProvider {
+        self.get().current_time()
     }
 
     fn max_epoch_jitter(&self) -> Option<u64> {
@@ -491,29 +528,32 @@ mod private {
     use super::{IntoConfigOutput, Settings};
 
     #[derive(Clone, Debug)]
-    pub struct Config<Ip, Pr, Cp>(pub(crate) ConfigInner<Ip, Pr, Cp>);
+    pub struct Config<Ip, Pr, Cp, CT>(pub(crate) ConfigInner<Ip, Pr, Cp, CT>);
 
     #[derive(Clone, Debug)]
-    pub struct ConfigInner<Ip, Mpf, Cp> {
+    pub struct ConfigInner<Ip, Mpf, Cp, CT> {
         pub(crate) settings: Settings,
         pub(crate) identity_provider: Ip,
         pub(crate) mls_rules: Mpf,
         pub(crate) crypto_provider: Cp,
         pub(crate) signing_data: Option<(SignatureSecretKey, SigningIdentity)>,
+        pub(crate) current_time: CT,
     }
 
     pub trait IntoConfig {
         type IdentityProvider;
         type MlsRules;
         type CryptoProvider;
+        type CurrentTimeProvider;
 
         fn into_config(self) -> IntoConfigOutput<Self>;
     }
 
-    impl<Ip, Pr, Cp> IntoConfig for Config<Ip, Pr, Cp> {
+    impl<Ip, Pr, Cp, CT> IntoConfig for Config<Ip, Pr, Cp, CT> {
         type IdentityProvider = Ip;
         type MlsRules = Pr;
         type CryptoProvider = Cp;
+        type CurrentTimeProvider = CT;
 
         fn into_config(self) -> Self {
             self
@@ -532,16 +572,18 @@ pub(crate) mod test_utils {
     use crate::{
         cipher_suite::CipherSuite, crypto::test_utils::TestCryptoProvider,
         identity::basic::BasicIdentityProvider,
+        time::DefaultCurrentTime,
     };
 
     use super::{
-        ExternalBaseConfig, ExternalClientBuilder, WithCryptoProvider, WithIdentityProvider,
+        ExternalBaseConfig, ExternalClientBuilder, WithCryptoProvider, WithIdentityProvider, WithCurrentTime
     };
 
     pub type TestExternalClientConfig = WithIdentityProvider<
         BasicIdentityProvider,
-        WithCryptoProvider<TestCryptoProvider, ExternalBaseConfig>,
-    >;
+        WithCryptoProvider<TestCryptoProvider, 
+        WithCurrentTime<DefaultCurrentTime, ExternalBaseConfig>,
+    >>;
 
     pub type TestExternalClientBuilder = ExternalClientBuilder<TestExternalClientConfig>;
 
