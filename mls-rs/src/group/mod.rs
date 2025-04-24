@@ -2327,7 +2327,7 @@ mod tests {
             leaf_node::{test_utils::get_test_capabilities, LeafNodeSource},
             UpdatePathNode,
         },
-        time::DefaultCurrentTime,
+        time::{DefaultCurrentTime, CurrentTimeProvider},
     };
 
     #[cfg(feature = "by_ref_proposal")]
@@ -5338,6 +5338,43 @@ mod tests {
         alice.process_incoming_message(commit).await.unwrap();
     }
 
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn commit_processes_with_custom_time_provider() {
+        let (bob_identity, secret_key) = get_test_signing_identity(TEST_CIPHER_SUITE, b"bob").await;
+        let bob = TestClientBuilder::new_for_test()
+            .signing_identity(bob_identity, secret_key, TEST_CIPHER_SUITE)
+            .current_time(CustomTimeProvider::new())
+            .build();
+
+        let (alice_identity, secret_key) = get_test_signing_identity(TEST_CIPHER_SUITE, b"alice").await;
+        let alice_time = CustomTimeProvider::new();
+        let alice = TestClientBuilder::new_for_test()
+            .signing_identity(alice_identity, secret_key, TEST_CIPHER_SUITE)
+            .current_time(alice_time.clone())
+            .build();
+
+        let mut alice_group = alice.create_group(Default::default(), Default::default())
+                            .await
+                            .unwrap();
+
+                            let bob_key_package = bob
+                            .generate_key_package_message(Default::default(), Default::default())
+                            .await
+                            .unwrap();
+
+        let commit_output = alice_group
+            .commit_builder()
+            .add_member(bob_key_package)
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+
+        // alice_group.apply_pending_commit().await.unwrap();
+        alice_group.process_incoming_message_with_time(commit_output.commit_message, alice_time.get_current_time_seconds().into()).await.unwrap();
+        
+    }
+
     #[cfg(feature = "custom_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn client_with_custom_rules(
@@ -5359,6 +5396,32 @@ mod tests {
     struct CustomMlsRules {
         path_required_for_custom: bool,
         external_joiner_can_send_custom: bool,
+    }
+
+    #[derive(Debug, Clone)]
+    struct CustomTimeProvider {
+        cur_time_seconds: std::sync::Arc<std::sync::Mutex<u64>>,
+    }
+
+    impl CustomTimeProvider {
+        pub fn new() -> Self {
+            /// Corresponds to Wednesday, February 19, 2025 9:20:00 PM GMT
+            const INITIAL_TIME_S: u64 = 1740000000;
+
+            Self {
+                cur_time_seconds: std::sync::Arc::new(std::sync::Mutex::new(INITIAL_TIME_S))
+            }
+        }
+    }
+
+    impl crate::time::CurrentTimeProvider for CustomTimeProvider {
+        fn get_current_time_seconds(&self) -> u64 {
+            let mut current_time_ref = self.cur_time_seconds.lock().unwrap();
+            let old_time = *current_time_ref;
+            let next_time = old_time + 1;
+            *current_time_ref = next_time;
+            old_time
+        }
     }
 
     #[cfg(feature = "custom_proposal")]
