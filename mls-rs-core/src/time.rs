@@ -48,7 +48,6 @@ extern "C" {
     fn date_now() -> f64;
 }
 
-
 impl MlsTime {
     pub fn now<CT: CurrentTimeProvider>(ct: &CT) -> Self {
         Self {
@@ -58,16 +57,16 @@ impl MlsTime {
 }
 
 #[derive(Clone, Debug)]
-pub struct DefaultCurrentTime{}
+pub struct DefaultCurrentTime {}
 impl CurrentTimeProvider for DefaultCurrentTime {
     fn get_current_time_seconds(&self) -> u64 {
         #[cfg(target_arch = "wasm32")]
         let ret_val = (date_now() / 1000.0) as u64;
         #[cfg(all(not(target_arch = "wasm32"), feature = "std"))]
         let ret_val = std::time::SystemTime::now()
-                .duration_since(std::time::SystemTime::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs();
+            .duration_since(std::time::SystemTime::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
         ret_val
     }
 }

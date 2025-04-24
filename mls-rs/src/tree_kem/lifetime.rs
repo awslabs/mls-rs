@@ -2,7 +2,10 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use crate::{client::MlsError, time::{MlsTime, CurrentTimeProvider, DefaultCurrentTime}};
+use crate::{
+    client::MlsError,
+    time::{CurrentTimeProvider, DefaultCurrentTime, MlsTime},
+};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 
 #[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode, Default)]
@@ -61,21 +64,21 @@ mod tests {
 
     #[test]
     fn test_lifetime_overflow() {
-        let res = Lifetime::seconds(u64::MAX, &DefaultCurrentTime{});
+        let res = Lifetime::seconds(u64::MAX, &DefaultCurrentTime {});
         assert_matches!(res, Err(MlsError::TimeOverflow))
     }
 
     #[test]
     fn test_seconds() {
         let seconds = 10;
-        let lifetime = Lifetime::seconds(seconds, &DefaultCurrentTime{}).unwrap();
+        let lifetime = Lifetime::seconds(seconds, &DefaultCurrentTime {}).unwrap();
         assert_eq!(lifetime.not_after - lifetime.not_before, 3610);
     }
 
     #[test]
     fn test_days() {
         let days = 2;
-        let lifetime = Lifetime::days(days, &DefaultCurrentTime{}).unwrap();
+        let lifetime = Lifetime::days(days, &DefaultCurrentTime {}).unwrap();
 
         assert_eq!(
             lifetime.not_after - lifetime.not_before,
@@ -86,7 +89,7 @@ mod tests {
     #[test]
     fn test_years() {
         let years = 2;
-        let ct = DefaultCurrentTime{};
+        let ct = DefaultCurrentTime {};
         let lifetime = Lifetime::years(years, &ct).unwrap();
 
         assert_eq!(

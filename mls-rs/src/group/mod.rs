@@ -2323,11 +2323,11 @@ mod tests {
         identity::test_utils::get_test_signing_identity,
         key_package::test_utils::test_key_package_message,
         mls_rules::CommitOptions,
+        time::{CurrentTimeProvider, DefaultCurrentTime},
         tree_kem::{
             leaf_node::{test_utils::get_test_capabilities, LeafNodeSource},
             UpdatePathNode,
         },
-        time::{DefaultCurrentTime, CurrentTimeProvider},
     };
 
     #[cfg(feature = "by_ref_proposal")]
@@ -4493,7 +4493,8 @@ mod tests {
         let commit = groups[0].commit(vec![]).await.unwrap().commit_message;
 
         // 10 years from now
-        let future_time = MlsTime::now(&DefaultCurrentTime{}).seconds_since_epoch() + 10 * 365 * 24 * 3600;
+        let future_time =
+            MlsTime::now(&DefaultCurrentTime {}).seconds_since_epoch() + 10 * 365 * 24 * 3600;
 
         let future_time =
             MlsTime::from_duration_since_epoch(core::time::Duration::from_secs(future_time));
@@ -5346,21 +5347,23 @@ mod tests {
             .current_time(CustomTimeProvider::new())
             .build();
 
-        let (alice_identity, secret_key) = get_test_signing_identity(TEST_CIPHER_SUITE, b"alice").await;
+        let (alice_identity, secret_key) =
+            get_test_signing_identity(TEST_CIPHER_SUITE, b"alice").await;
         let alice_time = CustomTimeProvider::new();
         let alice = TestClientBuilder::new_for_test()
             .signing_identity(alice_identity, secret_key, TEST_CIPHER_SUITE)
             .current_time(alice_time.clone())
             .build();
 
-        let mut alice_group = alice.create_group(Default::default(), Default::default())
-                            .await
-                            .unwrap();
+        let mut alice_group = alice
+            .create_group(Default::default(), Default::default())
+            .await
+            .unwrap();
 
-                            let bob_key_package = bob
-                            .generate_key_package_message(Default::default(), Default::default())
-                            .await
-                            .unwrap();
+        let bob_key_package = bob
+            .generate_key_package_message(Default::default(), Default::default())
+            .await
+            .unwrap();
 
         let commit_output = alice_group
             .commit_builder()
@@ -5370,9 +5373,13 @@ mod tests {
             .await
             .unwrap();
 
-        // alice_group.apply_pending_commit().await.unwrap();
-        alice_group.process_incoming_message_with_time(commit_output.commit_message, alice_time.get_current_time_seconds().into()).await.unwrap();
-        
+        alice_group
+            .process_incoming_message_with_time(
+                commit_output.commit_message,
+                alice_time.get_current_time_seconds().into(),
+            )
+            .await
+            .unwrap();
     }
 
     #[cfg(feature = "custom_proposal")]
@@ -5409,7 +5416,7 @@ mod tests {
             const INITIAL_TIME_S: u64 = 1740000000;
 
             Self {
-                cur_time_seconds: std::sync::Arc::new(std::sync::Mutex::new(INITIAL_TIME_S))
+                cur_time_seconds: std::sync::Arc::new(std::sync::Mutex::new(INITIAL_TIME_S)),
             }
         }
     }

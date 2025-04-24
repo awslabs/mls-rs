@@ -149,13 +149,13 @@ mod tests {
         identity::test_utils::get_test_signing_identity,
         key_package::validate_key_package_properties,
         protocol_version::ProtocolVersion,
+        time::DefaultCurrentTime,
         tree_kem::{
             leaf_node::{test_utils::get_test_capabilities, LeafNodeSource},
             leaf_node_validator::{LeafNodeValidator, ValidationContext},
             Lifetime,
         },
         ExtensionList,
-        time::DefaultCurrentTime,
     };
 
     use super::KeyPackageGenerator;
@@ -173,7 +173,7 @@ mod tests {
     }
 
     fn test_lifetime() -> Lifetime {
-        Lifetime::years(1, &DefaultCurrentTime{}).unwrap()
+        Lifetime::years(1, &DefaultCurrentTime {}).unwrap()
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]

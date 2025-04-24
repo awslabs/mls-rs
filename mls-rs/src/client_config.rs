@@ -7,9 +7,9 @@ use crate::{
     group::{mls_rules::MlsRules, proposal::ProposalType},
     identity::CredentialType,
     protocol_version::ProtocolVersion,
+    time::CurrentTimeProvider,
     tree_kem::{leaf_node::ConfigProperties, Capabilities, Lifetime},
     ExtensionList,
-    time::CurrentTimeProvider,
 };
 use alloc::vec::Vec;
 use mls_rs_core::{

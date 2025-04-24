@@ -15,8 +15,8 @@ use crate::{
         proposal::ProposalType,
     },
     protocol_version::ProtocolVersion,
+    time::{CurrentTimeProvider, DefaultCurrentTime},
     CryptoProvider, Sealed,
-    time::{CurrentTimeProvider, DefaultCurrentTime}
 };
 use std::{
     collections::HashMap,
@@ -112,7 +112,7 @@ impl ExternalClientBuilder<ExternalBaseConfig> {
             mls_rules: DefaultMlsRules::new(),
             crypto_provider: Missing,
             signing_data: None,
-            current_time: DefaultCurrentTime{},
+            current_time: DefaultCurrentTime {},
         }))
     }
 }
@@ -222,10 +222,7 @@ impl<C: IntoConfig> ExternalClientBuilder<C> {
     }
 
     /// Set the current time accessor to be used by the client.
-    pub fn current_time<I>(
-        self,
-        current_time: CT,
-    ) -> ExternalClientBuilder<WithCurrentTime<CT, C>>
+    pub fn current_time<I>(self, current_time: CT) -> ExternalClientBuilder<WithCurrentTime<CT, C>>
     where
         CT: CurrentTimeProvider,
     {
@@ -327,22 +324,39 @@ pub struct Missing;
 /// Change the identity validator used by a client configuration.
 ///
 /// See [`ExternalClientBuilder::identity_provider`].
-pub type WithIdentityProvider<I, C> =
-    Config<I, <C as IntoConfig>::MlsRules, <C as IntoConfig>::CryptoProvider, <C as IntoConfig>::CurrentTimeProvider>;
+pub type WithIdentityProvider<I, C> = Config<
+    I,
+    <C as IntoConfig>::MlsRules,
+    <C as IntoConfig>::CryptoProvider,
+    <C as IntoConfig>::CurrentTimeProvider,
+>;
 
-pub type WithCurrentTime<CT, C> = Config<<C as IntoConfig>::IdentityProvider, <C as IntoConfig>::MlsRules, <C as IntoConfig>::CryptoProvider, CT>;
+pub type WithCurrentTime<CT, C> = Config<
+    <C as IntoConfig>::IdentityProvider,
+    <C as IntoConfig>::MlsRules,
+    <C as IntoConfig>::CryptoProvider,
+    CT,
+>;
 
 /// Change the proposal filter used by a client configuration.
 ///
 /// See [`ExternalClientBuilder::mls_rules`].
-pub type WithMlsRules<Pr, C> =
-    Config<<C as IntoConfig>::IdentityProvider, Pr, <C as IntoConfig>::CryptoProvider, <C as IntoConfig>::CurrentTimeProvider>;
+pub type WithMlsRules<Pr, C> = Config<
+    <C as IntoConfig>::IdentityProvider,
+    Pr,
+    <C as IntoConfig>::CryptoProvider,
+    <C as IntoConfig>::CurrentTimeProvider,
+>;
 
 /// Change the crypto provider used by a client configuration.
 ///
 /// See [`ExternalClientBuilder::crypto_provider`].
-pub type WithCryptoProvider<Cp, C> =
-    Config<<C as IntoConfig>::IdentityProvider, <C as IntoConfig>::MlsRules, Cp, <C as IntoConfig>::CurrentTimeProvider>;
+pub type WithCryptoProvider<Cp, C> = Config<
+    <C as IntoConfig>::IdentityProvider,
+    <C as IntoConfig>::MlsRules,
+    Cp,
+    <C as IntoConfig>::CurrentTimeProvider,
+>;
 
 /// Helper alias for `Config`.
 pub type IntoConfigOutput<C> = Config<
@@ -571,19 +585,21 @@ use private::{Config, ConfigInner, IntoConfig};
 pub(crate) mod test_utils {
     use crate::{
         cipher_suite::CipherSuite, crypto::test_utils::TestCryptoProvider,
-        identity::basic::BasicIdentityProvider,
-        time::DefaultCurrentTime,
+        identity::basic::BasicIdentityProvider, time::DefaultCurrentTime,
     };
 
     use super::{
-        ExternalBaseConfig, ExternalClientBuilder, WithCryptoProvider, WithIdentityProvider, WithCurrentTime
+        ExternalBaseConfig, ExternalClientBuilder, WithCryptoProvider, WithCurrentTime,
+        WithIdentityProvider,
     };
 
     pub type TestExternalClientConfig = WithIdentityProvider<
         BasicIdentityProvider,
-        WithCryptoProvider<TestCryptoProvider, 
-        WithCurrentTime<DefaultCurrentTime, ExternalBaseConfig>,
-    >>;
+        WithCryptoProvider<
+            TestCryptoProvider,
+            WithCurrentTime<DefaultCurrentTime, ExternalBaseConfig>,
+        >,
+    >;
 
     pub type TestExternalClientBuilder = ExternalClientBuilder<TestExternalClientConfig>;
 

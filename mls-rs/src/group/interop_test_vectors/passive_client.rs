@@ -27,9 +27,9 @@ use crate::{
         all_process_message, generate_basic_client, get_test_basic_credential, get_test_groups,
         make_test_ext_psk, TEST_EXT_PSK_ID,
     },
+    time::DefaultCurrentTime,
     tree_kem::Lifetime,
     Client, Group, MlsMessage,
-    time::DefaultCurrentTime,
 };
 
 const VERSION: ProtocolVersion = ProtocolVersion::MLS_10;
@@ -208,7 +208,10 @@ async fn interop_passive_client() {
                 let message = MlsMessage::from_bytes(&proposal.0).unwrap();
 
                 group
-                    .process_incoming_message_with_time(message, MlsTime::now(&DefaultCurrentTime{}))
+                    .process_incoming_message_with_time(
+                        message,
+                        MlsTime::now(&DefaultCurrentTime {}),
+                    )
                     .await
                     .unwrap();
             }
@@ -216,7 +219,7 @@ async fn interop_passive_client() {
             let message = MlsMessage::from_bytes(&epoch.commit).unwrap();
 
             group
-                .process_incoming_message_with_time(message, MlsTime::now(&DefaultCurrentTime{}))
+                .process_incoming_message_with_time(message, MlsTime::now(&DefaultCurrentTime {}))
                 .await
                 .unwrap();
 

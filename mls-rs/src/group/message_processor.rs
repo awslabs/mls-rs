@@ -25,7 +25,7 @@ use super::{
 use crate::{
     client::MlsError,
     key_package::validate_key_package_properties,
-    time::{MlsTime, CurrentTimeProvider},
+    time::{CurrentTimeProvider, MlsTime},
     tree_kem::{
         leaf_node_validator::{LeafNodeValidator, ValidationContext},
         node::LeafIndex,
@@ -998,7 +998,11 @@ pub(crate) trait MessageProcessor: Send + Sync {
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-pub(crate) async fn validate_key_package<C: CipherSuiteProvider, I: IdentityProvider, CT: CurrentTimeProvider>(
+pub(crate) async fn validate_key_package<
+    C: CipherSuiteProvider,
+    I: IdentityProvider,
+    CT: CurrentTimeProvider,
+>(
     key_package: &KeyPackage,
     version: ProtocolVersion,
     cs: &C,

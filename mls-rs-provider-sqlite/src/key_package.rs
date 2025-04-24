@@ -5,7 +5,7 @@
 use mls_rs_core::{
     key_package::{KeyPackageData, KeyPackageStorage},
     mls_rs_codec::{MlsDecode, MlsEncode},
-    time::{MlsTime, CurrentTimeProvider},
+    time::{CurrentTimeProvider, MlsTime},
 };
 use rusqlite::{params, Connection, OptionalExtension};
 use std::sync::{Arc, Mutex};
@@ -76,7 +76,10 @@ impl SqLiteKeyPackageStorage {
     }
 
     /// Delete key packages that are expired based on the current system clock time.
-    pub fn delete_expired<CT: CurrentTimeProvider>(&self, ct: &CT) -> Result<(), SqLiteDataStorageError> {
+    pub fn delete_expired<CT: CurrentTimeProvider>(
+        &self,
+        ct: &CT,
+    ) -> Result<(), SqLiteDataStorageError> {
         self.delete_expired_by_time(MlsTime::now(ct).seconds_since_epoch())
     }
 
@@ -147,7 +150,9 @@ mod tests {
         {connection_strategy::MemoryStrategy, test_utils::gen_rand_bytes},
     };
     use assert_matches::assert_matches;
-    use mls_rs_core::{crypto::HpkeSecretKey, key_package::KeyPackageData, time::DefaultCurrentTime};
+    use mls_rs_core::{
+        crypto::HpkeSecretKey, key_package::KeyPackageData, time::DefaultCurrentTime,
+    };
 
     fn test_storage() -> SqLiteKeyPackageStorage {
         SqLiteDataStorageEngine::new(MemoryStrategy)
@@ -239,7 +244,7 @@ mod tests {
         storage.get(&data[2].0).unwrap().unwrap();
         storage.get(&data[3].0).unwrap().unwrap();
 
-        storage.delete_expired(&DefaultCurrentTime{}).unwrap();
+        storage.delete_expired(&DefaultCurrentTime {}).unwrap();
 
         assert!(storage.get(&data[2].0).unwrap().is_none());
         assert!(storage.get(&data[3].0).unwrap().is_none());

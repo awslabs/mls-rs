@@ -22,8 +22,8 @@ use crate::{
     identity::test_utils::get_test_signing_identity,
     key_package::{KeyPackageGeneration, KeyPackageGenerator},
     mls_rules::{CommitOptions, DefaultMlsRules},
-    tree_kem::{leaf_node::test_utils::get_test_capabilities, Lifetime},
     time::DefaultCurrentTime,
+    tree_kem::{leaf_node::test_utils::get_test_capabilities, Lifetime},
 };
 
 use crate::extension::RequiredCapabilitiesExt;
@@ -204,7 +204,7 @@ pub(crate) fn group_extensions() -> ExtensionList {
 }
 
 pub(crate) fn lifetime() -> Lifetime {
-    Lifetime::years(1, &DefaultCurrentTime{}).unwrap()
+    Lifetime::years(1, &DefaultCurrentTime {}).unwrap()
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]

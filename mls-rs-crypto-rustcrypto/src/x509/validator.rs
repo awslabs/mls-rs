@@ -217,7 +217,7 @@ mod tests {
     use std::time::Duration;
 
     use assert_matches::assert_matches;
-    use mls_rs_core::time::{MlsTime, DefaultCurrentTime};
+    use mls_rs_core::time::{DefaultCurrentTime, MlsTime};
     use mls_rs_identity_x509::{CertificateChain, X509CredentialValidator};
     use spki::der::Decode;
     use x509_cert::Certificate;
@@ -242,7 +242,7 @@ mod tests {
         let validator = X509Validator::new(vec![load_test_ca()]).unwrap();
 
         validator
-            .validate_chain(&chain, Some(MlsTime::now(&DefaultCurrentTime{})))
+            .validate_chain(&chain, Some(MlsTime::now(&DefaultCurrentTime {})))
             .unwrap();
     }
 
@@ -254,7 +254,7 @@ mod tests {
         let validator = X509Validator::new(vec![load_test_ca()]).unwrap();
 
         validator
-            .validate_chain(&chain, Some(MlsTime::now(&DefaultCurrentTime{})))
+            .validate_chain(&chain, Some(MlsTime::now(&DefaultCurrentTime {})))
             .unwrap();
     }
 
@@ -266,7 +266,7 @@ mod tests {
         validator.set_pinned_cert(Some(chain.get(1).unwrap().clone()));
 
         validator
-            .validate_chain(&chain, Some(MlsTime::now(&DefaultCurrentTime{})))
+            .validate_chain(&chain, Some(MlsTime::now(&DefaultCurrentTime {})))
             .unwrap();
     }
 
@@ -277,7 +277,12 @@ mod tests {
 
         let chain = vec![load_test_ca()].into();
 
-        X509CredentialValidator::validate_chain(&validator, &chain, Some(MlsTime::now(&DefaultCurrentTime{}))).unwrap();
+        X509CredentialValidator::validate_chain(
+            &validator,
+            &chain,
+            Some(MlsTime::now(&DefaultCurrentTime {})),
+        )
+        .unwrap();
     }
 
     #[test]
@@ -287,7 +292,12 @@ mod tests {
 
         let chain = vec![load_test_p384_ca()].into();
 
-        X509CredentialValidator::validate_chain(&validator, &chain, Some(MlsTime::now(&DefaultCurrentTime{}))).unwrap();
+        X509CredentialValidator::validate_chain(
+            &validator,
+            &chain,
+            Some(MlsTime::now(&DefaultCurrentTime {})),
+        )
+        .unwrap();
     }
 
     #[test]
@@ -297,7 +307,11 @@ mod tests {
 
         let chain = vec![load_test_ca(), load_another_ca()].into();
 
-        let res = X509CredentialValidator::validate_chain(&validator, &chain, Some(MlsTime::now(&DefaultCurrentTime{})));
+        let res = X509CredentialValidator::validate_chain(
+            &validator,
+            &chain,
+            Some(MlsTime::now(&DefaultCurrentTime {})),
+        );
 
         assert_matches!(res, Err(X509Error::SelfSignedWrongLength(2)))
     }
@@ -309,7 +323,7 @@ mod tests {
         let mut validator = X509Validator::new(vec![load_test_ca()]).unwrap();
         validator.set_pinned_cert(Some(load_another_ca()));
 
-        let res = validator.validate_chain(&chain, Some(MlsTime::now(&DefaultCurrentTime{})));
+        let res = validator.validate_chain(&chain, Some(MlsTime::now(&DefaultCurrentTime {})));
 
         assert_matches!(res, Err(X509Error::PinnedCertNotFound));
     }
@@ -337,7 +351,10 @@ mod tests {
         let validator = X509Validator::new(vec![]).unwrap();
         let empty: Vec<Vec<u8>> = Vec::new();
 
-        let res = validator.validate_chain(&CertificateChain::from(empty), Some(MlsTime::now(&DefaultCurrentTime{})));
+        let res = validator.validate_chain(
+            &CertificateChain::from(empty),
+            Some(MlsTime::now(&DefaultCurrentTime {})),
+        );
 
         assert_matches!(res, Err(X509Error::EmptyCertificateChain));
     }
@@ -347,7 +364,7 @@ mod tests {
         let chain = load_test_invalid_chain();
         let validator = X509Validator::new(vec![load_test_ca()]).unwrap();
 
-        let res = validator.validate_chain(&chain, Some(MlsTime::now(&DefaultCurrentTime{})));
+        let res = validator.validate_chain(&chain, Some(MlsTime::now(&DefaultCurrentTime {})));
 
         assert_matches!(
             res,
@@ -359,7 +376,7 @@ mod tests {
     fn will_fail_on_invalid_ca() {
         let chain = load_test_invalid_ca_chain();
         let validator = X509Validator::new(vec![load_another_ca()]).unwrap();
-        let res = validator.validate_chain(&chain, Some(MlsTime::now(&DefaultCurrentTime{})));
+        let res = validator.validate_chain(&chain, Some(MlsTime::now(&DefaultCurrentTime {})));
 
         assert_matches!(
             res,

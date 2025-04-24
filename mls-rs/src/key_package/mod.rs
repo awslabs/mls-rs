@@ -174,9 +174,9 @@ pub(crate) mod test_utils {
         crypto::test_utils::test_cipher_suite_provider,
         group::framing::MlsMessagePayload,
         identity::test_utils::get_test_signing_identity,
+        time::DefaultCurrentTime,
         tree_kem::{leaf_node::test_utils::get_test_capabilities, Lifetime},
         MlsMessage,
-        time::DefaultCurrentTime,
     };
 
     use mls_rs_core::crypto::SignatureSecretKey;
@@ -210,7 +210,7 @@ pub(crate) mod test_utils {
 
         let key_package = generator
             .generate(
-                Lifetime::years(1, &DefaultCurrentTime{}).unwrap(),
+                Lifetime::years(1, &DefaultCurrentTime {}).unwrap(),
                 get_test_capabilities(),
                 ExtensionList::default(),
                 ExtensionList::default(),

@@ -6,7 +6,7 @@ use mls_rs_core::identity::IdentityProvider;
 
 use crate::{
     crypto::SignaturePublicKey, group::mls_rules::MlsRules, protocol_version::ProtocolVersion,
-    CryptoProvider, time::CurrentTimeProvider
+    time::CurrentTimeProvider, CryptoProvider,
 };
 
 pub trait ExternalClientConfig: Send + Sync + Clone {

@@ -638,7 +638,7 @@ mod tests {
         let test_validator =
             LeafNodeValidator::new_for_test(&cipher_suite_provider, &BasicIdentityProvider);
 
-        let good_lifetime = MlsTime::now(&DefaultCurrentTime{});
+        let good_lifetime = MlsTime::now(&DefaultCurrentTime {});
 
         let over_one_year = good_lifetime.seconds_since_epoch() + (86400 * 366);
 

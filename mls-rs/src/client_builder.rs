@@ -27,7 +27,7 @@ use crate::{
 };
 
 #[cfg(feature = "std")]
-use crate::time::{MlsTime, DefaultCurrentTime, CurrentTimeProvider};
+use crate::time::{CurrentTimeProvider, DefaultCurrentTime, MlsTime};
 
 use alloc::vec::Vec;
 
@@ -65,7 +65,8 @@ pub type BaseInMemoryConfig = Config<
     DefaultCurrentTime,
 >;
 
-pub type EmptyConfig = Config<Missing, Missing, Missing, Missing, Missing, Missing, DefaultCurrentTime>;
+pub type EmptyConfig =
+    Config<Missing, Missing, Missing, Missing, Missing, Missing, DefaultCurrentTime>;
 
 /// Base client configuration that is backed by SQLite storage.
 #[cfg(feature = "sqlite")]
@@ -206,7 +207,7 @@ impl ClientBuilder<BaseConfig> {
             signer: Default::default(),
             signing_identity: Default::default(),
             version: ProtocolVersion::MLS_10,
-            current_time: DefaultCurrentTime{},
+            current_time: DefaultCurrentTime {},
         }))
     }
 }
@@ -224,7 +225,7 @@ impl ClientBuilder<EmptyConfig> {
             signer: Default::default(),
             signing_identity: Default::default(),
             version: ProtocolVersion::MLS_10,
-            current_time: DefaultCurrentTime{},
+            current_time: DefaultCurrentTime {},
         }))
     }
 }
@@ -337,8 +338,9 @@ impl<C: IntoConfig> ClientBuilder<C> {
     /// Set the current time accessor to be used by the client.
     ///
     /// By default, an implementation using the SystemTime::now (except for WASM) is used.
-    pub fn current_time<CT>(self, current_time: CT) -> ClientBuilder<WithCurrentTime<CT, C>> 
-    where CT: CurrentTimeProvider,
+    pub fn current_time<CT>(self, current_time: CT) -> ClientBuilder<WithCurrentTime<CT, C>>
+    where
+        CT: CurrentTimeProvider,
     {
         let Config(c) = self.0.into_config();
 
@@ -354,7 +356,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
             signing_identity: c.signing_identity,
             version: c.version,
             current_time,
-        }))    
+        }))
     }
 
     /// Set the PSK store to be used by the client.
@@ -931,7 +933,9 @@ mod private {
     use crate::client_builder::{IntoConfigOutput, Settings};
 
     #[derive(Clone, Debug)]
-    pub struct Config<Kpr, Ps, Gss, Ip, Pr, Cp, CT>(pub(crate) ConfigInner<Kpr, Ps, Gss, Ip, Pr, Cp, CT>);
+    pub struct Config<Kpr, Ps, Gss, Ip, Pr, Cp, CT>(
+        pub(crate) ConfigInner<Kpr, Ps, Gss, Ip, Pr, Cp, CT>,
+    );
 
     #[derive(Clone, Debug)]
     pub struct ConfigInner<Kpr, Ps, Gss, Ip, Pr, Cp, CT> {
