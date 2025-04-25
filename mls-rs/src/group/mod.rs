@@ -5339,6 +5339,7 @@ mod tests {
         alice.process_incoming_message(commit).await.unwrap();
     }
 
+    #[cfg(feature = "std")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn commit_processes_with_custom_time_provider() {
         let (bob_identity, secret_key) = get_test_signing_identity(TEST_CIPHER_SUITE, b"bob").await;
