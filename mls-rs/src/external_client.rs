@@ -152,8 +152,9 @@ where
             .ok_or(MlsError::UnsupportedCipherSuite(key_package.cipher_suite))?;
 
         let id = self.config.identity_provider();
+        let ct = self.current_time();
 
-        validate_key_package(&key_package, version, &cs, &id).await?;
+        validate_key_package(&key_package, version, &cs, &id, &ct).await?;
 
         Ok(key_package)
     }

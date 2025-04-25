@@ -24,7 +24,7 @@ use std::{
 };
 
 /// Base client configuration type when instantiating `ExternalClientBuilder`
-pub type ExternalBaseConfig = Config<Missing, DefaultMlsRules, Missing>;
+pub type ExternalBaseConfig = Config<Missing, DefaultMlsRules, Missing, DefaultCurrentTime>;
 
 /// Builder for [`ExternalClient`]
 ///
@@ -222,7 +222,7 @@ impl<C: IntoConfig> ExternalClientBuilder<C> {
     }
 
     /// Set the current time accessor to be used by the client.
-    pub fn current_time<I>(self, current_time: CT) -> ExternalClientBuilder<WithCurrentTime<CT, C>>
+    pub fn current_time<CT>(self, current_time: CT) -> ExternalClientBuilder<WithCurrentTime<CT, C>>
     where
         CT: CurrentTimeProvider,
     {
@@ -254,6 +254,7 @@ impl<C: IntoConfig> ExternalClientBuilder<C> {
             mls_rules: c.mls_rules,
             crypto_provider,
             signing_data: c.signing_data,
+            current_time: c.current_time,
         }))
     }
 
@@ -275,6 +276,7 @@ impl<C: IntoConfig> ExternalClientBuilder<C> {
             mls_rules,
             crypto_provider: c.crypto_provider,
             signing_data: c.signing_data,
+            current_time: c.current_time,
         }))
     }
 
@@ -295,6 +297,7 @@ where
     C::IdentityProvider: IdentityProvider + Clone,
     C::MlsRules: MlsRules + Clone,
     C::CryptoProvider: CryptoProvider + Clone,
+    C::CurrentTimeProvider: CurrentTimeProvider + Clone,
 {
     pub(crate) fn build_config(self) -> IntoConfigOutput<C> {
         let mut c = self.0.into_config();
@@ -423,7 +426,7 @@ where
     Cp: CryptoProvider + Clone,
     CT: CurrentTimeProvider + Clone,
 {
-    type Output = ConfigInner<Ip, Pr, Cp>;
+    type Output = ConfigInner<Ip, Pr, Cp, CT>;
 
     fn get(&self) -> &Self::Output {
         &self.0
