@@ -10,7 +10,7 @@ use mls_rs_core::{
     error::IntoAnyError,
     extension::ExtensionList,
     identity::{CredentialType, IdentityProvider, MemberValidationContext, SigningIdentity},
-    time::{MlsTime},
+    time::MlsTime,
 };
 
 #[cfg(not(feature = "std"))]
@@ -169,7 +169,9 @@ where
 #[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
-    use mls_rs_core::{crypto::SignaturePublicKey, identity::CredentialType, time::MlsTime};
+    use mls_rs_core::{
+        crypto::SignaturePublicKey, identity::CredentialType, time::MlsTime, DefaultCurrentTime,
+    };
 
     use crate::{
         test_utils::{
