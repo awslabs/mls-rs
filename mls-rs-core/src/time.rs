@@ -4,7 +4,7 @@
 
 use core::time::Duration;
 
-pub trait CurrentTimeProvider: std::marker::Sync + std::marker::Send {
+pub trait CurrentTimeProvider: core::marker::Sync + core::marker::Send {
     fn get_current_time_seconds(&self) -> u64;
 }
 
@@ -48,6 +48,7 @@ extern "C" {
     fn date_now() -> f64;
 }
 
+#[cfg(any(target_arch = "wasm32", feature = "std"))]
 impl MlsTime {
     pub fn now<CT: CurrentTimeProvider>(ct: &CT) -> Self {
         Self {
@@ -56,6 +57,7 @@ impl MlsTime {
     }
 }
 
+#[cfg(any(target_arch = "wasm32", feature = "std"))]
 #[derive(Clone, Debug)]
 pub struct DefaultCurrentTime {}
 impl CurrentTimeProvider for DefaultCurrentTime {
