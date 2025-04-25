@@ -4,7 +4,7 @@
 
 use crate::{
     client::MlsError,
-    time::{CurrentTimeProvider, DefaultCurrentTime, MlsTime},
+    time::{CurrentTimeProvider, MlsTime},
 };
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 
