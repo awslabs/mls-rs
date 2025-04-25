@@ -10,7 +10,7 @@ use mls_rs_core::{
     error::IntoAnyError,
     extension::ExtensionList,
     identity::{CredentialType, IdentityProvider, MemberValidationContext, SigningIdentity},
-    time::{DefaultCurrentTime, MlsTime},
+    time::{MlsTime},
 };
 
 #[cfg(not(feature = "std"))]
