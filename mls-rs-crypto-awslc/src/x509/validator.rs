@@ -13,7 +13,7 @@ use crate::aws_lc_sys_impl::{
 };
 use mls_rs_core::{
     crypto::SignaturePublicKey,
-    time::{DefaultCurrentTime, MlsTime},
+    time::{MlsTime},
 };
 use mls_rs_identity_x509::{CertificateChain, DerCertificate, X509CredentialValidator};
 
