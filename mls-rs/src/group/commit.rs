@@ -502,6 +502,7 @@ where
         }
 
         let mls_rules = self.config.mls_rules();
+        #[cfg(feature = "std")]
         let ct = self.config.current_time();
 
         let is_external = external_leaf.is_some();

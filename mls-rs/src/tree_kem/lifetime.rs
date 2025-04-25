@@ -25,9 +25,9 @@ impl Lifetime {
         }
     }
 
-    pub fn seconds<CT: CurrentTimeProvider>(s: u64, ct: &CT) -> Result<Self, MlsError> {
+    pub fn seconds<CT: CurrentTimeProvider>(s: u64, _ct: &CT) -> Result<Self, MlsError> {
         #[cfg(feature = "std")]
-        let not_before = MlsTime::now::<CT>(ct).seconds_since_epoch();
+        let not_before = MlsTime::now::<CT>(_ct).seconds_since_epoch();
         #[cfg(not(feature = "std"))]
         // There is no clock on no_std, this is here just so that we can run tests.
         let not_before = 3600u64;

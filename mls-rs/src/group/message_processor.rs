@@ -1007,12 +1007,12 @@ pub(crate) async fn validate_key_package<
     version: ProtocolVersion,
     cs: &C,
     id: &I,
-    ct: &CT,
+    _ct: &CT,
 ) -> Result<(), MlsError> {
     let validator = LeafNodeValidator::new(cs, id, MemberValidationContext::None);
 
     #[cfg(feature = "std")]
-    let context = Some(MlsTime::now::<CT>(ct));
+    let context = Some(MlsTime::now::<CT>(_ct));
 
     #[cfg(not(feature = "std"))]
     let context = None;
