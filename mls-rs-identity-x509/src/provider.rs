@@ -170,7 +170,9 @@ where
 mod tests {
     use super::*;
     use mls_rs_core::{
-        crypto::SignaturePublicKey, identity::CredentialType, time::{MlsTime, DefaultCurrentTime},
+        crypto::SignaturePublicKey,
+        identity::CredentialType,
+        time::{DefaultCurrentTime, MlsTime},
     };
 
     use crate::{
