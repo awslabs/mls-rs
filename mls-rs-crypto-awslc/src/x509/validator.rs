@@ -11,10 +11,7 @@ use crate::aws_lc_sys_impl::{
     X509_VERIFY_PARAM_set_time, X509_verify_cert, X509_verify_cert_error_string, X509_VERIFY_PARAM,
     X509_V_FLAG_NO_CHECK_TIME, X509_V_OK,
 };
-use mls_rs_core::{
-    crypto::SignaturePublicKey,
-    time::{MlsTime},
-};
+use mls_rs_core::{crypto::SignaturePublicKey, time::MlsTime};
 use mls_rs_identity_x509::{CertificateChain, DerCertificate, X509CredentialValidator};
 
 use crate::{check_non_null, check_res, AwsLcCryptoError};

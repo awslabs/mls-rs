@@ -60,6 +60,7 @@ mod tests {
     use core::time::Duration;
 
     use super::*;
+    use crate::time::DefaultCurrentTime;
     use assert_matches::assert_matches;
 
     #[test]
