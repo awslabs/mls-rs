@@ -5407,7 +5407,7 @@ mod tests {
 
     #[derive(Debug, Clone)]
     struct CustomTimeProvider {
-        cur_time_seconds: alloc::sync::Arc<alloc::sync::Mutex<u64>>,
+        cur_time_seconds: alloc::sync::Arc<spin::mutex::Mutex<u64>>,
     }
 
     impl CustomTimeProvider {
@@ -5416,14 +5416,14 @@ mod tests {
             const INITIAL_TIME_S: u64 = 1740000000;
 
             Self {
-                cur_time_seconds: alloc::sync::Arc::new(alloc::sync::Mutex::new(INITIAL_TIME_S)),
+                cur_time_seconds: alloc::sync::Arc::new(spin::mutex::Mutex::new(INITIAL_TIME_S)),
             }
         }
     }
 
     impl crate::time::CurrentTimeProvider for CustomTimeProvider {
         fn get_current_time_seconds(&self) -> u64 {
-            let mut current_time_ref = self.cur_time_seconds.lock().unwrap();
+            let mut current_time_ref = self.cur_time_seconds.lock();
             let old_time = *current_time_ref;
             let next_time = old_time + 1;
             *current_time_ref = next_time;
