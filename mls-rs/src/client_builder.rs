@@ -27,7 +27,8 @@ use crate::{
 };
 
 #[cfg(feature = "std")]
-use crate::time::{CurrentTimeProvider, DefaultCurrentTime, MlsTime};
+use crate::time::MlsTime;
+use crate::time::{CurrentTimeProvider, DefaultCurrentTime};
 
 use alloc::vec::Vec;
 
