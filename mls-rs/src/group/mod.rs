@@ -5407,7 +5407,7 @@ mod tests {
 
     #[derive(Debug, Clone)]
     struct CustomTimeProvider {
-        cur_time_seconds: std::sync::Arc<std::sync::Mutex<u64>>,
+        cur_time_seconds: alloc::sync::Arc<alloc::sync::Mutex<u64>>,
     }
 
     impl CustomTimeProvider {
@@ -5416,7 +5416,7 @@ mod tests {
             const INITIAL_TIME_S: u64 = 1740000000;
 
             Self {
-                cur_time_seconds: std::sync::Arc::new(std::sync::Mutex::new(INITIAL_TIME_S)),
+                cur_time_seconds: alloc::sync::Arc::new(alloc::sync::Mutex::new(INITIAL_TIME_S)),
             }
         }
     }
