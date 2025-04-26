@@ -1704,6 +1704,7 @@ where
         };
 
         info.grease(self.cipher_suite_provider())?;
+
         info.sign(&self.cipher_suite_provider, &self.signer, &())
             .await?;
 

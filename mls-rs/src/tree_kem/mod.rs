@@ -572,37 +572,6 @@ impl TreeKemPublic {
         Ok(added)
     }
 
-    #[cfg(not(feature = "by_ref_proposal"))]
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn apply_remove_lite<I>(
-        &mut self,
-        index: LeafIndex,
-        extensions: &ExtensionList,
-        id_provider: &I,
-    ) -> Result<(), MlsError>
-    where
-        I: IdentityProvider,
-    {
-        #[cfg(feature = "tree_index")]
-        {
-            // If this fails, it's not because the proposal is bad.
-            let old_leaf = self.nodes.blank_leaf_node(index)?;
-
-            let identity = identity(&old_leaf.signing_identity, id_provider, extensions).await?;
-
-            self.index.remove(&old_leaf, &identity);
-        }
-
-        #[cfg(not(feature = "tree_index"))]
-        self.nodes.blank_leaf_node(index)?;
-
-        self.nodes.blank_direct_path(index)?;
-
-        Ok(())
-    }
-
-    #[cfg(not(feature = "by_ref_proposal"))]
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn batch_edit_lite<I, CP>(
         &mut self,
         proposal_bundle: &ProposalBundle,
@@ -618,22 +587,21 @@ impl TreeKemPublic {
         for p in &proposal_bundle.removals {
             let index = p.proposal.to_remove;
 
-            self.apply_remove_lite(index, extensions, id_provider)
-                .await?;
-        }
+            #[cfg(feature = "tree_index")]
+            {
+                // If this fails, it's not because the proposal is bad.
+                let old_leaf = self.nodes.blank_leaf_node(index)?;
 
-        #[cfg(all(feature = "custom_proposal", feature = "self_remove_proposal"))]
-        let mut self_removed = vec![];
-        #[cfg(all(feature = "custom_proposal", feature = "self_remove_proposal"))]
-        for p in &proposal_bundle.self_removes {
-            let index = match proposal_bundle.self_removes[i].sender {
-                crate::group::Sender::Member(idx) => LeafIndex(idx),
-                _ => continue,
-            };
-            self_removed.push(index);
+                let identity =
+                    identity(&old_leaf.signing_identity, id_provider, extensions).await?;
 
-            self.apply_remove_lite(index, extensions, id_provider)
-                .await?;
+                self.index.remove(&old_leaf, &identity);
+            }
+
+            #[cfg(not(feature = "tree_index"))]
+            self.nodes.blank_leaf_node(index)?;
+
+            self.nodes.blank_direct_path(index)?;
         }
 
         // Apply adds
@@ -650,14 +618,12 @@ impl TreeKemPublic {
 
         self.nodes.trim();
 
-        let chained = proposal_bundle
+        let updated_leaves = proposal_bundle
             .remove_proposals()
             .iter()
             .map(|p| p.proposal.to_remove)
-            .chain(added.iter().copied());
-
-        #[cfg(all(feature = "custom_proposal", feature = "self_remove_proposal"))]
-        let chained = chained.chain(self_removed);
+            .chain(added.iter().copied())
+            .collect_vec();
 
         let updated_leaves = chained.collect_vec();
 
