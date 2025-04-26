@@ -60,7 +60,6 @@ impl MlsTime {
 #[derive(Clone, Debug, Default)]
 pub struct DefaultCurrentTime {}
 
-#[cfg(any(target_arch = "wasm32", feature = "std"))]
 impl CurrentTimeProvider for DefaultCurrentTime {
     fn get_current_time_seconds(&self) -> u64 {
         #[cfg(target_arch = "wasm32")]
@@ -70,6 +69,8 @@ impl CurrentTimeProvider for DefaultCurrentTime {
             .duration_since(std::time::SystemTime::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
+        #[cfg(all(not(target_arch = "wasm32"), not(feature = "std")))]
+        let ret_val = 0;
         ret_val
     }
 }
