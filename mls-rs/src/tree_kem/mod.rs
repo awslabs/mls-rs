@@ -572,6 +572,8 @@ impl TreeKemPublic {
         Ok(added)
     }
 
+    #[cfg(not(feature = "by_ref_proposal"))]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn batch_edit_lite<I, CP>(
         &mut self,
         proposal_bundle: &ProposalBundle,
@@ -624,8 +626,6 @@ impl TreeKemPublic {
             .map(|p| p.proposal.to_remove)
             .chain(added.iter().copied())
             .collect_vec();
-
-        let updated_leaves = chained.collect_vec();
 
         self.update_hashes(&updated_leaves, cipher_suite_provider)
             .await?;
