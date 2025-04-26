@@ -237,6 +237,13 @@ impl ProposalBundle {
         #[cfg(feature = "custom_proposal")]
         let len = len + self.custom_proposals.len();
 
+        #[cfg(all(
+            feature = "by_ref_proposal",
+            feature = "custom_proposal",
+            feature = "self_remove_proposal"
+        ))]
+        let len = len + self.self_removes.len();
+
         #[cfg(feature = "by_ref_proposal")]
         let len = len + self.updates.len();
 
@@ -342,7 +349,7 @@ impl ProposalBundle {
             feature = "custom_proposal",
             feature = "self_remove_proposal"
         ))]
-        let group_context_extensions_to_chain = group_context_extensions_to_chain.chain(
+        let res = res.chain(
             self.self_removes
                 .into_iter()
                 .map(|p| p.map(Proposal::SelfRemove)),

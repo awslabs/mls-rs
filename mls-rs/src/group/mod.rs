@@ -1704,7 +1704,6 @@ where
         };
 
         info.grease(self.cipher_suite_provider())?;
-
         info.sign(&self.cipher_suite_provider, &self.signer, &())
             .await?;
 
@@ -5102,6 +5101,80 @@ mod tests {
         // Check that carol's signing identity has not changed.
         let carol_old_identity = carol_new_group.current_member_signing_identity().unwrap();
         assert!(carol_identity == carol_old_identity);
+    }
+
+    #[cfg(all(
+        feature = "by_ref_proposal",
+        feature = "custom_proposal",
+        feature = "self_remove_proposal"
+    ))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn can_build_external_commit_from_group_with_self_remove() {
+        let (mut alice, mut bob) = self_remove_group_setup().await;
+
+        let carol_client = TestClientBuilder::new_for_test()
+            .with_random_signing_identity("carol", TEST_CIPHER_SUITE)
+            .await
+            .custom_proposal_type(ProposalType::SELF_REMOVE)
+            .build();
+
+        // Alice adds Carol.
+        let commit = alice
+            .commit_builder()
+            .add_member(
+                carol_client
+                    .generate_key_package_message(Default::default(), Default::default())
+                    .await
+                    .unwrap(),
+            )
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+        let carol = carol_client
+            .join_group(None, &commit.welcome_messages[0])
+            .await
+            .unwrap()
+            .0;
+        alice
+            .process_incoming_message(commit.commit_message.clone())
+            .await
+            .unwrap();
+        bob.process_incoming_message(commit.commit_message)
+            .await
+            .unwrap();
+
+        let bob_self_remove = bob.propose_self_remove(Vec::new()).await.unwrap();
+        alice
+            .process_incoming_message(bob_self_remove.clone())
+            .await
+            .unwrap();
+
+        // Alice commits Bob's self-remove proposal
+        let remove_bob_commit = alice.commit(Vec::new()).await.unwrap();
+
+        alice
+            .process_incoming_message(remove_bob_commit.commit_message.clone())
+            .await
+            .unwrap();
+
+        let group_info = alice
+            .group_info_message_allowing_ext_commit(true)
+            .await
+            .unwrap();
+
+        // Carol builds an external commit with Alice's group state, that includes Bob's self-remove committed.
+        let (_, commit) = carol_client
+            .external_commit_builder()
+            .unwrap()
+            .with_removal(carol.current_member_index())
+            .build(group_info)
+            .await
+            .unwrap();
+        alice
+            .process_incoming_message(commit.clone())
+            .await
+            .unwrap();
     }
 
     #[cfg(all(
