@@ -17,7 +17,7 @@ name = "mls_rs_uniffi"
 [dependencies]
 async-trait = "0.1.77"
 maybe-async = "0.2.10"
-mls-rs = { version = "0.46.0", path = "../mls-rs" }
+mls-rs = { version = "0.47.0", path = "../mls-rs" }
 mls-rs-core = { version = "0.22.0", path = "../mls-rs-core" }
 mls-rs-crypto-openssl = { version = "0.15.0", path = "../mls-rs-crypto-openssl" }
 thiserror = "1.0.57"
