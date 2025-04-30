@@ -28,8 +28,6 @@ pub enum X509IdentityError {
     IdentityExtractorError(AnyError),
     #[cfg_attr(feature = "std", error(transparent))]
     X509ValidationError(AnyError),
-    #[cfg_attr(feature = "std", error(transparent))]
-    IdentityWarningProviderError(AnyError),
 }
 
 impl mls_rs_core::error::IntoAnyError for X509IdentityError {
