@@ -606,8 +606,8 @@ impl TreeKemPublic {
     async fn apply_remove_lite<I>(
         &mut self,
         index: LeafIndex,
-        extensions: &ExtensionList,
-        id_provider: &I,
+        _extensions: &ExtensionList,
+        _id_provider: &I,
     ) -> Result<(), MlsError>
     where
         I: IdentityProvider,
@@ -617,7 +617,7 @@ impl TreeKemPublic {
             // If this fails, it's not because the proposal is bad.
             let old_leaf = self.nodes.blank_leaf_node(index)?;
 
-            let identity = identity(&old_leaf.signing_identity, id_provider, extensions).await?;
+            let identity = identity(&old_leaf.signing_identity, _id_provider, _extensions).await?;
 
             self.index.remove(&old_leaf, &identity);
         }
