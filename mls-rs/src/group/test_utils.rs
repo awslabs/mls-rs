@@ -491,6 +491,13 @@ impl MessageProcessor for GroupWithoutKeySchedule {
         self.inner.self_removal_proposal(provisional_state)
     }
 
+    fn server_removal_proposal(
+        &self,
+        provisional_state: &ProvisionalState,
+    ) -> Option<ProposalInfo<ServerRemoveProposal>> {
+        self.inner.server_removal_proposal(provisional_state)
+    }
+
     #[cfg(feature = "private_message")]
     #[cfg_attr(coverage_nightly, coverage(off))]
     fn min_epoch_available(&self) -> Option<u64> {

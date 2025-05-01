@@ -8,6 +8,7 @@
     feature = "self_remove_proposal"
 ))]
 use super::SelfRemoveProposal;
+use super::ServerRemoveProposal;
 use super::{
     commit_sender,
     confirmation_tag::ConfirmationTag,
@@ -90,6 +91,8 @@ pub(crate) fn path_update_required(proposals: &ProposalBundle) -> bool {
         feature = "self_remove_proposal"
     ))]
     let res = res || !proposals.self_removes.is_empty();
+
+    let res = res || !proposals.server_removes.is_empty();
 
     res || proposals.length() == 0
         || proposals.group_context_extensions_proposal().is_some()
@@ -727,6 +730,8 @@ pub(crate) trait MessageProcessor: Send + Sync {
         ))]
         let self_removed_by_self = self.self_removal_proposal(&provisional_state);
 
+        let self_removed_by_server = self.server_removal_proposal(&provisional_state);
+
         let is_self_removed = self_removed.is_some();
         #[cfg(all(
             feature = "by_ref_proposal",
@@ -734,6 +739,8 @@ pub(crate) trait MessageProcessor: Send + Sync {
             feature = "self_remove_proposal"
         ))]
         let is_self_removed = is_self_removed || self_removed_by_self.is_some();
+
+        let is_self_removed = is_self_removed || self_removed_by_server.is_some();
 
         let update_path = match commit.path {
             Some(update_path) => Some(
@@ -777,6 +784,16 @@ pub(crate) trait MessageProcessor: Send + Sync {
             let new_epoch = NewEpoch::new(self.group_state().clone(), &provisional_state);
             CommitEffect::Removed {
                 remover: self_remove_proposal.sender,
+                new_epoch: Box::new(new_epoch),
+            }
+        } else {
+            commit_effect
+        };
+
+        let commit_effect = if let Some(server_remove_proposal) = self_removed_by_server {
+            let new_epoch = NewEpoch::new(self.group_state().clone(), &provisional_state);
+            CommitEffect::Removed {
+                remover: server_remove_proposal.sender,
                 new_epoch: Box::new(new_epoch),
             }
         } else {
@@ -850,6 +867,11 @@ pub(crate) trait MessageProcessor: Send + Sync {
         &self,
         provisional_state: &ProvisionalState,
     ) -> Option<ProposalInfo<SelfRemoveProposal>>;
+
+    fn server_removal_proposal(
+        &self,
+        provisional_state: &ProvisionalState,
+    ) -> Option<ProposalInfo<ServerRemoveProposal>>;
 
     #[cfg(feature = "private_message")]
     fn min_epoch_available(&self) -> Option<u64>;

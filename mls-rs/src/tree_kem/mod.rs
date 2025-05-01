@@ -32,6 +32,7 @@ use crate::group::proposal::{AddProposal, UpdateProposal};
     feature = "self_remove_proposal"
 ))]
 use crate::group::proposal::SelfRemoveProposal;
+use crate::group::proposal::ServerRemoveProposal;
 
 #[cfg(any(test, feature = "by_ref_proposal"))]
 use crate::group::{proposal::RemoveProposal, proposal_filter::bundle::Proposable};
@@ -426,6 +427,23 @@ impl TreeKemPublic {
             )
             .await?;
         }
+        let mut server_removed = vec![];
+        for i in (0..proposal_bundle.server_remove_proposals().len()).rev() {
+            let index = proposal_bundle.server_remove_proposals()[i]
+                .proposal
+                .to_remove;
+            server_removed.push(index);
+            self.apply_remove::<ServerRemoveProposal, I>(
+                index,
+                i,
+                proposal_bundle.server_remove_proposals()[i].is_by_value(),
+                proposal_bundle,
+                extensions,
+                id_provider,
+                filter,
+            )
+            .await?;
+        }
 
         // Remove from the tree old leaves from updates
         let mut partial_updates = vec![];
@@ -568,12 +586,43 @@ impl TreeKemPublic {
         #[cfg(all(feature = "custom_proposal", feature = "self_remove_proposal"))]
         let chained = chained.chain(self_removed);
 
+        let chained = chained.chain(server_removed);
+
         let updated_leaves = chained.collect_vec();
 
         self.update_hashes(&updated_leaves, cipher_suite_provider)
             .await?;
 
         Ok(added)
+    }
+
+    #[cfg(not(feature = "by_ref_proposal"))]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn apply_remove_lite<I>(
+        &mut self,
+        index: LeafIndex,
+        extensions: &ExtensionList,
+        id_provider: &I,
+    ) -> Result<(), MlsError>
+    where
+        I: IdentityProvider,
+    {
+        #[cfg(feature = "tree_index")]
+        {
+            // If this fails, it's not because the proposal is bad.
+            let old_leaf = self.nodes.blank_leaf_node(index)?;
+
+            let identity = identity(&old_leaf.signing_identity, id_provider, extensions).await?;
+
+            self.index.remove(&old_leaf, &identity);
+        }
+
+        #[cfg(not(feature = "tree_index"))]
+        self.nodes.blank_leaf_node(index)?;
+
+        self.nodes.blank_direct_path(index)?;
+
+        Ok(())
     }
 
     #[cfg(not(feature = "by_ref_proposal"))]
@@ -593,21 +642,15 @@ impl TreeKemPublic {
         for p in &proposal_bundle.removals {
             let index = p.proposal.to_remove;
 
-            #[cfg(feature = "tree_index")]
-            {
-                // If this fails, it's not because the proposal is bad.
-                let old_leaf = self.nodes.blank_leaf_node(index)?;
+            self.apply_remove_lite(index, extensions, id_provider)
+                .await?;
+        }
 
-                let identity =
-                    identity(&old_leaf.signing_identity, id_provider, extensions).await?;
+        for p in &proposal_bundle.server_removes {
+            let index = p.proposal.to_remove;
 
-                self.index.remove(&old_leaf, &identity);
-            }
-
-            #[cfg(not(feature = "tree_index"))]
-            self.nodes.blank_leaf_node(index)?;
-
-            self.nodes.blank_direct_path(index)?;
+            self.apply_remove_lite(index, extensions, id_provider)
+                .await?;
         }
 
         // Apply adds
@@ -624,12 +667,20 @@ impl TreeKemPublic {
 
         self.nodes.trim();
 
-        let updated_leaves = proposal_bundle
+        let chained = proposal_bundle
             .remove_proposals()
             .iter()
             .map(|p| p.proposal.to_remove)
-            .chain(added.iter().copied())
-            .collect_vec();
+            .chain(added.iter().copied());
+
+        let chained = chained.chain(
+            proposal_bundle
+                .server_remove_proposals()
+                .iter()
+                .map(|p| p.proposal.to_remove),
+        );
+
+        let updated_leaves = chained.collect_vec();
 
         self.update_hashes(&updated_leaves, cipher_suite_provider)
             .await?;

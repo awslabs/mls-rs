@@ -1078,6 +1078,24 @@ where
         self.proposal_message(proposal, authenticated_data).await
     }
 
+    #[cfg_attr(feature = "ffi", safer_ffi_gen::safer_ffi_gen_ignore)]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn propose_server_remove(
+        &mut self,
+        index: u32,
+        authenticated_data: Vec<u8>,
+    ) -> Result<MlsMessage, MlsError> {
+        let leaf_index = LeafIndex(index);
+
+        // Verify that this leaf is actually in the tree
+        self.current_epoch_tree().get_leaf_node(leaf_index)?;
+
+        let proposal = Proposal::ServerRemove(ServerRemoveProposal {
+            to_remove: leaf_index,
+        });
+        self.proposal_message(proposal, authenticated_data).await
+    }
+
     /// Create a proposal message that adds an external pre shared key to the group.
     ///
     /// Each group member will need to have the PSK associated with
@@ -2313,6 +2331,18 @@ where
             .self_removes
             .iter()
             .find(|p| p.sender == Sender::Member(*self.private_tree.self_index))
+            .cloned()
+    }
+
+    fn server_removal_proposal(
+        &self,
+        provisional_state: &ProvisionalState,
+    ) -> Option<ProposalInfo<ServerRemoveProposal>> {
+        provisional_state
+            .applied_proposals
+            .server_removes
+            .iter()
+            .find(|p| p.proposal.to_remove == self.private_tree.self_index)
             .cloned()
     }
 
