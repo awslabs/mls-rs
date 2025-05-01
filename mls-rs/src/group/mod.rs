@@ -4568,17 +4568,15 @@ mod tests {
 
     #[cfg(feature = "custom_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn custom_proposal_setup() -> (TestGroup, TestGroup) {
+    async fn custom_proposal_setup(prop_type: ProposalType) -> (TestGroup, TestGroup) {
         let mut alice = test_group_custom_config(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, |b| {
-            b.custom_proposal_type(TEST_CUSTOM_PROPOSAL_TYPE)
+            b.custom_proposal_type(prop_type)
         })
         .await;
 
         let (bob, _) = alice
             .join_with_custom_config("bob", true, |c| {
-                c.0.settings
-                    .custom_proposal_types
-                    .push(TEST_CUSTOM_PROPOSAL_TYPE)
+                c.0.settings.custom_proposal_types.push(prop_type)
             })
             .await
             .unwrap();
@@ -4586,34 +4584,289 @@ mod tests {
         (alice, bob)
     }
 
-    #[cfg(all(
-        feature = "by_ref_proposal",
-        feature = "custom_proposal",
-        feature = "self_remove_proposal"
-    ))]
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn self_remove_group_setup() -> (TestGroup, TestGroup) {
-        let mut alice = test_group_custom_config(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, |b| {
-            b.custom_proposal_type(ProposalType::SELF_REMOVE)
-        })
-        .await;
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn server_remove_removes_client() {
+        let (mut alice, mut bob) = custom_proposal_setup(ProposalType::SERVER_REMOVE).await;
 
-        let (bob, _) = alice
-            .join_with_custom_config("bob", true, |c| {
-                c.0.settings
-                    .custom_proposal_types
-                    .push(ProposalType::SELF_REMOVE)
-            })
+        let propose_server_remove_bob = alice.propose_server_remove(1, Vec::new()).await.unwrap();
+        let commit = alice.commit_builder().build().await.unwrap().commit_message;
+
+        bob.process_incoming_message(propose_server_remove_bob)
             .await
             .unwrap();
 
-        (alice, bob)
+        let ReceivedMessage::Commit(CommitMessageDescription {
+            effect: CommitEffect::NewEpoch(new_epoch),
+            ..
+        }) = alice
+            .process_incoming_message(commit.clone())
+            .await
+            .unwrap()
+        else {
+            panic!("unexpected commit effect");
+        };
+
+        assert_eq!(new_epoch.applied_proposals.len(), 1);
+
+        let ReceivedMessage::Commit(CommitMessageDescription {
+            effect: CommitEffect::Removed { .. },
+            ..
+        }) = bob.process_incoming_message(commit).await.unwrap()
+        else {
+            panic!("unexpected commit effect");
+        };
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn commit_with_both_remove_and_server_remove_for_same_client_leaves_server_remove_unused()
+    {
+        let (mut alice, mut bob) = custom_proposal_setup(ProposalType::SERVER_REMOVE).await;
+
+        // Bob proposes server-remove of self.
+        let bob_self_remove = bob.propose_server_remove(1, Vec::new()).await.unwrap();
+
+        // Alice receives the self-remove proposal to be committed.
+        alice
+            .process_incoming_message(bob_self_remove.clone())
+            .await
+            .unwrap();
+
+        // Alice also removes Bob with a regular remove proposal.
+        alice.propose_remove(1, Vec::new()).await.unwrap();
+
+        // Alice commits Bob's self-remove and Alice's removal of Bob. This filters out the remove proposal.
+        let commit = alice.commit(Vec::new()).await.unwrap();
+        let unused = &commit.unused_proposals[0];
+        assert_matches!(
+            unused,
+            ProposalInfo {
+                proposal: Proposal::ServerRemove(ServerRemoveProposal {
+                    to_remove: LeafIndex(1)
+                }),
+                sender: Sender::Member(1),
+                ..
+            }
+        );
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn external_commit_can_have_server_removes_by_reference() {
+        let (mut alice, mut bob) = custom_proposal_setup(ProposalType::SERVER_REMOVE).await;
+
+        let carol_client = TestClientBuilder::new_for_test()
+            .with_random_signing_identity("carol", TEST_CIPHER_SUITE)
+            .await
+            .custom_proposal_type(ProposalType::SERVER_REMOVE)
+            .build();
+
+        // Alice adds Carol.
+        let commit = alice
+            .commit_builder()
+            .add_member(
+                carol_client
+                    .generate_key_package_message(Default::default(), Default::default())
+                    .await
+                    .unwrap(),
+            )
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+        let mut carol = carol_client
+            .join_group(None, &commit.welcome_messages[0])
+            .await
+            .unwrap()
+            .0;
+        alice
+            .process_incoming_message(commit.commit_message.clone())
+            .await
+            .unwrap();
+        bob.process_incoming_message(commit.commit_message)
+            .await
+            .unwrap();
+
+        let bob_server_removes_self = bob.propose_server_remove(1, Vec::new()).await.unwrap();
+        let bob_server_removes_alice = bob.propose_server_remove(0, Vec::new()).await.unwrap();
+
+        let group_info = alice
+            .group_info_message_allowing_ext_commit(true)
+            .await
+            .unwrap();
+        alice
+            .process_incoming_message(bob_server_removes_self.clone())
+            .await
+            .unwrap();
+        alice
+            .process_incoming_message(bob_server_removes_alice.clone())
+            .await
+            .unwrap();
+        carol
+            .process_incoming_message(bob_server_removes_self.clone())
+            .await
+            .unwrap();
+        carol
+            .process_incoming_message(bob_server_removes_alice.clone())
+            .await
+            .unwrap();
+
+        let (carol_new_group, commit) = carol_client
+            .external_commit_builder()
+            .unwrap()
+            .with_removal(carol.current_member_index())
+            .with_received_custom_proposal(bob_server_removes_self)
+            .with_received_custom_proposal(bob_server_removes_alice)
+            .build(group_info)
+            .await
+            .unwrap();
+
+        carol
+            .process_incoming_message(commit.clone())
+            .await
+            .unwrap();
+        bob.process_incoming_message(commit.clone()).await.unwrap();
+        alice.process_incoming_message(commit).await.unwrap();
+
+        // Assert that after applying the commit removing Bob, that Bob and Alice are no longer in the group.
+        let carol_identity = carol_new_group.current_member_signing_identity().unwrap();
+        let expected_member_identities = vec![carol_identity.clone()];
+        itertools::assert_equal(
+            carol_new_group
+                .roster()
+                .members_iter()
+                .map(|m| m.signing_identity),
+            expected_member_identities.clone(),
+        );
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn external_commit_can_have_server_removes_by_value() {
+        let (mut alice, mut bob) = custom_proposal_setup(ProposalType::SERVER_REMOVE).await;
+
+        let carol_client = TestClientBuilder::new_for_test()
+            .with_random_signing_identity("carol", TEST_CIPHER_SUITE)
+            .await
+            .custom_proposal_type(ProposalType::SERVER_REMOVE)
+            .build();
+
+        // Alice adds Carol.
+        let commit = alice
+            .commit_builder()
+            .add_member(
+                carol_client
+                    .generate_key_package_message(Default::default(), Default::default())
+                    .await
+                    .unwrap(),
+            )
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+        let mut carol = carol_client
+            .join_group(None, &commit.welcome_messages[0])
+            .await
+            .unwrap()
+            .0;
+        alice
+            .process_incoming_message(commit.commit_message.clone())
+            .await
+            .unwrap();
+        bob.process_incoming_message(commit.commit_message)
+            .await
+            .unwrap();
+
+        let group_info = alice
+            .group_info_message_allowing_ext_commit(true)
+            .await
+            .unwrap();
+
+        let (carol_new_group, commit) = carol_client
+            .external_commit_builder()
+            .unwrap()
+            .with_removal(carol.current_member_index())
+            .with_server_removal(1) // bob
+            .with_server_removal(0) // alice
+            .build(group_info)
+            .await
+            .unwrap();
+
+        carol
+            .process_incoming_message(commit.clone())
+            .await
+            .unwrap();
+        bob.process_incoming_message(commit.clone()).await.unwrap();
+        alice.process_incoming_message(commit).await.unwrap();
+
+        // Assert that after applying the commit removing Bob, that Bob and Alice are no longer in the group.
+        let carol_identity = carol_new_group.current_member_signing_identity().unwrap();
+        let expected_member_identities = vec![carol_identity.clone()];
+        itertools::assert_equal(
+            carol_new_group
+                .roster()
+                .members_iter()
+                .map(|m| m.signing_identity),
+            expected_member_identities.clone(),
+        );
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn server_remove_self_with_resync_external_commit_fails() {
+        let (mut alice, mut bob) = custom_proposal_setup(ProposalType::SERVER_REMOVE).await;
+
+        let carol_client = TestClientBuilder::new_for_test()
+            .with_random_signing_identity("carol", TEST_CIPHER_SUITE)
+            .await
+            .custom_proposal_type(ProposalType::SERVER_REMOVE)
+            .build();
+
+        // Alice adds Carol.
+        let commit = alice
+            .commit_builder()
+            .add_member(
+                carol_client
+                    .generate_key_package_message(Default::default(), Default::default())
+                    .await
+                    .unwrap(),
+            )
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+        let carol = carol_client
+            .join_group(None, &commit.welcome_messages[0])
+            .await
+            .unwrap()
+            .0;
+        alice
+            .process_incoming_message(commit.commit_message.clone())
+            .await
+            .unwrap();
+        bob.process_incoming_message(commit.commit_message)
+            .await
+            .unwrap();
+
+        let group_info = alice
+            .group_info_message_allowing_ext_commit(true)
+            .await
+            .unwrap();
+
+        let carol_self_remove_with_server_kick = carol_client
+            .external_commit_builder()
+            .unwrap()
+            .with_removal(carol.current_member_index())
+            .with_server_removal(2) // carol
+            .build(group_info)
+            .await;
+
+        assert!(matches!(
+            carol_self_remove_with_server_kick,
+            Err(MlsError::RemovingNonExistingMember)
+        ));
     }
 
     #[cfg(feature = "custom_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn custom_proposal_by_value() {
-        let (mut alice, mut bob) = custom_proposal_setup().await;
+        let (mut alice, mut bob) = custom_proposal_setup(TEST_CUSTOM_PROPOSAL_TYPE).await;
 
         let custom_proposal = CustomProposal::new(TEST_CUSTOM_PROPOSAL_TYPE, vec![0, 1, 2]);
 
@@ -4644,7 +4897,7 @@ mod tests {
     #[cfg(feature = "custom_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn custom_proposal_by_reference() {
-        let (mut alice, mut bob) = custom_proposal_setup().await;
+        let (mut alice, mut bob) = custom_proposal_setup(TEST_CUSTOM_PROPOSAL_TYPE).await;
 
         let custom_proposal = CustomProposal::new(TEST_CUSTOM_PROPOSAL_TYPE, vec![0, 1, 2]);
 
@@ -4898,7 +5151,7 @@ mod tests {
     ))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn client_can_self_remove_and_another_client_can_commit() {
-        let (mut alice, mut bob) = self_remove_group_setup().await;
+        let (mut alice, mut bob) = custom_proposal_setup(ProposalType::SELF_REMOVE).await;
 
         let carol_client = TestClientBuilder::new_for_test()
             .with_random_signing_identity("carol", TEST_CIPHER_SUITE)
@@ -4977,7 +5230,7 @@ mod tests {
     ))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn commit_with_both_remove_and_self_remove_for_same_client_leaves_remove_unused() {
-        let (mut alice, mut bob) = self_remove_group_setup().await;
+        let (mut alice, mut bob) = custom_proposal_setup(ProposalType::SELF_REMOVE).await;
 
         // Bob proposes self-remove.
         let bob_self_remove = bob.propose_self_remove(Vec::new()).await.unwrap();
@@ -5013,7 +5266,7 @@ mod tests {
     ))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn client_processing_commit_with_self_remove_without_processing_proposal_first_errors() {
-        let (mut alice, mut bob) = self_remove_group_setup().await;
+        let (mut alice, mut bob) = custom_proposal_setup(ProposalType::SELF_REMOVE).await;
 
         let carol_client = TestClientBuilder::new_for_test()
             .with_random_signing_identity("carol", TEST_CIPHER_SUITE)
@@ -5076,7 +5329,7 @@ mod tests {
     ))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_commit_can_have_self_remove() {
-        let (mut alice, mut bob) = self_remove_group_setup().await;
+        let (mut alice, mut bob) = custom_proposal_type(ProposalType::SELF_REMOVE).await;
 
         let carol_client = TestClientBuilder::new_for_test()
             .with_random_signing_identity("carol", TEST_CIPHER_SUITE)
@@ -5251,7 +5504,7 @@ mod tests {
     ))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_commit_can_have_multiple_self_removes() {
-        let (mut alice, mut bob) = self_remove_group_setup().await;
+        let (mut alice, mut bob) = custom_proposal_setup(ProposalType::SELF_REMOVE).await;
 
         let carol_client = TestClientBuilder::new_for_test()
             .with_random_signing_identity("carol", TEST_CIPHER_SUITE)
