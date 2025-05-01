@@ -8,6 +8,7 @@
     feature = "self_remove_proposal"
 ))]
 use super::SelfRemoveProposal;
+#[cfg(feature = "server_remove_proposal")]
 use super::ServerRemoveProposal;
 use super::{
     commit_sender,
@@ -92,6 +93,7 @@ pub(crate) fn path_update_required(proposals: &ProposalBundle) -> bool {
     ))]
     let res = res || !proposals.self_removes.is_empty();
 
+    #[cfg(feature = "server_remove_proposal")]
     let res = res || !proposals.server_removes.is_empty();
 
     res || proposals.length() == 0
@@ -730,6 +732,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
         ))]
         let self_removed_by_self = self.self_removal_proposal(&provisional_state);
 
+        #[cfg(feature = "server_remove_proposal")]
         let self_removed_by_server = self.server_removal_proposal(&provisional_state);
 
         let is_self_removed = self_removed.is_some();
@@ -740,6 +743,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
         ))]
         let is_self_removed = is_self_removed || self_removed_by_self.is_some();
 
+        #[cfg(feature = "server_remove_proposal")]
         let is_self_removed = is_self_removed || self_removed_by_server.is_some();
 
         let update_path = match commit.path {
@@ -790,6 +794,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
             commit_effect
         };
 
+        #[cfg(feature = "server_remove_proposal")]
         let commit_effect = if let Some(server_remove_proposal) = self_removed_by_server {
             let new_epoch = NewEpoch::new(self.group_state().clone(), &provisional_state);
             CommitEffect::Removed {
@@ -868,6 +873,8 @@ pub(crate) trait MessageProcessor: Send + Sync {
         provisional_state: &ProvisionalState,
     ) -> Option<ProposalInfo<SelfRemoveProposal>>;
 
+    #[cfg(feature = "server_remove_proposal")]
+    #[cfg_attr(feature = "ffi", safer_ffi_gen::safer_ffi_gen_ignore)]
     fn server_removal_proposal(
         &self,
         provisional_state: &ProvisionalState,

@@ -508,6 +508,7 @@ fn ensure_proposals_in_external_commit_are_allowed(
             feature = "self_remove_proposal"
         ))]
         ProposalType::SELF_REMOVE,
+        #[cfg(feature = "server_remove_proposal")]
         ProposalType::SERVER_REMOVE,
     ];
 

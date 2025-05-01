@@ -32,6 +32,7 @@ use crate::group::proposal::{AddProposal, UpdateProposal};
     feature = "self_remove_proposal"
 ))]
 use crate::group::proposal::SelfRemoveProposal;
+#[cfg(feature = "server_remove_proposal")]
 use crate::group::proposal::ServerRemoveProposal;
 
 #[cfg(any(test, feature = "by_ref_proposal"))]
@@ -427,7 +428,10 @@ impl TreeKemPublic {
             )
             .await?;
         }
+
+        #[cfg(feature = "server_remove_proposal")]
         let mut server_removed = vec![];
+        #[cfg(feature = "server_remove_proposal")]
         for i in (0..proposal_bundle.server_remove_proposals().len()).rev() {
             let index = proposal_bundle.server_remove_proposals()[i]
                 .proposal
@@ -586,6 +590,7 @@ impl TreeKemPublic {
         #[cfg(all(feature = "custom_proposal", feature = "self_remove_proposal"))]
         let chained = chained.chain(self_removed);
 
+        #[cfg(feature = "server_remove_proposal")]
         let chained = chained.chain(server_removed);
 
         let updated_leaves = chained.collect_vec();
@@ -646,6 +651,7 @@ impl TreeKemPublic {
                 .await?;
         }
 
+        #[cfg(feature = "server_remove_proposal")]
         for p in &proposal_bundle.server_removes {
             let index = p.proposal.to_remove;
 
@@ -673,6 +679,7 @@ impl TreeKemPublic {
             .map(|p| p.proposal.to_remove)
             .chain(added.iter().copied());
 
+        #[cfg(feature = "server_remove_proposal")]
         let chained = chained.chain(
             proposal_bundle
                 .server_remove_proposals()

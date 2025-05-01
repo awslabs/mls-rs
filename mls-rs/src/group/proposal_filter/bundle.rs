@@ -23,6 +23,7 @@ use crate::{
     feature = "self_remove_proposal"
 ))]
 use crate::group::SelfRemoveProposal;
+#[cfg(feature = "server_remove_proposal")]
 use crate::group::ServerRemoveProposal;
 
 #[cfg(feature = "by_ref_proposal")]
@@ -59,6 +60,7 @@ pub struct ProposalBundle {
         feature = "self_remove_proposal"
     ))]
     pub(crate) self_removes: Vec<ProposalInfo<SelfRemoveProposal>>,
+    #[cfg(feature = "server_remove_proposal")]
     pub(crate) server_removes: Vec<ProposalInfo<ServerRemoveProposal>>,
     #[cfg(feature = "custom_proposal")]
     pub(crate) custom_proposals: Vec<ProposalInfo<CustomProposal>>,
@@ -116,6 +118,7 @@ impl ProposalBundle {
                 sender,
                 source,
             }),
+            #[cfg(feature = "server_remove_proposal")]
             Proposal::ServerRemove(proposal) => self.server_removes.push(ProposalInfo {
                 proposal,
                 sender,
@@ -254,6 +257,7 @@ impl ProposalBundle {
         #[cfg(feature = "by_ref_proposal")]
         let len = len + self.updates.len();
 
+        #[cfg(feature = "server_remove_proposal")]
         let len = len + self.server_removes.len();
 
         len + self.additions.len()
@@ -289,6 +293,7 @@ impl ProposalBundle {
                 .map(|p| p.as_ref().map(BorrowedProposal::SelfRemove)),
         );
 
+        #[cfg(feature = "server_remove_proposal")]
         let res = res.chain(
             self.server_removes
                 .iter()
@@ -370,6 +375,7 @@ impl ProposalBundle {
                 .map(|p| p.map(Proposal::SelfRemove)),
         );
 
+        #[cfg(feature = "server_remove_proposal")]
         let res = res.chain(
             self.server_removes
                 .into_iter()
@@ -457,6 +463,8 @@ impl ProposalBundle {
         &self.self_removes
     }
 
+    #[cfg(feature = "server_remove_proposal")]
+    #[cfg_attr(feature = "ffi", safer_ffi_gen::safer_ffi_gen_ignore)]
     pub fn server_remove_proposals(&self) -> &[ProposalInfo<ServerRemoveProposal>] {
         &self.server_removes
     }
@@ -758,6 +766,7 @@ impl_proposable!(ExternalInit, EXTERNAL_INIT, external_initializations);
     feature = "self_remove_proposal"
 ))]
 impl_proposable!(SelfRemoveProposal, SELF_REMOVE, self_removes);
+#[cfg(feature = "server_remove_proposal")]
 impl_proposable!(ServerRemoveProposal, SERVER_REMOVE, server_removes);
 impl_proposable!(
     ExtensionList,

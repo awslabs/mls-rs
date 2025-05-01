@@ -1078,6 +1078,7 @@ where
         self.proposal_message(proposal, authenticated_data).await
     }
 
+    #[cfg(feature = "server_remove_proposal")]
     #[cfg_attr(feature = "ffi", safer_ffi_gen::safer_ffi_gen_ignore)]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn propose_server_remove(
@@ -2334,6 +2335,8 @@ where
             .cloned()
     }
 
+    #[cfg(feature = "server_remove_proposal")]
+    #[cfg_attr(feature = "ffi", safer_ffi_gen::safer_ffi_gen_ignore)]
     fn server_removal_proposal(
         &self,
         provisional_state: &ProvisionalState,
@@ -4584,6 +4587,7 @@ mod tests {
         (alice, bob)
     }
 
+    #[cfg(feature = "server_remove_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn server_remove_removes_client() {
         let (mut alice, mut bob) = custom_proposal_setup(ProposalType::SERVER_REMOVE).await;
@@ -4617,6 +4621,7 @@ mod tests {
         };
     }
 
+    #[cfg(feature = "server_remove_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn commit_with_both_remove_and_server_remove_for_same_client_leaves_server_remove_unused()
     {
@@ -4649,6 +4654,11 @@ mod tests {
         );
     }
 
+    #[cfg(all(
+        feature = "by_ref_proposal",
+        feature = "custom_proposal",
+        feature = "server_remove_proposal"
+    ))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_commit_can_have_server_removes_by_reference() {
         let (mut alice, mut bob) = custom_proposal_setup(ProposalType::SERVER_REMOVE).await;
@@ -4738,6 +4748,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "server_remove_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_commit_can_have_server_removes_by_value() {
         let (mut alice, mut bob) = custom_proposal_setup(ProposalType::SERVER_REMOVE).await;
@@ -4808,6 +4819,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "server_remove_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn server_remove_self_with_resync_external_commit_fails() {
         let (mut alice, mut bob) = custom_proposal_setup(ProposalType::SERVER_REMOVE).await;
@@ -5329,7 +5341,7 @@ mod tests {
     ))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn external_commit_can_have_self_remove() {
-        let (mut alice, mut bob) = custom_proposal_type(ProposalType::SELF_REMOVE).await;
+        let (mut alice, mut bob) = custom_proposal_setup(ProposalType::SELF_REMOVE).await;
 
         let carol_client = TestClientBuilder::new_for_test()
             .with_random_signing_identity("carol", TEST_CIPHER_SUITE)

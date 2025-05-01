@@ -18,6 +18,7 @@ use crate::{
     Group, MlsMessage,
 };
 
+#[cfg(feature = "server_remove_proposal")]
 use crate::group::proposal::ServerRemoveProposal;
 
 #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
@@ -283,6 +284,7 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
             }));
         }
 
+        #[cfg(feature = "server_remove_proposal")]
         for index_to_remove in self.to_server_remove {
             proposals.push(Proposal::ServerRemove(ServerRemoveProposal {
                 to_remove: LeafIndex(index_to_remove),

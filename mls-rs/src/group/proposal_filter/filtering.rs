@@ -35,6 +35,7 @@ use crate::extension::ExternalSendersExt;
     feature = "self_remove_proposal"
 ))]
 use crate::group::SelfRemoveProposal;
+#[cfg(feature = "server_remove_proposal")]
 use crate::group::ServerRemoveProposal;
 
 use alloc::vec::Vec;
@@ -121,6 +122,7 @@ where
         ))]
         let proposals = filter_out_remove_if_self_remove_same_leaf(strategy, proposals)?;
 
+        #[cfg(feature = "server_remove_proposal")]
         let proposals = filter_out_server_remove_if_remove_same_leaf(strategy, proposals)?;
 
         self.apply_proposal_changes(strategy, proposals, commit_time)
@@ -346,6 +348,7 @@ fn filter_out_remove_if_self_remove_same_leaf(
         )
     })?;
 
+    #[cfg(feature = "server_remove_proposal")]
     proposals.retain_by_type::<ServerRemoveProposal, _, _>(|p| {
         apply_strategy(
             strategy,
@@ -358,6 +361,7 @@ fn filter_out_remove_if_self_remove_same_leaf(
     Ok(proposals)
 }
 
+#[cfg(feature = "server_remove_proposal")]
 fn filter_out_server_remove_if_remove_same_leaf(
     strategy: FilterStrategy,
     mut proposals: ProposalBundle,
@@ -427,6 +431,7 @@ fn filter_out_removal_of_committer(
             .ok_or(MlsError::CommitterSelfRemoval),
         )
     })?;
+    #[cfg(feature = "server_remove_proposal")]
     proposals.retain_by_type::<ServerRemoveProposal, _, _>(|p| {
         apply_strategy(
             strategy,
@@ -572,6 +577,7 @@ pub(crate) fn proposer_can_propose(
                     | ProposalType::RE_INIT
                     | ProposalType::GROUP_CONTEXT_EXTENSIONS
             );
+            #[cfg(feature = "server_remove_proposal")]
             let can_propose = can_propose || matches!(proposal_type, ProposalType::SERVER_REMOVE);
             can_propose
         }
@@ -590,6 +596,7 @@ pub(crate) fn proposer_can_propose(
                 feature = "self_remove_proposal"
             ))]
             let can_propose = can_propose || matches!(proposal_type, ProposalType::SELF_REMOVE);
+            #[cfg(feature = "server_remove_proposal")]
             let can_propose = can_propose || matches!(proposal_type, ProposalType::SERVER_REMOVE);
             can_propose
         }
@@ -609,6 +616,7 @@ pub(crate) fn proposer_can_propose(
                 feature = "self_remove_proposal"
             ))]
             let can_propose = can_propose || matches!(proposal_type, ProposalType::SELF_REMOVE);
+            #[cfg(feature = "server_remove_proposal")]
             let can_propose = can_propose || matches!(proposal_type, ProposalType::SERVER_REMOVE);
             can_propose
         }
@@ -624,6 +632,7 @@ pub(crate) fn proposer_can_propose(
                     | ProposalType::PSK
                     | ProposalType::GROUP_CONTEXT_EXTENSIONS
             );
+            #[cfg(feature = "server_remove_proposal")]
             let can_propose = can_propose || matches!(proposal_type, ProposalType::SERVER_REMOVE);
             can_propose
         }
@@ -632,6 +641,7 @@ pub(crate) fn proposer_can_propose(
                 proposal_type,
                 ProposalType::REMOVE | ProposalType::PSK | ProposalType::EXTERNAL_INIT
             );
+            #[cfg(feature = "server_remove_proposal")]
             let can_propose = can_propose || matches!(proposal_type, ProposalType::SERVER_REMOVE);
             can_propose
         }
@@ -693,6 +703,7 @@ pub(crate) fn filter_out_invalid_proposers(
         }
     }
 
+    #[cfg(feature = "server_remove_proposal")]
     for i in (0..proposals.server_remove_proposals().len()).rev() {
         let p = &proposals.server_remove_proposals()[i];
         let res = proposer_can_propose(p.sender, ProposalType::SERVER_REMOVE, &p.source);
