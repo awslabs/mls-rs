@@ -18,6 +18,8 @@ use crate::{
     Group, MlsMessage,
 };
 
+use crate::group::proposal::ServerRemoveProposal;
+
 #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
 use crate::group::secret_tree::SecretTree;
 
@@ -52,6 +54,7 @@ pub struct ExternalCommitBuilder<C: ClientConfig> {
     config: C,
     tree_data: Option<ExportedTree<'static>>,
     to_remove: Option<u32>,
+    to_server_remove: Vec<u32>,
     #[cfg(feature = "psk")]
     external_psks: Vec<ExternalPskId>,
     authenticated_data: Vec<u8>,
@@ -70,6 +73,7 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
         Self {
             tree_data: None,
             to_remove: None,
+            to_server_remove: Vec::new(),
             authenticated_data: Vec::new(),
             signer,
             signing_identity,
@@ -100,6 +104,20 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
     pub fn with_removal(self, to_remove: u32) -> Self {
         Self {
             to_remove: Some(to_remove),
+            ..self
+        }
+    }
+
+    #[must_use]
+    /// Propose the server-removal of a client as part of the external commit.
+    pub fn with_server_removal(self, to_remove: u32) -> Self {
+        Self {
+            to_server_remove: self
+                .to_server_remove
+                .iter()
+                .chain([&to_remove])
+                .cloned()
+                .collect(),
             ..self
         }
     }
@@ -262,6 +280,12 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
         if let Some(r) = self.to_remove {
             proposals.push(Proposal::Remove(RemoveProposal {
                 to_remove: LeafIndex(r),
+            }));
+        }
+
+        for index_to_remove in self.to_server_remove {
+            proposals.push(Proposal::ServerRemove(ServerRemoveProposal {
+                to_remove: LeafIndex(index_to_remove),
             }));
         }
 
