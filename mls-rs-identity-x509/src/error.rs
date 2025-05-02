@@ -14,8 +14,6 @@ pub enum X509IdentityError {
         error("signing identity public key does not match the leaf certificate")
     )]
     SignatureKeyMismatch,
-    #[cfg_attr(feature = "std", error("unable to parse certificate chain data"))]
-    InvalidCertificateChain,
     #[cfg_attr(feature = "std", error("invalid offset within certificate chain"))]
     InvalidOffset,
     #[cfg_attr(feature = "std", error("empty certificate chain"))]
