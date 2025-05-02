@@ -19,8 +19,6 @@ pub enum X509IdentityError {
     #[cfg_attr(feature = "std", error("empty certificate chain"))]
     EmptyCertificateChain,
     #[cfg_attr(feature = "std", error(transparent))]
-    CredentialEncodingError(AnyError),
-    #[cfg_attr(feature = "std", error(transparent))]
     X509ReaderError(AnyError),
     #[cfg_attr(feature = "std", error(transparent))]
     IdentityExtractorError(AnyError),
