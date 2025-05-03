@@ -43,6 +43,8 @@ use crate::{
     feature = "self_remove_proposal"
 ))]
 use crate::group::proposal::SelfRemoveProposal;
+#[cfg(feature = "server_remove_proposal")]
+use crate::group::proposal::ServerRemoveProposal;
 
 #[cfg(feature = "by_ref_proposal")]
 use crate::{
@@ -696,6 +698,15 @@ where
         &self,
         _provisional_state: &ProvisionalState,
     ) -> Option<ProposalInfo<SelfRemoveProposal>> {
+        None
+    }
+
+    #[cfg(feature = "server_remove_proposal")]
+    #[cfg_attr(feature = "ffi", safer_ffi_gen::safer_ffi_gen_ignore)]
+    fn server_removal_proposal(
+        &self,
+        _provisional_state: &ProvisionalState,
+    ) -> Option<ProposalInfo<ServerRemoveProposal>> {
         None
     }
 

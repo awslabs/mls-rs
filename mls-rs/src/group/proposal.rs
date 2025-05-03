@@ -244,6 +244,34 @@ impl Debug for ExternalInit {
 /// [`Group`](crate::group::Group).
 pub struct SelfRemoveProposal {}
 
+#[derive(Clone, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode, Debug)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg(feature = "server_remove_proposal")]
+/// A proposal that the server remove an existing [`Member`](mls_rs_core::group::Member) of a
+/// [`Group`](crate::group::Group).
+pub struct ServerRemoveProposal {
+    pub(crate) to_remove: LeafIndex,
+}
+
+#[cfg(feature = "server_remove_proposal")]
+impl ServerRemoveProposal {
+    /// The index of the [`Member`](mls_rs_core::group::Member) that will be removed by
+    /// this proposal.
+    pub fn to_remove(&self) -> u32 {
+        *self.to_remove
+    }
+}
+
+#[cfg(feature = "server_remove_proposal")]
+impl From<u32> for ServerRemoveProposal {
+    fn from(value: u32) -> Self {
+        ServerRemoveProposal {
+            to_remove: LeafIndex(value),
+        }
+    }
+}
+
 #[cfg(feature = "custom_proposal")]
 #[derive(Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -350,6 +378,8 @@ pub enum Proposal {
         feature = "self_remove_proposal"
     ))]
     SelfRemove(SelfRemoveProposal),
+    #[cfg(feature = "server_remove_proposal")]
+    ServerRemove(ServerRemoveProposal),
     #[cfg(feature = "custom_proposal")]
     Custom(CustomProposal),
 }
@@ -372,6 +402,8 @@ impl MlsSize for Proposal {
                 feature = "self_remove_proposal"
             ))]
             Proposal::SelfRemove(p) => p.mls_encoded_len(),
+            #[cfg(feature = "server_remove_proposal")]
+            Proposal::ServerRemove(p) => p.mls_encoded_len(),
             #[cfg(feature = "custom_proposal")]
             Proposal::Custom(p) => mls_rs_codec::byte_vec::mls_encoded_len(&p.data),
         };
@@ -400,6 +432,8 @@ impl MlsEncode for Proposal {
                 feature = "self_remove_proposal"
             ))]
             Proposal::SelfRemove(p) => p.mls_encode(writer),
+            #[cfg(feature = "server_remove_proposal")]
+            Proposal::ServerRemove(p) => p.mls_encode(writer),
             #[cfg(feature = "custom_proposal")]
             Proposal::Custom(p) => {
                 if p.proposal_type.raw_value() <= 7 {
@@ -445,6 +479,10 @@ impl MlsDecode for Proposal {
             ProposalType::SELF_REMOVE => {
                 Proposal::SelfRemove(SelfRemoveProposal::mls_decode(reader)?)
             }
+            #[cfg(feature = "server_remove_proposal")]
+            ProposalType::SERVER_REMOVE => {
+                Proposal::ServerRemove(ServerRemoveProposal::mls_decode(reader)?)
+            }
             #[cfg(feature = "custom_proposal")]
             custom => Proposal::Custom(CustomProposal {
                 proposal_type: custom,
@@ -475,6 +513,8 @@ impl Proposal {
                 feature = "self_remove_proposal"
             ))]
             Proposal::SelfRemove(_) => ProposalType::SELF_REMOVE,
+            #[cfg(feature = "server_remove_proposal")]
+            Proposal::ServerRemove(_) => ProposalType::SERVER_REMOVE,
             #[cfg(feature = "custom_proposal")]
             Proposal::Custom(c) => c.proposal_type,
         }
@@ -499,6 +539,8 @@ pub enum BorrowedProposal<'a> {
         feature = "self_remove_proposal"
     ))]
     SelfRemove(&'a SelfRemoveProposal),
+    #[cfg(feature = "server_remove_proposal")]
+    ServerRemove(&'a ServerRemoveProposal),
     #[cfg(feature = "custom_proposal")]
     Custom(&'a CustomProposal),
 }
@@ -523,6 +565,10 @@ impl<'a> From<BorrowedProposal<'a>> for Proposal {
                 feature = "self_remove_proposal"
             ))]
             BorrowedProposal::SelfRemove(self_remove) => Proposal::SelfRemove(self_remove.clone()),
+            #[cfg(feature = "server_remove_proposal")]
+            BorrowedProposal::ServerRemove(server_remove) => {
+                Proposal::ServerRemove(server_remove.clone())
+            }
             #[cfg(feature = "custom_proposal")]
             BorrowedProposal::Custom(custom) => Proposal::Custom(custom.clone()),
         }
@@ -547,6 +593,8 @@ impl BorrowedProposal<'_> {
                 feature = "self_remove_proposal"
             ))]
             BorrowedProposal::SelfRemove(_) => ProposalType::SELF_REMOVE,
+            #[cfg(feature = "server_remove_proposal")]
+            BorrowedProposal::ServerRemove(_) => ProposalType::SERVER_REMOVE,
             #[cfg(feature = "custom_proposal")]
             BorrowedProposal::Custom(c) => c.proposal_type,
         }
@@ -571,6 +619,8 @@ impl<'a> From<&'a Proposal> for BorrowedProposal<'a> {
                 feature = "self_remove_proposal"
             ))]
             Proposal::SelfRemove(p) => BorrowedProposal::SelfRemove(p),
+            #[cfg(feature = "server_remove_proposal")]
+            Proposal::ServerRemove(p) => BorrowedProposal::ServerRemove(p),
             #[cfg(feature = "custom_proposal")]
             Proposal::Custom(p) => BorrowedProposal::Custom(p),
         }
@@ -629,6 +679,13 @@ impl<'a> From<&'a ExtensionList> for BorrowedProposal<'a> {
 impl<'a> From<&'a SelfRemoveProposal> for BorrowedProposal<'a> {
     fn from(p: &'a SelfRemoveProposal) -> Self {
         Self::SelfRemove(p)
+    }
+}
+
+#[cfg(feature = "server_remove_proposal")]
+impl<'a> From<&'a ServerRemoveProposal> for BorrowedProposal<'a> {
+    fn from(p: &'a ServerRemoveProposal) -> Self {
+        Self::ServerRemove(p)
     }
 }
 
