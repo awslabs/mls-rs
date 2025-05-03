@@ -225,6 +225,15 @@ where
         Ok(self)
     }
 
+    /// Insert a [`ServerRemoveProposal`](crate::group::proposal::RemoveProposal) into
+    /// the current commit that is being built.
+    #[cfg(feature = "server_remove_proposal")]
+    pub fn server_remove_member(mut self, index: u32) -> Result<Self, MlsError> {
+        let proposal = self.group.server_remove_proposal(index)?;
+        self.proposals.push(proposal);
+        Ok(self)
+    }
+
     /// Insert a
     /// [`GroupContextExtensions`](crate::group::proposal::Proposal::GroupContextExtensions)
     /// into the current commit that is being built.

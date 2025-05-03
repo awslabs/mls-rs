@@ -1086,15 +1086,21 @@ where
         index: u32,
         authenticated_data: Vec<u8>,
     ) -> Result<MlsMessage, MlsError> {
+        let proposal = self.server_remove_proposal(index)?;
+        self.proposal_message(proposal, authenticated_data).await
+    }
+
+    #[cfg(feature = "server_remove_proposal")]
+    #[cfg_attr(feature = "ffi", safer_ffi_gen::safer_ffi_gen_ignore)]
+    fn server_remove_proposal(&self, index: u32) -> Result<Proposal, MlsError> {
         let leaf_index = LeafIndex(index);
 
         // Verify that this leaf is actually in the tree
         self.current_epoch_tree().get_leaf_node(leaf_index)?;
 
-        let proposal = Proposal::ServerRemove(ServerRemoveProposal {
+        Ok(Proposal::ServerRemove(ServerRemoveProposal {
             to_remove: leaf_index,
-        });
-        self.proposal_message(proposal, authenticated_data).await
+        }))
     }
 
     /// Create a proposal message that adds an external pre shared key to the group.
@@ -4598,6 +4604,37 @@ mod tests {
         bob.process_incoming_message(propose_server_remove_bob)
             .await
             .unwrap();
+
+        let ReceivedMessage::Commit(CommitMessageDescription {
+            effect: CommitEffect::NewEpoch(new_epoch),
+            ..
+        }) = alice
+            .process_incoming_message(commit.clone())
+            .await
+            .unwrap()
+        else {
+            panic!("unexpected commit effect");
+        };
+
+        assert_eq!(new_epoch.applied_proposals.len(), 1);
+
+        let ReceivedMessage::Commit(CommitMessageDescription {
+            effect: CommitEffect::Removed { .. },
+            ..
+        }) = bob.process_incoming_message(commit).await.unwrap()
+        else {
+            panic!("unexpected commit effect");
+        };
+    }
+
+    #[cfg(feature = "server_remove_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn server_remove_removes_client_by_value() {
+        let (mut alice, mut bob) = custom_proposal_setup(ProposalType::SERVER_REMOVE).await;
+
+        let commit_builder = alice.commit_builder();
+        let commit_builder = commit_builder.server_remove_member(1).await.unwrap();
+        let commit = commit_builder.build().await.unwrap().commit_message;
 
         let ReceivedMessage::Commit(CommitMessageDescription {
             effect: CommitEffect::NewEpoch(new_epoch),
