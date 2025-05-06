@@ -1611,6 +1611,29 @@ where
         message: MlsMessage,
         time: MlsTime,
     ) -> Result<ReceivedMessage, MlsError> {
+        if let Some(pending) = self.pending_commit.commit_hash()? {
+            let message_hash = MessageHash::compute(&self.cipher_suite_provider, &message).await?;
+
+            if message_hash == pending {
+                let message_description = self.apply_pending_commit().await?;
+
+                return Ok(ReceivedMessage::Commit(message_description));
+            }
+        }
+
+        #[cfg(feature = "by_ref_proposal")]
+        if message.wire_format() == WireFormat::PrivateMessage {
+            let cached_own_proposal = self
+                .state
+                .proposals
+                .get_own(&self.cipher_suite_provider, &message)
+                .await?;
+
+            if let Some(cached) = cached_own_proposal {
+                return Ok(ReceivedMessage::Proposal(cached));
+            }
+        }
+
         MessageProcessor::process_incoming_message_with_time(
             self,
             message,
@@ -4505,6 +4528,19 @@ mod tests {
             .await;
 
         assert_matches!(res, Err(MlsError::InvalidLifetime));
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn can_process_commit_from_self_with_time() {
+        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+
+        let commit = alice.commit(Vec::new()).await.unwrap();
+        assert!(alice.has_pending_commit());
+
+        alice
+            .process_incoming_message_with_time(commit.commit_message, MlsTime::now())
+            .await
+            .unwrap();
     }
 
     #[cfg(feature = "custom_proposal")]

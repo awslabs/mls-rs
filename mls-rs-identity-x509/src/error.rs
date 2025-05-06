@@ -14,22 +14,16 @@ pub enum X509IdentityError {
         error("signing identity public key does not match the leaf certificate")
     )]
     SignatureKeyMismatch,
-    #[cfg_attr(feature = "std", error("unable to parse certificate chain data"))]
-    InvalidCertificateChain,
     #[cfg_attr(feature = "std", error("invalid offset within certificate chain"))]
     InvalidOffset,
     #[cfg_attr(feature = "std", error("empty certificate chain"))]
     EmptyCertificateChain,
-    #[cfg_attr(feature = "std", error(transparent))]
-    CredentialEncodingError(AnyError),
     #[cfg_attr(feature = "std", error(transparent))]
     X509ReaderError(AnyError),
     #[cfg_attr(feature = "std", error(transparent))]
     IdentityExtractorError(AnyError),
     #[cfg_attr(feature = "std", error(transparent))]
     X509ValidationError(AnyError),
-    #[cfg_attr(feature = "std", error(transparent))]
-    IdentityWarningProviderError(AnyError),
 }
 
 impl mls_rs_core::error::IntoAnyError for X509IdentityError {
