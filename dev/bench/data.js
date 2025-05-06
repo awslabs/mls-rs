@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1746189193587,
+  "lastUpdate": 1746547094284,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -22559,6 +22559,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 128476,
             "range": "± 1382",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ellen.arteca@gmail.com",
+            "name": "Ellen Arteca",
+            "username": "emarteca"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d2a74dea8a2218e92b18bb3d70198e47c6e787ba",
+          "message": "Fixing missing update_hash for SelfRemove proposals (#274)\n\n* Fixing missing update_hash for self-remove, + test\n\n* dont need to edit batch_edit_lite bc that only runs in no by_ref_proposal\n\n* oops\n\n* clippy\n\n---------\n\nCo-authored-by: Ellen Arteca <emarteca@google.com>\nCo-authored-by: Tom Leavy <tomleavy@amazon.com>",
+          "timestamp": "2025-05-06T11:53:58-04:00",
+          "tree_id": "d1782cc72e0617e2a2b7385b50c5a44953e0aa17",
+          "url": "https://github.com/awslabs/mls-rs/commit/d2a74dea8a2218e92b18bb3d70198e47c6e787ba"
+        },
+        "date": 1746547092981,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 530013,
+            "range": "± 5993",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 538901,
+            "range": "± 6488",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 599912,
+            "range": "± 8794",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1254340,
+            "range": "± 31804",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7554143,
+            "range": "± 52984",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2620637,
+            "range": "± 14499",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7055011,
+            "range": "± 197036",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13310484,
+            "range": "± 218395",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 769832,
+            "range": "± 8172",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 860214,
+            "range": "± 12897",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 994954,
+            "range": "± 30050",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 20259,
+            "range": "± 392",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 66181,
+            "range": "± 911",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 127607,
+            "range": "± 1251",
             "unit": "ns/iter"
           }
         ]
