@@ -394,11 +394,14 @@ impl TreeKemPublic {
         // Apply removes (they commute with updates because they don't touch the same leaves)
         // Self-removes take precedence
         #[cfg(all(feature = "custom_proposal", feature = "self_remove_proposal"))]
+        let mut self_removed = vec![];
+        #[cfg(all(feature = "custom_proposal", feature = "self_remove_proposal"))]
         for i in (0..proposal_bundle.self_removes.len()).rev() {
             let index = match proposal_bundle.self_removes[i].sender {
                 crate::group::Sender::Member(idx) => LeafIndex(idx),
                 _ => continue,
             };
+            self_removed.push(index);
             self.apply_remove::<SelfRemoveProposal, I>(
                 index,
                 i,
@@ -555,13 +558,17 @@ impl TreeKemPublic {
 
         self.nodes.trim();
 
-        let updated_leaves = proposal_bundle
+        let chained = proposal_bundle
             .remove_proposals()
             .iter()
             .map(|p| p.proposal.to_remove)
             .chain(updated_indices)
-            .chain(added.iter().copied())
-            .collect_vec();
+            .chain(added.iter().copied());
+
+        #[cfg(all(feature = "custom_proposal", feature = "self_remove_proposal"))]
+        let chained = chained.chain(self_removed);
+
+        let updated_leaves = chained.collect_vec();
 
         self.update_hashes(&updated_leaves, cipher_suite_provider)
             .await?;
