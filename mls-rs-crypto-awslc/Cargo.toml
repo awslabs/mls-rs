@@ -1,6 +1,6 @@
 [package]
 name = "mls-rs-crypto-awslc"
-version = "0.16.0"
+version = "0.17.0"
 edition = "2021"
 description = "AWS-LC based CryptoProvider for mls-rs"
 homepage = "https://github.com/awslabs/mls-rs"
@@ -18,18 +18,18 @@ default = ["non-fips"]
 aws-lc-rs = { version = "=1.12", default-features = false, features = ["alloc"] }
 aws-lc-sys = { version = "=0.26", optional = true }
 aws-lc-fips-sys = { version = "=0.13", optional = true }
-mls-rs-core = { path = "../mls-rs-core", version = "0.21.0" }
-mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", version = "0.14.0" }
-mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", version = "0.15.0" }
-mls-rs-identity-x509 = { path = "../mls-rs-identity-x509", version = "0.15.0" }
+mls-rs-core = { path = "../mls-rs-core", version = "0.22.0" }
+mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", version = "0.15.0" }
+mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", version = "0.16.0" }
+mls-rs-identity-x509 = { path = "../mls-rs-identity-x509", version = "0.16.0" }
 thiserror = "1.0.40"
 zeroize = { version = "1", features = ["zeroize_derive"] }
 maybe-async = "0.2.10"
 
 [dev-dependencies]
 assert_matches = "1.5.0"
-mls-rs-core = { path = "../mls-rs-core", version = "0.21.0", features = ["test_suite"] }
-mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", version = "0.14.0", features = ["test_utils"] }
+mls-rs-core = { path = "../mls-rs-core", version = "0.22.0", features = ["test_suite"] }
+mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", version = "0.15.0", features = ["test_utils"] }
 futures-test = "0.3.25"
 serde = { version = "1.0", features = ["derive"] }
 hex = { version = "0.4", features = ["serde"] }

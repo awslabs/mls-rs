@@ -145,6 +145,17 @@ impl ProposalCache {
         Ok(())
     }
 
+    #[cfg(all(
+        feature = "by_ref_proposal",
+        feature = "custom_proposal",
+        feature = "self_remove_proposal"
+    ))]
+    pub(crate) fn has_own_self_remove(&self) -> bool {
+        self.own_proposals
+            .values()
+            .any(|p| matches!(p.proposal, Proposal::SelfRemove(_)))
+    }
+
     pub fn prepare_commit(
         &self,
         sender: Sender,
@@ -4060,7 +4071,7 @@ mod tests {
             .send()
             .await;
 
-        assert_matches!(res, Err(MlsError::InvalidProposalTypeForSender { .. }))
+        assert_matches!(res, Err(MlsError::InvalidProposalTypeForSender))
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
