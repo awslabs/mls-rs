@@ -169,7 +169,11 @@ where
 #[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
-    use mls_rs_core::{crypto::SignaturePublicKey, identity::CredentialType, time::MlsTime};
+    use mls_rs_core::{
+        crypto::SignaturePublicKey,
+        identity::CredentialType,
+        time::{DefaultCurrentTime, MlsTime},
+    };
 
     use crate::{
         test_utils::{
@@ -217,7 +221,7 @@ mod tests {
 
         let test_signing_identity = test_signing_identity_with_chain(chain.clone());
 
-        let test_timestamp = MlsTime::now();
+        let test_timestamp = MlsTime::now(&DefaultCurrentTime {});
 
         let test_provider = test_setup(|_, validator| {
             let validation_result = test_signing_identity.signature_key.clone();

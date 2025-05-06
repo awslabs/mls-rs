@@ -133,7 +133,7 @@ mod tests {
     use std::time::Duration;
 
     use assert_matches::assert_matches;
-    use mls_rs_core::time::MlsTime;
+    use mls_rs_core::time::{DefaultCurrentTime, MlsTime};
     use mls_rs_identity_x509::{CertificateChain, DerCertificate, X509CredentialValidator};
 
     use crate::{
@@ -158,7 +158,7 @@ mod tests {
         let validator = CertificateValidator::new_der(&[load_test_ca()]).unwrap();
 
         validator
-            .validate_chain(&chain, Some(MlsTime::now()))
+            .validate_chain(&chain, Some(MlsTime::now(&DefaultCurrentTime {})))
             .unwrap();
     }
 
@@ -167,7 +167,10 @@ mod tests {
         let validator = CertificateValidator::new_der(&[]).unwrap();
         let empty: Vec<Vec<u8>> = Vec::new();
 
-        let res = validator.validate_chain(&CertificateChain::from(empty), Some(MlsTime::now()));
+        let res = validator.validate_chain(
+            &CertificateChain::from(empty),
+            Some(MlsTime::now(&DefaultCurrentTime {})),
+        );
 
         assert_matches!(res, Err(AwsLcCryptoError::CryptoError));
     }
@@ -177,7 +180,7 @@ mod tests {
         let chain = load_test_invalid_chain();
         let validator = CertificateValidator::new_der(&[load_test_ca()]).unwrap();
 
-        let res = validator.validate_chain(&chain, Some(MlsTime::now()));
+        let res = validator.validate_chain(&chain, Some(MlsTime::now(&DefaultCurrentTime {})));
 
         assert_matches!(res, Err(AwsLcCryptoError::CertValidationFailure(_)));
     }
@@ -186,7 +189,7 @@ mod tests {
     fn will_fail_on_invalid_ca() {
         let chain = load_test_invalid_ca_chain();
         let validator = CertificateValidator::new_der(&[load_another_ca()]).unwrap();
-        let res = validator.validate_chain(&chain, Some(MlsTime::now()));
+        let res = validator.validate_chain(&chain, Some(MlsTime::now(&DefaultCurrentTime {})));
 
         assert_matches!(res, Err(AwsLcCryptoError::CertValidationFailure(_)));
     }

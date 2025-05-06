@@ -2090,6 +2090,7 @@ where
     type PreSharedKeyStorage = C::PskStore;
     type OutputType = ReceivedMessage;
     type CipherSuiteProvider = <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider;
+    type CurrentTimeProvider = C::CurrentTimeProvider;
 
     #[cfg(feature = "private_message")]
     async fn process_ciphertext(
@@ -2286,6 +2287,10 @@ where
         &mut self.state
     }
 
+    fn current_time(&self) -> Self::CurrentTimeProvider {
+        self.config.current_time()
+    }
+
     fn removal_proposal(
         &self,
         provisional_state: &ProvisionalState,
@@ -2341,6 +2346,7 @@ mod tests {
         identity::test_utils::get_test_signing_identity,
         key_package::test_utils::test_key_package_message,
         mls_rules::CommitOptions,
+        time::{CurrentTimeProvider, DefaultCurrentTime},
         tree_kem::{
             leaf_node::{test_utils::get_test_capabilities, LeafNodeSource},
             UpdatePathNode,
@@ -4510,7 +4516,8 @@ mod tests {
         let commit = groups[0].commit(vec![]).await.unwrap().commit_message;
 
         // 10 years from now
-        let future_time = MlsTime::now().seconds_since_epoch() + 10 * 365 * 24 * 3600;
+        let future_time =
+            MlsTime::now(&DefaultCurrentTime {}).seconds_since_epoch() + 10 * 365 * 24 * 3600;
 
         let future_time =
             MlsTime::from_duration_since_epoch(core::time::Duration::from_secs(future_time));
@@ -5368,6 +5375,50 @@ mod tests {
         alice.process_incoming_message(commit).await.unwrap();
     }
 
+    #[cfg(feature = "std")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn commit_processes_with_custom_time_provider() {
+        let (bob_identity, secret_key) = get_test_signing_identity(TEST_CIPHER_SUITE, b"bob").await;
+        let bob = TestClientBuilder::new_for_test()
+            .signing_identity(bob_identity, secret_key, TEST_CIPHER_SUITE)
+            .current_time(CustomTimeProvider::new())
+            .build();
+
+        let (alice_identity, secret_key) =
+            get_test_signing_identity(TEST_CIPHER_SUITE, b"alice").await;
+        let alice_time = CustomTimeProvider::new();
+        let alice = TestClientBuilder::new_for_test()
+            .signing_identity(alice_identity, secret_key, TEST_CIPHER_SUITE)
+            .current_time(alice_time.clone())
+            .build();
+
+        let mut alice_group = alice
+            .create_group(Default::default(), Default::default())
+            .await
+            .unwrap();
+
+        let bob_key_package = bob
+            .generate_key_package_message(Default::default(), Default::default())
+            .await
+            .unwrap();
+
+        let commit_output = alice_group
+            .commit_builder()
+            .add_member(bob_key_package)
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+
+        alice_group
+            .process_incoming_message_with_time(
+                commit_output.commit_message,
+                alice_time.get_current_time_seconds().into(),
+            )
+            .await
+            .unwrap();
+    }
+
     #[cfg(feature = "custom_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn client_with_custom_rules(
@@ -5389,6 +5440,32 @@ mod tests {
     struct CustomMlsRules {
         path_required_for_custom: bool,
         external_joiner_can_send_custom: bool,
+    }
+
+    #[derive(Debug, Clone)]
+    struct CustomTimeProvider {
+        cur_time_seconds: alloc::sync::Arc<spin::mutex::Mutex<u64>>,
+    }
+
+    impl CustomTimeProvider {
+        pub fn new() -> Self {
+            /// Corresponds to Wednesday, February 19, 2025 9:20:00 PM GMT
+            const INITIAL_TIME_S: u64 = 1740000000;
+
+            Self {
+                cur_time_seconds: alloc::sync::Arc::new(spin::mutex::Mutex::new(INITIAL_TIME_S)),
+            }
+        }
+    }
+
+    impl crate::time::CurrentTimeProvider for CustomTimeProvider {
+        fn get_current_time_seconds(&self) -> u64 {
+            let mut current_time_ref = self.cur_time_seconds.lock();
+            let old_time = *current_time_ref;
+            let next_time = old_time + 1;
+            *current_time_ref = next_time;
+            old_time
+        }
     }
 
     #[cfg(feature = "custom_proposal")]

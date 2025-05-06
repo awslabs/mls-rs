@@ -694,6 +694,7 @@ mod tests {
         key_package::{test_utils::test_key_package, KeyPackageGenerator},
         mls_rules::{CommitOptions, DefaultMlsRules},
         psk::AlwaysFoundPskStorage,
+        time::DefaultCurrentTime,
         tree_kem::{
             leaf_node::{
                 test_utils::{
@@ -3042,7 +3043,7 @@ mod tests {
                 properties,
                 signing_identity,
                 &signature_key,
-                Lifetime::years(1).unwrap(),
+                Lifetime::years(1, &DefaultCurrentTime {}).unwrap(),
             )
             .await
             .unwrap();
@@ -3611,7 +3612,7 @@ mod tests {
 
         generator
             .generate(
-                Lifetime::years(1).unwrap(),
+                Lifetime::years(1, &DefaultCurrentTime {}).unwrap(),
                 Capabilities {
                     credentials: vec![42.into()],
                     ..Default::default()

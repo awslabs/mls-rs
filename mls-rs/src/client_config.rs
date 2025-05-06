@@ -7,6 +7,7 @@ use crate::{
     group::{mls_rules::MlsRules, proposal::ProposalType},
     identity::CredentialType,
     protocol_version::ProtocolVersion,
+    time::CurrentTimeProvider,
     tree_kem::{leaf_node::ConfigProperties, Capabilities, Lifetime},
     ExtensionList,
 };
@@ -23,6 +24,7 @@ pub trait ClientConfig: Send + Sync + Clone {
     type IdentityProvider: IdentityProvider + Clone;
     type MlsRules: MlsRules + Clone;
     type CryptoProvider: CryptoProvider + Clone;
+    type CurrentTimeProvider: CurrentTimeProvider + Clone;
 
     fn supported_extensions(&self) -> Vec<ExtensionType>;
     fn supported_custom_proposals(&self) -> Vec<ProposalType>;
@@ -36,6 +38,7 @@ pub trait ClientConfig: Send + Sync + Clone {
     fn group_state_storage(&self) -> Self::GroupStateStorage;
     fn identity_provider(&self) -> Self::IdentityProvider;
     fn crypto_provider(&self) -> Self::CryptoProvider;
+    fn current_time(&self) -> Self::CurrentTimeProvider;
 
     fn lifetime(&self) -> Lifetime;
 

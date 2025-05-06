@@ -612,9 +612,14 @@ where
     type PreSharedKeyStorage = AlwaysFoundPskStorage;
     type OutputType = ExternalReceivedMessage;
     type CipherSuiteProvider = <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider;
+    type CurrentTimeProvider = C::CurrentTimeProvider;
 
     fn mls_rules(&self) -> Self::MlsRules {
         self.config.mls_rules()
+    }
+
+    fn current_time(&self) -> Self::CurrentTimeProvider {
+        self.config.current_time()
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
