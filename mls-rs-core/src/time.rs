@@ -18,9 +18,7 @@ pub struct MlsTime {
 impl MlsTime {
     /// Create a timestamp from a duration since unix epoch.
     pub fn from_duration_since_epoch(duration: Duration) -> MlsTime {
-        Self {
-            seconds: duration.as_secs(),
-        }
+        Self::from(duration)
     }
 
     /// Number of seconds since the unix epoch.
@@ -45,6 +43,48 @@ impl MlsTime {
 impl From<u64> for MlsTime {
     fn from(value: u64) -> Self {
         Self { seconds: value }
+    }
+}
+
+impl From<Duration> for MlsTime {
+    fn from(value: Duration) -> MlsTime {
+        Self {
+            seconds: value.as_secs(),
+        }
+    }
+}
+
+impl From<MlsTime> for Duration {
+    fn from(value: MlsTime) -> Duration {
+        Duration::from_secs(value.seconds)
+    }
+}
+
+#[cfg(all(not(target_arch = "wasm32"), feature = "std"))]
+#[derive(Debug, thiserror::Error)]
+#[error("Overflow while adding {0:?}")]
+/// Overflow in time conversion.
+pub struct TimeOverflow(Duration);
+
+#[cfg(all(not(target_arch = "wasm32"), feature = "std"))]
+impl TryFrom<MlsTime> for std::time::SystemTime {
+    type Error = TimeOverflow;
+
+    fn try_from(value: MlsTime) -> Result<std::time::SystemTime, Self::Error> {
+        let duration = Duration::from(value);
+        std::time::SystemTime::UNIX_EPOCH
+            .checked_add(duration)
+            .ok_or(TimeOverflow(duration))
+    }
+}
+
+#[cfg(all(not(target_arch = "wasm32"), feature = "std"))]
+impl TryFrom<std::time::SystemTime> for MlsTime {
+    type Error = std::time::SystemTimeError;
+
+    fn try_from(value: std::time::SystemTime) -> Result<MlsTime, Self::Error> {
+        let duration = value.duration_since(std::time::SystemTime::UNIX_EPOCH)?;
+        Ok(MlsTime::from(duration))
     }
 }
 
