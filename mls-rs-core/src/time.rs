@@ -61,6 +61,24 @@ impl From<MlsTime> for Duration {
 }
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "std"))]
+#[derive(Debug, thiserror::Error)]
+#[error("Overflow while adding {0:?}")]
+/// Overflow in time conversion.
+pub struct TimeOverflow(Duration);
+
+#[cfg(all(not(target_arch = "wasm32"), feature = "std"))]
+impl TryFrom<MlsTime> for std::time::SystemTime {
+    type Error = TimeOverflow;
+
+    fn try_from(value: MlsTime) -> Result<std::time::SystemTime, Self::Error> {
+        let duration = Duration::from(value);
+        std::time::SystemTime::UNIX_EPOCH
+            .checked_add(duration)
+            .ok_or(TimeOverflow(duration))
+    }
+}
+
+#[cfg(all(not(target_arch = "wasm32"), feature = "std"))]
 impl TryFrom<std::time::SystemTime> for MlsTime {
     type Error = std::time::SystemTimeError;
 
