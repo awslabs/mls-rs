@@ -18,9 +18,7 @@ pub struct MlsTime {
 impl MlsTime {
     /// Create a timestamp from a duration since unix epoch.
     pub fn from_duration_since_epoch(duration: Duration) -> MlsTime {
-        Self {
-            seconds: duration.as_secs(),
-        }
+        Self::from(duration)
     }
 
     /// Number of seconds since the unix epoch.
@@ -45,6 +43,14 @@ impl MlsTime {
 impl From<u64> for MlsTime {
     fn from(value: u64) -> Self {
         Self { seconds: value }
+    }
+}
+
+impl From<Duration> for MlsTime {
+    fn from(value: Duration) -> MlsTime {
+        Self {
+            seconds: value.as_secs(),
+        }
     }
 }
 
