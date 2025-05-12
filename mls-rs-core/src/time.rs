@@ -54,6 +54,12 @@ impl From<Duration> for MlsTime {
     }
 }
 
+impl From<MlsTime> for Duration {
+    fn from(value: MlsTime) -> Duration {
+        Duration::from_secs(value.seconds)
+    }
+}
+
 #[cfg(all(target_arch = "wasm32", not(target_os = "emscripten")))]
 #[wasm_bindgen(inline_js = r#"
 export function date_now() {
