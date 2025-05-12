@@ -60,6 +60,16 @@ impl From<MlsTime> for Duration {
     }
 }
 
+#[cfg(all(not(target_arch = "wasm32"), feature = "std"))]
+impl TryFrom<std::time::SystemTime> for MlsTime {
+    type Error = std::time::SystemTimeError;
+
+    fn try_from(value: std::time::SystemTime) -> Result<MlsTime, Self::Error> {
+        let duration = value.duration_since(std::time::SystemTime::UNIX_EPOCH)?;
+        Ok(MlsTime::from(duration))
+    }
+}
+
 #[cfg(all(target_arch = "wasm32", not(target_os = "emscripten")))]
 #[wasm_bindgen(inline_js = r#"
 export function date_now() {
