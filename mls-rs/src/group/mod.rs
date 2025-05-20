@@ -5326,6 +5326,66 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "std")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn commit_processes_with_custom_time() {
+        // Corresponds to Wednesday, February 19, 2025 9:20:00 PM GMT
+        let mut current_time: u64 = 1740000000;
+
+        let (bob_identity, secret_key) = get_test_signing_identity(TEST_CIPHER_SUITE, b"bob").await;
+        let bob = TestClientBuilder::new_for_test()
+            .signing_identity(bob_identity, secret_key, TEST_CIPHER_SUITE)
+            .build();
+
+        current_time += 10;
+
+        let (alice_identity, secret_key) =
+            get_test_signing_identity(TEST_CIPHER_SUITE, b"alice").await;
+        let alice = TestClientBuilder::new_for_test()
+            .signing_identity(alice_identity, secret_key, TEST_CIPHER_SUITE)
+            .build();
+
+        current_time += 10;
+
+        let mut alice_group = alice
+            .create_group(
+                Default::default(),
+                Default::default(),
+                Some(current_time.into()),
+            )
+            .await
+            .unwrap();
+
+        current_time += 10;
+
+        let bob_key_package = bob
+            .generate_key_package_message(
+                Default::default(),
+                Default::default(),
+                Some(current_time.into()),
+            )
+            .await
+            .unwrap();
+
+        current_time += 10;
+
+        let commit_output = alice_group
+            .commit_builder()
+            .add_member(bob_key_package)
+            .unwrap()
+            .commit_time(current_time.into())
+            .build()
+            .await
+            .unwrap();
+
+        current_time += 10;
+
+        alice_group
+            .process_incoming_message_with_time(commit_output.commit_message, current_time.into())
+            .await
+            .unwrap();
+    }
+
     #[cfg(feature = "custom_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn custom_proposal_may_enforce_path() {

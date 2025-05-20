@@ -164,7 +164,7 @@ pub(crate) mod inner {
             };
 
             let (new_group, welcome) = if let Some(id) = subgroup_id {
-                group.branch(id, new_key_pkgs).map_err(abort)?
+                group.branch(id, new_key_pkgs, None).map_err(abort)?
             } else {
                 let client = group
                     .clone()
@@ -175,7 +175,7 @@ pub(crate) mod inner {
                     .map_err(abort)?;
 
                 client
-                    .commit(new_key_pkgs, Default::default())
+                    .commit(new_key_pkgs, Default::default(), None)
                     .map_err(abort)?
             };
 
@@ -248,7 +248,7 @@ pub(crate) mod inner {
                 .get_reinit_client(Some(secret_key.clone()), Some(signing_identity.clone()))
                 .map_err(abort)?;
 
-            let key_package = reinit_client.generate_key_package().map_err(abort)?;
+            let key_package = reinit_client.generate_key_package(None).map_err(abort)?;
 
             let resp = HandleReInitCommitResponse {
                 epoch_authenticator: commit_resp.epoch_authenticator,
