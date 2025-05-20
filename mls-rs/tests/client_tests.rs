@@ -831,7 +831,7 @@ async fn weird_tree_scenario() {
 async fn fake_key_package(id: usize) -> MlsMessage {
     generate_client(CipherSuite::P256_AES128, ProtocolVersion::MLS_10, id, false)
         .await
-        .generate_key_package_message(Default::default(), Default::default())
+        .generate_key_package_message(Default::default(), Default::default(), None)
         .await
         .unwrap()
 }
