@@ -253,7 +253,7 @@ async fn invite_passive_client<P: CipherSuiteProvider>(
         .build();
 
     let key_pckg = client
-        .generate_key_package_message(Default::default(), Default::default())
+        .generate_key_package_message(Default::default(), Default::default(), None)
         .await
         .unwrap();
 
@@ -495,7 +495,7 @@ async fn create_key_package(cs: CipherSuite) -> MlsMessage {
     .await;
 
     client
-        .generate_key_package_message(Default::default(), Default::default())
+        .generate_key_package_message(Default::default(), Default::default(), None)
         .await
         .unwrap()
 }
@@ -570,7 +570,7 @@ pub async fn generate_passive_client_random_tests() -> Vec<TestCase> {
         .await;
 
         let creator_group = creator
-            .create_group(Default::default(), Default::default())
+            .create_group(Default::default(), Default::default(), None)
             .await
             .unwrap();
 
@@ -665,7 +665,7 @@ pub async fn add_random_members<C: MlsConfig>(
 
     for client in &clients {
         let key_package = client
-            .generate_key_package_message(Default::default(), Default::default())
+            .generate_key_package_message(Default::default(), Default::default(), None)
             .await
             .unwrap();
         key_packages.push(key_package);

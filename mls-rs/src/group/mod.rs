@@ -300,6 +300,7 @@ where
         group_context_extensions: ExtensionList,
         leaf_node_extensions: ExtensionList,
         signer: SignatureSecretKey,
+        maybe_now_time: Option<MlsTime>,
     ) -> Result<Self, MlsError> {
         let cipher_suite_provider = cipher_suite_provider(config.crypto_provider(), cipher_suite)?;
 
@@ -308,7 +309,7 @@ where
             config.leaf_properties(leaf_node_extensions),
             signing_identity,
             &signer,
-            config.lifetime(),
+            config.lifetime(maybe_now_time),
         )
         .await?;
 
@@ -3221,6 +3222,7 @@ mod tests {
             .create_group(
                 core::iter::once(required_caps.into_extension().unwrap()).collect(),
                 Default::default(),
+                None,
             )
             .await
     }
@@ -3287,7 +3289,11 @@ mod tests {
             test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "alice")
                 .await
                 .0
-                .create_group(core::iter::once(ext_senders).collect(), Default::default())
+                .create_group(
+                    core::iter::once(ext_senders).collect(),
+                    Default::default(),
+                    None,
+                )
                 .await
                 .map(|_| ());
 
@@ -3693,12 +3699,12 @@ mod tests {
             Some((bob_identity, TEST_CIPHER_SUITE)),
             TEST_PROTOCOL_VERSION,
         )
-        .generate_key_package_message(Default::default(), Default::default())
+        .generate_key_package_message(Default::default(), Default::default(), None)
         .await
         .unwrap();
 
         let (mut alice_sub_group, welcome) = alice
-            .branch(b"subgroup".to_vec(), vec![new_key_pkg])
+            .branch(b"subgroup".to_vec(), vec![new_key_pkg], None)
             .await
             .unwrap();
 
@@ -4212,7 +4218,7 @@ mod tests {
             .with_random_signing_identity("alice", TEST_CIPHER_SUITE)
             .await
             .build()
-            .create_group(vec![ext_senders].into(), Default::default())
+            .create_group(vec![ext_senders].into(), Default::default(), None)
             .await
             .unwrap();
 
@@ -4226,7 +4232,7 @@ mod tests {
             .build();
 
         let kp = bob
-            .generate_key_package_message(Default::default(), Default::default())
+            .generate_key_package_message(Default::default(), Default::default(), None)
             .await
             .unwrap();
 
@@ -4277,7 +4283,11 @@ mod tests {
             .with_random_signing_identity("alice", TEST_CIPHER_SUITE)
             .await
             .build()
-            .create_group(core::iter::once(ext_senders).collect(), Default::default())
+            .create_group(
+                core::iter::once(ext_senders).collect(),
+                Default::default(),
+                None,
+            )
             .await
             .unwrap();
 
@@ -4309,7 +4319,7 @@ mod tests {
             .with_random_signing_identity("alice", TEST_CIPHER_SUITE)
             .await
             .build()
-            .create_group(Default::default(), Default::default())
+            .create_group(Default::default(), Default::default(), None)
             .await
             .unwrap();
 
@@ -4697,7 +4707,7 @@ mod tests {
             .await
             .extension_type(EXTENSION_TYPE)
             .build()
-            .create_group(group_extensions.clone(), Default::default())
+            .create_group(group_extensions.clone(), Default::default(), None)
             .await
             .unwrap();
 
@@ -4730,21 +4740,21 @@ mod tests {
             .commit_builder()
             .add_member(
                 bob_client
-                    .generate_key_package_message(Default::default(), Default::default())
+                    .generate_key_package_message(Default::default(), Default::default(), None)
                     .await
                     .unwrap(),
             )
             .unwrap()
             .add_member(
                 carol_client
-                    .generate_key_package_message(Default::default(), Default::default())
+                    .generate_key_package_message(Default::default(), Default::default(), None)
                     .await
                     .unwrap(),
             )
             .unwrap()
             .add_member(
                 dave_client
-                    .generate_key_package_message(Default::default(), Default::default())
+                    .generate_key_package_message(Default::default(), Default::default(), None)
                     .await
                     .unwrap(),
             )
@@ -4852,7 +4862,7 @@ mod tests {
             .await
             .custom_proposal_type(ProposalType::SELF_REMOVE)
             .build()
-            .create_group(ExtensionList::new(), Default::default())
+            .create_group(ExtensionList::new(), Default::default(), None)
             .await
             .unwrap();
 
@@ -4881,7 +4891,7 @@ mod tests {
             .commit_builder()
             .add_member(
                 carol_client
-                    .generate_key_package_message(Default::default(), Default::default())
+                    .generate_key_package_message(Default::default(), Default::default(), None)
                     .await
                     .unwrap(),
             )
@@ -4996,7 +5006,7 @@ mod tests {
             .commit_builder()
             .add_member(
                 carol_client
-                    .generate_key_package_message(Default::default(), Default::default())
+                    .generate_key_package_message(Default::default(), Default::default(), None)
                     .await
                     .unwrap(),
             )
@@ -5059,7 +5069,7 @@ mod tests {
             .commit_builder()
             .add_member(
                 carol_client
-                    .generate_key_package_message(Default::default(), Default::default())
+                    .generate_key_package_message(Default::default(), Default::default(), None)
                     .await
                     .unwrap(),
             )
@@ -5160,7 +5170,7 @@ mod tests {
             .commit_builder()
             .add_member(
                 carol_client
-                    .generate_key_package_message(Default::default(), Default::default())
+                    .generate_key_package_message(Default::default(), Default::default(), None)
                     .await
                     .unwrap(),
             )
@@ -5234,7 +5244,7 @@ mod tests {
             .commit_builder()
             .add_member(
                 carol_client
-                    .generate_key_package_message(Default::default(), Default::default())
+                    .generate_key_package_message(Default::default(), Default::default(), None)
                     .await
                     .unwrap(),
             )
@@ -5329,7 +5339,7 @@ mod tests {
 
         let mut alice = client_with_custom_rules(b"alice", mls_rules.clone())
             .await
-            .create_group(Default::default(), Default::default())
+            .create_group(Default::default(), Default::default(), None)
             .await
             .unwrap();
 
@@ -5337,7 +5347,7 @@ mod tests {
 
         let kp = client_with_custom_rules(b"bob", mls_rules)
             .await
-            .generate_key_package_message(Default::default(), Default::default())
+            .generate_key_package_message(Default::default(), Default::default(), None)
             .await
             .unwrap();
 
@@ -5383,7 +5393,7 @@ mod tests {
 
         let mut alice = client_with_custom_rules(b"alice", mls_rules.clone())
             .await
-            .create_group(Default::default(), Default::default())
+            .create_group(Default::default(), Default::default(), None)
             .await
             .unwrap();
 
@@ -5418,7 +5428,7 @@ mod tests {
 
         let mut alice = client_with_custom_rules(b"alice", mls_rules.clone())
             .await
-            .create_group(Default::default(), Default::default())
+            .create_group(Default::default(), Default::default(), None)
             .await
             .unwrap();
 
@@ -5572,7 +5582,7 @@ mod tests {
 
         let mut alice = TestGroup {
             group: alice
-                .create_group(Default::default(), Default::default())
+                .create_group(Default::default(), Default::default(), None)
                 .await
                 .unwrap(),
         };
