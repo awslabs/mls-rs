@@ -740,6 +740,7 @@ where
     /// welcome message can be used by [join_group](Client::join_group).
     #[cfg(feature = "by_ref_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     pub async fn external_add_proposal(
         &self,
         group_info: &MlsMessage,
