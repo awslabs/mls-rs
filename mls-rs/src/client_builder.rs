@@ -682,12 +682,18 @@ where
         self.crypto_provider.clone()
     }
 
-    fn lifetime(&self) -> Lifetime {
+    fn lifetime(&self, maybe_now_time: Option<MlsTime>) -> Lifetime {
         #[cfg(feature = "std")]
         let now_timestamp = MlsTime::now();
 
         #[cfg(not(feature = "std"))]
         let now_timestamp = MlsTime::from(0);
+
+        let now_timestamp = if let Some(now_time) = maybe_now_time {
+            now_time.seconds_since_epoch()
+        } else {
+            now_timestamp
+        };
 
         #[cfg(test)]
         let now_timestamp = self
@@ -781,8 +787,8 @@ impl<T: MlsConfig> ClientConfig for T {
         self.get().crypto_provider()
     }
 
-    fn lifetime(&self) -> Lifetime {
-        self.get().lifetime()
+    fn lifetime(&self, maybe_now_time: Option<MlsTime>) -> Lifetime {
+        self.get().lifetime(maybe_now_time)
     }
 
     fn capabilities(&self) -> Capabilities {
@@ -826,6 +832,7 @@ pub(crate) fn recreate_config<T: ClientConfig>(
     signer: Option<SignatureSecretKey>,
     signing_identity: Option<(SigningIdentity, CipherSuite)>,
     version: ProtocolVersion,
+    maybe_now_time: Option<MlsTime>,
 ) -> MakeConfig<T> {
     Config(ConfigInner {
         settings: Settings {
@@ -833,7 +840,7 @@ pub(crate) fn recreate_config<T: ClientConfig>(
             protocol_versions: c.supported_protocol_versions(),
             custom_proposal_types: c.supported_custom_proposals(),
             lifetime: {
-                let l = c.lifetime();
+                let l = c.lifetime(maybe_now_time);
                 l.not_after - l.not_before
             },
             #[cfg(any(test, feature = "test_util"))]

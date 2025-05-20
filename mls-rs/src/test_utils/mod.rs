@@ -122,7 +122,7 @@ pub async fn get_test_groups<C: CryptoProvider + Clone>(
     .await;
 
     let mut creator_group = creator
-        .create_group(Default::default(), Default::default())
+        .create_group(Default::default(), Default::default(), None)
         .await
         .unwrap();
 
@@ -141,7 +141,7 @@ pub async fn get_test_groups<C: CryptoProvider + Clone>(
         )
         .await;
         let kp = client
-            .generate_key_package_message(Default::default(), Default::default())
+            .generate_key_package_message(Default::default(), Default::default(), None)
             .await
             .unwrap();
 

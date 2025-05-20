@@ -211,7 +211,7 @@ pub(crate) mod test_utils {
 
         let key_package = generator
             .generate(
-                Lifetime::years(1).unwrap(),
+                Lifetime::years(1, None).unwrap(),
                 get_test_capabilities(),
                 ExtensionList::default(),
                 ExtensionList::default(),
