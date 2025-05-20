@@ -384,7 +384,7 @@ impl Client {
     pub async fn generate_key_package_message(&self) -> Result<Message, Error> {
         let message = self
             .inner
-            .generate_key_package_message(Default::default(), Default::default())
+            .generate_key_package_message(Default::default(), Default::default(), None)
             .await?;
         Ok(message.into())
     }
@@ -406,12 +406,12 @@ impl Client {
         let inner = match group_id {
             Some(group_id) => {
                 self.inner
-                    .create_group_with_id(group_id, extensions, Default::default())
+                    .create_group_with_id(group_id, extensions, Default::default(), None)
                     .await?
             }
             None => {
                 self.inner
-                    .create_group(extensions, Default::default())
+                    .create_group(extensions, Default::default(), None)
                     .await?
             }
         };

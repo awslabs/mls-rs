@@ -11,6 +11,7 @@ use mls_rs_core::{
     protocol_version::ProtocolVersion,
 };
 
+use crate::time::MlsTime;
 use crate::{client::MlsError, Client, Group, MlsMessage};
 
 use super::{
@@ -49,6 +50,7 @@ where
         &self,
         sub_group_id: Vec<u8>,
         new_key_packages: Vec<MlsMessage>,
+        maybe_now_time: Option<MlsTime>,
     ) -> Result<(Group<C>, Vec<MlsMessage>), MlsError> {
         let new_group_params = ResumptionGroupParameters {
             group_id: &sub_group_id,
@@ -68,6 +70,7 @@ where
             current_leaf_node_extensions,
             #[cfg(any(feature = "private_message", feature = "psk"))]
             self.resumption_psk_input(ResumptionPSKUsage::Branch)?,
+            maybe_now_time,
         )
         .await
     }
@@ -165,9 +168,12 @@ impl<C: ClientConfig + Clone> ReinitClient<C> {
     /// Generate a key package for the new group. The key package can
     /// be used in [`ReinitClient::commit`].
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn generate_key_package(&self) -> Result<MlsMessage, MlsError> {
+    pub async fn generate_key_package(
+        &self,
+        maybe_now_time: Option<MlsTime>,
+    ) -> Result<MlsMessage, MlsError> {
         self.client
-            .generate_key_package_message(Default::default(), Default::default())
+            .generate_key_package_message(Default::default(), Default::default(), maybe_now_time)
             .await
     }
 
@@ -183,6 +189,7 @@ impl<C: ClientConfig + Clone> ReinitClient<C> {
         self,
         new_key_packages: Vec<MlsMessage>,
         new_leaf_node_extensions: ExtensionList,
+        maybe_now_time: Option<MlsTime>,
     ) -> Result<(Group<C>, Vec<MlsMessage>), MlsError> {
         let new_group_params = ResumptionGroupParameters {
             group_id: self.reinit.group_id(),
@@ -201,6 +208,7 @@ impl<C: ClientConfig + Clone> ReinitClient<C> {
             &new_leaf_node_extensions,
             #[cfg(any(feature = "private_message", feature = "psk"))]
             self.psk_input,
+            maybe_now_time,
         )
         .await
     }
@@ -244,6 +252,7 @@ async fn resumption_create_group<C: ClientConfig + Clone>(
     signer: SignatureSecretKey,
     leaf_node_extensions: &ExtensionList,
     psk_input: PskSecretInput,
+    maybe_now_time: Option<MlsTime>,
 ) -> Result<(Group<C>, Vec<MlsMessage>), MlsError> {
     // Create a new group with new parameters
     let mut group = Group::new(
@@ -255,6 +264,7 @@ async fn resumption_create_group<C: ClientConfig + Clone>(
         new_group_params.extensions.clone(),
         leaf_node_extensions.clone(),
         signer,
+        maybe_now_time,
     )
     .await?;
 

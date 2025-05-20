@@ -452,7 +452,7 @@ async fn process_message<P: CipherSuiteProvider>(
     // Enabling encryption doesn't matter for processing
     let mut group = make_group(test_case, false, true, cs).await;
     let message = MlsMessage::mls_decode(&mut &*message).unwrap();
-    let evt_or_cont = group.get_event_from_incoming_message(message);
+    let evt_or_cont = group.get_event_from_incoming_message(message, None);
 
     match evt_or_cont.await.unwrap() {
         EventOrContent::Content(content) => content.content.content,
