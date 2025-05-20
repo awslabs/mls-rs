@@ -165,13 +165,18 @@ async fn test_create(
     let alice = generate_client(cipher_suite, protocol_version, 0, encrypt_controls).await;
     let bob = generate_client(cipher_suite, protocol_version, 1, encrypt_controls).await;
     let bob_key_pkg = bob
-        .generate_key_package_message(Default::default(), Default::default())
+        .generate_key_package_message(Default::default(), Default::default(), None)
         .await
         .unwrap();
 
     // Alice creates a group and adds bob
     let mut alice_group = alice
-        .create_group_with_id(b"group".to_vec(), Default::default(), Default::default())
+        .create_group_with_id(
+            b"group".to_vec(),
+            Default::default(),
+            Default::default(),
+            None,
+        )
         .await
         .unwrap();
 
@@ -493,7 +498,12 @@ async fn external_commits_work(
     let creator = generate_client(cipher_suite, protocol_version, 0, false).await;
 
     let creator_group = creator
-        .create_group_with_id(b"group".to_vec(), Default::default(), Default::default())
+        .create_group_with_id(
+            b"group".to_vec(),
+            Default::default(),
+            Default::default(),
+            None,
+        )
         .await
         .unwrap();
 
@@ -605,11 +615,11 @@ async fn reinit_works() {
 
     // Create a group with 2 parties
     let mut alice_group = alice1
-        .create_group(Default::default(), Default::default())
+        .create_group(Default::default(), Default::default(), None)
         .await
         .unwrap();
     let kp = bob1
-        .generate_key_package_message(Default::default(), Default::default())
+        .generate_key_package_message(Default::default(), Default::default(), None)
         .await
         .unwrap();
 
@@ -696,8 +706,11 @@ async fn reinit_works() {
         .unwrap();
 
     // Bob produces key package, alice commits, bob joins
-    let kp = bob2.generate_key_package().await.unwrap();
-    let (mut alice_group, welcome) = alice2.commit(vec![kp], Default::default()).await.unwrap();
+    let kp = bob2.generate_key_package(None).await.unwrap();
+    let (mut alice_group, welcome) = alice2
+        .commit(vec![kp], Default::default(), None)
+        .await
+        .unwrap();
     let (mut bob_group, _) = bob2.join(&welcome[0], None).await.unwrap();
 
     assert!(bob_group.cipher_suite() == suite2);
@@ -706,7 +719,7 @@ async fn reinit_works() {
     let carol = generate_client(suite2, version, 3, Default::default()).await;
 
     let kp = carol
-        .generate_key_package_message(Default::default(), Default::default())
+        .generate_key_package_message(Default::default(), Default::default(), None)
         .await
         .unwrap();
 

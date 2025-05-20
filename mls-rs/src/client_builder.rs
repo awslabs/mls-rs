@@ -23,6 +23,7 @@ use crate::{
     storage_provider::in_memory::{
         InMemoryGroupStateStorage, InMemoryKeyPackageStorage, InMemoryPreSharedKeyStorage,
     },
+    time::MlsTime,
     tree_kem::{Capabilities, Lifetime},
     Sealed,
 };
