@@ -842,6 +842,7 @@ async fn create_client(cipher_suite: u16, identity: &[u8]) -> Result<ClientDetai
     })
 }
 
+#[allow(clippy::result_large_err)]
 fn get_tree(tree: &[u8]) -> Result<Option<ExportedTree<'static>>, tonic::Status> {
     if tree.is_empty() {
         Ok(None)
