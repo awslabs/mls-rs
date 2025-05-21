@@ -1078,7 +1078,7 @@ where
         self.proposal_message(proposal, authenticated_data).await
     }
 
-    #[cfg(feature = "server_remove_proposal")]
+    #[cfg(all(feature = "server_remove_proposal", feature = "by_ref_proposal"))]
     #[cfg_attr(feature = "ffi", safer_ffi_gen::safer_ffi_gen_ignore)]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn propose_server_remove(
@@ -4593,7 +4593,7 @@ mod tests {
         (alice, bob)
     }
 
-    #[cfg(feature = "server_remove_proposal")]
+    #[cfg(all(feature = "server_remove_proposal", feature = "by_ref_proposal"))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn server_remove_removes_client() {
         let (mut alice, mut bob) = custom_proposal_setup(ProposalType::SERVER_REMOVE).await;
@@ -4658,7 +4658,7 @@ mod tests {
         };
     }
 
-    #[cfg(feature = "server_remove_proposal")]
+    #[cfg(all(feature = "server_remove_proposal", feature = "by_ref_proposal"))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn commit_with_both_remove_and_server_remove_for_same_client_leaves_server_remove_unused()
     {
