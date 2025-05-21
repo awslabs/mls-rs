@@ -5479,7 +5479,7 @@ mod tests {
     ))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn can_build_external_commit_from_group_with_self_remove() {
-        let (mut alice, mut bob) = self_remove_group_setup().await;
+        let (mut alice, mut bob) = custom_proposal_setup(ProposalType::SELF_REMOVE).await;
 
         let carol_client = TestClientBuilder::new_for_test()
             .with_random_signing_identity("carol", TEST_CIPHER_SUITE)
