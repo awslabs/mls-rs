@@ -859,6 +859,7 @@ fn parse_extensions(extensions: Vec<mls_client::Extension>) -> ExtensionList {
         .into()
 }
 
+#[allow(clippy::result_large_err)]
 fn find_member(roster: &[Member], cred: &Credential) -> Result<u32, Status> {
     roster
         .iter()
