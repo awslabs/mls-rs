@@ -491,7 +491,7 @@ impl MessageProcessor for GroupWithoutKeySchedule {
         self.inner.self_removal_proposal(provisional_state)
     }
 
-    #[cfg(feature = "server_remove_proposal")]
+    #[cfg(feature = "gsma_rcs_e2ee_feature")]
     #[cfg_attr(feature = "ffi", safer_ffi_gen::safer_ffi_gen_ignore)]
     fn server_removal_proposal(
         &self,

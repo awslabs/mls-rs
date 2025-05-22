@@ -43,7 +43,7 @@ use crate::{
     feature = "self_remove_proposal"
 ))]
 use crate::group::proposal::SelfRemoveProposal;
-#[cfg(feature = "server_remove_proposal")]
+#[cfg(feature = "gsma_rcs_e2ee_feature")]
 use crate::group::proposal::ServerRemoveProposal;
 
 #[cfg(feature = "by_ref_proposal")]
@@ -701,7 +701,7 @@ where
         None
     }
 
-    #[cfg(feature = "server_remove_proposal")]
+    #[cfg(feature = "gsma_rcs_e2ee_feature")]
     #[cfg_attr(feature = "ffi", safer_ffi_gen::safer_ffi_gen_ignore)]
     fn server_removal_proposal(
         &self,
