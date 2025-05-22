@@ -352,7 +352,7 @@ where
         leaf_node_validator
             .check_if_valid(
                 public_tree.get_leaf_node(LeafIndex::unchecked(0))?,
-                ValidationContext::Add(None),
+                ValidationContext::Add(maybe_now_time),
             )
             .await?;
 
