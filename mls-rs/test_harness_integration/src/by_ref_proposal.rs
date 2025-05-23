@@ -377,6 +377,7 @@ pub(crate) mod external_proposal {
                     vec![],
                     Default::default(),
                     Default::default(),
+                    None,
                 )
                 .map_err(abort)?
                 .to_bytes()

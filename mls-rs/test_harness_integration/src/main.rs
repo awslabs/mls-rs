@@ -219,6 +219,7 @@ impl MlsClient for MlsClientImpl {
                 request.group_id,
                 ExtensionList::default(),
                 Default::default(),
+                None,
             )
             .map_err(abort)?;
 
@@ -240,7 +241,7 @@ impl MlsClient for MlsClientImpl {
 
         let key_package = client
             .client
-            .generate_key_package_message(Default::default(), Default::default())
+            .generate_key_package_message(Default::default(), Default::default(), None)
             .map_err(abort)?;
 
         let (_, key_pckg_secrets) = client.key_package_repo.key_packages()[0].clone();
@@ -841,6 +842,7 @@ async fn create_client(cipher_suite: u16, identity: &[u8]) -> Result<ClientDetai
     })
 }
 
+#[allow(clippy::result_large_err)]
 fn get_tree(tree: &[u8]) -> Result<Option<ExportedTree<'static>>, tonic::Status> {
     if tree.is_empty() {
         Ok(None)
@@ -857,6 +859,7 @@ fn parse_extensions(extensions: Vec<mls_client::Extension>) -> ExtensionList {
         .into()
 }
 
+#[allow(clippy::result_large_err)]
 fn find_member(roster: &[Member], cred: &Credential) -> Result<u32, Status> {
     roster
         .iter()

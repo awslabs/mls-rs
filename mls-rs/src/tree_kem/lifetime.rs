@@ -22,12 +22,18 @@ impl Lifetime {
         }
     }
 
-    pub fn seconds(s: u64) -> Result<Self, MlsError> {
+    pub fn seconds(s: u64, maybe_not_before: Option<MlsTime>) -> Result<Self, MlsError> {
         #[cfg(feature = "std")]
         let not_before = MlsTime::now().seconds_since_epoch();
         #[cfg(not(feature = "std"))]
         // There is no clock on no_std, this is here just so that we can run tests.
         let not_before = 3600u64;
+
+        let not_before = if let Some(not_before_time) = maybe_not_before {
+            not_before_time.seconds_since_epoch()
+        } else {
+            not_before
+        };
 
         let not_after = not_before.checked_add(s).ok_or(MlsError::TimeOverflow)?;
 
@@ -38,12 +44,12 @@ impl Lifetime {
         })
     }
 
-    pub fn days(d: u32) -> Result<Self, MlsError> {
-        Self::seconds((d * 86400) as u64)
+    pub fn days(d: u32, maybe_not_before: Option<MlsTime>) -> Result<Self, MlsError> {
+        Self::seconds((d * 86400) as u64, maybe_not_before)
     }
 
-    pub fn years(y: u8) -> Result<Self, MlsError> {
-        Self::days(365 * y as u32)
+    pub fn years(y: u8, maybe_not_before: Option<MlsTime>) -> Result<Self, MlsError> {
+        Self::days(365 * y as u32, maybe_not_before)
     }
 
     pub(crate) fn within_lifetime(&self, time: MlsTime) -> bool {
@@ -61,21 +67,21 @@ mod tests {
 
     #[test]
     fn test_lifetime_overflow() {
-        let res = Lifetime::seconds(u64::MAX);
+        let res = Lifetime::seconds(u64::MAX, None);
         assert_matches!(res, Err(MlsError::TimeOverflow))
     }
 
     #[test]
     fn test_seconds() {
         let seconds = 10;
-        let lifetime = Lifetime::seconds(seconds).unwrap();
+        let lifetime = Lifetime::seconds(seconds, None).unwrap();
         assert_eq!(lifetime.not_after - lifetime.not_before, 3610);
     }
 
     #[test]
     fn test_days() {
         let days = 2;
-        let lifetime = Lifetime::days(days).unwrap();
+        let lifetime = Lifetime::days(days, None).unwrap();
 
         assert_eq!(
             lifetime.not_after - lifetime.not_before,
@@ -86,7 +92,7 @@ mod tests {
     #[test]
     fn test_years() {
         let years = 2;
-        let lifetime = Lifetime::years(years).unwrap();
+        let lifetime = Lifetime::years(years, None).unwrap();
 
         assert_eq!(
             lifetime.not_after - lifetime.not_before,

@@ -195,7 +195,7 @@ async fn interop_passive_client() {
             .ratchet_tree
             .map(|t| ExportedTree::from_bytes(&t.0).unwrap());
 
-        let (mut group, _info) = client.join_group(tree, &welcome).await.unwrap();
+        let (mut group, _info) = client.join_group(tree, &welcome, None).await.unwrap();
 
         assert_eq!(
             group.epoch_authenticator().unwrap().to_vec(),
@@ -251,7 +251,7 @@ async fn invite_passive_client<P: CipherSuiteProvider>(
         .build();
 
     let key_pckg = client
-        .generate_key_package_message(Default::default(), Default::default())
+        .generate_key_package_message(Default::default(), Default::default(), None)
         .await
         .unwrap();
 
@@ -493,7 +493,7 @@ async fn create_key_package(cs: CipherSuite) -> MlsMessage {
     .await;
 
     client
-        .generate_key_package_message(Default::default(), Default::default())
+        .generate_key_package_message(Default::default(), Default::default(), None)
         .await
         .unwrap()
 }
@@ -561,7 +561,7 @@ pub async fn generate_passive_client_random_tests() -> Vec<TestCase> {
                 .await;
 
         let creator_group = creator
-            .create_group(Default::default(), Default::default())
+            .create_group(Default::default(), Default::default(), None)
             .await
             .unwrap();
 
@@ -656,7 +656,7 @@ pub async fn add_random_members<C: MlsConfig>(
 
     for client in &clients {
         let key_package = client
-            .generate_key_package_message(Default::default(), Default::default())
+            .generate_key_package_message(Default::default(), Default::default(), None)
             .await
             .unwrap();
         key_packages.push(key_package);
@@ -696,7 +696,7 @@ pub async fn add_random_members<C: MlsConfig>(
         let commit = commit_output.welcome_messages[0].clone();
 
         let group = client
-            .join_group(Some(tree_data.clone()), &commit)
+            .join_group(Some(tree_data.clone()), &commit, None)
             .await
             .unwrap()
             .0;

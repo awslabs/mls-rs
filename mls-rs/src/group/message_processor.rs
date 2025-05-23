@@ -515,7 +515,9 @@ pub(crate) trait MessageProcessor: Send + Sync {
         #[cfg(feature = "by_ref_proposal")] cache_proposal: bool,
         time_sent: Option<MlsTime>,
     ) -> Result<Self::OutputType, MlsError> {
-        let event_or_content = self.get_event_from_incoming_message(message).await?;
+        let event_or_content = self
+            .get_event_from_incoming_message(message, time_sent)
+            .await?;
 
         self.process_event_or_content(
             event_or_content,
@@ -529,6 +531,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
     async fn get_event_from_incoming_message(
         &mut self,
         message: MlsMessage,
+        time: Option<MlsTime>,
     ) -> Result<EventOrContent<Self::OutputType>, MlsError> {
         self.check_metadata(&message)?;
 
@@ -555,7 +558,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
                 Ok(EventOrContent::Event(welcome.into()))
             }
             MlsMessagePayload::KeyPackage(key_package) => {
-                self.validate_key_package(&key_package, message.version)
+                self.validate_key_package(&key_package, message.version, time)
                     .await?;
 
                 Ok(EventOrContent::Event(key_package.into()))
@@ -948,11 +951,12 @@ pub(crate) trait MessageProcessor: Send + Sync {
         &self,
         key_package: &KeyPackage,
         version: ProtocolVersion,
+        time: Option<MlsTime>,
     ) -> Result<(), MlsError> {
         let cs = self.cipher_suite_provider();
         let id = self.identity_provider();
 
-        validate_key_package(key_package, version, cs, &id).await
+        validate_key_package(key_package, version, cs, &id, time).await
     }
 
     #[cfg(feature = "private_message")]
@@ -1000,6 +1004,7 @@ pub(crate) async fn validate_key_package<C: CipherSuiteProvider, I: IdentityProv
     version: ProtocolVersion,
     cs: &C,
     id: &I,
+    time: Option<MlsTime>,
 ) -> Result<(), MlsError> {
     let validator = LeafNodeValidator::new(cs, id, MemberValidationContext::None);
 
@@ -1008,6 +1013,8 @@ pub(crate) async fn validate_key_package<C: CipherSuiteProvider, I: IdentityProv
 
     #[cfg(not(feature = "std"))]
     let context = None;
+
+    let context = if time.is_some() { time } else { context };
 
     let context = ValidationContext::Add(context);
 
