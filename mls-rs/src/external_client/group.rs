@@ -121,6 +121,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         signing_data: Option<(SignatureSecretKey, SigningIdentity)>,
         group_info: MlsMessage,
         tree_data: Option<ExportedTree<'_>>,
+        maybe_time: Option<MlsTime>,
     ) -> Result<Self, MlsError> {
         let protocol_version = group_info.version;
 
@@ -143,6 +144,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             tree_data,
             &config.identity_provider(),
             &cipher_suite_provider,
+            maybe_time,
         )
         .await?;
 
@@ -835,6 +837,7 @@ pub(crate) mod test_utils {
                 .await
                 .unwrap(),
             None,
+            None,
         )
         .await
         .unwrap()
@@ -1088,6 +1091,7 @@ mod tests {
                 .await
                 .unwrap(),
             None,
+            None,
         )
         .await
         .map(|_| ());
@@ -1111,7 +1115,7 @@ mod tests {
 
         group_info.version = ProtocolVersion::from(64);
 
-        let res = ExternalGroup::join(config, None, group_info, None)
+        let res = ExternalGroup::join(config, None, group_info, None, None)
             .await
             .map(|_| ());
 
@@ -1330,7 +1334,9 @@ mod tests {
             .unwrap();
 
         let config = TestExternalClientBuilder::new_for_test().build_config();
-        let mut server = ExternalGroup::join(config, None, info, None).await.unwrap();
+        let mut server = ExternalGroup::join(config, None, info, None, None)
+            .await
+            .unwrap();
 
         for _ in 0..2 {
             let commit = alice.commit(vec![]).await.unwrap().commit_message;

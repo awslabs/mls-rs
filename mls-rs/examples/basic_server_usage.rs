@@ -43,7 +43,7 @@ impl BasicServer {
         let server = make_server();
         let group_info = MlsMessage::from_bytes(group_info)?;
 
-        let group = server.observe_group(group_info, None)?;
+        let group = server.observe_group(group_info, None, None)?;
 
         Ok(Self {
             group_state: group.snapshot().to_bytes()?,
@@ -150,7 +150,7 @@ fn main() -> Result<(), MlsError> {
         .build()?
         .welcome_messages[0];
 
-    let (mut bob_group, _) = bob.join_group(None, welcome)?;
+    let (mut bob_group, _) = bob.join_group(None, welcome, None)?;
     alice_group.apply_pending_commit()?;
 
     // Server starts observing Alice's group
