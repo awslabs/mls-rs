@@ -711,7 +711,7 @@ async fn reinit_works() {
         .commit(vec![kp], Default::default(), None)
         .await
         .unwrap();
-    let (mut bob_group, _) = bob2.join(&welcome[0], None).await.unwrap();
+    let (mut bob_group, _) = bob2.join(&welcome[0], None, None).await.unwrap();
 
     assert!(bob_group.cipher_suite() == suite2);
 
