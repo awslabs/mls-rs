@@ -89,7 +89,7 @@ fn make_groups_best_case<P: CryptoProvider + Clone>(
         groups.last_mut().unwrap().apply_pending_commit()?;
 
         // The new member joins.
-        let (bob_group, _info) = bob_client.join_group(None, &commit.welcome_messages[0])?;
+        let (bob_group, _info) = bob_client.join_group(None, &commit.welcome_messages[0], None)?;
 
         groups.push(bob_group);
     }
@@ -131,7 +131,7 @@ fn make_groups_worst_case<P: CryptoProvider + Clone>(
     let mut groups = vec![alice_group];
 
     for bob_client in &bob_clients {
-        let (bob_group, _info) = bob_client.join_group(None, welcome_message)?;
+        let (bob_group, _info) = bob_client.join_group(None, welcome_message, None)?;
         groups.push(bob_group);
     }
 
