@@ -14,6 +14,7 @@ use crate::client::MlsError;
 use crate::crypto::CipherSuiteProvider;
 use crate::group::GroupContext;
 use crate::iter::wrap_impl_iter;
+use crate::time::MlsTime;
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::{leaf_node_validator::LeafNodeValidator, TreeKemPublic};
 use mls_rs_core::identity::{IdentityProvider, MemberValidationContext};
@@ -58,14 +59,18 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> TreeValidator<'a, C, CSP
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn validate(&self, tree: &mut TreeKemPublic) -> Result<(), MlsError> {
+    pub async fn validate(
+        &self,
+        tree: &mut TreeKemPublic,
+        maybe_time: Option<MlsTime>,
+    ) -> Result<(), MlsError> {
         self.validate_tree_hash(tree).await?;
 
         tree.validate_parent_hashes(self.cipher_suite_provider)
             .await?;
 
         self.validate_no_trailing_blanks(tree)?;
-        self.validate_leaves(tree).await?;
+        self.validate_leaves(tree, maybe_time).await?;
         validate_unmerged(tree)
     }
 
@@ -91,7 +96,11 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> TreeValidator<'a, C, CSP
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn validate_leaves(&self, tree: &TreeKemPublic) -> Result<(), MlsError> {
+    async fn validate_leaves(
+        &self,
+        tree: &TreeKemPublic,
+        maybe_time: Option<MlsTime>,
+    ) -> Result<(), MlsError> {
         let leaves = wrap_impl_iter(tree.nodes.non_empty_leaves());
 
         #[cfg(mls_build_async)]
@@ -100,7 +109,7 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> TreeValidator<'a, C, CSP
         { leaves }
             .try_for_each(|(index, leaf_node)| async move {
                 self.leaf_node_validator
-                    .revalidate(leaf_node, self.group_id, *index)
+                    .revalidate(leaf_node, self.group_id, *index, maybe_time)
                     .await
             })
             .await
@@ -247,7 +256,7 @@ mod tests {
             let validator =
                 TreeValidator::new(&cipher_suite_provider, &context, &BasicIdentityProvider);
 
-            validator.validate(&mut test_tree).await.unwrap();
+            validator.validate(&mut test_tree, None).await.unwrap();
         }
     }
 
@@ -262,7 +271,7 @@ mod tests {
             let validator =
                 TreeValidator::new(&cipher_suite_provider, &context, &BasicIdentityProvider);
 
-            let res = validator.validate(&mut test_tree).await;
+            let res = validator.validate(&mut test_tree, None).await;
 
             assert_matches!(res, Err(MlsError::TreeHashMismatch));
         }
@@ -283,7 +292,7 @@ mod tests {
             let validator =
                 TreeValidator::new(&cipher_suite_provider, &context, &BasicIdentityProvider);
 
-            let res = validator.validate(&mut test_tree).await;
+            let res = validator.validate(&mut test_tree, None).await;
 
             assert_matches!(res, Err(MlsError::ParentHashMismatch));
         }
@@ -307,7 +316,7 @@ mod tests {
             let validator =
                 TreeValidator::new(&cipher_suite_provider, &context, &BasicIdentityProvider);
 
-            let res = validator.validate(&mut test_tree).await;
+            let res = validator.validate(&mut test_tree, None).await;
 
             assert_matches!(res, Err(MlsError::InvalidSignature));
         }

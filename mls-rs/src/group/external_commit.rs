@@ -192,6 +192,7 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
             self.tree_data,
             &self.config.identity_provider(),
             &cipher_suite,
+            self.commit_time,
         )
         .await?;
 

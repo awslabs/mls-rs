@@ -410,6 +410,7 @@ where
         tree_data: Option<ExportedTree<'_>>,
         config: C,
         signer: SignatureSecretKey,
+        maybe_time: Option<MlsTime>,
     ) -> Result<(Self, NewMemberInfo), MlsError> {
         Self::from_welcome_message(
             welcome,
@@ -418,6 +419,7 @@ where
             signer,
             #[cfg(feature = "psk")]
             None,
+            maybe_time,
         )
         .await
     }
@@ -429,6 +431,7 @@ where
         config: C,
         signer: SignatureSecretKey,
         #[cfg(feature = "psk")] additional_psk: Option<PskSecretInput>,
+        maybe_time: Option<MlsTime>,
     ) -> Result<(Self, NewMemberInfo), MlsError> {
         let (group_info, key_package_generation, group_secrets, psk_secret) =
             Self::decrypt_group_info_internal(
@@ -452,6 +455,7 @@ where
             tree_data,
             &id_provider,
             &cipher_suite_provider,
+            maybe_time,
         )
         .await?;
 
@@ -3033,6 +3037,7 @@ mod tests {
             None,
             bob_client.config,
             bob_client.signer.unwrap(),
+            None,
         )
         .await
         .map(|_| ());
@@ -3059,7 +3064,7 @@ mod tests {
 
         // Bob joins group.
         let (mut bob_group, _) = bob_client
-            .join_group(None, &commit_output.welcome_messages[0])
+            .join_group(None, &commit_output.welcome_messages[0], None)
             .await
             .unwrap();
         // This deletes the key package used to join the group.
@@ -3077,7 +3082,7 @@ mod tests {
 
         // Bob cannot join Carla's group.
         let bob_group = bob_client
-            .join_group(None, &commit_output.welcome_messages[0])
+            .join_group(None, &commit_output.welcome_messages[0], None)
             .await
             .map(|_| ());
         assert_matches!(bob_group, Err(MlsError::WelcomeKeyPackageNotFound));
@@ -3108,7 +3113,7 @@ mod tests {
 
         // Bob joins group.
         let (mut bob_group, _) = bob_client
-            .join_group(None, &commit_output.welcome_messages[0])
+            .join_group(None, &commit_output.welcome_messages[0], None)
             .await?;
         // This no longer deletes the key package
         bob_group.write_to_storage()?;
@@ -3123,7 +3128,7 @@ mod tests {
 
         // Bob can join Carla's group.
         bob_client
-            .join_group(None, &commit_output.welcome_messages[0])
+            .join_group(None, &commit_output.welcome_messages[0], None)
             .await?;
 
         Ok(())
@@ -3710,10 +3715,10 @@ mod tests {
 
         let welcome = &welcome[0];
 
-        let (mut bob_sub_group, _) = bob.join_subgroup(welcome, None).await.unwrap();
+        let (mut bob_sub_group, _) = bob.join_subgroup(welcome, None, None).await.unwrap();
 
         // Carol can't join
-        let res = carol.join_subgroup(welcome, None).await.map(|_| ());
+        let res = carol.join_subgroup(welcome, None, None).await.map(|_| ());
         assert_matches!(res, Err(_));
 
         // Alice and Bob can still talk
@@ -4245,7 +4250,7 @@ mod tests {
             .unwrap();
 
         let (mut bob, _) = bob
-            .join_group(None, &commit.welcome_messages[0])
+            .join_group(None, &commit.welcome_messages[0], None)
             .await
             .unwrap();
 
@@ -4684,7 +4689,7 @@ mod tests {
             .await
             .unwrap();
 
-        bob.join_group(None, &commit.welcome_messages[0])
+        bob.join_group(None, &commit.welcome_messages[0], None)
             .await
             .unwrap();
     }
@@ -4766,7 +4771,7 @@ mod tests {
         alice.apply_pending_commit().await.unwrap();
 
         let mut bob = bob_client
-            .join_group(None, &commit.welcome_messages[0])
+            .join_group(None, &commit.welcome_messages[0], None)
             .await
             .unwrap()
             .0;
@@ -4785,13 +4790,13 @@ mod tests {
             .unwrap();
 
         let mut carol = carol_client
-            .join_group(None, &commit.welcome_messages[0])
+            .join_group(None, &commit.welcome_messages[0], None)
             .await
             .unwrap()
             .0;
 
         let mut dave = dave_client
-            .join_group(None, &commit.welcome_messages[0])
+            .join_group(None, &commit.welcome_messages[0], None)
             .await
             .unwrap()
             .0;
@@ -4906,7 +4911,7 @@ mod tests {
             .unwrap();
 
         let mut carol = carol_client
-            .join_group(None, &commit.welcome_messages[0])
+            .join_group(None, &commit.welcome_messages[0], None)
             .await
             .unwrap()
             .0;
@@ -5015,7 +5020,7 @@ mod tests {
             .await
             .unwrap();
         let mut carol = carol_client
-            .join_group(None, &commit.welcome_messages[0])
+            .join_group(None, &commit.welcome_messages[0], None)
             .await
             .unwrap()
             .0;
@@ -5078,7 +5083,7 @@ mod tests {
             .await
             .unwrap();
         let mut carol = carol_client
-            .join_group(None, &commit.welcome_messages[0])
+            .join_group(None, &commit.welcome_messages[0], None)
             .await
             .unwrap()
             .0;
@@ -5179,7 +5184,7 @@ mod tests {
             .await
             .unwrap();
         let carol = carol_client
-            .join_group(None, &commit.welcome_messages[0])
+            .join_group(None, &commit.welcome_messages[0], None)
             .await
             .unwrap()
             .0;
@@ -5253,7 +5258,7 @@ mod tests {
             .await
             .unwrap();
         let mut carol = carol_client
-            .join_group(None, &commit.welcome_messages[0])
+            .join_group(None, &commit.welcome_messages[0], None)
             .await
             .unwrap()
             .0;
