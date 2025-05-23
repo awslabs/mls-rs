@@ -193,7 +193,7 @@ async fn test_create(
     alice_group.apply_pending_commit().await.unwrap();
 
     // Bob receives the welcome message and joins the group
-    let (bob_group, _) = bob.join_group(None, welcome).await.unwrap();
+    let (bob_group, _) = bob.join_group(None, welcome, None).await.unwrap();
 
     assert!(Group::equal_group_state(&alice_group, &bob_group));
 }
@@ -634,7 +634,7 @@ async fn reinit_works() {
 
     alice_group.apply_pending_commit().await.unwrap();
 
-    let (mut bob_group, _) = bob1.join_group(None, welcome).await.unwrap();
+    let (mut bob_group, _) = bob1.join_group(None, welcome, None).await.unwrap();
 
     // Alice proposes reinit
     let reinit_proposal_message = alice_group
@@ -739,7 +739,7 @@ async fn reinit_works() {
         .unwrap();
 
     carol
-        .join_group(None, &commit_output.welcome_messages[0])
+        .join_group(None, &commit_output.welcome_messages[0], None)
         .await
         .unwrap();
 }
