@@ -434,7 +434,7 @@ impl Client {
         let ratchet_tree = ratchet_tree.map(TryInto::try_into).transpose()?;
         let (group, new_member_info) = self
             .inner
-            .join_group(ratchet_tree, &welcome_message.inner)
+            .join_group(ratchet_tree, &welcome_message.inner, None)
             .await?;
 
         let group = Arc::new(Group {

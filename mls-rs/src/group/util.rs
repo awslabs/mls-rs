@@ -15,6 +15,7 @@ use crate::{
     key_package::KeyPackageGeneration,
     protocol_version::ProtocolVersion,
     signer::Signable,
+    time::MlsTime,
     tree_kem::{node::LeafIndex, tree_validator::TreeValidator, TreeKemPublic},
     CipherSuiteProvider, CryptoProvider,
 };
@@ -83,8 +84,9 @@ pub(crate) async fn validate_tree_and_info_joiner<C: CipherSuiteProvider, I: Ide
     tree: Option<ExportedTree<'_>>,
     id_provider: &I,
     cs: &C,
+    maybe_time: Option<MlsTime>,
 ) -> Result<TreeKemPublic, MlsError> {
-    let public_tree = validate_tree_joiner(group_info, tree, id_provider, cs).await?;
+    let public_tree = validate_tree_joiner(group_info, tree, id_provider, cs, maybe_time).await?;
 
     let signer = &public_tree
         .get_leaf_node(group_info.signer)?
@@ -101,6 +103,7 @@ pub(crate) async fn validate_tree_joiner<C: CipherSuiteProvider, I: IdentityProv
     tree: Option<ExportedTree<'_>>,
     id_provider: &I,
     cs: &C,
+    maybe_time: Option<MlsTime>,
 ) -> Result<TreeKemPublic, MlsError> {
     let tree = match group_info.extensions.get_as::<RatchetTreeExt>()? {
         Some(ext) => ext.tree_data,
@@ -114,7 +117,7 @@ pub(crate) async fn validate_tree_joiner<C: CipherSuiteProvider, I: IdentityProv
 
     // Verify the integrity of the ratchet tree
     TreeValidator::new(cs, context, id_provider)
-        .validate(&mut tree)
+        .validate(&mut tree, maybe_time)
         .await?;
 
     Ok(tree)

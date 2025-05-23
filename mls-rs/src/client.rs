@@ -577,16 +577,19 @@ where
     /// be exported from a group using the
     /// [export tree function](crate::group::Group::export_tree).
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     pub async fn join_group(
         &self,
         tree_data: Option<ExportedTree<'_>>,
         welcome_message: &MlsMessage,
+        maybe_time: Option<MlsTime>,
     ) -> Result<(Group<C>, NewMemberInfo), MlsError> {
         Group::join(
             welcome_message,
             tree_data,
             self.config.clone(),
             self.signer()?.clone(),
+            maybe_time,
         )
         .await
     }
@@ -774,6 +777,7 @@ where
             tree_data,
             &self.config.identity_provider(),
             &cipher_suite_provider,
+            maybe_now_time,
         )
         .await?;
 

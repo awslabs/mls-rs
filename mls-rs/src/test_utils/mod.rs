@@ -159,7 +159,7 @@ pub async fn get_test_groups<C: CryptoProvider + Clone>(
 
     for client in &receiver_clients {
         let (test_client, _info) = client
-            .join_group(Some(tree_data.clone()), &welcome[0])
+            .join_group(Some(tree_data.clone()), &welcome[0], None)
             .await
             .unwrap();
 

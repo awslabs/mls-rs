@@ -113,6 +113,7 @@ impl TestGroup {
             ratchet_tree,
             new_client.config.clone(),
             new_client.signer.clone().unwrap(),
+            None,
         )
         .await?;
 
@@ -398,7 +399,7 @@ pub(crate) async fn get_test_groups_with_features(
 
         groups.push(
             client
-                .join_group(None, &commit_output.welcome_messages[0])
+                .join_group(None, &commit_output.welcome_messages[0], None)
                 .await
                 .unwrap()
                 .0,

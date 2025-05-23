@@ -81,6 +81,7 @@ where
         &self,
         welcome: &MlsMessage,
         tree_data: Option<ExportedTree<'_>>,
+        maybe_time: Option<MlsTime>,
     ) -> Result<(Group<C>, NewMemberInfo), MlsError> {
         let expected_new_group_prams = ResumptionGroupParameters {
             group_id: &[],
@@ -97,6 +98,7 @@ where
             expected_new_group_prams,
             false,
             self.resumption_psk_input(ResumptionPSKUsage::Branch)?,
+            maybe_time,
         )
         .await
     }
@@ -219,6 +221,7 @@ impl<C: ClientConfig + Clone> ReinitClient<C> {
         self,
         welcome: &MlsMessage,
         tree_data: Option<ExportedTree<'_>>,
+        maybe_time: Option<MlsTime>,
     ) -> Result<(Group<C>, NewMemberInfo), MlsError> {
         let reinit = self.reinit;
 
@@ -238,6 +241,7 @@ impl<C: ClientConfig + Clone> ReinitClient<C> {
             expected_group_params,
             true,
             self.psk_input,
+            maybe_time,
         )
         .await
     }
@@ -297,11 +301,13 @@ async fn resumption_join_group<C: ClientConfig + Clone>(
     expected_new_group_params: ResumptionGroupParameters<'_>,
     verify_group_id: bool,
     psk_input: PskSecretInput,
+    maybe_time: Option<MlsTime>,
 ) -> Result<(Group<C>, NewMemberInfo), MlsError> {
     let psk_input = Some(psk_input);
 
     let (group, new_member_info) =
-        Group::<C>::from_welcome_message(welcome, tree_data, config, signer, psk_input).await?;
+        Group::<C>::from_welcome_message(welcome, tree_data, config, signer, psk_input, maybe_time)
+            .await?;
 
     if group.protocol_version() != expected_new_group_params.version {
         Err(MlsError::ProtocolVersionMismatch)

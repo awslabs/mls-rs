@@ -1120,7 +1120,10 @@ mod tests {
             .welcome_messages
             .remove(0);
 
-        let (_, context) = bob_client.join_group(None, &welcome_message).await.unwrap();
+        let (_, context) = bob_client
+            .join_group(None, &welcome_message, None)
+            .await
+            .unwrap();
 
         assert_eq!(
             context
@@ -1349,7 +1352,7 @@ mod tests {
                 .find(|w| w.welcome_key_package_references().contains(&&kp_ref))
                 .unwrap();
 
-            client.join_group(None, welcome).await.unwrap();
+            client.join_group(None, welcome, None).await.unwrap();
 
             assert_eq!(welcome.clone().into_welcome().unwrap().secrets.len(), 1);
         }
