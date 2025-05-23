@@ -80,12 +80,14 @@ where
         &self,
         group_info: MlsMessage,
         tree_data: Option<ExportedTree<'_>>,
+        maybe_time: Option<MlsTime>,
     ) -> Result<ExternalGroup<C>, MlsError> {
         ExternalGroup::join(
             self.config.clone(),
             self.signing_data.clone(),
             group_info,
             tree_data,
+            maybe_time,
         )
         .await
     }
