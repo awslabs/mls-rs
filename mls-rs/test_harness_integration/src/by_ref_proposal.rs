@@ -261,7 +261,7 @@ pub(crate) mod inner {
 
             let mut server = ext_client
                 .ext_client
-                .observe_group(group_info, get_tree(&request.ratchet_tree)?)
+                .observe_group(group_info, get_tree(&request.ratchet_tree)?, None)
                 .map_err(abort)?;
 
             let proposal = request
