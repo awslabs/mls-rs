@@ -3,13 +3,17 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use core::time::Duration;
+use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::ffi_type)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, MlsSize, MlsEncode, MlsDecode,
+)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(transparent)]
 pub struct MlsTime {
     seconds: u64,
@@ -26,6 +30,30 @@ impl MlsTime {
     /// Number of seconds since the unix epoch.
     pub fn seconds_since_epoch(&self) -> u64 {
         self.seconds
+    }
+}
+
+impl core::ops::Sub<MlsTime> for MlsTime {
+    type Output = Duration;
+
+    fn sub(self, rhs: Self) -> Duration {
+        Duration::from_secs(self.seconds - rhs.seconds)
+    }
+}
+
+impl core::ops::Sub<Duration> for MlsTime {
+    type Output = MlsTime;
+
+    fn sub(self, rhs: Duration) -> MlsTime {
+        MlsTime::from(self.seconds - rhs.as_secs())
+    }
+}
+
+impl core::ops::Add<Duration> for MlsTime {
+    type Output = MlsTime;
+
+    fn add(self, rhs: Duration) -> MlsTime {
+        MlsTime::from(self.seconds + rhs.as_secs())
     }
 }
 

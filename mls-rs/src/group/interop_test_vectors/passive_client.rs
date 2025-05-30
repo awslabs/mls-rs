@@ -33,10 +33,12 @@ use crate::{
 
 const VERSION: ProtocolVersion = ProtocolVersion::MLS_10;
 
-const ETERNAL_LIFETIME: Lifetime = Lifetime {
-    not_before: 0,
-    not_after: u64::MAX,
-};
+fn eternal_lifetime() -> Lifetime {
+    Lifetime {
+        not_before: MlsTime::from(0),
+        not_after: MlsTime::from(u64::MAX),
+    }
+}
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Default, Clone)]
 pub struct TestCase {
@@ -245,8 +247,8 @@ async fn invite_passive_client<P: CipherSuiteProvider>(
         .crypto_provider(crypto_provider)
         .identity_provider(BasicIdentityProvider::new())
         .key_package_repo(key_package_repo.clone())
-        .key_package_lifetime(ETERNAL_LIFETIME.not_after - ETERNAL_LIFETIME.not_before)
-        .key_package_not_before(ETERNAL_LIFETIME.not_before)
+        .key_package_lifetime(eternal_lifetime().not_after - eternal_lifetime().not_before)
+        .key_package_not_before(eternal_lifetime().not_before)
         .signing_identity(identity.clone(), secret_key.clone(), cs.cipher_suite())
         .build();
 
@@ -488,7 +490,7 @@ async fn create_key_package(cs: CipherSuite) -> MlsMessage {
         None,
         false,
         &TestCryptoProvider::new(),
-        Some(ETERNAL_LIFETIME),
+        Some(eternal_lifetime()),
     )
     .await;
 
@@ -556,9 +558,16 @@ pub async fn generate_passive_client_random_tests() -> Vec<TestCase> {
             continue;
         };
 
-        let creator =
-            generate_basic_client(cs, VERSION, 0, None, false, &crypto, Some(ETERNAL_LIFETIME))
-                .await;
+        let creator = generate_basic_client(
+            cs,
+            VERSION,
+            0,
+            None,
+            false,
+            &crypto,
+            Some(eternal_lifetime()),
+        )
+        .await;
 
         let creator_group = creator
             .create_group(Default::default(), Default::default())
@@ -578,7 +587,7 @@ pub async fn generate_passive_client_random_tests() -> Vec<TestCase> {
                     None,
                     false,
                     &crypto,
-                    Some(ETERNAL_LIFETIME),
+                    Some(eternal_lifetime()),
                 )
                 .await,
             )
@@ -625,7 +634,7 @@ pub async fn generate_passive_client_random_tests() -> Vec<TestCase> {
                         None,
                         false,
                         &crypto,
-                        Some(ETERNAL_LIFETIME),
+                        Some(eternal_lifetime()),
                     )
                     .await,
                 );
