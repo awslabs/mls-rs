@@ -25,7 +25,7 @@
 ///
 use assert_matches::assert_matches;
 use mls_rs::{
-    client_builder::{MlsConfig, PaddingMode},
+    client_builder::{GenerationAuthMode, MlsConfig, PaddingMode},
     error::MlsError,
     group::{
         proposal::{MlsCustomProposal, Proposal},
@@ -178,7 +178,11 @@ impl MlsRules for CustomMlsRules {
         _: &Roster,
         _: &GroupContext,
     ) -> Result<EncryptionOptions, Self::Error> {
-        Ok(EncryptionOptions::new(false, PaddingMode::None))
+        Ok(EncryptionOptions::new(
+            false,
+            PaddingMode::None,
+            GenerationAuthMode::None,
+        ))
     }
 }
 

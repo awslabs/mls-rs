@@ -11,6 +11,7 @@ use self::{
 use super::{
     epoch::EpochSecrets,
     framing::{ContentType, FramedContent, Sender, WireFormat},
+    generation_authentication::GenerationAuthMode,
     message_signature::AuthenticatedContent,
     padding::PaddingMode,
     secret_tree::{KeyType, MessageKeyData},
@@ -100,6 +101,7 @@ where
         &mut self,
         auth_content: AuthenticatedContent,
         padding: PaddingMode,
+        generation_auth: GenerationAuthMode,
     ) -> Result<PrivateMessage, MlsError> {
         if Sender::Member(*self.group_state.self_index()) != auth_content.content.sender {
             return Err(MlsError::InvalidSender);
@@ -145,6 +147,12 @@ where
 
         let key_data = self.next_encryption_key(key_type).await?;
         let generation = key_data.generation;
+
+        // Depending on the GenerationAuthMode, verify the key generation obtained from
+        // the ratchet matches the key generation prefix in `authenticated_data`
+        if content_type == ContentType::Application {
+            generation_auth.verify_generation(generation, &authenticated_data)?;
+        }
 
         let ciphertext = MessageKey::new(key_data)
             .encrypt(
@@ -195,6 +203,7 @@ where
     pub async fn open(
         &mut self,
         ciphertext: &PrivateMessage,
+        generation_auth: GenerationAuthMode,
     ) -> Result<AuthenticatedContent, MlsError> {
         // Decrypt the sender data with the derived sender_key and sender_nonce from the message
         // epoch's key schedule
@@ -217,6 +226,13 @@ where
 
         if self.group_state.self_index() == sender_data.sender {
             return Err(MlsError::CantProcessMessageFromSelf);
+        }
+
+        // Depending on the GenerationAuthMode, verify the key generation obtained from
+        // the ratchet matches the key generation prefix in `authenticated_data`
+        if ciphertext.content_type == ContentType::Application {
+            generation_auth
+                .verify_generation(sender_data.generation, &ciphertext.authenticated_data)?;
         }
 
         // Grab a decryption key from the message epoch's key schedule
@@ -273,6 +289,7 @@ mod test {
         },
         group::{
             framing::{ApplicationData, Content, Sender, WireFormat},
+            generation_authentication::GenerationAuthMode,
             message_signature::AuthenticatedContent,
             padding::PaddingMode,
             test_utils::{random_bytes, test_group, TestGroup},
@@ -298,10 +315,15 @@ mod test {
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn test_data(cipher_suite: CipherSuite) -> TestData {
+    async fn test_data(cipher_suite: CipherSuite, generation_auth: GenerationAuthMode) -> TestData {
         let provider = test_cipher_suite_provider(cipher_suite);
 
         let group = test_group(TEST_PROTOCOL_VERSION, cipher_suite).await;
+
+        let authenticated_data = match generation_auth {
+            GenerationAuthMode::None => vec![],
+            GenerationAuthMode::Plaintext => 0u32.to_be_bytes().to_vec(),
+        };
 
         let content = AuthenticatedContent::new_signed(
             &provider,
@@ -310,7 +332,7 @@ mod test {
             Content::Application(ApplicationData::from(b"test".to_vec())),
             &group.signer,
             WireFormat::PrivateMessage,
-            vec![],
+            authenticated_data,
         )
         .await
         .unwrap();
@@ -326,46 +348,64 @@ mod test {
                 PaddingMode::StepFunction,
                 PaddingMode::Padme,
             ] {
-                let mut test_data = test_data(cipher_suite).await;
-                let mut receiver_group = test_data.group.clone();
+                for generation_auth in [GenerationAuthMode::None, GenerationAuthMode::Plaintext] {
+                    let mut test_data = test_data(cipher_suite, generation_auth).await;
+                    let mut receiver_group = test_data.group.clone();
 
-                let mut ciphertext_processor = test_processor(&mut test_data.group, cipher_suite);
+                    let mut ciphertext_processor =
+                        test_processor(&mut test_data.group, cipher_suite);
 
-                let ciphertext = ciphertext_processor
-                    .seal(test_data.content.clone(), padding)
-                    .await
-                    .unwrap();
+                    let ciphertext = ciphertext_processor
+                        .seal(test_data.content.clone(), padding, generation_auth)
+                        .await
+                        .unwrap();
 
-                receiver_group.private_tree.self_index = LeafIndex::new(1);
+                    receiver_group.private_tree.self_index = LeafIndex::new(1);
 
-                let mut receiver_processor = test_processor(&mut receiver_group, cipher_suite);
+                    let mut receiver_processor = test_processor(&mut receiver_group, cipher_suite);
 
-                let decrypted = receiver_processor.open(&ciphertext).await.unwrap();
+                    let decrypted = receiver_processor
+                        .open(&ciphertext, generation_auth)
+                        .await
+                        .unwrap();
 
-                assert_eq!(decrypted, test_data.content);
+                    assert_eq!(decrypted, test_data.content);
+                }
             }
         }
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_padding_use() {
-        let mut test_data = test_data(TEST_CIPHER_SUITE).await;
+        let mut test_data = test_data(TEST_CIPHER_SUITE, GenerationAuthMode::None).await;
         let mut ciphertext_processor = test_processor(&mut test_data.group, TEST_CIPHER_SUITE);
 
         let ciphertext_step = ciphertext_processor
-            .seal(test_data.content.clone(), PaddingMode::StepFunction)
+            .seal(
+                test_data.content.clone(),
+                PaddingMode::StepFunction,
+                GenerationAuthMode::None,
+            )
             .await
             .unwrap();
 
         let ciphertext_no_pad = ciphertext_processor
-            .seal(test_data.content.clone(), PaddingMode::None)
+            .seal(
+                test_data.content.clone(),
+                PaddingMode::None,
+                GenerationAuthMode::None,
+            )
             .await
             .unwrap();
 
         assert!(ciphertext_step.ciphertext.len() > ciphertext_no_pad.ciphertext.len());
 
         let ciphertext_padme = ciphertext_processor
-            .seal(test_data.content.clone(), PaddingMode::Padme)
+            .seal(
+                test_data.content.clone(),
+                PaddingMode::Padme,
+                GenerationAuthMode::None,
+            )
             .await
             .unwrap();
 
@@ -374,13 +414,17 @@ mod test {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_invalid_sender() {
-        let mut test_data = test_data(TEST_CIPHER_SUITE).await;
+        let mut test_data = test_data(TEST_CIPHER_SUITE, GenerationAuthMode::None).await;
         test_data.content.content.sender = Sender::Member(3);
 
         let mut ciphertext_processor = test_processor(&mut test_data.group, TEST_CIPHER_SUITE);
 
         let res = ciphertext_processor
-            .seal(test_data.content, PaddingMode::None)
+            .seal(
+                test_data.content,
+                PaddingMode::None,
+                GenerationAuthMode::None,
+            )
             .await;
 
         assert_matches!(res, Err(MlsError::InvalidSender))
@@ -388,23 +432,29 @@ mod test {
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_cant_process_from_self() {
-        let mut test_data = test_data(TEST_CIPHER_SUITE).await;
+        let mut test_data = test_data(TEST_CIPHER_SUITE, GenerationAuthMode::None).await;
 
         let mut ciphertext_processor = test_processor(&mut test_data.group, TEST_CIPHER_SUITE);
 
         let ciphertext = ciphertext_processor
-            .seal(test_data.content, PaddingMode::None)
+            .seal(
+                test_data.content,
+                PaddingMode::None,
+                GenerationAuthMode::None,
+            )
             .await
             .unwrap();
 
-        let res = ciphertext_processor.open(&ciphertext).await;
+        let res = ciphertext_processor
+            .open(&ciphertext, GenerationAuthMode::None)
+            .await;
 
         assert_matches!(res, Err(MlsError::CantProcessMessageFromSelf))
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_decryption_error() {
-        let mut test_data = test_data(TEST_CIPHER_SUITE).await;
+        let mut test_data = test_data(TEST_CIPHER_SUITE, GenerationAuthMode::None).await;
         let mut receiver_group = test_data.group.clone();
         let mut ciphertext_processor = test_processor(&mut test_data.group, TEST_CIPHER_SUITE);
 
@@ -414,14 +464,16 @@ mod test {
             PaddingMode::Padme,
         ] {
             let mut ciphertext = ciphertext_processor
-                .seal(test_data.content.clone(), padding)
+                .seal(test_data.content.clone(), padding, GenerationAuthMode::None)
                 .await
                 .unwrap();
 
             ciphertext.ciphertext = random_bytes(ciphertext.ciphertext.len());
             receiver_group.private_tree.self_index = LeafIndex::new(1);
 
-            let res = ciphertext_processor.open(&ciphertext).await;
+            let res = ciphertext_processor
+                .open(&ciphertext, GenerationAuthMode::None)
+                .await;
 
             assert!(res.is_err());
         }

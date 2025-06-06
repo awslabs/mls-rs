@@ -44,6 +44,8 @@ use crate::crypto::{HpkePublicKey, HpkeSecretKey};
 
 use crate::extension::ExternalPubExt;
 
+#[cfg(feature = "private_message")]
+use self::generation_authentication::GenerationAuthMode;
 use self::message_hash::MessageHash;
 #[cfg(feature = "private_message")]
 use self::mls_rules::{EncryptionOptions, MlsRules};
@@ -116,6 +118,8 @@ pub mod component_operation;
 pub(crate) mod confirmation_tag;
 pub(crate) mod epoch;
 pub(crate) mod framing;
+#[cfg(feature = "private_message")]
+pub(crate) mod generation_authentication;
 mod group_info;
 pub(crate) mod key_schedule;
 mod membership_tag;
@@ -1368,10 +1372,13 @@ where
         auth_content: AuthenticatedContent,
     ) -> Result<PrivateMessage, MlsError> {
         let padding_mode = self.encryption_options()?.padding_mode;
+        let generation_auth_mode = self.encryption_options()?.generation_auth_mode;
 
         let mut encryptor = CiphertextProcessor::new(self, self.cipher_suite_provider.clone());
 
-        encryptor.seal(auth_content, padding_mode).await
+        encryptor
+            .seal(auth_content, padding_mode, generation_auth_mode)
+            .await
     }
 
     /// Encrypt an application message using the current group state.
@@ -1392,6 +1399,18 @@ where
             return Err(MlsError::CommitRequired);
         }
 
+        // Depending on the mode, authenticate key generation by prepending it to
+        // `authenticated_data`. See GenerationAuthMode for more details.
+        let new_authenticated_data = self
+            .encryption_options()?
+            .generation_auth_mode
+            .prepend_generation(
+                self,
+                &self.cipher_suite_provider.clone(),
+                ContentType::Application,
+                &mut authenticated_data.clone(),
+            )?;
+
         let auth_content = AuthenticatedContent::new_signed(
             &self.cipher_suite_provider,
             self.context(),
@@ -1399,7 +1418,7 @@ where
             Content::Application(message.to_vec().into()),
             &self.signer,
             WireFormat::PrivateMessage,
-            authenticated_data,
+            new_authenticated_data,
         )
         .await?;
 
@@ -1413,10 +1432,11 @@ where
         message: &PrivateMessage,
     ) -> Result<AuthenticatedContent, MlsError> {
         let epoch_id = message.epoch;
+        let generation_auth_mode = self.encryption_options()?.generation_auth_mode;
 
         let auth_content = if epoch_id == self.context().epoch {
             let content = CiphertextProcessor::new(self, self.cipher_suite_provider.clone())
-                .open(message)
+                .open(message, generation_auth_mode)
                 .await?;
 
             verify_auth_content_signature(
@@ -1440,7 +1460,7 @@ where
                     .ok_or(MlsError::EpochNotFound)?;
 
                 let content = CiphertextProcessor::new(epoch, self.cipher_suite_provider.clone())
-                    .open(message)
+                    .open(message, GenerationAuthMode::None)
                     .await?;
 
                 verify_auth_content_signature(
@@ -3304,26 +3324,29 @@ mod tests {
         // This test requires a cipher suite whose signatures are not variable in length.
         let cipher_suite = CipherSuite::CURVE25519_AES128;
 
-        let mut test_group = test_group_custom_config(protocol_version, cipher_suite, |b| {
-            b.mls_rules(
-                DefaultMlsRules::default()
-                    .with_encryption_options(EncryptionOptions::new(true, PaddingMode::None)),
-            )
-        })
-        .await;
+        let mut test_group =
+            test_group_custom_config(protocol_version, cipher_suite, |b| {
+                b.mls_rules(DefaultMlsRules::default().with_encryption_options(
+                    EncryptionOptions::new(true, PaddingMode::None, GenerationAuthMode::None),
+                ))
+            })
+            .await;
 
         let without_padding = test_group
             .encrypt_application_message(&random_bytes(150), vec![])
             .await
             .unwrap();
 
-        let mut test_group =
-            test_group_custom_config(protocol_version, cipher_suite, |b| {
-                b.mls_rules(DefaultMlsRules::default().with_encryption_options(
-                    EncryptionOptions::new(true, PaddingMode::StepFunction),
-                ))
-            })
-            .await;
+        let mut test_group = test_group_custom_config(protocol_version, cipher_suite, |b| {
+            b.mls_rules(
+                DefaultMlsRules::default().with_encryption_options(EncryptionOptions::new(
+                    true,
+                    PaddingMode::StepFunction,
+                    GenerationAuthMode::None,
+                )),
+            )
+        })
+        .await;
 
         let with_step_function_padding = test_group
             .encrypt_application_message(&random_bytes(150), vec![])
@@ -3332,13 +3355,13 @@ mod tests {
 
         assert!(with_step_function_padding.mls_encoded_len() > without_padding.mls_encoded_len());
 
-        let mut test_group = test_group_custom_config(protocol_version, cipher_suite, |b| {
-            b.mls_rules(
-                DefaultMlsRules::default()
-                    .with_encryption_options(EncryptionOptions::new(true, PaddingMode::Padme)),
-            )
-        })
-        .await;
+        let mut test_group =
+            test_group_custom_config(protocol_version, cipher_suite, |b| {
+                b.mls_rules(DefaultMlsRules::default().with_encryption_options(
+                    EncryptionOptions::new(true, PaddingMode::Padme, GenerationAuthMode::None),
+                ))
+            })
+            .await;
 
         let with_padme_padding = test_group
             .encrypt_application_message(&random_bytes(150), vec![])
@@ -3346,6 +3369,114 @@ mod tests {
             .unwrap();
 
         assert!(with_padme_padding.mls_encoded_len() > without_padding.mls_encoded_len());
+    }
+
+    #[cfg(all(not(target_arch = "wasm32"), feature = "private_message"))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn generation_authentication_plaintext() {
+        for padding in [
+            PaddingMode::None,
+            PaddingMode::StepFunction,
+            PaddingMode::Padme,
+        ] {
+            let rules = DefaultMlsRules::default().with_encryption_options(EncryptionOptions::new(
+                true,
+                padding,
+                GenerationAuthMode::Plaintext,
+            ));
+            let mut alice =
+                test_group_custom_config(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, |b| {
+                    b.mls_rules(rules.clone())
+                })
+                .await;
+            let (mut bob, _) = alice
+                .join_with_custom_config("bob", false, |c| c.0.mls_rules = rules.clone())
+                .await
+                .unwrap();
+
+            let alice_plaintext = b"I'm Alice";
+            let alice_ad = b"things Alice wants to authenticate";
+            let bob_plaintext = b"I'm Bob";
+            let bob_empty_ad = b"";
+
+            for i in 0u32..10 {
+                let alice_ciphertext = alice
+                    .encrypt_application_message(alice_plaintext, alice_ad.to_vec())
+                    .await
+                    .unwrap();
+                let bob_ciphertext = bob
+                    .encrypt_application_message(bob_plaintext, bob_empty_ad.to_vec())
+                    .await
+                    .unwrap();
+
+                let alice_decrypted = alice
+                    .process_incoming_message(bob_ciphertext)
+                    .await
+                    .unwrap();
+                let bob_decrypted = bob
+                    .process_incoming_message(alice_ciphertext)
+                    .await
+                    .unwrap();
+
+                assert_matches!(
+                    alice_decrypted,
+                    ReceivedMessage::ApplicationMessage(ApplicationMessageDescription { authenticated_data, .. })
+                        if u32::from_be_bytes(authenticated_data[0..4].try_into().unwrap()) == i
+                );
+                assert_matches!(
+                    bob_decrypted,
+                    ReceivedMessage::ApplicationMessage(ApplicationMessageDescription { authenticated_data, .. })
+                        if u32::from_be_bytes(authenticated_data[0..4].try_into().unwrap()) == i
+                );
+            }
+        }
+    }
+
+    #[cfg(all(not(target_arch = "wasm32"), feature = "private_message"))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn generation_authentication_plaintext_errors() {
+        let mut alice_no_auth =
+            test_group_custom_config(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, |b| {
+                b.mls_rules(DefaultMlsRules::default().with_encryption_options(
+                    EncryptionOptions::new(true, PaddingMode::None, GenerationAuthMode::None),
+                ))
+            })
+            .await;
+        let (mut bob_plaintext_auth, _) = alice_no_auth
+            .join_with_custom_config("bob", false, |c| {
+                c.0.mls_rules = DefaultMlsRules::default().with_encryption_options(
+                    EncryptionOptions::new(true, PaddingMode::None, GenerationAuthMode::Plaintext),
+                )
+            })
+            .await
+            .unwrap();
+
+        let alice_ciphertext = alice_no_auth
+            .encrypt_application_message(
+                b"I'm Alice",
+                b"things Alice wants to authenticate".to_vec(),
+            )
+            .await
+            .unwrap();
+        let bob_err = bob_plaintext_auth
+            .process_incoming_message(alice_ciphertext)
+            .await;
+        assert_matches!(
+            bob_err,
+            Err(MlsError::GenerationMismatch {
+                auth_generation: _,
+                sender_data_generation: 0
+            })
+        );
+
+        let alice_ciphertext = alice_no_auth
+            .encrypt_application_message(b"I'm Alice", vec![])
+            .await
+            .unwrap();
+        let bob_err = bob_plaintext_auth
+            .process_incoming_message(alice_ciphertext)
+            .await;
+        assert_matches!(bob_err, Err(MlsError::MissingAuthGeneration));
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]

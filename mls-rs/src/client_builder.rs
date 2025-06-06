@@ -43,6 +43,9 @@ use mls_rs_provider_sqlite::{
 #[cfg(feature = "private_message")]
 pub use crate::group::padding::PaddingMode;
 
+#[cfg(feature = "private_message")]
+pub use crate::group::generation_authentication::GenerationAuthMode;
+
 /// Base client configuration type when instantiating `ClientBuilder`
 pub type BaseConfig = Config<
     InMemoryKeyPackageStorage,

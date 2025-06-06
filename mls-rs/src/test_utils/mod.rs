@@ -24,7 +24,10 @@ use crate::{
 };
 
 #[cfg(feature = "private_message")]
-use crate::group::{mls_rules::EncryptionOptions, padding::PaddingMode};
+use crate::group::{
+    generation_authentication::GenerationAuthMode, mls_rules::EncryptionOptions,
+    padding::PaddingMode,
+};
 
 use alloc::{vec, vec::Vec};
 
@@ -74,7 +77,11 @@ pub async fn generate_basic_client<C: CryptoProvider + Clone>(
 
     #[cfg(feature = "private_message")]
     let mls_rules = if encrypt_controls {
-        mls_rules.with_encryption_options(EncryptionOptions::new(true, PaddingMode::None))
+        mls_rules.with_encryption_options(EncryptionOptions::new(
+            true,
+            PaddingMode::None,
+            GenerationAuthMode::None,
+        ))
     } else {
         mls_rules
     };

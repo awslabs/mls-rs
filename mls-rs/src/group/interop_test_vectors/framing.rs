@@ -14,6 +14,7 @@ use crate::{
         confirmation_tag::ConfirmationTag,
         epoch::EpochSecrets,
         framing::{Content, WireFormat},
+        generation_authentication::GenerationAuthMode,
         message_processor::{EventOrContent, MessageProcessor},
         mls_rules::EncryptionOptions,
         padding::PaddingMode,
@@ -388,18 +389,21 @@ async fn make_group<P: CipherSuiteProvider>(
     control_encryption_enabled: bool,
     cs: &P,
 ) -> Group<TestClientConfig> {
-    let mut group =
-        test_group_custom_config(
-            TEST_PROTOCOL_VERSION,
-            test_case.context.cipher_suite.into(),
-            |b| {
-                b.mls_rules(DefaultMlsRules::default().with_encryption_options(
-                    EncryptionOptions::new(control_encryption_enabled, PaddingMode::None),
-                ))
-            },
-        )
-        .await
-        .group;
+    let mut group = test_group_custom_config(
+        TEST_PROTOCOL_VERSION,
+        test_case.context.cipher_suite.into(),
+        |b| {
+            b.mls_rules(
+                DefaultMlsRules::default().with_encryption_options(EncryptionOptions::new(
+                    control_encryption_enabled,
+                    PaddingMode::None,
+                    GenerationAuthMode::None,
+                )),
+            )
+        },
+    )
+    .await
+    .group;
 
     // Add a leaf for the sender. It will get index 1.
     let mut leaf = get_basic_test_node(cs.cipher_suite(), "leaf").await;
