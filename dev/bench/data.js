@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1746551302780,
+  "lastUpdate": 1749565504839,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -22775,6 +22775,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 130062,
             "range": "± 1383",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mgeisler@google.com",
+            "name": "Martin Geisler",
+            "username": "mgeisler"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "864e79474df126700983c0345c14a3eba05b64c0",
+          "message": "Add `From` and `TryFrom` for `MlsTime` (#281)\n\n* Add regular `From<Duration>` for `MlsTime`\n\nThis just aligns better with the existing `From<u64>` conversion.\n\n* Add `From<MlsTime>` for `Duration`\n\n* Add `TryFrom<SystemTime>` for `MlsTime`\n\n* Add `TryFrom<MlsTime>` for `SystemTime`",
+          "timestamp": "2025-06-10T10:20:50-04:00",
+          "tree_id": "2e4220b27143ab8e3ee4aa2dc8375f47d0c3e129",
+          "url": "https://github.com/awslabs/mls-rs/commit/864e79474df126700983c0345c14a3eba05b64c0"
+        },
+        "date": 1749565503616,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 528900,
+            "range": "± 10335",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 540453,
+            "range": "± 5452",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 600651,
+            "range": "± 7192",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1276990,
+            "range": "± 22474",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7489113,
+            "range": "± 67450",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2636424,
+            "range": "± 14342",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7065565,
+            "range": "± 100793",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13195993,
+            "range": "± 120012",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 767117,
+            "range": "± 45247",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 856331,
+            "range": "± 5324",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 980413,
+            "range": "± 3932",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 20295,
+            "range": "± 455",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 66346,
+            "range": "± 868",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 127914,
+            "range": "± 2116",
             "unit": "ns/iter"
           }
         ]
