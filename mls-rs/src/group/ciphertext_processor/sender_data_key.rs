@@ -237,7 +237,7 @@ mod tests {
             let reuse_guard = ReuseGuard::new(value.reuse_guard);
 
             Self {
-                sender: LeafIndex(value.sender),
+                sender: LeafIndex::unchecked(value.sender),
                 generation: value.generation,
                 reuse_guard,
             }

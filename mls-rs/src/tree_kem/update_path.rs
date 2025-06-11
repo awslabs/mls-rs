@@ -204,7 +204,7 @@ mod tests {
             &cipher_suite_provider,
             update_path.clone(),
             &state,
-            LeafIndex(0),
+            LeafIndex::unchecked(0),
             None,
             &state.group_context,
         )
@@ -229,7 +229,7 @@ mod tests {
             &cipher_suite_provider,
             update_path,
             &state,
-            LeafIndex(0),
+            LeafIndex::unchecked(0),
             None,
             &state.group_context,
         )
@@ -250,7 +250,7 @@ mod tests {
             &cipher_suite_provider,
             update_path,
             &state,
-            LeafIndex(0),
+            LeafIndex::unchecked(0),
             None,
             &state.group_context,
         )
@@ -268,7 +268,7 @@ mod tests {
         state
             .public_tree
             .nodes
-            .borrow_as_leaf_mut(LeafIndex(0))
+            .borrow_as_leaf_mut(LeafIndex::unchecked(0))
             .unwrap()
             .public_key = update_path.leaf_node.public_key.clone();
 
@@ -277,7 +277,7 @@ mod tests {
             &cipher_suite_provider,
             update_path,
             &state,
-            LeafIndex(0),
+            LeafIndex::unchecked(0),
             None,
             &state.group_context,
         )

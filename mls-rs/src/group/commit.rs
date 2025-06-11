@@ -895,7 +895,7 @@ where
             group_context: group_context.clone(),
             extensions,
             confirmation_tag: confirmation_tag.clone(), // The confirmation_tag from the MlsPlaintext object
-            signer: LeafIndex(self.current_member_index()),
+            signer: LeafIndex::try_from(self.current_member_index())?,
             signature: vec![],
         };
 

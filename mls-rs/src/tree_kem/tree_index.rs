@@ -319,7 +319,7 @@ mod tests {
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn get_test_data(index: LeafIndex) -> TestData {
         let cipher_suite = TEST_CIPHER_SUITE;
-        let leaf_node = get_basic_test_node(cipher_suite, &format!("foo{}", index.0)).await;
+        let leaf_node = get_basic_test_node(cipher_suite, &format!("foo{}", *index)).await;
 
         TestData { leaf_node, index }
     }
@@ -329,7 +329,7 @@ mod tests {
         let mut test_data = Vec::new();
 
         for i in 0..10 {
-            test_data.push(get_test_data(LeafIndex(i)).await);
+            test_data.push(get_test_data(LeafIndex::unchecked(i)).await);
         }
 
         let mut test_index = TreeIndex::new();
@@ -359,12 +359,12 @@ mod tests {
 
             assert_eq!(
                 test_index.credential_signature_key.get(&pub_key),
-                Some(&LeafIndex(i as u32))
+                Some(&LeafIndex::unchecked(i as u32))
             );
 
             assert_eq!(
                 test_index.hpke_key.get(&d.leaf_node.public_key),
-                Some(&LeafIndex(i as u32))
+                Some(&LeafIndex::unchecked(i as u32))
             );
         })
     }
@@ -446,7 +446,7 @@ mod tests {
         let test_proposal_id = ProposalType::new(42);
         let other_proposal_id = ProposalType::new(45);
 
-        let mut test_data_1 = get_test_data(LeafIndex(0)).await;
+        let mut test_data_1 = get_test_data(LeafIndex::unchecked(0)).await;
 
         test_data_1
             .leaf_node
@@ -454,7 +454,7 @@ mod tests {
             .proposals
             .push(test_proposal_id);
 
-        let mut test_data_2 = get_test_data(LeafIndex(1)).await;
+        let mut test_data_2 = get_test_data(LeafIndex::unchecked(1)).await;
 
         test_data_2
             .leaf_node

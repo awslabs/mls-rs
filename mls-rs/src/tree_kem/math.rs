@@ -147,10 +147,11 @@ pub fn leaf_lca_level(x: u32, y: u32) -> u32 {
 
 pub fn subtree(x: u32) -> (LeafIndex, LeafIndex) {
     let breadth = 1 << x.trailing_ones();
-    (
-        LeafIndex((x + 1 - breadth) >> 1),
-        LeafIndex(((x + breadth) >> 1) + 1),
-    )
+
+    let left = LeafIndex::from_node_index_unchecked(x + 1 - breadth);
+    let right = LeafIndex::from_node_index_unchecked(x + breadth).next_unchecked();
+
+    (left, right)
 }
 
 pub struct BfsIterTopDown {

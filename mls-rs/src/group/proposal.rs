@@ -129,14 +129,6 @@ impl RemoveProposal {
     }
 }
 
-impl From<u32> for RemoveProposal {
-    fn from(value: u32) -> Self {
-        RemoveProposal {
-            to_remove: LeafIndex(value),
-        }
-    }
-}
-
 #[cfg(feature = "psk")]
 #[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]

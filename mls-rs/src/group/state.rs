@@ -40,7 +40,9 @@ impl GroupState {
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl GroupState {
     pub fn member_at_index(&self, index: u32) -> Option<Member> {
-        let leaf_index = LeafIndex(index);
+        let Ok(leaf_index) = LeafIndex::try_from(index) else {
+            return None;
+        };
 
         self.public_tree
             .get_leaf_node(leaf_index)

@@ -336,21 +336,31 @@ pub(crate) mod test_utils {
             .unwrap();
 
         tree.nodes[1] = Some(test_parent_node(cipher_suite, vec![]).await);
-        tree.nodes[3] = Some(test_parent_node(cipher_suite, vec![LeafIndex(3)]).await);
+        tree.nodes[3] = Some(test_parent_node(cipher_suite, vec![LeafIndex::unchecked(3)]).await);
 
-        tree.nodes[7] =
-            Some(test_parent_node(cipher_suite, vec![LeafIndex(3), LeafIndex(6)]).await);
+        tree.nodes[7] = Some(
+            test_parent_node(
+                cipher_suite,
+                vec![LeafIndex::unchecked(3), LeafIndex::unchecked(6)],
+            )
+            .await,
+        );
 
-        tree.nodes[9] = Some(test_parent_node(cipher_suite, vec![LeafIndex(5)]).await);
+        tree.nodes[9] = Some(test_parent_node(cipher_suite, vec![LeafIndex::unchecked(5)]).await);
 
-        tree.nodes[11] =
-            Some(test_parent_node(cipher_suite, vec![LeafIndex(5), LeafIndex(6)]).await);
+        tree.nodes[11] = Some(
+            test_parent_node(
+                cipher_suite,
+                vec![LeafIndex::unchecked(5), LeafIndex::unchecked(6)],
+            )
+            .await,
+        );
 
-        tree.update_parent_hashes(LeafIndex(0), false, &cipher_suite_provider)
+        tree.update_parent_hashes(LeafIndex::unchecked(0), false, &cipher_suite_provider)
             .await
             .unwrap();
 
-        tree.update_parent_hashes(LeafIndex(4), false, &cipher_suite_provider)
+        tree.update_parent_hashes(LeafIndex::unchecked(4), false, &cipher_suite_provider)
             .await
             .unwrap();
 
@@ -374,12 +384,14 @@ mod tests {
         let cs = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let mut test_tree = TreeWithSigners::make_full_tree(8, &cs).await.tree;
 
-        *test_tree.nodes.borrow_as_leaf_mut(LeafIndex(0)).unwrap() =
-            get_basic_test_node(TEST_CIPHER_SUITE, "foo").await;
+        *test_tree
+            .nodes
+            .borrow_as_leaf_mut(LeafIndex::unchecked(0))
+            .unwrap() = get_basic_test_node(TEST_CIPHER_SUITE, "foo").await;
 
         let missing_parent_hash_res = test_tree
             .update_parent_hashes(
-                LeafIndex(0),
+                LeafIndex::unchecked(0),
                 true,
                 &test_cipher_suite_provider(TEST_CIPHER_SUITE),
             )
@@ -400,13 +412,13 @@ mod tests {
 
         test_tree
             .nodes
-            .borrow_as_leaf_mut(LeafIndex(0))
+            .borrow_as_leaf_mut(LeafIndex::unchecked(0))
             .unwrap()
             .leaf_node_source = LeafNodeSource::Commit(unexpected_parent_hash);
 
         let invalid_parent_hash_res = test_tree
             .update_parent_hashes(
-                LeafIndex(0),
+                LeafIndex::unchecked(0),
                 true,
                 &test_cipher_suite_provider(TEST_CIPHER_SUITE),
             )

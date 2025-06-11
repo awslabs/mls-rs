@@ -99,7 +99,7 @@ async fn tree_kem() {
 
         for leaf in test_case.leaves_private.iter() {
             // Construct the private ratchet tree
-            let mut tree_private = TreeKemPrivate::new(LeafIndex(leaf.index));
+            let mut tree_private = TreeKemPrivate::new(LeafIndex::unchecked(leaf.index));
 
             // Set and validate HPKE keys on direct path
             let path = tree.nodes.direct_copath(tree_private.self_index);

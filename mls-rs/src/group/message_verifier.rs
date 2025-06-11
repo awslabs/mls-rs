@@ -131,7 +131,7 @@ fn signing_identity_for_sender(
 ) -> Result<SignaturePublicKey, MlsError> {
     match sender {
         Sender::Member(leaf_index) => {
-            signing_identity_for_member(signature_keys_container, LeafIndex(*leaf_index))
+            signing_identity_for_member(signature_keys_container, LeafIndex::try_from(*leaf_index)?)
         }
         #[cfg(feature = "by_ref_proposal")]
         Sender::External(external_key_index) => {
@@ -155,7 +155,7 @@ fn signing_identity_for_member(
             .clone()), // TODO: We can probably get rid of this clone
         #[cfg(feature = "private_message")]
         SignaturePublicKeysContainer::List(list) => list
-            .get(leaf_index.0 as usize)
+            .get(*leaf_index as usize)
             .cloned()
             .flatten()
             .ok_or(MlsError::LeafNotFound(*leaf_index)),
@@ -509,7 +509,7 @@ mod tests {
 
         let message = test_new_member_proposal(key_pkg_gen, &signer, &test_group, |msg| {
             msg.content.content = Content::Proposal(Box::new(Proposal::Remove(RemoveProposal {
-                to_remove: LeafIndex(0),
+                to_remove: LeafIndex::unchecked(0),
             })))
         })
         .await;

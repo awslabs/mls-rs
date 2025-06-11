@@ -59,7 +59,7 @@ impl<'a> Roster<'a> {
     /// This index does correlate with indexes of users within [`ReceivedMessage`]
     /// content descriptions.
     pub fn member_with_index(&self, index: u32) -> Result<Member, MlsError> {
-        let index = LeafIndex(index);
+        let index = LeafIndex::try_from(index)?;
 
         self.public_tree
             .borrow_as_leaf(index)

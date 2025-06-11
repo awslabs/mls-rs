@@ -203,7 +203,7 @@ mod tests {
             let context = get_test_group_context(0x3456, cs.cipher_suite());
 
             let proposal = Proposal::Remove(RemoveProposal {
-                to_remove: LeafIndex(1),
+                to_remove: LeafIndex::unchecked(1),
             });
 
             let proposal = ProposalOrRef::Proposal(Box::new(proposal));

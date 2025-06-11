@@ -122,7 +122,7 @@ mod test {
         for (protocol_version, cipher_suite) in
             ProtocolVersion::all().flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
         {
-            let sender = LeafIndex(0);
+            let sender = LeafIndex::unchecked(0);
 
             let add = auth_content_from_proposal(
                 Proposal::Add(Box::new(AddProposal {
@@ -140,7 +140,7 @@ mod test {
 
             let remove = auth_content_from_proposal(
                 Proposal::Remove(RemoveProposal {
-                    to_remove: LeafIndex(1),
+                    to_remove: LeafIndex::unchecked(1),
                 }),
                 sender,
             );
