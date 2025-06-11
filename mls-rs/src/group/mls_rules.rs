@@ -6,7 +6,7 @@ use crate::group::{proposal_filter::ProposalBundle, Roster};
 
 #[cfg(feature = "private_message")]
 use crate::{
-    group::{generation_authentication::GenerationAuthMode, padding::PaddingMode, Sender},
+    group::{generation_authentication::GenerationAuth, padding::PaddingMode, Sender},
     WireFormat,
 };
 
@@ -108,7 +108,7 @@ pub struct EncryptionOptions {
     #[cfg(feature = "private_message")]
     pub padding_mode: PaddingMode,
     #[cfg(feature = "private_message")]
-    pub generation_auth_mode: GenerationAuthMode,
+    pub generation_auth: GenerationAuth,
 }
 
 #[cfg(feature = "private_message")]
@@ -116,12 +116,12 @@ impl EncryptionOptions {
     pub fn new(
         encrypt_control_messages: bool,
         padding_mode: PaddingMode,
-        generation_auth_mode: GenerationAuthMode,
+        generation_auth: GenerationAuth,
     ) -> Self {
         Self {
             encrypt_control_messages,
             padding_mode,
-            generation_auth_mode,
+            generation_auth,
         }
     }
 

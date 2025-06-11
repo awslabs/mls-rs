@@ -45,7 +45,6 @@ use crate::crypto::{HpkePublicKey, HpkeSecretKey};
 use crate::extension::ExternalPubExt;
 
 #[cfg(feature = "private_message")]
-use self::generation_authentication::GenerationAuthMode;
 use self::message_hash::MessageHash;
 #[cfg(feature = "private_message")]
 use self::mls_rules::{EncryptionOptions, MlsRules};
@@ -1372,12 +1371,12 @@ where
         auth_content: AuthenticatedContent,
     ) -> Result<PrivateMessage, MlsError> {
         let padding_mode = self.encryption_options()?.padding_mode;
-        let generation_auth_mode = self.encryption_options()?.generation_auth_mode;
+        let generation_auth = self.encryption_options()?.generation_auth;
 
         let mut encryptor = CiphertextProcessor::new(self, self.cipher_suite_provider.clone());
 
         encryptor
-            .seal(auth_content, padding_mode, generation_auth_mode)
+            .seal(auth_content, padding_mode, generation_auth)
             .await
     }
 
@@ -1400,15 +1399,16 @@ where
         }
 
         // Depending on the mode, authenticate key generation by prepending it to
-        // `authenticated_data`. See GenerationAuthMode for more details.
-        let new_authenticated_data = self
+        // `authenticated_data`.
+        let new_auth_data = self
             .encryption_options()?
-            .generation_auth_mode
-            .prepend_generation(
-                self,
-                &self.cipher_suite_provider.clone(),
+            .generation_auth
+            .prepend_to_auth_data(
+                &mut self.epoch_secrets.secret_tree,
+                &self.cipher_suite_provider,
+                crate::tree_kem::node::NodeIndex::from(self.private_tree.self_index),
                 ContentType::Application,
-                &mut authenticated_data.clone(),
+                authenticated_data,
             )?;
 
         let auth_content = AuthenticatedContent::new_signed(
@@ -1418,7 +1418,7 @@ where
             Content::Application(message.to_vec().into()),
             &self.signer,
             WireFormat::PrivateMessage,
-            new_authenticated_data,
+            new_auth_data,
         )
         .await?;
 
@@ -1432,11 +1432,11 @@ where
         message: &PrivateMessage,
     ) -> Result<AuthenticatedContent, MlsError> {
         let epoch_id = message.epoch;
-        let generation_auth_mode = self.encryption_options()?.generation_auth_mode;
+        let generation_auth = self.encryption_options()?.generation_auth;
 
         let auth_content = if epoch_id == self.context().epoch {
             let content = CiphertextProcessor::new(self, self.cipher_suite_provider.clone())
-                .open(message, generation_auth_mode)
+                .open(message, generation_auth)
                 .await?;
 
             verify_auth_content_signature(
@@ -1460,7 +1460,7 @@ where
                     .ok_or(MlsError::EpochNotFound)?;
 
                 let content = CiphertextProcessor::new(epoch, self.cipher_suite_provider.clone())
-                    .open(message, GenerationAuthMode::None)
+                    .open(message, generation_auth)
                     .await?;
 
                 verify_auth_content_signature(
@@ -2429,6 +2429,9 @@ mod tests {
     #[cfg(feature = "private_message")]
     use super::test_utils::test_member;
 
+    #[cfg(feature = "private_message")]
+    use crate::group::generation_authentication::GenerationAuth;
+
     use mls_rs_core::extension::MlsExtension;
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -3327,7 +3330,7 @@ mod tests {
         let mut test_group =
             test_group_custom_config(protocol_version, cipher_suite, |b| {
                 b.mls_rules(DefaultMlsRules::default().with_encryption_options(
-                    EncryptionOptions::new(true, PaddingMode::None, GenerationAuthMode::None),
+                    EncryptionOptions::new(true, PaddingMode::None, GenerationAuth::None),
                 ))
             })
             .await;
@@ -3337,16 +3340,13 @@ mod tests {
             .await
             .unwrap();
 
-        let mut test_group = test_group_custom_config(protocol_version, cipher_suite, |b| {
-            b.mls_rules(
-                DefaultMlsRules::default().with_encryption_options(EncryptionOptions::new(
-                    true,
-                    PaddingMode::StepFunction,
-                    GenerationAuthMode::None,
-                )),
-            )
-        })
-        .await;
+        let mut test_group =
+            test_group_custom_config(protocol_version, cipher_suite, |b| {
+                b.mls_rules(DefaultMlsRules::default().with_encryption_options(
+                    EncryptionOptions::new(true, PaddingMode::StepFunction, GenerationAuth::None),
+                ))
+            })
+            .await;
 
         let with_step_function_padding = test_group
             .encrypt_application_message(&random_bytes(150), vec![])
@@ -3358,7 +3358,7 @@ mod tests {
         let mut test_group =
             test_group_custom_config(protocol_version, cipher_suite, |b| {
                 b.mls_rules(DefaultMlsRules::default().with_encryption_options(
-                    EncryptionOptions::new(true, PaddingMode::Padme, GenerationAuthMode::None),
+                    EncryptionOptions::new(true, PaddingMode::Padme, GenerationAuth::None),
                 ))
             })
             .await;
@@ -3371,7 +3371,11 @@ mod tests {
         assert!(with_padme_padding.mls_encoded_len() > without_padding.mls_encoded_len());
     }
 
-    #[cfg(all(not(target_arch = "wasm32"), feature = "private_message"))]
+    #[cfg(all(
+        not(target_arch = "wasm32"),
+        feature = "private_message",
+        feature = "generation_authentication_in_plaintext"
+    ))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn generation_authentication_plaintext() {
         for padding in [
@@ -3382,7 +3386,7 @@ mod tests {
             let rules = DefaultMlsRules::default().with_encryption_options(EncryptionOptions::new(
                 true,
                 padding,
-                GenerationAuthMode::Plaintext,
+                GenerationAuth::Plaintext,
             ));
             let mut alice =
                 test_group_custom_config(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, |b| {
@@ -3422,30 +3426,37 @@ mod tests {
                     alice_decrypted,
                     ReceivedMessage::ApplicationMessage(ApplicationMessageDescription { authenticated_data, .. })
                         if u32::from_be_bytes(authenticated_data[0..4].try_into().unwrap()) == i
+                        && authenticated_data[4..] == *bob_empty_ad
                 );
+
                 assert_matches!(
                     bob_decrypted,
                     ReceivedMessage::ApplicationMessage(ApplicationMessageDescription { authenticated_data, .. })
                         if u32::from_be_bytes(authenticated_data[0..4].try_into().unwrap()) == i
+                        && authenticated_data[4..] == *alice_ad
                 );
             }
         }
     }
 
-    #[cfg(all(not(target_arch = "wasm32"), feature = "private_message"))]
+    #[cfg(all(
+        not(target_arch = "wasm32"),
+        feature = "private_message",
+        feature = "generation_authentication_in_plaintext"
+    ))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn generation_authentication_plaintext_errors() {
         let mut alice_no_auth =
             test_group_custom_config(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, |b| {
                 b.mls_rules(DefaultMlsRules::default().with_encryption_options(
-                    EncryptionOptions::new(true, PaddingMode::None, GenerationAuthMode::None),
+                    EncryptionOptions::new(true, PaddingMode::None, GenerationAuth::None),
                 ))
             })
             .await;
         let (mut bob_plaintext_auth, _) = alice_no_auth
             .join_with_custom_config("bob", false, |c| {
                 c.0.mls_rules = DefaultMlsRules::default().with_encryption_options(
-                    EncryptionOptions::new(true, PaddingMode::None, GenerationAuthMode::Plaintext),
+                    EncryptionOptions::new(true, PaddingMode::None, GenerationAuth::Plaintext),
                 )
             })
             .await

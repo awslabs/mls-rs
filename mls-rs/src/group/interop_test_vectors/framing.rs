@@ -14,7 +14,7 @@ use crate::{
         confirmation_tag::ConfirmationTag,
         epoch::EpochSecrets,
         framing::{Content, WireFormat},
-        generation_authentication::GenerationAuthMode,
+        generation_authentication::GenerationAuth,
         message_processor::{EventOrContent, MessageProcessor},
         mls_rules::EncryptionOptions,
         padding::PaddingMode,
@@ -397,7 +397,7 @@ async fn make_group<P: CipherSuiteProvider>(
                 DefaultMlsRules::default().with_encryption_options(EncryptionOptions::new(
                     control_encryption_enabled,
                     PaddingMode::None,
-                    GenerationAuthMode::None,
+                    GenerationAuth::None,
                 )),
             )
         },

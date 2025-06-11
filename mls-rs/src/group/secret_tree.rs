@@ -147,6 +147,7 @@ impl SecretRatchets {
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    #[allow(dead_code)]
     /// Peeks at the next key generation for `key_type`, but does not increment the
     /// generation nor derive keys.
     async fn peek_next_key_generation(&self, key_type: KeyType) -> u32 {
@@ -245,11 +246,12 @@ impl<T: TreeIndex> SecretTree<T> {
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    #[allow(dead_code)]
     /// Peeks at the next key generation, but does not increment the generation nor
-    /// derive keys.
+    /// derive keys. Takes &mut self since take_leaf_ratchet constructs and stores nodes
+    /// in the SecretTree the first time they are requested.
     ///
-    /// Used by GenerationAuthMode, which authenticates key generation depending on the
-    /// mode. See GenerationAuthMode for more details.
+    /// Used by GenerationAuth, which authenticates the key generation.
     pub async fn peek_next_key_generation<P: CipherSuiteProvider>(
         &mut self,
         cipher_suite: &P,
@@ -479,6 +481,7 @@ impl SecretKeyRatchet {
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    #[allow(dead_code)]
     /// Peeks at the next key generation, but does not increment the generation nor
     /// derive keys.
     async fn peek_next_key_generation(&self) -> u32 {

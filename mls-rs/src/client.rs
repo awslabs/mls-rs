@@ -35,12 +35,6 @@ use crate::group::external_commit::ExternalCommitBuilder;
 #[cfg(feature = "by_ref_proposal")]
 use alloc::boxed::Box;
 
-#[cfg(feature = "std")]
-use std::array::TryFromSliceError;
-
-#[cfg(not(feature = "std"))]
-use core::array::TryFromSliceError;
-
 #[derive(Debug)]
 #[cfg_attr(feature = "std", derive(thiserror::Error))]
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::enum_to_error_code)]
@@ -62,8 +56,6 @@ pub enum MlsError {
     SerializationError(AnyError),
     #[cfg_attr(feature = "std", error(transparent))]
     ExtensionError(AnyError),
-    #[cfg_attr(feature = "std", error(transparent))]
-    TryFromSliceError(TryFromSliceError),
     #[cfg_attr(feature = "std", error("Cipher suite does not match"))]
     CipherSuiteMismatch,
     #[cfg_attr(feature = "std", error("Invalid commit, missing required path"))]
@@ -199,6 +191,8 @@ pub enum MlsError {
         auth_generation: u32,
         sender_data_generation: u32,
     },
+    #[cfg_attr(feature = "std", error("invalid conversion to slice"))]
+    TryFromSliceError,
     #[cfg_attr(feature = "std", error("leaf node has no children"))]
     LeafNodeNoChildren,
     #[cfg_attr(feature = "std", error("root node has no parent"))]
@@ -380,13 +374,6 @@ impl From<ExtensionError> for MlsError {
     #[inline]
     fn from(e: ExtensionError) -> Self {
         MlsError::ExtensionError(e.into_any_error())
-    }
-}
-
-impl From<TryFromSliceError> for MlsError {
-    #[cfg(feature = "std")]
-    fn from(e: TryFromSliceError) -> Self {
-        MlsError::TryFromSliceError(e)
     }
 }
 
