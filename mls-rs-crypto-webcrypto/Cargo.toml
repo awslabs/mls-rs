@@ -12,7 +12,7 @@ license = "Apache-2.0 OR MIT"
 mls-rs-core = { path = "../mls-rs-core", default-features = false, features = ["std"], version = "0.22.0" }
 mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", default-features = false, features = ["std"], version = "0.15.0" }
 mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", default-features = false, features = ["std"], version = "0.16.0" }
-thiserror = "1.0.40"
+thiserror = "2"
 zeroize = { version = "1", features = ["zeroize_derive"] }
 maybe-async = "0.2.10"
 async-trait = "0.1.74"
@@ -23,7 +23,7 @@ serde-wasm-bindgen = "0.6"
 serde = { version = "1.0", features = ["derive"] }
 der = { version = "0.7.8", features = ["alloc", "derive", "oid"] }
 web-sys = { version = "0.3.64", features = ["Window", "CryptoKey", "CryptoKeyPair", "SubtleCrypto", "Crypto", "HkdfParams", "HmacImportParams", "AesGcmParams", "EcKeyImportParams", "EcKeyGenParams", "EcdsaParams", "EcdhKeyDeriveParams"] }
-const-oid = { version = "0.9", features = ["db"] }
+const-oid = { version = "0.10", features = ["db"] }
 
 [dev-dependencies]
 mls-rs-core = { path = "../mls-rs-core", version = "0.22.0", features = ["test_suite"] }

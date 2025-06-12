@@ -15,14 +15,14 @@ std = ["mls-rs-core/std", "dep:thiserror"]
 [dependencies]
 mls-rs-core = { path = "../mls-rs-core", default-features = false, features = ["x509"], version = "0.22.0" }
 maybe-async = "0.2.10"
-thiserror = { version = "1.0.40", optional = true }
+thiserror = { version = "2", optional = true }
 
 # Async mode dependencies
 [target.'cfg(mls_build_async)'.dependencies]
 async-trait = "0.1.74"
 
 [dev-dependencies]
-mockall = "0.12"
+mockall = "0.13"
 assert_matches = "1"
 rand = "0.8"
 

@@ -32,7 +32,7 @@ pub enum X509Error {
     #[cfg_attr(feature = "std", error(transparent))]
     EcX509Error(EcX509Error),
     #[cfg_attr(feature = "std", error(transparent))]
-    ConstOidError(const_oid::Error),
+    ConstOidError(spki::der::oid::Error),
     #[cfg_attr(feature = "std", error(transparent))]
     EcSignerError(EcSignerError),
     #[cfg_attr(feature = "std", error(transparent))]
@@ -111,8 +111,8 @@ impl From<EcX509Error> for X509Error {
     }
 }
 
-impl From<const_oid::Error> for X509Error {
-    fn from(e: const_oid::Error) -> Self {
+impl From<spki::der::oid::Error> for X509Error {
+    fn from(e: spki::der::oid::Error) -> Self {
         X509Error::ConstOidError(e)
     }
 }

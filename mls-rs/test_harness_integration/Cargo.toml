@@ -11,7 +11,7 @@ tonic = "0.10.2"
 prost = "0.12.1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 clap = { version = "4", features = ["derive"] }
-thiserror = "1"
+thiserror = "2"
 hex = "0.4"
 
 [features]
