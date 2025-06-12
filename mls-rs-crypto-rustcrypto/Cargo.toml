@@ -9,7 +9,7 @@ keywords = ["mls", "mls-rs"]
 license = "Apache-2.0 OR MIT"
 
 [features]
-x509 = ["std", "mls-rs-identity-x509", "x509-cert", "spki", "const-oid", "mls-rs-core/x509"]
+x509 = ["std", "mls-rs-identity-x509", "x509-cert", "spki", "mls-rs-core/x509"]
 default = ["std", "x509"]
 browser = ["getrandom/js"]
 
@@ -33,7 +33,7 @@ mls-rs-core = { path = "../mls-rs-core", default-features = false, version = "0.
 mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", default-features = false, version = "0.15.0" }
 mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", default-features = false, version = "0.16.0" }
 
-thiserror = { version = "1.0.40", optional = true }
+thiserror = { version = "2", optional = true }
 zeroize = { version = "1", default-features = false, features = ["alloc", "zeroize_derive"] }
 
 # Random
@@ -62,7 +62,6 @@ sec1 = { version = "0.7", default-features = false, features = ["alloc"] }
 mls-rs-identity-x509 = { path = "../mls-rs-identity-x509", optional = true, version = "0.16.0" }
 x509-cert = { version = "0.2", optional = true, features = ["std"] }
 spki = { version = "0.7", optional = true, features = ["std", "alloc"] }
-const-oid = { version = "0.9", optional = true, features = ["std"] }
 maybe-async = "0.2.10"
 
 [dev-dependencies]

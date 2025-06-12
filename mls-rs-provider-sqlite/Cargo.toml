@@ -10,11 +10,10 @@ license = "Apache-2.0 OR MIT"
 
 [dependencies]
 mls-rs-core = { path = "../mls-rs-core", version = "0.22.0" }
-thiserror = "1.0.40"
+thiserror = "2"
 wasm-bindgen = { version = "0.2", optional = true }
 zeroize = { version = "1", features = ["zeroize_derive"] }
-rusqlite = { version = "0.31", default-features = false }
-rand = "0.8"
+rusqlite = { version = "0.36", default-features = false }
 hex = { version = "0.4" }
 maybe-async = "0.2.10"
 async-trait = "0.1.74"
@@ -23,6 +22,7 @@ async-trait = "0.1.74"
 tempfile = "3"
 assert_matches = "1"
 anyhow = "1"
+rand = "0.9"
 
 [features]
 default = ["sqlcipher-bundled"]
