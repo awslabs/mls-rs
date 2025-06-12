@@ -23,7 +23,6 @@ serde-wasm-bindgen = "0.6"
 serde = { version = "1.0", features = ["derive"] }
 der = { version = "0.7.8", features = ["alloc", "derive", "oid"] }
 web-sys = { version = "0.3.64", features = ["Window", "CryptoKey", "CryptoKeyPair", "SubtleCrypto", "Crypto", "HkdfParams", "HmacImportParams", "AesGcmParams", "EcKeyImportParams", "EcKeyGenParams", "EcdsaParams", "EcdhKeyDeriveParams"] }
-const-oid = { version = "0.10", features = ["db"] }
 
 [dev-dependencies]
 mls-rs-core = { path = "../mls-rs-core", version = "0.22.0", features = ["test_suite"] }
