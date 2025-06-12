@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1749569066008,
+  "lastUpdate": 1749741365212,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -22991,6 +22991,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 130009,
             "range": "± 6742",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mgeisler@google.com",
+            "name": "Martin Geisler",
+            "username": "mgeisler"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8dd34c9fecf9c6ffa6bca9d5624f73a30ee7739b",
+          "message": "Use `MlsTime` more consistently (#284)\n\nThis changes the `Lifetime` struct to use `MlsTime` instead of `u64`\nto represent the fixed `not_before` and `not_after` timestamps.\n\nThis change came out of an internal discussion about what the unit is\nfor the field: does it measure a different from “now”, or is it an\nabsolute place in time? Turns out it’s the latter and this is now\nencoded in the type system.\n\nCo-authored-by: Tom Leavy <tomleavy@amazon.com>",
+          "timestamp": "2025-06-12T11:11:55-04:00",
+          "tree_id": "8691052d82143369f857f793de1fb60811c6be06",
+          "url": "https://github.com/awslabs/mls-rs/commit/8dd34c9fecf9c6ffa6bca9d5624f73a30ee7739b"
+        },
+        "date": 1749741363734,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 533261,
+            "range": "± 6566",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 538898,
+            "range": "± 15387",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 601302,
+            "range": "± 8039",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1283853,
+            "range": "± 25959",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7568265,
+            "range": "± 202765",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2641332,
+            "range": "± 113289",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7057062,
+            "range": "± 91023",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13181518,
+            "range": "± 129131",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 768786,
+            "range": "± 61557",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 856840,
+            "range": "± 5027",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 985109,
+            "range": "± 33674",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 20339,
+            "range": "± 542",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 67067,
+            "range": "± 1075",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 129099,
+            "range": "± 2321",
             "unit": "ns/iter"
           }
         ]
