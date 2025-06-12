@@ -337,7 +337,7 @@ fn filter_out_remove_if_self_remove_same_leaf(
         apply_strategy(
             strategy,
             p.is_by_reference(),
-            (!self_removed_leaves.contains(&Some(p.proposal.to_remove.0)))
+            (!self_removed_leaves.contains(&Some(*p.proposal.to_remove)))
                 .then_some(())
                 .ok_or(MlsError::CommitterSelfRemoval),
         )
@@ -386,7 +386,7 @@ fn filter_out_removal_of_committer(
             strategy,
             p.is_by_reference(),
             match p.sender {
-                Sender::Member(sender) => commit_sender != LeafIndex(sender),
+                Sender::Member(sender) => commit_sender != LeafIndex::try_from(sender)?,
                 _ => false,
             }
             .then_some(())
@@ -679,7 +679,7 @@ pub(crate) fn filter_out_invalid_proposers(
 
 fn leaf_index_of_update_sender(p: &ProposalInfo<UpdateProposal>) -> Result<LeafIndex, MlsError> {
     match p.sender {
-        Sender::Member(i) => Ok(LeafIndex(i)),
+        Sender::Member(i) => LeafIndex::try_from(i),
         _ => Err(MlsError::InvalidProposalTypeForSender),
     }
 }

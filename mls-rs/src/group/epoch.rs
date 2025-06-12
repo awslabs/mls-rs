@@ -159,7 +159,7 @@ pub(crate) mod test_utils {
     ) -> PriorEpoch {
         PriorEpoch {
             context: get_test_group_context_with_id(group_id, id, cipher_suite),
-            self_index: LeafIndex(0),
+            self_index: LeafIndex::unchecked(0),
             secrets: get_test_epoch_secrets(cipher_suite),
             signature_public_keys: Default::default(),
             #[cfg(feature = "prior_epoch_membership_key")]

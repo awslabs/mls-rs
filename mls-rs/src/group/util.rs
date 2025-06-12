@@ -151,7 +151,7 @@ pub(crate) fn commit_sender(
     provisional_state: &ProvisionalState,
 ) -> Result<LeafIndex, MlsError> {
     match sender {
-        Sender::Member(index) => Ok(LeafIndex(*index)),
+        Sender::Member(index) => LeafIndex::try_from(*index),
         #[cfg(feature = "by_ref_proposal")]
         Sender::External(_) => Err(MlsError::ExternalSenderCannotCommit),
         #[cfg(feature = "by_ref_proposal")]

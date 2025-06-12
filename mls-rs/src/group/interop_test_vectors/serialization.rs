@@ -16,7 +16,7 @@ use crate::{
         },
         Commit, GroupSecrets, MlsMessage,
     },
-    tree_kem::node::NodeVec,
+    tree_kem::node::{NodeVec, MAX_LEAF_INDEX},
 };
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Default, Clone)]
@@ -102,12 +102,29 @@ async fn serialization() {
             &test_case.update_proposal
         );
 
-        let proposal = RemoveProposal::mls_decode(&mut &*test_case.remove_proposal).unwrap();
+        let proposal = RemoveProposal::mls_decode(&mut &*test_case.remove_proposal);
 
-        assert_eq!(
-            &proposal.mls_encode_to_vec().unwrap(),
-            &test_case.remove_proposal
-        );
+        match proposal {
+            Ok(p) => {
+                assert_eq!(&p.mls_encode_to_vec().unwrap(), &test_case.remove_proposal);
+            }
+            Err(mls_rs_codec::Error::Custom(6)) => {
+                let decoded = u32::mls_decode(&mut &*test_case.remove_proposal).unwrap();
+
+                if decoded > MAX_LEAF_INDEX {
+                    #[cfg(feature = "std")]
+                    println!(
+                        "skipping case {:?}, decoded value {:?} is greater than max accepted leaf index {:?}",
+                        hex::encode(&test_case.remove_proposal),
+                        decoded,
+                        MAX_LEAF_INDEX
+                    );
+                } else {
+                    panic!("unexpected decode failure of valid remove proposal");
+                }
+            }
+            Err(e) => panic!("unexpected error: {:?}", e),
+        }
 
         let proposal = ReInitProposal::mls_decode(&mut &*test_case.re_init_proposal).unwrap();
 

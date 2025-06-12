@@ -318,7 +318,7 @@ pub(crate) mod test_utils {
                 confirmation_tag: ConfirmationTag::empty(&test_cipher_suite_provider(cipher_suite))
                     .await,
             },
-            private_tree: TreeKemPrivate::new(LeafIndex(0)),
+            private_tree: TreeKemPrivate::new(LeafIndex::unchecked(0)),
             epoch_secrets: get_test_epoch_secrets(cipher_suite),
             key_schedule: get_test_key_schedule(cipher_suite),
             #[cfg(feature = "by_ref_proposal")]
