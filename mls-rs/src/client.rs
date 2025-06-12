@@ -181,6 +181,18 @@ pub enum MlsError {
         error("requested generation {0} is too far ahead of current generation")
     )]
     InvalidFutureGeneration(u32),
+    #[cfg_attr(feature = "std", error("expected authenticated generation missing"))]
+    MissingAuthGeneration,
+    #[cfg_attr(
+        feature = "std",
+        error("mismatched authenticated {auth_generation} and sender data {sender_data_generation} generations")
+    )]
+    GenerationMismatch {
+        auth_generation: u32,
+        sender_data_generation: u32,
+    },
+    #[cfg_attr(feature = "std", error("invalid conversion to slice"))]
+    TryFromSliceError,
     #[cfg_attr(feature = "std", error("leaf node has no children"))]
     LeafNodeNoChildren,
     #[cfg_attr(feature = "std", error("root node has no parent"))]
