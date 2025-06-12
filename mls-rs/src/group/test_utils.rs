@@ -491,6 +491,15 @@ impl MessageProcessor for GroupWithoutKeySchedule {
         self.inner.self_removal_proposal(provisional_state)
     }
 
+    #[cfg(feature = "gsma_rcs_e2ee_feature")]
+    #[cfg_attr(feature = "ffi", safer_ffi_gen::safer_ffi_gen_ignore)]
+    fn server_removal_proposal(
+        &self,
+        provisional_state: &ProvisionalState,
+    ) -> Option<ProposalInfo<ServerRemoveProposal>> {
+        self.inner.server_removal_proposal(provisional_state)
+    }
+
     #[cfg(feature = "private_message")]
     #[cfg_attr(coverage_nightly, coverage(off))]
     fn min_epoch_available(&self) -> Option<u64> {
