@@ -9,6 +9,7 @@ use crate::hash_reference::HashReference;
 use crate::identity::SigningIdentity;
 use crate::protocol_version::ProtocolVersion;
 use crate::signer::Signable;
+use crate::time::MlsTime;
 use crate::tree_kem::leaf_node::{LeafNode, LeafNodeSource};
 use crate::CipherSuiteProvider;
 use alloc::vec::Vec;
@@ -130,7 +131,8 @@ impl KeyPackage {
         ))
     }
 
-    pub fn expiration(&self) -> Result<u64, MlsError> {
+    /// Time after which the key package is expired.
+    pub fn expiration(&self) -> Result<MlsTime, MlsError> {
         if let LeafNodeSource::KeyPackage(lifetime) = &self.leaf_node.leaf_node_source {
             Ok(lifetime.not_after)
         } else {
