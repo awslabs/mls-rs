@@ -20,6 +20,7 @@ use crate::group::{
 use crate::identity::SigningIdentity;
 use crate::key_package::{KeyPackageGeneration, KeyPackageGenerator};
 use crate::protocol_version::ProtocolVersion;
+use crate::time::MlsTime;
 use crate::tree_kem::node::NodeIndex;
 use alloc::vec::Vec;
 use mls_rs_codec::MlsDecode;
@@ -410,12 +411,13 @@ where
     }
 
     #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
-    pub fn to_builder(&self) -> ClientBuilder<MakeConfig<C>> {
+    pub fn to_builder(&self, timestamp: Option<MlsTime>) -> ClientBuilder<MakeConfig<C>> {
         ClientBuilder::from_config(recreate_config(
             self.config.clone(),
             self.signer.clone(),
             self.signing_identity.clone(),
             self.version,
+            timestamp,
         ))
     }
 
@@ -433,13 +435,15 @@ where
     ///
     /// A key package message may only be used once.
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     pub async fn generate_key_package_message(
         &self,
         key_package_extensions: ExtensionList,
         leaf_node_extensions: ExtensionList,
+        timestamp: Option<MlsTime>,
     ) -> Result<MlsMessage, MlsError> {
         Ok(self
-            .generate_key_package(key_package_extensions, leaf_node_extensions)
+            .generate_key_package(key_package_extensions, leaf_node_extensions, timestamp)
             .await?
             .key_package_message())
     }
@@ -449,6 +453,7 @@ where
         &self,
         key_package_extensions: ExtensionList,
         leaf_node_extensions: ExtensionList,
+        timestamp: Option<MlsTime>,
     ) -> Result<KeyPackageGeneration, MlsError> {
         let (signing_identity, cipher_suite) = self.signing_identity()?;
 
@@ -467,7 +472,7 @@ where
 
         let key_pkg_gen = key_package_generator
             .generate(
-                self.config.lifetime(),
+                self.config.lifetime(timestamp),
                 self.config.capabilities(),
                 key_package_extensions,
                 leaf_node_extensions,
@@ -497,11 +502,13 @@ where
     /// instead of this function because it guarantees that group_id values
     /// are globally unique.
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     pub async fn create_group_with_id(
         &self,
         group_id: Vec<u8>,
         group_context_extensions: ExtensionList,
         leaf_node_extensions: ExtensionList,
+        timestamp: Option<MlsTime>,
     ) -> Result<Group<C>, MlsError> {
         let (signing_identity, cipher_suite) = self.signing_identity()?;
 
@@ -514,6 +521,7 @@ where
             group_context_extensions,
             leaf_node_extensions,
             self.signer()?.clone(),
+            timestamp,
         )
         .await
     }
@@ -524,10 +532,12 @@ where
     /// [CipherSuiteProvider](crate::CipherSuiteProvider)
     /// that was used to build the client.
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     pub async fn create_group(
         &self,
         group_context_extensions: ExtensionList,
         leaf_node_extensions: ExtensionList,
+        timestamp: Option<MlsTime>,
     ) -> Result<Group<C>, MlsError> {
         let (signing_identity, cipher_suite) = self.signing_identity()?;
 
@@ -540,6 +550,7 @@ where
             group_context_extensions,
             leaf_node_extensions,
             self.signer()?.clone(),
+            timestamp,
         )
         .await
     }
@@ -554,16 +565,19 @@ where
     /// be exported from a group using the
     /// [export tree function](crate::group::Group::export_tree).
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     pub async fn join_group(
         &self,
         tree_data: Option<ExportedTree<'_>>,
         welcome_message: &MlsMessage,
+        maybe_time: Option<MlsTime>,
     ) -> Result<(Group<C>, NewMemberInfo), MlsError> {
         Group::join(
             welcome_message,
             tree_data,
             self.config.clone(),
             self.signer()?.clone(),
+            maybe_time,
         )
         .await
     }
@@ -717,6 +731,7 @@ where
     /// welcome message can be used by [join_group](Client::join_group).
     #[cfg(feature = "by_ref_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     pub async fn external_add_proposal(
         &self,
         group_info: &MlsMessage,
@@ -724,6 +739,7 @@ where
         authenticated_data: Vec<u8>,
         key_package_extensions: ExtensionList,
         leaf_node_extensions: ExtensionList,
+        timestamp: Option<MlsTime>,
     ) -> Result<MlsMessage, MlsError> {
         let protocol_version = group_info.version;
 
@@ -749,11 +765,12 @@ where
             tree_data,
             &self.config.identity_provider(),
             &cipher_suite_provider,
+            timestamp,
         )
         .await?;
 
         let key_package = self
-            .generate_key_package(key_package_extensions, leaf_node_extensions)
+            .generate_key_package(key_package_extensions, leaf_node_extensions, timestamp)
             .await?
             .key_package;
 
@@ -875,7 +892,7 @@ pub(crate) mod test_utils {
         config(&mut client.config);
 
         let key_package = client
-            .generate_key_package_message(key_package_extensions, leaf_node_extensions)
+            .generate_key_package_message(key_package_extensions, leaf_node_extensions, None)
             .await
             .unwrap();
 
@@ -925,7 +942,7 @@ mod tests {
 
             // TODO: Tests around extensions
             let key_package = client
-                .generate_key_package_message(Default::default(), Default::default())
+                .generate_key_package_message(Default::default(), Default::default(), None)
                 .await
                 .unwrap();
 
@@ -945,7 +962,7 @@ mod tests {
             let capabilities = key_package.leaf_node.ungreased_capabilities();
             assert_eq!(capabilities, client.config.capabilities());
 
-            let client_lifetime = client.config.lifetime();
+            let client_lifetime = client.config.lifetime(None);
             assert_matches!(key_package.leaf_node.leaf_node_source, LeafNodeSource::KeyPackage(lifetime) if (lifetime.not_after - lifetime.not_before) == (client_lifetime.not_after - client_lifetime.not_before));
         }
     }
@@ -968,6 +985,7 @@ mod tests {
                 vec![],
                 Default::default(),
                 Default::default(),
+                None,
             )
             .await
             .unwrap();
@@ -1114,7 +1132,7 @@ mod tests {
             .build();
 
         let msg = alice
-            .generate_key_package_message(Default::default(), Default::default())
+            .generate_key_package_message(Default::default(), Default::default(), None)
             .await
             .unwrap();
         let res = alice.commit_external(msg).await.map(|_| ());
@@ -1159,7 +1177,7 @@ mod tests {
         let alice = TestClientBuilder::new_for_test()
             .extension_type(33.into())
             .build();
-        let bob = alice.to_builder().extension_type(34.into()).build();
+        let bob = alice.to_builder(None).extension_type(34.into()).build();
         assert_eq!(bob.config.supported_extensions(), [33, 34].map(Into::into));
     }
 
