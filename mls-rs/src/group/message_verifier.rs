@@ -303,6 +303,7 @@ mod tests {
                 None,
                 bob_client.config,
                 bob_client.signer.unwrap(),
+                None,
             )
             .await
             .unwrap();

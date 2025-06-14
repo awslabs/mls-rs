@@ -219,6 +219,7 @@ impl MlsClient for MlsClientImpl {
                 request.group_id,
                 ExtensionList::default(),
                 Default::default(),
+                None,
             )
             .map_err(abort)?;
 
@@ -240,7 +241,7 @@ impl MlsClient for MlsClientImpl {
 
         let key_package = client
             .client
-            .generate_key_package_message(Default::default(), Default::default())
+            .generate_key_package_message(Default::default(), Default::default(), None)
             .map_err(abort)?;
 
         let (_, key_pckg_secrets) = client.key_package_repo.key_packages()[0].clone();
@@ -274,7 +275,7 @@ impl MlsClient for MlsClientImpl {
 
         let (group, _) = client
             .client
-            .join_group(get_tree(&request.ratchet_tree)?, &welcome_msg)
+            .join_group(get_tree(&request.ratchet_tree)?, &welcome_msg, None)
             .map_err(abort)?;
 
         let epoch_authenticator = group.epoch_authenticator().map_err(abort)?.to_vec();
@@ -318,7 +319,7 @@ impl MlsClient for MlsClientImpl {
                 .build();
 
             let server = server
-                .observe_group(group_info.clone(), tree.clone())
+                .observe_group(group_info.clone(), tree.clone(), None)
                 .map_err(abort)?;
 
             let idx = find_member(

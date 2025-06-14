@@ -296,7 +296,7 @@ pub(crate) mod test_utils {
             secret,
             capabilities.unwrap_or_else(get_test_capabilities),
             extensions.unwrap_or_default(),
-            Lifetime::years(1).unwrap(),
+            Lifetime::years(1, None).unwrap(),
         )
         .await
     }
@@ -357,7 +357,7 @@ pub(crate) mod test_utils {
             },
             signing_identity,
             &signature_key,
-            Lifetime::years(1).unwrap(),
+            Lifetime::years(1, None).unwrap(),
         )
         .await
         .map(|(leaf, hpke_secret_key)| (leaf, hpke_secret_key, signature_key))
@@ -421,7 +421,7 @@ mod tests {
     async fn test_node_generation() {
         let capabilities = get_test_capabilities();
         let extensions = get_test_extensions();
-        let lifetime = Lifetime::years(1).unwrap();
+        let lifetime = Lifetime::years(1, None).unwrap();
 
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let (signing_identity, secret) = get_test_signing_identity(cipher_suite, b"foo").await;

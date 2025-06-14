@@ -128,7 +128,7 @@ async fn validation() {
         context.group_id = test_case.group_id;
 
         TreeValidator::new(&cs, &context, &BasicIdentityProvider)
-            .validate(&mut tree)
+            .validate(&mut tree, None)
             .await
             .unwrap();
     }
