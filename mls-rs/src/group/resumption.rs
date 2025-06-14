@@ -293,6 +293,7 @@ async fn resumption_create_group<C: ClientConfig + Clone>(
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[allow(clippy::too_many_arguments)]
 async fn resumption_join_group<C: ClientConfig + Clone>(
     config: C,
     signer: SignatureSecretKey,
