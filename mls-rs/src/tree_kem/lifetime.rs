@@ -31,7 +31,7 @@ impl Lifetime {
         let not_before = MlsTime::from(3600u64);
 
         let not_before = if let Some(not_before_time) = maybe_not_before {
-            not_before_time.seconds_since_epoch()
+            not_before_time
         } else {
             not_before
         };

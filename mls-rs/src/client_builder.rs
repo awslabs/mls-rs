@@ -6,7 +6,6 @@
 //!
 //! See [`ClientBuilder`].
 
-use crate::time::MlsTime;
 use crate::{
     cipher_suite::CipherSuite,
     client::Client,
@@ -691,7 +690,7 @@ where
         let now_timestamp = MlsTime::from(0);
 
         let now_timestamp = if let Some(now_time) = maybe_now_time {
-            now_time.seconds_since_epoch()
+            now_time
         } else {
             now_timestamp
         };
