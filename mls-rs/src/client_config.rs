@@ -38,7 +38,7 @@ pub trait ClientConfig: Send + Sync + Clone {
     fn identity_provider(&self) -> Self::IdentityProvider;
     fn crypto_provider(&self) -> Self::CryptoProvider;
 
-    fn lifetime(&self, maybe_now_time: Option<MlsTime>) -> Lifetime;
+    fn lifetime(&self, timestamp: Option<MlsTime>) -> Lifetime;
 
     fn capabilities(&self) -> Capabilities {
         Capabilities {

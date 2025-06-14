@@ -423,13 +423,13 @@ where
     }
 
     #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
-    pub fn to_builder(&self, maybe_now_time: Option<MlsTime>) -> ClientBuilder<MakeConfig<C>> {
+    pub fn to_builder(&self, timestamp: Option<MlsTime>) -> ClientBuilder<MakeConfig<C>> {
         ClientBuilder::from_config(recreate_config(
             self.config.clone(),
             self.signer.clone(),
             self.signing_identity.clone(),
             self.version,
-            maybe_now_time,
+            timestamp,
         ))
     }
 
@@ -452,10 +452,10 @@ where
         &self,
         key_package_extensions: ExtensionList,
         leaf_node_extensions: ExtensionList,
-        maybe_now_time: Option<MlsTime>,
+        timestamp: Option<MlsTime>,
     ) -> Result<MlsMessage, MlsError> {
         Ok(self
-            .generate_key_package(key_package_extensions, leaf_node_extensions, maybe_now_time)
+            .generate_key_package(key_package_extensions, leaf_node_extensions, timestamp)
             .await?
             .key_package_message())
     }
@@ -465,7 +465,7 @@ where
         &self,
         key_package_extensions: ExtensionList,
         leaf_node_extensions: ExtensionList,
-        maybe_now_time: Option<MlsTime>,
+        timestamp: Option<MlsTime>,
     ) -> Result<KeyPackageGeneration, MlsError> {
         let (signing_identity, cipher_suite) = self.signing_identity()?;
 
@@ -484,7 +484,7 @@ where
 
         let key_pkg_gen = key_package_generator
             .generate(
-                self.config.lifetime(maybe_now_time),
+                self.config.lifetime(timestamp),
                 self.config.capabilities(),
                 key_package_extensions,
                 leaf_node_extensions,
@@ -520,7 +520,7 @@ where
         group_id: Vec<u8>,
         group_context_extensions: ExtensionList,
         leaf_node_extensions: ExtensionList,
-        maybe_now_time: Option<MlsTime>,
+        timestamp: Option<MlsTime>,
     ) -> Result<Group<C>, MlsError> {
         let (signing_identity, cipher_suite) = self.signing_identity()?;
 
@@ -533,7 +533,7 @@ where
             group_context_extensions,
             leaf_node_extensions,
             self.signer()?.clone(),
-            maybe_now_time,
+            timestamp,
         )
         .await
     }
@@ -549,7 +549,7 @@ where
         &self,
         group_context_extensions: ExtensionList,
         leaf_node_extensions: ExtensionList,
-        maybe_now_time: Option<MlsTime>,
+        timestamp: Option<MlsTime>,
     ) -> Result<Group<C>, MlsError> {
         let (signing_identity, cipher_suite) = self.signing_identity()?;
 
@@ -562,7 +562,7 @@ where
             group_context_extensions,
             leaf_node_extensions,
             self.signer()?.clone(),
-            maybe_now_time,
+            timestamp,
         )
         .await
     }
@@ -751,7 +751,7 @@ where
         authenticated_data: Vec<u8>,
         key_package_extensions: ExtensionList,
         leaf_node_extensions: ExtensionList,
-        maybe_now_time: Option<MlsTime>,
+        timestamp: Option<MlsTime>,
     ) -> Result<MlsMessage, MlsError> {
         let protocol_version = group_info.version;
 
@@ -777,12 +777,12 @@ where
             tree_data,
             &self.config.identity_provider(),
             &cipher_suite_provider,
-            maybe_now_time,
+            timestamp,
         )
         .await?;
 
         let key_package = self
-            .generate_key_package(key_package_extensions, leaf_node_extensions, maybe_now_time)
+            .generate_key_package(key_package_extensions, leaf_node_extensions, timestamp)
             .await?
             .key_package;
 

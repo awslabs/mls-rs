@@ -141,7 +141,7 @@ where
     pub async fn validate_key_package(
         &self,
         key_package: MlsMessage,
-        maybe_now_time: Option<MlsTime>,
+        timestamp: Option<MlsTime>,
     ) -> Result<KeyPackage, MlsError> {
         let version = key_package.version;
 
@@ -157,7 +157,7 @@ where
 
         let id = self.config.identity_provider();
 
-        validate_key_package(&key_package, version, &cs, &id, maybe_now_time).await?;
+        validate_key_package(&key_package, version, &cs, &id, timestamp).await?;
 
         Ok(key_package)
     }
