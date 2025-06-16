@@ -136,15 +136,20 @@ impl X509Validator {
     }
 }
 
-fn verify_time(cert: &Certificate, time: MlsTime) -> Result<(), X509Error> {
+fn verify_time(cert: &Certificate, timestamp: MlsTime) -> Result<(), X509Error> {
     let validity = cert.tbs_certificate.validity;
-    let now = time.seconds_since_epoch();
-    let not_before = validity.not_before.to_unix_duration().as_secs();
-    let not_after = validity.not_after.to_unix_duration().as_secs();
+    let not_before = MlsTime::from(validity.not_before.to_unix_duration());
+    let not_after = MlsTime::from(validity.not_after.to_unix_duration());
 
-    (not_before <= now && now <= not_after)
-        .then_some(())
-        .ok_or_else(|| X509Error::ValidityError(now, format!("{cert:?}")))
+    if timestamp < not_before || timestamp > not_after {
+        return Err(X509Error::ValidityError {
+            timestamp,
+            not_before,
+            not_after,
+        });
+    }
+
+    Ok(())
 }
 
 fn verify_cert(
@@ -214,8 +219,6 @@ impl X509CredentialValidator for X509Validator {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
     use assert_matches::assert_matches;
     use mls_rs_core::time::MlsTime;
     use mls_rs_identity_x509::{CertificateChain, X509CredentialValidator};
@@ -373,14 +376,19 @@ mod tests {
 
         let validator = X509Validator::new(vec![load_test_ca()]).unwrap();
 
-        let res = validator.validate_chain(
-            &chain,
-            Some(MlsTime::from_duration_since_epoch(Duration::from_secs(
-                1798761600,
-            ))),
-        );
+        let res = validator.validate_chain(&chain, Some(MlsTime::from(1798761600)));
 
-        assert_matches!(res, Err(X509Error::ValidityError(_, _)));
+        let Err(X509Error::ValidityError {
+            timestamp,
+            not_before,
+            not_after,
+        }) = res
+        else {
+            panic!("Expected validity error, got: {res:?}");
+        };
+        assert_eq!(timestamp, MlsTime::from(1798761600));
+        assert_eq!(not_before, MlsTime::from(1673273683));
+        assert_eq!(not_after, MlsTime::from(1767968040));
     }
 
     #[test]
