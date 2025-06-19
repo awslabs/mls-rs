@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1749741365212,
+  "lastUpdate": 1750359806651,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -23099,6 +23099,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 129099,
             "range": "± 2321",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "52458849+JHabz@users.noreply.github.com",
+            "name": "Jared Habermehl",
+            "username": "JHabz"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "50ec33c53d6d01f77f631a7048ec4885fd3cf12a",
+          "message": "Report rows changed on SqLite inserts (#290)\n\n* Report rows changed on SqLite inserts\n\n* Bump version of SQLite provider\n\n* Bump consumed version of SqLite provider\n\n* Bump mls-rs version from breaking SqLite provider change\n\n* Bump versions from breaking SqLite provider change\n\n---------\n\nCo-authored-by: Jared Habermehl <jhabs@amazon.com>",
+          "timestamp": "2025-06-19T14:59:23-04:00",
+          "tree_id": "c6146cc262d3972c30a7d33b81d6a6b886b8c1c6",
+          "url": "https://github.com/awslabs/mls-rs/commit/50ec33c53d6d01f77f631a7048ec4885fd3cf12a"
+        },
+        "date": 1750359805596,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 531703,
+            "range": "± 7112",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 538006,
+            "range": "± 9753",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 601657,
+            "range": "± 11827",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1266044,
+            "range": "± 25031",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7505482,
+            "range": "± 46473",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2632537,
+            "range": "± 13508",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7079992,
+            "range": "± 97284",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13194499,
+            "range": "± 120930",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 768978,
+            "range": "± 4828",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 857242,
+            "range": "± 6255",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 986845,
+            "range": "± 8343",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 20742,
+            "range": "± 220",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 67864,
+            "range": "± 863",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 130179,
+            "range": "± 1919",
             "unit": "ns/iter"
           }
         ]
