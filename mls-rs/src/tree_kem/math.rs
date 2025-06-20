@@ -145,13 +145,52 @@ pub fn leaf_lca_level(x: u32, y: u32) -> u32 {
     k
 }
 
-pub fn subtree(x: u32) -> (LeafIndex, LeafIndex) {
+#[derive(Clone, Debug)]
+pub(crate) struct SubTree {
+    pub left: LeafIndex,
+    pub right: LeafIndex,
+}
+
+// Custom iterator for SubTree
+pub(crate) struct SubTreeIter {
+    current: LeafIndex,
+    end: LeafIndex,
+}
+
+impl Iterator for SubTreeIter {
+    type Item = LeafIndex;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current < self.end {
+            let result = self.current;
+            self.current = self.current.next_unchecked();
+            Some(result)
+        } else {
+            None
+        }
+    }
+}
+
+// Make SubTree iterable
+impl IntoIterator for SubTree {
+    type Item = LeafIndex;
+    type IntoIter = SubTreeIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        SubTreeIter {
+            current: self.left,
+            end: self.right,
+        }
+    }
+}
+
+pub fn subtree(x: u32) -> SubTree {
     let breadth = 1 << x.trailing_ones();
 
     let left = LeafIndex::from_node_index_unchecked(x + 1 - breadth);
     let right = LeafIndex::from_node_index_unchecked(x + breadth).next_unchecked();
 
-    (left, right)
+    SubTree { left, right }
 }
 
 pub struct BfsIterTopDown {
@@ -380,5 +419,20 @@ mod tests {
 
             assert_eq!(item, &copath)
         }
+    }
+
+    #[test]
+    fn test_subtree_iterator() {
+        let subtree = subtree(101);
+
+        assert_eq!(subtree.left, LeafIndex::unchecked(50));
+        assert_eq!(subtree.right, LeafIndex::unchecked(52));
+
+        let iter = subtree.into_iter().collect_vec();
+
+        assert_eq!(
+            iter,
+            vec![LeafIndex::unchecked(50), LeafIndex::unchecked(51),]
+        );
     }
 }

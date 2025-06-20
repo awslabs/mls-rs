@@ -3,7 +3,8 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 use super::leaf_node::LeafNode;
-use super::node::{LeafIndex, LeafIndexRange, NodeVec};
+use super::math::SubTree;
+use super::node::{LeafIndex, NodeVec};
 use super::tree_math::BfsIterTopDown;
 use crate::client::MlsError;
 use crate::crypto::CipherSuiteProvider;
@@ -150,7 +151,7 @@ impl TreeKemPublic {
         subtree_root: u32,
     ) -> Result<&[LeafIndex], MlsError> {
         let unmerged = &self.nodes.borrow_as_parent(node_unmerged)?.unmerged_leaves;
-        let (left, right) = tree_math::subtree(subtree_root);
+        let SubTree { left, right } = tree_math::subtree(subtree_root);
         let mut start = 0;
         while start < unmerged.len() && unmerged[start] < left {
             start += 1;
@@ -207,11 +208,7 @@ impl TreeKemPublic {
                 tree_hash(
                     &mut tree_hashes[p as usize],
                     &self.nodes,
-                    Some(
-                        LeafIndexRange::from(tree_math::subtree(n as u32))
-                            .into_iter()
-                            .collect_vec(),
-                    ),
+                    Some(tree_math::subtree(n as u32).into_iter().collect_vec()),
                     &self.nodes.borrow_as_parent(p)?.unmerged_leaves,
                     num_leaves as u32,
                     cipher_suite,

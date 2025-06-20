@@ -129,6 +129,22 @@ impl RemoveProposal {
     }
 }
 
+impl RemoveProposal {
+    pub fn removing(member_index: u32) -> Result<Self, MlsError> {
+        Ok(Self {
+            to_remove: LeafIndex::try_from(member_index)?,
+        })
+    }
+}
+
+impl TryFrom<u32> for RemoveProposal {
+    type Error = MlsError;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        Self::removing(value)
+    }
+}
+
 #[cfg(feature = "psk")]
 #[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]

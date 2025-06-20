@@ -10,7 +10,7 @@ use crate::tree_kem::parent_hash::ParentHash;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::hash::Hash;
-use core::ops::{Deref, DerefMut, Range};
+use core::ops::{Deref, DerefMut};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use tree_math::{CopathNode, TreeIndex};
 
@@ -76,65 +76,6 @@ impl From<&LeafIndex> for NodeIndex {
 impl From<LeafIndex> for NodeIndex {
     fn from(leaf_index: LeafIndex) -> Self {
         leaf_index.0 * 2
-    }
-}
-
-// Custom range type for LeafIndex
-#[derive(Clone, Debug)]
-pub struct LeafIndexRange {
-    start: LeafIndex,
-    end: LeafIndex,
-}
-
-// Custom iterator for LeafIndexRange
-pub struct LeafIndexRangeIter {
-    current: LeafIndex,
-    end: LeafIndex,
-}
-
-impl From<(LeafIndex, LeafIndex)> for LeafIndexRange {
-    fn from(value: (LeafIndex, LeafIndex)) -> Self {
-        LeafIndexRange {
-            start: value.0,
-            end: value.1,
-        }
-    }
-}
-
-impl Iterator for LeafIndexRangeIter {
-    type Item = LeafIndex;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.current < self.end {
-            let result = self.current;
-            self.current = LeafIndex(self.current.0 + 1);
-            Some(result)
-        } else {
-            None
-        }
-    }
-}
-
-// Make LeafIndexRange iterable
-impl IntoIterator for LeafIndexRange {
-    type Item = LeafIndex;
-    type IntoIter = LeafIndexRangeIter;
-
-    fn into_iter(self) -> Self::IntoIter {
-        LeafIndexRangeIter {
-            current: self.start,
-            end: self.end,
-        }
-    }
-}
-
-// Add Range syntax support through std::ops::Range
-impl From<Range<LeafIndex>> for LeafIndexRange {
-    fn from(range: Range<LeafIndex>) -> Self {
-        LeafIndexRange {
-            start: range.start,
-            end: range.end,
-        }
     }
 }
 

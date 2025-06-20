@@ -750,7 +750,12 @@ where
     /// [`ReceivedMessage`].
     #[inline(always)]
     pub fn current_member_index(&self) -> u32 {
-        *self.private_tree.self_index
+        *self.current_member_leaf_index()
+    }
+
+    #[inline(always)]
+    fn current_member_leaf_index(&self) -> LeafIndex {
+        self.private_tree.self_index
     }
 
     fn current_user_leaf_node(&self) -> Result<&LeafNode, MlsError> {
