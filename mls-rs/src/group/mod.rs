@@ -4522,7 +4522,11 @@ mod tests {
             .process_incoming_message_with_time(commit, future_time)
             .await;
 
-        assert_matches!(res, Err(MlsError::InvalidLifetime));
+        assert_matches!(
+            res,
+            Err(MlsError::InvalidLifetime { timestamp, .. })
+                if timestamp == future_time
+        );
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]

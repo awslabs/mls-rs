@@ -29,6 +29,7 @@ use mls_rs_core::extension::{ExtensionError, ExtensionList, ExtensionType};
 use mls_rs_core::group::{GroupStateStorage, ProposalType};
 use mls_rs_core::identity::{CredentialType, IdentityProvider, MemberValidationContext};
 use mls_rs_core::key_package::KeyPackageStorage;
+use mls_rs_core::time::MlsTime;
 
 use crate::group::external_commit::ExternalCommitBuilder;
 
@@ -191,8 +192,19 @@ pub enum MlsError {
     TimeOverflow,
     #[cfg_attr(feature = "std", error("invalid leaf_node_source"))]
     InvalidLeafNodeSource,
-    #[cfg_attr(feature = "std", error("key package has expired or is not valid yet"))]
-    InvalidLifetime,
+    #[cfg_attr(
+        feature = "std",
+        error("current time ({}) is not within key package lifetime ({} to {})",
+              timestamp.seconds_since_epoch(),
+              not_before.seconds_since_epoch(),
+              not_after.seconds_since_epoch(),
+        )
+    )]
+    InvalidLifetime {
+        not_before: MlsTime,
+        not_after: MlsTime,
+        timestamp: MlsTime,
+    },
     #[cfg_attr(feature = "std", error("required extension not found"))]
     RequiredExtensionNotFound(ExtensionType),
     #[cfg_attr(feature = "std", error("required proposal not found"))]
