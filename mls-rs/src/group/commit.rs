@@ -17,6 +17,7 @@ use crate::{
     identity::SigningIdentity,
     protocol_version::ProtocolVersion,
     signer::Signable,
+    time::MlsTime,
     tree_kem::{
         kem::TreeKem, node::LeafIndex, path_secret::PathSecret, TreeKemPrivate, UpdatePath,
     },
@@ -186,6 +187,7 @@ where
     new_signer: Option<SignatureSecretKey>,
     new_signing_identity: Option<SigningIdentity>,
     new_leaf_node_extensions: Option<ExtensionList>,
+    commit_time: Option<MlsTime>,
 }
 
 impl<'a, C> CommitBuilder<'a, C>
@@ -342,6 +344,14 @@ where
         }
     }
 
+    /// Add a time to associate with the commit creation.
+    pub fn commit_time(self, commit_time: MlsTime) -> Self {
+        Self {
+            commit_time: Some(commit_time),
+            ..self
+        }
+    }
+
     /// Finalize the commit to send.
     ///
     /// # Errors
@@ -362,6 +372,7 @@ where
                 self.new_signer,
                 self.new_signing_identity,
                 self.new_leaf_node_extensions,
+                self.commit_time,
             )
             .await?;
 
@@ -386,6 +397,7 @@ where
                 self.new_signer,
                 self.new_signing_identity,
                 self.new_leaf_node_extensions,
+                self.commit_time,
             )
             .await?;
 
@@ -476,6 +488,7 @@ where
             new_signer: Default::default(),
             new_signing_identity: Default::default(),
             new_leaf_node_extensions: Default::default(),
+            commit_time: None,
         }
     }
 
@@ -492,6 +505,7 @@ where
         new_signer: Option<SignatureSecretKey>,
         new_signing_identity: Option<SigningIdentity>,
         new_leaf_node_extensions: Option<ExtensionList>,
+        commit_time: Option<MlsTime>,
     ) -> Result<(CommitOutput, PendingCommit), MlsError> {
         if !self.pending_commit.is_none() {
             return Err(MlsError::ExistingPendingCommit);
@@ -522,6 +536,12 @@ where
 
         #[cfg(not(feature = "std"))]
         let time = None;
+
+        let time = if commit_time.is_some() {
+            commit_time
+        } else {
+            time
+        };
 
         #[cfg(feature = "by_ref_proposal")]
         let proposals = self.state.proposals.prepare_commit(sender, proposals);
@@ -1103,7 +1123,10 @@ mod tests {
             .welcome_messages
             .remove(0);
 
-        let (_, context) = bob_client.join_group(None, &welcome_message).await.unwrap();
+        let (_, context) = bob_client
+            .join_group(None, &welcome_message, None)
+            .await
+            .unwrap();
 
         assert_eq!(
             context
@@ -1332,7 +1355,7 @@ mod tests {
                 .find(|w| w.welcome_key_package_references().contains(&&kp_ref))
                 .unwrap();
 
-            client.join_group(None, welcome).await.unwrap();
+            client.join_group(None, welcome, None).await.unwrap();
 
             assert_eq!(welcome.clone().into_welcome().unwrap().secrets.len(), 1);
         }
@@ -1554,13 +1577,13 @@ mod tests {
     async fn member_identity_is_validated_against_new_extensions() {
         let alice = client_with_test_extension(b"alice").await;
         let mut alice = alice
-            .create_group(ExtensionList::new(), Default::default())
+            .create_group(ExtensionList::new(), Default::default(), None)
             .await
             .unwrap();
 
         let bob = client_with_test_extension(b"bob").await;
         let bob_kp = bob
-            .generate_key_package_message(Default::default(), Default::default())
+            .generate_key_package_message(Default::default(), Default::default(), None)
             .await
             .unwrap();
 
@@ -1584,7 +1607,7 @@ mod tests {
         alice
             .commit_builder()
             .add_member(
-                alex.generate_key_package_message(Default::default(), Default::default())
+                alex.generate_key_package_message(Default::default(), Default::default(), None)
                     .await
                     .unwrap(),
             )
@@ -1601,7 +1624,7 @@ mod tests {
     async fn server_identity_is_validated_against_new_extensions() {
         let alice = client_with_test_extension(b"alice").await;
         let mut alice = alice
-            .create_group(ExtensionList::new(), Default::default())
+            .create_group(ExtensionList::new(), Default::default(), None)
             .await
             .unwrap();
 
