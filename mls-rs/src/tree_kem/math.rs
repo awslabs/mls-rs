@@ -432,7 +432,7 @@ mod tests {
 
         assert_eq!(
             iter,
-            vec![LeafIndex::unchecked(50), LeafIndex::unchecked(51),]
+            [LeafIndex::unchecked(50), LeafIndex::unchecked(51)].to_vec()
         );
     }
 }
