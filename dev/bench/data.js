@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1750406630688,
+  "lastUpdate": 1750406699154,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -23423,6 +23423,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 129642,
             "range": "± 1133",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mgeisler@google.com",
+            "name": "Martin Geisler",
+            "username": "mgeisler"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4f4e4f7f1e5088450b799c08966ca6c884b662c1",
+          "message": "Include timestamps in `MlsError::InvalidLifetime` (#289)\n\nThis makes it much easier to debug the error after the fact.\n\nThis is a breaking change, so I’m also bumping the mls-rs version\nnumber to reflect this.\n\nCo-authored-by: Tom Leavy <tomleavy@amazon.com>",
+          "timestamp": "2025-06-20T10:00:48+02:00",
+          "tree_id": "3048008d3460aa6f835c8ed41c509965e4bd597e",
+          "url": "https://github.com/awslabs/mls-rs/commit/4f4e4f7f1e5088450b799c08966ca6c884b662c1"
+        },
+        "date": 1750406698304,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 529096,
+            "range": "± 8949",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 539752,
+            "range": "± 12047",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 601140,
+            "range": "± 24855",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1280399,
+            "range": "± 18307",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7623697,
+            "range": "± 46329",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2633985,
+            "range": "± 13237",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7072796,
+            "range": "± 81787",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13240665,
+            "range": "± 140374",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 772671,
+            "range": "± 4056",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 869443,
+            "range": "± 13272",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 1010576,
+            "range": "± 55584",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 20606,
+            "range": "± 345",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 67137,
+            "range": "± 1022",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 129222,
+            "range": "± 1212",
             "unit": "ns/iter"
           }
         ]
