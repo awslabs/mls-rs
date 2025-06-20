@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1750406593419,
+  "lastUpdate": 1750406630688,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -23315,6 +23315,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 129328,
             "range": "± 3305",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mgeisler@google.com",
+            "name": "Martin Geisler",
+            "username": "mgeisler"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9d8ed4ff61ae1e361ea47a4f2c13a96466813a33",
+          "message": "Show `not_before` and `not_after` fields for `X509Error::ValidityError` (#288)\n\nThis avoids serializing the entire X.509 certificate on validation\nerrors, thus avoiding including potential PII (Personally Identifiable\nInformation), as well as making it feasible to use the errors for\nbetter reporting upstream.\n\nCo-authored-by: Tom Leavy <tomleavy@amazon.com>",
+          "timestamp": "2025-06-20T09:59:45+02:00",
+          "tree_id": "8b8d327f5cb70a65f08ec41f2007fbea3968d3fd",
+          "url": "https://github.com/awslabs/mls-rs/commit/9d8ed4ff61ae1e361ea47a4f2c13a96466813a33"
+        },
+        "date": 1750406629874,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 533215,
+            "range": "± 5313",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 539435,
+            "range": "± 5982",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 603048,
+            "range": "± 13439",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1260914,
+            "range": "± 20409",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7500085,
+            "range": "± 115558",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2619765,
+            "range": "± 23329",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7030672,
+            "range": "± 97540",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13146408,
+            "range": "± 113477",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 769397,
+            "range": "± 7439",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 856463,
+            "range": "± 10634",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 985242,
+            "range": "± 7701",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 20622,
+            "range": "± 213",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 67495,
+            "range": "± 856",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 129642,
+            "range": "± 1133",
             "unit": "ns/iter"
           }
         ]
