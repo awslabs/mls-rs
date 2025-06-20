@@ -15,7 +15,7 @@ std = ["dep:thiserror"]
 
 [dependencies]
 mls-rs-codec-derive = { version = "0.2.0", path = "../mls-rs-codec-derive" }
-thiserror = { version = "1.0.40", optional = true }
+thiserror = { version = "2", optional = true }
 
 [dev-dependencies]
 assert_matches = "1.5.0"

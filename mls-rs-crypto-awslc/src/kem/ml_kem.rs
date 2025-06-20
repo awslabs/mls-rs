@@ -59,9 +59,9 @@ impl MlKem {
 
     fn algorithm(&self) -> &'static Algorithm {
         match self {
-            MlKem::MlKem512 => &aws_lc_rs::unstable::kem::ML_KEM_512,
-            MlKem::MlKem768 => &aws_lc_rs::unstable::kem::ML_KEM_768,
-            MlKem::MlKem1024 => &aws_lc_rs::unstable::kem::ML_KEM_1024,
+            MlKem::MlKem512 => &aws_lc_rs::kem::ML_KEM_512,
+            MlKem::MlKem768 => &aws_lc_rs::kem::ML_KEM_768,
+            MlKem::MlKem1024 => &aws_lc_rs::kem::ML_KEM_1024,
         }
     }
 }

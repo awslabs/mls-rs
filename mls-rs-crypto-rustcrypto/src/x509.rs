@@ -4,6 +4,7 @@
 
 use std::net::AddrParseError;
 
+use mls_rs_core::time::MlsTime;
 use mls_rs_core::{crypto::CipherSuite, error::IntoAnyError};
 use mls_rs_identity_x509::SubjectAltName;
 use spki::{der::Tag, ObjectIdentifier};
@@ -32,7 +33,7 @@ pub enum X509Error {
     #[cfg_attr(feature = "std", error(transparent))]
     EcX509Error(EcX509Error),
     #[cfg_attr(feature = "std", error(transparent))]
-    ConstOidError(const_oid::Error),
+    ConstOidError(spki::der::oid::Error),
     #[cfg_attr(feature = "std", error(transparent))]
     EcSignerError(EcSignerError),
     #[cfg_attr(feature = "std", error(transparent))]
@@ -62,9 +63,17 @@ pub enum X509Error {
     PinnedCertNotFound,
     #[cfg_attr(
         feature = "std",
-        error("Current (commit) timestamp {0} outside of the validity period of certificate {1}")
+        error("Current (commit) timestamp {} outside of the validity period ({} to {}) of certificate",
+              timestamp.seconds_since_epoch(),
+              not_before.seconds_since_epoch(),
+              not_after.seconds_since_epoch(),
+        )
     )]
-    ValidityError(u64, String),
+    ValidityError {
+        timestamp: MlsTime,
+        not_before: MlsTime,
+        not_after: MlsTime,
+    },
     #[cfg_attr(feature = "std", error("unsupported signing algorithm with OID {0}"))]
     UnsupportedAlgorithm(ObjectIdentifier),
     #[cfg_attr(feature = "std", error(transparent))]
@@ -111,8 +120,8 @@ impl From<EcX509Error> for X509Error {
     }
 }
 
-impl From<const_oid::Error> for X509Error {
-    fn from(e: const_oid::Error) -> Self {
+impl From<spki::der::oid::Error> for X509Error {
+    fn from(e: spki::der::oid::Error) -> Self {
         X509Error::ConstOidError(e)
     }
 }
