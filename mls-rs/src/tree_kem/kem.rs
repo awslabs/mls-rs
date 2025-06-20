@@ -401,7 +401,9 @@ impl<'a> TreeKem<'a> {
 
         let (ct_pos, _) = reso
             .iter()
-            .filter(|idx| **idx % 2 == 1 || !excluding.contains(&LeafIndex(**idx / 2)))
+            .filter(|idx| {
+                **idx % 2 == 1 || !excluding.contains(&LeafIndex::from_node_index_unchecked(**idx))
+            })
             .find_position(|idx| idx == &&resolved)
             .ok_or(MlsError::UpdateErrorNoSecretKey)?;
 
@@ -543,7 +545,8 @@ mod tests {
             let (leaf_node, hpke_secret, _) =
                 get_basic_test_node_sig_key(cipher_suite, &format!("{index}")).await;
 
-            let private_key = TreeKemPrivate::new_self_leaf(LeafIndex(index as u32), hpke_secret);
+            let private_key =
+                TreeKemPrivate::new_self_leaf(LeafIndex::unchecked(index as u32), hpke_secret);
 
             leaf_nodes.push(leaf_node);
             private_keys.push(private_key);
@@ -594,16 +597,21 @@ mod tests {
         verify_tree_update_path(
             &encap_tree,
             &encap_gen.update_path,
-            LeafIndex(0),
+            LeafIndex::unchecked(0),
             capabilities,
             extensions,
         );
 
         // Verify that the private key matches the data in the public key
-        verify_tree_private_path(&cipher_suite, &encap_tree, &encap_private_key, LeafIndex(0))
-            .await;
+        verify_tree_private_path(
+            &cipher_suite,
+            &encap_tree,
+            &encap_private_key,
+            LeafIndex::unchecked(0),
+        )
+        .await;
 
-        let filtered = test_tree.nodes.filtered(LeafIndex(0)).unwrap();
+        let filtered = test_tree.nodes.filtered(LeafIndex::unchecked(0)).unwrap();
         let mut unfiltered_nodes = vec![None; filtered.len()];
         filtered
             .into_iter()
@@ -621,7 +629,7 @@ mod tests {
         };
 
         encap_tree
-            .update_hashes(&[LeafIndex(0)], &cipher_suite_provider)
+            .update_hashes(&[LeafIndex::unchecked(0)], &cipher_suite_provider)
             .await
             .unwrap();
 
@@ -629,7 +637,7 @@ mod tests {
 
         for (i, tree) in receiver_trees.iter_mut().enumerate() {
             tree.apply_update_path(
-                LeafIndex(0),
+                LeafIndex::unchecked(0),
                 &validated_update_path,
                 &Default::default(),
                 BasicIdentityProvider,
@@ -643,7 +651,7 @@ mod tests {
 
             TreeKem::new(tree, &mut private_keys[i])
                 .decap(
-                    LeafIndex(0),
+                    LeafIndex::unchecked(0),
                     &validated_update_path,
                     &[],
                     &context.mls_encode_to_vec().unwrap(),
@@ -652,7 +660,7 @@ mod tests {
                 .await
                 .unwrap();
 
-            tree.update_hashes(&[LeafIndex(0)], &cipher_suite_provider)
+            tree.update_hashes(&[LeafIndex::unchecked(0)], &cipher_suite_provider)
                 .await
                 .unwrap();
 

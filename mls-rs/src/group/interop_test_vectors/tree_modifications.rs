@@ -134,7 +134,7 @@ async fn apply_proposal(
     let cs = test_cipher_suite_provider(CipherSuite::CURVE25519_AES128);
     let p_ref = ProposalRef::new_fake(b"fake ref".to_vec());
 
-    CommitReceiver::new(tree_before, Sender::Member(0), LeafIndex(1), cs)
+    CommitReceiver::new(tree_before, Sender::Member(0), LeafIndex::unchecked(1), cs)
         .cache(p_ref.clone(), proposal, Sender::Member(sender))
         .receive(vec![ProposalOrRef::Reference(p_ref)])
         .await
@@ -151,7 +151,7 @@ async fn generate_add() -> Proposal {
 
 #[cfg_attr(coverage_nightly, coverage(off))]
 fn generate_remove(i: u32) -> Proposal {
-    let to_remove = LeafIndex(i);
+    let to_remove = LeafIndex::unchecked(i);
     Proposal::Remove(RemoveProposal { to_remove })
 }
 
@@ -159,7 +159,11 @@ fn generate_remove(i: u32) -> Proposal {
 #[cfg_attr(coverage_nightly, coverage(off))]
 async fn generate_update(i: u32, tree: &TreeWithSigners) -> Proposal {
     let signer = tree.signers[i as usize].as_ref().unwrap();
-    let mut leaf_node = tree.tree.get_leaf_node(LeafIndex(i)).unwrap().clone();
+    let mut leaf_node = tree
+        .tree
+        .get_leaf_node(LeafIndex::unchecked(i))
+        .unwrap()
+        .clone();
 
     leaf_node
         .update(

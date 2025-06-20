@@ -350,7 +350,7 @@ where
 
         leaf_node_validator
             .check_if_valid(
-                public_tree.get_leaf_node(LeafIndex(0))?,
+                public_tree.get_leaf_node(LeafIndex::unchecked(0))?,
                 ValidationContext::Add(None),
             )
             .await?;
@@ -615,7 +615,7 @@ where
         let member_leaf_node = self
             .group_state()
             .public_tree
-            .get_leaf_node(LeafIndex(recipient_index))?;
+            .get_leaf_node(LeafIndex::try_from(recipient_index)?)?;
         let member_public_key = &member_leaf_node.public_key;
         let hpke_ciphertext = self
             .cipher_suite_provider
@@ -750,7 +750,12 @@ where
     /// [`ReceivedMessage`].
     #[inline(always)]
     pub fn current_member_index(&self) -> u32 {
-        self.private_tree.self_index.0
+        *self.current_member_leaf_index()
+    }
+
+    #[inline(always)]
+    fn current_member_leaf_index(&self) -> LeafIndex {
+        self.private_tree.self_index
     }
 
     fn current_user_leaf_node(&self) -> Result<&LeafNode, MlsError> {
@@ -1050,7 +1055,7 @@ where
     }
 
     fn remove_proposal(&self, index: u32) -> Result<Proposal, MlsError> {
-        let leaf_index = LeafIndex(index);
+        let leaf_index = LeafIndex::try_from(index)?;
 
         // Verify that this leaf is actually in the tree
         self.current_epoch_tree().get_leaf_node(leaf_index)?;
@@ -2438,10 +2443,7 @@ mod tests {
 
             assert!(!group.has_pending_commit());
 
-            assert_eq!(
-                group.private_tree.self_index.0,
-                group.current_member_index()
-            );
+            assert_eq!(*group.private_tree.self_index, group.current_member_index());
         }
     }
 
@@ -4968,16 +4970,19 @@ mod tests {
         // Alice commits Bob's self-remove and Alice's removal of Bob. This filters out the remove proposal.
         let commit = alice.commit(Vec::new()).await.unwrap();
         let unused = &commit.unused_proposals[0];
+
+        let expected_index = LeafIndex::unchecked(1);
+
         assert_matches!(
             unused,
             ProposalInfo {
                 proposal: Proposal::Remove(RemoveProposal {
-                    to_remove: LeafIndex(1)
+                    to_remove: i,
                 }),
                 sender: Sender::Member(0),
                 ..
             }
-        );
+        if *i == expected_index);
     }
 
     #[cfg(all(

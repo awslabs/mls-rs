@@ -821,7 +821,7 @@ mod tests {
         let (sender_leaf, sender_leaf_secret, _) =
             get_basic_test_node_sig_key(cipher_suite, "alice").await;
 
-        let sender = LeafIndex(0);
+        let sender = LeafIndex::unchecked(0);
 
         let (mut tree, _) = TreeKemPublic::derive(
             sender_leaf,
@@ -896,7 +896,7 @@ mod tests {
             public_tree: expected_tree,
             group_context: get_test_group_context(1, cipher_suite).await,
             external_init_index: None,
-            indexes_of_added_kpkgs: vec![LeafIndex(1)],
+            indexes_of_added_kpkgs: vec![LeafIndex::unchecked(1)],
             unused_proposals: vec![],
             applied_proposals: bundle,
         };
@@ -1082,7 +1082,9 @@ mod tests {
             .await
             .unwrap();
 
-        expected_effects.indexes_of_added_kpkgs.push(LeafIndex(3));
+        expected_effects
+            .indexes_of_added_kpkgs
+            .push(LeafIndex::unchecked(3));
 
         assert_matches(expected_effects, provisional_state);
     }
@@ -1132,7 +1134,7 @@ mod tests {
         } = test_proposals(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
         let update = Proposal::Update(make_update_proposal("foo").await);
-        let update_proposal_ref = make_proposal_ref(&update, LeafIndex(1)).await;
+        let update_proposal_ref = make_proposal_ref(&update, LeafIndex::unchecked(1)).await;
         let mut cache = test_proposal_cache_setup(test_proposals).await;
 
         cache.insert(update_proposal_ref.clone(), update, Sender::Member(1));
@@ -1248,11 +1250,12 @@ mod tests {
         assert!(cache.is_empty());
 
         let test_proposal = Proposal::Remove(RemoveProposal {
-            to_remove: LeafIndex(test_sender()),
+            to_remove: LeafIndex::unchecked(test_sender()),
         });
 
         let proposer = test_sender();
-        let test_proposal_ref = make_proposal_ref(&test_proposal, LeafIndex(proposer)).await;
+        let test_proposal_ref =
+            make_proposal_ref(&test_proposal, LeafIndex::unchecked(proposer)).await;
         cache.insert(test_proposal_ref, test_proposal, Sender::Member(proposer));
 
         assert!(!cache.is_empty())
@@ -1771,7 +1774,7 @@ mod tests {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         cache.insert(
-            make_proposal_ref(&update, LeafIndex(2)).await,
+            make_proposal_ref(&update, LeafIndex::unchecked(2)).await,
             update,
             Sender::Member(2),
         );
@@ -2235,7 +2238,7 @@ mod tests {
             test_cipher_suite_provider(TEST_CIPHER_SUITE),
         )
         .receive([Proposal::Remove(RemoveProposal {
-            to_remove: LeafIndex(10),
+            to_remove: LeafIndex::unchecked(10),
         })])
         .await;
 
@@ -2248,7 +2251,7 @@ mod tests {
 
         let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
             .with_additional([Proposal::Remove(RemoveProposal {
-                to_remove: LeafIndex(10),
+                to_remove: LeafIndex::unchecked(10),
             })])
             .send()
             .await;
@@ -2261,7 +2264,7 @@ mod tests {
         let (alice, tree) = new_tree("alice").await;
 
         let proposal = Proposal::Remove(RemoveProposal {
-            to_remove: LeafIndex(10),
+            to_remove: LeafIndex::unchecked(10),
         });
 
         let proposal_info = make_proposal_info(&proposal, alice).await;

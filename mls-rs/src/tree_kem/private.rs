@@ -33,7 +33,7 @@ impl TreeKemPrivate {
 
     pub fn new_for_external() -> Self {
         TreeKemPrivate {
-            self_index: LeafIndex(0),
+            self_index: LeafIndex::unchecked(0),
             secret_keys: Default::default(),
         }
     }
@@ -143,7 +143,7 @@ mod tests {
     async fn test_create_self_leaf() {
         let secret = random_hpke_secret_key().await;
 
-        let self_index = LeafIndex(42);
+        let self_index = LeafIndex::unchecked(42);
 
         let private_key = TreeKemPrivate::new_self_leaf(self_index, secret.clone());
 
@@ -211,7 +211,8 @@ mod tests {
         let path_secret = encap_gen.path_secrets[1].clone().unwrap();
 
         // Private key for Charlie
-        let charlie_private = TreeKemPrivate::new_self_leaf(LeafIndex(2), charlie_hpke_secret);
+        let charlie_private =
+            TreeKemPrivate::new_self_leaf(LeafIndex::unchecked(2), charlie_hpke_secret);
 
         (public_tree, charlie_private, alice_private, path_secret)
     }
@@ -229,7 +230,7 @@ mod tests {
         charlie_private
             .update_secrets(
                 &test_cipher_suite_provider(cipher_suite),
-                LeafIndex(0),
+                LeafIndex::unchecked(0),
                 path_secret,
                 &public_tree,
             )
@@ -267,7 +268,7 @@ mod tests {
         let res = charlie_private
             .update_secrets(
                 &test_cipher_suite_provider(cipher_suite),
-                LeafIndex(0),
+                LeafIndex::unchecked(0),
                 path_secret,
                 &public_tree,
             )
@@ -293,7 +294,7 @@ mod tests {
     #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_update_leaf() {
-        let self_leaf = LeafIndex(42);
+        let self_leaf = LeafIndex::unchecked(42);
         let mut private_key = setup_direct_path(self_leaf, 128).await;
 
         let new_secret = random_hpke_secret_key().await;

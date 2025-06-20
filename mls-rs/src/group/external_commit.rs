@@ -261,7 +261,7 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
 
         if let Some(r) = self.to_remove {
             proposals.push(Proposal::Remove(RemoveProposal {
-                to_remove: LeafIndex(r),
+                to_remove: LeafIndex::try_from(r)?,
             }));
         }
 

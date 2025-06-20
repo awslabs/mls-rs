@@ -17,9 +17,7 @@ use crate::{
     identity::SigningIdentity,
     protocol_version::ProtocolVersion,
     signer::Signable,
-    tree_kem::{
-        kem::TreeKem, node::LeafIndex, path_secret::PathSecret, TreeKemPrivate, UpdatePath,
-    },
+    tree_kem::{kem::TreeKem, path_secret::PathSecret, TreeKemPrivate, UpdatePath},
     ExtensionList, MlsRules,
 };
 
@@ -895,7 +893,7 @@ where
             group_context: group_context.clone(),
             extensions,
             confirmation_tag: confirmation_tag.clone(), // The confirmation_tag from the MlsPlaintext object
-            signer: LeafIndex(self.current_member_index()),
+            signer: self.current_member_leaf_index(),
             signature: vec![],
         };
 

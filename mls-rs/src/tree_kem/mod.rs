@@ -180,7 +180,7 @@ impl TreeKemPublic {
             .add_leaf(leaf_node, identity_provider, extensions, None)
             .await?;
 
-        let private_tree = TreeKemPrivate::new_self_leaf(LeafIndex(0), secret_key);
+        let private_tree = TreeKemPrivate::new_self_leaf(LeafIndex::unchecked(0), secret_key);
 
         Ok((public_tree, private_tree))
     }
@@ -229,7 +229,7 @@ impl TreeKemPublic {
         id_provider: &I,
         cipher_suite_provider: &CP,
     ) -> Result<Vec<LeafIndex>, MlsError> {
-        let mut start = LeafIndex(0);
+        let mut start = LeafIndex::unchecked(0);
         let mut added = vec![];
 
         for leaf in leaf_nodes.into_iter() {
@@ -398,7 +398,7 @@ impl TreeKemPublic {
         #[cfg(all(feature = "custom_proposal", feature = "self_remove_proposal"))]
         for i in (0..proposal_bundle.self_removes.len()).rev() {
             let index = match proposal_bundle.self_removes[i].sender {
-                crate::group::Sender::Member(idx) => LeafIndex(idx),
+                crate::group::Sender::Member(idx) => LeafIndex::try_from(idx)?,
                 _ => continue,
             };
             self_removed.push(index);
@@ -527,7 +527,7 @@ impl TreeKemPublic {
         }
 
         // Apply adds
-        let mut start = LeafIndex(0);
+        let mut start = LeafIndex::unchecked(0);
         let mut added = vec![];
         let mut bad_indexes = vec![];
 
@@ -611,7 +611,7 @@ impl TreeKemPublic {
         }
 
         // Apply adds
-        let mut start = LeafIndex(0);
+        let mut start = LeafIndex::unchecked(0);
         let mut added = vec![];
 
         for p in &proposal_bundle.additions {
@@ -645,7 +645,9 @@ impl TreeKemPublic {
         extensions: &ExtensionList,
         start: Option<LeafIndex>,
     ) -> Result<LeafIndex, MlsError> {
-        let index = self.nodes.next_empty_leaf(start.unwrap_or(LeafIndex(0)));
+        let index = self
+            .nodes
+            .next_empty_leaf(start.unwrap_or(LeafIndex::unchecked(0)));
 
         #[cfg(feature = "tree_index")]
         index_insert(&mut self.index, &leaf, index, id_provider, extensions).await?;
@@ -698,11 +700,13 @@ impl TreeKemPublic {
         I: IdentityProvider,
         CP: CipherSuiteProvider,
     {
+        let leaf_index = LeafIndex::try_from(leaf_index)?;
+
         let p = Proposal::Update(UpdateProposal { leaf_node });
 
         let mut bundle = ProposalBundle::default();
-        bundle.add(p, Sender::Member(leaf_index), ProposalSource::ByValue);
-        bundle.update_senders = vec![LeafIndex(leaf_index)];
+        bundle.add(p, Sender::Member(*leaf_index), ProposalSource::ByValue);
+        bundle.update_senders = vec![leaf_index];
 
         self.batch_edit(
             &mut bundle,
@@ -883,7 +887,7 @@ pub(crate) mod test_utils {
         #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
         pub async fn add_member<P: CipherSuiteProvider>(&mut self, name: &str, cs: &P) {
             let (leaf, signer) = make_leaf(name, cs).await;
-            let index = self.tree.nodes.next_empty_leaf(LeafIndex(0));
+            let index = self.tree.nodes.next_empty_leaf(LeafIndex::unchecked(0));
             self.tree.nodes.insert_leaf(index, leaf);
             self.tree.update_unmerged(index).unwrap();
             let index = *index as usize;
@@ -900,10 +904,13 @@ pub(crate) mod test_utils {
         pub fn remove_member(&mut self, member: u32) {
             self.tree
                 .nodes
-                .blank_direct_path(LeafIndex(member))
+                .blank_direct_path(LeafIndex::unchecked(member))
                 .unwrap();
 
-            self.tree.nodes.blank_leaf_node(LeafIndex(member)).unwrap();
+            self.tree
+                .nodes
+                .blank_leaf_node(LeafIndex::unchecked(member))
+                .unwrap();
 
             *self
                 .signers
@@ -917,7 +924,7 @@ pub(crate) mod test_utils {
             committer: u32,
             cs: &P,
         ) {
-            let committer = LeafIndex(committer);
+            let committer = LeafIndex::unchecked(committer);
 
             let path = self.tree.nodes.direct_copath(committer);
             let filtered = self.tree.nodes.filtered(committer).unwrap();
@@ -1041,7 +1048,7 @@ mod tests {
                 Some(Node::Leaf(test_tree.creator_leaf.clone()))
             );
 
-            assert_eq!(test_tree.private.self_index, LeafIndex(0));
+            assert_eq!(test_tree.private.self_index, LeafIndex::unchecked(0));
 
             assert_eq!(
                 test_tree.private.secret_keys[0],
@@ -1216,7 +1223,7 @@ mod tests {
 
         assert_eq!(
             tree.nodes[3].as_parent().unwrap().unmerged_leaves,
-            vec![LeafIndex(3)]
+            vec![LeafIndex::unchecked(3)]
         )
     }
 
@@ -1234,14 +1241,17 @@ mod tests {
             .unwrap();
 
         // Add in parent nodes so we can detect them clearing after update
-        tree.nodes.direct_copath(LeafIndex(0)).iter().for_each(|n| {
-            tree.nodes
-                .borrow_or_fill_node_as_parent(n.path, &b"pub_key".to_vec().into())
-                .unwrap();
-        });
+        tree.nodes
+            .direct_copath(LeafIndex::unchecked(0))
+            .iter()
+            .for_each(|n| {
+                tree.nodes
+                    .borrow_or_fill_node_as_parent(n.path, &b"pub_key".to_vec().into())
+                    .unwrap();
+            });
 
         let original_size = tree.occupied_leaf_count();
-        let original_leaf_index = LeafIndex(1);
+        let original_leaf_index = LeafIndex::unchecked(1);
 
         let updated_leaf = get_basic_test_node(TEST_CIPHER_SUITE, "A").await;
 
@@ -1268,9 +1278,12 @@ mod tests {
         );
 
         // Verify that the direct path has been cleared
-        tree.nodes.direct_copath(LeafIndex(0)).iter().for_each(|n| {
-            assert!(tree.nodes[n.path as usize].is_none());
-        });
+        tree.nodes
+            .direct_copath(LeafIndex::unchecked(0))
+            .iter()
+            .for_each(|n| {
+                assert!(tree.nodes[n.path as usize].is_none());
+            });
     }
 
     #[cfg(feature = "by_ref_proposal")]
@@ -1399,7 +1412,7 @@ mod tests {
 
         let original_leaf_count = tree.occupied_leaf_count();
 
-        let to_remove = vec![LeafIndex(2)];
+        let to_remove = vec![LeafIndex::unchecked(2)];
 
         // Remove the leaf from the tree
         tree.remove_leaves(to_remove, &BasicIdentityProvider, &cipher_suite_provider)
@@ -1415,7 +1428,7 @@ mod tests {
         // The location of key_packages[1] should now be blank
         let removed_location = tree
             .nodes
-            .get(NodeIndex::from(LeafIndex(2)) as usize)
+            .get(NodeIndex::from(LeafIndex::unchecked(2)) as usize)
             .unwrap();
 
         assert_eq!(removed_location, &None);
@@ -1430,7 +1443,7 @@ mod tests {
 
         let res = tree
             .remove_leaves(
-                vec![LeafIndex(128)],
+                vec![LeafIndex::unchecked(128)],
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
             )
@@ -1457,7 +1470,7 @@ mod tests {
 
         // Find each node
         for (i, leaf_node) in leaf_nodes.iter().enumerate() {
-            let expected_index = LeafIndex(i as u32 + 1);
+            let expected_index = LeafIndex::unchecked(i as u32 + 1);
             assert_eq!(tree.find_leaf_node(leaf_node), Some(expected_index));
         }
     }
@@ -1491,10 +1504,10 @@ mod tests {
 
         bundle.add(update, Sender::Member(1), ProposalSource::ByReference(pref));
 
-        bundle.update_senders = vec![LeafIndex(1)];
+        bundle.update_senders = vec![LeafIndex::unchecked(1)];
 
         let remove = RemoveProposal {
-            to_remove: LeafIndex(2),
+            to_remove: LeafIndex::unchecked(2),
         };
 
         let remove = Proposal::Remove(remove);
