@@ -763,7 +763,7 @@ mod tests {
 
         let test_auth = auth_content_from_proposal(
             Proposal::Remove(RemoveProposal {
-                to_remove: LeafIndex(0),
+                to_remove: LeafIndex::unchecked(0),
             }),
             Sender::External(0),
         );

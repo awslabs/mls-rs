@@ -220,7 +220,7 @@ mod tests {
         TreeKem::new(&mut test_tree.public, &mut test_tree.private)
             .encap(
                 &mut get_test_group_context(42, cipher_suite).await,
-                &[LeafIndex(1), LeafIndex(2)],
+                &[LeafIndex::unchecked(1), LeafIndex::unchecked(2)],
                 &test_tree.creator_signing_key,
                 Some(default_properties()),
                 None,
@@ -296,7 +296,7 @@ mod tests {
 
             test_tree
                 .nodes
-                .borrow_as_leaf_mut(LeafIndex(0))
+                .borrow_as_leaf_mut(LeafIndex::unchecked(0))
                 .unwrap()
                 .signature = random_bytes(32);
 
@@ -350,7 +350,7 @@ mod tests {
         let mut tree = get_test_tree_fig_12(TEST_CIPHER_SUITE).await;
 
         // Add leaf E from the right subtree of the root to unmerged leaves of node 1 on the left
-        tree.nodes.borrow_as_parent_mut(1).unwrap().unmerged_leaves = vec![LeafIndex(4)];
+        tree.nodes.borrow_as_parent_mut(1).unwrap().unmerged_leaves = vec![LeafIndex::unchecked(4)];
 
         assert_matches!(
             validate_unmerged(&tree),

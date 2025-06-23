@@ -310,7 +310,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         index: u32,
         authenticated_data: Vec<u8>,
     ) -> Result<MlsMessage, MlsError> {
-        let to_remove = LeafIndex(index);
+        let to_remove = LeafIndex::try_from(index)?;
 
         // Verify that this leaf is actually in the tree
         self.group_state().public_tree.get_leaf_node(to_remove)?;

@@ -129,11 +129,19 @@ impl RemoveProposal {
     }
 }
 
-impl From<u32> for RemoveProposal {
-    fn from(value: u32) -> Self {
-        RemoveProposal {
-            to_remove: LeafIndex(value),
-        }
+impl RemoveProposal {
+    pub fn removing(member_index: u32) -> Result<Self, MlsError> {
+        Ok(Self {
+            to_remove: LeafIndex::try_from(member_index)?,
+        })
+    }
+}
+
+impl TryFrom<u32> for RemoveProposal {
+    type Error = MlsError;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        Self::removing(value)
     }
 }
 

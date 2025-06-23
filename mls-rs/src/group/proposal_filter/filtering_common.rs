@@ -106,7 +106,7 @@ where
                 self.apply_proposals_from_member(
                     #[cfg(feature = "by_ref_proposal")]
                     strategy,
-                    LeafIndex(*sender),
+                    LeafIndex::try_from(*sender)?,
                     proposals,
                     commit_time,
                 )

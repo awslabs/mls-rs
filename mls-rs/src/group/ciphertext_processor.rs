@@ -336,7 +336,7 @@ mod test {
                     .await
                     .unwrap();
 
-                receiver_group.private_tree.self_index = LeafIndex::new(1);
+                receiver_group.private_tree.self_index = LeafIndex::unchecked(1);
 
                 let mut receiver_processor = test_processor(&mut receiver_group, cipher_suite);
 
@@ -419,7 +419,7 @@ mod test {
                 .unwrap();
 
             ciphertext.ciphertext = random_bytes(ciphertext.ciphertext.len());
-            receiver_group.private_tree.self_index = LeafIndex::new(1);
+            receiver_group.private_tree.self_index = LeafIndex::unchecked(1);
 
             let res = ciphertext_processor.open(&ciphertext).await;
 

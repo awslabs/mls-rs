@@ -14,6 +14,12 @@ use core::ops::{Deref, DerefMut};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use tree_math::{CopathNode, TreeIndex};
 
+#[cfg(feature = "serde")]
+use mls_rs_core::error::IntoAnyError;
+
+// Restrict leaf index to 24bits
+pub(crate) const MAX_LEAF_INDEX: u32 = (1 << 24) - 1;
+
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub(crate) struct Parent {
@@ -22,16 +28,34 @@ pub(crate) struct Parent {
     pub unmerged_leaves: Vec<LeafIndex>,
 }
 
-#[derive(
-    Clone, Copy, Debug, Ord, PartialEq, PartialOrd, Hash, Eq, MlsSize, MlsEncode, MlsDecode,
-)]
+#[derive(Clone, Copy, Debug, Ord, PartialEq, PartialOrd, Hash, Eq, MlsSize, MlsEncode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct LeafIndex(pub(crate) u32);
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+pub struct LeafIndex(u32);
+
+impl TryFrom<u32> for LeafIndex {
+    type Error = MlsError;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        if value > MAX_LEAF_INDEX {
+            return Err(MlsError::InvalidTreeIndex);
+        }
+
+        Ok(Self(value))
+    }
+}
 
 impl LeafIndex {
-    pub fn new(i: u32) -> Self {
-        Self(i)
+    pub(crate) fn from_node_index_unchecked(index: NodeIndex) -> Self {
+        LeafIndex(index >> 1)
+    }
+
+    pub(crate) fn unchecked(value: u32) -> Self {
+        Self(value)
+    }
+
+    pub(crate) fn next_unchecked(&self) -> Self {
+        LeafIndex(self.0 + 1)
     }
 }
 
@@ -52,6 +76,25 @@ impl From<&LeafIndex> for NodeIndex {
 impl From<LeafIndex> for NodeIndex {
     fn from(leaf_index: LeafIndex) -> Self {
         leaf_index.0 * 2
+    }
+}
+
+impl MlsDecode for LeafIndex {
+    fn mls_decode(reader: &mut &[u8]) -> Result<Self, mls_rs_codec::Error> {
+        let val = u32::mls_decode(reader)?;
+        LeafIndex::try_from(val).map_err(|_| mls_rs_codec::Error::Custom(6))
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for LeafIndex {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let val = u32::deserialize(deserializer)?;
+
+        LeafIndex::try_from(val).map_err(|e| serde::de::Error::custom(e.into_any_error()))
     }
 }
 
@@ -203,13 +246,13 @@ impl NodeVec {
             .step_by(2)
             .enumerate()
             .filter(|(_, n)| n.is_none())
-            .map(|(i, n)| (LeafIndex(i as u32), n))
+            .map(|(i, n)| (LeafIndex::unchecked(i as u32), n))
     }
 
     pub fn non_empty_leaves(&self) -> impl Iterator<Item = (LeafIndex, &LeafNode)> + '_ {
         self.leaves()
             .enumerate()
-            .filter_map(|(i, l)| l.map(|l| (LeafIndex(i as u32), l)))
+            .filter_map(|(i, l)| l.map(|l| (LeafIndex::unchecked(i as u32), l)))
     }
 
     pub fn non_empty_parents(&self) -> impl Iterator<Item = (NodeIndex, &Parent)> + '_ {
@@ -386,13 +429,13 @@ impl NodeVec {
 
         while n < self.len() {
             if self.0[n].is_none() {
-                return LeafIndex((n as u32) >> 1);
+                return LeafIndex::from_node_index_unchecked(n as NodeIndex);
             }
 
             n += 2;
         }
 
-        LeafIndex((self.len() as u32 + 1) >> 1)
+        LeafIndex::from_node_index_unchecked(self.len() as NodeIndex + 1)
     }
 
     /// If `index` fits in the current tree, inserts `leaf` at `index`. Else, inserts `leaf` as the
@@ -428,7 +471,7 @@ pub(crate) mod test_utils {
         nodes[5] = Parent {
             public_key: b"CD".to_vec().into(),
             parent_hash: ParentHash::empty(),
-            unmerged_leaves: vec![LeafIndex(2)],
+            unmerged_leaves: vec![LeafIndex::unchecked(2)],
         }
         .into();
 
@@ -440,6 +483,8 @@ pub(crate) mod test_utils {
 
 #[cfg(test)]
 mod tests {
+    use assert_matches::assert_matches;
+
     use super::*;
     use crate::{
         client::test_utils::TEST_CIPHER_SUITE,
@@ -470,7 +515,7 @@ mod tests {
         let mut test_vec_clone = get_test_node_vec().await;
         let empty_leaves: Vec<(LeafIndex, &mut Option<Node>)> = test_vec.empty_leaves().collect();
         assert_eq!(
-            [(LeafIndex(1), &mut test_vec_clone[2])].as_ref(),
+            [(LeafIndex::unchecked(1), &mut test_vec_clone[2])].as_ref(),
             empty_leaves.as_slice()
         );
     }
@@ -480,7 +525,7 @@ mod tests {
         let test_vec = get_test_node_vec().await;
         // Tree math is already tested in that module, just ensure equality
         let expected = 0.direct_copath(&4);
-        let actual = test_vec.direct_copath(LeafIndex(0));
+        let actual = test_vec.direct_copath(LeafIndex::unchecked(0));
         assert_eq!(actual, expected);
     }
 
@@ -488,7 +533,7 @@ mod tests {
     async fn test_filtered_direct_path_co_path() {
         let test_vec = get_test_node_vec().await;
         let expected = [true, false];
-        let actual = test_vec.filtered(LeafIndex(0)).unwrap();
+        let actual = test_vec.filtered(LeafIndex::unchecked(0)).unwrap();
         assert_eq!(actual, expected);
     }
 
@@ -508,7 +553,7 @@ mod tests {
         let mut expected = Parent {
             public_key: b"CD".to_vec().into(),
             parent_hash: ParentHash::empty(),
-            unmerged_leaves: vec![LeafIndex(2)],
+            unmerged_leaves: vec![LeafIndex::unchecked(2)],
         };
 
         assert_eq!(test_vec.borrow_as_parent_mut(5).unwrap(), &mut expected);
@@ -573,5 +618,43 @@ mod tests {
         let test_vec = get_test_node_vec().await;
         assert_eq!(test_vec.occupied_leaf_count(), 3);
         assert_eq!(test_vec.total_leaf_count(), 4);
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn max_leaf_index() {
+        let test_index = LeafIndex::try_from(1).unwrap();
+
+        let serialized = test_index.mls_encode_to_vec().unwrap();
+
+        LeafIndex::mls_decode(&mut &*serialized).unwrap();
+
+        #[cfg(feature = "serde")]
+        {
+            let serialized = serde_json::to_string(&test_index).unwrap();
+            serde_json::from_str::<LeafIndex>(&serialized).unwrap();
+        }
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn max_leaf_index_failure() {
+        let res = LeafIndex::try_from(MAX_LEAF_INDEX + 1);
+        assert_matches!(res, Err(MlsError::InvalidTreeIndex));
+
+        let serialized = LeafIndex::unchecked(MAX_LEAF_INDEX + 1)
+            .mls_encode_to_vec()
+            .unwrap();
+
+        let res = LeafIndex::mls_decode(&mut &*serialized);
+        assert_matches!(res, Err(mls_rs_codec::Error::Custom(6)));
+
+        #[cfg(feature = "serde")]
+        {
+            let serialized =
+                serde_json::to_string(&LeafIndex::unchecked(MAX_LEAF_INDEX + 1)).unwrap();
+
+            let res: Result<LeafIndex, _> = serde_json::from_str(&serialized);
+
+            assert!(res.is_err())
+        }
     }
 }
