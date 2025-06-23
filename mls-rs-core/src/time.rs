@@ -8,6 +8,13 @@ use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
+/// Wasm-compatible representation of a timestamp.
+///
+/// This type represents a point in time after 1970. The precision is seconds.
+///
+/// Since `MlsTime` always represents a timestamp after 1970, it can be trivially
+/// converted to/from a standard library [`Duration`] value (measuring the time since
+/// the start of the Unix epoch).
 #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::ffi_type)]
 #[derive(
     Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, MlsSize, MlsEncode, MlsDecode,
