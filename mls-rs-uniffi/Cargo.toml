@@ -1,6 +1,6 @@
 [package]
 name = "mls-rs-uniffi"
-version = "0.5.1"
+version = "0.6.0"
 edition = "2021"
 description = "An UniFFI-compatible implementation of Messaging Layer Security (RFC 9420)"
 homepage = "https://github.com/awslabs/mls-rs"
@@ -18,8 +18,8 @@ name = "mls_rs_uniffi"
 async-trait = "0.1.77"
 maybe-async = "0.2.10"
 mls-rs = { version = "0.48.0", path = "../mls-rs" }
-mls-rs-core = { version = "0.22.0", path = "../mls-rs-core" }
-mls-rs-crypto-openssl = { version = "0.15.0", path = "../mls-rs-crypto-openssl" }
+mls-rs-core = { version = "0.23.0", path = "../mls-rs-core" }
+mls-rs-crypto-openssl = { version = "0.16.0", path = "../mls-rs-crypto-openssl" }
 thiserror = "1.0.57"
 uniffi = { git = "https://github.com/mozilla/uniffi-rs/", rev = "eeb785c", version = "0.27.0" }
 
