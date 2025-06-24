@@ -30,7 +30,6 @@ use mls_rs_core::extension::{ExtensionError, ExtensionList, ExtensionType};
 use mls_rs_core::group::{GroupStateStorage, ProposalType};
 use mls_rs_core::identity::{CredentialType, IdentityProvider, MemberValidationContext};
 use mls_rs_core::key_package::KeyPackageStorage;
-use mls_rs_core::time::MlsTime;
 
 use crate::group::external_commit::ExternalCommitBuilder;
 

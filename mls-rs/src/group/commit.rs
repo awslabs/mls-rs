@@ -17,6 +17,7 @@ use crate::{
     identity::SigningIdentity,
     protocol_version::ProtocolVersion,
     signer::Signable,
+    time::MlsTime,
     tree_kem::{kem::TreeKem, path_secret::PathSecret, TreeKemPrivate, UpdatePath},
     ExtensionList, MlsRules,
 };
