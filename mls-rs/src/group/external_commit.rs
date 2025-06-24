@@ -15,6 +15,7 @@ use crate::{
         proposal::{ExternalInit, Proposal, RemoveProposal},
         EpochSecrets, ExternalPubExt, LeafIndex, LeafNode, MlsError, TreeKemPrivate,
     },
+    time::MlsTime,
     Group, MlsMessage,
 };
 
@@ -59,6 +60,7 @@ pub struct ExternalCommitBuilder<C: ClientConfig> {
     custom_proposals: Vec<Proposal>,
     #[cfg(feature = "custom_proposal")]
     received_custom_proposals: Vec<MlsMessage>,
+    commit_time: Option<MlsTime>,
 }
 
 impl<C: ClientConfig> ExternalCommitBuilder<C> {
@@ -81,6 +83,7 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
             custom_proposals: Vec::new(),
             #[cfg(feature = "custom_proposal")]
             received_custom_proposals: Vec::new(),
+            commit_time: None,
         }
     }
 
@@ -152,6 +155,14 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
         }
     }
 
+    /// Add a time to associate with the commit creation.
+    pub fn commit_time(self, commit_time: MlsTime) -> Self {
+        Self {
+            commit_time: Some(commit_time),
+            ..self
+        }
+    }
+
     /// Build the external commit using a GroupInfo message provided by an existing group member.
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn build(self, group_info: MlsMessage) -> Result<(Group<C>, MlsMessage), MlsError> {
@@ -181,6 +192,7 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
             self.tree_data,
             &self.config.identity_provider(),
             &cipher_suite,
+            self.commit_time,
         )
         .await?;
 
@@ -189,7 +201,7 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
             self.config.leaf_properties(self.leaf_node_extensions),
             self.signing_identity,
             &self.signer,
-            self.config.lifetime(),
+            self.config.lifetime(self.commit_time),
         )
         .await?;
 
@@ -274,6 +286,7 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
                 None,
                 None,
                 None,
+                self.commit_time,
             )
             .await?;
 

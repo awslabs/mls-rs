@@ -32,7 +32,7 @@ fn main() {
         .build();
 
     let mut alice_group = alice_client
-        .create_group(Default::default(), Default::default())
+        .create_group(Default::default(), Default::default(), None)
         .unwrap();
 
     alice_group.commit(Vec::new()).unwrap();

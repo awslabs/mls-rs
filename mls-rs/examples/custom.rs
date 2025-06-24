@@ -377,12 +377,15 @@ fn main() -> Result<(), CustomError> {
     context_extensions.set_from(RosterExtension { roster })?;
 
     let mut alice_tablet_group =
-        make_client(alice_tablet)?.create_group(context_extensions, Default::default())?;
+        make_client(alice_tablet)?.create_group(context_extensions, Default::default(), None)?;
 
     // Alice can add her other device
     let alice_pc_client = make_client(alice_pc)?;
-    let key_package =
-        alice_pc_client.generate_key_package_message(Default::default(), Default::default())?;
+    let key_package = alice_pc_client.generate_key_package_message(
+        Default::default(),
+        Default::default(),
+        None,
+    )?;
 
     let welcome = alice_tablet_group
         .commit_builder()
@@ -392,12 +395,15 @@ fn main() -> Result<(), CustomError> {
         .remove(0);
 
     alice_tablet_group.apply_pending_commit()?;
-    let (mut alice_pc_group, _) = alice_pc_client.join_group(None, &welcome)?;
+    let (mut alice_pc_group, _) = alice_pc_client.join_group(None, &welcome, None)?;
 
     // Alice cannot add bob's devices yet
     let bob_tablet_client = make_client(bob_tablet)?;
-    let key_package =
-        bob_tablet_client.generate_key_package_message(Default::default(), Default::default())?;
+    let key_package = bob_tablet_client.generate_key_package_message(
+        Default::default(),
+        Default::default(),
+        None,
+    )?;
 
     let res = alice_tablet_group
         .commit_builder()
@@ -417,7 +423,7 @@ fn main() -> Result<(), CustomError> {
         .add_member(key_package)?
         .build()?;
 
-    bob_tablet_client.join_group(None, &commit.welcome_messages[0])?;
+    bob_tablet_client.join_group(None, &commit.welcome_messages[0], None)?;
     alice_tablet_group.apply_pending_commit()?;
     alice_pc_group.process_incoming_message(commit.commit_message)?;
 

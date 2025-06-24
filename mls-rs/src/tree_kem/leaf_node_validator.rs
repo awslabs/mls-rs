@@ -109,11 +109,14 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
         leaf_node: &LeafNode,
         group_id: &[u8],
         leaf_index: u32,
+        maybe_time: Option<MlsTime>,
     ) -> Result<(), MlsError> {
         let context = match leaf_node.leaf_node_source {
-            LeafNodeSource::KeyPackage(_) => ValidationContext::Add(None),
-            LeafNodeSource::Update => ValidationContext::Update((group_id, leaf_index, None)),
-            LeafNodeSource::Commit(_) => ValidationContext::Commit((group_id, leaf_index, None)),
+            LeafNodeSource::KeyPackage(_) => ValidationContext::Add(maybe_time),
+            LeafNodeSource::Update => ValidationContext::Update((group_id, leaf_index, maybe_time)),
+            LeafNodeSource::Commit(_) => {
+                ValidationContext::Commit((group_id, leaf_index, maybe_time))
+            }
         };
 
         self.check_if_valid(leaf_node, context).await

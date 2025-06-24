@@ -44,11 +44,11 @@ fn main() -> Result<(), MlsError> {
     let bob = make_client(crypto_provider.clone(), "bob")?;
 
     // Alice creates a new group.
-    let mut alice_group = alice.create_group(ExtensionList::default(), Default::default())?;
+    let mut alice_group = alice.create_group(ExtensionList::default(), Default::default(), None)?;
 
     // Bob generates a key package that Alice needs to add Bob to the group.
     let bob_key_package =
-        bob.generate_key_package_message(Default::default(), Default::default())?;
+        bob.generate_key_package_message(Default::default(), Default::default(), None)?;
 
     // Alice issues a commit that adds Bob to the group.
     let alice_commit = alice_group
@@ -62,7 +62,7 @@ fn main() -> Result<(), MlsError> {
     alice_group.apply_pending_commit()?;
 
     // Bob joins the group with the welcome message created as part of Alice's commit.
-    let (mut bob_group, _) = bob.join_group(None, &alice_commit.welcome_messages[0])?;
+    let (mut bob_group, _) = bob.join_group(None, &alice_commit.welcome_messages[0], None)?;
 
     // Alice encrypts an application message to Bob.
     let msg = alice_group.encrypt_application_message(b"hello world", Default::default())?;

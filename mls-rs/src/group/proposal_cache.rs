@@ -3045,7 +3045,7 @@ mod tests {
                 properties,
                 signing_identity,
                 &signature_key,
-                Lifetime::years(1).unwrap(),
+                Lifetime::years(1, None).unwrap(),
             )
             .await
             .unwrap();
@@ -3614,7 +3614,7 @@ mod tests {
 
         generator
             .generate(
-                Lifetime::years(1).unwrap(),
+                Lifetime::years(1, None).unwrap(),
                 Capabilities {
                     credentials: vec![42.into()],
                     ..Default::default()

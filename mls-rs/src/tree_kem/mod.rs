@@ -992,7 +992,7 @@ pub(crate) mod test_utils {
             properties,
             signing_identity,
             &signature_key,
-            Lifetime::years(1).unwrap(),
+            Lifetime::years(1, None).unwrap(),
         )
         .await
         .unwrap();
