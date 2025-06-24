@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1750687680580,
+  "lastUpdate": 1750778328175,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -23747,6 +23747,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 129147,
             "range": "± 1201",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ellen.arteca@gmail.com",
+            "name": "Ellen Arteca",
+            "username": "emarteca"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d48efe41bb75ebe2355b059fd39ca2e8786fbf0d",
+          "message": "Adding custom time through commit builder and various explicit inputs (#282)\n\n* allowing custom time, not through a trait\n\n* clippy and external_client\n\n* missed one fix\n\n* .\n\n* clippy and features\n\n* test and fixing harness\n\n* .\n\n* passing time to leaf node valdiator\n\n* passing time through leaf node validator\n\n* missed a test\n\n* .\n\n* external client\n\n* adding more time vals\n\n* fixing test_harness calls\n\n* fix bad merge\n\n* code review: renaming maybe_now_time to timestamp\n\n* clippy\n\n* fixing merge\n\n---------\n\nCo-authored-by: Ellen Arteca <emarteca@google.com>",
+          "timestamp": "2025-06-24T11:14:38-04:00",
+          "tree_id": "2f4242dc4e5fb77d9045f2af31d3395b350c2288",
+          "url": "https://github.com/awslabs/mls-rs/commit/d48efe41bb75ebe2355b059fd39ca2e8786fbf0d"
+        },
+        "date": 1750778327410,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 531424,
+            "range": "± 11991",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 539101,
+            "range": "± 5752",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 602835,
+            "range": "± 5873",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1258136,
+            "range": "± 26570",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7534027,
+            "range": "± 102362",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2628468,
+            "range": "± 130160",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7043677,
+            "range": "± 84854",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13168798,
+            "range": "± 118604",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 773791,
+            "range": "± 49783",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 860623,
+            "range": "± 10433",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 991116,
+            "range": "± 10545",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 20428,
+            "range": "± 193",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 67069,
+            "range": "± 1040",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 129231,
+            "range": "± 1464",
             "unit": "ns/iter"
           }
         ]
