@@ -865,7 +865,7 @@ fn find_member(roster: &[Member], cred: &Credential) -> Result<u32, Status> {
         .iter()
         .find(|member| &member.signing_identity.credential == cred)
         .map(|member| member.index)
-        .ok_or_else(|| Status::aborted(format!("member \"{:?}\" not found", cred)))
+        .ok_or_else(|| Status::aborted(format!("member \"{cred:?}\" not found")))
 }
 
 #[derive(Parser)]

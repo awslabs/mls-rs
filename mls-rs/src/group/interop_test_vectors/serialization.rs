@@ -123,7 +123,7 @@ async fn serialization() {
                     panic!("unexpected decode failure of valid remove proposal");
                 }
             }
-            Err(e) => panic!("unexpected error: {:?}", e),
+            Err(e) => panic!("unexpected error: {e:?}"),
         }
 
         let proposal = ReInitProposal::mls_decode(&mut &*test_case.re_init_proposal).unwrap();
