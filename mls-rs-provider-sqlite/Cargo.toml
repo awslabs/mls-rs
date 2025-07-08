@@ -13,7 +13,7 @@ mls-rs-core = { path = "../mls-rs-core", version = "0.23.0" }
 thiserror = "2"
 wasm-bindgen = { version = "0.2", optional = true }
 zeroize = { version = "1", features = ["zeroize_derive"] }
-rusqlite = { version = "0.36", default-features = false }
+rusqlite = { version = "0.32", default-features = false }
 hex = { version = "0.4" }
 maybe-async = "0.2.10"
 async-trait = "0.1.74"
