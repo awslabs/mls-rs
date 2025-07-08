@@ -72,12 +72,12 @@ impl SqLiteApplicationStorage {
     }
 
     /// Delete a value from storage based on its `key`.
-    pub fn delete(&self, key: &str) -> Result<(), SqLiteDataStorageError> {
+    /// Returns the number of rows modified (0 if the key-value pair didnt exist).
+    pub fn delete(&self, key: &str) -> Result<usize, SqLiteDataStorageError> {
         let connection = self.connection.lock().unwrap();
 
         connection
             .execute("DELETE FROM kvs WHERE key = ?", params![key])
-            .map(|_| ())
             .map_err(sql_engine_error)
     }
 
@@ -100,7 +100,8 @@ impl SqLiteApplicationStorage {
     }
 
     /// Delete all values from storage for which key starts with `key_prefix`.
-    pub fn delete_by_prefix(&self, key_prefix: &str) -> Result<(), SqLiteDataStorageError> {
+    /// Returns the total number of rows modified.
+    pub fn delete_by_prefix(&self, key_prefix: &str) -> Result<usize, SqLiteDataStorageError> {
         let connection = self.connection.lock().unwrap();
         let mut key_prefix = sanitize(key_prefix);
         key_prefix.push('%');
@@ -110,7 +111,6 @@ impl SqLiteApplicationStorage {
                 "DELETE FROM kvs WHERE key LIKE ? ESCAPE '$'",
                 params![key_prefix],
             )
-            .map(|_| ())
             .map_err(sql_engine_error)
     }
 }
@@ -224,7 +224,11 @@ mod tests {
         let storage = test_storage();
 
         storage.insert(&key, &value).unwrap();
-        storage.delete(&key).unwrap();
+        let rows_deleted_some = storage.delete(&key).unwrap();
+        let rows_deleted_none = storage.delete(&key).unwrap();
+
+        assert_eq!(rows_deleted_some, 1);
+        assert_eq!(rows_deleted_none, 0);
 
         assert!(storage.get(&key).unwrap().is_none());
     }
@@ -258,7 +262,9 @@ mod tests {
         let result = storage.get_by_prefix("").unwrap();
         assert_eq!(result.len(), keys.len());
 
-        storage.delete_by_prefix("prefix").unwrap();
+        let deleted_items = storage.delete_by_prefix("prefix").unwrap();
+        assert_eq!(deleted_items, 2);
+
         let result = storage.get_by_prefix("").unwrap();
         assert_eq!(result.len(), 2);
         assert!(result.contains(&Item::new("prefiy ".to_string(), value.clone())));
