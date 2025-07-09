@@ -70,7 +70,7 @@ fn main() -> Result<(), MlsError> {
     // Bob decrypts the application message from Alice.
     let msg = bob_group.process_incoming_message(msg)?;
 
-    println!("Received message: {:?}", msg);
+    println!("Received message: {msg:?}");
 
     // Alice and bob write the group state to their configured storage engine
     alice_group.write_to_storage()?;

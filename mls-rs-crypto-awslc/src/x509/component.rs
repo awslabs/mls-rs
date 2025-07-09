@@ -416,7 +416,7 @@ impl X509Extension {
         }
 
         if let Some(path_len) = path_len {
-            basic_constraints.push_str(format!(",pathlen{}", path_len).as_str());
+            basic_constraints.push_str(format!(",pathlen{path_len}").as_str());
         }
 
         string_to_ext(basic_constraints, NID_basic_constraints, None)

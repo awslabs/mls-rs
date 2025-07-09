@@ -56,16 +56,16 @@ mod swift {
         // We need to pass the MIN_OS var into these because for all platforms other than macOS, not doing so will cause
         // libraries_require_rpath to be true and this build script has no support for RPaths.
         match env::var("TARGET").unwrap().as_str() {
-            "aarch64-apple-ios" => format!("arm64-apple-ios{}", MIN_IOS_DEPLOYMENT_TARGET),
+            "aarch64-apple-ios" => format!("arm64-apple-ios{MIN_IOS_DEPLOYMENT_TARGET}"),
             "x86_64-apple-ios" => {
-                format!("x86_64-apple-ios{}-simulator", MIN_IOS_DEPLOYMENT_TARGET)
+                format!("x86_64-apple-ios{MIN_IOS_DEPLOYMENT_TARGET}-simulator")
             }
             "aarch64-apple-ios-sim" => {
-                format!("arm64-apple-ios{}-simulator", MIN_IOS_DEPLOYMENT_TARGET)
+                format!("arm64-apple-ios{MIN_IOS_DEPLOYMENT_TARGET}-simulator")
             }
-            "aarch64-apple-darwin" => format!("arm64-apple-macosx{}", MIN_OSX_DEPLOYMENT_TARGET),
-            "x86_64-apple-darwin" => format!("x86_64-apple-macosx{}", MIN_OSX_DEPLOYMENT_TARGET),
-            unknown_target => panic!("Unsupported Arch for swift: {}", unknown_target), //
+            "aarch64-apple-darwin" => format!("arm64-apple-macosx{MIN_OSX_DEPLOYMENT_TARGET}"),
+            "x86_64-apple-darwin" => format!("x86_64-apple-macosx{MIN_OSX_DEPLOYMENT_TARGET}"),
+            unknown_target => panic!("Unsupported Arch for swift: {unknown_target}"), //
         }
     }
 
@@ -80,7 +80,7 @@ mod swift {
             .runtime_library_paths
             .iter()
             .for_each(|path| {
-                println!("cargo:rustc-link-search=native={}", path);
+                println!("cargo:rustc-link-search=native={path}");
             });
     }
 
@@ -91,7 +91,7 @@ mod swift {
             "aarch64-apple-ios-sim" => "iphonesimulator",
             "aarch64-apple-darwin" => "macosx",
             "x86_64-apple-darwin" => "macosx",
-            unknown_target => panic!("Unsupported Arch for swift: {}", unknown_target), //
+            unknown_target => panic!("Unsupported Arch for swift: {unknown_target}"), //
         };
 
         let sdk_root = Command::new("xcrun")
@@ -118,7 +118,7 @@ mod swift {
             .unwrap()
             .success()
         {
-            panic!("Failed to compile swift package {}", package_name);
+            panic!("Failed to compile swift package {package_name}");
         }
 
         let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
@@ -127,6 +127,6 @@ mod swift {
             "cargo:rustc-link-search=native={}/{}.build/{}/{}",
             manifest_dir, package_root, swift_target_info.target.unversioned_triple, profile
         );
-        println!("cargo:rustc-link-lib=static={}", package_name);
+        println!("cargo:rustc-link-lib=static={package_name}");
     }
 }
