@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1750798681493,
+  "lastUpdate": 1752019658359,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -23963,6 +23963,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 128603,
             "range": "± 1161",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "52458849+JHabz@users.noreply.github.com",
+            "name": "Jared Habermehl",
+            "username": "JHabz"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d9e5f8bac5fd6a531bc8b403afdeef5e45aa589e",
+          "message": "Delete report rows (#293)",
+          "timestamp": "2025-07-08T20:03:27-04:00",
+          "tree_id": "f830853c3484fc007b7c155ce1dfefa5e6393c01",
+          "url": "https://github.com/awslabs/mls-rs/commit/d9e5f8bac5fd6a531bc8b403afdeef5e45aa589e"
+        },
+        "date": 1752019657503,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 530098,
+            "range": "± 6900",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 538554,
+            "range": "± 5788",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 600186,
+            "range": "± 6973",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1275498,
+            "range": "± 27767",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7559781,
+            "range": "± 34236",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2624175,
+            "range": "± 11195",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7059338,
+            "range": "± 100872",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13199001,
+            "range": "± 107991",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 773567,
+            "range": "± 6896",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 859716,
+            "range": "± 9330",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 989327,
+            "range": "± 8950",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 20257,
+            "range": "± 173",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 67135,
+            "range": "± 1304",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 127687,
+            "range": "± 3963",
             "unit": "ns/iter"
           }
         ]
