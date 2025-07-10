@@ -1861,6 +1861,36 @@ where
         PskSecret::new(self.cipher_suite_provider())
     }
 
+    /// Returns the key generation used by the next invocation of
+    /// [`Group::encrypt_application_message`]. Does not increment the generation nor
+    /// derive keys.
+    ///
+    /// Used by clients to authenticate the generation to defend against in-group forgery
+    /// attacks described in https://eprint.iacr.org/2025/554. This may be accomplished
+    /// by placing the generation in the `message` or `authenticated_data` parameters of
+    /// [`Group::encrypt_application_message`], as both fields are signed by the sender's
+    /// signature key. To verify, the authenticated generation MUST be checked against
+    /// the unauthenticated generation in the SenderData, which is the actual value used
+    /// to derive keys for decryption.
+    ///
+    /// WARNING: This API is only safe for synchronous clients.
+    #[cfg(all(
+        feature = "export_key_generation",
+        feature = "private_message",
+        feature = "secret_tree_access",
+    ))]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub fn peek_next_key_generation(&mut self) -> Result<u32, MlsError> {
+        self.epoch_secrets
+            .secret_tree
+            .peek_next_key_generation(
+                &self.cipher_suite_provider,
+                crate::tree_kem::node::NodeIndex::from(self.private_tree.self_index),
+                KeyType::Application,
+            )
+            .await
+    }
+
     #[cfg(feature = "secret_tree_access")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     #[inline(never)]
@@ -3798,6 +3828,67 @@ mod tests {
             ReceivedMessage::ApplicationMessage(ApplicationMessageDescription { sender_index, .. })
                 if sender_index == bob_group.current_member_index()
         );
+    }
+
+    #[cfg(all(
+        feature = "export_key_generation",
+        feature = "private_message",
+        feature = "secret_tree_access",
+    ))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn member_can_see_key_generation() {
+        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (mut bob_group, _) = alice_group.join("bob").await;
+
+        let key_gen = bob_group.peek_next_key_generation().unwrap();
+        assert_eq!(key_gen, 0);
+
+        let bob_msg = [
+            b"I'm Bob, and I'm using key generation " as &[_],
+            &key_gen.to_be_bytes(),
+        ]
+        .concat();
+        let msg = bob_group
+            .encrypt_application_message(&bob_msg, vec![])
+            .await
+            .unwrap();
+
+        let _received_by_alice = alice_group.process_incoming_message(msg).await.unwrap();
+
+        // TODO: Verify key generation once export-on-decrypt API is implemented.
+    }
+
+    #[cfg(all(
+        feature = "export_key_generation",
+        feature = "private_message",
+        feature = "secret_tree_access",
+    ))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn peek_next_key_generation() {
+        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (mut bob_group, _) = alice_group.join("bob").await;
+
+        assert_eq!(bob_group.peek_next_key_generation().unwrap(), 0);
+        assert_eq!(bob_group.peek_next_key_generation().unwrap(), 0);
+
+        let bob_msg = b"I'm Bob";
+        bob_group
+            .encrypt_application_message(bob_msg, vec![])
+            .await
+            .unwrap();
+
+        assert_eq!(bob_group.peek_next_key_generation().unwrap(), 1);
+        bob_group
+            .encrypt_application_message(bob_msg, vec![])
+            .await
+            .unwrap();
+
+        bob_group
+            .encrypt_application_message(bob_msg, vec![])
+            .await
+            .unwrap();
+
+        assert_eq!(bob_group.peek_next_key_generation().unwrap(), 3);
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
