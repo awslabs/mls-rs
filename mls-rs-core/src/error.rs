@@ -23,7 +23,7 @@ impl Display for AnyError {
 #[cfg(feature = "std")]
 impl std::error::Error for AnyError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        self.0.source()
+        Some(&*self.0) //changed from self.0.source() because calling source() twice went too deep
     }
 }
 
@@ -61,3 +61,24 @@ impl IntoAnyError for mls_rs_codec::Error {
 }
 
 impl IntoAnyError for core::convert::Infallible {}
+
+#[cfg(test)]
+mod tests {
+    use mls_rs_codec::Error as CodecError;
+    use super::{AnyError, IntoAnyError};
+    use std::error::Error;
+
+    #[test]
+    fn source_returns_wrapped_error_with_data() {
+        let error_with_data = CodecError::Custom(42);
+        let any_error: AnyError = error_with_data.into_any_error();
+
+        let downcasted_source = any_error
+            .source()
+            .expect("Expected AnyError to have a source, but it was None")
+            .downcast_ref::<CodecError>()
+            .expect("Expected the error source to be of type CodecError");
+
+        assert!(matches!(downcasted_source, CodecError::Custom(42)));
+    }
+}
