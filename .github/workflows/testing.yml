@@ -1,0 +1,103 @@
+name: Native
+on: [push, pull_request]
+env:
+  CARGO_TERM_COLOR: always
+  SSH_AUTH_SOCK: /tmp/ssh_agent.sock
+jobs:
+  SyncBuildAndTestS:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+      fail-fast: false
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: arduino/setup-protoc@v2
+        with:
+          version: "25.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: ilammy/setup-nasm@v1
+        if: runner.os == 'Windows'
+      - run: |
+          echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
+          vcpkg install openssl:x64-windows-static-md sqlite3:x64-windows-static-md
+          echo "OPENSSL_DIR=C:/vcpkg/packages/openssl_x64-windows-static-md" | Out-File -FilePath $env:GITHUB_ENV -Append
+          curl -o C:/cacert.pem https://curl.se/ca/cacert.pem
+          echo "SSL_CERT_FILE=C:/cacert.pem" | Out-File -FilePath $env:GITHUB_ENV -Append
+        if: runner.os == 'Windows'
+      - name: Test Full RFC Compliance
+        run: cargo test --all-features --verbose --workspace
+      - name: Test Bare Bones
+        run: cargo test --no-default-features --features std,test_util  --verbose --workspace
+      - name: Examples
+        working-directory: mls-rs
+        run: cargo run --example basic_usage
+  AsyncBuildAndTest:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+      fail-fast: false
+    runs-on: ${{ matrix.os }}
+    env:
+      RUSTFLAGS: '--cfg mls_build_async'
+    steps:
+      - uses: actions/checkout@v3
+      - uses: arduino/setup-protoc@v2
+        with:
+          version: "25.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: ilammy/setup-nasm@v1
+        if: runner.os == 'Windows'
+      - run: |
+          echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
+          vcpkg install openssl:x64-windows-static-md sqlite3:x64-windows-static-md
+          echo "OPENSSL_DIR=C:/vcpkg/packages/openssl_x64-windows-static-md" | Out-File -FilePath $env:GITHUB_ENV -Append
+          curl -o C:/cacert.pem https://curl.se/ca/cacert.pem
+          echo "SSL_CERT_FILE=C:/cacert.pem" | Out-File -FilePath $env:GITHUB_ENV -Append
+        if: runner.os == 'Windows'
+      - name: Test Async Full RFC
+        run: cargo test --lib --test '*' --verbose --features test_util -p mls-rs
+      - name: Test Async Bare Bones
+        run: cargo test --no-default-features --lib --test '*' --features std,test_util --verbose -p mls-rs
+  LintAndFormatting:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: arduino/setup-protoc@v2
+        with:
+          version: "25.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Rust Fmt
+        run: cargo fmt --all -- --check
+      - name: Clippy Full RFC Compliance
+        run: cargo clippy --all-targets --all-features --workspace -- -D warnings
+      - name: Clippy Bare Bones
+        run: cargo clippy --all-targets --no-default-features --features std,test_util --workspace -- -D warnings
+  CodeCoverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      - name: Setup code coverage
+        run: cargo install cargo-llvm-cov
+      - name: Run code coverage
+        # Using `cargo llvm-cov show-env` lets us capture coverage
+        # information from Python integration tests.
+        run: |
+          source <(cargo llvm-cov show-env --export-prefix)
+          cargo llvm-cov clean --workspace
+          cargo test --features "test_util"
+          cargo llvm-cov report --lcov --output-path lcov.info
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: lcov.info
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
