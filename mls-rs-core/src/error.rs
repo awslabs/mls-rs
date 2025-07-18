@@ -64,8 +64,8 @@ impl IntoAnyError for core::convert::Infallible {}
 
 #[cfg(test)]
 mod tests {
-    use mls_rs_codec::Error as CodecError;
     use super::{AnyError, IntoAnyError};
+    use mls_rs_codec::Error as CodecError;
     use std::error::Error;
 
     #[test]
