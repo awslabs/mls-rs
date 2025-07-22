@@ -27,6 +27,7 @@ impl std::error::Error for AnyError {
     }
 }
 
+#[cfg(feature = "std")]
 impl AnyError {
     pub fn inner_dyn_error(&self) -> Option<&(dyn std::error::Error + 'static)> {
         Some(&*self.0)
