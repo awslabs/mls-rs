@@ -23,7 +23,7 @@ impl Display for AnyError {
 #[cfg(feature = "std")]
 impl std::error::Error for AnyError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        Some(&*self.0)
+        self.0.source()
     }
 }
 
