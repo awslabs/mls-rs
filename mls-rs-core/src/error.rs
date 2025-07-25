@@ -29,8 +29,8 @@ impl std::error::Error for AnyError {
 
 #[cfg(feature = "std")]
 impl AnyError {
-    pub fn inner_dyn_error(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        Some(&*self.0)
+    pub fn inner_dyn_error(&self) -> &(dyn std::error::Error + Send + Sync + 'static) {
+        &*self.0
     }
 }
 
@@ -81,7 +81,6 @@ mod tests {
 
         let downcast_err = any_error
             .inner_dyn_error()
-            .expect("Expected AnyError to have inner dyn err, but it was None")
             .downcast_ref::<CodecError>()
             .expect("Expected the dyn error to be of type CodecError");
 
