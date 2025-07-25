@@ -19,7 +19,7 @@ mod map_impl {
 
     #[derive(Clone, Debug, PartialEq, Eq)]
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-    pub struct SmallMap<K: Hash + Eq, V>(pub(super) HashMap<K, V>);
+    pub struct SmallMap<K: Hash + Eq + Ord, V>(pub(super) HashMap<K, V>);
 
     pub type LargeMap<K, V> = SmallMap<K, V>;
     pub(super) type SmallMapInner<K, V> = HashMap<K, V>;
@@ -67,13 +67,13 @@ mod map_impl {
     }
 }
 
-impl<K: Hash + Eq, V> Default for SmallMap<K, V> {
+impl<K: Hash + Eq + Ord, V> Default for SmallMap<K, V> {
     fn default() -> Self {
         Self(SmallMapInner::new())
     }
 }
 
-impl<K: Hash + Eq, V> Deref for SmallMap<K, V> {
+impl<K: Hash + Eq + Ord, V> Deref for SmallMap<K, V> {
     type Target = SmallMapInner<K, V>;
 
     fn deref(&self) -> &Self::Target {
@@ -81,7 +81,7 @@ impl<K: Hash + Eq, V> Deref for SmallMap<K, V> {
     }
 }
 
-impl<K: Hash + Eq, V> DerefMut for SmallMap<K, V> {
+impl<K: Hash + Eq + Ord, V> DerefMut for SmallMap<K, V> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
@@ -89,7 +89,7 @@ impl<K: Hash + Eq, V> DerefMut for SmallMap<K, V> {
 
 impl<K, V> MlsDecode for SmallMap<K, V>
 where
-    K: Hash + Eq + MlsEncode + MlsDecode + MlsSize,
+    K: Hash + Eq + Ord + MlsEncode + MlsDecode + MlsSize,
     V: MlsEncode + MlsDecode + MlsSize,
 {
     fn mls_decode(reader: &mut &[u8]) -> Result<Self, mls_rs_codec::Error> {
@@ -99,7 +99,7 @@ where
 
 impl<K, V> MlsSize for SmallMap<K, V>
 where
-    K: Hash + Eq + MlsEncode + MlsDecode + MlsSize,
+    K: Hash + Eq + Ord + MlsEncode + MlsDecode + MlsSize,
     V: MlsEncode + MlsDecode + MlsSize,
 {
     fn mls_encoded_len(&self) -> usize {
@@ -109,7 +109,7 @@ where
 
 impl<K, V> MlsEncode for SmallMap<K, V>
 where
-    K: Hash + Eq + MlsEncode + MlsDecode + MlsSize,
+    K: Hash + Eq + Ord + MlsEncode + MlsDecode + MlsSize,
     V: MlsEncode + MlsDecode + MlsSize,
 {
     fn mls_encode(&self, writer: &mut Vec<u8>) -> Result<(), mls_rs_codec::Error> {

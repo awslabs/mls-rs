@@ -1,6 +1,6 @@
 [package]
 name = "mls-rs-core"
-version = "0.23.0"
+version = "0.24.0"
 edition = "2021"
 description = "Core components and traits for mls-rs"
 homepage = "https://github.com/awslabs/mls-rs"
@@ -25,7 +25,7 @@ post-quantum = []
 self_remove_proposal = []
 
 [dependencies]
-mls-rs-codec = { version = "0.6", path = "../mls-rs-codec", default-features = false}
+mls-rs-codec = { version = "0.7", path = "../mls-rs-codec", default-features = false}
 zeroize = { version = "1", default-features = false, features = ["alloc", "zeroize_derive"] }
 arbitrary = { version = "1", features = ["derive"], optional = true }
 thiserror = { version = "2", optional = true }
