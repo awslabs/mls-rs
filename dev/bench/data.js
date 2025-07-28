@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1752019658359,
+  "lastUpdate": 1753715215728,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -24071,6 +24071,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 127687,
             "range": "± 3963",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "73967680+ethanfire@users.noreply.github.com",
+            "name": "Ethan Fiore",
+            "username": "ethanfire"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c0b9aaa28791e7c33ee05a5d39d3ddf4a749f17f",
+          "message": " Create new method to return inner dyn error (#296)\n\n* Update .source() to return an error able to be downcast back to original\n\n* Remove comment\n\n* testing workflow\n\n* Fix lint formatting errors\n\n* Deleting workflow file\n\n* Create new function to return inner dyn error\n\n* Create new method to return inner dyn error\n\n* Fix inner_dyn_error() error\n\n* Modify inner_dyn_error()\n\n---------\n\nCo-authored-by: Ethan Fiore <ejfiore@google.com>",
+          "timestamp": "2025-07-28T11:02:42-04:00",
+          "tree_id": "bd35aa6866374b7dde4a7af39a2c172d6e05a10c",
+          "url": "https://github.com/awslabs/mls-rs/commit/c0b9aaa28791e7c33ee05a5d39d3ddf4a749f17f"
+        },
+        "date": 1753715214621,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 532014,
+            "range": "± 6006",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 541703,
+            "range": "± 7443",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 601481,
+            "range": "± 20631",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1262349,
+            "range": "± 20860",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7565692,
+            "range": "± 68582",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2638852,
+            "range": "± 46764",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7089414,
+            "range": "± 94202",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13209882,
+            "range": "± 128410",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 781047,
+            "range": "± 9419",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 867273,
+            "range": "± 16113",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 1009208,
+            "range": "± 17176",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 20798,
+            "range": "± 256",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 68314,
+            "range": "± 1272",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 129928,
+            "range": "± 1255",
             "unit": "ns/iter"
           }
         ]
