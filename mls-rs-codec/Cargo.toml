@@ -1,6 +1,6 @@
 [package]
 name = "mls-rs-codec"
-version = "0.6.0"
+version = "0.7.0"
 edition = "2021"
 description = "TLS codec and MLS specific encoding used by mls-rs"
 homepage = "https://github.com/awslabs/mls-rs"
@@ -16,6 +16,7 @@ std = ["dep:thiserror"]
 [dependencies]
 mls-rs-codec-derive = { version = "0.2.0", path = "../mls-rs-codec-derive" }
 thiserror = { version = "2", optional = true }
+itertools = { version = "0.14.0", default-features = false, features = ["use_alloc"]}
 
 [dev-dependencies]
 assert_matches = "1.5.0"

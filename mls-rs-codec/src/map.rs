@@ -23,11 +23,12 @@ where
 #[cfg(feature = "std")]
 impl<K, V> MlsEncode for HashMap<K, V>
 where
-    K: MlsEncode,
+    K: MlsEncode + Ord,
     V: MlsEncode,
 {
     fn mls_encode(&self, writer: &mut Vec<u8>) -> Result<(), crate::Error> {
-        crate::iter::mls_encode(self.iter(), writer)
+        use itertools::Itertools;
+        crate::iter::mls_encode(self.iter().sorted_by_key(|(key, _)| *key), writer)
     }
 }
 

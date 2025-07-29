@@ -1,6 +1,6 @@
 [package]
 name = "mls-rs-crypto-hpke"
-version = "0.16.0"
+version = "0.17.0"
 edition = "2021"
 description = "HPKE implementation based on mls-rs-crypto-traits used by mls-rs"
 homepage = "https://github.com/awslabs/mls-rs"
@@ -15,8 +15,8 @@ std = ["mls-rs-core/std", "mls-rs-crypto-traits/std", "dep:thiserror", "zeroize/
 test_utils = ["mls-rs-core/test_suite"]
 
 [dependencies]
-mls-rs-core = { path = "../mls-rs-core", default-features = false, version = "0.23.0" }
-mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", default-features = false, version = "0.17.0" }
+mls-rs-core = { path = "../mls-rs-core", default-features = false, version = "0.24.0" }
+mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", default-features = false, version = "0.18.0" }
 thiserror = { version = "2", optional = true }
 zeroize = { version = "1", default-features = false, features = ["alloc", "zeroize_derive"] }
 cfg-if = "^1"
@@ -28,7 +28,7 @@ serde_json = { version = "^1.0" }
 assert_matches = "1.5.0"
 mockall = "0.13"
 hex = { version = "^0.4.3", features = ["serde"] }
-mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", features = ["mock"], version = "0.17.0" }
+mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", features = ["mock"], version = "0.18.0" }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wasm-bindgen-test = { version = "0.3" }
