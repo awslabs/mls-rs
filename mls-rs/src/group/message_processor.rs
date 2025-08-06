@@ -281,18 +281,27 @@ pub struct ApplicationMessageDescription {
     data: ApplicationData,
     /// Plaintext authenticated data in the received MLS packet.
     pub authenticated_data: Vec<u8>,
+    /// Unauthenticated key generation used to decrypt the message. See documentation for
+    /// [`Group::peek_next_key_generation`] for usage.
+    #[cfg(all(feature = "export_key_generation", feature = "private_message"))]
+    pub unauthenticated_key_generation: Option<u32>,
 }
 
 impl Debug for ApplicationMessageDescription {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ApplicationMessageDescription")
-            .field("sender_index", &self.sender_index)
+        let mut res = f.debug_struct("ApplicationMessageDescription");
+        res.field("sender_index", &self.sender_index)
             .field("data", &self.data)
             .field(
                 "authenticated_data",
                 &mls_rs_core::debug::pretty_bytes(&self.authenticated_data),
-            )
-            .finish()
+            );
+        #[cfg(all(feature = "export_key_generation", feature = "private_message"))]
+        res.field(
+            "unauthenticated_key_generation",
+            &self.unauthenticated_key_generation,
+        );
+        res.finish()
     }
 }
 
@@ -515,6 +524,19 @@ pub(crate) trait MessageProcessor: Send + Sync {
         #[cfg(feature = "by_ref_proposal")] cache_proposal: bool,
         time_sent: Option<MlsTime>,
     ) -> Result<Self::OutputType, MlsError> {
+        #[cfg(all(feature = "export_key_generation", feature = "private_message"))]
+        // For encrypted application messages, retrieve the unauthenticated key
+        // generation used to decrypt the message and return it with the plaintext. Does
+        // not return an error on failure, allowing `get_event_from_incoming_message` to
+        // continue owning that task.
+        // Note that this decrypts the SenderData twice, which is not ideal.
+        let unauthn_key_gen_in_app_msg: Option<u32> = match message.payload {
+            MlsMessagePayload::Cipher(ref cipher_text) => self
+                .get_unauthenticated_key_generation_from_sender_data(cipher_text)
+                .unwrap_or_default(),
+            _ => None,
+        };
+
         let event_or_content = self
             .get_event_from_incoming_message(message, time_sent)
             .await?;
@@ -523,6 +545,8 @@ pub(crate) trait MessageProcessor: Send + Sync {
             event_or_content,
             #[cfg(feature = "by_ref_proposal")]
             cache_proposal,
+            #[cfg(all(feature = "export_key_generation", feature = "private_message"))]
+            unauthn_key_gen_in_app_msg,
             time_sent,
         )
         .await
@@ -570,6 +594,8 @@ pub(crate) trait MessageProcessor: Send + Sync {
         &mut self,
         event_or_content: EventOrContent<Self::OutputType>,
         #[cfg(feature = "by_ref_proposal")] cache_proposal: bool,
+        #[cfg(all(feature = "export_key_generation", feature = "private_message"))]
+        unauthn_key_gen_in_app_msg: Option<u32>,
         time_sent: Option<MlsTime>,
     ) -> Result<Self::OutputType, MlsError> {
         let msg = match event_or_content {
@@ -579,6 +605,8 @@ pub(crate) trait MessageProcessor: Send + Sync {
                     content,
                     #[cfg(feature = "by_ref_proposal")]
                     cache_proposal,
+                    #[cfg(all(feature = "export_key_generation", feature = "private_message"))]
+                    unauthn_key_gen_in_app_msg,
                     time_sent,
                 )
                 .await?
@@ -592,6 +620,8 @@ pub(crate) trait MessageProcessor: Send + Sync {
         &mut self,
         auth_content: AuthenticatedContent,
         #[cfg(feature = "by_ref_proposal")] cache_proposal: bool,
+        #[cfg(all(feature = "export_key_generation", feature = "private_message"))]
+        unauthn_key_gen_in_app_msg: Option<u32>,
         time_sent: Option<MlsTime>,
     ) -> Result<Self::OutputType, MlsError> {
         let event = match auth_content.content.content {
@@ -600,8 +630,14 @@ pub(crate) trait MessageProcessor: Send + Sync {
                 let authenticated_data = auth_content.content.authenticated_data;
                 let sender = auth_content.content.sender;
 
-                self.process_application_message(data, sender, authenticated_data)
-                    .and_then(Self::OutputType::try_from)
+                self.process_application_message(
+                    data,
+                    sender,
+                    authenticated_data,
+                    #[cfg(all(feature = "export_key_generation", feature = "private_message"))]
+                    unauthn_key_gen_in_app_msg,
+                )
+                .and_then(Self::OutputType::try_from)
             }
             Content::Commit(_) => self
                 .process_commit(auth_content, time_sent)
@@ -623,6 +659,8 @@ pub(crate) trait MessageProcessor: Send + Sync {
         data: ApplicationData,
         sender: Sender,
         authenticated_data: Vec<u8>,
+        #[cfg(all(feature = "export_key_generation", feature = "private_message"))]
+        unauthenticated_key_generation: Option<u32>,
     ) -> Result<ApplicationMessageDescription, MlsError> {
         let Sender::Member(sender_index) = sender else {
             return Err(MlsError::InvalidSender);
@@ -632,6 +670,8 @@ pub(crate) trait MessageProcessor: Send + Sync {
             authenticated_data,
             sender_index,
             data,
+            #[cfg(all(feature = "export_key_generation", feature = "private_message"))]
+            unauthenticated_key_generation,
         })
     }
 
@@ -969,6 +1009,13 @@ pub(crate) trait MessageProcessor: Send + Sync {
         &self,
         message: PublicMessage,
     ) -> Result<EventOrContent<Self::OutputType>, MlsError>;
+
+    #[cfg(all(feature = "export_key_generation", feature = "private_message"))]
+    /// Returns the unauthenticated key generation used to decrypt the private message.
+    async fn get_unauthenticated_key_generation_from_sender_data(
+        &mut self,
+        cipher_text: &PrivateMessage,
+    ) -> Result<Option<u32>, MlsError>;
 
     async fn apply_update_path(
         &mut self,

@@ -552,4 +552,14 @@ impl MessageProcessor for GroupWithoutKeySchedule {
         self.secrets = secrets;
         Ok(())
     }
+
+    #[cfg(all(feature = "export_key_generation", feature = "private_message"))]
+    async fn get_unauthenticated_key_generation_from_sender_data(
+        &mut self,
+        cipher_text: &PrivateMessage,
+    ) -> Result<Option<u32>, MlsError> {
+        self.inner
+            .get_unauthenticated_key_generation_from_sender_data(cipher_text)
+            .await
+    }
 }
