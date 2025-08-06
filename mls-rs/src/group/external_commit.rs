@@ -267,7 +267,13 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
             .await?;
 
             group
-                .process_event_or_content(EventOrContent::Content(auth_content), true, None)
+                .process_event_or_content(
+                    EventOrContent::Content(auth_content),
+                    true,
+                    #[cfg(feature = "export_key_generation")]
+                    None,
+                    None,
+                )
                 .await?;
         }
 

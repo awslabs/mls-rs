@@ -638,6 +638,14 @@ where
         Ok(EventOrContent::Content(auth_content))
     }
 
+    #[cfg(all(feature = "export_key_generation", feature = "private_message"))]
+    async fn get_unauthenticated_key_generation_from_sender_data(
+        &mut self,
+        _cipher_text: &PrivateMessage,
+    ) -> Result<Option<u32>, MlsError> {
+        Ok(None)
+    }
+
     #[cfg(feature = "private_message")]
     async fn process_ciphertext(
         &mut self,
