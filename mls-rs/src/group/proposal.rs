@@ -308,11 +308,17 @@ impl CustomProposal {
 }
 
 pub trait CustomDecoder: Sized + MlsEncode + MlsDecode + MlsSize {
-    // type A: any;
-    fn encode_from_bytes(data: &Vec<u8>, writer: &mut Vec<u8>, _proposal_type: &ProposalType) -> Result<(), mls_rs_codec::Error> {
+    fn encode_from_bytes(
+        data: &Vec<u8>,
+        writer: &mut Vec<u8>,
+        _proposal_type: &ProposalType,
+    ) -> Result<(), mls_rs_codec::Error> {
         mls_rs_codec::byte_vec::mls_encode(data, writer)
     }
-    fn decode_from_bytes(reader: &mut &[u8], _proposal_type: &ProposalType) -> Result<Vec<u8>, mls_rs_codec::Error> {
+    fn decode_from_bytes(
+        reader: &mut &[u8],
+        _proposal_type: &ProposalType,
+    ) -> Result<Vec<u8>, mls_rs_codec::Error> {
         mls_rs_codec::byte_vec::mls_decode(reader)
     }
 }
@@ -321,13 +327,41 @@ pub trait CustomDecoder: Sized + MlsEncode + MlsDecode + MlsSize {
 pub struct BasicDecoder {}
 impl CustomDecoder for BasicDecoder {}
 
-// impl CustomDecoder for CustomProposal {
-//     fn decode_from_bytes(reader: &mut &[u8], proposal_type: &ProposalType) -> Result<Vec<u8>, mls_rs_codec::Error> {
-//         match proposal_type {
-//             _ => mls_rs_codec::byte_vec::mls_decode(reader),
-//         }
-//     }
-// }
+#[derive(Clone, PartialEq, MlsEncode, MlsDecode, Debug, MlsSize)]
+pub struct RfcCustomProposalDecoder {}
+impl CustomDecoder for RfcCustomProposalDecoder {
+    fn encode_from_bytes(
+        data: &Vec<u8>,
+        writer: &mut Vec<u8>,
+        proposal_type: &ProposalType,
+    ) -> Result<(), mls_rs_codec::Error> {
+        match proposal_type {
+            &ProposalType::RFC_SIGNATURE | &ProposalType::RFC_SERVER_REMOVE => {
+                // directly extend with the serialized proposals; don't encode as a byte array
+                // as the length should not be included in the encoding
+                writer.extend(data);
+                Ok(())
+            }
+            _ => mls_rs_codec::byte_vec::mls_encode(data, writer),
+        }
+    }
+    fn decode_from_bytes(
+        reader: &mut &[u8],
+        proposal_type: &ProposalType,
+    ) -> Result<Vec<u8>, mls_rs_codec::Error> {
+        match proposal_type {
+            &ProposalType::RFC_SIGNATURE => Ok(Vec::new()), // empty struct
+            &ProposalType::RFC_SERVER_REMOVE => {
+                let decoded = RemoveProposal::mls_decode(reader)?; // remove proposal
+                let mut writer = Vec::new();
+                RemoveProposal::mls_encode(&decoded, &mut writer)?;
+                // return, to be used in the data field of CustomProposal, the encoded proposal
+                Ok(writer)
+            }
+            _ => mls_rs_codec::byte_vec::mls_decode(reader),
+        }
+    }
+}
 
 /// Trait to simplify creating custom proposals that are serialized with MLS
 /// encoding.
@@ -364,7 +398,7 @@ pub trait MlsCustomProposal: MlsSize + MlsEncode + MlsDecode + Sized {
 #[repr(u16)]
 #[non_exhaustive]
 /// An enum that represents all possible types of proposals.
-pub enum Proposal<C: CustomDecoder = BasicDecoder> {
+pub enum Proposal<C: CustomDecoder = RfcCustomProposalDecoder> {
     Add(alloc::boxed::Box<AddProposal>),
     #[cfg(feature = "by_ref_proposal")]
     Update(UpdateProposal),
@@ -445,7 +479,7 @@ impl<C: CustomDecoder> MlsEncode for Proposal<C> {
                 }
                 C::encode_from_bytes(&p.data, writer, &p.proposal_type)
                 // mls_rs_codec::byte_vec::mls_encode(&p.data, writer)
-            },
+            }
             Proposal::_PhantomVariant(_) => panic!("Not constructible"),
         }
     }

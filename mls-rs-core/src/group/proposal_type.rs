@@ -58,6 +58,8 @@ impl ProposalType {
     pub const GROUP_CONTEXT_EXTENSIONS: ProposalType = ProposalType(7);
     #[cfg(feature = "self_remove_proposal")]
     pub const SELF_REMOVE: ProposalType = ProposalType(0xF003);
+    pub const RFC_SIGNATURE: ProposalType = ProposalType::new(0xF002);
+    pub const RFC_SERVER_REMOVE: ProposalType = ProposalType::new(0xF004);
 
     /// Default proposal types defined
     /// in [RFC 9420](https://www.rfc-editor.org/rfc/rfc9420.html#name-leaf-node-contents)
