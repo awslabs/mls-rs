@@ -307,6 +307,11 @@ impl CustomProposal {
     }
 }
 
+#[cfg(feature = "custom_proposal")]
+/// Encode/Decode for the `data` field of CustomProposal. This allows specialization over
+/// the decoding based on the ProposalType, if users want to use an encoding other than the
+/// default bytes vector (in particular, if users want the CustomProposal wrapper to be hidden
+/// in the encoding, so the underlying custom proposal can be decoded directly).
 pub trait CustomDecoder: Sized {
     fn encode_from_bytes(
         data: &Vec<u8>,
@@ -326,6 +331,10 @@ pub trait CustomDecoder: Sized {
     }
 }
 
+#[cfg(all(feature = "custom_proposal", not(feature = "gsma_rcs_e2ee_feature")))]
+impl CustomDecoder for CustomProposal {}
+
+#[cfg(all(feature = "custom_proposal", feature = "gsma_rcs_e2ee_feature"))]
 impl CustomDecoder for CustomProposal {
     fn encode_from_bytes(
         data: &Vec<u8>,
@@ -333,11 +342,11 @@ impl CustomDecoder for CustomProposal {
         proposal_type: &ProposalType,
     ) -> Result<(), mls_rs_codec::Error> {
         match proposal_type {
+            // directly extend with the serialized proposals; don't encode as a byte array
+            // as the length should not be included in the encoding
             &ProposalType::RCS_SIGNATURE
             | &ProposalType::RCS_SERVER_REMOVE
             | &ProposalType::RCS_END_MLS => {
-                // directly extend with the serialized proposals; don't encode as a byte array
-                // as the length should not be included in the encoding
                 writer.extend(data);
                 Ok(())
             }
@@ -349,9 +358,11 @@ impl CustomDecoder for CustomProposal {
         proposal_type: &ProposalType,
     ) -> Result<Vec<u8>, mls_rs_codec::Error> {
         match proposal_type {
-            &ProposalType::RCS_SIGNATURE | &ProposalType::RCS_END_MLS => Ok(Vec::new()), // empty struct
+            // empty struct
+            &ProposalType::RCS_SIGNATURE | &ProposalType::RCS_END_MLS => Ok(Vec::new()),
+            // remove proposal
             &ProposalType::RCS_SERVER_REMOVE => {
-                let decoded = RemoveProposal::mls_decode(reader)?; // remove proposal
+                let decoded = RemoveProposal::mls_decode(reader)?;
                 let mut writer = Vec::new();
                 RemoveProposal::mls_encode(&decoded, &mut writer)?;
                 // return, to be used in the data field of CustomProposal, the encoded proposal

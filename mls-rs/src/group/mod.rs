@@ -4667,6 +4667,138 @@ mod tests {
         );
     }
 
+    #[cfg(all(feature = "custom_proposal", feature = "gsma_rcs_e2ee_feature"))]
+    #[derive(MlsSize, MlsDecode, MlsEncode, Debug, PartialEq)]
+    struct RcsSignature {}
+    #[cfg(all(feature = "custom_proposal", feature = "gsma_rcs_e2ee_feature"))]
+    impl MlsCustomProposal for RcsSignature {
+        fn proposal_type() -> ProposalType {
+            ProposalType::RCS_SIGNATURE
+        }
+
+        fn to_custom_proposal(&self) -> Result<CustomProposal, mls_rs_codec::Error> {
+            Ok(CustomProposal::new(Self::proposal_type(), Vec::new()))
+        }
+
+        fn from_custom_proposal(proposal: &CustomProposal) -> Result<Self, mls_rs_codec::Error> {
+            if proposal.proposal_type() != Self::proposal_type() {
+                return Err(mls_rs_codec::Error::Custom(4));
+            }
+
+            Ok(Self {})
+        }
+    }
+
+    #[cfg(all(feature = "custom_proposal", feature = "gsma_rcs_e2ee_feature"))]
+    #[derive(MlsSize, MlsDecode, MlsEncode, Debug, PartialEq)]
+    struct RcsServerRemove {
+        to_remove: u32,
+    }
+
+    #[cfg(all(feature = "custom_proposal", feature = "gsma_rcs_e2ee_feature"))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn custom_proposal_custom_data_encoding_rcs_signature() {
+        let mut alice = test_group_custom_config(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, |b| {
+            b.custom_proposal_type(ProposalType::RCS_SIGNATURE)
+        })
+        .await;
+
+        let (mut bob, _) = alice
+            .join_with_custom_config("bob", true, |c| {
+                c.0.settings
+                    .custom_proposal_types
+                    .push(ProposalType::RCS_SIGNATURE)
+            })
+            .await
+            .unwrap();
+
+        let custom_proposal = RcsSignature {};
+
+        let proposal = alice
+            .propose_custom(custom_proposal.to_custom_proposal().unwrap(), vec![])
+            .await
+            .unwrap();
+
+        let recv_prop = bob.process_incoming_message(proposal).await.unwrap();
+
+        assert_matches!(recv_prop, ReceivedMessage::Proposal(ProposalMessageDescription { proposal: Proposal::Custom(c), ..})
+            if c == custom_proposal.to_custom_proposal().unwrap());
+
+        let commit = bob.commit(vec![]).await.unwrap().commit_message;
+
+        let ReceivedMessage::Commit(CommitMessageDescription {
+            effect: CommitEffect::NewEpoch(new_epoch),
+            ..
+        }) = bob.process_incoming_message(commit).await.unwrap()
+        else {
+            panic!("unexpected commit effect");
+        };
+
+        assert_eq!(new_epoch.applied_proposals.len(), 1);
+
+        let Proposal::Custom(ref c) = new_epoch.applied_proposals[0].proposal else {
+            panic!("unexpected non-custom proposal");
+        };
+        assert_eq!(
+            RcsSignature::from_custom_proposal(&c).unwrap(),
+            custom_proposal
+        );
+    }
+
+    #[cfg(all(feature = "custom_proposal", feature = "gsma_rcs_e2ee_feature"))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn custom_proposal_custom_data_encoding_rcs_server_remove() {
+        let mut alice = test_group_custom_config(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, |b| {
+            b.custom_proposal_type(ProposalType::RCS_SERVER_REMOVE)
+        })
+        .await;
+
+        let (mut bob, _) = alice
+            .join_with_custom_config("bob", true, |c| {
+                c.0.settings
+                    .custom_proposal_types
+                    .push(ProposalType::RCS_SERVER_REMOVE)
+            })
+            .await
+            .unwrap();
+
+        let server_remove_proposal = RcsServerRemove { to_remove: 1 };
+        // show directly how the encoding works
+        let custom_proposal = CustomProposal::new(
+            ProposalType::RCS_SERVER_REMOVE,
+            server_remove_proposal.mls_encode_to_vec().unwrap(),
+        );
+
+        let proposal = alice
+            .propose_custom(custom_proposal.clone(), vec![])
+            .await
+            .unwrap();
+
+        let recv_prop = bob.process_incoming_message(proposal).await.unwrap();
+
+        assert_matches!(recv_prop, ReceivedMessage::Proposal(ProposalMessageDescription { proposal: Proposal::Custom(c), ..})
+            if c == custom_proposal);
+
+        let commit = bob.commit(vec![]).await.unwrap().commit_message;
+
+        let ReceivedMessage::Commit(CommitMessageDescription {
+            effect: CommitEffect::NewEpoch(new_epoch),
+            ..
+        }) = bob.process_incoming_message(commit).await.unwrap()
+        else {
+            panic!("unexpected commit effect");
+        };
+
+        assert_eq!(new_epoch.applied_proposals.len(), 1);
+
+        let Proposal::Custom(ref c) = new_epoch.applied_proposals[0].proposal else {
+            panic!("unexpected non-custom proposal");
+        };
+        let reader = c.data().to_vec();
+        let server_remove_decoded = RcsServerRemove::mls_decode(&mut reader.as_slice()).unwrap();
+        assert_eq!(server_remove_decoded, server_remove_proposal);
+    }
+
     #[cfg(feature = "psk")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn can_join_with_psk() {
