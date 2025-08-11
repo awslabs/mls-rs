@@ -321,14 +321,11 @@ pub trait CustomDecoder: Sized {
     ) -> Result<Vec<u8>, mls_rs_codec::Error> {
         mls_rs_codec::byte_vec::mls_decode(reader)
     }
+    fn encoded_byte_len(data: &Vec<u8>, _proposal_type: &ProposalType) -> usize {
+        mls_rs_codec::byte_vec::mls_encoded_len(data)
+    }
 }
 
-// #[derive(Clone, PartialEq, MlsEncode, MlsDecode, Debug, MlsSize)]
-// pub struct BasicDecoder {}
-// impl CustomDecoder for BasicDecoder {}
-
-// #[derive(Clone, PartialEq, MlsEncode, MlsDecode, Debug, MlsSize)]
-// pub struct RfcCustomProposalDecoder {}
 impl CustomDecoder for CustomProposal {
     fn encode_from_bytes(
         data: &Vec<u8>,
@@ -361,6 +358,14 @@ impl CustomDecoder for CustomProposal {
                 Ok(writer)
             }
             _ => mls_rs_codec::byte_vec::mls_decode(reader),
+        }
+    }
+    fn encoded_byte_len(data: &Vec<u8>, proposal_type: &ProposalType) -> usize {
+        match proposal_type {
+            &ProposalType::RCS_SIGNATURE
+            | &ProposalType::RCS_SERVER_REMOVE
+            | &ProposalType::RCS_END_MLS => data.len(),
+            _ => mls_rs_codec::byte_vec::mls_encoded_len(data),
         }
     }
 }
@@ -439,7 +444,7 @@ impl MlsSize for Proposal {
             ))]
             Proposal::SelfRemove(p) => p.mls_encoded_len(),
             #[cfg(feature = "custom_proposal")]
-            Proposal::Custom(p) => mls_rs_codec::byte_vec::mls_encoded_len(&p.data),
+            Proposal::Custom(p) => CustomProposal::encoded_byte_len(&p.data, &p.proposal_type),
         };
 
         self.proposal_type().mls_encoded_len() + inner_len
