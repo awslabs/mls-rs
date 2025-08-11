@@ -120,7 +120,6 @@ impl ProposalBundle {
                 sender,
                 source,
             }),
-            Proposal::_PhantomVariant(_) => panic!("Not constructible"),
         }
     }
 

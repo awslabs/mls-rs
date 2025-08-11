@@ -307,7 +307,7 @@ impl CustomProposal {
     }
 }
 
-pub trait CustomDecoder: Sized + MlsEncode + MlsDecode + MlsSize {
+pub trait CustomDecoder: Sized {
     fn encode_from_bytes(
         data: &Vec<u8>,
         writer: &mut Vec<u8>,
@@ -323,13 +323,13 @@ pub trait CustomDecoder: Sized + MlsEncode + MlsDecode + MlsSize {
     }
 }
 
-#[derive(Clone, PartialEq, MlsEncode, MlsDecode, Debug, MlsSize)]
-pub struct BasicDecoder {}
-impl CustomDecoder for BasicDecoder {}
+// #[derive(Clone, PartialEq, MlsEncode, MlsDecode, Debug, MlsSize)]
+// pub struct BasicDecoder {}
+// impl CustomDecoder for BasicDecoder {}
 
-#[derive(Clone, PartialEq, MlsEncode, MlsDecode, Debug, MlsSize)]
-pub struct RfcCustomProposalDecoder {}
-impl CustomDecoder for RfcCustomProposalDecoder {
+// #[derive(Clone, PartialEq, MlsEncode, MlsDecode, Debug, MlsSize)]
+// pub struct RfcCustomProposalDecoder {}
+impl CustomDecoder for CustomProposal {
     fn encode_from_bytes(
         data: &Vec<u8>,
         writer: &mut Vec<u8>,
@@ -400,7 +400,7 @@ pub trait MlsCustomProposal: MlsSize + MlsEncode + MlsDecode + Sized {
 #[repr(u16)]
 #[non_exhaustive]
 /// An enum that represents all possible types of proposals.
-pub enum Proposal<C: CustomDecoder = RfcCustomProposalDecoder> {
+pub enum Proposal {
     Add(alloc::boxed::Box<AddProposal>),
     #[cfg(feature = "by_ref_proposal")]
     Update(UpdateProposal),
@@ -418,10 +418,9 @@ pub enum Proposal<C: CustomDecoder = RfcCustomProposalDecoder> {
     SelfRemove(SelfRemoveProposal),
     #[cfg(feature = "custom_proposal")]
     Custom(CustomProposal),
-    _PhantomVariant(std::marker::PhantomData<C>),
 }
 
-impl<C: CustomDecoder> MlsSize for Proposal<C> {
+impl MlsSize for Proposal {
     fn mls_encoded_len(&self) -> usize {
         let inner_len = match self {
             Proposal::Add(p) => p.mls_encoded_len(),
@@ -441,14 +440,13 @@ impl<C: CustomDecoder> MlsSize for Proposal<C> {
             Proposal::SelfRemove(p) => p.mls_encoded_len(),
             #[cfg(feature = "custom_proposal")]
             Proposal::Custom(p) => mls_rs_codec::byte_vec::mls_encoded_len(&p.data),
-            Proposal::_PhantomVariant(_) => panic!("Not constructible"),
         };
 
         self.proposal_type().mls_encoded_len() + inner_len
     }
 }
 
-impl<C: CustomDecoder> MlsEncode for Proposal<C> {
+impl MlsEncode for Proposal {
     fn mls_encode(&self, writer: &mut Vec<u8>) -> Result<(), mls_rs_codec::Error> {
         self.proposal_type().mls_encode(writer)?;
 
@@ -479,15 +477,13 @@ impl<C: CustomDecoder> MlsEncode for Proposal<C> {
                     // #[cfg(not(feature = "std"))]
                     return Err(mls_rs_codec::Error::Custom(2));
                 }
-                C::encode_from_bytes(&p.data, writer, &p.proposal_type)
-                // mls_rs_codec::byte_vec::mls_encode(&p.data, writer)
+                CustomProposal::encode_from_bytes(&p.data, writer, &p.proposal_type)
             }
-            Proposal::_PhantomVariant(_) => panic!("Not constructible"),
         }
     }
 }
 
-impl<C: CustomDecoder> MlsDecode for Proposal<C> {
+impl MlsDecode for Proposal {
     fn mls_decode(reader: &mut &[u8]) -> Result<Self, mls_rs_codec::Error> {
         let proposal_type = ProposalType::mls_decode(reader)?;
 
@@ -518,7 +514,7 @@ impl<C: CustomDecoder> MlsDecode for Proposal<C> {
             #[cfg(feature = "custom_proposal")]
             custom => Proposal::Custom(CustomProposal {
                 proposal_type: custom,
-                data: C::decode_from_bytes(reader, &custom)?,
+                data: CustomProposal::decode_from_bytes(reader, &custom)?,
             }),
             // TODO fix test dependency on openssl loading codec with default features
             #[cfg(not(feature = "custom_proposal"))]
@@ -527,7 +523,7 @@ impl<C: CustomDecoder> MlsDecode for Proposal<C> {
     }
 }
 
-impl<C: CustomDecoder> Proposal<C> {
+impl Proposal {
     pub fn proposal_type(&self) -> ProposalType {
         match self {
             Proposal::Add(_) => ProposalType::ADD,
@@ -547,7 +543,6 @@ impl<C: CustomDecoder> Proposal<C> {
             Proposal::SelfRemove(_) => ProposalType::SELF_REMOVE,
             #[cfg(feature = "custom_proposal")]
             Proposal::Custom(c) => c.proposal_type,
-            Proposal::_PhantomVariant(_) => panic!("Not constructible"),
         }
     }
 }
@@ -644,7 +639,6 @@ impl<'a> From<&'a Proposal> for BorrowedProposal<'a> {
             Proposal::SelfRemove(p) => BorrowedProposal::SelfRemove(p),
             #[cfg(feature = "custom_proposal")]
             Proposal::Custom(p) => BorrowedProposal::Custom(p),
-            Proposal::_PhantomVariant(_) => panic!("Not constructible"),
         }
     }
 }
