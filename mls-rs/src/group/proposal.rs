@@ -336,7 +336,9 @@ impl CustomDecoder for RfcCustomProposalDecoder {
         proposal_type: &ProposalType,
     ) -> Result<(), mls_rs_codec::Error> {
         match proposal_type {
-            &ProposalType::RFC_SIGNATURE | &ProposalType::RFC_SERVER_REMOVE => {
+            &ProposalType::RCS_SIGNATURE
+            | &ProposalType::RCS_SERVER_REMOVE
+            | &ProposalType::RCS_END_MLS => {
                 // directly extend with the serialized proposals; don't encode as a byte array
                 // as the length should not be included in the encoding
                 writer.extend(data);
@@ -350,8 +352,8 @@ impl CustomDecoder for RfcCustomProposalDecoder {
         proposal_type: &ProposalType,
     ) -> Result<Vec<u8>, mls_rs_codec::Error> {
         match proposal_type {
-            &ProposalType::RFC_SIGNATURE => Ok(Vec::new()), // empty struct
-            &ProposalType::RFC_SERVER_REMOVE => {
+            &ProposalType::RCS_SIGNATURE | &ProposalType::RCS_END_MLS => Ok(Vec::new()), // empty struct
+            &ProposalType::RCS_SERVER_REMOVE => {
                 let decoded = RemoveProposal::mls_decode(reader)?; // remove proposal
                 let mut writer = Vec::new();
                 RemoveProposal::mls_encode(&decoded, &mut writer)?;
