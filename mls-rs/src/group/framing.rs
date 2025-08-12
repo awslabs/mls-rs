@@ -527,6 +527,20 @@ impl MlsMessage {
         }
     }
 
+    /// If this is a plaintext commit message, return all proposals committed by value.
+    /// If this is not a plaintext or not a commit, this returns an empty list.
+    /// **Note**: This method is not available in FFI bindings due to Proposal type constraints.
+    #[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen_ignore)]
+    pub fn proposals_by_value(&self) -> Vec<&Proposal> {
+        match &self.payload {
+            MlsMessagePayload::Plain(plaintext) => match &plaintext.content.content {
+                Content::Commit(commit) => Self::find_all_proposals(commit),
+                _ => Vec::new(),
+            },
+            _ => Vec::new(),
+        }
+    }
+
     /// If this is a welcome message, return key package references of all members who can
     /// join using this message.
     pub fn welcome_key_package_references(&self) -> Vec<&KeyPackageRef> {
@@ -568,8 +582,8 @@ impl MlsMessage {
     }
 }
 
-#[cfg(feature = "custom_proposal")]
 impl MlsMessage {
+    #[cfg(feature = "custom_proposal")]
     fn find_custom_proposals(commit: &Commit) -> Vec<&CustomProposal> {
         commit
             .proposals
@@ -579,6 +593,17 @@ impl MlsMessage {
                     crate::group::Proposal::Custom(p) => Some(p),
                     _ => None,
                 },
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn find_all_proposals(commit: &Commit) -> Vec<&Proposal> {
+        commit
+            .proposals
+            .iter()
+            .filter_map(|p| match p {
+                ProposalOrRef::Proposal(p) => Some(p.as_ref()),
                 _ => None,
             })
             .collect()
