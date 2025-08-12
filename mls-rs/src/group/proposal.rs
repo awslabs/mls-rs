@@ -344,9 +344,7 @@ impl CustomDecoder for CustomProposal {
         match proposal_type {
             // directly extend with the serialized proposals; don't encode as a byte array
             // as the length should not be included in the encoding
-            &ProposalType::RCS_SIGNATURE
-            | &ProposalType::RCS_SERVER_REMOVE
-            | &ProposalType::RCS_END_MLS => {
+            &ProposalType::RCS_SIGNATURE | &ProposalType::RCS_SERVER_REMOVE => {
                 writer.extend(data);
                 Ok(())
             }
@@ -359,7 +357,7 @@ impl CustomDecoder for CustomProposal {
     ) -> Result<Vec<u8>, mls_rs_codec::Error> {
         match proposal_type {
             // empty struct
-            &ProposalType::RCS_SIGNATURE | &ProposalType::RCS_END_MLS => Ok(Vec::new()),
+            &ProposalType::RCS_SIGNATURE => Ok(Vec::new()),
             // remove proposal
             &ProposalType::RCS_SERVER_REMOVE => {
                 let decoded = RemoveProposal::mls_decode(reader)?;
@@ -373,9 +371,7 @@ impl CustomDecoder for CustomProposal {
     }
     fn encoded_byte_len(data: &Vec<u8>, proposal_type: &ProposalType) -> usize {
         match proposal_type {
-            &ProposalType::RCS_SIGNATURE
-            | &ProposalType::RCS_SERVER_REMOVE
-            | &ProposalType::RCS_END_MLS => data.len(),
+            &ProposalType::RCS_SIGNATURE | &ProposalType::RCS_SERVER_REMOVE => data.len(),
             _ => mls_rs_codec::byte_vec::mls_encoded_len(data),
         }
     }
