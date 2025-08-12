@@ -59,8 +59,6 @@ impl ProposalType {
     #[cfg(feature = "self_remove_proposal")]
     pub const SELF_REMOVE: ProposalType = ProposalType(0xF003);
     #[cfg(feature = "gsma_rcs_e2ee_feature")]
-    pub const RCS_END_MLS: ProposalType = ProposalType::new(0xF001);
-    #[cfg(feature = "gsma_rcs_e2ee_feature")]
     pub const RCS_SIGNATURE: ProposalType = ProposalType::new(0xF002);
     #[cfg(feature = "gsma_rcs_e2ee_feature")]
     pub const RCS_SERVER_REMOVE: ProposalType = ProposalType::new(0xF004);
