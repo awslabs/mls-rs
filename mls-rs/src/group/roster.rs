@@ -82,7 +82,7 @@ impl<'a> Roster<'a> {
 }
 
 impl TreeKemPublic {
-    pub(crate) fn roster(&self) -> Roster {
+    pub(crate) fn roster(&self) -> Roster<'_> {
         Roster {
             public_tree: &self.nodes,
         }

@@ -542,7 +542,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
 
     /// Get the current roster of the group.
     #[inline(always)]
-    pub fn roster(&self) -> Roster {
+    pub fn roster(&self) -> Roster<'_> {
         self.group_state().public_tree.roster()
     }
 
