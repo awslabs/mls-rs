@@ -13,6 +13,7 @@ use aws_lc_rs::{
 };
 
 use mls_rs_core::crypto::{CipherSuite, HpkePublicKey, HpkeSecretKey};
+use mls_rs_crypto_hpke::kem_combiner::FixedLengthKemType;
 use mls_rs_crypto_traits::{KdfType, KemResult, KemType};
 
 use crate::{check_non_null, kdf::AwsLcHkdf, AwsLcCryptoError};
@@ -152,7 +153,9 @@ impl KemType for MlKemKem {
 
         self.generate_deterministic(&out)
     }
+}
 
+impl FixedLengthKemType for MlKemKem {
     fn public_key_size(&self) -> usize {
         match self.ml_kem {
             MlKem::MlKem512 => 800,
@@ -216,7 +219,7 @@ unsafe fn kem_derive(
 #[cfg(test)]
 mod tests {
     use mls_rs_core::crypto::CipherSuite;
-    use mls_rs_crypto_traits::{KemResult, KemType};
+    use mls_rs_crypto_traits::KemType;
 
     use super::MlKemKem;
 
@@ -225,11 +228,11 @@ mod tests {
         let kem = MlKemKem::new(CipherSuite::ML_KEM_512).unwrap();
 
         let (secret_key, public_key) = kem.generate_deterministic(&[1u8; 64]).unwrap();
-        let KemResult { shared_secret, enc } = kem.encap(&public_key).unwrap();
+        let result = kem.encap(&public_key).unwrap();
 
         assert_eq!(
-            kem.decap(&enc, &secret_key, &public_key).unwrap(),
-            shared_secret
+            kem.decap(&result.enc, &secret_key, &public_key).unwrap(),
+            result.shared_secret
         );
     }
 }

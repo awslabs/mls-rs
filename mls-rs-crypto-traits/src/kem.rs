@@ -12,6 +12,7 @@ use alloc::vec::Vec;
 
 #[cfg(feature = "mock")]
 use mockall::automock;
+use zeroize::ZeroizeOnDrop;
 
 /// A trait that provides the required KEM functions
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -45,18 +46,13 @@ pub trait KemType: Send + Sync + Sized {
     ) -> Result<Vec<u8>, Self::Error>;
 
     fn seed_length_for_derive(&self) -> usize;
-    fn public_key_size(&self) -> usize;
-    fn secret_key_size(&self) -> usize;
-
-    fn enc_size(&self) -> usize {
-        self.public_key_size()
-    }
 }
 
 /// Struct to represent the output of the kem [encap](KemType::encap) function
-#[derive(Clone, Debug, MlsDecode, MlsEncode, MlsSize)]
+#[derive(Clone, Debug, MlsDecode, MlsEncode, MlsSize, ZeroizeOnDrop)]
 pub struct KemResult {
     pub shared_secret: Vec<u8>,
+    #[zeroize(skip)]
     pub enc: Vec<u8>,
 }
 

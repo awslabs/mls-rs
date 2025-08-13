@@ -13,7 +13,7 @@ use crate::{
 };
 
 use mls_rs_core::crypto::test_suite::{EncapOutput, TestHpke};
-use mls_rs_crypto_traits::{AeadType, DhType, KdfType, KemResult, KemType};
+use mls_rs_crypto_traits::{AeadType, DhType, KdfType, KemType};
 
 impl<DH: DhType, KDF: KdfType + Clone, AEAD: AeadType + Clone> TestHpke
     for Hpke<DhKem<DH, KDF>, KDF, AEAD>
@@ -41,9 +41,12 @@ impl<DH: DhType, KDF: KdfType + Clone, AEAD: AeadType + Clone> TestHpke
 
     fn encap(&mut self, ikm_e: Vec<u8>, pk_rm: Vec<u8>) -> EncapOutput {
         self.kem.set_test_data(ikm_e);
-        let KemResult { enc, shared_secret } = self.kem.encap(&pk_rm.into()).unwrap();
+        let res = self.kem.encap(&pk_rm.into()).unwrap();
 
-        EncapOutput { enc, shared_secret }
+        EncapOutput {
+            enc: res.enc.clone(),
+            shared_secret: res.shared_secret.clone(),
+        }
     }
 
     fn decap(&mut self, enc: Vec<u8>, sk_rm: Vec<u8>, pk_rm: Vec<u8>) -> Vec<u8> {

@@ -10,6 +10,7 @@ wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
 
 pub mod context;
 pub mod dhkem;
+pub mod ghp_kem_combiner;
 pub mod hpke;
 pub mod kdf;
 pub mod kem_combiner;
