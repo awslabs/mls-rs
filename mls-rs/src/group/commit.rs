@@ -477,7 +477,7 @@ where
 
     /// Create a new commit builder that can include proposals
     /// by-value.
-    pub fn commit_builder(&mut self) -> CommitBuilder<C> {
+    pub fn commit_builder(&mut self) -> CommitBuilder<'_, C> {
         CommitBuilder {
             group: self,
             proposals: Default::default(),
