@@ -21,7 +21,7 @@ pub enum ValidationContext<'a> {
 }
 
 impl ValidationContext<'_> {
-    fn signing_context(&self) -> LeafNodeSigningContext {
+    fn signing_context(&self) -> LeafNodeSigningContext<'_> {
         match *self {
             ValidationContext::Add(_) => Default::default(),
             ValidationContext::Update((group_id, leaf_index, _)) => (group_id, leaf_index).into(),
