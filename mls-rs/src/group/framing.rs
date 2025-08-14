@@ -8,8 +8,10 @@ use crate::{client::MlsError, tree_kem::node::LeafIndex, KeyPackage, KeyPackageR
 
 use super::{Commit, FramedContentAuthData, GroupInfo, MembershipTag, Welcome};
 
+use crate::group::proposal::{Proposal, ProposalOrRef};
+
 #[cfg(feature = "by_ref_proposal")]
-use crate::{group::Proposal, mls_rules::ProposalRef};
+use crate::mls_rules::ProposalRef;
 
 use alloc::vec::Vec;
 use core::fmt::{self, Debug};
@@ -24,7 +26,7 @@ use zeroize::ZeroizeOnDrop;
 use alloc::boxed::Box;
 
 #[cfg(feature = "custom_proposal")]
-use crate::group::proposal::{CustomProposal, ProposalOrRef};
+use crate::group::proposal::CustomProposal;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -531,6 +533,7 @@ impl MlsMessage {
     /// If this is not a plaintext or not a commit, this returns an empty list.
     /// **Note**: This method is not available in FFI bindings due to Proposal type constraints.
     #[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen_ignore)]
+    #[allow(unreachable_patterns)]
     pub fn proposals_by_value(&self) -> Vec<&Proposal> {
         match &self.payload {
             MlsMessagePayload::Plain(plaintext) => match &plaintext.content.content {
@@ -598,6 +601,7 @@ impl MlsMessage {
             .collect()
     }
 
+    #[allow(unreachable_patterns)]
     fn find_all_proposals(commit: &Commit) -> Vec<&Proposal> {
         commit
             .proposals
