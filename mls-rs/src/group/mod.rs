@@ -4740,7 +4740,7 @@ mod tests {
             panic!("unexpected non-custom proposal");
         };
         assert_eq!(
-            RcsSignature::from_custom_proposal(&c).unwrap(),
+            RcsSignature::from_custom_proposal(c).unwrap(),
             custom_proposal
         );
     }

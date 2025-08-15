@@ -355,11 +355,11 @@ impl CustomDecoder for CustomProposal {
         reader: &mut &[u8],
         proposal_type: &ProposalType,
     ) -> Result<Vec<u8>, mls_rs_codec::Error> {
-        match proposal_type {
+        match *proposal_type {
             // empty struct
-            &ProposalType::RCS_SIGNATURE => Ok(Vec::new()),
+            ProposalType::RCS_SIGNATURE => Ok(Vec::new()),
             // remove proposal
-            &ProposalType::RCS_SERVER_REMOVE => {
+            ProposalType::RCS_SERVER_REMOVE => {
                 let decoded = RemoveProposal::mls_decode(reader)?;
                 let mut writer = Vec::new();
                 RemoveProposal::mls_encode(&decoded, &mut writer)?;
