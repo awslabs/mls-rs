@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1755171373569,
+  "lastUpdate": 1755261188986,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -24395,6 +24395,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 156111,
             "range": "± 1841",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "maz.kamil@gmail.com",
+            "name": "Kamil Mazur",
+            "username": "Hord4ne"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "af6a38e306ded864732239d633893239fda3bfa7",
+          "message": "Add method to extract proposals by value from commit messages (#301)",
+          "timestamp": "2025-08-15T08:28:51-04:00",
+          "tree_id": "d4074d673458d802883ce4db461f362464cd4a0f",
+          "url": "https://github.com/awslabs/mls-rs/commit/af6a38e306ded864732239d633893239fda3bfa7"
+        },
+        "date": 1755261187959,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 527575,
+            "range": "± 8843",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 534883,
+            "range": "± 5504",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 596884,
+            "range": "± 2666",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1257097,
+            "range": "± 22774",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7541768,
+            "range": "± 22568",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2633285,
+            "range": "± 85706",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7074689,
+            "range": "± 91247",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13222109,
+            "range": "± 221503",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 774924,
+            "range": "± 6659",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 865192,
+            "range": "± 34193",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 998531,
+            "range": "± 21535",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 22974,
+            "range": "± 237",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 78494,
+            "range": "± 977",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 154368,
+            "range": "± 1102",
             "unit": "ns/iter"
           }
         ]
