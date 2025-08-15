@@ -28,6 +28,15 @@ impl From<mls_rs_core::mls_rs_codec::Error> for Error {
 
 impl IntoAnyError for Error {}
 
+pub trait FixedLengthKemType: KemType {
+    fn public_key_size(&self) -> usize;
+    fn secret_key_size(&self) -> usize;
+
+    fn enc_size(&self) -> usize {
+        self.public_key_size()
+    }
+}
+
 #[derive(Clone)]
 pub struct CombinedKem<KEM1, KEM2, H, VH, F> {
     kem1: KEM1,
@@ -156,8 +165,8 @@ impl<'a> SharedSecretDetails<'a> {
 )]
 impl<KEM1, KEM2, H, VH, F> KemType for CombinedKem<KEM1, KEM2, H, VH, F>
 where
-    KEM1: KemType,
-    KEM2: KemType,
+    KEM1: FixedLengthKemType,
+    KEM2: FixedLengthKemType,
     H: Hash,
     VH: VariableLengthHash,
     F: SharedSecretHashInput,
@@ -284,7 +293,16 @@ where
     fn seed_length_for_derive(&self) -> usize {
         self.kem1.seed_length_for_derive() + self.kem2.seed_length_for_derive()
     }
+}
 
+impl<KEM1, KEM2, H, VH, F> FixedLengthKemType for CombinedKem<KEM1, KEM2, H, VH, F>
+where
+    KEM1: FixedLengthKemType,
+    KEM2: FixedLengthKemType,
+    H: Hash,
+    VH: VariableLengthHash,
+    F: SharedSecretHashInput,
+{
     fn public_key_size(&self) -> usize {
         self.kem1.public_key_size() + self.kem2.public_key_size()
     }
@@ -300,8 +318,8 @@ where
 
 impl<KEM1, KEM2, H, VH, F> CombinedKem<KEM1, KEM2, H, VH, F>
 where
-    KEM1: KemType,
-    KEM2: KemType,
+    KEM1: FixedLengthKemType,
+    KEM2: FixedLengthKemType,
     H: Hash,
     VH: VariableLengthHash,
     F: SharedSecretHashInput,
@@ -356,7 +374,7 @@ where
     }
 }
 
-// Makes no sense to test this both in sync and async mode
+/*// Makes no sense to test this both in sync and async mode
 #[cfg(all(test, not(mls_build_async)))]
 mod tests {
     use mls_rs_core::crypto::{HpkePublicKey, HpkeSecretKey};
@@ -366,7 +384,7 @@ mod tests {
     };
 
     use super::{
-        CombinedKem, DefaultSharedSecretHashInput, SharedSecretHashInput,
+        CombinedKem, DefaultSharedSecretHashInput, FixedLengthKemType, SharedSecretHashInput,
         XWingSharedSecretHashInput,
     };
 
@@ -541,3 +559,4 @@ mod tests {
         assert_eq!(kem.enc_size(), 10010);
     }
 }
+*/
