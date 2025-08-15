@@ -10,7 +10,7 @@ use mls_rs_core::{
 };
 use zeroize::Zeroizing;
 
-use crate::kdf::HpkeKdf;
+use crate::{kdf::HpkeKdf, kem_combiner::FixedLengthKemType};
 
 use alloc::vec::Vec;
 
@@ -161,7 +161,9 @@ impl<DH: DhType, KDF: KdfType> KemType for DhKem<DH, KDF> {
     fn seed_length_for_derive(&self) -> usize {
         self.n_secret
     }
+}
 
+impl<DH: DhType, KDF: KdfType> FixedLengthKemType for DhKem<DH, KDF> {
     fn public_key_size(&self) -> usize {
         self.dh.public_key_size()
     }
