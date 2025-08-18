@@ -348,10 +348,17 @@ pub enum MlsMessageDescription<'a> {
         key_package_refs: Vec<&'a KeyPackageRef>,
         cipher_suite: CipherSuite,
     },
-    ProtocolMessage {
+    PrivateProtocolMessage {
         group_id: &'a [u8],
         epoch_id: u64,
         content_type: ContentType, // commit, proposal, or application
+    },
+    PublicProtocolMessage {
+        group_id: &'a [u8],
+        epoch_id: u64,
+        content_type: ContentType,
+        sender: Sender,
+        authenticated_data: &'a [u8],
     },
     GroupInfo,
     KeyPackage,
@@ -364,13 +371,15 @@ impl MlsMessage {
                 key_package_refs: w.secrets.iter().map(|s| &s.new_member).collect(),
                 cipher_suite: w.cipher_suite,
             },
-            MlsMessagePayload::Plain(p) => MlsMessageDescription::ProtocolMessage {
+            MlsMessagePayload::Plain(p) => MlsMessageDescription::PublicProtocolMessage {
                 group_id: &p.content.group_id,
                 epoch_id: p.content.epoch,
                 content_type: p.content.content_type(),
+                sender: p.content.sender,
+                authenticated_data: &p.content.authenticated_data,
             },
             #[cfg(feature = "private_message")]
-            MlsMessagePayload::Cipher(c) => MlsMessageDescription::ProtocolMessage {
+            MlsMessagePayload::Cipher(c) => MlsMessageDescription::PrivateProtocolMessage {
                 group_id: &c.group_id,
                 epoch_id: c.epoch,
                 content_type: c.content_type,
@@ -794,10 +803,12 @@ mod tests {
 
         let message = group.commit(vec![]).await.unwrap();
 
-        let expected = MlsMessageDescription::ProtocolMessage {
+        let expected = MlsMessageDescription::PublicProtocolMessage {
             group_id: group.group_id(),
             epoch_id: group.context().epoch,
             content_type: ContentType::Commit,
+            sender: Sender::Member(0),
+            authenticated_data: &[],
         };
 
         assert_eq!(message.commit_message.description(), expected);
@@ -809,7 +820,7 @@ mod tests {
             .await
             .unwrap();
 
-        let expected = MlsMessageDescription::ProtocolMessage {
+        let expected = MlsMessageDescription::PrivateProtocolMessage {
             group_id: group.group_id(),
             epoch_id: group.context().epoch,
             content_type: ContentType::Application,
