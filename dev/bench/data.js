@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1755542004673,
+  "lastUpdate": 1755543927598,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -24719,6 +24719,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 152862,
             "range": "± 1077",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "9029396+cindylindeed@users.noreply.github.com",
+            "name": "Cindy Lin",
+            "username": "cindylindeed"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2df2fcfe9b2fca2ea684dd28514a9a2cc4bec833",
+          "message": "Export key generation during encryption, decryption of PrivateMessages. (#294)\n\n* Export key generation for encrypt_application_message and process_incoming_message.\n\nUsed by clients to authenticate the generation to defend against in-group forgery\nattacks described in https://eprint.iacr.org/2025/554. This may be accomplished\nby placing the generation in the `message` or `authenticated_data` parameters of\n`Group::encrypt_application_message`, as both fields are signed by the sender's\nsignature key. To verify, the authenticated generation MUST be checked against\nthe unauthenticated generation in the SenderData, which is the actual value used\nto derive keys for decryption.\n\n* Export unauthenticated key generation via ApplicationMessageDescription on decrypt.\n\n---------\n\nCo-authored-by: Tom Leavy <tomleavy@amazon.com>",
+          "timestamp": "2025-08-18T21:01:01+02:00",
+          "tree_id": "2bb166447d909d2e45e608494d86e3fb7a1a61f9",
+          "url": "https://github.com/awslabs/mls-rs/commit/2df2fcfe9b2fca2ea684dd28514a9a2cc4bec833"
+        },
+        "date": 1755543926829,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 525822,
+            "range": "± 7173",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 534085,
+            "range": "± 3371",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 595858,
+            "range": "± 6379",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1265724,
+            "range": "± 26760",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7530096,
+            "range": "± 31313",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2628978,
+            "range": "± 79970",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7029244,
+            "range": "± 94042",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13172500,
+            "range": "± 127394",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 777111,
+            "range": "± 8471",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 865992,
+            "range": "± 5510",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 1001084,
+            "range": "± 14338",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 22786,
+            "range": "± 399",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 78142,
+            "range": "± 1018",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 154002,
+            "range": "± 1194",
             "unit": "ns/iter"
           }
         ]
