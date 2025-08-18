@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1755540095102,
+  "lastUpdate": 1755542004673,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -24611,6 +24611,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 154122,
             "range": "± 1343",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ellen.arteca@gmail.com",
+            "name": "Ellen Arteca",
+            "username": "emarteca"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5ebe2152a937d62276f4ee68a2b195fc5d5c3f7f",
+          "message": "Custom proposals support GSMA RCS encoding (#299)\n\n* initial trait setup; now to pull up through layers\n\n* adding explicit gsma spec proposals\n\n* adding gsma end_mls proposal type\n\n* simplifying\n\n* forgot about encoded len\n\n* adding tests and a feature flag\n\n* consistent caps in hex\n\n* removing end_mls proposal type as we do not need it\n\n* removing from type list\n\n* clippy\n\n---------\n\nCo-authored-by: Ellen Arteca <emarteca@google.com>\nCo-authored-by: Tom Leavy <tomleavy@amazon.com>\nCo-authored-by: mulmarta <103590845+mulmarta@users.noreply.github.com>",
+          "timestamp": "2025-08-18T14:29:16-04:00",
+          "tree_id": "03f17e039b0a12dddcab60d2828bf487901d8308",
+          "url": "https://github.com/awslabs/mls-rs/commit/5ebe2152a937d62276f4ee68a2b195fc5d5c3f7f"
+        },
+        "date": 1755542003866,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 529902,
+            "range": "± 6663",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 538297,
+            "range": "± 7248",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 599975,
+            "range": "± 24429",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1278584,
+            "range": "± 39508",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7515732,
+            "range": "± 35369",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2650926,
+            "range": "± 134145",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7112735,
+            "range": "± 138133",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13275512,
+            "range": "± 122171",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 772162,
+            "range": "± 5013",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 864768,
+            "range": "± 5516",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 996186,
+            "range": "± 12263",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 22714,
+            "range": "± 272",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 78101,
+            "range": "± 996",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 152862,
+            "range": "± 1077",
             "unit": "ns/iter"
           }
         ]
