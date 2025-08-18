@@ -2166,9 +2166,26 @@ where
         &mut self,
         cipher_text: &PrivateMessage,
     ) -> Result<Option<u32>, MlsError> {
-        let sender_data = CiphertextProcessor::new(self, self.cipher_suite_provider.clone())
-            .open_sender_data(cipher_text)
-            .await?;
+        let epoch_id = cipher_text.epoch;
+        let sender_data = if epoch_id == self.context().epoch {
+            CiphertextProcessor::new(self, self.cipher_suite_provider.clone())
+                .open_sender_data(cipher_text)
+                .await?
+        } else {
+            #[cfg(feature = "prior_epoch")]
+            {
+                let epoch = self
+                    .state_repo
+                    .get_epoch_mut(epoch_id)
+                    .await?
+                    .ok_or(MlsError::EpochNotFound)?;
+                CiphertextProcessor::new(epoch, self.cipher_suite_provider.clone())
+                    .open_sender_data(cipher_text)
+                    .await?
+            }
+            #[cfg(not(feature = "prior_epoch"))]
+            Err(MlsError::EpochNotFound)
+        };
         Ok(Some(sender_data.generation))
     }
 
@@ -3894,6 +3911,52 @@ mod tests {
                     if unauthenticated_key_generation.unwrap().to_be_bytes() == bob_msg
             );
         }
+    }
+
+    #[cfg(all(
+        feature = "export_key_generation",
+        feature = "private_message",
+        feature = "prior_epoch",
+        feature = "secret_tree_access"
+    ))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn verify_key_generation_from_prior_epoch() {
+        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (mut bob_group, _) = alice_group.join("bob").await;
+
+        let key_gen = bob_group.peek_next_key_generation().unwrap();
+
+        let alice_key_gen = alice_group.peek_next_key_generation().unwrap();
+        assert!(alice_key_gen == key_gen);
+
+        let authn_key_gen = key_gen.to_be_bytes();
+        let msg = bob_group
+            .encrypt_application_message(&authn_key_gen, vec![])
+            .await
+            .unwrap();
+
+        alice_group
+            .encrypt_application_message(&[1, 2, 3], vec![])
+            .await
+            .unwrap();
+
+        // Advance the key generation so Alice has a different keygen than
+        // Bob when the message was encrypted.
+        let alice_key_gen = alice_group.peek_next_key_generation().unwrap();
+        assert!(alice_key_gen != key_gen);
+
+        // Advance the epoch so the message will be decrypted in an epoch
+        // after it was encrypted.
+        alice_group.commit(vec![]).await.unwrap();
+        assert!(alice_group.has_pending_commit());
+        alice_group.apply_pending_commit().await.unwrap();
+
+        let received_by_alice = alice_group.process_incoming_message(msg).await.unwrap();
+        assert_matches!(
+            received_by_alice,
+            ReceivedMessage::ApplicationMessage(ApplicationMessageDescription { unauthenticated_key_generation, .. })
+                if unauthenticated_key_generation.unwrap().to_be_bytes() == authn_key_gen
+        );
     }
 
     #[cfg(all(
