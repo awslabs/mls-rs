@@ -1861,6 +1861,39 @@ where
         PskSecret::new(self.cipher_suite_provider())
     }
 
+    /// Returns the key generation used by the next invocation of
+    /// [`Group::encrypt_application_message`]. Does not increment the generation nor
+    /// derive keys.
+    ///
+    /// Used by clients to authenticate the generation to defend against in-group forgery
+    /// attacks described in https://eprint.iacr.org/2025/554. This may be accomplished
+    /// by placing the generation in the `message` or `authenticated_data` parameters of
+    /// [`Group::encrypt_application_message`], as both fields are signed by the sender's
+    /// signature key.
+    ///
+    /// To verify, get the unauthenticated generation from ApplicationMessageDescription
+    /// returned from [`Group::process_incoming_message`], which is the value used to
+    /// derive keys to decrypt the message, and check that it equals the authenticated
+    /// generation.
+    ///
+    /// WARNING: This is only safe for synchronous usage of [`Group`] APIs.
+    #[cfg(all(
+        feature = "export_key_generation",
+        feature = "private_message",
+        feature = "secret_tree_access",
+    ))]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub fn peek_next_key_generation(&mut self) -> Result<u32, MlsError> {
+        self.epoch_secrets
+            .secret_tree
+            .peek_next_key_generation(
+                &self.cipher_suite_provider,
+                crate::tree_kem::node::NodeIndex::from(self.private_tree.self_index),
+                KeyType::Application,
+            )
+            .await
+    }
+
     #[cfg(feature = "secret_tree_access")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     #[inline(never)]
@@ -2125,6 +2158,18 @@ where
         .await?;
 
         Ok(EventOrContent::Content(auth_content))
+    }
+
+    #[cfg(all(feature = "export_key_generation", feature = "private_message"))]
+    /// Returns the unauthenticated key generation used to decrypt the private message.
+    async fn get_unauthenticated_key_generation_from_sender_data(
+        &mut self,
+        cipher_text: &PrivateMessage,
+    ) -> Result<Option<u32>, MlsError> {
+        let sender_data = CiphertextProcessor::new(self, self.cipher_suite_provider.clone())
+            .open_sender_data(cipher_text)
+            .await?;
+        Ok(Some(sender_data.generation))
     }
 
     async fn apply_update_path(
@@ -3798,6 +3843,90 @@ mod tests {
             ReceivedMessage::ApplicationMessage(ApplicationMessageDescription { sender_index, .. })
                 if sender_index == bob_group.current_member_index()
         );
+    }
+
+    #[cfg(all(
+        feature = "export_key_generation",
+        feature = "private_message",
+        feature = "secret_tree_access",
+    ))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn export_and_verify_key_generation() {
+        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (mut bob_group, _) = alice_group.join("bob").await;
+
+        for i in 0..10 {
+            let key_gen = bob_group.peek_next_key_generation().unwrap();
+            assert_eq!(key_gen, i);
+
+            let authn_key_gen = key_gen.to_be_bytes();
+            let msg = bob_group
+                .encrypt_application_message(&authn_key_gen, vec![])
+                .await
+                .unwrap();
+
+            let received_by_alice = alice_group.process_incoming_message(msg).await.unwrap();
+            assert_matches!(
+                received_by_alice,
+                ReceivedMessage::ApplicationMessage(ApplicationMessageDescription { unauthenticated_key_generation, .. })
+                    if unauthenticated_key_generation.unwrap().to_be_bytes() == authn_key_gen
+            );
+        }
+    }
+
+    #[cfg(all(feature = "export_key_generation", feature = "private_message",))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn verify_key_generation() {
+        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (mut bob_group, _) = alice_group.join("bob").await;
+
+        for i in 0u32..10u32 {
+            let bob_msg = i.to_be_bytes();
+            let msg = bob_group
+                .encrypt_application_message(&bob_msg, vec![])
+                .await
+                .unwrap();
+
+            let received_by_alice = alice_group.process_incoming_message(msg).await.unwrap();
+            assert_matches!(
+                received_by_alice,
+                ReceivedMessage::ApplicationMessage(ApplicationMessageDescription { unauthenticated_key_generation, .. })
+                    if unauthenticated_key_generation.unwrap().to_be_bytes() == bob_msg
+            );
+        }
+    }
+
+    #[cfg(all(
+        feature = "export_key_generation",
+        feature = "private_message",
+        feature = "secret_tree_access",
+    ))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn peek_next_key_generation() {
+        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (mut bob_group, _) = alice_group.join("bob").await;
+
+        assert_eq!(bob_group.peek_next_key_generation().unwrap(), 0);
+        assert_eq!(bob_group.peek_next_key_generation().unwrap(), 0);
+
+        let bob_msg = b"I'm Bob";
+        bob_group
+            .encrypt_application_message(bob_msg, vec![])
+            .await
+            .unwrap();
+
+        assert_eq!(bob_group.peek_next_key_generation().unwrap(), 1);
+        bob_group
+            .encrypt_application_message(bob_msg, vec![])
+            .await
+            .unwrap();
+
+        bob_group
+            .encrypt_application_message(bob_msg, vec![])
+            .await
+            .unwrap();
+
+        assert_eq!(bob_group.peek_next_key_generation().unwrap(), 3);
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]

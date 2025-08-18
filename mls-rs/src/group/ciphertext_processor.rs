@@ -198,22 +198,7 @@ where
     ) -> Result<AuthenticatedContent, MlsError> {
         // Decrypt the sender data with the derived sender_key and sender_nonce from the message
         // epoch's key schedule
-        let sender_data_aad = SenderDataAAD {
-            group_id: self.group_state.group_context().group_id.clone(),
-            epoch: self.group_state.group_context().epoch,
-            content_type: ciphertext.content_type,
-        };
-
-        let sender_data_key = SenderDataKey::new(
-            &self.group_state.epoch_secrets().sender_data_secret,
-            &ciphertext.ciphertext,
-            &self.cipher_suite_provider,
-        )
-        .await?;
-
-        let sender_data = sender_data_key
-            .open(&ciphertext.encrypted_sender_data, &sender_data_aad)
-            .await?;
+        let sender_data = self.open_sender_data(ciphertext).await?;
 
         if self.group_state.self_index() == sender_data.sender {
             return Err(MlsError::CantProcessMessageFromSelf);
@@ -260,6 +245,30 @@ where
 
         Ok(auth_content)
     }
+
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    /// Decrypts the sender data with a key and nonce derived from the key schedule and a sample of the ciphertext.
+    pub async fn open_sender_data(
+        &mut self,
+        ciphertext: &PrivateMessage,
+    ) -> Result<SenderData, MlsError> {
+        let sender_data_aad = SenderDataAAD {
+            group_id: self.group_state.group_context().group_id.clone(),
+            epoch: self.group_state.group_context().epoch,
+            content_type: ciphertext.content_type,
+        };
+
+        let sender_data_key = SenderDataKey::new(
+            &self.group_state.epoch_secrets().sender_data_secret,
+            &ciphertext.ciphertext,
+            &self.cipher_suite_provider,
+        )
+        .await?;
+
+        sender_data_key
+            .open(&ciphertext.encrypted_sender_data, &sender_data_aad)
+            .await
+    }
 }
 
 #[cfg(test)]
@@ -280,7 +289,7 @@ mod test {
         tree_kem::node::LeafIndex,
     };
 
-    use super::{CiphertextProcessor, GroupStateProvider, MlsError};
+    use super::{CiphertextProcessor, GroupStateProvider, MlsError, SenderData};
 
     use alloc::vec;
     use assert_matches::assert_matches;
@@ -343,6 +352,39 @@ mod test {
                 let decrypted = receiver_processor.open(&ciphertext).await.unwrap();
 
                 assert_eq!(decrypted, test_data.content);
+            }
+        }
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_open_sender_data() {
+        for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
+            for padding in [
+                PaddingMode::None,
+                PaddingMode::StepFunction,
+                PaddingMode::Padme,
+            ] {
+                // Sender's LeafIndex is 0.
+                let mut test_data = test_data(cipher_suite).await;
+                let mut ciphertext_processor = test_processor(&mut test_data.group, cipher_suite);
+                let ciphertext = ciphertext_processor
+                    .seal(test_data.content.clone(), padding)
+                    .await
+                    .unwrap();
+
+                let mut receiver_group = test_data.group.clone();
+                receiver_group.private_tree.self_index = LeafIndex::unchecked(1);
+                let mut receiver_processor = test_processor(&mut receiver_group, cipher_suite);
+
+                let sender_data = receiver_processor
+                    .open_sender_data(&ciphertext)
+                    .await
+                    .unwrap();
+                assert_matches!(
+                    sender_data,
+                    SenderData { sender, generation, .. }
+                        if sender == LeafIndex::unchecked(0) && generation == 0
+                );
             }
         }
     }

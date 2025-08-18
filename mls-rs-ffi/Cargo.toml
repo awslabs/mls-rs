@@ -22,6 +22,7 @@ by_ref_proposal = ["mls-rs/by_ref_proposal"]
 custom_proposal = ["mls-rs/custom_proposal"]
 private_message = ["mls-rs/private_message"]
 secret_tree_access = ["mls-rs/secret_tree_access"]
+export_key_generation = ["mls-rs/export_key_generation"]
 
 [dependencies]
 mls-rs = { path = "../mls-rs", version = "0.51.0", features = ["ffi"] }
