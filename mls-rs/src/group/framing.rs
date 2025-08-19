@@ -8,8 +8,10 @@ use crate::{client::MlsError, tree_kem::node::LeafIndex, KeyPackage, KeyPackageR
 
 use super::{Commit, FramedContentAuthData, GroupInfo, MembershipTag, Welcome};
 
+use crate::group::proposal::{Proposal, ProposalOrRef};
+
 #[cfg(feature = "by_ref_proposal")]
-use crate::{group::Proposal, mls_rules::ProposalRef};
+use crate::mls_rules::ProposalRef;
 
 use alloc::vec::Vec;
 use core::fmt::{self, Debug};
@@ -24,7 +26,7 @@ use zeroize::ZeroizeOnDrop;
 use alloc::boxed::Box;
 
 #[cfg(feature = "custom_proposal")]
-use crate::group::proposal::{CustomProposal, ProposalOrRef};
+use crate::group::proposal::CustomProposal;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -348,10 +350,17 @@ pub enum MlsMessageDescription<'a> {
         key_package_refs: Vec<&'a KeyPackageRef>,
         cipher_suite: CipherSuite,
     },
-    ProtocolMessage {
+    PrivateProtocolMessage {
         group_id: &'a [u8],
         epoch_id: u64,
         content_type: ContentType, // commit, proposal, or application
+    },
+    PublicProtocolMessage {
+        group_id: &'a [u8],
+        epoch_id: u64,
+        content_type: ContentType,
+        sender: Sender,
+        authenticated_data: &'a [u8],
     },
     GroupInfo,
     KeyPackage,
@@ -364,13 +373,15 @@ impl MlsMessage {
                 key_package_refs: w.secrets.iter().map(|s| &s.new_member).collect(),
                 cipher_suite: w.cipher_suite,
             },
-            MlsMessagePayload::Plain(p) => MlsMessageDescription::ProtocolMessage {
+            MlsMessagePayload::Plain(p) => MlsMessageDescription::PublicProtocolMessage {
                 group_id: &p.content.group_id,
                 epoch_id: p.content.epoch,
                 content_type: p.content.content_type(),
+                sender: p.content.sender,
+                authenticated_data: &p.content.authenticated_data,
             },
             #[cfg(feature = "private_message")]
-            MlsMessagePayload::Cipher(c) => MlsMessageDescription::ProtocolMessage {
+            MlsMessagePayload::Cipher(c) => MlsMessageDescription::PrivateProtocolMessage {
                 group_id: &c.group_id,
                 epoch_id: c.epoch,
                 content_type: c.content_type,
@@ -527,6 +538,21 @@ impl MlsMessage {
         }
     }
 
+    /// If this is a plaintext commit message, return all proposals committed by value.
+    /// If this is not a plaintext or not a commit, this returns an empty list.
+    /// **Note**: This method is not available in FFI bindings due to Proposal type constraints.
+    #[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen_ignore)]
+    #[allow(unreachable_patterns)]
+    pub fn proposals_by_value(&self) -> Vec<&Proposal> {
+        match &self.payload {
+            MlsMessagePayload::Plain(plaintext) => match &plaintext.content.content {
+                Content::Commit(commit) => Self::find_all_proposals(commit),
+                _ => Vec::new(),
+            },
+            _ => Vec::new(),
+        }
+    }
+
     /// If this is a welcome message, return key package references of all members who can
     /// join using this message.
     pub fn welcome_key_package_references(&self) -> Vec<&KeyPackageRef> {
@@ -568,8 +594,8 @@ impl MlsMessage {
     }
 }
 
-#[cfg(feature = "custom_proposal")]
 impl MlsMessage {
+    #[cfg(feature = "custom_proposal")]
     fn find_custom_proposals(commit: &Commit) -> Vec<&CustomProposal> {
         commit
             .proposals
@@ -579,6 +605,18 @@ impl MlsMessage {
                     crate::group::Proposal::Custom(p) => Some(p),
                     _ => None,
                 },
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[allow(unreachable_patterns)]
+    fn find_all_proposals(commit: &Commit) -> Vec<&Proposal> {
+        commit
+            .proposals
+            .iter()
+            .filter_map(|p| match p {
+                ProposalOrRef::Proposal(p) => Some(p.as_ref()),
                 _ => None,
             })
             .collect()
@@ -794,10 +832,12 @@ mod tests {
 
         let message = group.commit(vec![]).await.unwrap();
 
-        let expected = MlsMessageDescription::ProtocolMessage {
+        let expected = MlsMessageDescription::PublicProtocolMessage {
             group_id: group.group_id(),
             epoch_id: group.context().epoch,
             content_type: ContentType::Commit,
+            sender: Sender::Member(0),
+            authenticated_data: &[],
         };
 
         assert_eq!(message.commit_message.description(), expected);
@@ -809,7 +849,7 @@ mod tests {
             .await
             .unwrap();
 
-        let expected = MlsMessageDescription::ProtocolMessage {
+        let expected = MlsMessageDescription::PrivateProtocolMessage {
             group_id: group.group_id(),
             epoch_id: group.context().epoch,
             content_type: ContentType::Application,

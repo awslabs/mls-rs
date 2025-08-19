@@ -307,6 +307,76 @@ impl CustomProposal {
     }
 }
 
+#[cfg(feature = "custom_proposal")]
+/// Encode/Decode for the `data` field of CustomProposal. This allows specialization over
+/// the decoding based on the ProposalType, if users want to use an encoding other than the
+/// default bytes vector (in particular, if users want the CustomProposal wrapper to be hidden
+/// in the encoding, so the underlying custom proposal can be decoded directly).
+pub trait CustomDecoder: Sized {
+    fn encode_from_bytes(
+        data: &Vec<u8>,
+        writer: &mut Vec<u8>,
+        _proposal_type: &ProposalType,
+    ) -> Result<(), mls_rs_codec::Error> {
+        mls_rs_codec::byte_vec::mls_encode(data, writer)
+    }
+    fn decode_from_bytes(
+        reader: &mut &[u8],
+        _proposal_type: &ProposalType,
+    ) -> Result<Vec<u8>, mls_rs_codec::Error> {
+        mls_rs_codec::byte_vec::mls_decode(reader)
+    }
+    fn encoded_byte_len(data: &Vec<u8>, _proposal_type: &ProposalType) -> usize {
+        mls_rs_codec::byte_vec::mls_encoded_len(data)
+    }
+}
+
+#[cfg(all(feature = "custom_proposal", not(feature = "gsma_rcs_e2ee_feature")))]
+impl CustomDecoder for CustomProposal {}
+
+#[cfg(all(feature = "custom_proposal", feature = "gsma_rcs_e2ee_feature"))]
+impl CustomDecoder for CustomProposal {
+    fn encode_from_bytes(
+        data: &Vec<u8>,
+        writer: &mut Vec<u8>,
+        proposal_type: &ProposalType,
+    ) -> Result<(), mls_rs_codec::Error> {
+        match proposal_type {
+            // directly extend with the serialized proposals; don't encode as a byte array
+            // as the length should not be included in the encoding
+            &ProposalType::RCS_SIGNATURE | &ProposalType::RCS_SERVER_REMOVE => {
+                writer.extend(data);
+                Ok(())
+            }
+            _ => mls_rs_codec::byte_vec::mls_encode(data, writer),
+        }
+    }
+    fn decode_from_bytes(
+        reader: &mut &[u8],
+        proposal_type: &ProposalType,
+    ) -> Result<Vec<u8>, mls_rs_codec::Error> {
+        match *proposal_type {
+            // empty struct
+            ProposalType::RCS_SIGNATURE => Ok(Vec::new()),
+            // remove proposal
+            ProposalType::RCS_SERVER_REMOVE => {
+                let decoded = RemoveProposal::mls_decode(reader)?;
+                let mut writer = Vec::new();
+                RemoveProposal::mls_encode(&decoded, &mut writer)?;
+                // return, to be used in the data field of CustomProposal, the encoded proposal
+                Ok(writer)
+            }
+            _ => mls_rs_codec::byte_vec::mls_decode(reader),
+        }
+    }
+    fn encoded_byte_len(data: &Vec<u8>, proposal_type: &ProposalType) -> usize {
+        match proposal_type {
+            &ProposalType::RCS_SIGNATURE | &ProposalType::RCS_SERVER_REMOVE => data.len(),
+            _ => mls_rs_codec::byte_vec::mls_encoded_len(data),
+        }
+    }
+}
+
 /// Trait to simplify creating custom proposals that are serialized with MLS
 /// encoding.
 #[cfg(feature = "custom_proposal")]
@@ -381,7 +451,7 @@ impl MlsSize for Proposal {
             ))]
             Proposal::SelfRemove(p) => p.mls_encoded_len(),
             #[cfg(feature = "custom_proposal")]
-            Proposal::Custom(p) => mls_rs_codec::byte_vec::mls_encoded_len(&p.data),
+            Proposal::Custom(p) => CustomProposal::encoded_byte_len(&p.data, &p.proposal_type),
         };
 
         self.proposal_type().mls_encoded_len() + inner_len
@@ -419,7 +489,7 @@ impl MlsEncode for Proposal {
                     // #[cfg(not(feature = "std"))]
                     return Err(mls_rs_codec::Error::Custom(2));
                 }
-                mls_rs_codec::byte_vec::mls_encode(&p.data, writer)
+                CustomProposal::encode_from_bytes(&p.data, writer, &p.proposal_type)
             }
         }
     }
@@ -456,7 +526,7 @@ impl MlsDecode for Proposal {
             #[cfg(feature = "custom_proposal")]
             custom => Proposal::Custom(CustomProposal {
                 proposal_type: custom,
-                data: mls_rs_codec::byte_vec::mls_decode(reader)?,
+                data: CustomProposal::decode_from_bytes(reader, &custom)?,
             }),
             // TODO fix test dependency on openssl loading codec with default features
             #[cfg(not(feature = "custom_proposal"))]

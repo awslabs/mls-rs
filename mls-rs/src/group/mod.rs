@@ -1861,6 +1861,39 @@ where
         PskSecret::new(self.cipher_suite_provider())
     }
 
+    /// Returns the key generation used by the next invocation of
+    /// [`Group::encrypt_application_message`]. Does not increment the generation nor
+    /// derive keys.
+    ///
+    /// Used by clients to authenticate the generation to defend against in-group forgery
+    /// attacks described in https://eprint.iacr.org/2025/554. This may be accomplished
+    /// by placing the generation in the `message` or `authenticated_data` parameters of
+    /// [`Group::encrypt_application_message`], as both fields are signed by the sender's
+    /// signature key.
+    ///
+    /// To verify, get the unauthenticated generation from ApplicationMessageDescription
+    /// returned from [`Group::process_incoming_message`], which is the value used to
+    /// derive keys to decrypt the message, and check that it equals the authenticated
+    /// generation.
+    ///
+    /// WARNING: This is only safe for synchronous usage of [`Group`] APIs.
+    #[cfg(all(
+        feature = "export_key_generation",
+        feature = "private_message",
+        feature = "secret_tree_access",
+    ))]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub fn peek_next_key_generation(&mut self) -> Result<u32, MlsError> {
+        self.epoch_secrets
+            .secret_tree
+            .peek_next_key_generation(
+                &self.cipher_suite_provider,
+                crate::tree_kem::node::NodeIndex::from(self.private_tree.self_index),
+                KeyType::Application,
+            )
+            .await
+    }
+
     #[cfg(feature = "secret_tree_access")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     #[inline(never)]
@@ -2125,6 +2158,35 @@ where
         .await?;
 
         Ok(EventOrContent::Content(auth_content))
+    }
+
+    #[cfg(all(feature = "export_key_generation", feature = "private_message"))]
+    /// Returns the unauthenticated key generation used to decrypt the private message.
+    async fn get_unauthenticated_key_generation_from_sender_data(
+        &mut self,
+        cipher_text: &PrivateMessage,
+    ) -> Result<Option<u32>, MlsError> {
+        let epoch_id = cipher_text.epoch;
+        let sender_data = if epoch_id == self.context().epoch {
+            CiphertextProcessor::new(self, self.cipher_suite_provider.clone())
+                .open_sender_data(cipher_text)
+                .await?
+        } else {
+            #[cfg(feature = "prior_epoch")]
+            {
+                let epoch = self
+                    .state_repo
+                    .get_epoch_mut(epoch_id)
+                    .await?
+                    .ok_or(MlsError::EpochNotFound)?;
+                CiphertextProcessor::new(epoch, self.cipher_suite_provider.clone())
+                    .open_sender_data(cipher_text)
+                    .await?
+            }
+            #[cfg(not(feature = "prior_epoch"))]
+            Err(MlsError::EpochNotFound)
+        };
+        Ok(Some(sender_data.generation))
     }
 
     async fn apply_update_path(
@@ -3800,6 +3862,136 @@ mod tests {
         );
     }
 
+    #[cfg(all(
+        feature = "export_key_generation",
+        feature = "private_message",
+        feature = "secret_tree_access",
+    ))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn export_and_verify_key_generation() {
+        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (mut bob_group, _) = alice_group.join("bob").await;
+
+        for i in 0..10 {
+            let key_gen = bob_group.peek_next_key_generation().unwrap();
+            assert_eq!(key_gen, i);
+
+            let authn_key_gen = key_gen.to_be_bytes();
+            let msg = bob_group
+                .encrypt_application_message(&authn_key_gen, vec![])
+                .await
+                .unwrap();
+
+            let received_by_alice = alice_group.process_incoming_message(msg).await.unwrap();
+            assert_matches!(
+                received_by_alice,
+                ReceivedMessage::ApplicationMessage(ApplicationMessageDescription { unauthenticated_key_generation, .. })
+                    if unauthenticated_key_generation.unwrap().to_be_bytes() == authn_key_gen
+            );
+        }
+    }
+
+    #[cfg(all(feature = "export_key_generation", feature = "private_message",))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn verify_key_generation() {
+        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (mut bob_group, _) = alice_group.join("bob").await;
+
+        for i in 0u32..10u32 {
+            let bob_msg = i.to_be_bytes();
+            let msg = bob_group
+                .encrypt_application_message(&bob_msg, vec![])
+                .await
+                .unwrap();
+
+            let received_by_alice = alice_group.process_incoming_message(msg).await.unwrap();
+            assert_matches!(
+                received_by_alice,
+                ReceivedMessage::ApplicationMessage(ApplicationMessageDescription { unauthenticated_key_generation, .. })
+                    if unauthenticated_key_generation.unwrap().to_be_bytes() == bob_msg
+            );
+        }
+    }
+
+    #[cfg(all(
+        feature = "export_key_generation",
+        feature = "private_message",
+        feature = "prior_epoch",
+        feature = "secret_tree_access"
+    ))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn verify_key_generation_from_prior_epoch() {
+        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (mut bob_group, _) = alice_group.join("bob").await;
+
+        let key_gen = bob_group.peek_next_key_generation().unwrap();
+
+        let alice_key_gen = alice_group.peek_next_key_generation().unwrap();
+        assert!(alice_key_gen == key_gen);
+
+        let authn_key_gen = key_gen.to_be_bytes();
+        let msg = bob_group
+            .encrypt_application_message(&authn_key_gen, vec![])
+            .await
+            .unwrap();
+
+        alice_group
+            .encrypt_application_message(&[1, 2, 3], vec![])
+            .await
+            .unwrap();
+
+        // Advance the key generation so Alice has a different keygen than
+        // Bob when the message was encrypted.
+        let alice_key_gen = alice_group.peek_next_key_generation().unwrap();
+        assert!(alice_key_gen != key_gen);
+
+        // Advance the epoch so the message will be decrypted in an epoch
+        // after it was encrypted.
+        alice_group.commit(vec![]).await.unwrap();
+        assert!(alice_group.has_pending_commit());
+        alice_group.apply_pending_commit().await.unwrap();
+
+        let received_by_alice = alice_group.process_incoming_message(msg).await.unwrap();
+        assert_matches!(
+            received_by_alice,
+            ReceivedMessage::ApplicationMessage(ApplicationMessageDescription { unauthenticated_key_generation, .. })
+                if unauthenticated_key_generation.unwrap().to_be_bytes() == authn_key_gen
+        );
+    }
+
+    #[cfg(all(
+        feature = "export_key_generation",
+        feature = "private_message",
+        feature = "secret_tree_access",
+    ))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn peek_next_key_generation() {
+        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (mut bob_group, _) = alice_group.join("bob").await;
+
+        assert_eq!(bob_group.peek_next_key_generation().unwrap(), 0);
+        assert_eq!(bob_group.peek_next_key_generation().unwrap(), 0);
+
+        let bob_msg = b"I'm Bob";
+        bob_group
+            .encrypt_application_message(bob_msg, vec![])
+            .await
+            .unwrap();
+
+        assert_eq!(bob_group.peek_next_key_generation().unwrap(), 1);
+        bob_group
+            .encrypt_application_message(bob_msg, vec![])
+            .await
+            .unwrap();
+
+        bob_group
+            .encrypt_application_message(bob_msg, vec![])
+            .await
+            .unwrap();
+
+        assert_eq!(bob_group.peek_next_key_generation().unwrap(), 3);
+    }
+
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn members_of_a_group_have_identical_authentication_secrets() {
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
@@ -4665,6 +4857,138 @@ mod tests {
             new_epoch.applied_proposals[0].proposal,
             Proposal::Custom(custom_proposal)
         );
+    }
+
+    #[cfg(all(feature = "custom_proposal", feature = "gsma_rcs_e2ee_feature"))]
+    #[derive(MlsSize, MlsDecode, MlsEncode, Debug, PartialEq)]
+    struct RcsSignature {}
+    #[cfg(all(feature = "custom_proposal", feature = "gsma_rcs_e2ee_feature"))]
+    impl MlsCustomProposal for RcsSignature {
+        fn proposal_type() -> ProposalType {
+            ProposalType::RCS_SIGNATURE
+        }
+
+        fn to_custom_proposal(&self) -> Result<CustomProposal, mls_rs_codec::Error> {
+            Ok(CustomProposal::new(Self::proposal_type(), Vec::new()))
+        }
+
+        fn from_custom_proposal(proposal: &CustomProposal) -> Result<Self, mls_rs_codec::Error> {
+            if proposal.proposal_type() != Self::proposal_type() {
+                return Err(mls_rs_codec::Error::Custom(4));
+            }
+
+            Ok(Self {})
+        }
+    }
+
+    #[cfg(all(feature = "custom_proposal", feature = "gsma_rcs_e2ee_feature"))]
+    #[derive(MlsSize, MlsDecode, MlsEncode, Debug, PartialEq)]
+    struct RcsServerRemove {
+        to_remove: u32,
+    }
+
+    #[cfg(all(feature = "custom_proposal", feature = "gsma_rcs_e2ee_feature"))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn custom_proposal_custom_data_encoding_rcs_signature() {
+        let mut alice = test_group_custom_config(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, |b| {
+            b.custom_proposal_type(ProposalType::RCS_SIGNATURE)
+        })
+        .await;
+
+        let (mut bob, _) = alice
+            .join_with_custom_config("bob", true, |c| {
+                c.0.settings
+                    .custom_proposal_types
+                    .push(ProposalType::RCS_SIGNATURE)
+            })
+            .await
+            .unwrap();
+
+        let custom_proposal = RcsSignature {};
+
+        let proposal = alice
+            .propose_custom(custom_proposal.to_custom_proposal().unwrap(), vec![])
+            .await
+            .unwrap();
+
+        let recv_prop = bob.process_incoming_message(proposal).await.unwrap();
+
+        assert_matches!(recv_prop, ReceivedMessage::Proposal(ProposalMessageDescription { proposal: Proposal::Custom(c), ..})
+            if c == custom_proposal.to_custom_proposal().unwrap());
+
+        let commit = bob.commit(vec![]).await.unwrap().commit_message;
+
+        let ReceivedMessage::Commit(CommitMessageDescription {
+            effect: CommitEffect::NewEpoch(new_epoch),
+            ..
+        }) = bob.process_incoming_message(commit).await.unwrap()
+        else {
+            panic!("unexpected commit effect");
+        };
+
+        assert_eq!(new_epoch.applied_proposals.len(), 1);
+
+        let Proposal::Custom(ref c) = new_epoch.applied_proposals[0].proposal else {
+            panic!("unexpected non-custom proposal");
+        };
+        assert_eq!(
+            RcsSignature::from_custom_proposal(c).unwrap(),
+            custom_proposal
+        );
+    }
+
+    #[cfg(all(feature = "custom_proposal", feature = "gsma_rcs_e2ee_feature"))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn custom_proposal_custom_data_encoding_rcs_server_remove() {
+        let mut alice = test_group_custom_config(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, |b| {
+            b.custom_proposal_type(ProposalType::RCS_SERVER_REMOVE)
+        })
+        .await;
+
+        let (mut bob, _) = alice
+            .join_with_custom_config("bob", true, |c| {
+                c.0.settings
+                    .custom_proposal_types
+                    .push(ProposalType::RCS_SERVER_REMOVE)
+            })
+            .await
+            .unwrap();
+
+        let server_remove_proposal = RcsServerRemove { to_remove: 1 };
+        // show directly how the encoding works
+        let custom_proposal = CustomProposal::new(
+            ProposalType::RCS_SERVER_REMOVE,
+            server_remove_proposal.mls_encode_to_vec().unwrap(),
+        );
+
+        let proposal = alice
+            .propose_custom(custom_proposal.clone(), vec![])
+            .await
+            .unwrap();
+
+        let recv_prop = bob.process_incoming_message(proposal).await.unwrap();
+
+        assert_matches!(recv_prop, ReceivedMessage::Proposal(ProposalMessageDescription { proposal: Proposal::Custom(c), ..})
+            if c == custom_proposal);
+
+        let commit = bob.commit(vec![]).await.unwrap().commit_message;
+
+        let ReceivedMessage::Commit(CommitMessageDescription {
+            effect: CommitEffect::NewEpoch(new_epoch),
+            ..
+        }) = bob.process_incoming_message(commit).await.unwrap()
+        else {
+            panic!("unexpected commit effect");
+        };
+
+        assert_eq!(new_epoch.applied_proposals.len(), 1);
+
+        let Proposal::Custom(ref c) = new_epoch.applied_proposals[0].proposal else {
+            panic!("unexpected non-custom proposal");
+        };
+        let reader = c.data().to_vec();
+        let server_remove_decoded = RcsServerRemove::mls_decode(&mut reader.as_slice()).unwrap();
+        assert_eq!(server_remove_decoded, server_remove_proposal);
     }
 
     #[cfg(feature = "psk")]
