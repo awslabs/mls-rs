@@ -29,9 +29,16 @@ pub(crate) struct Parent {
 }
 
 #[derive(Clone, Copy, Debug, Ord, PartialEq, PartialOrd, Hash, Eq, MlsSize, MlsEncode)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct LeafIndex(u32);
+
+#[cfg(feature = "arbitrary")]
+impl<'a> arbitrary::Arbitrary<'a> for LeafIndex {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let value = u.int_in_range(0..=MAX_LEAF_INDEX)?;
+        Ok(LeafIndex(value))
+    }
+}
 
 impl TryFrom<u32> for LeafIndex {
     type Error = MlsError;
