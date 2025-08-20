@@ -2271,9 +2271,8 @@ where
             .applied_proposals
             .external_initializations
             .first()
-            .cloned()
         {
-            Some(ext_init) if self.pending_commit.is_none() => {
+            Some(ext_init) => {
                 self.key_schedule
                     .derive_for_external(&ext_init.proposal.kem_output, &self.cipher_suite_provider)
                     .await?
