@@ -5,6 +5,7 @@
 mod aead;
 mod ec;
 mod ecdsa;
+mod hmac;
 mod kdf;
 mod kem;
 
@@ -15,14 +16,12 @@ use aws_lc_fips_sys as aws_lc_sys_impl;
 
 #[cfg(not(feature = "fips"))]
 use aws_lc_sys as aws_lc_sys_impl;
+pub use hmac::AwsLcHmac;
 
 use std::{ffi::c_int, mem::MaybeUninit, num::TryFromIntError};
 
-use aead::AwsLcAead;
-use aws_lc_rs::{
-    error::{KeyRejected, Unspecified},
-    hmac,
-};
+pub use aead::AwsLcAead;
+use aws_lc_rs::error::{KeyRejected, Unspecified};
 
 use crate::aws_lc_sys_impl::SHA256;
 use mls_rs_core::{
@@ -33,8 +32,8 @@ use mls_rs_core::{
     error::{AnyError, IntoAnyError},
 };
 
-use ecdsa::AwsLcEcdsa;
-use kdf::AwsLcHkdf;
+pub use ecdsa::AwsLcEcdsa;
+pub use kdf::AwsLcHkdf;
 use kem::ecdh::Ecdh;
 use mls_rs_crypto_hpke::{
     context::{ContextR, ContextS},
@@ -46,13 +45,13 @@ use thiserror::Error;
 use zeroize::Zeroizing;
 
 #[cfg(feature = "post-quantum")]
-use self::{kdf::shake::AwsLcShake128, kem::ml_kem::MlKemKem};
+use self::kdf::shake::AwsLcShake128;
 
 #[cfg(feature = "post-quantum")]
-use mls_rs_crypto_hpke::kem_combiner::{CombinedKem, XWingSharedSecretHashInput};
+use mls_rs_crypto_hpke::kem_combiner::xwing::{CombinedKem, XWingSharedSecretHashInput};
 
 #[cfg(feature = "post-quantum")]
-pub use self::kem::ml_kem::MlKem;
+pub use self::kem::ml_kem::{MlKem, MlKemKem};
 
 #[cfg(feature = "post-quantum")]
 pub use self::kdf::Sha3;
@@ -66,7 +65,7 @@ pub struct AwsLcCipherSuite {
     aead: AwsLcAead,
     kdf: AwsLcHkdf,
     hpke: AwsLcHpke,
-    mac_algo: hmac::Algorithm,
+    hmac: AwsLcHmac,
     hash: AwsLcHash,
 }
 
@@ -164,7 +163,7 @@ pub struct AwsLcCipherSuiteBuilder {
     aead: Option<AwsLcAead>,
     kdf: Option<AwsLcHkdf>,
     hpke: Option<AwsLcHpke>,
-    mac_algo: Option<hmac::Algorithm>,
+    hmac: Option<AwsLcHmac>,
     hash: Option<AwsLcHash>,
     fallback_cipher_suite: Option<CipherSuite>,
 }
@@ -195,9 +194,9 @@ impl AwsLcCipherSuiteBuilder {
         }
     }
 
-    pub fn mac_algo(self, mac_algo: hmac::Algorithm) -> Self {
+    pub fn hmac(self, hmac: AwsLcHmac) -> Self {
         Self {
-            mac_algo: Some(mac_algo),
+            hmac: Some(hmac),
             ..self
         }
     }
@@ -265,22 +264,38 @@ impl AwsLcCipherSuiteBuilder {
         Self { hpke, ..self }
     }
 
+    #[cfg(feature = "post-quantum")]
+    pub fn ghp_combined_hpke(
+        self,
+        classical_cipher_suite: CipherSuite,
+        ml_kem: MlKem,
+        kdf: KdfId,
+        aead: AeadId,
+        hash: AwsLcHash,
+    ) -> Self {
+        let ml_kem = MlKemKem {
+            ml_kem,
+            kdf: AwsLcHkdf(kdf),
+        };
+
+        let ecdh = dhkem(classical_cipher_suite);
+
+        let hpke = ecdh.map(|ecdh| {
+            let kem = CombinedKem::new_xwing(ml_kem, ecdh, hash, AwsLcShake128);
+
+            AwsLcHpke::Combined(Hpke::new(kem, AwsLcHkdf(kdf), Some(AwsLcAead(aead))))
+        });
+
+        Self { hpke, ..self }
+    }
+
     pub fn build(self, cipher_suite: CipherSuite) -> Option<AwsLcCipherSuite> {
         let fallback_cs = self.fallback_cipher_suite.unwrap_or(cipher_suite);
         let hpke = self.hpke.or_else(|| classical_hpke(fallback_cs))?;
         let kdf = self.kdf.or_else(|| AwsLcHkdf::new(fallback_cs))?;
         let aead = self.aead.or_else(|| AwsLcAead::new(fallback_cs))?;
         let signing = self.signing.or_else(|| AwsLcEcdsa::new(fallback_cs))?;
-
-        let mac_algo = self.mac_algo.or(match fallback_cs {
-            CipherSuite::CURVE25519_AES128
-            | CipherSuite::CURVE25519_CHACHA
-            | CipherSuite::P256_AES128 => Some(hmac::HMAC_SHA256),
-            CipherSuite::P384_AES256 => Some(hmac::HMAC_SHA384),
-            CipherSuite::P521_AES256 => Some(hmac::HMAC_SHA512),
-            _ => None,
-        })?;
-
+        let hmac = self.hmac.or_else(|| AwsLcHmac::new(fallback_cs))?;
         let hash = self.hash.or_else(|| AwsLcHash::new(fallback_cs))?;
 
         Some(AwsLcCipherSuite {
@@ -289,7 +304,7 @@ impl AwsLcCipherSuiteBuilder {
             aead,
             kdf,
             signing,
-            mac_algo,
+            hmac,
             hash,
         })
     }
@@ -326,15 +341,7 @@ impl CryptoProvider for AwsLcCryptoProvider {
 
         let kdf = AwsLcHkdf::new(classical_cs)?;
         let aead = AwsLcAead::new(classical_cs)?;
-
-        let mac_algo = match classical_cs {
-            CipherSuite::CURVE25519_AES128
-            | CipherSuite::CURVE25519_CHACHA
-            | CipherSuite::P256_AES128 => hmac::HMAC_SHA256,
-            CipherSuite::P384_AES256 => hmac::HMAC_SHA384,
-            CipherSuite::P521_AES256 => hmac::HMAC_SHA512,
-            _ => return None,
-        };
+        let hmac = AwsLcHmac::new(classical_cs)?;
 
         let hpke = match cipher_suite {
             #[cfg(feature = "post-quantum")]
@@ -361,13 +368,13 @@ impl CryptoProvider for AwsLcCryptoProvider {
             aead,
             kdf,
             signing: AwsLcEcdsa::new(classical_cs)?,
-            mac_algo,
+            hmac,
             hash: AwsLcHash::new(classical_cs)?,
         })
     }
 }
 
-pub(crate) fn dhkem(cipher_suite: CipherSuite) -> Option<DhKem<Ecdh, AwsLcHkdf>> {
+pub fn dhkem(cipher_suite: CipherSuite) -> Option<DhKem<Ecdh, AwsLcHkdf>> {
     let kem_id = KemId::new(cipher_suite)?;
     let dh = Ecdh::new(cipher_suite)?;
     let kdf = AwsLcHkdf::new(cipher_suite)?;
@@ -428,8 +435,7 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
     }
 
     async fn mac(&self, key: &[u8], data: &[u8]) -> Result<Vec<u8>, Self::Error> {
-        let key = hmac::Key::new(self.mac_algo, key);
-        Ok(hmac::sign(&key, data).as_ref().to_vec())
+        self.hmac.hmac(key, data)
     }
 
     async fn aead_seal(
