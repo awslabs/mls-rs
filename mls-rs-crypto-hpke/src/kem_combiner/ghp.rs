@@ -2,34 +2,12 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use mls_rs_core::{
     crypto::{HpkePublicKey, HpkeSecretKey},
-    error::{AnyError, IntoAnyError},
-    mls_rs_codec::{MlsDecode, MlsEncode},
+    error::IntoAnyError,
 };
-use mls_rs_crypto_traits::{KdfType, KemResult, KemType};
+use mls_rs_crypto_traits::{KemResult, KemType};
 use zeroize::Zeroize;
 
-#[derive(Debug)]
-#[cfg_attr(feature = "std", derive(thiserror::Error))]
-pub enum Error {
-    #[cfg_attr(feature = "std", error(transparent))]
-    KemError(AnyError),
-    #[cfg_attr(feature = "std", error(transparent))]
-    KdfError(AnyError),
-    #[cfg_attr(feature = "std", error(transparent))]
-    PrgError(AnyError),
-    #[cfg_attr(feature = "std", error(transparent))]
-    ByteVecCodecError(AnyError),
-    #[cfg_attr(feature = "std", error(transparent))]
-    RandomOracleError(AnyError),
-    #[cfg_attr(feature = "std", error("invalid key data"))]
-    InvalidKeyData,
-    #[cfg_attr(feature = "std", error(transparent))]
-    MlsCodecError(mls_rs_core::mls_rs_codec::Error),
-    #[cfg_attr(feature = "std", error("invalid prg output length"))]
-    InvalidPrgOutputLength,
-    #[cfg_attr(feature = "std", error("invalid prg output length {0}"))]
-    InvalidInputLength(usize),
-}
+use super::{codec_error, kem_error, prg_error, ro_error, Error};
 
 #[cfg_attr(test, mockall::automock(type Error = mls_rs_crypto_traits::mock::TestError;))]
 pub trait Prg: Send + Sync {
@@ -38,7 +16,7 @@ pub trait Prg: Send + Sync {
     fn eval(&self, key: &[u8], out_len: usize) -> Result<Vec<u8>, Self::Error>;
 }
 
-// FIXME. not supported by automock
+// FIXME. not supported by automock yet
 pub trait ByteVecCodec<const N: usize>: ByteVecEncoder<N> {
     fn decode(&self, data: &[u8]) -> Result<[Vec<u8>; N], Self::Error>;
 
@@ -47,7 +25,7 @@ pub trait ByteVecCodec<const N: usize>: ByteVecEncoder<N> {
     }
 }
 
-// FIXME. not supported by automock
+// FIXME. not supported by automock yet
 pub trait ByteVecEncoder<const N: usize>: Send + Sync {
     type Error: Send + Sync + IntoAnyError;
 
@@ -84,7 +62,7 @@ pub struct GhpKemCombiner<KEM1, KEM2, PRG, C2, C7, RO> {
     pub pk_codec: C2,
     pub sk_codec: C2,
     pub ct_codec: C2,
-    pub ro_input_codec: C7,
+    pub ro_input_encoder: C7,
     pub random_oracle: RO,
     pub label: String,
     pub kem_id: u16,
@@ -136,7 +114,7 @@ where
         let res2 = self.kem2.encap(&pk2).map_err(kem_error)?;
 
         let mut ro_input = self
-            .ro_input_codec
+            .ro_input_encoder
             .encode([
                 &res1.shared_secret,
                 &res2.shared_secret,
@@ -177,7 +155,7 @@ where
         let shared_secret2 = self.kem2.decap(&enc2, &sk2, &pk2).map_err(kem_error)?;
 
         let ro_input = self
-            .ro_input_codec
+            .ro_input_encoder
             .encode([
                 &shared_secret1,
                 &shared_secret2,
@@ -200,89 +178,6 @@ where
 
     pub fn seed_length_for_derive(&self) -> usize {
         self.kem1.seed_length_for_derive() + self.kem2.seed_length_for_derive()
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct MlsByteVecCodec;
-
-impl<const N: usize> ByteVecEncoder<N> for MlsByteVecCodec {
-    type Error = Error;
-
-    fn encode(&self, data: [&[u8]; N]) -> Result<Vec<u8>, Error> {
-        data.mls_encode_to_vec().map_err(Error::MlsCodecError)
-    }
-}
-
-impl<const N: usize> ByteVecCodec<N> for MlsByteVecCodec {
-    fn decode(&self, data: &[u8]) -> Result<[Vec<u8>; N], Error> {
-        let vecs = Vec::<Vec<u8>>::mls_decode(&mut &*data).map_err(Error::MlsCodecError)?;
-
-        vecs.try_into()
-            .map_err(|vecs: Vec<Vec<u8>>| Error::InvalidInputLength(vecs.len()))
-    }
-}
-
-/// The concatenation codec for two chunks to instantiate [GhpKemCombiner] as specified in the
-/// [RFC draft](https://datatracker.ietf.org/doc/html/draft-irtf-cfrg-hybrid-kems)
-/// with input KEM's whose ciphertexts and public / secret keys are of fixed size.
-#[derive(Debug, Clone)]
-pub struct CatCodec2 {
-    pub chunk_lengths: [usize; 2],
-}
-
-/// The concatenation codec for seven chunks to instantiate [GhpKemCombiner] as specified in the
-/// [RFC draft](https://datatracker.ietf.org/doc/html/draft-irtf-cfrg-hybrid-kems)
-/// with input KEM's whose ciphertexts and public / secret keys are of fixed size.
-#[derive(Debug, Clone)]
-pub struct CatCodec7 {
-    pub chunk_lengths: [usize; 7],
-}
-
-impl ByteVecEncoder<2> for CatCodec2 {
-    type Error = Error;
-
-    fn encode(&self, data: [&[u8]; 2]) -> Result<Vec<u8>, Error> {
-        Ok(data.concat())
-    }
-}
-
-impl ByteVecCodec<2> for CatCodec2 {
-    fn decode(&self, data: &[u8]) -> Result<[Vec<u8>; 2], Error> {
-        if data.len() != self.chunk_lengths.iter().sum::<usize>() {
-            return Err(Error::InvalidKeyData);
-        }
-
-        let (first, second) = data.split_at(self.chunk_lengths[0]);
-
-        Ok([first.to_vec(), second.to_vec()])
-    }
-}
-
-impl ByteVecEncoder<7> for CatCodec7 {
-    type Error = Error;
-
-    fn encode(&self, data: [&[u8]; 7]) -> Result<Vec<u8>, Error> {
-        Ok(data.concat())
-    }
-}
-
-#[derive(Clone)]
-pub struct MlsKdfPrg<KDF> {
-    pub mls_kdf: KDF,
-}
-
-impl<KDF> MlsKdfPrg<KDF> {
-    pub fn new(mls_kdf: KDF) -> Self {
-        Self { mls_kdf }
-    }
-}
-
-impl<KDF: KdfType> Prg for MlsKdfPrg<KDF> {
-    type Error = <KDF as KdfType>::Error;
-
-    fn eval(&self, key: &[u8], out_len: usize) -> Result<Vec<u8>, Self::Error> {
-        self.mls_kdf.expand(key, &[], out_len)
     }
 }
 
@@ -341,31 +236,17 @@ where
     }
 }
 
-impl IntoAnyError for Error {}
-
-fn kem_error<E: IntoAnyError>(e: E) -> Error {
-    Error::KemError(e.into_any_error())
-}
-
-fn prg_error<E: IntoAnyError>(e: E) -> Error {
-    Error::PrgError(e.into_any_error())
-}
-
-fn codec_error<E: IntoAnyError>(e: E) -> Error {
-    Error::ByteVecCodecError(e.into_any_error())
-}
-
-fn ro_error<E: IntoAnyError>(e: E) -> Error {
-    Error::RandomOracleError(e.into_any_error())
-}
-
 #[cfg(test)]
 mod tests {
+    use assert_matches::assert_matches;
     use mls_rs_crypto_traits::{mock::MockKemType, KemResult, KemType};
 
-    use crate::ghp_kem_combiner::ByteVecEncoder;
+    use crate::kem_combiner::byte_vec_codecs::MlsByteVecCodec;
+    use crate::kem_combiner::Error;
 
-    use super::{ByteVecCodec, GhpKemCombiner, MlsByteVecCodec, MockPrg, MockRandomOracle};
+    use super::ByteVecEncoder;
+
+    use super::{GhpKemCombiner, MockPrg, MockRandomOracle};
 
     fn test_combiner() -> GhpKemCombiner<
         MockKemType,
@@ -382,19 +263,11 @@ mod tests {
             pk_codec: MlsByteVecCodec,
             sk_codec: MlsByteVecCodec,
             ct_codec: MlsByteVecCodec,
-            ro_input_codec: MlsByteVecCodec,
+            ro_input_encoder: MlsByteVecCodec,
             random_oracle: MockRandomOracle::new(),
             label: "1234".to_string(),
             kem_id: 42,
         }
-    }
-
-    #[test]
-    fn mls_byte_vec_codec() {
-        let data = [b"hello".as_slice(), b"world".as_slice()];
-        let encoded = MlsByteVecCodec.encode(data).unwrap();
-        let [decoded1, decoded2] = MlsByteVecCodec.decode(&encoded).unwrap();
-        assert_eq!(data, [decoded1, decoded2]);
     }
 
     #[test]
@@ -553,5 +426,31 @@ mod tests {
             .unwrap();
 
         assert_eq!(shared_secret, b"ss");
+    }
+
+    #[test]
+    fn invalid_eval_output() {
+        let mut combiner = test_combiner();
+
+        combiner
+            .kem1
+            .expect_seed_length_for_derive()
+            .returning(|| 5);
+
+        combiner
+            .kem2
+            .expect_seed_length_for_derive()
+            .returning(|| 10);
+
+        combiner
+            .prg
+            .expect_eval()
+            .once()
+            .withf(|seed, len| seed == b"seed" && *len == 15)
+            .return_once(|_, _| Ok(vec![]));
+
+        let res = combiner.generate_deterministic(b"seed");
+
+        assert_matches!(res, Err(Error::InvalidPrgOutputLength));
     }
 }
