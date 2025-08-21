@@ -4,7 +4,7 @@
 
 use aws_lc_rs::hmac;
 use mls_rs_core::crypto::CipherSuite;
-use mls_rs_crypto_hpke::ghp_kem_combiner::RandomOracle;
+use mls_rs_crypto_hpke::kem_combiner::ghp::RandomOracle;
 
 use crate::AwsLcCryptoError;
 

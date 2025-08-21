@@ -2,6 +2,7 @@ use mls_rs_core::error::{AnyError, IntoAnyError};
 use mls_rs_crypto_traits::KemType;
 
 pub mod byte_vec_codecs;
+#[cfg(not(mls_build_async))]
 pub mod ghp;
 pub mod prgs;
 pub mod xwing;
