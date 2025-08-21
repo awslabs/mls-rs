@@ -1,3 +1,5 @@
+use alloc::vec::Vec;
+
 use mls_rs_crypto_traits::KdfType;
 
 use crate::kem_combiner::ghp::Prg;

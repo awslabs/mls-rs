@@ -1,3 +1,5 @@
+use alloc::vec::Vec;
+
 use mls_rs_core::mls_rs_codec::{MlsDecode, MlsEncode};
 
 use crate::kem_combiner::ghp::{ByteVecCodec, ByteVecEncoder};

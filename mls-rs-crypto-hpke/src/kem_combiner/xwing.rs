@@ -1,3 +1,5 @@
+use alloc::vec::Vec;
+
 use mls_rs_core::{
     crypto::{HpkePublicKey, HpkeSecretKey},
     error::IntoAnyError,
