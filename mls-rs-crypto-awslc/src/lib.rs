@@ -48,7 +48,7 @@ use zeroize::Zeroizing;
 use self::kdf::shake::AwsLcShake128;
 
 #[cfg(feature = "post-quantum")]
-use mls_rs_crypto_hpke::kem_combiner::{CombinedKem, XWingSharedSecretHashInput};
+use mls_rs_crypto_hpke::kem_combiner::xwing::{CombinedKem, XWingSharedSecretHashInput};
 
 #[cfg(feature = "post-quantum")]
 pub use self::kem::ml_kem::{MlKem, MlKemKem};
