@@ -884,3 +884,50 @@ async fn can_process_own_removal_if_pending_commit() {
         .await
         .unwrap();
 }
+
+#[maybe_async::test(not(mls_build_async), async(mls_build_async, futures_test))]
+async fn can_process_external_commit_if_pending_commit() {
+    let alice = generate_client(CipherSuite::P256_AES128, ProtocolVersion::MLS_10, 0, false).await;
+    let bob = generate_client(CipherSuite::P256_AES128, ProtocolVersion::MLS_10, 1, false).await;
+
+    let mut alice_group = alice
+        .create_group(Default::default(), Default::default(), None)
+        .await
+        .unwrap();
+
+    alice_group
+        .commit_builder()
+        .add_member(
+            bob.generate_key_package_message(Default::default(), Default::default(), None)
+                .await
+                .unwrap(),
+        )
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+
+    let (mut bob_group, external_commit) = bob
+        .commit_external(
+            alice_group
+                .group_info_message_allowing_ext_commit(true)
+                .await
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    alice_group
+        .process_incoming_message(external_commit)
+        .await
+        .unwrap();
+
+    // Confirm that clients are in sync
+    let commit = alice_group.commit(vec![]).await.unwrap();
+    alice_group.apply_pending_commit().await.unwrap();
+
+    bob_group
+        .process_incoming_message(commit.commit_message)
+        .await
+        .unwrap();
+}
