@@ -17,6 +17,7 @@ default = ["std"]
 mls-rs-core = { path = "../mls-rs-core", version = "0.24.0", default-features = false }
 mockall = { version = "^0.11", optional = true }
 maybe-async = "0.2.10"
+zeroize = { version = "1", default-features = false, features = ["alloc", "zeroize_derive"] }
 
 [target.'cfg(mls_build_async)'.dependencies]
 async-trait = "0.1.74"
