@@ -1,8 +1,6 @@
 use mls_rs_core::crypto::{CipherSuite, CipherSuiteProvider};
-use mls_rs_crypto_awslc::{AwsLcCipherSuiteBuilder, AwsLcHash};
+use mls_rs_crypto_awslc::{AwsLcCipherSuiteBuilder, AwsLcHash, AwsLcHmac};
 use mls_rs_crypto_traits::{AeadId, Curve, KdfId};
-
-use aws_lc_rs::hmac;
 
 #[test]
 fn custom_cipher_suite() {
@@ -10,7 +8,7 @@ fn custom_cipher_suite() {
         .aead(AeadId::Aes128Gcm)
         .hash(AwsLcHash::new(CipherSuite::P256_AES128).unwrap())
         .kdf(KdfId::HkdfSha384)
-        .mac_algo(hmac::HMAC_SHA384)
+        .hmac(AwsLcHmac::new(CipherSuite::P384_AES256).unwrap())
         .signing(Curve::P521)
         .hpke(CipherSuite::P521_AES256)
         .build(CipherSuite::new(12345))
@@ -39,7 +37,7 @@ fn custom_pq_cipher_suite() {
             AeadId::Aes256Gcm,
             hash,
         )
-        .fallback_cipher_suite(CipherSuite::P521_AES256)
+        .fallback_cipher_suite(CipherSuite::P384_AES256)
         .build(CipherSuite::new(12345))
         .unwrap();
 
