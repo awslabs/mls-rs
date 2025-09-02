@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1755697335104,
+  "lastUpdate": 1756849176595,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -25259,6 +25259,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 154863,
             "range": "± 941",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "103590845+mulmarta@users.noreply.github.com",
+            "name": "mulmarta",
+            "username": "mulmarta"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "194a8b21e1845a3f8c8ef2f36974a4b7b6833de2",
+          "message": "Add a KEM combiner from an RFC draft (#303)\n\n* Add a KEM combiner from an RFC draft\n\n* Improve module split in the kem combiner\n\n* fixup\n\n* fixup\n\n* fixup\n\n---------\n\nCo-authored-by: Marta Mularczyk <mulmarta@amazon.com>\nCo-authored-by: Tom Leavy <tomleavy@amazon.com>",
+          "timestamp": "2025-09-02T17:35:17-04:00",
+          "tree_id": "d8f0f1306f6ee3cc46f84d88a46d699390eaa0a3",
+          "url": "https://github.com/awslabs/mls-rs/commit/194a8b21e1845a3f8c8ef2f36974a4b7b6833de2"
+        },
+        "date": 1756849175442,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 530805,
+            "range": "± 4947",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 537764,
+            "range": "± 6128",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 597949,
+            "range": "± 12043",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1257317,
+            "range": "± 20457",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7527268,
+            "range": "± 45781",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2656327,
+            "range": "± 79517",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7111929,
+            "range": "± 93235",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13287188,
+            "range": "± 189852",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 778631,
+            "range": "± 12141",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 865939,
+            "range": "± 7885",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 995144,
+            "range": "± 5120",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 22491,
+            "range": "± 205",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 77439,
+            "range": "± 1176",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 151460,
+            "range": "± 1459",
             "unit": "ns/iter"
           }
         ]
