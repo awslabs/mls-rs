@@ -1,6 +1,6 @@
 [package]
 name = "mls-rs-crypto-hpke"
-version = "0.17.0"
+version = "0.17.1"
 edition = "2021"
 description = "HPKE implementation based on mls-rs-crypto-traits used by mls-rs"
 homepage = "https://github.com/awslabs/mls-rs"
