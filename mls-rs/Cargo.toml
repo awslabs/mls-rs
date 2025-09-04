@@ -1,6 +1,6 @@
 [package]
 name = "mls-rs"
-version = "0.50.1"
+version = "0.51.0"
 edition = "2021"
 description = "An implementation of Messaging Layer Security (RFC 9420)"
 homepage = "https://github.com/awslabs/mls-rs"
@@ -70,7 +70,7 @@ maybe-async = { version = "0.2.10" }
 
 # Optional dependencies
 mls-rs-provider-sqlite = { path = "../mls-rs-provider-sqlite", version = "0.19.0", default-features = false, optional = true }
-mls-rs-crypto-openssl = { path = "../mls-rs-crypto-openssl", optional = true, version = "0.17.0" }
+mls-rs-crypto-openssl = { path = "../mls-rs-crypto-openssl", optional = true, version = "0.18.0" }
 
 # TODO: https://github.com/GoogleChromeLabs/wasm-bindgen-rayon
 rayon = { version = "1", optional = true }
@@ -82,7 +82,7 @@ serde = { version = "1.0", default-features = false, features = ["alloc", "deriv
 hex = { version = "^0.4.3", default-features = false, features = ["serde", "alloc"], optional = true }
 
 # Only for benchmarks
-mls-rs-crypto-awslc = { path = "../mls-rs-crypto-awslc", optional = true, version = "0.19" }
+mls-rs-crypto-awslc = { path = "../mls-rs-crypto-awslc", optional = true, version = "0.20" }
 
 # Async mode dependencies
 [target.'cfg(mls_build_async)'.dependencies]
@@ -112,10 +112,10 @@ rand_core = { version = "0.6", default-features = false, features = ["alloc"] }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wasm-bindgen-test = { version = "0.3" }
-mls-rs-crypto-webcrypto = { path = "../mls-rs-crypto-webcrypto", version = "0.11.0" }
+mls-rs-crypto-webcrypto = { path = "../mls-rs-crypto-webcrypto", version = "0.12.0" }
 criterion = { version = "0.6", default-features = false, features = ["plotters", "cargo_bench_support", "async_futures", "html_reports"] }
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-mls-rs-crypto-openssl = { path = "../mls-rs-crypto-openssl", version = "0.17.0"}
+mls-rs-crypto-openssl = { path = "../mls-rs-crypto-openssl", version = "0.18.0"}
 criterion = { version = "0.6", features = ["async_futures", "html_reports"] }
 
 [lints.rust]
