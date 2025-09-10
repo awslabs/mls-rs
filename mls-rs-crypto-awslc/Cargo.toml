@@ -1,6 +1,6 @@
 [package]
 name = "mls-rs-crypto-awslc"
-version = "0.20.0"
+version = "0.20.1"
 edition = "2021"
 description = "AWS-LC based CryptoProvider for mls-rs"
 homepage = "https://github.com/awslabs/mls-rs"

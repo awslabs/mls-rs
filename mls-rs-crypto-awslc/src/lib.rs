@@ -34,7 +34,7 @@ use mls_rs_core::{
 
 pub use ecdsa::AwsLcEcdsa;
 pub use kdf::AwsLcHkdf;
-use kem::ecdh::Ecdh;
+pub use kem::ecdh::Ecdh;
 use mls_rs_crypto_hpke::{
     context::{ContextR, ContextS},
     dhkem::DhKem,
