@@ -381,4 +381,28 @@ mod tests {
 
         assert_eq!(list, expected);
     }
+
+    #[test]
+    fn test_extension_list_remove() {
+        let mut list = ExtensionList::new();
+        list.set_from(TestExtensionA(1)).unwrap();
+        list.set_from(TestExtensionB(vec![2])).unwrap();
+
+        list.remove(<TestExtensionA as MlsExtension>::extension_type());
+
+        assert_eq!(list.len(), 1);
+        assert!(list.get_as::<TestExtensionA>().unwrap().is_none());
+        assert!(list.get_as::<TestExtensionB>().unwrap().is_some());
+    }
+
+    #[test]
+    fn test_extension_list_remove_nonexistent() {
+        let mut list = ExtensionList::new();
+        list.set_from(TestExtensionA(1)).unwrap();
+
+        list.remove(ExtensionType(999));
+
+        assert_eq!(list.len(), 1);
+        assert!(list.get_as::<TestExtensionA>().unwrap().is_some());
+    }
 }
