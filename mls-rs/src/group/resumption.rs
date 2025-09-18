@@ -48,6 +48,7 @@ where
             timestamp,
             signer: self.signer.clone(),
             config: self.config.clone(),
+            typ: GroupCreationType::Branch,
         })
     }
 
@@ -179,6 +180,7 @@ impl<C: ClientConfig + Clone> ReinitClient<C> {
             timestamp,
             signer: self.client.signer.unwrap(),
             config: self.client.config,
+            typ: GroupCreationType::Reinit,
         }
     }
 
@@ -235,6 +237,7 @@ struct GroupCreator<C> {
     timestamp: Option<MlsTime>,
     signer: SignatureSecretKey,
     config: C,
+    typ: GroupCreationType,
 }
 
 impl<C: ClientConfig> GroupCreator<C> {
@@ -276,7 +279,7 @@ impl<C: ClientConfig> GroupCreator<C> {
         // Uninstall the resumption psk on success (in case of failure, the new group is discarded anyway)
         group.previous_psk = None;
 
-        check_that_subgroup_is_a_subset(old_roster, &group)?;
+        check_that_subgroup_is_a_subset(old_roster, &group, self.typ)?;
 
         Ok((group, commit.welcome_messages))
     }
@@ -299,7 +302,7 @@ impl<C: ClientConfig> GroupCreator<C> {
         )
         .await?;
 
-        check_that_subgroup_is_a_subset(old_roster, &group)?;
+        check_that_subgroup_is_a_subset(old_roster, &group, self.typ)?;
 
         // The version and cipher_suite values in the Welcome message are the same as those used
         // by the old group.
@@ -321,10 +324,22 @@ impl<C: ClientConfig> GroupCreator<C> {
     }
 }
 
+enum GroupCreationType {
+    Branch,
+    Reinit,
+}
+
 fn check_that_subgroup_is_a_subset<C: ClientConfig>(
     old_roster: Roster<'_>,
     new_group: &Group<C>,
+    typ: GroupCreationType,
 ) -> Result<(), MlsError> {
+    if matches!(typ, GroupCreationType::Reinit)
+        && old_roster.public_tree.len() != new_group.roster().public_tree.len()
+    {
+        return Err(MlsError::NotASubgroup);
+    }
+
     let provider = new_group.identity_provider();
     let extensions = new_group.context().extensions();
 
@@ -334,7 +349,9 @@ fn check_that_subgroup_is_a_subset<C: ClientConfig>(
     new_identities
         .is_subset(&old_identities)
         .then_some(())
-        .ok_or(MlsError::NotASubgroup)
+        .ok_or(MlsError::NotASubgroup)?;
+
+    Ok(())
 }
 
 fn collect_identities<I: IdentityProvider>(
@@ -346,7 +363,7 @@ fn collect_identities<I: IdentityProvider>(
         .members_iter()
         .map(|m| {
             provider
-                .identity(m.signing_identity(), extensions)
+                .identity(&m.signing_identity, extensions)
                 .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))
         })
         .try_collect()
