@@ -45,10 +45,6 @@ jobs:
       - run: |
           echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
           vcpkg install openssl:x64-windows-static-md sqlite3:x64-windows-static-md
-          echo "OPENSSL_DIR=C:/vcpkg/packages/openssl_x64-windows-static-md" | Out-File -FilePath $env:GITHUB_ENV -Append
-          curl -o C:/cacert.pem https://curl.se/ca/cacert.pem
-          echo "SSL_CERT_FILE=C:/cacert.pem" | Out-File -FilePath $env:GITHUB_ENV -Append
-          echo "RUSTFLAGS=`"-C link-arg=crypt32.lib`"" | Out-File -FilePath $env:GITHUB_ENV -Append
         if: runner.os == 'Windows'
       - run: |
           sudo apt-get install -y libsqlite3-dev
@@ -72,8 +68,6 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
       fail-fast: false
     runs-on: ${{ matrix.os }}
-    env:
-      RUSTFLAGS: '--cfg mls_build_async'
     steps:
       - uses: actions/checkout@v3
       - uses: arduino/setup-protoc@v2
@@ -82,7 +76,7 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          rustflags: ''
+          rustflags: '--cfg mls_build_async'
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -99,10 +93,6 @@ jobs:
       - run: |
           echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
           vcpkg install openssl:x64-windows-static-md sqlite3:x64-windows-static-md
-          echo "OPENSSL_DIR=C:/vcpkg/packages/openssl_x64-windows-static-md" | Out-File -FilePath $env:GITHUB_ENV -Append
-          curl -o C:/cacert.pem https://curl.se/ca/cacert.pem
-          echo "SSL_CERT_FILE=C:/cacert.pem" | Out-File -FilePath $env:GITHUB_ENV -Append
-          echo "RUSTFLAGS=`"-C link-arg=crypt32.lib`"" | Out-File -FilePath $env:GITHUB_ENV -Append
         if: runner.os == 'Windows'
       - name: Test Async Full RFC
         run: cargo test --lib --test '*' --verbose --features test_util -p mls-rs
