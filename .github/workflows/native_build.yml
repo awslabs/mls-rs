@@ -48,7 +48,7 @@ jobs:
           echo "OPENSSL_DIR=C:/vcpkg/packages/openssl_x64-windows-static-md" | Out-File -FilePath $env:GITHUB_ENV -Append
           curl -o C:/cacert.pem https://curl.se/ca/cacert.pem
           echo "SSL_CERT_FILE=C:/cacert.pem" | Out-File -FilePath $env:GITHUB_ENV -Append
-          echo 'RUSTFLAGS="-C link-arg=crypt32.lib"' | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo RUSTFLAGS=\"-C link-arg=crypt32.lib\" | Out-File -FilePath $env:GITHUB_ENV -Append
         if: runner.os == 'Windows'
       - run: |
           sudo apt-get install -y libsqlite3-dev
@@ -102,7 +102,7 @@ jobs:
           echo "OPENSSL_DIR=C:/vcpkg/packages/openssl_x64-windows-static-md" | Out-File -FilePath $env:GITHUB_ENV -Append
           curl -o C:/cacert.pem https://curl.se/ca/cacert.pem
           echo "SSL_CERT_FILE=C:/cacert.pem" | Out-File -FilePath $env:GITHUB_ENV -Append
-          echo 'RUSTFLAGS="-C link-arg=crypt32.lib"' | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo RUSTFLAGS=\"-C link-arg=crypt32\" | Out-File -FilePath $env:GITHUB_ENV -Append
         if: runner.os == 'Windows'
       - name: Test Async Full RFC
         run: cargo test --lib --test '*' --verbose --features test_util -p mls-rs
