@@ -7,10 +7,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
-    - uses: dtolnay/rust-toolchain@stable
-    - uses: dtolnay/rust-toolchain@nightly
+    - uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
-        targets: thumbv6m-none-eabi
+        rustflags: ''
+        toolchain: stable,nightly
+        target: thumbv6m-none-eabi
         components: clippy
     - uses: Swatinem/rust-cache@v2
       with:
