@@ -950,9 +950,10 @@ async fn can_process_external_commit_if_pending_commit() {
 #[cfg(feature = "psk")]
 #[maybe_async::test(not(mls_build_async), async(mls_build_async, futures_test))]
 async fn branch_cannot_add_clients() {
-    let alice = get_default_test_groups(2).remove(0);
+    let alice = get_default_test_groups(2).await.remove(0);
 
     let kp = generate_default_client(12345)
+        .await
         .generate_key_package_message(Default::default(), Default::default(), None)
         .await
         .unwrap();
@@ -968,10 +969,11 @@ async fn branch_cannot_add_clients() {
 #[cfg(feature = "psk")]
 #[maybe_async::test(not(mls_build_async), async(mls_build_async, futures_test))]
 async fn reinit_cannot_add_clients() {
-    let mut alice = get_default_test_groups(2).remove(0);
+    let mut alice = get_default_test_groups(2).await.remove(0);
     let cs = TestCryptoProvider::all_supported_cipher_suites()[0];
 
     let kp = generate_default_client(12345)
+        .await
         .generate_key_package_message(Default::default(), Default::default(), None)
         .await
         .unwrap();
@@ -999,7 +1001,7 @@ async fn reinit_cannot_add_clients() {
 #[cfg(feature = "psk")]
 #[maybe_async::test(not(mls_build_async), async(mls_build_async, futures_test))]
 async fn reinit_cannot_remove_clients() {
-    let mut alice = get_default_test_groups(2).remove(0);
+    let mut alice = get_default_test_groups(2).await.remove(0);
     let cs = TestCryptoProvider::all_supported_cipher_suites()[0];
 
     alice
