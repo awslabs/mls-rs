@@ -44,7 +44,7 @@ jobs:
         run: cargo install --force --locked bindgen-cli
       - run: |
           echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
-          vcpkg install openssl:x64-windows-static-md sqlite3:x64-windows-static-md
+          vcpkg install openssl:x64-windows-md sqlcipher:x64-windows-md
         if: runner.os == 'Windows'
       - run: |
           sudo apt-get install -y libsqlite3-dev
