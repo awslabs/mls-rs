@@ -45,7 +45,7 @@ jobs:
       - run: |
           echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
           echo "VCPKGRS_DYNAMIC=1" | Out-File -FilePath $env:GITHUB_ENV -Append
-          echo "OPENSSL_DIR=$env:VCPKG_INSTALLATION_ROOT/openssl_x64-windows" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "OPENSSL_DIR=$env:VCPKG_INSTALLATION_ROOT/packages/openssl_x64-windows" | Out-File -FilePath $env:GITHUB_ENV -Append
           vcpkg install openssl:x64-windows sqlcipher:x64-windows
         if: runner.os == 'Windows'
       - run: |
@@ -95,7 +95,7 @@ jobs:
       - run: |
           echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
           echo "VCPKGRS_DYNAMIC=1" | Out-File -FilePath $env:GITHUB_ENV -Append
-          echo "OPENSSL_DIR=$env:VCPKG_INSTALLATION_ROOT/openssl_x64-windows" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "OPENSSL_DIR=$env:VCPKG_INSTALLATION_ROOT/packages/openssl_x64-windows" | Out-File -FilePath $env:GITHUB_ENV -Append
           vcpkg install openssl:x64-windows sqlite3:x64-windows
         if: runner.os == 'Windows'
       - name: Test Async Full RFC
