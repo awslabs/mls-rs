@@ -418,6 +418,6 @@ fn collect_identities<I: IdentityProvider>(
                 .identity(&m.signing_identity, extensions)
                 .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))
         })
-        .try_collect()
+        .collect::<Result<Vec<_>, _>>()
         .map(Identities)
 }
