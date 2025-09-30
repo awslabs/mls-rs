@@ -162,7 +162,7 @@ impl ExtensionList {
     /// If there is already an entry in the list for the same extension type,
     /// then the existing value is removed.
     pub fn append(&mut self, others: Self) {
-        self.0.extend(others.0);
+        self.extend(others.0);
     }
 }
 
@@ -336,6 +336,29 @@ mod tests {
             TestExtensionB(vec![36]).into_extension().unwrap(),
             TestExtensionA(37).into_extension().unwrap(),
         ]);
+
+        let expected = ExtensionList(vec![
+            TestExtensionA(37).into_extension().unwrap(),
+            TestExtensionB(vec![36]).into_extension().unwrap(),
+            TestExtensionC(34).into_extension().unwrap(),
+        ]);
+
+        assert_eq!(list, expected);
+    }
+
+    #[test]
+    fn appending_extension_list_maintains_extension_uniqueness() {
+        let mut list = ExtensionList::new();
+        list.set_from(TestExtensionA(33)).unwrap();
+        list.set_from(TestExtensionC(34)).unwrap();
+
+        let to_append = ExtensionList::from_iter([
+            TestExtensionA(35).into_extension().unwrap(),
+            TestExtensionB(vec![36]).into_extension().unwrap(),
+            TestExtensionA(37).into_extension().unwrap(),
+        ]);
+
+        list.append(to_append);
 
         let expected = ExtensionList(vec![
             TestExtensionA(37).into_extension().unwrap(),

@@ -22,7 +22,10 @@ jobs:
         with:
           version: "25.x"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ''
+          components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -33,13 +36,17 @@ jobs:
           go-version: '>=1.18'
       - uses: seanmiddleditch/gha-setup-ninja@master
         if: runner.os == 'Windows'
+      - name: Setup MSVC linker
+        uses: microsoft/setup-msbuild@v2
+        if: runner.os == 'Windows'
       # TODO remove after AWS-LC FIPS bindings for Kyber are fixed
       - name: Install bindgen-cli
         run: cargo install --force --locked bindgen-cli
       - run: |
           echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
-          vcpkg install openssl:x64-windows-static-md sqlite3:x64-windows-static-md
-          echo "OPENSSL_DIR=C:/vcpkg/packages/openssl_x64-windows-static-md" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "VCPKGRS_DYNAMIC=1" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "OPENSSL_DIR=$env:VCPKG_INSTALLATION_ROOT/packages/openssl_x64-windows" | Out-File -FilePath $env:GITHUB_ENV -Append
+          vcpkg install openssl:x64-windows sqlcipher:x64-windows sqlite3:x64-windows
           curl -o C:/cacert.pem https://curl.se/ca/cacert.pem
           echo "SSL_CERT_FILE=C:/cacert.pem" | Out-File -FilePath $env:GITHUB_ENV -Append
         if: runner.os == 'Windows'
@@ -47,6 +54,7 @@ jobs:
           sudo apt-get install -y libsqlite3-dev
         if: runner.os == 'Linux'
       - name: Test Full RFC Compliance
+        
         # Don't test AWS LC on all features as it makes it build both FIPS and non-FIPS versions
         run: cargo test --all-features --verbose --workspace --exclude mls-rs-crypto-aws-lc
       - name: Test AWS-LC provider
@@ -64,15 +72,15 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
       fail-fast: false
     runs-on: ${{ matrix.os }}
-    env:
-      RUSTFLAGS: '--cfg mls_build_async'
     steps:
       - uses: actions/checkout@v3
       - uses: arduino/setup-protoc@v2
         with:
           version: "25.x"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: '--cfg mls_build_async'
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -83,10 +91,14 @@ jobs:
           go-version: '>=1.18'
       - uses: seanmiddleditch/gha-setup-ninja@master
         if: runner.os == 'Windows'
+      - name: Setup MSVC linker
+        uses: microsoft/setup-msbuild@v2
+        if: runner.os == 'Windows'
       - run: |
           echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
-          vcpkg install openssl:x64-windows-static-md sqlite3:x64-windows-static-md
-          echo "OPENSSL_DIR=C:/vcpkg/packages/openssl_x64-windows-static-md" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "VCPKGRS_DYNAMIC=1" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "OPENSSL_DIR=$env:VCPKG_INSTALLATION_ROOT/packages/openssl_x64-windows" | Out-File -FilePath $env:GITHUB_ENV -Append
+          vcpkg install openssl:x64-windows sqlcipher:x64-windows sqlite3:x64-windows
           curl -o C:/cacert.pem https://curl.se/ca/cacert.pem
           echo "SSL_CERT_FILE=C:/cacert.pem" | Out-File -FilePath $env:GITHUB_ENV -Append
         if: runner.os == 'Windows'
@@ -105,7 +117,10 @@ jobs:
         with:
           version: "25.x"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ''
+          components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -133,7 +148,10 @@ jobs:
         with:
           version: "25.x"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ''
+          components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -145,7 +163,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ''
+          toolchain: nightly
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}

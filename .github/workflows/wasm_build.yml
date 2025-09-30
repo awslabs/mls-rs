@@ -10,7 +10,9 @@ jobs:
     runs-on: [ubuntu-latest]
     steps:
     - uses: actions/checkout@v3
-    - uses: dtolnay/rust-toolchain@stable
+    - uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        rustflags: ''
     - uses: nanasess/setup-chromedriver@v2
     - uses: jetli/wasm-pack-action@v0.3.0
       with:
