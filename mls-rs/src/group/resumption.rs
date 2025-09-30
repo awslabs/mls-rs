@@ -2,11 +2,14 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
+#[cfg(feature = "std")]
 use std::collections::HashSet;
 
-use alloc::vec::Vec;
+#[cfg(mls_build_async)]
+use futures::{stream::FuturesUnordered, TryStreamExt};
 
-use itertools::Itertools;
+use alloc::{vec, vec::Vec};
+
 use mls_rs_core::{
     crypto::{CipherSuite, SignatureSecretKey},
     error::IntoAnyError,
@@ -48,6 +51,7 @@ where
             timestamp,
             signer: self.signer.clone(),
             config: self.config.clone(),
+            typ: GroupCreationType::Branch,
         })
     }
 
@@ -179,6 +183,7 @@ impl<C: ClientConfig + Clone> ReinitClient<C> {
             timestamp,
             signer: self.client.signer.unwrap(),
             config: self.client.config,
+            typ: GroupCreationType::Reinit,
         }
     }
 
@@ -235,6 +240,7 @@ struct GroupCreator<C> {
     timestamp: Option<MlsTime>,
     signer: SignatureSecretKey,
     config: C,
+    typ: GroupCreationType,
 }
 
 impl<C: ClientConfig> GroupCreator<C> {
@@ -276,7 +282,7 @@ impl<C: ClientConfig> GroupCreator<C> {
         // Uninstall the resumption psk on success (in case of failure, the new group is discarded anyway)
         group.previous_psk = None;
 
-        check_that_subgroup_is_a_subset(old_roster, &group)?;
+        check_that_subgroup_is_a_subset(old_roster, &group, self.typ).await?;
 
         Ok((group, commit.welcome_messages))
     }
@@ -299,7 +305,7 @@ impl<C: ClientConfig> GroupCreator<C> {
         )
         .await?;
 
-        check_that_subgroup_is_a_subset(old_roster, &group)?;
+        check_that_subgroup_is_a_subset(old_roster, &group, self.typ).await?;
 
         // The version and cipher_suite values in the Welcome message are the same as those used
         // by the old group.
@@ -321,22 +327,39 @@ impl<C: ClientConfig> GroupCreator<C> {
     }
 }
 
-fn check_that_subgroup_is_a_subset<C: ClientConfig>(
+enum GroupCreationType {
+    Branch,
+    Reinit,
+}
+
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+async fn check_that_subgroup_is_a_subset<C: ClientConfig>(
     old_roster: Roster<'_>,
     new_group: &Group<C>,
+    typ: GroupCreationType,
 ) -> Result<(), MlsError> {
+    if matches!(typ, GroupCreationType::Reinit)
+        && old_roster.public_tree.len() != new_group.roster().public_tree.len()
+    {
+        return Err(MlsError::NotASubgroup);
+    }
+
     let provider = new_group.identity_provider();
     let extensions = new_group.context().extensions();
 
-    let old_identities = collect_identities(extensions, old_roster, &provider)?;
-    let new_identities = collect_identities(extensions, new_group.roster(), &provider)?;
+    let old_identities = collect_identities(extensions, old_roster, &provider).await?;
+    let new_identities = collect_identities(extensions, new_group.roster(), &provider).await?;
 
     new_identities
         .is_subset(&old_identities)
         .then_some(())
-        .ok_or(MlsError::NotASubgroup)
+        .ok_or(MlsError::NotASubgroup)?;
+
+    Ok(())
 }
 
+#[cfg(feature = "std")]
+#[cfg(not(mls_build_async))]
 fn collect_identities<I: IdentityProvider>(
     extensions: &ExtensionList,
     roster: Roster<'_>,
@@ -346,8 +369,55 @@ fn collect_identities<I: IdentityProvider>(
         .members_iter()
         .map(|m| {
             provider
-                .identity(m.signing_identity(), extensions)
+                .identity(&m.signing_identity, extensions)
+                .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))
+        })
+        .collect()
+}
+
+#[cfg(feature = "std")]
+#[cfg(mls_build_async)]
+async fn collect_identities<I: IdentityProvider>(
+    extensions: &ExtensionList,
+    roster: Roster<'_>,
+    provider: &I,
+) -> Result<HashSet<Vec<u8>>, MlsError> {
+    roster
+        .members_iter()
+        .map(async move |m| {
+            provider
+                .identity(&m.signing_identity, extensions)
+                .await
+                .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))
+        })
+        .collect::<FuturesUnordered<_>>()
+        .try_collect()
+        .await
+}
+
+#[cfg(not(feature = "std"))]
+struct Identities(Vec<Vec<u8>>);
+
+#[cfg(not(feature = "std"))]
+impl Identities {
+    fn is_subset(&self, other: &Self) -> bool {
+        self.0.iter().all(|i| other.0.contains(i))
+    }
+}
+
+#[cfg(not(feature = "std"))]
+fn collect_identities<I: IdentityProvider>(
+    extensions: &ExtensionList,
+    roster: Roster<'_>,
+    provider: &I,
+) -> Result<Identities, MlsError> {
+    roster
+        .members_iter()
+        .map(|m| {
+            provider
+                .identity(&m.signing_identity, extensions)
                 .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))
         })
         .try_collect()
+        .map(Identities)
 }
