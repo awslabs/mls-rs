@@ -354,6 +354,8 @@ pub enum MlsError {
     ExporterDeleted,
     #[cfg_attr(feature = "std", error("Self-remove already proposed"))]
     SelfRemoveAlreadyProposed,
+    #[cfg_attr(feature = "std", error("Default value listed"))]
+    DefaultValueListed,
 }
 
 impl IntoAnyError for MlsError {
@@ -489,6 +491,11 @@ where
                 leaf_node_extensions,
             )
             .await?;
+
+        key_pkg_gen
+            .key_package
+            .leaf_node
+            .validate_no_default_values_listed()?;
 
         let (id, key_package_data) = key_pkg_gen.to_storage()?;
 
@@ -1256,5 +1263,33 @@ mod tests {
 
         let res = bob.validate_group_info(&group_info, &other_signer).await;
         assert_matches!(res, Err(MlsError::InvalidSignature));
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+
+    async fn cannot_list_default_extensions_in_capabilities() {
+        let res = TestClientBuilder::new_for_test()
+            .with_random_signing_identity("client", TEST_CIPHER_SUITE)
+            .await
+            .extension_type(ExtensionType::APPLICATION_ID)
+            .build()
+            .generate_key_package(Default::default(), Default::default(), Default::default())
+            .await;
+
+        assert_matches!(res, Err(MlsError::DefaultValueListed));
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+
+    async fn cannot_list_default_proposals_in_capabilities() {
+        let res = TestClientBuilder::new_for_test()
+            .with_random_signing_identity("client", TEST_CIPHER_SUITE)
+            .await
+            .custom_proposal_type(ProposalType::ADD)
+            .build()
+            .generate_key_package(Default::default(), Default::default(), Default::default())
+            .await;
+
+        assert_matches!(res, Err(MlsError::DefaultValueListed));
     }
 }
