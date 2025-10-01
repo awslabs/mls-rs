@@ -50,8 +50,8 @@ pub enum Error {
     UnsupportedEnumDiscriminant,
     #[cfg_attr(feature = "std", error("Expected UTF-8 string"))]
     Utf8,
-    #[cfg_attr(feature = "std", error("Invalid map content"))]
-    InvalidMapContent,
+    #[cfg_attr(feature = "std", error("Invalid content"))]
+    InvalidContent,
     #[cfg_attr(feature = "std", error("mls codec error: {0}"))]
     Custom(u8),
 }

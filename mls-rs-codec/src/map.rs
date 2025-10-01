@@ -48,7 +48,7 @@ where
                 let value = V::mls_decode(data)?;
 
                 if data.len() == before || items.insert(key, value).is_some() {
-                    return Err(crate::Error::InvalidMapContent);
+                    return Err(crate::Error::InvalidContent);
                 }
             }
 
@@ -92,7 +92,7 @@ where
                 let value = V::mls_decode(data)?;
 
                 if data.len() == before || items.insert(key, value).is_some() {
-                    return Err(crate::Error::InvalidMapContent);
+                    return Err(crate::Error::InvalidContent);
                 }
             }
 
@@ -164,7 +164,7 @@ mod tests {
     #[test]
     fn hashmap_zero_length_structure() {
         let res = HashMap::<[u8; 0], [u8; 0]>::mls_decode(&mut &[0x01, 0xff][..]);
-        assert_matches!(res, Err(crate::Error::InvalidMapContent))
+        assert_matches!(res, Err(crate::Error::InvalidContent))
     }
 
     #[cfg(feature = "std")]
@@ -177,7 +177,7 @@ mod tests {
             .unwrap();
 
         let res = HashMap::<u8, u8>::mls_decode(&mut &*encoded);
-        assert_matches!(res, Err(crate::Error::InvalidMapContent))
+        assert_matches!(res, Err(crate::Error::InvalidContent))
     }
 
     #[test]
@@ -189,13 +189,13 @@ mod tests {
             .unwrap();
 
         let res = BTreeMap::<u8, u8>::mls_decode(&mut &*encoded);
-        assert_matches!(res, Err(crate::Error::InvalidMapContent))
+        assert_matches!(res, Err(crate::Error::InvalidContent))
     }
 
     #[test]
     fn btree_map_zero_length_structure() {
         let res = BTreeMap::<[u8; 0], [u8; 0]>::mls_decode(&mut &[0x01, 0xff][..]);
-        assert_matches!(res, Err(crate::Error::InvalidMapContent))
+        assert_matches!(res, Err(crate::Error::InvalidContent))
     }
 
     #[cfg(feature = "std")]
