@@ -45,8 +45,13 @@ impl Curve {
     #[inline(always)]
     pub fn public_key_size(&self) -> usize {
         match self {
-            Curve::P256 | Curve::P384 | Curve::P521 => 2 * self.secret_key_size() + 1,
-            Curve::X25519 | Curve::Ed25519 | Curve::X448 | Curve::Ed448 => self.secret_key_size(),
+            Curve::P256 => 65,
+            Curve::P384 => 97,
+            Curve::P521 => 133,
+            Curve::X25519 => 32,
+            Curve::Ed25519 => 32,
+            Curve::X448 => 56,
+            Curve::Ed448 => 57,
         }
     }
 
