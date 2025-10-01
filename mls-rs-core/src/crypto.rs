@@ -37,10 +37,7 @@ pub struct HpkeCiphertext {
 
 impl Debug for HpkeCiphertext {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("HpkeCiphertext")
-            .field("kem_output", &crate::debug::pretty_bytes(&self.kem_output))
-            .field("ciphertext", &crate::debug::pretty_bytes(&self.ciphertext))
-            .finish()
+        f.debug_struct("HpkeCiphertext").finish()
     }
 }
 
@@ -109,9 +106,7 @@ pub struct HpkeSecretKey(
 
 impl Debug for HpkeSecretKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        crate::debug::pretty_bytes(&self.0)
-            .named("HpkeSecretKey")
-            .fmt(f)
+        f.debug_struct("HpkeSecretKey").finish()
     }
 }
 
@@ -254,9 +249,7 @@ pub struct SignatureSecretKey {
 
 impl Debug for SignatureSecretKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        crate::debug::pretty_bytes(&self.bytes)
-            .named("SignatureSecretKey")
-            .fmt(f)
+        f.debug_struct("SignatureSecretKey").finish()
     }
 }
 

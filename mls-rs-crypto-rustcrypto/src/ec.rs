@@ -332,7 +332,6 @@ impl Debug for KeyPair {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("KeyPair")
             .field("public", &mls_rs_core::debug::pretty_bytes(&self.public))
-            .field("secret", &mls_rs_core::debug::pretty_bytes(&self.secret))
             .finish()
     }
 }

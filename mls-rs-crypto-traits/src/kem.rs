@@ -2,6 +2,8 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
+use core::fmt::Debug;
+
 use mls_rs_core::{
     crypto::{CipherSuite, HpkePublicKey, HpkeSecretKey},
     error::IntoAnyError,
@@ -49,11 +51,17 @@ pub trait KemType: Send + Sync + Sized {
 }
 
 /// Struct to represent the output of the kem [encap](KemType::encap) function
-#[derive(Clone, Debug, MlsDecode, MlsEncode, MlsSize, ZeroizeOnDrop)]
+#[derive(Clone, MlsDecode, MlsEncode, MlsSize, ZeroizeOnDrop)]
 pub struct KemResult {
     pub shared_secret: Vec<u8>,
     #[zeroize(skip)]
     pub enc: Vec<u8>,
+}
+
+impl Debug for KemResult {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("KemResult").finish()
+    }
 }
 
 impl KemResult {

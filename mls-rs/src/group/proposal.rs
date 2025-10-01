@@ -231,12 +231,7 @@ pub struct ExternalInit {
 
 impl Debug for ExternalInit {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ExternalInit")
-            .field(
-                "kem_output",
-                &mls_rs_core::debug::pretty_bytes(&self.kem_output),
-            )
-            .finish()
+        f.debug_struct("ExternalInit").finish()
     }
 }
 

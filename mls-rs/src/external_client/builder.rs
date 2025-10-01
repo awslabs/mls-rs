@@ -94,8 +94,13 @@ pub type ExternalBaseConfig = Config<Missing, DefaultMlsRules, Missing>;
 /// }
 ///
 /// ```
-#[derive(Debug)]
 pub struct ExternalClientBuilder<C>(C);
+
+impl<C> Debug for ExternalClientBuilder<C> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_tuple("ExternalClientBuilder").finish()
+    }
+}
 
 impl Default for ExternalClientBuilder<ExternalBaseConfig> {
     fn default() -> Self {

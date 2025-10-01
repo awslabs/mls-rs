@@ -88,9 +88,7 @@ pub(crate) struct SenderDataSecret(
 
 impl Debug for SenderDataSecret {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        mls_rs_core::debug::pretty_bytes(&self.0)
-            .named("SenderDataSecret")
-            .fmt(f)
+        f.debug_struct("SenderDataSecret").finish()
     }
 }
 

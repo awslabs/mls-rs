@@ -47,9 +47,7 @@ struct TreeSecret(
 
 impl Debug for TreeSecret {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        mls_rs_core::debug::pretty_bytes(&self.0)
-            .named("TreeSecret")
-            .fmt(f)
+        f.debug_struct("TreeSecret").finish()
     }
 }
 
@@ -334,8 +332,6 @@ pub struct MessageKeyData {
 impl Debug for MessageKeyData {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("MessageKeyData")
-            .field("nonce", &mls_rs_core::debug::pretty_bytes(&self.nonce))
-            .field("key", &mls_rs_core::debug::pretty_bytes(&self.key))
             .field("generation", &self.generation)
             .finish()
     }
