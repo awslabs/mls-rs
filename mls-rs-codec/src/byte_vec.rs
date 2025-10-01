@@ -13,7 +13,7 @@ where
 {
     fn slice_len(data: &[u8]) -> usize {
         let len = data.len();
-        let header_length = VarInt::try_from(len).unwrap_or(VarInt(0)).mls_encoded_len();
+        let header_length = VarInt::try_from(len).unwrap_or_default().mls_encoded_len();
 
         header_length + len
     }

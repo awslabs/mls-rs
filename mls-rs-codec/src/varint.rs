@@ -5,8 +5,8 @@
 use crate::{Error, MlsDecode, MlsEncode, MlsSize};
 use alloc::vec::Vec;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct VarInt(pub u32);
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct VarInt(u32);
 
 impl VarInt {
     pub const MAX: VarInt = VarInt((1 << 30) - 1);
