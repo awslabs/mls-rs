@@ -12,7 +12,7 @@ where
 {
     let len = iter.map(|x| x.mls_encoded_len()).sum::<usize>();
 
-    let header_length = VarInt::try_from(len).unwrap_or(VarInt(0)).mls_encoded_len();
+    let header_length = VarInt::try_from(len).unwrap_or_default().mls_encoded_len();
 
     header_length + len
 }
@@ -74,7 +74,7 @@ where
 pub fn mls_decode_split_on_collection<'b>(
     reader: &mut &'b [u8],
 ) -> Result<(&'b [u8], &'b [u8]), crate::Error> {
-    let len = VarInt::mls_decode(reader)?.0 as usize;
+    let len = u32::from(VarInt::mls_decode(reader)?) as usize;
 
     if len > reader.len() {
         return Err(crate::Error::UnexpectedEOF);
