@@ -2,40 +2,60 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use alloc::vec::Vec;
+#[cfg(feature = "std")]
+use std::collections::HashSet;
+
+#[cfg(mls_build_async)]
+use futures::{stream::FuturesUnordered, TryStreamExt};
+
+use alloc::{vec, vec::Vec};
 
 use mls_rs_core::{
     crypto::{CipherSuite, SignatureSecretKey},
+    error::IntoAnyError,
     extension::ExtensionList,
-    identity::SigningIdentity,
+    identity::{IdentityProvider, SigningIdentity},
     protocol_version::ProtocolVersion,
 };
 
-use crate::time::MlsTime;
-use crate::{client::MlsError, Client, Group, MlsMessage};
+use crate::{client::MlsError, tree_kem::TreeKemPublic, Client, Group, MlsMessage};
+use crate::{group::Roster, time::MlsTime};
 
 use super::{
     proposal::ReInitProposal, ClientConfig, ExportedTree, JustPreSharedKeyID, MessageProcessor,
     NewMemberInfo, PreSharedKeyID, PskGroupId, PskSecretInput, ResumptionPSKUsage, ResumptionPsk,
 };
 
-struct ResumptionGroupParameters<'a> {
-    group_id: &'a [u8],
-    cipher_suite: CipherSuite,
-    version: ProtocolVersion,
-    extensions: &'a ExtensionList,
-}
-
 pub struct ReinitClient<C: ClientConfig + Clone> {
     client: Client<C>,
     reinit: ReInitProposal,
     psk_input: PskSecretInput,
+    old_public_tree: TreeKemPublic,
 }
 
 impl<C> Group<C>
 where
     C: ClientConfig + Clone,
 {
+    fn branch_group_creator(
+        &self,
+        timestamp: Option<MlsTime>,
+        group_id: Vec<u8>,
+    ) -> Result<GroupCreator<C>, MlsError> {
+        Ok(GroupCreator {
+            group_id,
+            cipher_suite: self.cipher_suite(),
+            version: self.protocol_version(),
+            extensions: self.group_state().context.extensions.clone(),
+            psk_input: self.resumption_psk_input(ResumptionPSKUsage::Branch)?,
+            timestamp,
+            signer: self.signer.clone(),
+            config: self.config.clone(),
+            typ: GroupCreationType::Branch,
+        })
+    }
+
+    ///
     /// Create a sub-group from a subset of the current group members.
     ///
     /// Membership within the resulting sub-group is indicated by providing a
@@ -52,27 +72,15 @@ where
         new_key_packages: Vec<MlsMessage>,
         timestamp: Option<MlsTime>,
     ) -> Result<(Group<C>, Vec<MlsMessage>), MlsError> {
-        let new_group_params = ResumptionGroupParameters {
-            group_id: &sub_group_id,
-            cipher_suite: self.cipher_suite(),
-            version: self.protocol_version(),
-            extensions: &self.group_state().context.extensions,
-        };
-
-        let current_leaf_node_extensions = &self.current_user_leaf_node()?.ungreased_extensions();
-        resumption_create_group(
-            self.config.clone(),
-            new_key_packages,
-            &new_group_params,
-            // TODO investigate if it's worth updating your own signing identity here
-            self.current_member_signing_identity()?.clone(),
-            self.signer.clone(),
-            current_leaf_node_extensions,
-            #[cfg(any(feature = "private_message", feature = "psk"))]
-            self.resumption_psk_input(ResumptionPSKUsage::Branch)?,
-            timestamp,
-        )
-        .await
+        self.branch_group_creator(timestamp, sub_group_id)?
+            .create(
+                new_key_packages,
+                // TODO investigate if it's worth updating your own signing identity here
+                self.current_member_signing_identity()?.clone(),
+                self.current_user_leaf_node()?.ungreased_extensions(),
+                self.roster(),
+            )
+            .await
     }
 
     /// Join a subgroup that was created by [`Group::branch`].
@@ -81,26 +89,11 @@ where
         &self,
         welcome: &MlsMessage,
         tree_data: Option<ExportedTree<'_>>,
-        maybe_time: Option<MlsTime>,
+        timestamp: Option<MlsTime>,
     ) -> Result<(Group<C>, NewMemberInfo), MlsError> {
-        let expected_new_group_prams = ResumptionGroupParameters {
-            group_id: &[],
-            cipher_suite: self.cipher_suite(),
-            version: self.protocol_version(),
-            extensions: &self.group_state().context.extensions,
-        };
-
-        resumption_join_group(
-            self.config.clone(),
-            self.signer.clone(),
-            welcome,
-            tree_data,
-            expected_new_group_prams,
-            false,
-            self.resumption_psk_input(ResumptionPSKUsage::Branch)?,
-            maybe_time,
-        )
-        .await
+        self.branch_group_creator(timestamp, vec![])?
+            .join(welcome, tree_data, false, self.roster())
+            .await
     }
 
     /// Generate a [`ReinitClient`] that can be used to create or join a new group
@@ -146,6 +139,7 @@ where
             client,
             reinit,
             psk_input,
+            old_public_tree: self.state.public_tree,
         })
     }
 
@@ -179,6 +173,20 @@ impl<C: ClientConfig + Clone> ReinitClient<C> {
             .await
     }
 
+    fn group_creator(self, timestamp: Option<MlsTime>) -> GroupCreator<C> {
+        GroupCreator {
+            group_id: self.reinit.group_id,
+            cipher_suite: self.reinit.cipher_suite,
+            version: self.reinit.version,
+            extensions: self.reinit.extensions,
+            psk_input: self.psk_input,
+            timestamp,
+            signer: self.client.signer.unwrap(),
+            config: self.client.config,
+            typ: GroupCreationType::Reinit,
+        }
+    }
+
     /// Create the new group using new key packages of all group members, possibly
     /// generated by [`ReinitClient::generate_key_package`].
     ///
@@ -188,137 +196,228 @@ impl<C: ClientConfig + Clone> ReinitClient<C> {
     /// group is not the same as the prior group roster.
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn commit(
-        self,
+        mut self,
         new_key_packages: Vec<MlsMessage>,
         new_leaf_node_extensions: ExtensionList,
         timestamp: Option<MlsTime>,
     ) -> Result<(Group<C>, Vec<MlsMessage>), MlsError> {
-        let new_group_params = ResumptionGroupParameters {
-            group_id: self.reinit.group_id(),
-            cipher_suite: self.reinit.new_cipher_suite(),
-            version: self.reinit.new_version(),
-            extensions: self.reinit.new_group_context_extensions(),
-        };
+        let signing_identity = self.client.signing_identity.take();
+        let old_public_tree = core::mem::take(&mut self.old_public_tree);
 
-        resumption_create_group(
-            self.client.config.clone(),
-            new_key_packages,
-            &new_group_params,
-            // These private fields are created with `Some(x)` by `get_reinit_client`
-            self.client.signing_identity.unwrap().0,
-            self.client.signer.unwrap(),
-            &new_leaf_node_extensions,
-            #[cfg(any(feature = "private_message", feature = "psk"))]
-            self.psk_input,
-            timestamp,
-        )
-        .await
+        self.group_creator(timestamp)
+            .create(
+                new_key_packages,
+                // These private fields are created with `Some(x)` by `get_reinit_client`
+                signing_identity.unwrap().0,
+                new_leaf_node_extensions,
+                old_public_tree.roster(),
+            )
+            .await
     }
 
     /// Join a reinitialized group that was created by [`ReinitClient::commit`].
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn join(
+        mut self,
+        welcome: &MlsMessage,
+        tree_data: Option<ExportedTree<'_>>,
+        timestamp: Option<MlsTime>,
+    ) -> Result<(Group<C>, NewMemberInfo), MlsError> {
+        let old_public_tree = core::mem::take(&mut self.old_public_tree);
+
+        self.group_creator(timestamp)
+            .join(welcome, tree_data, true, old_public_tree.roster())
+            .await
+    }
+}
+
+struct GroupCreator<C> {
+    group_id: Vec<u8>,
+    cipher_suite: CipherSuite,
+    version: ProtocolVersion,
+    extensions: ExtensionList,
+    psk_input: PskSecretInput,
+    timestamp: Option<MlsTime>,
+    signer: SignatureSecretKey,
+    config: C,
+    typ: GroupCreationType,
+}
+
+impl<C: ClientConfig> GroupCreator<C> {
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn create(
+        self,
+        new_key_packages: Vec<MlsMessage>,
+        signing_identity: SigningIdentity,
+        leaf_node_extensions: ExtensionList,
+        old_roster: Roster<'_>,
+    ) -> Result<(Group<C>, Vec<MlsMessage>), MlsError> {
+        // Create a new group with new parameters
+        let mut group = Group::new(
+            self.config,
+            Some(self.group_id),
+            self.cipher_suite,
+            self.version,
+            signing_identity,
+            self.extensions.clone(),
+            leaf_node_extensions,
+            self.signer,
+            self.timestamp,
+        )
+        .await?;
+
+        // Install the resumption psk in the new group
+        group.previous_psk = Some(self.psk_input);
+
+        // Create a commit that adds new key packages and uses the resumption PSK
+        let mut commit = group.commit_builder();
+
+        for kp in new_key_packages.into_iter() {
+            commit = commit.add_member(kp)?;
+        }
+
+        let commit = commit.build().await?;
+        group.apply_pending_commit().await?;
+
+        // Uninstall the resumption psk on success (in case of failure, the new group is discarded anyway)
+        group.previous_psk = None;
+
+        check_that_subgroup_is_a_subset(old_roster, &group, self.typ).await?;
+
+        Ok((group, commit.welcome_messages))
+    }
+
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn join(
         self,
         welcome: &MlsMessage,
         tree_data: Option<ExportedTree<'_>>,
-        maybe_time: Option<MlsTime>,
+        verify_group_id: bool,
+        old_roster: Roster<'_>,
     ) -> Result<(Group<C>, NewMemberInfo), MlsError> {
-        let reinit = self.reinit;
-
-        let expected_group_params = ResumptionGroupParameters {
-            group_id: reinit.group_id(),
-            cipher_suite: reinit.new_cipher_suite(),
-            version: reinit.new_version(),
-            extensions: reinit.new_group_context_extensions(),
-        };
-
-        resumption_join_group(
-            self.client.config,
-            // This private field is created with `Some(x)` by `get_reinit_client`
-            self.client.signer.unwrap(),
+        let (group, new_member_info) = Group::from_welcome_message(
             welcome,
             tree_data,
-            expected_group_params,
-            true,
-            self.psk_input,
-            maybe_time,
+            self.config,
+            self.signer,
+            Some(self.psk_input),
+            self.timestamp,
         )
+        .await?;
+
+        check_that_subgroup_is_a_subset(old_roster, &group, self.typ).await?;
+
+        // The version and cipher_suite values in the Welcome message are the same as those used
+        // by the old group.
+        if group.protocol_version() != self.version {
+            Err(MlsError::ProtocolVersionMismatch)
+        } else if group.cipher_suite() != self.cipher_suite {
+            Err(MlsError::CipherSuiteMismatch)
+        }
+        // The epoch in the Welcome message MUST be 1.
+        else if group.current_epoch() != 1 {
+            Err(MlsError::InitialEpochNotOne)
+        } else if verify_group_id && group.group_id() != self.group_id {
+            Err(MlsError::GroupIdMismatch)
+        } else if group.group_state().context.extensions != self.extensions {
+            Err(MlsError::ReInitExtensionsMismatch)
+        } else {
+            Ok((group, new_member_info))
+        }
+    }
+}
+
+enum GroupCreationType {
+    Branch,
+    Reinit,
+}
+
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+async fn check_that_subgroup_is_a_subset<C: ClientConfig>(
+    old_roster: Roster<'_>,
+    new_group: &Group<C>,
+    typ: GroupCreationType,
+) -> Result<(), MlsError> {
+    if matches!(typ, GroupCreationType::Reinit)
+        && old_roster.public_tree.len() != new_group.roster().public_tree.len()
+    {
+        return Err(MlsError::NotASubgroup);
+    }
+
+    let provider = new_group.identity_provider();
+    let extensions = new_group.context().extensions();
+
+    let old_identities = collect_identities(extensions, old_roster, &provider).await?;
+    let new_identities = collect_identities(extensions, new_group.roster(), &provider).await?;
+
+    new_identities
+        .is_subset(&old_identities)
+        .then_some(())
+        .ok_or(MlsError::NotASubgroup)?;
+
+    Ok(())
+}
+
+#[cfg(feature = "std")]
+#[cfg(not(mls_build_async))]
+fn collect_identities<I: IdentityProvider>(
+    extensions: &ExtensionList,
+    roster: Roster<'_>,
+    provider: &I,
+) -> Result<HashSet<Vec<u8>>, MlsError> {
+    roster
+        .members_iter()
+        .map(|m| {
+            provider
+                .identity(&m.signing_identity, extensions)
+                .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))
+        })
+        .collect()
+}
+
+#[cfg(feature = "std")]
+#[cfg(mls_build_async)]
+async fn collect_identities<I: IdentityProvider>(
+    extensions: &ExtensionList,
+    roster: Roster<'_>,
+    provider: &I,
+) -> Result<HashSet<Vec<u8>>, MlsError> {
+    roster
+        .members_iter()
+        .map(async move |m| {
+            provider
+                .identity(&m.signing_identity, extensions)
+                .await
+                .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))
+        })
+        .collect::<FuturesUnordered<_>>()
+        .try_collect()
         .await
+}
+
+#[cfg(not(feature = "std"))]
+struct Identities(Vec<Vec<u8>>);
+
+#[cfg(not(feature = "std"))]
+impl Identities {
+    fn is_subset(&self, other: &Self) -> bool {
+        self.0.iter().all(|i| other.0.contains(i))
     }
 }
 
-#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-#[allow(clippy::too_many_arguments)]
-async fn resumption_create_group<C: ClientConfig + Clone>(
-    config: C,
-    new_key_packages: Vec<MlsMessage>,
-    new_group_params: &ResumptionGroupParameters<'_>,
-    signing_identity: SigningIdentity,
-    signer: SignatureSecretKey,
-    leaf_node_extensions: &ExtensionList,
-    psk_input: PskSecretInput,
-    timestamp: Option<MlsTime>,
-) -> Result<(Group<C>, Vec<MlsMessage>), MlsError> {
-    // Create a new group with new parameters
-    let mut group = Group::new(
-        config,
-        Some(new_group_params.group_id.to_vec()),
-        new_group_params.cipher_suite,
-        new_group_params.version,
-        signing_identity,
-        new_group_params.extensions.clone(),
-        leaf_node_extensions.clone(),
-        signer,
-        timestamp,
-    )
-    .await?;
-
-    // Install the resumption psk in the new group
-    group.previous_psk = Some(psk_input);
-
-    // Create a commit that adds new key packages and uses the resumption PSK
-    let mut commit = group.commit_builder();
-
-    for kp in new_key_packages.into_iter() {
-        commit = commit.add_member(kp)?;
-    }
-
-    let commit = commit.build().await?;
-    group.apply_pending_commit().await?;
-
-    // Uninstall the resumption psk on success (in case of failure, the new group is discarded anyway)
-    group.previous_psk = None;
-
-    Ok((group, commit.welcome_messages))
-}
-
-#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-#[allow(clippy::too_many_arguments)]
-async fn resumption_join_group<C: ClientConfig + Clone>(
-    config: C,
-    signer: SignatureSecretKey,
-    welcome: &MlsMessage,
-    tree_data: Option<ExportedTree<'_>>,
-    expected_new_group_params: ResumptionGroupParameters<'_>,
-    verify_group_id: bool,
-    psk_input: PskSecretInput,
-    maybe_time: Option<MlsTime>,
-) -> Result<(Group<C>, NewMemberInfo), MlsError> {
-    let psk_input = Some(psk_input);
-
-    let (group, new_member_info) =
-        Group::<C>::from_welcome_message(welcome, tree_data, config, signer, psk_input, maybe_time)
-            .await?;
-
-    if group.protocol_version() != expected_new_group_params.version {
-        Err(MlsError::ProtocolVersionMismatch)
-    } else if group.cipher_suite() != expected_new_group_params.cipher_suite {
-        Err(MlsError::CipherSuiteMismatch)
-    } else if verify_group_id && group.group_id() != expected_new_group_params.group_id {
-        Err(MlsError::GroupIdMismatch)
-    } else if &group.group_state().context.extensions != expected_new_group_params.extensions {
-        Err(MlsError::ReInitExtensionsMismatch)
-    } else {
-        Ok((group, new_member_info))
-    }
+#[cfg(not(feature = "std"))]
+fn collect_identities<I: IdentityProvider>(
+    extensions: &ExtensionList,
+    roster: Roster<'_>,
+    provider: &I,
+) -> Result<Identities, MlsError> {
+    roster
+        .members_iter()
+        .map(|m| {
+            provider
+                .identity(&m.signing_identity, extensions)
+                .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(Identities)
 }
