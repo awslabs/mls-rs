@@ -232,8 +232,32 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
                 .map_or(Ok(()), Err)?;
         }
 
+        leaf_node.validate_no_default_values_listed()?;
+
         #[cfg(feature = "by_ref_proposal")]
         self.validate_external_senders_ext_credentials(leaf_node)?;
+
+        Ok(())
+    }
+}
+
+impl LeafNode {
+    pub fn validate_no_default_values_listed(&self) -> Result<(), MlsError> {
+        // The following proposal and extension types are considered "default" and
+        // MUST NOT be listed
+        self.capabilities
+            .extensions
+            .iter()
+            .all(|ext| !ext.is_default())
+            .then_some(())
+            .ok_or(MlsError::DefaultValueListed)?;
+
+        self.capabilities
+            .proposals
+            .iter()
+            .all(|prop| !prop.is_default())
+            .then_some(())
+            .ok_or(MlsError::DefaultValueListed)?;
 
         Ok(())
     }

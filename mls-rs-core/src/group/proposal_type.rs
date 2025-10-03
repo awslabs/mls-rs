@@ -74,4 +74,10 @@ impl ProposalType {
         ProposalType::EXTERNAL_INIT,
         ProposalType::GROUP_CONTEXT_EXTENSIONS,
     ];
+
+    /// Determines if this proposal type is required to be implemented
+    /// by the MLS RFC.
+    pub fn is_default(&self) -> bool {
+        Self::DEFAULT.contains(self)
+    }
 }
