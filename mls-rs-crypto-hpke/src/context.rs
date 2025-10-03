@@ -24,10 +24,6 @@ pub(super) struct Context<KDF: KdfType, AEAD: AeadType> {
 impl<KDF: KdfType + Debug, AEAD: AeadType + Debug> Debug for Context<KDF, AEAD> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Context")
-            .field(
-                "exporter_secret",
-                &mls_rs_core::debug::pretty_bytes(&self.exporter_secret),
-            )
             .field("encryption_context", &self.encryption_context)
             .field("kdf", &self.kdf)
             .finish()
@@ -153,10 +149,6 @@ impl<AEAD: AeadType + Debug> Debug for EncryptionContext<AEAD> {
             )
             .field("seq_number", &self.seq_number)
             .field("aead", &self.aead)
-            .field(
-                "aead_key",
-                &mls_rs_core::debug::pretty_bytes(&self.aead_key),
-            )
             .finish()
     }
 }

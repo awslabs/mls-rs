@@ -24,9 +24,7 @@ pub struct PreSharedKey(
 
 impl Debug for PreSharedKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        crate::debug::pretty_bytes(&self.0)
-            .named("PreSharedKey")
-            .fmt(f)
+        f.debug_struct("PreSharedKey").finish()
     }
 }
 

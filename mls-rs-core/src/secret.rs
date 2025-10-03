@@ -19,7 +19,7 @@ pub struct Secret(Zeroizing<Vec<u8>>);
 
 impl Debug for Secret {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        crate::debug::pretty_bytes(&self.0).named("Secret").fmt(f)
+        f.debug_struct("Secret").finish()
     }
 }
 

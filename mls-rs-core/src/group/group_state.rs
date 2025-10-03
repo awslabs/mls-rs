@@ -21,7 +21,6 @@ impl Debug for GroupState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("GroupState")
             .field("id", &crate::debug::pretty_bytes(&self.id))
-            .field("data", &crate::debug::pretty_bytes(&self.data))
             .finish()
     }
 }
@@ -36,10 +35,7 @@ pub struct EpochRecord {
 
 impl Debug for EpochRecord {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("EpochRecord")
-            .field("id", &self.id)
-            .field("data", &crate::debug::pretty_bytes(&self.data))
-            .finish()
+        f.debug_struct("EpochRecord").field("id", &self.id).finish()
     }
 }
 

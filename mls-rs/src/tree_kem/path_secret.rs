@@ -27,9 +27,7 @@ pub struct PathSecret(
 
 impl Debug for PathSecret {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        mls_rs_core::debug::pretty_bytes(&self.0)
-            .named("PathSecret")
-            .fmt(f)
+        f.debug_struct("PathSecret").finish()
     }
 }
 

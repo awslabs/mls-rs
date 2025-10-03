@@ -28,7 +28,7 @@ use crate::{
 };
 
 use alloc::vec::Vec;
-use core::time::Duration;
+use core::{fmt::Debug, time::Duration};
 
 #[cfg(feature = "sqlite")]
 use mls_rs_provider_sqlite::{
@@ -173,8 +173,13 @@ pub type BaseSqlConfig = Config<
 /// }
 ///
 /// ```
-#[derive(Debug)]
 pub struct ClientBuilder<C>(C);
+
+impl<C> Debug for ClientBuilder<C> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_tuple("ClientBuilder").finish()
+    }
+}
 
 impl Default for ClientBuilder<BaseConfig> {
     fn default() -> Self {
