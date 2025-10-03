@@ -13,6 +13,7 @@ use core::{
 };
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
+use subtle::ConstantTimeEq;
 
 use super::message_signature::AuthenticatedContent;
 
@@ -38,9 +39,15 @@ impl<'a> AuthenticatedContentTBM<'a> {
     }
 }
 
-#[derive(Clone, PartialEq, MlsSize, MlsEncode, MlsDecode)]
+#[derive(Clone, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct MembershipTag(#[mls_codec(with = "mls_rs_codec::byte_vec")] Vec<u8>);
+
+impl PartialEq for MembershipTag {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.ct_eq(&other.0).into()
+    }
+}
 
 impl Debug for MembershipTag {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
