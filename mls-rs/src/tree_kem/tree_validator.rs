@@ -117,17 +117,28 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> TreeValidator<'a, C, CSP
 }
 
 fn validate_unmerged(tree: &TreeKemPublic) -> Result<(), MlsError> {
+    // The entries in the unmerged_leaves vector MUST be sorted in increasing order.
+    tree.nodes
+        .iter()
+        .flatten()
+        .all(|n| match n {
+            Node::Leaf(_) => true,
+            Node::Parent(p) => p.unmerged_leaves.is_sorted(),
+        })
+        .then_some(())
+        .ok_or(MlsError::ParentHashMismatch)?;
+
     let unmerged_sets = tree.nodes.iter().map(|n| {
         #[cfg(feature = "std")]
         if let Some(Node::Parent(p)) = n {
-            HashSet::from_iter(p.unmerged_leaves.iter().cloned())
+            HashSet::from_iter(p.unmerged_leaves.iter())
         } else {
             HashSet::new()
         }
 
         #[cfg(not(feature = "std"))]
         if let Some(Node::Parent(p)) = n {
-            p.unmerged_leaves.clone()
+            &p.unmerged_leaves
         } else {
             vec![]
         }
@@ -152,7 +163,7 @@ fn validate_unmerged(tree: &TreeKemPublic) -> Result<(), MlsError> {
             let parent_node = tree.nodes.borrow_as_parent(ps.parent)?;
 
             if parent_node.unmerged_leaves.contains(&index) {
-                unmerged_sets[ps.parent as usize].retain(|i| i != &index);
+                unmerged_sets[ps.parent as usize].retain(|i| **i != index);
 
                 n = ps.parent;
             } else {
@@ -365,5 +376,16 @@ mod tests {
             validate_unmerged(&tree),
             Err(MlsError::UnmergedLeavesMismatch)
         );
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn verify_unmerged_leaves_sorted() {
+        let mut tree = get_test_tree_fig_12(TEST_CIPHER_SUITE).await;
+
+        // Set unsorted unmerged leaves
+        tree.nodes.borrow_as_parent_mut(3).unwrap().unmerged_leaves =
+            vec![LeafIndex::unchecked(3), LeafIndex::unchecked(1)];
+
+        assert_matches!(validate_unmerged(&tree), Err(MlsError::ParentHashMismatch));
     }
 }
