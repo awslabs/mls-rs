@@ -8,7 +8,7 @@ repository = "https://github.com/awslabs/mls-rs"
 keywords = ["crypto", "cryptography", "security", "mls", "e2ee"]
 categories = ["no-std", "cryptography"]
 license = "Apache-2.0 OR MIT"
-rust-version = "1.68.2"
+rust-version = "1.82.0"
 exclude = ["test_data"]
 
 [package.metadata.docs.rs]
