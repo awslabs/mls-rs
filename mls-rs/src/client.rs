@@ -761,7 +761,10 @@ where
     ) -> Result<MlsMessage, MlsError> {
         let protocol_version = group_info.version;
 
-        if !self.config.version_supported(protocol_version) && protocol_version == self.version {
+        let protocol_version_ok =
+            self.config.version_supported(protocol_version) && protocol_version == self.version;
+
+        if !protocol_version_ok {
             return Err(MlsError::UnsupportedProtocolVersion(protocol_version));
         }
 
