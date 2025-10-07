@@ -11,8 +11,9 @@ use core::{
 };
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
+use subtle::ConstantTimeEq;
 
-#[derive(Clone, PartialEq, MlsSize, MlsEncode, MlsDecode, Default)]
+#[derive(Clone, MlsSize, MlsEncode, MlsDecode, Default)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ConfirmationTag(
@@ -20,6 +21,12 @@ pub struct ConfirmationTag(
     #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::vec_serde"))]
     Vec<u8>,
 );
+
+impl PartialEq for ConfirmationTag {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.ct_eq(&other.0).into()
+    }
+}
 
 impl Debug for ConfirmationTag {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
