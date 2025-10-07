@@ -92,7 +92,8 @@ pub(crate) async fn validate_tree_and_info_joiner<C: CipherSuiteProvider, I: Ide
         .get_leaf_node(group_info.signer)?
         .signing_identity;
 
-    validate_group_info_joiner(msg_version, group_info, signer, id_provider, cs).await?;
+    validate_group_info_joiner(msg_version, group_info, signer, id_provider, cs, maybe_time)
+        .await?;
 
     Ok(public_tree)
 }
@@ -131,15 +132,16 @@ pub(crate) async fn validate_group_info_joiner<C: CipherSuiteProvider, I: Identi
     #[cfg(feature = "by_ref_proposal")] id_provider: &I,
     #[cfg(not(feature = "by_ref_proposal"))] _id_provider: &I,
     cs: &C,
+    #[cfg(feature = "by_ref_proposal")] timestamp: Option<MlsTime>,
+    #[cfg(not(feature = "by_ref_proposal"))] _timestamp: Option<MlsTime>,
 ) -> Result<(), MlsError> {
     #[cfg(feature = "by_ref_proposal")]
     let context = &group_info.group_context;
 
     #[cfg(feature = "by_ref_proposal")]
     if let Some(ext_senders) = context.extensions.get_as::<ExternalSendersExt>()? {
-        // TODO do joiners verify group against current time??
         ext_senders
-            .verify_all(id_provider, None, &context.extensions)
+            .verify_all(id_provider, timestamp, &context.extensions)
             .await
             .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?;
     }

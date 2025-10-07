@@ -613,11 +613,13 @@ where
     /// Validate GroupInfo message. This does NOT validate the ratchet tree in case
     /// it is provided in the extension. It validates the signature, identity of the
     /// signer, identities of external senders and cipher suite.
+    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn validate_group_info(
         &self,
         group_info_message: &MlsMessage,
         signer: &SigningIdentity,
+        timestamp: Option<MlsTime>,
     ) -> Result<(), MlsError> {
         let MlsMessagePayload::GroupInfo(group_info) = &group_info_message.payload else {
             return Err(MlsError::UnexpectedMessageType);
@@ -630,8 +632,15 @@ where
 
         let id = self.config.identity_provider();
 
-        validate_group_info_joiner(group_info_message.version, group_info, signer, &id, &cs)
-            .await?;
+        validate_group_info_joiner(
+            group_info_message.version,
+            group_info,
+            signer,
+            &id,
+            &cs,
+            timestamp,
+        )
+        .await?;
 
         let context = MemberValidationContext::ForNewGroup {
             current_context: &group_info.group_context,
@@ -1253,7 +1262,7 @@ mod tests {
         let group_info = alice.group_info_message(false).await.unwrap();
         let alice_signer = alice.current_member_signing_identity().unwrap().clone();
 
-        bob.validate_group_info(&group_info, &alice_signer)
+        bob.validate_group_info(&group_info, &alice_signer, None)
             .await
             .unwrap();
 
@@ -1261,7 +1270,9 @@ mod tests {
             .await
             .0;
 
-        let res = bob.validate_group_info(&group_info, &other_signer).await;
+        let res = bob
+            .validate_group_info(&group_info, &other_signer, None)
+            .await;
         assert_matches!(res, Err(MlsError::InvalidSignature));
     }
 
