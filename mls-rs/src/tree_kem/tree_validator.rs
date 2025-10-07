@@ -138,7 +138,7 @@ fn validate_unmerged(tree: &TreeKemPublic) -> Result<(), MlsError> {
 
         #[cfg(not(feature = "std"))]
         if let Some(Node::Parent(p)) = n {
-            &p.unmerged_leaves
+            p.unmerged_leaves.iter().collect()
         } else {
             vec![]
         }
