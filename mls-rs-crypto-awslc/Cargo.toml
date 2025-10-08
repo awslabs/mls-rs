@@ -1,6 +1,6 @@
 [package]
 name = "mls-rs-crypto-awslc"
-version = "0.20.1"
+version = "0.20.2"
 edition = "2021"
 description = "AWS-LC based CryptoProvider for mls-rs"
 homepage = "https://github.com/awslabs/mls-rs"
@@ -15,8 +15,8 @@ post-quantum = ["aws-lc-rs/unstable", "mls-rs-core/post-quantum"]
 default = ["non-fips"]
 
 [dependencies]
-aws-lc-rs = { version = "=1.13.1", default-features = false, features = ["alloc"] }
-aws-lc-sys = { version = "=0.29", optional = true }
+aws-lc-rs = { version = "=1.14.1", default-features = false, features = ["alloc"] }
+aws-lc-sys = { version = "=0.32", optional = true }
 aws-lc-fips-sys = { version = "=0.13", optional = true }
 mls-rs-core = { path = "../mls-rs-core", version = "0.24.0" }
 mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", version = "0.18.0" }
