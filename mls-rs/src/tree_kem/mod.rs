@@ -787,7 +787,7 @@ pub(crate) mod test_utils {
     use alloc::{format, vec};
     use mls_rs_core::crypto::CipherSuiteProvider;
     use mls_rs_core::group::Capabilities;
-    use mls_rs_core::identity::BasicCredential;
+    use mls_rs_core::identity::{BasicCredential, SigningIdentity};
 
     use crate::identity::test_utils::get_test_signing_identity;
     use crate::{
@@ -886,7 +886,14 @@ pub(crate) mod test_utils {
 
         #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
         pub async fn add_member<P: CipherSuiteProvider>(&mut self, name: &str, cs: &P) {
-            let (leaf, signer) = make_leaf(name, cs).await;
+            let (signing_identity, signer) =
+                get_test_signing_identity(cs.cipher_suite(), name.as_bytes()).await;
+
+            let leaf = make_leaf(cs, signing_identity, &signer).await;
+            self.add_leaf(leaf, signer);
+        }
+
+        pub fn add_leaf(&mut self, leaf: LeafNode, signer: SignatureSecretKey) {
             let index = self.tree.nodes.next_empty_leaf(LeafIndex::unchecked(0));
             self.tree.nodes.insert_leaf(index, leaf);
             self.tree.update_unmerged(index).unwrap();
@@ -970,12 +977,10 @@ pub(crate) mod test_utils {
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn make_leaf<P: CipherSuiteProvider>(
-        name: &str,
         cs: &P,
-    ) -> (LeafNode, SignatureSecretKey) {
-        let (signing_identity, signature_key) =
-            get_test_signing_identity(cs.cipher_suite(), name.as_bytes()).await;
-
+        signing_identity: SigningIdentity,
+        signer: &SignatureSecretKey,
+    ) -> LeafNode {
         let capabilities = Capabilities {
             credentials: vec![BasicCredential::credential_type()],
             cipher_suites: TestCryptoProvider::all_supported_cipher_suites(),
@@ -991,13 +996,13 @@ pub(crate) mod test_utils {
             cs,
             properties,
             signing_identity,
-            &signature_key,
+            &signer,
             Lifetime::years(1, None).unwrap(),
         )
         .await
         .unwrap();
 
-        (leaf, signature_key)
+        leaf
     }
 }
 

@@ -231,3 +231,89 @@ where
         .cipher_suite_provider(cipher_suite)
         .ok_or(MlsError::UnsupportedCipherSuite(cipher_suite))
 }
+
+#[cfg(test)]
+mod tests {
+    use assert_matches::assert_matches;
+    use mls_rs_core::{
+        group::Capabilities,
+        identity::{Credential, CredentialType, CustomCredential, SigningIdentity},
+    };
+
+    use crate::{
+        client::test_utils::TEST_CIPHER_SUITE,
+        crypto::test_utils::test_cipher_suite_provider,
+        error::MlsError,
+        identity::{basic::BasicIdentityProvider, test_utils::BasicWithCustomProvider},
+        tree_kem::{
+            leaf_node::{ConfigProperties, LeafNode},
+            test_utils::{make_leaf, TreeWithSigners},
+            Lifetime, TreeKemPublic,
+        },
+        CipherSuiteProvider,
+    };
+
+    #[test]
+    fn tree_with_duplicate_signature_key_is_rejected() {
+        let cs = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+        let mut tree = TreeWithSigners::make_full_tree(8, &cs);
+
+        let signer = tree.signers[0].clone().unwrap();
+        let existing_leaf = tree.tree.leaves().next().unwrap().unwrap();
+        let duplicate_leaf = make_leaf(&cs, existing_leaf.signing_identity.clone(), &signer);
+
+        tree.add_leaf(duplicate_leaf, signer);
+
+        let res = TreeKemPublic::import_node_data(
+            tree.tree.nodes,
+            &BasicIdentityProvider,
+            &Default::default(),
+        );
+
+        assert_matches!(res, Err(MlsError::DuplicateLeafData(idx)) if idx == 0);
+    }
+
+    #[test]
+    fn tree_with_unsupported_cred_is_rejected() {
+        let cs = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+        let mut tree = TreeWithSigners::make_full_tree(8, &cs);
+
+        let cred = Credential::Custom(CustomCredential::new(
+            CredentialType::new(BasicWithCustomProvider::CUSTOM_CREDENTIAL_TYPE),
+            b"12345".into(),
+        ));
+
+        let (signer, public_key) = cs.signature_key_generate().unwrap();
+        let signing_identity = SigningIdentity::new(cred, public_key);
+
+        let capabilities = Capabilities {
+            credentials: vec![BasicWithCustomProvider::CUSTOM_CREDENTIAL_TYPE.into()],
+            cipher_suites: vec![TEST_CIPHER_SUITE],
+            ..Default::default()
+        };
+
+        let properties = ConfigProperties {
+            capabilities,
+            extensions: Default::default(),
+        };
+
+        let (unsupported_leaf, _) = LeafNode::generate(
+            &cs,
+            properties,
+            signing_identity,
+            &signer,
+            Lifetime::years(1, None).unwrap(),
+        )
+        .unwrap();
+
+        tree.add_leaf(unsupported_leaf, signer);
+
+        let res = TreeKemPublic::import_node_data(
+            tree.tree.nodes,
+            &BasicWithCustomProvider::new(BasicIdentityProvider),
+            &Default::default(),
+        );
+
+        assert_matches!(res, Err(MlsError::InUseCredentialTypeUnsupportedByNewLeaf));
+    }
+}
