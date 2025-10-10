@@ -142,6 +142,9 @@ required-features = ["std"]
 name = "basic_server_usage"
 required-features = ["external_client"]
 
+[[example]]
+name = "complete_basic_usage"
+
 [[bench]]
 name = "group_add"
 harness = false

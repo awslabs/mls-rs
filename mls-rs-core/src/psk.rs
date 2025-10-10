@@ -132,4 +132,7 @@ pub trait PreSharedKeyStorage: Send + Sync {
     async fn contains(&self, id: &ExternalPskId) -> Result<bool, Self::Error> {
         self.get(id).await.map(|key| key.is_some())
     }
+
+    async fn insert(&mut self, psk_id: ExternalPskId, psk: PreSharedKey)
+        -> Result<(), Self::Error>;
 }

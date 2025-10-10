@@ -3822,6 +3822,10 @@ mod tests {
         async fn get(&self, _: &ExternalPskId) -> Result<Option<PreSharedKey>, Self::Error> {
             Ok(None)
         }
+
+        async fn insert(&mut self, _: ExternalPskId, _: PreSharedKey) -> Result<(), Self::Error> {
+            Ok(())
+        }
     }
 
     #[cfg(feature = "psk")]
