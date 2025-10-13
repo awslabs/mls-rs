@@ -8,7 +8,7 @@ repository = "https://github.com/awslabs/mls-rs"
 keywords = ["mls", "e2ee", "uniffi"]
 categories = ["cryptography"]
 license = "Apache-2.0 OR MIT"
-rust-version = "1.68.2"
+rust-version = "1.82.0"
 
 [lib]
 crate-type = ["lib", "cdylib"]

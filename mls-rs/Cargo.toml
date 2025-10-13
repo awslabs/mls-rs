@@ -8,7 +8,7 @@ repository = "https://github.com/awslabs/mls-rs"
 keywords = ["crypto", "cryptography", "security", "mls", "e2ee"]
 categories = ["no-std", "cryptography"]
 license = "Apache-2.0 OR MIT"
-rust-version = "1.68.2"
+rust-version = "1.82.0"
 exclude = ["test_data"]
 
 [package.metadata.docs.rs]
@@ -39,7 +39,7 @@ self_remove_proposal = ["mls-rs-core/self_remove_proposal"]
 export_key_generation = []
 gsma_rcs_e2ee_feature = ["mls-rs-core/gsma_rcs_e2ee_feature"]
 
-std = ["mls-rs-core/std", "mls-rs-codec/std", "mls-rs-identity-x509?/std", "hex/std", "futures/std", "itertools/use_std", "safer-ffi-gen?/std", "zeroize/std", "dep:debug_tree", "dep:thiserror", "serde?/std"]
+std = ["mls-rs-core/std", "mls-rs-codec/std", "mls-rs-identity-x509?/std", "hex/std", "futures/std", "itertools/use_std", "safer-ffi-gen?/std", "zeroize/std", "dep:debug_tree", "dep:thiserror", "serde?/std", "subtle/std"]
 
 ffi = ["dep:safer-ffi", "dep:safer-ffi-gen", "mls-rs-core/ffi"]
 
@@ -67,6 +67,7 @@ cfg-if = "1"
 debug_tree = { version = "0.4.0", optional = true }
 spin = { version = "0.10", default-features = false, features = ["mutex", "spin_mutex"] }
 maybe-async = { version = "0.2.10" }
+subtle = { version = "2.6.1", default-features = false, features = ["i128"] }
 
 # Optional dependencies
 mls-rs-provider-sqlite = { path = "../mls-rs-provider-sqlite", version = "0.19.0", default-features = false, optional = true }
