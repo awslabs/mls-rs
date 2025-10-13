@@ -327,11 +327,15 @@ impl TreeKemPublic {
 
     fn update_unmerged(&mut self, index: LeafIndex) -> Result<(), MlsError> {
         // For a given leaf index, find parent nodes and add the leaf to the unmerged leaf
-        self.nodes.direct_copath(index).into_iter().for_each(|i| {
+        for i in self.nodes.direct_copath(index) {
             if let Ok(p) = self.nodes.borrow_as_parent_mut(i.path) {
-                p.unmerged_leaves.push(index)
+                // Unmerged leaves MUST be sorted and some of our mechanisms rely on this.
+                match p.unmerged_leaves.binary_search(&index) {
+                    Ok(_) => return Err(MlsError::ParentHashMismatch),
+                    Err(to_insert) => p.unmerged_leaves.insert(to_insert, index),
+                }
             }
-        });
+        }
 
         Ok(())
     }
