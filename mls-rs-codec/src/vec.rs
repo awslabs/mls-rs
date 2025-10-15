@@ -53,7 +53,14 @@ where
             let mut items = Vec::new();
 
             while !data.is_empty() {
-                items.push(T::mls_decode(data)?);
+                let before = data.len();
+                let value = T::mls_decode(data)?;
+
+                if data.len() == before {
+                    return Err(crate::Error::InvalidContent);
+                }
+
+                items.push(value);
             }
 
             Ok(items)
@@ -96,5 +103,11 @@ mod tests {
             Vec::<u8>::mls_decode(&mut &[2, 3][..]),
             Err(Error::UnexpectedEOF)
         );
+    }
+
+    #[test]
+    fn vec_zero_length_structure() {
+        let res = Vec::<[u8; 0]>::mls_decode(&mut &[0x01, 0xff][..]);
+        assert_matches!(res, Err(crate::Error::InvalidContent))
     }
 }
