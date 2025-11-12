@@ -462,7 +462,7 @@ mod tests {
                 .await
                 .unwrap();
 
-            assert_eq!(opened, test_data);
+            assert_eq!(*opened, test_data);
 
             leaf_node
                 .verify(

@@ -515,7 +515,7 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
         local_public: &HpkePublicKey,
         info: &[u8],
         aad: Option<&[u8]>,
-    ) -> Result<Vec<u8>, Self::Error> {
+    ) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
         match &self.hpke {
             AwsLcHpke::Classical(hpke) => {
                 hpke.open(ciphertext, local_secret, local_public, info, None, aad)

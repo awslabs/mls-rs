@@ -147,7 +147,7 @@ where
         info: &[u8],
         psk: Option<Psk<'_>>,
         aad: Option<&[u8]>,
-    ) -> Result<Vec<u8>, HpkeError> {
+    ) -> Result<Zeroizing<Vec<u8>>, HpkeError> {
         let mut hpke_ctx = self
             .setup_receiver(
                 &ciphertext.kem_output,
