@@ -14,6 +14,7 @@ use core::{
     ops::Deref,
 };
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
+#[cfg(feature = "prior_epoch")]
 use zeroize::Zeroizing;
 
 #[cfg(all(feature = "prior_epoch", feature = "private_message"))]
@@ -31,7 +32,9 @@ pub(crate) struct PriorEpoch {
     pub(crate) secrets: EpochSecrets,
     pub(crate) signature_public_keys: Vec<Option<SignaturePublicKey>>,
     #[cfg(feature = "prior_epoch_membership_key")]
-    pub(crate) membership_key: Vec<u8>,
+    #[mls_codec(with = "mls_rs_codec::byte_vec")]
+    #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::zeroizing_serde"))]
+    pub(crate) membership_key: Zeroizing<Vec<u8>>,
 }
 
 #[cfg(feature = "prior_epoch")]

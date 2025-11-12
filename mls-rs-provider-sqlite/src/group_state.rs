@@ -8,6 +8,7 @@ use std::{
     fmt::Debug,
     sync::{Arc, Mutex},
 };
+use zeroize::Zeroizing;
 
 use crate::SqLiteDataStorageError;
 
@@ -120,7 +121,7 @@ impl SqLiteGroupStateStorage {
     fn update_group_state(
         &self,
         group_id: &[u8],
-        group_snapshot: Vec<u8>,
+        group_snapshot: &[u8],
         inserts: Vec<EpochRecord>,
         updates: Vec<EpochRecord>,
     ) -> Result<(), SqLiteDataStorageError> {
@@ -144,7 +145,7 @@ impl SqLiteGroupStateStorage {
             transaction
                 .execute(
                     "INSERT INTO epoch (group_id, epoch_id, epoch_data) VALUES (?, ?, ?)",
-                    params![group_id, epoch.id, epoch.data],
+                    params![group_id, epoch.id, &*epoch.data],
                 )
                 .map(|_| ())
                 .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))?;
@@ -155,7 +156,7 @@ impl SqLiteGroupStateStorage {
             transaction
                 .execute(
                     "UPDATE epoch SET epoch_data = ? WHERE group_id = ? AND epoch_id = ?",
-                    params![epoch.data, group_id, epoch.id],
+                    params![&*epoch.data, group_id, epoch.id],
                 )
                 .map(|_| ())
                 .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))
@@ -193,22 +194,25 @@ impl GroupStateStorage for SqLiteGroupStateStorage {
         inserts: Vec<EpochRecord>,
         updates: Vec<EpochRecord>,
     ) -> Result<(), Self::Error> {
-        let group_id = state.id;
-        let snapshot_data = state.data;
-
-        self.update_group_state(&group_id, snapshot_data, inserts, updates)
+        self.update_group_state(&state.id, &state.data, inserts, updates)
     }
 
-    async fn state(&self, group_id: &[u8]) -> Result<Option<Vec<u8>>, Self::Error> {
-        self.get_snapshot_data(group_id)
+    async fn state(&self, group_id: &[u8]) -> Result<Option<Zeroizing<Vec<u8>>>, Self::Error> {
+        let data = self.get_snapshot_data(group_id)?;
+        Ok(data.map(Into::into))
     }
 
     async fn max_epoch_id(&self, group_id: &[u8]) -> Result<Option<u64>, Self::Error> {
         self.max_epoch_id(group_id)
     }
 
-    async fn epoch(&self, group_id: &[u8], epoch_id: u64) -> Result<Option<Vec<u8>>, Self::Error> {
-        self.get_epoch_data(group_id, epoch_id)
+    async fn epoch(
+        &self,
+        group_id: &[u8],
+        epoch_id: u64,
+    ) -> Result<Option<Zeroizing<Vec<u8>>>, Self::Error> {
+        let data = self.get_epoch_data(group_id, epoch_id)?;
+        Ok(data.map(Into::into))
     }
 }
 
@@ -238,7 +242,7 @@ mod tests {
 
     fn test_epoch(id: u64) -> EpochRecord {
         EpochRecord {
-            data: gen_rand_bytes(256),
+            data: gen_rand_bytes(256).into(),
             id,
         }
     }
@@ -259,7 +263,7 @@ mod tests {
         test_storage
             .update_group_state(
                 &test_group_id,
-                test_snapshot.clone(),
+                &test_snapshot,
                 vec![test_epoch_0.clone()],
                 vec![],
             )
@@ -289,7 +293,7 @@ mod tests {
             .storage
             .get_epoch_data(&test_data.group_id, 0)
             .unwrap();
-        assert_eq!(epoch.unwrap(), test_data.epoch_0.data);
+        assert_eq!(epoch.unwrap(), *test_data.epoch_0.data);
     }
 
     #[test]
@@ -303,7 +307,7 @@ mod tests {
             .storage
             .update_group_state(
                 &test_data.group_id,
-                test_snapshot.clone(),
+                &test_snapshot,
                 vec![],
                 vec![epoch_update.clone()],
             )
@@ -324,7 +328,7 @@ mod tests {
                 .get_epoch_data(&test_data.group_id, 0)
                 .unwrap()
                 .unwrap(),
-            epoch_update.data
+            *epoch_update.data
         );
     }
 
@@ -343,7 +347,7 @@ mod tests {
             .storage
             .update_group_state(
                 &test_data.group_id,
-                test_snapshot(),
+                &test_snapshot(),
                 test_epochs.clone(),
                 vec![],
             )
@@ -360,7 +364,7 @@ mod tests {
             if epoch.id <= n - DEFAULT_EPOCH_RETENTION_LIMIT {
                 assert!(stored.is_none());
             } else {
-                assert_eq!(stored.unwrap(), epoch.data);
+                assert_eq!(stored.unwrap(), *epoch.data);
             }
         }
     }
@@ -373,7 +377,7 @@ mod tests {
             .storage
             .update_group_state(
                 &test_data.group_id,
-                test_snapshot(),
+                &test_snapshot(),
                 vec![test_epoch(1)],
                 vec![],
             )
@@ -386,7 +390,7 @@ mod tests {
             .storage
             .update_group_state(
                 &test_data.group_id,
-                test_snapshot(),
+                &test_snapshot(),
                 test_epochs.clone(),
                 vec![new_epoch_1.clone()],
             )
@@ -414,7 +418,7 @@ mod tests {
         let group_id = b"test";
 
         storage
-            .update_group_state(group_id, vec![0, 1, 2], vec![], vec![])
+            .update_group_state(group_id, &[0, 1, 2], vec![], vec![])
             .unwrap();
 
         let res = storage.max_epoch_id(group_id).unwrap();
@@ -430,7 +434,7 @@ mod tests {
             .storage
             .update_group_state(
                 &test_data.group_id,
-                test_snapshot(),
+                &test_snapshot(),
                 (1..10).map(test_epoch).collect(),
                 vec![],
             )
@@ -457,7 +461,7 @@ mod tests {
             .storage
             .update_group_state(
                 &new_group,
-                test_snapshot(),
+                &test_snapshot(),
                 vec![new_group_epoch.clone()],
                 vec![],
             )
@@ -478,7 +482,7 @@ mod tests {
                 .get_epoch_data(&new_group, 0)
                 .unwrap()
                 .unwrap(),
-            new_group_epoch.data
+            *new_group_epoch.data
         );
     }
 

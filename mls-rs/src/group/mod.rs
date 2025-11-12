@@ -2083,7 +2083,7 @@ impl<C: ClientConfig> Group<C> {
             secrets: self.epoch_secrets.clone(),
             signature_public_keys,
             #[cfg(feature = "prior_epoch_membership_key")]
-            membership_key: self.key_schedule.membership_key.to_vec(),
+            membership_key: self.key_schedule.membership_key.clone(),
         };
 
         self.state_repo.insert(past_epoch).await?;
