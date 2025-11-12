@@ -14,7 +14,6 @@ use core::{
     ops::Deref,
 };
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
-#[cfg(feature = "prior_epoch")]
 use zeroize::Zeroizing;
 
 #[cfg(all(feature = "prior_epoch", feature = "private_message"))]
