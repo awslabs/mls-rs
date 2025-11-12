@@ -720,7 +720,7 @@ where
         context_info: &[u8],
         associated_data: Option<&[u8]>,
         hpke_ciphertext: HpkeCiphertext,
-    ) -> Result<Vec<u8>, MlsError> {
+    ) -> Result<Zeroizing<Vec<u8>>, MlsError> {
         self.hpke_decrypt_for_current_member_with_generic_context(
             context_info,
             associated_data,
