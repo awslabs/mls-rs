@@ -468,7 +468,7 @@ mod test {
             let ct = ctx_s.seal(Some(aad), message).unwrap();
             let pt = ctx_r.open(Some(aad), &ct).unwrap();
             assert_ne!(ct, message);
-            assert_eq!(pt, message);
+            assert_eq!(*pt, message);
 
             let export_s = ctx_s.export(export_ctx, export_len).unwrap();
             let export_r = ctx_r.export(export_ctx, export_len).unwrap();
