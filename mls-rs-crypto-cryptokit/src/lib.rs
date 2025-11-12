@@ -282,7 +282,6 @@ impl CipherSuiteProvider for CryptoKitCipherSuite {
             self.hpke_setup_r(&ciphertext.kem_output, local_secret, local_public, info)?;
         ctx.open(aad, &ciphertext.ciphertext)
             .map_err(<KemError as Into<CryptoKitError>>::into)
-            .map(Into::into)
     }
 
     fn random_bytes(&self, out: &mut [u8]) -> Result<(), Self::Error> {
