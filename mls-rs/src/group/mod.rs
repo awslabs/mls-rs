@@ -2702,7 +2702,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(plaintext.to_vec(), hpke_decrypted);
+        assert_eq!(plaintext.to_vec(), *hpke_decrypted);
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -2854,7 +2854,7 @@ mod tests {
             .hpke_decrypt_for_current_member(&context_info, Some(&associated_data), hpke_ciphertext)
             .await
             .unwrap();
-        assert_eq!(plaintext.to_vec(), hpke_decrypted);
+        assert_eq!(plaintext.to_vec(), *hpke_decrypted);
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
