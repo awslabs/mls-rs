@@ -12,6 +12,7 @@ use mls_rs_core::{
     crypto::{self, CipherSuite, HpkePublicKey, HpkeSecretKey},
     error::IntoAnyError,
 };
+use zeroize::Zeroizing;
 
 #[derive(Debug)]
 #[cfg_attr(feature = "std", derive(thiserror::Error))]
@@ -191,7 +192,11 @@ impl crypto::HpkeContextS for HpkeContextS {
         Ok(ct_buf)
     }
 
-    fn export(&self, exporter_context: &[u8], len: usize) -> Result<Vec<u8>, Self::Error> {
+    fn export(
+        &self,
+        exporter_context: &[u8],
+        len: usize,
+    ) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
         let mut out = vec![0u8; len];
         let rv = unsafe {
             hpke_export_s(
@@ -207,7 +212,7 @@ impl crypto::HpkeContextS for HpkeContextS {
             return Err(KemError::CryptoKitError);
         }
 
-        Ok(out)
+        Ok(out.into())
     }
 }
 
@@ -230,7 +235,11 @@ unsafe impl Sync for HpkeContextR {}
 impl crypto::HpkeContextR for HpkeContextR {
     type Error = KemError;
 
-    fn open(&mut self, aad: Option<&[u8]>, ciphertext: &[u8]) -> Result<Vec<u8>, Self::Error> {
+    fn open(
+        &mut self,
+        aad: Option<&[u8]>,
+        ciphertext: &[u8],
+    ) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
         let aad = aad.unwrap_or(&[]);
 
         let mut pt_buf = vec![0u8; ciphertext.len()];
@@ -252,10 +261,14 @@ impl crypto::HpkeContextR for HpkeContextR {
         }
 
         pt_buf.truncate(pt_len as usize);
-        Ok(pt_buf)
+        Ok(pt_buf.into())
     }
 
-    fn export(&self, exporter_context: &[u8], len: usize) -> Result<Vec<u8>, Self::Error> {
+    fn export(
+        &self,
+        exporter_context: &[u8],
+        len: usize,
+    ) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
         let mut out = vec![0u8; len];
         let rv = unsafe {
             hpke_export_r(
@@ -271,7 +284,7 @@ impl crypto::HpkeContextR for HpkeContextR {
             return Err(KemError::CryptoKitError);
         }
 
-        Ok(out)
+        Ok(out.into())
     }
 }
 
