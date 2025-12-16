@@ -16,8 +16,8 @@ mod openssl_sqlite {
         WithCryptoProvider<OpensslCryptoProvider, BaseConfig>,
     >;
 
-    safer_ffi_gen::specialize!(OpensslSqlMlsClient = mls_rs::client::Client<OpensslSqlMlsConfig>);
-    safer_ffi_gen::specialize!(OpensslSqlMlsGroup = mls_rs::group::Group<OpensslSqlMlsConfig>);
+    // safer_ffi_gen::specialize!(OpensslSqlMlsClient = mls_rs::client::Client<OpensslSqlMlsConfig>);
+    // safer_ffi_gen::specialize!(OpensslSqlMlsGroup = mls_rs::group::Group<OpensslSqlMlsConfig>);
 }
 
 #[cfg(all(feature = "openssl", feature = "sqlite", feature = "x509"))]

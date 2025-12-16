@@ -8,6 +8,8 @@
     feature = "self_remove_proposal"
 ))]
 use super::SelfRemoveProposal;
+#[cfg(feature = "application_data")]
+use super::application_data::ComponentId;
 use super::{
     commit_sender,
     confirmation_tag::ConfirmationTag,
@@ -38,6 +40,8 @@ use itertools::Itertools;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 
 use alloc::boxed::Box;
+#[cfg(feature = "application_data")]
+use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use core::fmt::{self, Debug};
 use mls_rs_core::{
@@ -58,7 +62,7 @@ use super::proposal_filter::ProposalInfo;
 #[cfg(feature = "private_message")]
 use crate::group::framing::PrivateMessage;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct ProvisionalState {
     pub(crate) public_tree: TreeKemPublic,
     pub(crate) applied_proposals: ProposalBundle,
@@ -329,19 +333,27 @@ pub struct CommitMessageDescription {
     /// Plaintext authenticated data in the received MLS packet.
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     pub authenticated_data: Vec<u8>,
+    #[cfg(feature = "application_data")]
+    /// Application data transmitted by an ApplicationDataProposal
+    pub application_data: BTreeMap<ComponentId, Vec<Vec<u8>>>,
 }
 
 impl Debug for CommitMessageDescription {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("CommitMessageDescription")
-            .field("is_external", &self.is_external)
+        let mut f = f.debug_struct("CommitMessageDescription");
+        f.field("is_external", &self.is_external)
             .field("committer", &self.committer)
             .field("effect", &self.effect)
             .field(
                 "authenticated_data",
                 &mls_rs_core::debug::pretty_bytes(&self.authenticated_data),
-            )
-            .finish()
+            );
+
+        #[cfg(feature = "application_data")]
+        // FIXME: use pretty_bytes
+        f.field("application_data", &self.application_data);
+
+        f.finish()
     }
 }
 
@@ -485,7 +497,10 @@ pub(crate) enum EventOrContent<E> {
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-#[cfg_attr(all(target_arch = "wasm32", mls_build_async), maybe_async::must_be_async(?Send))]
+#[cfg_attr(
+    all(target_arch = "wasm32", mls_build_async),
+    maybe_async::must_be_async
+)]
 #[cfg_attr(
     all(not(target_arch = "wasm32"), mls_build_async),
     maybe_async::must_be_async
@@ -796,19 +811,19 @@ pub(crate) trait MessageProcessor: Send + Sync {
 
         let commit_effect =
             if let Some(reinit) = provisional_state.applied_proposals.reinitializations.pop() {
-                self.group_state_mut().pending_reinit = Some(reinit.proposal.clone());
+                self.group_state_mut().pending_reinit = Some((reinit.sender, reinit.proposal.clone()));
                 CommitEffect::ReInit(reinit)
             } else if let Some(remove_proposal) = self_removed {
+                // since we are removed, this is the last version of the ratchet tree we're ever gonna see
+                self.group_state_mut().public_tree = provisional_state.public_tree.clone();
                 let new_epoch = NewEpoch::new(self.group_state().clone(), &provisional_state);
                 CommitEffect::Removed {
                     remover: remove_proposal.sender,
                     new_epoch: Box::new(new_epoch),
                 }
             } else {
-                CommitEffect::NewEpoch(Box::new(NewEpoch::new(
-                    self.group_state().clone(),
-                    &provisional_state,
-                )))
+                let new_epoch = NewEpoch::new(self.group_state().clone(), &provisional_state);
+                CommitEffect::NewEpoch(Box::new(new_epoch))
             };
 
         #[cfg(all(
@@ -849,6 +864,20 @@ pub(crate) trait MessageProcessor: Send + Sync {
             .tree_hash(self.cipher_suite_provider())
             .await?;
 
+        #[cfg(feature = "application_data")]
+        let application_data = {
+            let mut data: BTreeMap<u32, Vec<Vec<u8>>> = BTreeMap::new();
+            for proposal in provisional_state
+                .applied_proposals
+                .app_ephemeral_proposals()
+            {
+                data.entry(proposal.proposal.component_id)
+                    .or_default()
+                    .push(proposal.proposal.data.clone());
+            }
+            data
+        };
+
         if let Some(confirmation_tag) = &auth_content.auth.confirmation_tag {
             if !is_self_removed {
                 // Update the key schedule to calculate new private keys
@@ -865,6 +894,8 @@ pub(crate) trait MessageProcessor: Send + Sync {
                 authenticated_data: auth_content.content.authenticated_data,
                 committer: *sender,
                 effect: commit_effect,
+                #[cfg(feature = "application_data")]
+                application_data,
             })
         } else {
             Err(MlsError::InvalidConfirmationTag)

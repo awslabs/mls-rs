@@ -11,7 +11,7 @@ use crate::client::MlsError;
 use crate::crypto::{CipherSuiteProvider, SignaturePublicKey, SignatureSecretKey};
 
 #[derive(Clone, MlsSize, MlsEncode)]
-struct SignContent {
+pub struct SignContent {
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     label: Vec<u8>,
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
@@ -34,10 +34,17 @@ impl SignContent {
             content,
         }
     }
+
+    pub fn new_with_raw_label(label: &str, content: Vec<u8>) -> Self {
+        Self {
+            label: label.as_bytes().to_vec(),
+            content,
+        }
+    }
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-#[cfg_attr(all(target_arch = "wasm32", mls_build_async), maybe_async::must_be_async(?Send))]
+#[cfg_attr(all(target_arch = "wasm32", mls_build_async), maybe_async::must_be_async)]
 #[cfg_attr(
     all(not(target_arch = "wasm32"), mls_build_async),
     maybe_async::must_be_async

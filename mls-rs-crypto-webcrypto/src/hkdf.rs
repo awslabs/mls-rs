@@ -39,7 +39,7 @@ impl Hkdf {
     }
 }
 
-#[maybe_async::must_be_async(?Send)]
+#[maybe_async::must_be_async]
 impl KdfType for Hkdf {
     type Error = CryptoError;
 

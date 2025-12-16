@@ -8,6 +8,7 @@ use mls_rs_core::{
     time::MlsTime,
 };
 use rusqlite::{params, Connection, OptionalExtension};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use crate::SqLiteDataStorageError;
@@ -128,6 +129,14 @@ impl KeyPackageStorage for SqLiteKeyPackageStorage {
 
     async fn insert(&mut self, id: Vec<u8>, pkg: KeyPackageData) -> Result<(), Self::Error> {
         self.insert(id.as_slice(), pkg)
+    }
+
+    async fn insert_all(&mut self, kps: &HashMap<Vec<u8>, KeyPackageData>) -> Result<(), Self::Error> {
+        // consider optimizing if used by another application
+        for (id, pkg) in kps {
+            self.insert(id.as_slice(), pkg.clone())?;
+        }
+        Ok(())
     }
 
     async fn get(&self, id: &[u8]) -> Result<Option<KeyPackageData>, Self::Error> {

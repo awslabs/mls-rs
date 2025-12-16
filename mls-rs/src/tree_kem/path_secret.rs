@@ -137,7 +137,6 @@ impl<'a, P: CipherSuiteProvider> PathSecretGenerator<'a, P> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        cipher_suite::CipherSuite,
         client::test_utils::TEST_CIPHER_SUITE,
         crypto::test_utils::{
             test_cipher_suite_provider, try_test_cipher_suite_provider, TestCryptoProvider,
@@ -161,6 +160,8 @@ mod tests {
         #[cfg(not(mls_build_async))]
         #[cfg_attr(coverage_nightly, coverage(off))]
         fn generate() -> Vec<TestCase> {
+            use mls_rs_core::crypto::CipherSuite;
+
             CipherSuite::all()
                 .map(
                     #[cfg_attr(coverage_nightly, coverage(off))]

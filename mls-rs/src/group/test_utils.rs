@@ -61,7 +61,7 @@ impl TestGroup {
     #[cfg(feature = "by_ref_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn update_proposal(&mut self) -> Proposal {
-        self.group.update_proposal(None, None, None).await.unwrap()
+        self.group.update_proposal(None, None, None, None).await.unwrap()
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -252,7 +252,8 @@ pub(crate) async fn test_group_custom(
         .extension_types(extension_types)
         .protocol_versions(ProtocolVersion::all())
         .used_protocol_version(protocol_version)
-        .signing_identity(signing_identity.clone(), secret_key, cipher_suite)
+        .ciphersuite(cipher_suite)
+        .signing_identity(signing_identity.clone(), secret_key)
         .build()
         .create_group_with_id(
             TEST_GROUP.to_vec(),
@@ -295,7 +296,8 @@ where
     let client_builder = TestClientBuilder::new_for_test().used_protocol_version(protocol_version);
 
     let group = custom(client_builder)
-        .signing_identity(signing_identity.clone(), secret_key, cipher_suite)
+        .ciphersuite(cipher_suite)
+        .signing_identity(signing_identity.clone(), secret_key)
         .build()
         .create_group_with_id(
             TEST_GROUP.to_vec(),
@@ -357,7 +359,8 @@ pub(crate) async fn get_test_groups_with_features(
         clients.push(
             TestClientBuilder::new_for_test()
                 .extension_type(999.into())
-                .signing_identity(identity, secret_key, TEST_CIPHER_SUITE)
+                .ciphersuite(TEST_CIPHER_SUITE)
+                .signing_identity(identity, secret_key)
                 .build(),
         );
     }
@@ -450,7 +453,7 @@ impl GroupWithoutKeySchedule {
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-#[cfg_attr(all(target_arch = "wasm32", mls_build_async), maybe_async::must_be_async(?Send))]
+#[cfg_attr(all(target_arch = "wasm32", mls_build_async), maybe_async::must_be_async)]
 #[cfg_attr(
     all(not(target_arch = "wasm32"), mls_build_async),
     maybe_async::must_be_async

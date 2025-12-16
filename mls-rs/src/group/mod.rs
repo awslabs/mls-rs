@@ -29,7 +29,7 @@ use crate::psk::PreSharedKeyID;
 use crate::signer::Signable;
 use crate::tree_kem::hpke_encryption::HpkeEncryptable;
 use crate::tree_kem::kem::TreeKem;
-use crate::tree_kem::leaf_node::LeafNode;
+use crate::tree_kem::leaf_node::{ConfigProperties, LeafNode};
 use crate::tree_kem::leaf_node_validator::{LeafNodeValidator, ValidationContext};
 use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::path_secret::PathSecret;
@@ -37,6 +37,10 @@ pub use crate::tree_kem::Capabilities;
 use crate::tree_kem::{math as tree_math, ValidatedUpdatePath};
 use crate::tree_kem::{TreeKemPrivate, TreeKemPublic};
 use crate::{CipherSuiteProvider, CryptoProvider};
+#[cfg(feature = "application_data")]
+pub use application_data::{
+    ApplicationDataDictionary, ComponentData, ComponentId, APPLICATION_DATA,
+};
 pub use state::GroupState;
 
 #[cfg(feature = "by_ref_proposal")]
@@ -111,11 +115,13 @@ pub use self::message_processor::CachedProposal;
 #[cfg(feature = "private_message")]
 mod ciphertext_processor;
 
+#[cfg(feature = "application_data")]
+mod application_data;
 mod commit;
 pub mod component_operation;
 pub(crate) mod confirmation_tag;
 pub(crate) mod epoch;
-pub(crate) mod framing;
+pub mod framing;
 mod group_info;
 pub(crate) mod key_schedule;
 mod membership_tag;
@@ -135,7 +141,7 @@ pub(crate) mod proposal_ref;
 #[cfg(feature = "psk")]
 mod resumption;
 mod roster;
-pub(crate) mod snapshot;
+pub mod snapshot;
 pub(crate) mod state;
 
 #[cfg(feature = "prior_epoch")]
@@ -185,14 +191,18 @@ impl HpkeEncryptable for GroupSecrets {
 
 #[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub(crate) struct EncryptedGroupSecrets {
+pub struct EncryptedGroupSecrets {
     pub new_member: KeyPackageRef,
     pub encrypted_group_secrets: HpkeCiphertext,
 }
 
 #[derive(Clone, Eq, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub(crate) struct Welcome {
+#[cfg_attr(
+    all(feature = "ffi", not(test)),
+    ::safer_ffi_gen::ffi_type(clone, opaque)
+)]
+pub struct Welcome {
     pub cipher_suite: CipherSuite,
     pub secrets: Vec<EncryptedGroupSecrets>,
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
@@ -763,11 +773,6 @@ where
         self.private_tree.self_index
     }
 
-    fn current_user_leaf_node(&self) -> Result<&LeafNode, MlsError> {
-        self.current_epoch_tree()
-            .get_leaf_node(self.private_tree.self_index)
-    }
-
     /// Signing identity currently in use by the local group instance.
     #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     pub fn current_member_signing_identity(&self) -> Result<&SigningIdentity, MlsError> {
@@ -969,7 +974,7 @@ where
         &mut self,
         authenticated_data: Vec<u8>,
     ) -> Result<MlsMessage, MlsError> {
-        let proposal = self.update_proposal(None, None, None).await?;
+        let proposal = self.update_proposal(None, None, None, None).await?;
         self.proposal_message(proposal, authenticated_data).await
     }
 
@@ -999,7 +1004,29 @@ where
         authenticated_data: Vec<u8>,
     ) -> Result<MlsMessage, MlsError> {
         let proposal = self
-            .update_proposal(Some(signer), Some(signing_identity), None)
+            .update_proposal(Some(signer), Some(signing_identity), None, None)
+            .await?;
+
+        self.proposal_message(proposal, authenticated_data).await
+    }
+
+    #[cfg(feature = "by_ref_proposal")]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn raw_propose_update(
+        &mut self,
+        signer: Option<SignatureSecretKey>,
+        signing_identity: Option<SigningIdentity>,
+        leaf_node_extensions: Option<ExtensionList>,
+        leaf_node_capabilities: Option<Capabilities>,
+        authenticated_data: Vec<u8>,
+    ) -> Result<MlsMessage, MlsError> {
+        let proposal = self
+            .update_proposal(
+                signer,
+                signing_identity,
+                leaf_node_extensions,
+                leaf_node_capabilities,
+            )
             .await?;
 
         self.proposal_message(proposal, authenticated_data).await
@@ -1012,18 +1039,29 @@ where
         signer: Option<SignatureSecretKey>,
         signing_identity: Option<SigningIdentity>,
         leaf_node_extensions: Option<ExtensionList>,
+        leaf_node_capabilities: Option<Capabilities>,
     ) -> Result<Proposal, MlsError> {
         // Grab a copy of the current node and update it to have new key material
         let mut new_leaf_node: LeafNode = self.current_user_leaf_node()?.clone();
 
         let new_leaf_node_extensions =
             leaf_node_extensions.unwrap_or(new_leaf_node.ungreased_extensions());
+
+        let new_properties = if let Some(leaf_node_capabilities) = leaf_node_capabilities {
+            ConfigProperties {
+                capabilities: leaf_node_capabilities,
+                extensions: new_leaf_node_extensions,
+            }
+        } else {
+            self.config.leaf_properties(new_leaf_node_extensions)
+        };
+
         let secret_key = new_leaf_node
             .update(
                 &self.cipher_suite_provider,
                 self.group_id(),
                 self.current_member_index(),
-                Some(self.config.leaf_properties(new_leaf_node_extensions)),
+                Some(new_properties),
                 signing_identity,
                 signer.as_ref().unwrap_or(&self.signer),
             )
@@ -1212,6 +1250,33 @@ where
 
     fn group_context_extensions_proposal(&self, extensions: ExtensionList) -> Proposal {
         Proposal::GroupContextExtensions(extensions)
+    }
+
+    #[cfg(feature = "application_data")]
+    /// Create a proposal message to update application data in group context extensions
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn propose_app_data_update(
+        &mut self,
+        component_id: ComponentId,
+        operation: AppDataUpdateOperation,
+        authenticated_data: Vec<u8>,
+    ) -> Result<MlsMessage, MlsError> {
+        let proposal = self.app_data_update_proposal(component_id, operation);
+        self.proposal_message(proposal, authenticated_data).await
+    }
+
+    #[cfg(feature = "application_data")]
+    fn app_data_update_proposal(
+        &self,
+        component_id: ComponentId,
+        op: AppDataUpdateOperation,
+    ) -> Proposal {
+        Proposal::AppDataUpdate(AppDataUpdateProposal { component_id, op })
+    }
+
+    #[cfg(feature = "application_data")]
+    fn app_ephemeral_proposal(&self, component_id: ComponentId, data: Vec<u8>) -> Proposal {
+        Proposal::AppEphemeral(AppEphemeralProposal { component_id, data })
     }
 
     /// Create a custom proposal message.
@@ -1427,7 +1492,13 @@ where
         let auth_content = if epoch_id == self.context().epoch {
             let content = CiphertextProcessor::new(self, self.cipher_suite_provider.clone())
                 .open(message)
-                .await?;
+                .await
+                .map_err(|e| {
+                    match e {
+                        MlsError::CryptoProviderError(e) if &e.to_string() == "Rc AEAD Error" => MlsError::RcAeadError,
+                        e => e,
+                    }
+                })?;
 
             verify_auth_content_signature(
                 &self.cipher_suite_provider,
@@ -1502,7 +1573,15 @@ where
             _ => return Err(MlsError::PendingCommitNotFound),
         };
 
-        self.insert_past_epoch().await?;
+        let is_external_commit = pending.output.is_external;
+        let committer = pending.output.committer;
+        let own_index = self.private_tree.self_index;
+        let is_own_commit = committer == *own_index;
+
+        // when we resync we might have missed some commits, hence we want to ignore the guards around bad epoch bookkeeping
+        let tolerate_epoch_gaps = is_external_commit && is_own_commit;
+
+        self.insert_past_epoch(tolerate_epoch_gaps).await?;
 
         self.state = pending.state;
         self.epoch_secrets = pending.epoch_secrets;
@@ -1551,6 +1630,16 @@ where
     #[cfg(feature = "by_ref_proposal")]
     pub fn commit_required(&self) -> bool {
         !self.state.proposals.is_empty()
+    }
+
+    /// Returns the pending proposals waiting to be committed
+    #[cfg(feature = "by_ref_proposal")]
+    pub fn pending_proposals<'g>(&'g self) -> impl Iterator<Item = &'g Proposal> + 'g {
+        self.state
+            .proposals
+            .proposals
+            .values()
+            .map(|cp| &cp.proposal)
     }
 
     /// Process an inbound message for this group.
@@ -1927,6 +2016,26 @@ where
     }
 }
 
+impl<C> Group<C>
+where
+    C: ClientConfig + Clone,
+{
+    pub fn current_user_leaf_node(&self) -> Result<&LeafNode, MlsError> {
+        self.current_epoch_tree()
+            .get_leaf_node(self.private_tree.self_index)
+    }
+
+    /// Returns the pending commit
+    pub fn pending_commit(&self) -> Result<Option<PendingCommit>, MlsError> {
+        match &self.pending_commit {
+            PendingCommitSnapshot::None | PendingCommitSnapshot::LegacyPendingCommit(_) => Ok(None),
+            PendingCommitSnapshot::PendingCommit(bytes) => {
+                Ok(Some(PendingCommit::mls_decode(&mut bytes.as_slice())?))
+            }
+        }
+    }
+}
+
 impl<C: ClientConfig> Group<C> {
     #[cfg(feature = "psk")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -2065,9 +2174,16 @@ impl<C: ClientConfig> Group<C> {
         ))
     }
 
+    pub fn confirmation_tag(&self) -> &ConfirmationTag {
+        &self.state.confirmation_tag
+    }
+
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     #[cfg(feature = "prior_epoch")]
-    pub(crate) async fn insert_past_epoch(&mut self) -> Result<(), MlsError> {
+    pub(crate) async fn insert_past_epoch(
+        &mut self,
+        tolerate_epoch_gaps: bool,
+    ) -> Result<(), MlsError> {
         let signature_public_keys = self
             .state
             .public_tree
@@ -2084,7 +2200,9 @@ impl<C: ClientConfig> Group<C> {
             membership_key: self.key_schedule.membership_key.to_vec(),
         };
 
-        self.state_repo.insert(past_epoch).await?;
+        self.state_repo
+            .insert(past_epoch, tolerate_epoch_gaps)
+            .await?;
 
         Ok(())
     }
@@ -2119,7 +2237,10 @@ where
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-#[cfg_attr(all(target_arch = "wasm32", mls_build_async), maybe_async::must_be_async(?Send))]
+#[cfg_attr(
+    all(target_arch = "wasm32", mls_build_async),
+    maybe_async::must_be_async
+)]
 #[cfg_attr(
     all(not(target_arch = "wasm32"), mls_build_async),
     maybe_async::must_be_async
@@ -2313,7 +2434,7 @@ where
             return Err(MlsError::InvalidConfirmationTag);
         }
 
-        self.insert_past_epoch().await?;
+        self.insert_past_epoch(false).await?;
 
         self.epoch_secrets = key_schedule_result.epoch_secrets;
         self.state.context = provisional_state.group_context;
@@ -3574,7 +3695,8 @@ mod tests {
         let (bob_identity, secret_key) = get_test_signing_identity(TEST_CIPHER_SUITE, b"bob").await;
 
         let bob = TestClientBuilder::new_for_test()
-            .signing_identity(bob_identity, secret_key, TEST_CIPHER_SUITE)
+            .ciphersuite(TEST_CIPHER_SUITE)
+            .signing_identity(bob_identity, secret_key)
             .build();
 
         let (bob_group, commit) = bob
@@ -3620,7 +3742,8 @@ mod tests {
         let (bob_identity, secret_key) = get_test_signing_identity(TEST_CIPHER_SUITE, b"bob").await;
 
         let bob = TestClientBuilder::new_for_test()
-            .signing_identity(bob_identity, secret_key, TEST_CIPHER_SUITE)
+            .ciphersuite(TEST_CIPHER_SUITE)
+            .signing_identity(bob_identity, secret_key)
             .build();
 
         let (_, commit) = bob
@@ -3764,19 +3887,20 @@ mod tests {
         let new_key_pkg = Client::new(
             bob.config.clone(),
             Some(signer),
-            Some((bob_identity, TEST_CIPHER_SUITE)),
+            TEST_CIPHER_SUITE,
+            Some(bob_identity),
             TEST_PROTOCOL_VERSION,
         )
         .generate_key_package_message(Default::default(), Default::default(), None)
         .await
         .unwrap();
 
-        let (mut alice_sub_group, welcome) = alice
+        let (mut alice_sub_group, commit) = alice
             .branch(b"subgroup".to_vec(), vec![new_key_pkg], None)
             .await
             .unwrap();
 
-        let welcome = &welcome[0];
+        let welcome = &commit.welcome_messages[0];
 
         let (mut bob_sub_group, _) = bob.join_subgroup(welcome, None, None).await.unwrap();
 
@@ -4103,13 +4227,15 @@ mod tests {
             Some(sk.clone())
         };
 
-        let commit_output = groups[0].commit(vec![]).await.unwrap();
+        let err = match groups[0].commit(vec![]).await {
+            Ok(commit_output) => groups[2]
+                .process_message(commit_output.commit_message)
+                .await
+                .unwrap_err(),
+            Err(e) => e,
+        };
 
-        let res = groups[2]
-            .process_message(commit_output.commit_message)
-            .await;
-
-        assert_matches!(res, Err(MlsError::InvalidLeafNodeSource));
+        assert_matches!(err, MlsError::InvalidLeafNodeSource);
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -4132,13 +4258,15 @@ mod tests {
             .unwrap();
 
         // Group 0 tries to use the fixed key againd
-        let commit_output = groups[0].commit(vec![]).await.unwrap();
+        let err = match groups[0].commit(vec![]).await {
+            Ok(commit_output) => groups[2]
+                .process_message(commit_output.commit_message)
+                .await
+                .unwrap_err(),
+            Err(e) => e,
+        };
 
-        let res = groups[2]
-            .process_message(commit_output.commit_message)
-            .await;
-
-        assert_matches!(res, Err(MlsError::SameHpkeKey(0)));
+        assert_matches!(err, MlsError::SameHpkeKey(0));
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -4238,13 +4366,15 @@ mod tests {
             None
         };
 
-        let commit_output = groups[0].commit(vec![]).await.unwrap();
+        let err = match groups[0].commit(vec![]).await {
+            Ok(commit_output) => groups[2]
+                .process_message(commit_output.commit_message)
+                .await
+                .unwrap_err(),
+            Err(e) => e,
+        };
 
-        let res = groups[2]
-            .process_message(commit_output.commit_message)
-            .await;
-
-        assert_matches!(res, Err(MlsError::InvalidSignature));
+        assert_matches!(err, MlsError::InvalidSignature);
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -4263,13 +4393,15 @@ mod tests {
             Some(sk.clone())
         };
 
-        let commit_output = groups[0].commit(vec![]).await.unwrap();
+        let err = match groups[0].commit(vec![]).await {
+            Ok(commit_output) => groups[1]
+                .process_incoming_message(commit_output.commit_message)
+                .await
+                .unwrap_err(),
+            Err(e) => e,
+        };
 
-        let res = groups[1]
-            .process_incoming_message(commit_output.commit_message)
-            .await;
-
-        assert_matches!(res, Err(MlsError::UnsupportedGroupExtension(EXT_TYPE)));
+        assert_matches!(err, MlsError::UnsupportedGroupExtension(EXT_TYPE));
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -4291,11 +4423,14 @@ mod tests {
             Some(sk.clone())
         };
 
-        let commit_output = groups[0].commit(vec![]).await.unwrap();
-
-        let res = groups[2]
-            .process_incoming_message(commit_output.commit_message)
-            .await;
+        let res = match groups[0].commit(vec![]).await {
+            Ok(commit_output) => {
+                groups[2]
+                    .process_incoming_message(commit_output.commit_message)
+                    .await
+            }
+            Err(e) => Err(e),
+        };
 
         assert!(res.is_err());
     }
@@ -4373,13 +4508,15 @@ mod tests {
             Some(sk.clone())
         };
 
-        let commit_output = groups[0].commit(vec![]).await.unwrap();
+        let err = match groups[0].commit(vec![]).await {
+            Ok(commit_output) => groups[2]
+                .process_incoming_message(commit_output.commit_message)
+                .await
+                .unwrap_err(),
+            Err(e) => e,
+        };
 
-        let res = groups[2]
-            .process_incoming_message(commit_output.commit_message)
-            .await;
-
-        assert_matches!(res, Err(MlsError::RequiredCredentialNotFound(_)));
+        assert_matches!(err, MlsError::RequiredCredentialNotFound(_));
     }
 
     #[cfg(feature = "by_ref_proposal")]
@@ -4455,12 +4592,17 @@ mod tests {
             Some(sk.clone())
         };
 
-        let commit = alice.commit(vec![]).await.unwrap();
-        let res = bob.process_incoming_message(commit.commit_message).await;
+        let err = match alice.commit(vec![]).await {
+            Ok(commit) => bob
+                .process_incoming_message(commit.commit_message)
+                .await
+                .unwrap_err(),
+            Err(e) => e,
+        };
 
         assert_matches!(
-            res,
-            Err(MlsError::RequiredCredentialNotFound(CredentialType::X509))
+            err,
+            MlsError::RequiredCredentialNotFound(CredentialType::X509)
         );
     }
 
@@ -4613,14 +4755,16 @@ mod tests {
             path
         };
 
-        let commit_output = groups[0].commit(vec![]).await.unwrap();
-
-        let res = groups[7]
-            .process_message(commit_output.commit_message)
-            .await;
+        let err = match groups[0].commit(vec![]).await {
+            Ok(commit_output) => groups[7]
+                .process_message(commit_output.commit_message)
+                .await
+                .unwrap_err(),
+            Err(e) => e,
+        };
 
         // We should get a path validation error, since the path is too long
-        assert_matches!(res, Err(MlsError::WrongPathLen));
+        assert_matches!(err, MlsError::WrongPathLen);
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
@@ -5049,11 +5193,8 @@ mod tests {
             get_test_signing_identity(TEST_CIPHER_SUITE, b"bob").await;
 
         let bob_client = TestClientBuilder::new_for_test()
-            .signing_identity(
-                bob_signing_identity.clone(),
-                bob_secret_key.clone(),
-                TEST_CIPHER_SUITE,
-            )
+            .ciphersuite(TEST_CIPHER_SUITE)
+            .signing_identity(bob_signing_identity.clone(), bob_secret_key.clone())
             .extension_type(EXTENSION_TYPE)
             .build();
 
@@ -5110,7 +5251,8 @@ mod tests {
         // Bob reloads his group data, but with parameters that will cause his generated leaves to
         // not support the mandatory extension.
         let mut bob = TestClientBuilder::new_for_test()
-            .signing_identity(bob_signing_identity, bob_secret_key, TEST_CIPHER_SUITE)
+            .ciphersuite(TEST_CIPHER_SUITE)
+            .signing_identity(bob_signing_identity, bob_secret_key)
             .key_package_repo(bob.config.key_package_repo())
             .group_state_storage(bob.config.group_state_storage())
             .build()
@@ -5662,7 +5804,8 @@ mod tests {
 
         let (bob_identity, secret_key) = get_test_signing_identity(TEST_CIPHER_SUITE, b"bob").await;
         let bob = TestClientBuilder::new_for_test()
-            .signing_identity(bob_identity, secret_key, TEST_CIPHER_SUITE)
+            .ciphersuite(TEST_CIPHER_SUITE)
+            .signing_identity(bob_identity, secret_key)
             .build();
 
         current_time += 10;
@@ -5670,7 +5813,8 @@ mod tests {
         let (alice_identity, secret_key) =
             get_test_signing_identity(TEST_CIPHER_SUITE, b"alice").await;
         let alice = TestClientBuilder::new_for_test()
-            .signing_identity(alice_identity, secret_key, TEST_CIPHER_SUITE)
+            .ciphersuite(TEST_CIPHER_SUITE)
+            .signing_identity(alice_identity, secret_key)
             .build();
 
         current_time += 10;
@@ -5860,7 +6004,8 @@ mod tests {
         ClientBuilder::new()
             .crypto_provider(TestCryptoProvider::new())
             .identity_provider(BasicWithCustomProvider::new(BasicIdentityProvider::new()))
-            .signing_identity(signing_identity, signer, TEST_CIPHER_SUITE)
+            .ciphersuite(TEST_CIPHER_SUITE)
+            .signing_identity(signing_identity, signer)
             .custom_proposal_type(TEST_CUSTOM_PROPOSAL_TYPE)
             .mls_rules(mls_rules)
             .build()
@@ -5918,6 +6063,17 @@ mod tests {
             let allowed = !has_custom || !is_external || self.external_joiner_can_send_custom;
 
             allowed.then_some(proposals).ok_or(MlsError::InvalidSender)
+        }
+
+        #[cfg(feature = "application_data")]
+        async fn update_components(
+            &self,
+            _component_id: ComponentId,
+            _component_data: Option<&[u8]>,
+            _update: &[u8],
+            _roster: &Roster,
+        ) -> Result<Vec<u8>, Self::Error> {
+            unreachable!()
         }
     }
 
@@ -6070,10 +6226,16 @@ mod tests {
 
         let exported_tree = group.export_tree();
 
-        let restored = Client::new(group.config.clone(), None, None, TEST_PROTOCOL_VERSION)
-            .load_group_with_ratchet_tree(group.group_id(), exported_tree)
-            .await
-            .unwrap();
+        let restored = Client::new(
+            group.config.clone(),
+            None,
+            TEST_CIPHER_SUITE,
+            None,
+            TEST_PROTOCOL_VERSION,
+        )
+        .load_group_with_ratchet_tree(group.group_id(), exported_tree)
+        .await
+        .unwrap();
 
         assert_eq!(restored.group_state(), group.group_state());
     }

@@ -26,7 +26,7 @@ impl Aead {
     }
 }
 
-#[maybe_async::must_be_async(?Send)]
+#[maybe_async::must_be_async]
 impl mls_rs_crypto_traits::AeadType for Aead {
     type Error = CryptoError;
 

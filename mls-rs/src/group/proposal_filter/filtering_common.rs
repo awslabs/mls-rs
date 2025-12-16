@@ -13,7 +13,7 @@ use crate::{
         node::LeafIndex,
         TreeKemPublic,
     },
-    CipherSuiteProvider, ExtensionList,
+    CipherSuiteProvider, ExtensionList, MlsRules,
 };
 
 use crate::tree_kem::leaf_node::LeafNode;
@@ -48,13 +48,15 @@ use super::filtering::{apply_strategy, filter_out_invalid_proposers, FilterStrat
 use super::filtering::filter_out_unsupported_custom_proposals;
 
 #[derive(Debug)]
-pub(crate) struct ProposalApplier<'a, C, P, CSP> {
+pub(crate) struct ProposalApplier<'a, C, P, CSP, Rules> {
     pub original_tree: &'a TreeKemPublic,
     pub cipher_suite_provider: &'a CSP,
     pub original_context: &'a GroupContext,
     pub external_leaf: Option<&'a LeafNode>,
     pub identity_provider: &'a C,
     pub psk_storage: &'a P,
+    #[allow(dead_code)]
+    pub user_rules: &'a Rules,
 }
 
 #[derive(Debug)]
@@ -67,11 +69,12 @@ pub(crate) struct ApplyProposalsOutput {
     pub(crate) new_context_extensions: Option<ExtensionList>,
 }
 
-impl<'a, C, P, CSP> ProposalApplier<'a, C, P, CSP>
+impl<'a, C, P, CSP, Rules> ProposalApplier<'a, C, P, CSP, Rules>
 where
     C: IdentityProvider,
     P: PreSharedKeyStorage,
     CSP: CipherSuiteProvider,
+    Rules: MlsRules,
 {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
@@ -81,6 +84,7 @@ where
         external_leaf: Option<&'a LeafNode>,
         identity_provider: &'a C,
         psk_storage: &'a P,
+        user_rules: &'a Rules,
     ) -> Self {
         Self {
             original_tree,
@@ -89,6 +93,7 @@ where
             external_leaf,
             identity_provider,
             psk_storage,
+            user_rules,
         }
     }
 
@@ -508,6 +513,7 @@ fn ensure_proposals_in_external_commit_are_allowed(
             feature = "self_remove_proposal"
         ))]
         ProposalType::SELF_REMOVE,
+        ProposalType::APP_DATA_UPDATE,
     ];
 
     let unsupported_proposal = proposals.iter_proposals().find(|proposal| {

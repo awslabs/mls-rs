@@ -51,6 +51,12 @@ impl Deref for CipherSuite {
     }
 }
 
+impl Default for CipherSuite {
+    fn default() -> Self {
+        Self::CURVE25519_AES128
+    }
+}
+
 impl CipherSuite {
     /// MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519
     pub const CURVE25519_AES128: CipherSuite = CipherSuite(1);

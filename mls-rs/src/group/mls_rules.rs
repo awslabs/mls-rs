@@ -10,10 +10,13 @@ use crate::{
     WireFormat,
 };
 
+#[cfg(feature = "application_data")]
+use super::application_data::ComponentId;
+
 use alloc::boxed::Box;
 use core::convert::Infallible;
-use mls_rs_core::{error::IntoAnyError, group::Member, identity::SigningIdentity};
-
+use mls_rs_core::{error::IntoAnyError};
+use crate::LeafNode;
 use super::GroupContext;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -24,10 +27,10 @@ pub enum CommitDirection {
 
 /// The source of the commit: either a current member or a new member joining
 /// via external commit.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum CommitSource {
-    ExistingMember(Member),
-    NewMember(SigningIdentity),
+    ExistingMember(LeafNode),
+    NewMember(LeafNode),
 }
 
 /// Options controlling commit generation
@@ -184,6 +187,32 @@ pub trait MlsRules: Send + Sync {
         current_roster: &Roster,
         current_context: &GroupContext,
     ) -> Result<EncryptionOptions, Self::Error>;
+
+    #[cfg(feature = "application_data")]
+    /// The list of components supported by the application. If a commit contains an [ApplicationDataProposal](crate::group::proposal::ApplicationDataProposal) or an [ApplicationDataUpdateProposal](crate::group::proposal::ApplicationDataUpdateProposal)
+    /// referring to a [ComponentId] not in the list, then the commit will be rejected
+    fn supported_components(&self) -> &[ComponentId] {
+        &[]
+    }
+
+    #[cfg(feature = "application_data")]
+    /// checks the component data in an [ApplicationDataProposal](crate::group::proposal::ApplicationDataProposal)
+    /// if this returns false, the commit will be rejected
+    fn validate_component_data(&self, _component_id: ComponentId, _component_data: &[u8]) -> bool {
+        false
+    }
+
+    #[cfg(feature = "application_data")]
+    /// When receiving an [ApplicationDataUpdateProposal](crate::group::proposal::ApplicationDataUpdateProposal),
+    /// this will be called with the proposal's [ComponentId], the existing component data if already present in the
+    /// group context, and the update data. This then returns the new component data to be stored.
+    async fn update_components(
+        &self,
+        _component_id: ComponentId,
+        _component_data: Option<&[u8]>,
+        _update: &[u8],
+        _roster: &Roster,
+    ) -> Result<Vec<u8>, Self::Error>;
 }
 
 macro_rules! delegate_mls_rules {
@@ -222,6 +251,20 @@ macro_rules! delegate_mls_rules {
                 context: &GroupContext,
             ) -> Result<EncryptionOptions, Self::Error> {
                 (**self).encryption_options(roster, context)
+            }
+
+            #[cfg(feature = "application_data")]
+            #[cfg_attr(mls_build_async, maybe_async::must_be_async)]
+            async fn update_components(
+                &self,
+                component_id: ComponentId,
+                component_data: Option<&[u8]>,
+                update: &[u8],
+                roster: &Roster,
+            ) -> Result<Vec<u8>, Self::Error> {
+                (**self)
+                    .update_components(component_id, component_data, update, roster)
+                    .await
             }
         }
     };
@@ -293,5 +336,16 @@ impl MlsRules for DefaultMlsRules {
         _: &GroupContext,
     ) -> Result<EncryptionOptions, Self::Error> {
         Ok(self.encryption_options)
+    }
+
+    #[cfg(feature = "application_data")]
+    async fn update_components(
+        &self,
+        _component_id: ComponentId,
+        _component_data: Option<&[u8]>,
+        update: &[u8],
+        _roster: &Roster,
+    ) -> Result<Vec<u8>, Self::Error> {
+        Ok(update.to_owned())
     }
 }

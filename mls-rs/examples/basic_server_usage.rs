@@ -117,7 +117,8 @@ fn make_client(name: &str) -> Result<Client<impl MlsConfig>, MlsError> {
     Ok(Client::builder()
         .identity_provider(BasicIdentityProvider)
         .crypto_provider(crypto_provider())
-        .signing_identity(signing_identity, secret, CIPHERSUITE)
+        .signing_identity(signing_identity, secret)
+        .ciphersuite(CIPHERSUITE)
         .build())
 }
 

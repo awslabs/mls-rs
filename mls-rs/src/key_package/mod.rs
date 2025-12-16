@@ -40,7 +40,7 @@ pub struct KeyPackage {
     pub version: ProtocolVersion,
     pub cipher_suite: CipherSuite,
     pub hpke_init_key: HpkePublicKey,
-    pub(crate) leaf_node: LeafNode,
+    pub leaf_node: LeafNode,
     pub extensions: ExtensionList,
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
     #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::vec_serde"))]
@@ -65,6 +65,7 @@ impl Debug for KeyPackage {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(
     all(feature = "ffi", not(test)),
     safer_ffi_gen::ffi_type(clone, opaque)

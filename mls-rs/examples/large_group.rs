@@ -160,7 +160,8 @@ fn make_client<P: CryptoProvider + Clone>(
             DefaultMlsRules::new()
                 .with_commit_options(CommitOptions::new().with_path_required(true)),
         )
-        .signing_identity(signing_identity, secret, CIPHERSUITE)
+        .signing_identity(signing_identity, secret)
+        .ciphersuite(CIPHERSUITE)
         .build())
 }
 

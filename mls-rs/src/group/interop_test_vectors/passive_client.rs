@@ -178,7 +178,8 @@ async fn interop_passive_client() {
         }
 
         let client = client_builder
-            .signing_identity(id, key, cs.cipher_suite())
+            .ciphersuite(cs.cipher_suite())
+            .signing_identity(id, key)
             .build();
 
         let key_pckg_gen = KeyPackageGeneration {
@@ -249,7 +250,8 @@ async fn invite_passive_client<P: CipherSuiteProvider>(
         .key_package_repo(key_package_repo.clone())
         .key_package_lifetime(eternal_lifetime().not_after - eternal_lifetime().not_before)
         .key_package_not_before(eternal_lifetime().not_before)
-        .signing_identity(identity.clone(), secret_key.clone(), cs.cipher_suite())
+        .ciphersuite(cs.cipher_suite())
+        .signing_identity(identity.clone(), secret_key.clone())
         .build();
 
     let key_pckg = client

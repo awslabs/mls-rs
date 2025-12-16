@@ -134,7 +134,7 @@ impl Ecdh {
     }
 }
 
-#[maybe_async::must_be_async(?Send)]
+#[maybe_async::must_be_async]
 impl DhType for Ecdh {
     type Error = CryptoError;
 

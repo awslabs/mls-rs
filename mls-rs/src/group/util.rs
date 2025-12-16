@@ -200,9 +200,10 @@ pub(crate) async fn find_key_package_generation<'a, K: KeyPackageStorage>(
     secrets: &'a [EncryptedGroupSecrets],
 ) -> Result<(&'a EncryptedGroupSecrets, KeyPackageGeneration), MlsError> {
     for secret in secrets {
-        if let Some(val) = key_package_repo
+        let kp = key_package_repo
             .get(&secret.new_member)
-            .await
+            .await;
+        if let Some(val) = kp
             .map_err(|e| MlsError::KeyPackageRepoError(e.into_any_error()))
             .and_then(|maybe_data| {
                 if let Some(data) = maybe_data {

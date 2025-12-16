@@ -6,6 +6,7 @@ use assert_matches::assert_matches;
 use cfg_if::cfg_if;
 use mls_rs::client_builder::MlsConfig;
 use mls_rs::error::MlsError;
+use mls_rs::extension::built_in::ExternalSendersExt;
 use mls_rs::group::proposal::Proposal;
 use mls_rs::group::ReceivedMessage;
 use mls_rs::identity::SigningIdentity;
@@ -13,9 +14,19 @@ use mls_rs::mls_rules::CommitOptions;
 use mls_rs::ExtensionList;
 use mls_rs::MlsMessage;
 use mls_rs::ProtocolVersion;
+#[cfg(feature = "application_data")]
+use mls_rs::{
+    client_builder::PaddingMode,
+    group::{ApplicationDataDictionary, ComponentId, APPLICATION_DATA},
+    identity::basic::BasicIdentityProvider,
+    mls_rules::{DefaultMlsRules, EncryptionOptions},
+    MlsRules,
+};
 use mls_rs::{CipherSuite, Group};
 use mls_rs::{Client, CryptoProvider};
 use mls_rs_core::crypto::CipherSuiteProvider;
+#[cfg(feature = "application_data")]
+use mls_rs_core::identity::BasicCredential;
 use rand::prelude::SliceRandom;
 use rand::RngCore;
 
@@ -930,4 +941,620 @@ async fn can_process_external_commit_if_pending_commit() {
         .process_incoming_message(commit.commit_message)
         .await
         .unwrap();
+}
+
+#[cfg(feature = "application_data")]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+async fn test_application_data_proposals(
+    protocol_version: ProtocolVersion,
+    cipher_suite: CipherSuite,
+    participants: usize,
+    encrypt_controls: bool,
+) {
+    let commit_options = CommitOptions::new()
+        .with_ratchet_tree_extension(false)
+        .with_single_welcome_message(true)
+        .with_path_required(false)
+        .with_allow_external_commit(true);
+    let encryption_options = EncryptionOptions::new(encrypt_controls, PaddingMode::StepFunction);
+    let rules = ApplicationDataRules(
+        DefaultMlsRules::new()
+            .with_commit_options(commit_options)
+            .with_encryption_options(encryption_options),
+    );
+
+    let mut groups = get_test_group_with_rules(
+        cipher_suite,
+        participants,
+        rules,
+        #[cfg(feature = "by_ref_proposal")]
+        None,
+    );
+
+    let committer = (0..groups.len()).choose_multiple(&mut rand::thread_rng(), 1)[0];
+
+    let commit_output = groups[committer]
+        .commit_builder()
+        .application_data(10, b"hello".to_vec())
+        .unwrap()
+        .application_data(12, b"hi".to_vec())
+        .unwrap()
+        .application_data(10, b"world".to_vec())
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+
+    let commit = commit_output.commit_message;
+    let committer_index = groups[committer].current_member_index() as usize;
+
+    let mut app_data = None;
+    for group in &mut groups {
+        let description = if committer_index != group.current_member_index() as usize {
+            if let ReceivedMessage::Commit(description) = group
+                .process_incoming_message(commit.clone())
+                .await
+                .unwrap()
+            {
+                description
+            } else {
+                unreachable!()
+            }
+        } else {
+            group.apply_pending_commit().await.unwrap()
+        };
+
+        if app_data.is_none() {
+            app_data = Some(description.application_data);
+        } else {
+            // the application data proposals must have been applied in the same order for all clients,
+            // so if multiple proposals refer to the same component id and overwrite each other,
+            // we should get a consistent result
+            assert_eq!(app_data.as_ref().unwrap(), &description.application_data);
+        }
+    }
+
+    for one_group in groups.iter() {
+        assert!(Group::equal_group_state(one_group, &groups[0]))
+    }
+}
+
+#[cfg(feature = "application_data")]
+#[maybe_async::test(not(mls_build_async), async(mls_build_async, futures_test))]
+async fn test_group_application_data_proposals() {
+    test_on_all_params(test_application_data_proposals).await;
+}
+
+#[cfg(feature = "application_data")]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+async fn test_application_data_update_proposals(
+    protocol_version: ProtocolVersion,
+    cipher_suite: CipherSuite,
+    participants: usize,
+    encrypt_controls: bool,
+) {
+    use mls_rs::group::{proposal::AppDataUpdateOperation, ComponentData};
+
+    let commit_options = CommitOptions::new()
+        .with_ratchet_tree_extension(false)
+        .with_single_welcome_message(true)
+        .with_path_required(false)
+        .with_allow_external_commit(true);
+    let encryption_options = EncryptionOptions::new(encrypt_controls, PaddingMode::StepFunction);
+    let rules = ApplicationDataRules(
+        DefaultMlsRules::new()
+            .with_commit_options(commit_options)
+            .with_encryption_options(encryption_options),
+    );
+
+    let mut groups = get_test_group_with_rules(
+        cipher_suite,
+        participants,
+        rules,
+        #[cfg(feature = "by_ref_proposal")]
+        None,
+    );
+
+    let committer = (0..groups.len()).choose_multiple(&mut rand::thread_rng(), 1)[0];
+    let commit_output = groups[committer]
+        .commit_builder()
+        .application_data_update(
+            10,
+            ApplicationDataUpdateOperation::Update(b"hello".to_vec()),
+        )
+        .unwrap()
+        .application_data_update(12, ApplicationDataUpdateOperation::Update(b"hi".to_vec()))
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+
+    let sender = groups[committer].current_member_index() as usize;
+    all_process_message(&mut groups, &commit_output.commit_message, sender, true).await;
+    for one_group in groups.iter() {
+        assert!(Group::equal_group_state(one_group, &groups[0]))
+    }
+    let app_data = check_application_data(&groups);
+
+    assert_eq!(
+        app_data,
+        ApplicationDataDictionary {
+            component_data: vec![
+                ComponentData {
+                    component_id: 10,
+                    data: b"\x0A\x00hello".to_vec()
+                },
+                ComponentData {
+                    component_id: 12,
+                    data: b"\x0C\x00hi".to_vec()
+                }
+            ]
+        }
+    );
+
+    let committer = (0..groups.len()).choose_multiple(&mut rand::thread_rng(), 1)[0];
+    let commit_output = groups[committer]
+        .commit_builder()
+        .application_data_update(
+            10,
+            ApplicationDataUpdateOperation::Update(b"world".to_vec()),
+        )
+        .unwrap()
+        .application_data_update(12, ApplicationDataUpdateOperation::Remove)
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+
+    let sender = groups[committer].current_member_index() as usize;
+    all_process_message(&mut groups, &commit_output.commit_message, sender, true).await;
+    for one_group in groups.iter() {
+        assert!(Group::equal_group_state(one_group, &groups[0]))
+    }
+    let app_data = check_application_data(&groups);
+    assert_eq!(
+        app_data,
+        ApplicationDataDictionary {
+            component_data: vec![ComponentData {
+                component_id: 10,
+                data: b"\x0A\x00hello\x00world".to_vec()
+            }]
+        }
+    );
+}
+
+#[cfg(feature = "application_data")]
+#[maybe_async::test(not(mls_build_async), async(mls_build_async, futures_test))]
+async fn test_group_application_data_update_proposals() {
+    test_on_all_params(test_application_data_update_proposals).await;
+}
+
+#[cfg(feature = "application_data")]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+async fn test_application_data_update_invalid_proposals(
+    protocol_version: ProtocolVersion,
+    cipher_suite: CipherSuite,
+    participants: usize,
+    encrypt_controls: bool,
+) {
+    use mls_rs::group::proposal::AppDataUpdateOperation;
+
+    let commit_options = CommitOptions::new()
+        .with_ratchet_tree_extension(false)
+        .with_single_welcome_message(true)
+        .with_path_required(false)
+        .with_allow_external_commit(true);
+    let encryption_options = EncryptionOptions::new(encrypt_controls, PaddingMode::StepFunction);
+    let rules = ApplicationDataRules(
+        DefaultMlsRules::new()
+            .with_commit_options(commit_options)
+            .with_encryption_options(encryption_options),
+    );
+
+    let mut groups = get_test_group_with_rules(
+        cipher_suite,
+        participants,
+        rules,
+        #[cfg(feature = "by_ref_proposal")]
+        None,
+    )
+    .await;
+
+    let committer = (0..groups.len()).choose_multiple(&mut rand::thread_rng(), 1)[0];
+    // unknown component id
+    assert_eq!(
+        groups[committer]
+            .commit_builder()
+            .application_data_update(
+                10,
+                AppDataUpdateOperation::Update(b"hello".to_vec()),
+            )
+            .unwrap()
+            .application_data_update(42, AppDataUpdateOperation::Update(b"hi".to_vec()))
+            .unwrap()
+            .build()
+            .unwrap_err()
+            .to_string(),
+        "Invalid application data update proposal"
+    );
+
+    // multiple remove operations for the same component
+    assert_eq!(
+        groups[committer]
+            .commit_builder()
+            .application_data_update(10, AppDataUpdateOperation::Remove,)
+            .unwrap()
+            .application_data_update(12, AppDataUpdateOperation::Update(b"hi".to_vec()))
+            .unwrap()
+            .application_data_update(10, AppDataUpdateOperation::Remove,)
+            .unwrap()
+            .build()
+            .unwrap_err()
+            .to_string(),
+        "Invalid application data update proposal"
+    );
+
+    // update and remove operations for the same component
+    assert_eq!(
+        groups[committer]
+            .commit_builder()
+            .application_data_update(
+                10,
+                AppDataUpdateOperation::Update(b"hello".to_vec()),
+            )
+            .unwrap()
+            .application_data_update(12, AppDataUpdateOperation::Update(b"hi".to_vec()))
+            .unwrap()
+            .application_data_update(10, AppDataUpdateOperation::Remove,)
+            .unwrap()
+            .build()
+            .unwrap_err()
+            .to_string(),
+        "Invalid application data update proposal"
+    );
+}
+
+#[cfg(feature = "application_data")]
+#[maybe_async::test(not(mls_build_async), async(mls_build_async, futures_test))]
+async fn test_group_application_data_update_invalid_proposals() {
+    test_on_all_params(test_application_data_update_invalid_proposals).await;
+}
+
+#[cfg(all(feature = "by_ref_proposal", feature = "application_data"))]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+async fn test_application_data_update_external_proposals(
+    protocol_version: ProtocolVersion,
+    cipher_suite: CipherSuite,
+    participants: usize,
+    encrypt_controls: bool,
+) {
+    use mls_rs::group::{proposal::AppDataUpdateOperation, ComponentData};
+
+    let commit_options = CommitOptions::new()
+        .with_ratchet_tree_extension(false)
+        .with_single_welcome_message(true)
+        .with_path_required(false)
+        .with_allow_external_commit(true);
+    let encryption_options = EncryptionOptions::new(encrypt_controls, PaddingMode::StepFunction);
+    let rules = ApplicationDataRules(
+        DefaultMlsRules::new()
+            .with_commit_options(commit_options)
+            .with_encryption_options(encryption_options),
+    );
+
+    let crypto = TestCryptoProvider::new();
+    let idp = BasicIdentityProvider::new();
+    let credential =
+        BasicCredential::new(format!("external").as_bytes().to_vec()).into_credential();
+    let cs_crypto = crypto.cipher_suite_provider(cipher_suite).unwrap();
+    let (secret, public) = cs_crypto.signature_key_generate().unwrap();
+    let signing_identity = SigningIdentity::new(credential, public);
+
+    let mut groups = get_test_group_with_rules(
+        cipher_suite,
+        participants,
+        rules.clone(),
+        Some(signing_identity.clone()),
+    )
+    .await;
+
+    let client = mls_rs::external_client::ExternalClient::builder()
+        .protocol_version(protocol_version)
+        .identity_provider(idp.clone())
+        .crypto_provider(crypto.clone())
+        .mls_rules(rules.clone())
+        .extension_types([APPLICATION_DATA])
+        .signer(secret, signing_identity)
+        .build();
+
+    let group_info = groups[0].group_info_message(true).unwrap();
+    let tree_data = groups[0].export_tree();
+
+    // send the external proposal
+    let mut external_group = client
+        .observe_group(group_info, Some(tree_data))
+        .await
+        .unwrap();
+    let message = external_group
+        .propose_application_data_update(
+            10,
+            ApplicationDataUpdateOperation::Update(b"hello".to_vec()),
+            vec![],
+        )
+        .unwrap();
+    for group in &mut groups {
+        group
+            .process_incoming_message(message.clone())
+            .await
+            .unwrap();
+    }
+
+    // one of the members commits the proposal and sends to other members
+    let committer = (0..groups.len()).choose_multiple(&mut rand::thread_rng(), 1)[0];
+    let commit_output = groups[committer].commit_builder().build().await.unwrap();
+
+    let sender = groups[committer].current_member_index() as usize;
+    all_process_message(&mut groups, &commit_output.commit_message, sender, true).await;
+    for one_group in groups.iter() {
+        assert!(Group::equal_group_state(one_group, &groups[0]))
+    }
+
+    let app_data = check_application_data(&groups);
+    assert_eq!(
+        app_data,
+        ApplicationDataDictionary {
+            component_data: vec![ComponentData {
+                component_id: 10,
+                data: b"\x0A\x00hello".to_vec()
+            }]
+        }
+    );
+
+    // check if we can observe the group again
+    let group_info = groups[0].group_info_message(true).unwrap();
+    let tree_data = groups[0].export_tree();
+    let _external_group = client
+        .observe_group(group_info, Some(tree_data))
+        .await
+        .unwrap();
+
+    // now, try with an invalid external sender
+    let unauthorized_credential =
+        BasicCredential::new(format!("unauthorized_external").as_bytes().to_vec())
+            .into_credential();
+    let (unauthorized_secret, unauthorized_public) = cs_crypto.signature_key_generate().unwrap();
+    let unauthorized_signing_identity =
+        SigningIdentity::new(unauthorized_credential, unauthorized_public);
+
+    let unauthorized_client = mls_rs::external_client::ExternalClient::builder()
+        .protocol_version(protocol_version)
+        .identity_provider(idp)
+        .crypto_provider(crypto)
+        .mls_rules(rules)
+        .extension_types([APPLICATION_DATA])
+        .signer(unauthorized_secret, unauthorized_signing_identity)
+        .build();
+
+    let group_info = groups[0].group_info_message(true).unwrap();
+    let tree_data = groups[0].export_tree();
+
+    // send the external proposal
+    let mut unauthorized_external_group = unauthorized_client
+        .observe_group(group_info, Some(tree_data))
+        .await
+        .unwrap();
+    assert_matches!(
+        unauthorized_external_group
+            .propose_application_data_update(
+                10,
+                AppDataUpdateOperation::Update(b"hi".to_vec()),
+                vec![],
+            )
+            .unwrap_err(),
+        MlsError::InvalidExternalSigningIdentity
+    );
+}
+
+#[cfg(feature = "application_data")]
+#[maybe_async::test(not(mls_build_async), async(mls_build_async, futures_test))]
+async fn test_group_application_data_update_external_proposals() {
+    test_on_all_params(test_application_data_update_external_proposals).await;
+}
+
+#[cfg(feature = "application_data")]
+fn check_application_data<C: MlsConfig>(groups: &[Group<C>]) -> ApplicationDataDictionary {
+    let mut app_data = None;
+    for group in groups {
+        let application_data =
+            application_data_from_extensions(&group.context().extensions).unwrap();
+
+        if app_data.is_none() {
+            app_data = application_data;
+        } else {
+            assert_eq!(app_data, application_data);
+        }
+    }
+    app_data.unwrap()
+}
+
+#[cfg(feature = "application_data")]
+fn application_data_from_extensions(
+    extensions: &ExtensionList,
+) -> Result<Option<mls_rs::group::ApplicationDataDictionary>, mls_rs_codec::Error> {
+    use mls_rs::mls_rs_codec::MlsDecode;
+
+    for extension in extensions.iter() {
+        if extension.extension_type == mls_rs::group::APPLICATION_DATA {
+            return Ok(Some(mls_rs::group::ApplicationDataDictionary::mls_decode(
+                &mut &*extension.extension_data,
+            )?));
+        }
+    }
+    Ok(None)
+}
+
+#[cfg(feature = "application_data")]
+#[derive(Clone)]
+struct ApplicationDataRules(DefaultMlsRules);
+
+#[cfg(feature = "application_data")]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
+impl MlsRules for ApplicationDataRules {
+    type Error = MlsError;
+
+    async fn filter_proposals(
+        &self,
+        direction: mls_rs::mls_rules::CommitDirection,
+        source: mls_rs::mls_rules::CommitSource,
+        current_roster: &mls_rs::group::Roster<'_>,
+        current_context: &mls_rs_core::group::GroupContext,
+        proposals: mls_rs::mls_rules::ProposalBundle,
+    ) -> Result<mls_rs::mls_rules::ProposalBundle, Self::Error> {
+        self.0
+            .filter_proposals(
+                direction,
+                source,
+                current_roster,
+                current_context,
+                proposals,
+            )
+            .map_err(|_| unreachable!())
+    }
+
+    fn commit_options(
+        &self,
+        new_roster: &mls_rs::group::Roster,
+        new_context: &mls_rs_core::group::GroupContext,
+        proposals: &mls_rs::mls_rules::ProposalBundle,
+    ) -> Result<CommitOptions, Self::Error> {
+        self.0
+            .commit_options(new_roster, new_context, proposals)
+            .map_err(|_| unreachable!())
+    }
+
+    fn encryption_options(
+        &self,
+        current_roster: &mls_rs::group::Roster,
+        current_context: &mls_rs_core::group::GroupContext,
+    ) -> Result<mls_rs::mls_rules::EncryptionOptions, Self::Error> {
+        self.0
+            .encryption_options(current_roster, current_context)
+            .map_err(|_| unreachable!())
+    }
+
+    #[cfg(feature = "application_data")]
+    fn supported_components(&self) -> &[ComponentId] {
+        &[10, 12]
+    }
+
+    #[cfg(feature = "application_data")]
+    async fn update_components(
+        &self,
+        component_id: ComponentId,
+        component_data: Option<&[u8]>,
+        update: &[u8],
+        _roster: &mls_rs::group::Roster,
+    ) -> Result<Vec<u8>, MlsError> {
+        let mut v = component_data
+            .map(ToOwned::to_owned)
+            .unwrap_or_else(|| vec![component_id as u8]);
+        v.push(0);
+        v.extend(update);
+        Ok(v)
+    }
+    #[cfg(feature = "application_data")]
+    async fn validate_component_data(
+        &self,
+        _component_id: ComponentId,
+        _component_data: &[u8],
+    ) -> bool {
+        true
+    }
+}
+
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+async fn get_test_group_with_rules<Rules: MlsRules + Clone>(
+    cipher_suite: CipherSuite,
+    num_participants: usize,
+    rules: Rules,
+    #[cfg(feature = "by_ref_proposal")] ext_identity: Option<SigningIdentity>,
+) -> Vec<Group<impl MlsConfig>> {
+    let creator = setup_mls_client(0, cipher_suite, rules.clone());
+
+    #[cfg(not(feature = "by_ref_proposal"))]
+    let group_context_extensions: ExtensionList = Default::default();
+    #[cfg(feature = "by_ref_proposal")]
+    let mut group_context_extensions: ExtensionList = Default::default();
+    #[cfg(feature = "by_ref_proposal")]
+    if let Some(ext_signer) = ext_identity {
+        group_context_extensions
+            .set_from(ExternalSendersExt::new(vec![ext_signer]))
+            .unwrap();
+    }
+
+    let mut creator_group = creator
+        .create_group(group_context_extensions, Default::default())
+        .await
+        .unwrap();
+
+    let mut commit_builder = creator_group.commit_builder();
+    let mut receiver_clients = vec![];
+
+    for i in 1..num_participants {
+        let client = setup_mls_client(i, cipher_suite, rules.clone());
+
+        let kp = client
+            .generate_key_package_message(Default::default(), Default::default())
+            .await
+            .unwrap();
+
+        receiver_clients.push(client);
+        commit_builder = commit_builder.add_member(kp.clone()).unwrap();
+    }
+
+    let welcome = commit_builder.build().await.unwrap().welcome_messages;
+
+    creator_group.apply_pending_commit().await.unwrap();
+
+    let tree_data = creator_group.export_tree().into_owned();
+
+    let mut groups = vec![creator_group];
+
+    for client in &receiver_clients {
+        let (test_client, _info) = client
+            .join_group(Some(tree_data.clone()), &welcome[0])
+            .await
+            .unwrap();
+
+        groups.push(test_client);
+    }
+    groups
+}
+
+#[cfg(feature = "application_data")]
+pub(crate) fn setup_mls_client<Rules: MlsRules + Clone>(
+    id: usize,
+    cipher_suite: CipherSuite,
+    rules: Rules,
+) -> Client<impl MlsConfig> {
+    let credential =
+        BasicCredential::new(format!("client-{id}").as_bytes().to_vec()).into_credential();
+    let crypto = TestCryptoProvider::new();
+    let idp = BasicIdentityProvider::new();
+
+    let cs_crypto = crypto.cipher_suite_provider(cipher_suite).unwrap();
+    let (secret, public) = cs_crypto.signature_key_generate().unwrap();
+    let signing_identity = SigningIdentity::new(credential, public);
+
+    let client = Client::builder()
+        .ciphersuite(cipher_suite)
+        .crypto_provider(crypto)
+        .identity_provider(idp)
+        .signing_identity(signing_identity, secret)
+        .mls_rules(rules)
+        .extension_type(APPLICATION_DATA)
+        .build();
+
+    client
 }

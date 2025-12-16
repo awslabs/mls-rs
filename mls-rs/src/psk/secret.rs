@@ -26,7 +26,7 @@ use crate::{
 
 #[cfg(feature = "psk")]
 #[derive(Clone)]
-pub(crate) struct PskSecretInput {
+pub struct PskSecretInput {
     pub id: PreSharedKeyID,
     pub psk: PreSharedKey,
 }

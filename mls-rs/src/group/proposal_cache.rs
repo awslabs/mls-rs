@@ -35,6 +35,7 @@ use mls_rs_core::{
     psk::PreSharedKeyStorage,
 };
 
+use crate::tree_kem::node::LeafIndex;
 #[cfg(feature = "by_ref_proposal")]
 use core::fmt::{self, Debug};
 
@@ -281,7 +282,10 @@ impl GroupState {
 
         let origin = match sender {
             Sender::Member(index) => Ok::<_, MlsError>(CommitSource::ExistingMember(
-                roster.member_with_index(index)?,
+                roster
+                    .public_tree
+                    .borrow_as_leaf(LeafIndex::try_from(index)?)?
+                    .clone(),
             )),
             #[cfg(feature = "by_ref_proposal")]
             Sender::NewMemberProposal => Err(MlsError::InvalidSender),
@@ -289,8 +293,8 @@ impl GroupState {
             Sender::External(_) => Err(MlsError::InvalidSender),
             Sender::NewMemberCommit => Ok(CommitSource::NewMember(
                 external_leaf
-                    .map(|l| l.signing_identity.clone())
-                    .ok_or(MlsError::ExternalCommitMustHaveNewLeaf)?,
+                    .ok_or(MlsError::ExternalCommitMustHaveNewLeaf)?
+                    .clone(),
             )),
         }?;
 
@@ -308,6 +312,7 @@ impl GroupState {
             external_leaf,
             identity_provider,
             psk_storage,
+            user_rules,
         );
 
         #[cfg(feature = "by_ref_proposal")]
@@ -3919,6 +3924,17 @@ mod tests {
             ) -> Result<EncryptionOptions, Self::Error> {
                 Ok(Default::default())
             }
+
+            #[cfg(feature = "application_data")]
+            async fn update_components(
+                &self,
+                _component_id: crate::group::ComponentId,
+                _component_data: Option<&[u8]>,
+                _update: &[u8],
+                _roster: &Roster,
+            ) -> Result<Vec<u8>, Self::Error> {
+                unreachable!()
+            }
         }
 
         let (alice, tree) = new_tree("alice").await;
@@ -3970,6 +3986,17 @@ mod tests {
         ) -> Result<EncryptionOptions, Self::Error> {
             Ok(Default::default())
         }
+
+        #[cfg(feature = "application_data")]
+        async fn update_components(
+            &self,
+            _component_id: crate::group::ComponentId,
+            _component_data: Option<&[u8]>,
+            _update: &[u8],
+            _roster: &Roster,
+        ) -> Result<Vec<u8>, Self::Error> {
+            unreachable!()
+        }
     }
 
     struct InjectMlsRules {
@@ -4014,6 +4041,17 @@ mod tests {
             _: &GroupContext,
         ) -> Result<EncryptionOptions, Self::Error> {
             Ok(Default::default())
+        }
+
+        #[cfg(feature = "application_data")]
+        async fn update_components(
+            &self,
+            _component_id: crate::group::ComponentId,
+            _component_data: Option<&[u8]>,
+            _update: &[u8],
+            _roster: &Roster,
+        ) -> Result<Vec<u8>, Self::Error> {
+            unreachable!()
         }
     }
 

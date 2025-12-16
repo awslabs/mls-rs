@@ -173,16 +173,18 @@ where
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn insert(&mut self, epoch: PriorEpoch) -> Result<(), MlsError> {
+    pub async fn insert(&mut self, epoch: PriorEpoch, tolerate_epoch_gaps: bool) -> Result<(), MlsError> {
         if epoch.group_id() != self.group_id {
             return Err(MlsError::GroupIdMismatch);
         }
 
         let epoch_id = epoch.epoch_id();
 
-        if let Some(expected_id) = self.find_max_id().await?.map(|id| id + 1) {
-            if epoch_id != expected_id {
-                return Err(MlsError::InvalidEpoch);
+        if !tolerate_epoch_gaps {
+            if let Some(expected_id) = self.find_max_id().await?.map(|id| id + 1) {
+                if epoch_id != expected_id {
+                    return Err(MlsError::InvalidEpoch);
+                }
             }
         }
 
@@ -192,42 +194,51 @@ where
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn write_to_storage(&mut self, group_snapshot: Snapshot) -> Result<(), MlsError> {
+    pub async fn write_to_storage(&mut self, group_snapshot: Snapshot) -> Result<usize, MlsError> {
         let inserts = self
             .pending_commit
             .inserts
             .iter()
             .map(|e| Ok(EpochRecord::new(e.epoch_id(), e.mls_encode_to_vec()?)))
-            .collect::<Result<_, MlsError>>()?;
+            .collect::<Result<Vec<_>, MlsError>>()?;
 
         let updates = self
             .pending_commit
             .updates
             .iter()
             .map(|e| Ok(EpochRecord::new(e.epoch_id(), e.mls_encode_to_vec()?)))
-            .collect::<Result<_, MlsError>>()?;
+            .collect::<Result<Vec<_>, MlsError>>()?;
 
         let group_state = GroupState {
             data: group_snapshot.mls_encode_to_vec()?,
             id: group_snapshot.state.context.group_id,
         };
 
-        self.storage
-            .write(group_state, inserts, updates)
-            .await
-            .map_err(|e| MlsError::GroupStorageError(e.into_any_error()))?;
-
         if let Some(ref key_package_ref) = self.pending_key_package_removal {
             self.key_package_repo
                 .delete(key_package_ref)
                 .await
                 .map_err(|e| MlsError::KeyPackageRepoError(e.into_any_error()))?;
+            // this stores in the group state that we have deleted the KP in case a subsequent
+            // 'write_to_storage' happens we'll fail because the KP does not exist anymore
+            self.pending_key_package_removal = None;
         }
+        // We compute the amount of bytes to be written in the storage
+        let bytes = group_state
+            .data
+            .len()
+            .saturating_add(inserts.iter().map(|e| e.data.len()).sum::<usize>())
+            .saturating_add(updates.iter().map(|e| e.data.len()).sum::<usize>());
+
+        self.storage
+            .write(group_state, inserts, updates)
+            .await
+            .map_err(|e| MlsError::GroupStorageError(e.into_any_error()))?;
 
         self.pending_commit.inserts.clear();
         self.pending_commit.updates.clear();
 
-        Ok(())
+        Ok(bytes)
     }
 
     #[cfg(any(feature = "psk", feature = "private_message"))]
@@ -284,7 +295,7 @@ mod tests {
         let mut test_repo = test_group_state_repo(1);
         let test_epoch = test_epoch(0);
 
-        test_repo.insert(test_epoch.clone()).await.unwrap();
+        test_repo.insert(test_epoch.clone(), false).await.unwrap();
 
         // Check the in-memory state
         assert_eq!(
@@ -352,7 +363,7 @@ mod tests {
         let mut test_repo = test_group_state_repo(2);
         let test_epoch_0 = test_epoch(0);
 
-        test_repo.insert(test_epoch_0.clone()).await.unwrap();
+        test_repo.insert(test_epoch_0.clone(), false).await.unwrap();
 
         test_repo
             .write_to_storage(test_snapshot(0).await)
@@ -417,7 +428,7 @@ mod tests {
         let mut test_repo = test_group_state_repo(2);
         let test_epoch_0 = test_epoch(0);
 
-        test_repo.insert(test_epoch_0).await.unwrap();
+        test_repo.insert(test_epoch_0, false).await.unwrap();
 
         test_repo
             .write_to_storage(test_snapshot(0).await)
@@ -432,7 +443,7 @@ mod tests {
 
         // Insert another epoch
         let test_epoch_1 = test_epoch(1);
-        test_repo.insert(test_epoch_1.clone()).await.unwrap();
+        test_repo.insert(test_epoch_1.clone(), false).await.unwrap();
 
         test_repo
             .write_to_storage(test_snapshot(1).await)
@@ -475,7 +486,7 @@ mod tests {
         let mut test_repo = test_group_state_repo(10);
 
         for epoch in epochs.iter().cloned() {
-            test_repo.insert(epoch).await.unwrap()
+            test_repo.insert(epoch, false).await.unwrap()
         }
 
         test_repo
@@ -495,7 +506,7 @@ mod tests {
         let mut test_repo = test_group_state_repo(2);
         let test_epoch_0 = test_epoch(0);
 
-        test_repo.insert(test_epoch_0.clone()).await.unwrap();
+        test_repo.insert(test_epoch_0.clone(), false).await.unwrap();
 
         test_repo
             .write_to_storage(test_snapshot(0).await)
@@ -512,8 +523,8 @@ mod tests {
     async fn reducing_retention_limit_takes_effect_on_epoch_access() {
         let mut repo = test_group_state_repo(1);
 
-        repo.insert(test_epoch(0)).await.unwrap();
-        repo.insert(test_epoch(1)).await.unwrap();
+        repo.insert(test_epoch(0), false).await.unwrap();
+        repo.insert(test_epoch(1), false).await.unwrap();
 
         repo.write_to_storage(test_snapshot(0).await).await.unwrap();
 
@@ -531,9 +542,9 @@ mod tests {
     async fn in_memory_storage_obeys_retention_limit_after_saving() {
         let mut repo = test_group_state_repo(1);
 
-        repo.insert(test_epoch(0)).await.unwrap();
+        repo.insert(test_epoch(0), false).await.unwrap();
         repo.write_to_storage(test_snapshot(0).await).await.unwrap();
-        repo.insert(test_epoch(1)).await.unwrap();
+        repo.insert(test_epoch(1), false).await.unwrap();
         repo.write_to_storage(test_snapshot(1).await).await.unwrap();
 
         #[cfg(feature = "std")]

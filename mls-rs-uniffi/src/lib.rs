@@ -365,7 +365,8 @@ impl Client {
         let client = mls_rs::Client::builder()
             .crypto_provider(crypto_provider)
             .identity_provider(basic::BasicIdentityProvider::new())
-            .signing_identity(signing_identity, secret_key.into(), cipher_suite.into())
+            .ciphersuite(cipher_suite.into())
+            .signing_identity(signing_identity, secret_key.into())
             .group_state_storage(client_config.group_state_storage.into())
             .mls_rules(mls_rules)
             .build();
@@ -390,7 +391,7 @@ impl Client {
     }
 
     pub fn signing_identity(&self) -> Result<Arc<SigningIdentity>, Error> {
-        let (signing_identity, _) = self.inner.signing_identity()?;
+        let signing_identity = self.inner.signing_identity()?;
         Ok(Arc::new(signing_identity.clone().into()))
     }
 
@@ -597,9 +598,12 @@ async fn signing_identity_to_identifier(
 impl Group {
     /// Write the current state of the group to storage defined by
     /// [`ClientConfig::group_state_storage`]
-    pub async fn write_to_storage(&self) -> Result<(), Error> {
+    ///
+    /// Returns the amount of bytes written to storage
+    pub async fn write_to_storage(&self) -> Result<u32, Error> {
         let mut group = self.inner().await;
-        group.write_to_storage().await.map_err(Into::into)
+        let size = group.write_to_storage().await.map_err(Error::from)?;
+        Ok(size as u32)
     }
 
     /// Export the current epoch's ratchet tree in serialized format.

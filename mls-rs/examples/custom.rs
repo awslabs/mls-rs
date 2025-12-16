@@ -180,6 +180,17 @@ impl MlsRules for CustomMlsRules {
     ) -> Result<EncryptionOptions, Self::Error> {
         Ok(EncryptionOptions::new(false, PaddingMode::None))
     }
+
+    #[cfg(feature = "application_data")]
+    fn update_components(
+        &self,
+        _component_id: mls_rs::group::ComponentId,
+        _component_data: Option<&[u8]>,
+        _update: &[u8],
+        _roster: &Roster<'_>,
+    ) -> Result<Vec<u8>, Self::Error> {
+        unreachable!()
+    }
 }
 
 // The IdentityProvider will tell MLS how to validate members' identities. We will use custom identity
@@ -359,7 +370,8 @@ fn make_client(member: Member) -> Result<Client<impl MlsConfig>, CustomError> {
         .custom_proposal_type(ADD_USER_PROPOSAL_V1)
         .extension_type(ROSTER_EXTENSION_V1)
         .crypto_provider(crypto())
-        .signing_identity(signing_identity, member.signer, CIPHER_SUITE)
+        .signing_identity(signing_identity, member.signer)
+        .ciphersuite(CIPHER_SUITE)
         .build())
 }
 

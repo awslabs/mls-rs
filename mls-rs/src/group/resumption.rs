@@ -11,13 +11,14 @@ use mls_rs_core::{
     protocol_version::ProtocolVersion,
 };
 
+use super::{
+    proposal::ReInitProposal, ClientConfig, CommitOutput, ExportedTree, JustPreSharedKeyID,
+    MessageProcessor, NewMemberInfo, PreSharedKeyID, PskGroupId, PskSecretInput,
+    ResumptionPSKUsage, ResumptionPsk,
+};
+use crate::framing::Sender;
 use crate::time::MlsTime;
 use crate::{client::MlsError, Client, Group, MlsMessage};
-
-use super::{
-    proposal::ReInitProposal, ClientConfig, ExportedTree, JustPreSharedKeyID, MessageProcessor,
-    NewMemberInfo, PreSharedKeyID, PskGroupId, PskSecretInput, ResumptionPSKUsage, ResumptionPsk,
-};
 
 struct ResumptionGroupParameters<'a> {
     group_id: &'a [u8],
@@ -27,9 +28,9 @@ struct ResumptionGroupParameters<'a> {
 }
 
 pub struct ReinitClient<C: ClientConfig + Clone> {
-    client: Client<C>,
-    reinit: ReInitProposal,
-    psk_input: PskSecretInput,
+    pub client: Client<C>,
+    pub reinit: ReInitProposal,
+    pub psk_input: PskSecretInput,
 }
 
 impl<C> Group<C>
@@ -51,7 +52,7 @@ where
         sub_group_id: Vec<u8>,
         new_key_packages: Vec<MlsMessage>,
         timestamp: Option<MlsTime>,
-    ) -> Result<(Group<C>, Vec<MlsMessage>), MlsError> {
+    ) -> Result<(Group<C>, CommitOutput), MlsError> {
         let new_group_params = ResumptionGroupParameters {
             group_id: &sub_group_id,
             cipher_suite: self.cipher_suite(),
@@ -125,7 +126,7 @@ where
             .map(Ok)
             .unwrap_or_else(|| self.current_member_signing_identity().cloned())?;
 
-        let reinit = self
+        let (_, reinit) = self
             .state
             .pending_reinit
             .ok_or(MlsError::PendingReInitNotFound)?;
@@ -138,7 +139,8 @@ where
         let client = Client::new(
             self.config,
             Some(new_signer),
-            Some((new_signing_identity, reinit.new_cipher_suite())),
+            reinit.new_cipher_suite(),
+            Some(new_signing_identity),
             reinit.new_version(),
         );
 
@@ -147,6 +149,10 @@ where
             reinit,
             psk_input,
         })
+    }
+
+    pub fn pending_reinit_sender(&self) -> Option<&Sender> {
+        self.state.pending_reinit.as_ref().map(|(sender, _)| sender)
     }
 
     fn resumption_psk_input(&self, usage: ResumptionPSKUsage) -> Result<PskSecretInput, MlsError> {
@@ -192,7 +198,7 @@ impl<C: ClientConfig + Clone> ReinitClient<C> {
         new_key_packages: Vec<MlsMessage>,
         new_leaf_node_extensions: ExtensionList,
         timestamp: Option<MlsTime>,
-    ) -> Result<(Group<C>, Vec<MlsMessage>), MlsError> {
+    ) -> Result<(Group<C>, CommitOutput), MlsError> {
         let new_group_params = ResumptionGroupParameters {
             group_id: self.reinit.group_id(),
             cipher_suite: self.reinit.new_cipher_suite(),
@@ -205,7 +211,7 @@ impl<C: ClientConfig + Clone> ReinitClient<C> {
             new_key_packages,
             &new_group_params,
             // These private fields are created with `Some(x)` by `get_reinit_client`
-            self.client.signing_identity.unwrap().0,
+            self.client.signing_identity.unwrap(),
             self.client.signer.unwrap(),
             &new_leaf_node_extensions,
             #[cfg(any(feature = "private_message", feature = "psk"))]
@@ -258,7 +264,7 @@ async fn resumption_create_group<C: ClientConfig + Clone>(
     leaf_node_extensions: &ExtensionList,
     psk_input: PskSecretInput,
     timestamp: Option<MlsTime>,
-) -> Result<(Group<C>, Vec<MlsMessage>), MlsError> {
+) -> Result<(Group<C>, CommitOutput), MlsError> {
     // Create a new group with new parameters
     let mut group = Group::new(
         config,
@@ -289,7 +295,7 @@ async fn resumption_create_group<C: ClientConfig + Clone>(
     // Uninstall the resumption psk on success (in case of failure, the new group is discarded anyway)
     group.previous_psk = None;
 
-    Ok((group, commit.welcome_messages))
+    Ok((group, commit))
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]

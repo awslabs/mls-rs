@@ -24,6 +24,9 @@ pub use mls_rs_core::group::ProposalType;
 #[cfg(feature = "psk")]
 use crate::psk::{ExternalPskId, JustPreSharedKeyID, PreSharedKeyID};
 
+#[cfg(feature = "application_data")]
+use super::application_data::ComponentId;
+
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -400,6 +403,122 @@ pub trait MlsCustomProposal: MlsSize + MlsEncode + MlsDecode + Sized {
     }
 }
 
+#[cfg(feature = "application_data")]
+#[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(
+    all(feature = "ffi", not(test)),
+    safer_ffi_gen::ffi_type(clone, opaque)
+)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+/// An application data ephemeral proposal.
+///
+/// This is an ephemeral proposal used to tie in the AppData to the commit transcript
+pub struct AppEphemeralProposal {
+    pub component_id: ComponentId,
+    #[mls_codec(with = "mls_rs_codec::byte_vec")]
+    #[cfg_attr(feature = "serde", serde(with = "mls_rs_core::vec_serde"))]
+    pub data: Vec<u8>,
+}
+
+#[cfg(feature = "application_data")]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(
+    all(feature = "ffi", not(test)),
+    safer_ffi_gen::ffi_type(clone, opaque)
+)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+/// An application data update proposal.
+///
+/// Application data is stored in group context extensions, and allows applications to use
+/// proposal to manage their data without registering a custom extension
+pub struct AppDataUpdateProposal {
+    pub component_id: ComponentId,
+    pub op: AppDataUpdateOperation,
+}
+
+#[cfg(feature = "application_data")]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(
+    all(feature = "ffi", not(test)),
+    safer_ffi_gen::ffi_type(clone, opaque)
+)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum AppDataUpdateOperation {
+    Invalid,
+    Update(Vec<u8>),
+    Remove,
+}
+
+#[cfg(feature = "application_data")]
+impl AppDataUpdateOperation {
+    fn operation_type(&self) -> ApplicationDataUpdateOperationType {
+        match self {
+            AppDataUpdateOperation::Invalid => ApplicationDataUpdateOperationType::Invalid,
+            AppDataUpdateOperation::Update(_) => ApplicationDataUpdateOperationType::Update,
+            AppDataUpdateOperation::Remove => ApplicationDataUpdateOperationType::Remove,
+        }
+    }
+}
+
+#[cfg(feature = "application_data")]
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(
+    all(feature = "ffi", not(test)),
+    safer_ffi_gen::ffi_type(clone, opaque)
+)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[repr(u8)]
+pub enum ApplicationDataUpdateOperationType {
+    Invalid = 0,
+    Update = 1,
+    Remove = 2,
+}
+
+#[cfg(feature = "application_data")]
+impl MlsSize for AppDataUpdateProposal {
+    fn mls_encoded_len(&self) -> usize {
+        self.component_id.mls_encoded_len()
+            + (self.op.operation_type() as u8).mls_encoded_len()
+            + match &self.op {
+                AppDataUpdateOperation::Update(v) => mls_rs_codec::byte_vec::mls_encoded_len(&v),
+                _ => 0,
+            }
+    }
+}
+
+#[cfg(feature = "application_data")]
+impl MlsEncode for AppDataUpdateProposal {
+    fn mls_encode(&self, writer: &mut Vec<u8>) -> Result<(), mls_rs_codec::Error> {
+        self.component_id.mls_encode(writer)?;
+        (self.op.operation_type() as u8).mls_encode(writer)?;
+
+        if let AppDataUpdateOperation::Update(v) = &self.op {
+            mls_rs_codec::byte_vec::mls_encode(v, writer)?;
+        }
+
+        Ok(())
+    }
+}
+
+#[cfg(feature = "application_data")]
+impl MlsDecode for AppDataUpdateProposal {
+    fn mls_decode(reader: &mut &[u8]) -> Result<Self, mls_rs_codec::Error> {
+        let component_id = u32::mls_decode(reader)?;
+        let op = match u8::mls_decode(reader)? {
+            0 => AppDataUpdateOperation::Invalid,
+            1 => AppDataUpdateOperation::Update(mls_rs_codec::byte_vec::mls_decode(reader)?),
+            2 => AppDataUpdateOperation::Remove,
+            _ => return Err(mls_rs_codec::Error::Custom(3)),
+        };
+
+        Ok(AppDataUpdateProposal { component_id, op })
+    }
+}
+
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -425,6 +544,10 @@ pub enum Proposal {
     SelfRemove(SelfRemoveProposal),
     #[cfg(feature = "custom_proposal")]
     Custom(CustomProposal),
+    #[cfg(feature = "application_data")]
+    AppDataUpdate(AppDataUpdateProposal),
+    #[cfg(feature = "application_data")]
+    AppEphemeral(AppEphemeralProposal),
 }
 
 impl MlsSize for Proposal {
@@ -447,6 +570,10 @@ impl MlsSize for Proposal {
             Proposal::SelfRemove(p) => p.mls_encoded_len(),
             #[cfg(feature = "custom_proposal")]
             Proposal::Custom(p) => CustomProposal::encoded_byte_len(&p.data, &p.proposal_type),
+            #[cfg(feature = "application_data")]
+            Proposal::AppDataUpdate(p) => p.mls_encoded_len(),
+            #[cfg(feature = "application_data")]
+            Proposal::AppEphemeral(p) => p.mls_encoded_len(),
         };
 
         self.proposal_type().mls_encoded_len() + inner_len
@@ -486,6 +613,10 @@ impl MlsEncode for Proposal {
                 }
                 CustomProposal::encode_from_bytes(&p.data, writer, &p.proposal_type)
             }
+            #[cfg(feature = "application_data")]
+            Proposal::AppDataUpdate(p) => p.mls_encode(writer),
+            #[cfg(feature = "application_data")]
+            Proposal::AppEphemeral(p) => p.mls_encode(writer),
         }
     }
 }
@@ -518,6 +649,15 @@ impl MlsDecode for Proposal {
             ProposalType::SELF_REMOVE => {
                 Proposal::SelfRemove(SelfRemoveProposal::mls_decode(reader)?)
             }
+            #[cfg(feature = "application_data")]
+            ProposalType::APP_DATA_UPDATE => {
+                Proposal::AppDataUpdate(AppDataUpdateProposal::mls_decode(reader)?)
+            }
+
+            #[cfg(feature = "application_data")]
+            ProposalType::APP_EPHEMERAL => {
+                Proposal::AppEphemeral(AppEphemeralProposal::mls_decode(reader)?)
+            }
             #[cfg(feature = "custom_proposal")]
             custom => Proposal::Custom(CustomProposal {
                 proposal_type: custom,
@@ -548,6 +688,10 @@ impl Proposal {
                 feature = "self_remove_proposal"
             ))]
             Proposal::SelfRemove(_) => ProposalType::SELF_REMOVE,
+            #[cfg(feature = "application_data")]
+            Proposal::AppDataUpdate(_) => ProposalType::APP_DATA_UPDATE,
+            #[cfg(feature = "application_data")]
+            Proposal::AppEphemeral(_) => ProposalType::APP_EPHEMERAL,
             #[cfg(feature = "custom_proposal")]
             Proposal::Custom(c) => c.proposal_type,
         }
@@ -572,6 +716,10 @@ pub enum BorrowedProposal<'a> {
         feature = "self_remove_proposal"
     ))]
     SelfRemove(&'a SelfRemoveProposal),
+    #[cfg(feature = "application_data")]
+    AppDataUpdate(&'a AppDataUpdateProposal),
+    #[cfg(feature = "application_data")]
+    AppEphemeral(&'a AppEphemeralProposal),
     #[cfg(feature = "custom_proposal")]
     Custom(&'a CustomProposal),
 }
@@ -596,6 +744,15 @@ impl<'a> From<BorrowedProposal<'a>> for Proposal {
                 feature = "self_remove_proposal"
             ))]
             BorrowedProposal::SelfRemove(self_remove) => Proposal::SelfRemove(self_remove.clone()),
+            #[cfg(feature = "application_data")]
+            BorrowedProposal::AppDataUpdate(application_data_update) => {
+                Proposal::AppDataUpdate(application_data_update.clone())
+            }
+            #[cfg(feature = "application_data")]
+            BorrowedProposal::AppEphemeral(app_ephemeral) => {
+                Proposal::AppEphemeral(app_ephemeral.clone())
+            }
+
             #[cfg(feature = "custom_proposal")]
             BorrowedProposal::Custom(custom) => Proposal::Custom(custom.clone()),
         }
@@ -620,6 +777,10 @@ impl BorrowedProposal<'_> {
                 feature = "self_remove_proposal"
             ))]
             BorrowedProposal::SelfRemove(_) => ProposalType::SELF_REMOVE,
+            #[cfg(feature = "application_data")]
+            BorrowedProposal::AppDataUpdate(_) => ProposalType::APP_DATA_UPDATE,
+            #[cfg(feature = "application_data")]
+            BorrowedProposal::AppEphemeral(_) => ProposalType::APP_EPHEMERAL,
             #[cfg(feature = "custom_proposal")]
             BorrowedProposal::Custom(c) => c.proposal_type,
         }
@@ -644,6 +805,10 @@ impl<'a> From<&'a Proposal> for BorrowedProposal<'a> {
                 feature = "self_remove_proposal"
             ))]
             Proposal::SelfRemove(p) => BorrowedProposal::SelfRemove(p),
+            #[cfg(feature = "application_data")]
+            Proposal::AppDataUpdate(p) => BorrowedProposal::AppDataUpdate(p),
+            #[cfg(feature = "application_data")]
+            Proposal::AppEphemeral(p) => BorrowedProposal::AppEphemeral(p),
             #[cfg(feature = "custom_proposal")]
             Proposal::Custom(p) => BorrowedProposal::Custom(p),
         }
@@ -705,6 +870,20 @@ impl<'a> From<&'a SelfRemoveProposal> for BorrowedProposal<'a> {
     }
 }
 
+#[cfg(feature = "application_data")]
+impl<'a> From<&'a AppDataUpdateProposal> for BorrowedProposal<'a> {
+    fn from(p: &'a AppDataUpdateProposal) -> Self {
+        Self::AppDataUpdate(p)
+    }
+}
+
+#[cfg(feature = "application_data")]
+impl<'a> From<&'a AppEphemeralProposal> for BorrowedProposal<'a> {
+    fn from(p: &'a AppEphemeralProposal) -> Self {
+        Self::AppEphemeral(p)
+    }
+}
+
 #[cfg(feature = "custom_proposal")]
 impl<'a> From<&'a CustomProposal> for BorrowedProposal<'a> {
     fn from(p: &'a CustomProposal) -> Self {
@@ -716,7 +895,7 @@ impl<'a> From<&'a CustomProposal> for BorrowedProposal<'a> {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(u8)]
-pub(crate) enum ProposalOrRef {
+pub enum ProposalOrRef {
     Proposal(Box<Proposal>) = 1u8,
     #[cfg(feature = "by_ref_proposal")]
     Reference(ProposalRef) = 2u8,

@@ -6,6 +6,8 @@ use mls_rs_core::{
     crypto::SignatureSecretKey, extension::ExtensionList, identity::SigningIdentity,
 };
 
+#[cfg(feature = "application_data")]
+use crate::group::proposal::AppDataUpdateProposal;
 use crate::{
     client_config::ClientConfig,
     group::{
@@ -33,7 +35,6 @@ use crate::group::{
 
 use alloc::vec;
 use alloc::vec::Vec;
-
 #[cfg(feature = "psk")]
 use mls_rs_core::psk::{ExternalPskId, PreSharedKey};
 
@@ -41,7 +42,6 @@ use mls_rs_core::psk::{ExternalPskId, PreSharedKey};
 use crate::group::{
     PreSharedKeyProposal, {JustPreSharedKeyID, PreSharedKeyID},
 };
-
 use super::{validate_tree_and_info_joiner, ExportedTree};
 
 /// A builder that aids with the construction of an external commit.
@@ -53,6 +53,8 @@ pub struct ExternalCommitBuilder<C: ClientConfig> {
     config: C,
     tree_data: Option<ExportedTree<'static>>,
     to_remove: Option<u32>,
+    #[cfg(feature = "application_data")]
+    application_data_update: std::collections::HashSet<AppDataUpdateProposal>,
     #[cfg(feature = "psk")]
     external_psks: Vec<ExternalPskId>,
     authenticated_data: Vec<u8>,
@@ -64,11 +66,7 @@ pub struct ExternalCommitBuilder<C: ClientConfig> {
 }
 
 impl<C: ClientConfig> ExternalCommitBuilder<C> {
-    pub(crate) fn new(
-        signer: SignatureSecretKey,
-        signing_identity: SigningIdentity,
-        config: C,
-    ) -> Self {
+    pub fn new(signer: SignatureSecretKey, signing_identity: SigningIdentity, config: C) -> Self {
         Self {
             tree_data: None,
             to_remove: None,
@@ -77,6 +75,8 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
             signing_identity,
             leaf_node_extensions: Default::default(),
             config,
+            #[cfg(feature = "application_data")]
+            application_data_update: std::collections::HashSet::new(),
             #[cfg(feature = "psk")]
             external_psks: Vec::new(),
             #[cfg(feature = "custom_proposal")]
@@ -112,6 +112,56 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
     pub fn with_authenticated_data(self, data: Vec<u8>) -> Self {
         Self {
             authenticated_data: data,
+            ..self
+        }
+    }
+
+    #[must_use]
+    #[cfg(feature = "application_data")]
+    /// Add an application data update proposal
+    pub fn with_application_data_update(mut self, data: AppDataUpdateProposal) -> Result<Self, MlsError> {
+        use crate::group::proposal::AppDataUpdateOperation;
+        // A proposal list is invalid if it includes multiple AppDataUpdate proposals that remove
+        // state for the same component_id, or proposals that both update and remove state for
+        // the same component_id. In other words, for a given component_id, a proposal list
+        // is valid only if it contains
+        // (a) a single remove operation or
+        // (b) one or more update operation.
+        match data {
+            AppDataUpdateProposal { op: AppDataUpdateOperation::Remove, .. } => {
+                // there can be a single remove for a given component
+                if self.application_data_update.iter().any(|adu| adu.component_id == data.component_id) {
+                    return Err(MlsError::InvalidApplicationDataProposal)
+                }
+                if !self.application_data_update.insert(data) {
+                    return Err(MlsError::InvalidApplicationDataProposal)
+                }
+            },
+            AppDataUpdateProposal { op: AppDataUpdateOperation::Update(_), component_id } => {
+                // there can be a single remove for a given component
+                if self.application_data_update.iter()
+                    .filter(|adu| matches!(adu.op, AppDataUpdateOperation::Remove))
+                    .any(|adu| adu.component_id == data.component_id) {
+                    return Err(MlsError::InvalidApplicationDataProposal)
+                }
+
+                if self.application_data_update.iter().any(|adu| adu.component_id == component_id && adu.op == AppDataUpdateOperation::Remove) {
+                    return Err(MlsError::InvalidApplicationDataProposal)
+                }
+                if !self.application_data_update.insert(data) {
+                    return Err(MlsError::InvalidApplicationDataProposal)
+                }
+            }
+            AppDataUpdateProposal { op: AppDataUpdateOperation::Invalid, .. } => return Err(MlsError::InvalidApplicationDataProposal),
+        }
+        Ok(self)
+    }
+
+    #[must_use]
+    /// Use a custom [SigningIdentity] when externally joining the group
+    pub fn with_signing_identity(self, signing_identity: SigningIdentity) -> Self {
+        Self {
+            signing_identity,
             ..self
         }
     }
@@ -283,12 +333,18 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
             }));
         }
 
+        #[cfg(feature = "application_data")]
+        for adu in self.application_data_update {
+            proposals.push(Proposal::AppDataUpdate(adu));
+        }
+
         let (commit_output, pending_commit) = group
             .commit_internal(
                 proposals,
                 Some(&leaf_node),
                 self.authenticated_data,
                 Default::default(),
+                None,
                 None,
                 None,
                 None,

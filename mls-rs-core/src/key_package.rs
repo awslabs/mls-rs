@@ -6,6 +6,7 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::fmt::{self, Debug};
+use std::collections::HashMap;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 
 use crate::{crypto::HpkeSecretKey, error::IntoAnyError};
@@ -76,6 +77,9 @@ pub trait KeyPackageStorage: Send + Sync {
     ///
     /// This function is automatically called whenever a new key package is created.
     async fn insert(&mut self, id: Vec<u8>, pkg: KeyPackageData) -> Result<(), Self::Error>;
+
+    /// Stores a bunch of [`KeyPackageData`]
+    async fn insert_all(&mut self, kps: &HashMap<Vec<u8>, KeyPackageData>) -> Result<(), Self::Error>;
 
     /// Retrieve [`KeyPackageData`] by its `id`.
     ///

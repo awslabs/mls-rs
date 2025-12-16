@@ -128,7 +128,7 @@ impl CryptoProvider for WebCryptoProvider {
 
 impl IntoAnyError for CryptoError {}
 
-#[maybe_async::must_be_async(?Send)]
+#[maybe_async::must_be_async]
 impl CipherSuiteProvider for WebCryptoCipherSuite {
     type Error = CryptoError;
 

@@ -9,6 +9,8 @@ use alloc::vec::Vec;
 use itertools::Itertools;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 
+#[cfg(feature = "application_data")]
+use crate::group::proposal::{AppDataUpdateProposal, AppEphemeralProposal};
 use crate::{
     group::{
         AddProposal, BorrowedProposal, Proposal, ProposalOrRef, ProposalType, ReInitProposal,
@@ -60,6 +62,10 @@ pub struct ProposalBundle {
     pub(crate) self_removes: Vec<ProposalInfo<SelfRemoveProposal>>,
     #[cfg(feature = "custom_proposal")]
     pub(crate) custom_proposals: Vec<ProposalInfo<CustomProposal>>,
+    #[cfg(feature = "application_data")]
+    pub(crate) app_data_update_proposals: Vec<ProposalInfo<AppDataUpdateProposal>>,
+    #[cfg(feature = "application_data")]
+    pub(crate) app_ephemeral_proposals: Vec<ProposalInfo<AppEphemeralProposal>>,
 }
 
 impl ProposalBundle {
@@ -110,6 +116,20 @@ impl ProposalBundle {
                 feature = "self_remove_proposal"
             ))]
             Proposal::SelfRemove(proposal) => self.self_removes.push(ProposalInfo {
+                proposal,
+                sender,
+                source,
+            }),
+            #[cfg(feature = "application_data")]
+            Proposal::AppDataUpdate(proposal) => {
+                self.app_data_update_proposals.push(ProposalInfo {
+                    proposal,
+                    sender,
+                    source,
+                })
+            }
+            #[cfg(feature = "application_data")]
+            Proposal::AppEphemeral(proposal) => self.app_ephemeral_proposals.push(ProposalInfo {
                 proposal,
                 sender,
                 source,
@@ -247,6 +267,9 @@ impl ProposalBundle {
         #[cfg(feature = "by_ref_proposal")]
         let len = len + self.updates.len();
 
+        #[cfg(feature = "application_data")]
+        let len = len + self.app_ephemeral_proposals.len() + self.app_data_update_proposals.len();
+
         len + self.additions.len()
             + self.removals.len()
             + self.reinitializations.len()
@@ -306,6 +329,20 @@ impl ProposalBundle {
                 .map(|p| p.as_ref().map(BorrowedProposal::GroupContextExtensions)),
         );
 
+        #[cfg(feature = "application_data")]
+        let res = res.chain(
+            self.app_data_update_proposals
+                .iter()
+                .map(|p| p.as_ref().map(BorrowedProposal::AppDataUpdate)),
+        );
+
+        #[cfg(feature = "application_data")]
+        let res = res.chain(
+            self.app_ephemeral_proposals
+                .iter()
+                .map(|p| p.as_ref().map(BorrowedProposal::AppEphemeral)),
+        );
+
         #[cfg(feature = "custom_proposal")]
         let res = res.chain(
             self.custom_proposals
@@ -313,6 +350,38 @@ impl ProposalBundle {
                 .map(|p| p.as_ref().map(BorrowedProposal::Custom)),
         );
 
+        res
+    }
+
+    /// Iterate over the proposals in the order specified by the RFC in https://www.rfc-editor.org/rfc/rfc9420.html#section-12.3
+    pub fn iter_proposals_for_applying(&self) -> impl Iterator<Item=ProposalInfo<BorrowedProposal<'_>>> {
+        let add = self.additions.iter().map(|p| p.as_ref().map(BorrowedProposal::Add));
+        let remove = self.removals.iter().map(|p| p.as_ref().map(BorrowedProposal::Remove));
+        let reinit = self.reinitializations.iter().map(|p| p.as_ref().map(BorrowedProposal::ReInit));
+        #[cfg(feature = "by_ref_proposal")]
+        let update = self.updates.iter().map(|p| p.as_ref().map(BorrowedProposal::Update));
+        #[cfg(feature = "psk")]
+        let psk = self.psks.iter().map(|p| p.as_ref().map(BorrowedProposal::Psk));
+        let ext_init = self.external_initializations.iter().map(|p| p.as_ref().map(BorrowedProposal::ExternalInit));
+        let gce = self.group_context_extensions.iter().map(|p| p.as_ref().map(BorrowedProposal::GroupContextExtensions));
+        #[cfg(feature = "application_data")]
+        let adu = self.app_data_update_proposals.iter().map(|p| p.as_ref().map(BorrowedProposal::AppDataUpdate));
+        #[cfg(feature = "application_data")]
+        let ae = self.app_ephemeral_proposals.iter().map(|p| p.as_ref().map(BorrowedProposal::AppEphemeral));
+        #[cfg(feature = "custom_proposal")]
+        let custom = self.custom_proposals.iter().map(|p| p.as_ref().map(BorrowedProposal::Custom));
+
+        let res = gce;
+        #[cfg(feature = "by_ref_proposal")]
+        let res = res.chain(update);
+        let res = res.chain(remove).chain(add);
+        #[cfg(feature = "psk")]
+        let res = res.chain(psk);
+        let res = res.chain(ext_init).chain(reinit);
+        #[cfg(feature = "application_data")]
+        let res = res.chain(ae).chain(adu);
+        #[cfg(feature = "custom_proposal")]
+        let res = res.chain(custom);
         res
     }
 
@@ -355,7 +424,7 @@ impl ProposalBundle {
                 .map(|p| p.map(Proposal::SelfRemove)),
         );
 
-        res.chain(
+        let res = res.chain(
             self.additions
                 .into_iter()
                 .map(|p| p.map(|p| Proposal::Add(alloc::boxed::Box::new(p)))),
@@ -366,7 +435,23 @@ impl ProposalBundle {
                 .into_iter()
                 .map(|p| p.map(Proposal::ReInit)),
         )
-        .chain(group_context_extensions_to_chain)
+        .chain(group_context_extensions_to_chain);
+       
+
+        #[cfg(feature = "application_data")]
+        let res = res
+            .chain(
+                self.app_data_update_proposals
+                    .into_iter()
+                    .map(|p| p.map(Proposal::AppDataUpdate)),
+            )
+            .chain(
+                self.app_ephemeral_proposals
+                    .into_iter()
+                    .map(|p| p.map(Proposal::AppEphemeral)),
+            );
+
+        res
     }
 
     pub(crate) fn proposals_or_refs(&self) -> Vec<ProposalOrRef> {
@@ -435,6 +520,18 @@ impl ProposalBundle {
     pub fn self_remove_proposals(&self) -> &[ProposalInfo<SelfRemoveProposal>] {
         &self.self_removes
     }
+    
+    #[cfg(feature = "application_data")]
+    pub fn app_data_update_proposals(
+        &self,
+    ) -> &[ProposalInfo<crate::group::AppDataUpdateProposal>] {
+        &self.app_data_update_proposals
+    }
+
+    #[cfg(feature = "application_data")]
+    pub fn app_ephemeral_proposals(&self) -> &[ProposalInfo<crate::group::AppEphemeralProposal>] {
+        &self.app_ephemeral_proposals
+    }
 
     /// Custom proposals in the bundle.
     #[cfg(feature = "custom_proposal")]
@@ -484,6 +581,16 @@ impl ProposalBundle {
         let res = res.chain(
             (!self.external_initializations.is_empty()).then_some(ProposalType::EXTERNAL_INIT),
         );
+
+        #[cfg(feature = "application_data")]
+        let res = res
+            .chain(
+                (!self.app_data_update_proposals.is_empty())
+                    .then_some(ProposalType::APP_DATA_UPDATE),
+            )
+            .chain(
+                (!self.app_ephemeral_proposals.is_empty()).then_some(ProposalType::APP_EPHEMERAL),
+            );
 
         #[cfg(not(feature = "custom_proposal"))]
         return res.chain(
@@ -738,3 +845,11 @@ impl_proposable!(
     GROUP_CONTEXT_EXTENSIONS,
     group_context_extensions
 );
+#[cfg(feature = "application_data")]
+impl_proposable!(
+    AppDataUpdateProposal,
+    APP_DATA_UPDATE,
+    app_data_update_proposals
+);
+#[cfg(feature = "application_data")]
+impl_proposable!(AppEphemeralProposal, APP_EPHEMERAL, app_ephemeral_proposals);

@@ -57,6 +57,10 @@ impl GroupInfo {
     pub fn sender(&self) -> u32 {
         *self.signer
     }
+
+    pub fn confirmation_tag(&self) -> &ConfirmationTag {
+        &self.confirmation_tag
+    }
 }
 
 #[derive(MlsEncode, MlsSize)]

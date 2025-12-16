@@ -28,7 +28,8 @@ fn main() {
             ))
             .unwrap(),
         )
-        .signing_identity(signing_identity, secret_key, CIPHERSUITE)
+        .signing_identity(signing_identity, secret_key)
+        .ciphersuite(CIPHERSUITE)
         .build();
 
     let mut alice_group = alice_client

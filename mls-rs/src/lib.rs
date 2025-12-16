@@ -130,7 +130,7 @@ pub use protocol_version::ProtocolVersion;
 
 pub mod client;
 pub mod client_builder;
-mod client_config;
+pub mod client_config;
 /// Dependencies of [`CryptoProvider`] and [`CipherSuiteProvider`]
 pub mod crypto;
 /// Extension utilities and built-in extension types.
@@ -162,6 +162,7 @@ pub use mls_rs_core::{
     identity::IdentityProvider,
     key_package::KeyPackageStorage,
     psk::PreSharedKeyStorage,
+
 };
 
 /// Dependencies of [`MlsRules`].
@@ -182,11 +183,15 @@ pub use mls_rs_core::extension::{Extension, ExtensionList};
 pub use crate::{
     client::Client,
     group::{
+        framing,
         framing::{MlsMessage, MlsMessageDescription, WireFormat},
         mls_rules::MlsRules,
         Group,
     },
     key_package::{KeyPackage, KeyPackageRef},
+    signer::SignContent,
+    tree_kem::hpke_encryption::EncryptContext,
+    tree_kem::leaf_node::LeafNode,
 };
 
 /// Error types.
@@ -202,6 +207,7 @@ pub mod time {
 }
 
 mod tree_kem;
+pub use tree_kem::Lifetime;
 
 pub use mls_rs_codec;
 

@@ -8,6 +8,8 @@ use alloc::vec::Vec;
 use core::fmt::Debug;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::{crypto::SignatureSecretKey, error::IntoAnyError};
+#[cfg(feature = "application_data")]
+use std::collections::BTreeMap;
 
 use crate::{
     cipher_suite::CipherSuite,
@@ -18,14 +20,17 @@ use crate::{
     protocol_version::ProtocolVersion,
     signer::Signable,
     time::MlsTime,
-    tree_kem::{kem::TreeKem, path_secret::PathSecret, TreeKemPrivate, UpdatePath},
+    tree_kem::{
+        kem::TreeKem, node::LeafIndex, path_secret::PathSecret, TreeKemPrivate, UpdatePath,
+    },
     ExtensionList, MlsRules,
 };
 
+use crate::tree_kem::leaf_node::{ConfigProperties, LeafNode};
+use crate::tree_kem::validate_update_path;
+use mls_rs_core::group::Capabilities;
 #[cfg(all(not(mls_build_async), feature = "rayon"))]
 use {crate::iter::ParallelIteratorExt, rayon::prelude::*};
-
-use crate::tree_kem::leaf_node::LeafNode;
 
 #[cfg(not(feature = "private_message"))]
 use crate::WireFormat;
@@ -56,21 +61,25 @@ use super::proposal_cache::prepare_commit;
 #[cfg(feature = "custom_proposal")]
 use super::proposal::CustomProposal;
 
+#[cfg(feature = "application_data")]
+use super::{application_data::ComponentId, proposal::AppDataUpdateOperation};
+
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(mls_rs_core::arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub(crate) struct Commit {
+pub struct Commit {
     pub proposals: Vec<ProposalOrRef>,
     pub path: Option<UpdatePath>,
 }
 
 #[derive(Clone, PartialEq, Debug, MlsEncode, MlsDecode, MlsSize)]
-pub(crate) struct PendingCommit {
+pub struct PendingCommit {
     pub(crate) state: GroupState,
     pub(crate) epoch_secrets: EpochSecrets,
     pub(crate) private_tree: TreeKemPrivate,
     pub(crate) key_schedule: KeySchedule,
     pub(crate) signer: SignatureSecretKey,
+    pub new_leaf_node: Option<LeafNode>,
 
     pub(crate) output: CommitMessageDescription,
 
@@ -123,11 +132,11 @@ pub struct CommitOutput {
     /// functionality. This value is set if [`MlsRules::commit_options`] returns
     /// `allow_external_commit` set to true.
     pub external_commit_group_info: Option<MlsMessage>,
+    /// Indicator that the commit contains a path update
+    pub contains_update_path: bool,
     /// Proposals that were received in the prior epoch but not included in the following commit.
     #[cfg(feature = "by_ref_proposal")]
     pub unused_proposals: Vec<crate::mls_rules::ProposalInfo<Proposal>>,
-    /// Indicator that the commit contains a path update
-    pub contains_update_path: bool,
 }
 
 #[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen)]
@@ -185,6 +194,7 @@ where
     new_signer: Option<SignatureSecretKey>,
     new_signing_identity: Option<SigningIdentity>,
     new_leaf_node_extensions: Option<ExtensionList>,
+    new_leaf_node_capabilities: Option<Capabilities>,
     commit_time: Option<MlsTime>,
 }
 
@@ -279,6 +289,34 @@ where
         Ok(self)
     }
 
+    #[cfg(feature = "application_data")]
+    /// Insert an [`ApplicationDataProposal`](crate::group::proposal::ApplicationDataProposal) into
+    /// the current commit that is being built.
+    pub fn app_ephemeral(
+        mut self,
+        component_id: ComponentId,
+        data: Vec<u8>,
+    ) -> Result<Self, MlsError> {
+        let proposal = self.group.app_ephemeral_proposal(component_id, data);
+
+        self.proposals.push(proposal);
+        Ok(self)
+    }
+
+    #[cfg(feature = "application_data")]
+    /// Insert an [`ApplicationDataUpdateProposal`](crate::group::proposal::ApplicationDataUpdateProposal) into
+    /// the current commit that is being built.
+    pub fn application_data_update(
+        mut self,
+        component_id: ComponentId,
+        operation: AppDataUpdateOperation,
+    ) -> Result<Self, MlsError> {
+        let proposal = self.group.app_data_update_proposal(component_id, operation);
+
+        self.proposals.push(proposal);
+        Ok(self)
+    }
+
     /// Insert a [`CustomProposal`](crate::group::proposal::CustomProposal) into
     /// the current commit that is being built.
     #[cfg(feature = "custom_proposal")]
@@ -334,10 +372,29 @@ where
         }
     }
 
+    pub fn set_new_signing_identity_same_signature_key(
+        self,
+        signing_identity: SigningIdentity,
+    ) -> Self {
+        Self {
+            new_signer: None,
+            new_signing_identity: Some(signing_identity),
+            ..self
+        }
+    }
+
     /// Change the committer's leaf node extensions as part of making this commit.
     pub fn set_leaf_node_extensions(self, new_leaf_node_extensions: ExtensionList) -> Self {
         Self {
             new_leaf_node_extensions: Some(new_leaf_node_extensions),
+            ..self
+        }
+    }
+
+    /// Change the committer's leaf node capabilities as part of making this commit.
+    pub fn set_leaf_node_capabilities(self, new_leaf_node_capabilities: Capabilities) -> Self {
+        Self {
+            new_leaf_node_capabilities: Some(new_leaf_node_capabilities),
             ..self
         }
     }
@@ -370,6 +427,7 @@ where
                 self.new_signer,
                 self.new_signing_identity,
                 self.new_leaf_node_extensions,
+                self.new_leaf_node_capabilities,
                 self.commit_time,
             )
             .await?;
@@ -395,6 +453,7 @@ where
                 self.new_signer,
                 self.new_signing_identity,
                 self.new_leaf_node_extensions,
+                self.new_leaf_node_capabilities,
                 self.commit_time,
             )
             .await?;
@@ -486,6 +545,7 @@ where
             new_signer: Default::default(),
             new_signing_identity: Default::default(),
             new_leaf_node_extensions: Default::default(),
+            new_leaf_node_capabilities: Default::default(),
             commit_time: None,
         }
     }
@@ -503,6 +563,7 @@ where
         new_signer: Option<SignatureSecretKey>,
         new_signing_identity: Option<SigningIdentity>,
         new_leaf_node_extensions: Option<ExtensionList>,
+        new_leaf_node_capabilities: Option<Capabilities>,
         commit_time: Option<MlsTime>,
     ) -> Result<(CommitOutput, PendingCommit), MlsError> {
         if !self.pending_commit.is_none() {
@@ -526,6 +587,7 @@ where
             Sender::Member(*self.private_tree.self_index)
         };
 
+        let has_new_signer = new_signer.is_some();
         let new_signer = new_signer.unwrap_or_else(|| self.signer.clone());
         let old_signer = &self.signer;
 
@@ -584,8 +646,13 @@ where
             )
             .map_err(|e| MlsError::MlsRulesError(e.into_any_error()))?;
 
-        let perform_path_update = commit_options.path_required
+        let mut perform_path_update = commit_options.path_required
             || path_update_required(&provisional_state.applied_proposals);
+
+        perform_path_update |= has_new_signer
+            || new_signing_identity.is_some()
+            || new_leaf_node_extensions.is_some()
+            || new_leaf_node_capabilities.is_some();
 
         let (update_path, path_secrets, commit_secret) = if perform_path_update {
             // If populating the path field: Create an UpdatePath using the new tree. Any new
@@ -604,6 +671,18 @@ where
                 None => self.current_user_leaf_node()?.ungreased_extensions(),
             };
 
+            let updated_leaf_properties =
+                if let Some(new_leaf_node_capabilities) = new_leaf_node_capabilities {
+                    ConfigProperties {
+                        capabilities: new_leaf_node_capabilities,
+                        extensions: new_leaf_node_extensions,
+                    }
+                } else {
+                    self.config.leaf_properties(new_leaf_node_extensions)
+                };
+
+            let prior_provisional_state = provisional_state.clone();
+
             let encap_gen = TreeKem::new(
                 &mut provisional_state.public_tree,
                 &mut provisional_private_tree,
@@ -612,11 +691,22 @@ where
                 &mut provisional_state.group_context,
                 &provisional_state.indexes_of_added_kpkgs,
                 &new_signer,
-                Some(self.config.leaf_properties(new_leaf_node_extensions)),
+                Some(updated_leaf_properties),
                 new_signing_identity,
                 &self.cipher_suite_provider,
                 #[cfg(test)]
                 &self.commit_modifiers,
+            )
+            .await?;
+
+            validate_update_path(
+                &self.identity_provider(),
+                self.cipher_suite_provider(),
+                encap_gen.update_path.clone(),
+                &prior_provisional_state,
+                LeafIndex::try_from(*self.private_tree.self_index)?,
+                None,
+                &provisional_state.group_context, // unused
             )
             .await?;
 
@@ -642,6 +732,8 @@ where
 
             (None, None, PathSecret::empty(&self.cipher_suite_provider))
         };
+
+        let new_leaf_node = update_path.as_ref().map(|up| up.leaf_node.clone());
 
         #[cfg(feature = "psk")]
         let (psk_secret, psks) = self
@@ -829,6 +921,20 @@ where
             secrets
         };
 
+        #[cfg(feature = "application_data")]
+        let application_data = {
+            let mut data: BTreeMap<u32, Vec<Vec<u8>>> = BTreeMap::new();
+            for proposal in provisional_state
+                .applied_proposals
+                .app_ephemeral_proposals()
+            {
+                data.entry(proposal.proposal.component_id)
+                    .or_default()
+                    .push(proposal.proposal.data.clone());
+            }
+            data
+        };
+
         let welcome_messages =
             if commit_options.single_welcome_message && !encrypted_path_secrets.is_empty() {
                 vec![self.make_welcome_message(encrypted_path_secrets, encrypted_group_info)]
@@ -862,6 +968,8 @@ where
                         NewEpoch::new(self.state.clone(), &provisional_state).into(),
                     ),
                 },
+                #[cfg(feature = "application_data")]
+                application_data,
             },
 
             state: GroupState {
@@ -873,7 +981,7 @@ where
                 context: provisional_state.group_context,
                 public_tree: provisional_state.public_tree,
                 interim_transcript_hash,
-                pending_reinit: pending_reinit.map(|r| r.proposal.clone()),
+                pending_reinit: pending_reinit.map(|r| (r.sender, r.proposal.clone())),
                 confirmation_tag,
             },
 
@@ -884,6 +992,7 @@ where
             key_schedule: key_schedule_result.key_schedule,
 
             private_tree: provisional_private_tree,
+            new_leaf_node,
         };
 
         let output = CommitOutput {
@@ -974,7 +1083,7 @@ pub(crate) mod test_utils {
 mod tests {
     use mls_rs_core::{
         error::IntoAnyError,
-        extension::ExtensionType,
+        extension::{Extension, ExtensionType},
         identity::{CredentialType, IdentityProvider, MemberValidationContext},
         time::MlsTime,
     };
@@ -1406,6 +1515,79 @@ mod tests {
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn commit_can_change_capabilities() {
+        let cs = TEST_CIPHER_SUITE;
+        let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, cs, 3).await;
+
+        let current_leaf_node = groups[0].current_user_leaf_node().unwrap();
+        let mut capabilities = current_leaf_node.capabilities.clone();
+        capabilities.credentials.push(CredentialType::new(42));
+        capabilities.extensions.push(ExtensionType::APPLICATION_ID);
+
+        let test_ext = Extension::new(ExtensionType::APPLICATION_ID, b"1234".to_vec());
+        let mut extensions = current_leaf_node.extensions.clone();
+        extensions.0.push(test_ext.clone());
+
+        let commit_output = groups[0]
+            .commit_builder()
+            .set_leaf_node_capabilities(capabilities)
+            .set_leaf_node_extensions(extensions)
+            .build()
+            .await
+            .unwrap();
+
+        // Check that the capability was updated by in the committer's state.
+        groups[0].process_pending_commit().await.unwrap();
+        let new_member = groups[0].roster().member_with_index(0).unwrap();
+
+        assert!(new_member
+            .capabilities
+            .credentials
+            .contains(&CredentialType::new(42)));
+        assert!(new_member.extensions.contains(&test_ext));
+
+        // Check that the capability was updated in another member's state.
+        groups[1]
+            .process_message(commit_output.commit_message)
+            .await
+            .unwrap();
+
+        let new_member = groups[1].roster().member_with_index(0).unwrap();
+
+        assert!(new_member
+            .capabilities
+            .credentials
+            .contains(&CredentialType::new(42)));
+        assert!(new_member.extensions.contains(&test_ext));
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn commit_fails_when_new_extension_not_in_capabilities() {
+        let cs = TEST_CIPHER_SUITE;
+        let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, cs, 3).await;
+
+        let current_leaf_node: &LeafNode = groups[0].current_user_leaf_node().unwrap();
+        assert!(!current_leaf_node
+            .capabilities
+            .extensions
+            .contains(&ExtensionType::APPLICATION_ID));
+
+        let test_ext = Extension::new(ExtensionType::APPLICATION_ID, b"1234".to_vec());
+        let mut extensions = current_leaf_node.extensions.clone();
+        extensions.0.push(test_ext.clone());
+
+        let commit = groups[0]
+            .commit_builder()
+            .set_leaf_node_extensions(extensions)
+            .build()
+            .await;
+        assert!(matches!(
+            commit.unwrap_err(),
+            MlsError::ExtensionNotInCapabilities(ExtensionType::APPLICATION_ID)
+        ));
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn commit_includes_tree_if_no_ratchet_tree_ext() {
         let mut group = test_group_custom(
             TEST_PROTOCOL_VERSION,
@@ -1771,7 +1953,8 @@ mod tests {
             .crypto_provider(TestCryptoProvider::new())
             .extension_types(vec![TEST_EXTENSION_TYPE.into()])
             .identity_provider(IdentityProviderWithExtension(BasicIdentityProvider::new()))
-            .signing_identity(identity, secret_key, TEST_CIPHER_SUITE)
+            .ciphersuite(TEST_CIPHER_SUITE)
+            .signing_identity(identity, secret_key)
             .build()
     }
 

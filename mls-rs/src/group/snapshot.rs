@@ -34,10 +34,11 @@ use mls_rs_core::identity::IdentityProvider;
 use super::PendingCommit;
 
 pub(crate) use legacy::LegacyPendingCommit;
+use crate::framing::Sender;
 
 #[derive(Debug, PartialEq, Clone, MlsEncode, MlsDecode, MlsSize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub(crate) struct Snapshot {
+pub struct Snapshot {
     version: u16,
     pub(crate) state: RawGroupState,
     private_tree: TreeKemPrivate,
@@ -101,7 +102,7 @@ pub(crate) struct RawGroupState {
     pub(crate) own_proposals: SmallMap<MessageHash, ProposalMessageDescription>,
     pub(crate) public_tree: TreeKemPublic,
     pub(crate) interim_transcript_hash: InterimTranscriptHash,
-    pub(crate) pending_reinit: Option<ReInitProposal>,
+    pub(crate) pending_reinit: Option<(Sender, ReInitProposal)>,
     pub(crate) confirmation_tag: ConfirmationTag,
 }
 
@@ -195,8 +196,10 @@ where
     /// Write the current state of the group to the
     /// [`GroupStorageProvider`](crate::GroupStateStorage)
     /// that is currently in use by the group.
+    ///
+    /// Returns the amount of bytes written to storage
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn write_to_storage(&mut self) -> Result<(), MlsError> {
+    pub async fn write_to_storage(&mut self) -> Result<usize, MlsError> {
         self.state_repo.write_to_storage(self.snapshot()?).await
     }
 
@@ -206,14 +209,14 @@ where
     /// The tree is not included in the state and can be stored
     /// separately by calling [`Group::export_tree`].
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn write_to_storage_without_ratchet_tree(&mut self) -> Result<(), MlsError> {
+    pub async fn write_to_storage_without_ratchet_tree(&mut self) -> Result<usize, MlsError> {
         let mut snapshot = self.snapshot()?;
         snapshot.state.public_tree.nodes = Default::default();
 
         self.state_repo.write_to_storage(snapshot).await
     }
 
-    pub(crate) fn snapshot(&self) -> Result<Snapshot, MlsError> {
+    pub fn snapshot(&self) -> Result<Snapshot, MlsError> {
         Ok(Snapshot {
             state: RawGroupState::export(&self.state),
             private_tree: self.private_tree.clone(),
@@ -228,7 +231,7 @@ where
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub(crate) async fn from_snapshot(config: C, snapshot: Snapshot) -> Result<Self, MlsError> {
+    pub async fn from_snapshot(config: C, snapshot: Snapshot) -> Result<Self, MlsError> {
         let cipher_suite_provider = cipher_suite_provider(
             config.crypto_provider(),
             snapshot.state.context.cipher_suite,

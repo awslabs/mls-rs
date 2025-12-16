@@ -62,6 +62,9 @@ impl ProposalType {
     pub const RCS_SIGNATURE: ProposalType = ProposalType::new(0xF002);
     #[cfg(feature = "gsma_rcs_e2ee_feature")]
     pub const RCS_SERVER_REMOVE: ProposalType = ProposalType::new(0xF004);
+    // MLS-Extensions-draft-06
+    pub const APP_DATA_UPDATE: ProposalType = ProposalType(0x0008);
+    pub const APP_EPHEMERAL: ProposalType = ProposalType(0x0009);
 
     /// Default proposal types defined
     /// in [RFC 9420](https://www.rfc-editor.org/rfc/rfc9420.html#name-leaf-node-contents)

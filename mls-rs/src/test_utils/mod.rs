@@ -88,7 +88,8 @@ pub async fn generate_basic_client<C: CryptoProvider + Clone>(
             make_test_ext_psk().into(),
         )
         .used_protocol_version(protocol_version)
-        .signing_identity(identity, secret_key, cipher_suite);
+        .ciphersuite(cipher_suite)
+        .signing_identity(identity, secret_key);
 
     if let Some(lifetime) = lifetime {
         builder = builder

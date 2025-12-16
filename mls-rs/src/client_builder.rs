@@ -106,7 +106,8 @@ pub type BaseSqlConfig = Config<
 /// let _client = Client::builder()
 ///     .crypto_provider(OpensslCryptoProvider::default())
 ///     .identity_provider(BasicIdentityProvider::new())
-///     .signing_identity(signing_identity, secret_key, CipherSuite::CURVE25519_AES128)
+///     .ciphersuite(CipherSuite::CURVE25519_AES128)
+///     .signing_identity(signing_identity, secret_key)
 ///     .build();
 /// ```
 ///
@@ -135,7 +136,8 @@ pub type BaseSqlConfig = Config<
 ///     Client::builder()
 ///         .crypto_provider(OpensslCryptoProvider::default())
 ///         .identity_provider(BasicIdentityProvider::new())
-///         .signing_identity(signing_identity, secret_key, CipherSuite::CURVE25519_AES128)
+///         .ciphersuite(CipherSuite::CURVE25519_AES128)
+///         .signing_identity(signing_identity, secret_key)
 ///         .build()
 /// }
 ///```
@@ -168,7 +170,8 @@ pub type BaseSqlConfig = Config<
 ///     Client::builder()
 ///         .crypto_provider(OpensslCryptoProvider::default())
 ///         .identity_provider(BasicIdentityProvider::new())
-///         .signing_identity(signing_identity, secret_key, CipherSuite::CURVE25519_AES128)
+///         .signing_identity(signing_identity, secret_key)
+///         .ciphersuite(CipherSuite::CURVE25519_AES128)
 ///         .build()
 /// }
 ///
@@ -205,6 +208,7 @@ impl ClientBuilder<BaseConfig> {
             mls_rules: DefaultMlsRules::new(),
             crypto_provider: Missing,
             signer: Default::default(),
+            ciphersuite: Default::default(),
             signing_identity: Default::default(),
             version: ProtocolVersion::MLS_10,
         }))
@@ -222,6 +226,7 @@ impl ClientBuilder<EmptyConfig> {
             mls_rules: Missing,
             crypto_provider: Missing,
             signer: Default::default(),
+            ciphersuite: Default::default(),
             signing_identity: Default::default(),
             version: ProtocolVersion::MLS_10,
         }))
@@ -326,6 +331,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
             mls_rules: c.mls_rules,
             crypto_provider: c.crypto_provider,
             signer: c.signer,
+            ciphersuite: c.ciphersuite,
             signing_identity: c.signing_identity,
             version: c.version,
         }))
@@ -349,6 +355,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
             mls_rules: c.mls_rules,
             crypto_provider: c.crypto_provider,
             signer: c.signer,
+            ciphersuite: c.ciphersuite,
             signing_identity: c.signing_identity,
             version: c.version,
         }))
@@ -375,6 +382,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
             crypto_provider: c.crypto_provider,
             mls_rules: c.mls_rules,
             signer: c.signer,
+            ciphersuite: c.ciphersuite,
             signing_identity: c.signing_identity,
             version: c.version,
         }))
@@ -399,6 +407,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
             mls_rules: c.mls_rules,
             crypto_provider: c.crypto_provider,
             signer: c.signer,
+            ciphersuite: c.ciphersuite,
             signing_identity: c.signing_identity,
             version: c.version,
         }))
@@ -423,6 +432,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
             mls_rules: c.mls_rules,
             crypto_provider,
             signer: c.signer,
+            ciphersuite: c.ciphersuite,
             signing_identity: c.signing_identity,
             version: c.version,
         }))
@@ -450,6 +460,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
             mls_rules,
             crypto_provider: c.crypto_provider,
             signer: c.signer,
+            ciphersuite: c.ciphersuite,
             signing_identity: c.signing_identity,
             version: c.version,
         }))
@@ -465,17 +476,25 @@ impl<C: IntoConfig> ClientBuilder<C> {
         ClientBuilder(c)
     }
 
+    pub fn ciphersuite(
+        self,
+        cipher_suite: CipherSuite,
+    ) -> ClientBuilder<IntoConfigOutput<C>> {
+        let mut c = self.0.into_config();
+        c.0.ciphersuite = cipher_suite;
+        ClientBuilder(c)
+    }
+
     /// Set the signing identity used by the client as well as the matching signer and cipher suite.
     /// This must be called in order to create groups and key packages.
     pub fn signing_identity(
         self,
         signing_identity: SigningIdentity,
         signer: SignatureSecretKey,
-        cipher_suite: CipherSuite,
     ) -> ClientBuilder<IntoConfigOutput<C>> {
         let mut c = self.0.into_config();
         c.0.signer = Some(signer);
-        c.0.signing_identity = Some((signing_identity, cipher_suite));
+        c.0.signing_identity = Some(signing_identity);
         ClientBuilder(c)
     }
 
@@ -524,9 +543,10 @@ where
         let mut c = self.build_config();
         let version = c.0.version;
         let signer = c.0.signer.take();
+        let ciphersuite = c.0.ciphersuite;
         let signing_identity = c.0.signing_identity.take();
 
-        Client::new(c, signer, signing_identity, version)
+        Client::new(c, signer, ciphersuite, signing_identity, version)
     }
 }
 
@@ -682,7 +702,7 @@ where
     fn identity_provider(&self) -> Self::IdentityProvider {
         self.identity_provider.clone()
     }
-
+    
     fn crypto_provider(&self) -> Self::CryptoProvider {
         self.crypto_provider.clone()
     }
@@ -734,6 +754,10 @@ where
     fn get(&self) -> &Self::Output {
         &self.0
     }
+    
+    fn get_mut(&mut self) -> &mut Self::Output {
+        &mut self.0
+    }
 }
 
 /// Helper trait to allow consuming crates to easily write a client type as `Client<impl MlsConfig>`
@@ -745,6 +769,9 @@ pub trait MlsConfig: Clone + Send + Sync + Sealed {
 
     #[doc(hidden)]
     fn get(&self) -> &Self::Output;
+    
+    #[doc(hidden)]
+    fn get_mut(&mut self) -> &mut Self::Output;
 }
 
 /// Blanket implementation so that `T: MlsConfig` implies `T: ClientConfig`
@@ -787,7 +814,7 @@ impl<T: MlsConfig> ClientConfig for T {
     fn identity_provider(&self) -> Self::IdentityProvider {
         self.get().identity_provider()
     }
-
+    
     fn crypto_provider(&self) -> Self::CryptoProvider {
         self.get().crypto_provider()
     }
@@ -835,7 +862,8 @@ impl Default for Settings {
 pub(crate) fn recreate_config<T: ClientConfig>(
     c: T,
     signer: Option<SignatureSecretKey>,
-    signing_identity: Option<(SigningIdentity, CipherSuite)>,
+    ciphersuite: CipherSuite,
+    signing_identity: Option<SigningIdentity>,
     version: ProtocolVersion,
     timestamp: Option<MlsTime>,
 ) -> MakeConfig<T> {
@@ -858,6 +886,7 @@ pub(crate) fn recreate_config<T: ClientConfig>(
         mls_rules: c.mls_rules(),
         crypto_provider: c.crypto_provider(),
         signer,
+        ciphersuite,
         signing_identity,
         version,
     })
@@ -887,7 +916,8 @@ mod private {
         pub(crate) mls_rules: Pr,
         pub(crate) crypto_provider: Cp,
         pub(crate) signer: Option<SignatureSecretKey>,
-        pub(crate) signing_identity: Option<(SigningIdentity, CipherSuite)>,
+        pub(crate) ciphersuite: CipherSuite,
+        pub(crate) signing_identity: Option<SigningIdentity>,
         pub(crate) version: ProtocolVersion,
     }
 
@@ -961,7 +991,8 @@ pub(crate) mod test_utils {
         ) -> Self {
             let (signing_identity, signer) =
                 get_test_signing_identity(cipher_suite, identity.as_bytes()).await;
-            self.signing_identity(signing_identity, signer, cipher_suite)
+            self.signing_identity(signing_identity, signer)
+                .ciphersuite(cipher_suite)
         }
     }
 }

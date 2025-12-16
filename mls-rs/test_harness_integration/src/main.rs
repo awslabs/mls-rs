@@ -828,7 +828,7 @@ async fn create_client(cipher_suite: u16, identity: &[u8]) -> Result<ClientDetai
         .mls_rules(mls_rules.clone())
         .psk_store(psk_store.clone())
         .key_package_repo(key_package_repo.clone())
-        .signing_identity(signing_identity.clone(), secret_key.clone(), cipher_suite)
+        .signing_identity(signing_identity.clone(), secret_key.clone())
         .build();
 
     Ok(ClientDetails {

@@ -11,9 +11,12 @@ use alloc::vec::Vec;
 
 /// Generic representation of a group's state.
 #[derive(Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct GroupState {
     /// A unique group identifier.
+    #[cfg_attr(feature = "serde", serde(with = "crate::vec_serde"))]
     pub id: Vec<u8>,
+    #[cfg_attr(feature = "serde", serde(with = "crate::vec_serde"))]
     pub data: Vec<u8>,
 }
 

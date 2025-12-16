@@ -18,7 +18,7 @@ use crate::{
         node::LeafIndex,
         TreeKemPublic,
     },
-    CipherSuiteProvider, ExtensionList,
+    CipherSuiteProvider, ExtensionList, MlsRules,
 };
 
 use super::{
@@ -36,7 +36,16 @@ use crate::extension::ExternalSendersExt;
 ))]
 use crate::group::SelfRemoveProposal;
 
+#[cfg(feature = "application_data")]
+use crate::group::application_data::{
+    application_data_from_extensions, ApplicationDataDictionary, ComponentData, APPLICATION_DATA,
+};
+
 use alloc::vec::Vec;
+#[cfg(feature = "application_data")]
+use mls_rs_codec::MlsEncode;
+#[cfg(feature = "application_data")]
+use mls_rs_core::extension::Extension;
 use mls_rs_core::{
     error::IntoAnyError,
     identity::{IdentityProvider, MemberValidationContext},
@@ -60,11 +69,12 @@ use {crate::iter::ParallelIteratorExt, rayon::prelude::*};
 #[cfg(mls_build_async)]
 use futures::{StreamExt, TryStreamExt};
 
-impl<C, P, CSP> ProposalApplier<'_, C, P, CSP>
+impl<C, P, CSP, Rules> ProposalApplier<'_, C, P, CSP, Rules>
 where
     C: IdentityProvider,
     P: PreSharedKeyStorage,
     CSP: CipherSuiteProvider,
+    Rules: MlsRules,
 {
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(super) async fn apply_proposals_from_member(
@@ -119,6 +129,15 @@ where
             feature = "self_remove_proposal"
         ))]
         let proposals = filter_out_remove_if_self_remove_same_leaf(strategy, proposals)?;
+        
+        #[cfg(feature = "application_data")]
+        let proposals = filter_out_invalid_application_data_updates(
+            strategy,
+            proposals,
+            &application_data_from_extensions(self.original_context.extensions())?
+                .unwrap_or_default(),
+            self.user_rules,
+        )?;
 
         self.apply_proposal_changes(strategy, proposals, commit_time)
             .await
@@ -175,6 +194,17 @@ where
         let new_context_extensions = applied_proposals
             .group_context_extensions_proposal()
             .map(|gce| gce.proposal.clone());
+        #[cfg(feature = "application_data")]
+        let mut new_context_extensions = new_context_extensions;
+        #[cfg(feature = "application_data")]
+        if !applied_proposals.app_data_update_proposals().is_empty() {
+            let mut context_extensions =
+                new_context_extensions.unwrap_or(self.original_context.extensions.clone());
+            self.apply_app_data_updates(&applied_proposals, &mut context_extensions)
+                .await?;
+
+            new_context_extensions = Some(context_extensions);
+        }
 
         Ok(ApplyProposalsOutput {
             applied_proposals,
@@ -273,6 +303,83 @@ where
             .for_each(|i| proposals.remove::<AddProposal>(i));
 
         Ok(proposals)
+    }
+
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    #[cfg(feature = "application_data")]
+    pub(super) async fn apply_app_data_updates(
+        &self,
+        applied_proposals: &ProposalBundle,
+        context_extensions: &mut ExtensionList,
+    ) -> Result<(), MlsError> {
+        let mut application_data =
+            application_data_from_extensions(context_extensions)?.unwrap_or_default();
+
+        for proposal in applied_proposals.app_data_update_proposals() {
+            match &proposal.proposal.op {
+                crate::group::proposal::AppDataUpdateOperation::Remove => {
+                    application_data.component_data.retain(|component| {
+                        component.component_id != proposal.proposal.component_id
+                    });
+                }
+                crate::group::proposal::AppDataUpdateOperation::Update(update) => {
+                    let component_data = application_data
+                        .component_data
+                        .iter_mut()
+                        .find(|component| component.component_id == proposal.proposal.component_id)
+                        .map(|component| &mut component.data);
+                    let updated = self
+                        .user_rules
+                        .update_components(
+                            proposal.proposal.component_id,
+                            component_data.as_ref().map(|v| v.as_slice()),
+                            &update,
+                            &self.original_tree.roster(),
+                        )
+                        .await
+                        .map_err(|e| MlsError::MlsRulesError(e.into_any_error()))?;
+
+                    match component_data {
+                        Some(data) => *data = updated,
+                        None => {
+                            let new_component = ComponentData {
+                                component_id: proposal.proposal.component_id,
+                                data: updated,
+                            };
+
+                            // ensure components are sorted by component id
+                            match application_data
+                                .component_data
+                                .iter()
+                                .position(|component| {
+                                    component.component_id > proposal.proposal.component_id
+                                }) {
+                                Some(index) => {
+                                    application_data.component_data.insert(index, new_component)
+                                }
+                                None => application_data.component_data.push(new_component),
+                            }
+                        }
+                    }
+                }
+                // already filtered out
+                crate::group::proposal::AppDataUpdateOperation::Invalid => {}
+            }
+        }
+
+        let encoded = application_data.mls_encode_to_vec()?;
+        match context_extensions
+            .0
+            .iter_mut()
+            .find(|extension| extension.extension_type == APPLICATION_DATA)
+        {
+            Some(extension) => extension.extension_data = encoded,
+            None => context_extensions
+                .0
+                .push(Extension::new(APPLICATION_DATA, encoded)),
+        }
+
+        Ok(())
     }
 }
 
@@ -514,6 +621,67 @@ fn filter_out_external_init(
     Ok(proposals)
 }
 
+#[cfg(feature = "application_data")]
+fn filter_out_invalid_application_data_updates<Rules>(
+    strategy: FilterStrategy,
+    mut proposals: ProposalBundle,
+    application_data: &ApplicationDataDictionary,
+    user_rules: &Rules,
+) -> Result<ProposalBundle, MlsError>
+where
+    Rules: MlsRules,
+{
+    use std::collections::HashSet;
+
+    use crate::group::proposal::{AppDataUpdateOperation, AppDataUpdateProposal};
+    let supported_components = user_rules
+        .supported_components()
+        .iter()
+        .collect::<HashSet<_>>();
+
+    let mut updated = HashSet::new();
+    let mut removed = HashSet::new();
+
+    proposals.retain_by_type::<AppDataUpdateProposal, _, _>(|p| {
+        let proposal = &p.proposal;
+        // the component must be supported by the application
+        let mut condition = supported_components.contains(&p.proposal.component_id);
+
+        match p.proposal.op {
+            AppDataUpdateOperation::Invalid => condition = false,
+            AppDataUpdateOperation::Update(_) => {
+                condition = condition
+                // there cannot be update and remove operations for the same component
+                && !removed.contains(&p.proposal.component_id);
+                updated.insert(p.proposal.component_id);
+            }
+            AppDataUpdateOperation::Remove => {
+                condition = condition
+                // the remove operation must refer to existing state
+                && application_data
+                    .component_data
+                    .iter()
+                    .any(|component| component.component_id == proposal.component_id)
+                // there cannot be multiple remove operations for the same component
+                && !removed.contains(&p.proposal.component_id)
+                // there cannot be update and remove operations for the same component
+                && !updated.contains(&p.proposal.component_id);
+                removed.insert(p.proposal.component_id);
+            }
+        }
+
+        apply_strategy(
+            strategy,
+            p.is_by_reference(),
+            condition
+                .then_some(())
+                .ok_or(MlsError::InvalidApplicationDataUpdateProposal),
+        )
+    })?;
+
+    Ok(proposals)
+}
+
 pub(crate) fn proposer_can_propose(
     proposer: Sender,
     proposal_type: ProposalType,
@@ -565,7 +733,17 @@ pub(crate) fn proposer_can_propose(
         }
         #[cfg(feature = "by_ref_proposal")]
         (Sender::External(_), ProposalSource::ByValue) => false,
-        #[cfg(feature = "by_ref_proposal")]
+        #[cfg(all(feature = "by_ref_proposal", feature = "application_data"))]
+        (Sender::External(_), _) => matches!(
+            proposal_type,
+            ProposalType::ADD
+                | ProposalType::REMOVE
+                | ProposalType::RE_INIT
+                | ProposalType::PSK
+                | ProposalType::GROUP_CONTEXT_EXTENSIONS
+                | ProposalType::APP_DATA_UPDATE
+        ),
+        #[cfg(all(feature = "by_ref_proposal", not(feature = "application_data")))]
         (Sender::External(_), _) => matches!(
             proposal_type,
             ProposalType::ADD
