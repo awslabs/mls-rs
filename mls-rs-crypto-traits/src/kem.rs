@@ -1,6 +1,7 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
+#![allow(unused_assignments)]
 
 use core::fmt::Debug;
 
@@ -52,6 +53,7 @@ pub trait KemType: Send + Sync + Sized {
 
 /// Struct to represent the output of the kem [encap](KemType::encap) function
 #[derive(Clone, MlsDecode, MlsEncode, MlsSize, ZeroizeOnDrop)]
+
 pub struct KemResult {
     pub shared_secret: Vec<u8>,
     #[zeroize(skip)]
