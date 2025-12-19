@@ -866,7 +866,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
 
         #[cfg(feature = "application_data")]
         let application_data = {
-            let mut data: BTreeMap<u32, Vec<Vec<u8>>> = BTreeMap::new();
+            let mut data: BTreeMap<u16, Vec<Vec<u8>>> = BTreeMap::new();
             for proposal in provisional_state
                 .applied_proposals
                 .app_ephemeral_proposals()

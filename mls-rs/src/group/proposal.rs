@@ -507,7 +507,7 @@ impl MlsEncode for AppDataUpdateProposal {
 #[cfg(feature = "application_data")]
 impl MlsDecode for AppDataUpdateProposal {
     fn mls_decode(reader: &mut &[u8]) -> Result<Self, mls_rs_codec::Error> {
-        let component_id = u32::mls_decode(reader)?;
+        let component_id = u16::mls_decode(reader)?;
         let op = match u8::mls_decode(reader)? {
             0 => AppDataUpdateOperation::Invalid,
             1 => AppDataUpdateOperation::Update(mls_rs_codec::byte_vec::mls_decode(reader)?),
