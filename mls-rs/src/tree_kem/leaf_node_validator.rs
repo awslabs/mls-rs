@@ -211,7 +211,7 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
 
         // If there are extensions, make sure they are referenced in the capabilities field
         for one_ext in &*leaf_node.extensions {
-            if !leaf_node
+            if !one_ext.extension_type.is_default() && !leaf_node
                 .capabilities
                 .extensions
                 .contains(&one_ext.extension_type)
