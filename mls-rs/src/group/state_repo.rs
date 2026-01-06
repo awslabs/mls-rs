@@ -37,8 +37,8 @@ where
     pending_commit: EpochStorageCommit,
     pending_key_package_removal: Option<KeyPackageRef>,
     group_id: Vec<u8>,
-    storage: S,
-    key_package_repo: K,
+    pub(crate) storage: S,
+    pub(crate) key_package_repo: K,
 }
 
 impl<S, K> Debug for GroupStateRepository<S, K>

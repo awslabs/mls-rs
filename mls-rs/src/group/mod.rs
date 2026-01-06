@@ -299,6 +299,14 @@ impl<C> Group<C>
 where
     C: ClientConfig + Clone,
 {
+    pub fn group_state_storage_mut(&mut self) -> &mut <C as ClientConfig>::GroupStateStorage {
+        &mut self.state_repo.storage
+    }
+
+    pub fn key_package_repository_mut(&mut self) -> &mut <C as ClientConfig>::KeyPackageRepository {
+        &mut self.state_repo.key_package_repo
+    }
+
     #[allow(clippy::too_many_arguments)]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn new(
@@ -321,7 +329,7 @@ where
             &signer,
             config.lifetime(maybe_now_time),
         )
-        .await?;
+            .await?;
 
         let (mut public_tree, private_tree) = TreeKemPublic::derive(
             leaf_node,
@@ -329,7 +337,7 @@ where
             &config.identity_provider(),
             &group_context_extensions,
         )
-        .await?;
+            .await?;
 
         let tree_hash = public_tree.tree_hash(&cipher_suite_provider).await?;
 
@@ -379,21 +387,21 @@ where
             #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
             public_tree.total_leaf_count(),
         )
-        .await?;
+            .await?;
 
         let confirmation_tag = ConfirmationTag::create(
             &key_schedule_result.confirmation_key,
             &vec![].into(),
             &cipher_suite_provider,
         )
-        .await?;
+            .await?;
 
         let interim_hash = InterimTranscriptHash::create(
             &cipher_suite_provider,
             &vec![].into(),
             &confirmation_tag,
         )
-        .await?;
+            .await?;
 
         Ok(Self {
             config,
