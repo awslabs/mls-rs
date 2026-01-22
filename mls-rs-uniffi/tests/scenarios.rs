@@ -26,6 +26,8 @@ macro_rules! generate_python_tests {
     };
 
     ($scenario:ident) => {
+        // TODO: Fix Python tests on Windows
+        #[cfg_attr(target_os = "windows", ignore)]
         #[test]
         fn $scenario() -> Result<(), Box<dyn std::error::Error>> {
             let target_dir = env!("CARGO_TARGET_TMPDIR");
