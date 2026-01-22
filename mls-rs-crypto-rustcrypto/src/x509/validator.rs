@@ -410,6 +410,12 @@ mod tests {
 
         let validator = X509Validator::new(vec![load_test_ca()]).unwrap();
 
-        assert_eq!(validator.validate_chain(&chain, None).unwrap(), expected)
+        // July 6, 2024 00:00:00 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1720224000));
+
+        assert_eq!(
+            validator.validate_chain(&chain, Some(time)).unwrap(),
+            expected
+        )
     }
 }

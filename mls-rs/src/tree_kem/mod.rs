@@ -1006,7 +1006,7 @@ pub(crate) mod test_utils {
             cs,
             properties,
             signing_identity,
-            &signer,
+            signer,
             Lifetime::years(1, None).unwrap(),
         )
         .await
