@@ -102,11 +102,13 @@ impl TreeKemPublic {
     where
         IP: IdentityProvider,
     {
-        let mut tree = TreeKemPublic {
+        let tree = TreeKemPublic {
             nodes,
             ..Default::default()
         };
 
+        #[cfg(feature = "tree_index")]
+        let mut tree = tree;
         #[cfg(feature = "tree_index")]
         tree.initialize_index_if_necessary(identity_provider, extensions)
             .await?;
