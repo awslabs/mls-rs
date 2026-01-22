@@ -297,8 +297,8 @@ mod tests {
 
         let chain = vec![load_test_p384_ca()].into();
 
-        // July 6, 2024 00:00:00 UTC
-        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1720224000));
+        // February 4, 2025 00:00:00 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1738627200));
 
         X509CredentialValidator::validate_chain(&validator, &chain, Some(time)).unwrap();
     }
@@ -432,8 +432,8 @@ mod tests {
 
         let validator = X509Validator::new(vec![load_test_ca()]).unwrap();
 
-        // July 6, 2024 00:00:00 UTC
-        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1720224000));
+        // February 4, 2025 00:00:00 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1738627200));
 
         assert_eq!(
             validator.validate_chain(&chain, Some(time)).unwrap(),
