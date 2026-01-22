@@ -219,6 +219,8 @@ impl X509CredentialValidator for X509Validator {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use assert_matches::assert_matches;
     use mls_rs_core::time::MlsTime;
     use mls_rs_identity_x509::{CertificateChain, X509CredentialValidator};
@@ -244,9 +246,10 @@ mod tests {
 
         let validator = X509Validator::new(vec![load_test_ca()]).unwrap();
 
-        validator
-            .validate_chain(&chain, Some(MlsTime::now()))
-            .unwrap();
+        // July 6, 2024 00:00:00 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1720224000));
+
+        validator.validate_chain(&chain, Some(time)).unwrap();
     }
 
     #[test]
@@ -254,11 +257,11 @@ mod tests {
         let chain = load_test_cert_chain();
         let chain = chain[0..chain.len() - 1].to_vec().into();
 
-        let validator = X509Validator::new(vec![load_test_ca()]).unwrap();
+        // July 6, 2024 00:00:00 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1720224000));
 
-        validator
-            .validate_chain(&chain, Some(MlsTime::now()))
-            .unwrap();
+        let validator = X509Validator::new(vec![load_test_ca()]).unwrap();
+        validator.validate_chain(&chain, Some(time)).unwrap();
     }
 
     #[test]
@@ -268,9 +271,10 @@ mod tests {
         let mut validator = X509Validator::new(vec![load_test_ca()]).unwrap();
         validator.set_pinned_cert(Some(chain.get(1).unwrap().clone()));
 
-        validator
-            .validate_chain(&chain, Some(MlsTime::now()))
-            .unwrap();
+        // July 6, 2024 00:00:00 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1720224000));
+
+        validator.validate_chain(&chain, Some(time)).unwrap();
     }
 
     #[test]

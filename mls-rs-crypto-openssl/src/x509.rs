@@ -626,9 +626,10 @@ mod tests {
         let validator = X509Validator::new(vec![load_test_ca()]).unwrap();
         let system_validator = X509Validator::new(vec![]).unwrap().with_system_ca();
 
-        validator
-            .validate_chain(&chain, Some(MlsTime::now()))
-            .unwrap();
+        // July 6, 2024 00:00:00 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1720224000));
+
+        validator.validate_chain(&chain, Some(time)).unwrap();
 
         assert_matches!(
             system_validator.validate_chain(&chain, None),
