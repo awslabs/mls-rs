@@ -157,9 +157,10 @@ mod tests {
 
         let validator = CertificateValidator::new_der(&[load_test_ca()]).unwrap();
 
-        validator
-            .validate_chain(&chain, Some(MlsTime::now()))
-            .unwrap();
+        // July 6, 2024 00:00:00 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1720224000));
+
+        validator.validate_chain(&chain, Some(time)).unwrap();
     }
 
     #[test]
@@ -167,7 +168,10 @@ mod tests {
         let validator = CertificateValidator::new_der(&[]).unwrap();
         let empty: Vec<Vec<u8>> = Vec::new();
 
-        let res = validator.validate_chain(&CertificateChain::from(empty), Some(MlsTime::now()));
+        // July 6, 2024 00:00:00 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1720224000));
+
+        let res = validator.validate_chain(&CertificateChain::from(empty), Some(time));
 
         assert_matches!(res, Err(AwsLcCryptoError::CryptoError));
     }
@@ -177,7 +181,10 @@ mod tests {
         let chain = load_test_invalid_chain();
         let validator = CertificateValidator::new_der(&[load_test_ca()]).unwrap();
 
-        let res = validator.validate_chain(&chain, Some(MlsTime::now()));
+        // July 6, 2024 00:00:00 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1720224000));
+
+        let res = validator.validate_chain(&chain, Some(time));
 
         assert_matches!(res, Err(AwsLcCryptoError::CertValidationFailure(_)));
     }
@@ -186,7 +193,11 @@ mod tests {
     fn will_fail_on_invalid_ca() {
         let chain = load_test_invalid_ca_chain();
         let validator = CertificateValidator::new_der(&[load_another_ca()]).unwrap();
-        let res = validator.validate_chain(&chain, Some(MlsTime::now()));
+
+        // July 6, 2024 00:00:00 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1720224000));
+
+        let res = validator.validate_chain(&chain, Some(time));
 
         assert_matches!(res, Err(AwsLcCryptoError::CertValidationFailure(_)));
     }

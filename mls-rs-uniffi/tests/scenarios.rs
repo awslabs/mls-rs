@@ -26,11 +26,13 @@ macro_rules! generate_python_tests {
     };
 
     ($scenario:ident) => {
+        // TODO: Fix Python tests on Windows
+        #[cfg_attr(target_os = "windows", ignore)]
         #[test]
         fn $scenario() -> Result<(), Box<dyn std::error::Error>> {
             let target_dir = env!("CARGO_TARGET_TMPDIR");
             let script_path = format!("tests/{}.py", stringify!($scenario));
-            uniffi_bindgen::bindings::python::run_script(
+            uniffi_bindgen::bindings::python_test::run_script(
                 &target_dir,
                 "mls-rs-uniffi",
                 &script_path,

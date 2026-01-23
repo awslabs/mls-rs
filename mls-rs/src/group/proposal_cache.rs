@@ -846,7 +846,7 @@ mod tests {
 
         let extensions = Proposal::GroupContextExtensions(ExtensionList::new());
 
-        let proposals = vec![add, remove, extensions];
+        let proposals = [add, remove, extensions];
 
         let test_node = get_basic_test_node(cipher_suite, "charlie").await;
 

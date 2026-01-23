@@ -626,9 +626,10 @@ mod tests {
         let validator = X509Validator::new(vec![load_test_ca()]).unwrap();
         let system_validator = X509Validator::new(vec![]).unwrap().with_system_ca();
 
-        validator
-            .validate_chain(&chain, Some(MlsTime::now()))
-            .unwrap();
+        // July 6, 2024 00:00:00 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1720224000));
+
+        validator.validate_chain(&chain, Some(time)).unwrap();
 
         assert_matches!(
             system_validator.validate_chain(&chain, None),
@@ -641,7 +642,10 @@ mod tests {
         let validator = X509Validator::new(vec![]).unwrap();
         let empty: Vec<Vec<u8>> = Vec::new();
 
-        let res = validator.validate_chain(&CertificateChain::from(empty), Some(MlsTime::now()));
+        // July 6, 2024 00:00:00 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1720224000));
+
+        let res = validator.validate_chain(&CertificateChain::from(empty), Some(time));
 
         assert_matches!(res, Err(X509Error::EmptyCertificateChain));
     }
@@ -672,7 +676,10 @@ mod tests {
         let chain = load_test_invalid_chain();
         let validator = X509Validator::new(vec![load_test_ca()]).unwrap();
 
-        let res = validator.validate_chain(&chain, Some(MlsTime::now()));
+        // July 6, 2024 00:00:00 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1720224000));
+
+        let res = validator.validate_chain(&chain, Some(time));
 
         assert_matches!(res, Err(X509Error::ChainValidationFailure(_)));
     }
@@ -681,7 +688,11 @@ mod tests {
     fn will_fail_on_invalid_ca() {
         let chain = load_test_invalid_ca_chain();
         let validator = X509Validator::new(vec![load_another_ca()]).unwrap();
-        let res = validator.validate_chain(&chain, Some(MlsTime::now()));
+
+        // July 6, 2024 00:00:00 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1720224000));
+
+        let res = validator.validate_chain(&chain, Some(time));
 
         assert_matches!(res, Err(X509Error::ChainValidationFailure(_)));
     }
@@ -717,7 +728,13 @@ mod tests {
 
         let validator = X509Validator::new(vec![load_test_ca()]).unwrap();
 
-        assert_eq!(validator.validate_chain(&chain, None).unwrap(), expected)
+        // July 6, 2024 00:00:00 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1720224000));
+
+        assert_eq!(
+            validator.validate_chain(&chain, Some(time)).unwrap(),
+            expected
+        )
     }
 
     #[test]

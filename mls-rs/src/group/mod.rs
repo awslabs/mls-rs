@@ -2407,14 +2407,17 @@ mod tests {
             test_client_with_key_pkg, TestClientBuilder, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION,
         },
         client_builder::test_utils::TestClientConfig,
+        crypto::test_utils::test_cipher_suite_provider,
         crypto::test_utils::TestCryptoProvider,
         group::proposal_filter::ProposalInfo,
-        identity::test_utils::get_test_signing_identity,
+        identity::basic::BasicIdentityProvider,
+        identity::test_utils::{get_test_signing_identity, BasicWithCustomProvider},
         key_package::test_utils::test_key_package_message,
         mls_rules::CommitOptions,
         tree_kem::{
-            leaf_node::{test_utils::get_test_capabilities, LeafNodeSource},
-            UpdatePathNode,
+            leaf_node::{test_utils::get_test_capabilities, ConfigProperties, LeafNodeSource},
+            test_utils::{make_leaf, TreeWithSigners},
+            Lifetime, UpdatePathNode,
         },
     };
 
@@ -2427,8 +2430,6 @@ mod tests {
             mls_rules::{CommitDirection, CommitSource},
             proposal_filter::ProposalBundle,
         },
-        identity::basic::BasicIdentityProvider,
-        identity::test_utils::BasicWithCustomProvider,
     };
 
     #[cfg(any(feature = "private_message", feature = "custom_proposal"))]
@@ -2468,14 +2469,17 @@ mod tests {
     use assert_matches::assert_matches;
 
     use message_processor::CommitEffect;
-    use mls_rs_core::extension::{Extension, ExtensionType};
     use mls_rs_core::identity::{Credential, CredentialType, CustomCredential};
+    use mls_rs_core::{
+        extension::{Extension, ExtensionType},
+        identity::BasicCredential,
+    };
 
     #[cfg(feature = "by_ref_proposal")]
     use mls_rs_core::identity::CertificateChain;
 
     #[cfg(feature = "by_ref_proposal")]
-    use crate::{crypto::test_utils::test_cipher_suite_provider, extension::ExternalSendersExt};
+    use crate::extension::ExternalSendersExt;
 
     #[cfg(feature = "private_message")]
     use super::test_utils::test_member;
@@ -4224,6 +4228,36 @@ mod tests {
 
         let res = groups[7]
             .process_message(commit_output.commit_message)
+            .await;
+
+        assert_matches!(res, Err(MlsError::DuplicateLeafData(_)));
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn add_leaf_duplicate_signature_key() {
+        // RFC 8.3 "Verify that the following fields are unique among the members of the group: `signature_key`"
+
+        let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 10).await;
+
+        // copy existing signing key
+        let mut signing_identity = groups[1].current_member_signing_identity().unwrap().clone();
+        signing_identity.credential = Credential::Basic(BasicCredential::new(b"fred".to_vec()));
+        let secret_key = groups[1].signer.clone();
+
+        let client = TestClientBuilder::new_for_test()
+            .signing_identity(signing_identity, secret_key, TEST_CIPHER_SUITE)
+            .build();
+
+        let kp = client
+            .generate_key_package_message(Default::default(), Default::default(), None)
+            .await
+            .unwrap();
+
+        let res = groups[0]
+            .commit_builder()
+            .add_member(kp)
+            .unwrap()
+            .build()
             .await;
 
         assert_matches!(res, Err(MlsError::DuplicateLeafData(_)));
@@ -6091,5 +6125,72 @@ mod tests {
         group.commit(vec![]).await.unwrap();
         group.apply_pending_commit().await.unwrap();
         group.export_secret(b"123", b"", 15).await.unwrap();
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn tree_with_duplicate_signature_key_is_rejected() {
+        let cs = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+        let mut tree = TreeWithSigners::make_full_tree(8, &cs).await;
+
+        let signer = tree.signers[0].clone().unwrap();
+        let existing_leaf = tree.tree.nodes.leaves().next().unwrap().unwrap();
+        let duplicate_leaf = make_leaf(&cs, existing_leaf.signing_identity.clone(), &signer).await;
+
+        tree.add_leaf(duplicate_leaf, signer);
+
+        let res = TreeKemPublic::import_node_data(
+            tree.tree.nodes,
+            &BasicIdentityProvider,
+            &Default::default(),
+        )
+        .await;
+
+        assert_matches!(res, Err(MlsError::DuplicateLeafData(_)));
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn tree_with_unsupported_cred_is_rejected() {
+        let cs = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+        let mut tree = TreeWithSigners::make_full_tree(8, &cs).await;
+
+        let cred = Credential::Custom(CustomCredential::new(
+            CredentialType::new(BasicWithCustomProvider::CUSTOM_CREDENTIAL_TYPE),
+            b"12345".into(),
+        ));
+
+        let (signer, public_key) = cs.signature_key_generate().await.unwrap();
+        let signing_identity = SigningIdentity::new(cred, public_key);
+
+        let capabilities = Capabilities {
+            credentials: vec![BasicWithCustomProvider::CUSTOM_CREDENTIAL_TYPE.into()],
+            cipher_suites: vec![TEST_CIPHER_SUITE],
+            ..Default::default()
+        };
+
+        let properties = ConfigProperties {
+            capabilities,
+            extensions: Default::default(),
+        };
+
+        let (unsupported_leaf, _) = LeafNode::generate(
+            &cs,
+            properties,
+            signing_identity,
+            &signer,
+            Lifetime::years(1, None).unwrap(),
+        )
+        .await
+        .unwrap();
+
+        tree.add_leaf(unsupported_leaf, signer);
+
+        let res = TreeKemPublic::import_node_data(
+            tree.tree.nodes,
+            &BasicWithCustomProvider::new(BasicIdentityProvider),
+            &Default::default(),
+        )
+        .await;
+
+        assert_matches!(res, Err(MlsError::InUseCredentialTypeUnsupportedByNewLeaf));
     }
 }
