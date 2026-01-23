@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1760537387686,
+  "lastUpdate": 1769157147450,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -26771,6 +26771,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 156121,
             "range": "± 1843",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "103590845+mulmarta@users.noreply.github.com",
+            "name": "mulmarta",
+            "username": "mulmarta"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e32b32462a834f0304506b7550a3edb16371f587",
+          "message": "Fix tree validation on join to be independent of tree index (#328)\n\n* fix: Tree validation on join should not be dependent on tree index\n\n* fix: Use fixed time in X509 tests\n\n* fix: Apply clippy suggestion\n\n* fix: Use constant time for all cert validation tests\n\n* fix: Use constant time for all cert validation tests\n\n* fix: Use later date for X509 tests\n\n* fix: Update ffi version to fix kotlin build\n\n* temp disable python ffi tests on windows\n\n---------\n\nCo-authored-by: Marta Mularczyk <mulmarta@amazon.com>",
+          "timestamp": "2026-01-23T09:28:11+01:00",
+          "tree_id": "afb66c421232a36cd13d55b583cf27c7cb97cb3c",
+          "url": "https://github.com/awslabs/mls-rs/commit/e32b32462a834f0304506b7550a3edb16371f587"
+        },
+        "date": 1769157146509,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 535099,
+            "range": "± 10153",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 544173,
+            "range": "± 3425",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 604350,
+            "range": "± 18186",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1267246,
+            "range": "± 20329",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 9097643,
+            "range": "± 231750",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2650202,
+            "range": "± 46969",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7133430,
+            "range": "± 76847",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13286194,
+            "range": "± 130548",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 778325,
+            "range": "± 5171",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 869297,
+            "range": "± 6267",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 996903,
+            "range": "± 6849",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 22753,
+            "range": "± 691",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 77931,
+            "range": "± 1041",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 153567,
+            "range": "± 991",
             "unit": "ns/iter"
           }
         ]
