@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1769157147450,
+  "lastUpdate": 1769280975234,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -26879,6 +26879,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 153567,
             "range": "± 991",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "103590845+mulmarta@users.noreply.github.com",
+            "name": "mulmarta",
+            "username": "mulmarta"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "93856c231837a545e1e4a9f356cbe1a02f63df39",
+          "message": "Zeroize hpke and storage related data (#326)\n\n* fix: Zeroize hpke related outputs\n\n* fix: Zeroize storage related structs\n\n* Fix build\n\n* Fix build, take 2\n\n* Fix build, take 3\n\n* Fix build, take 4\n\n* Fix build, take 5\n\n* Fix build, take 7\n\n* Fix build, take 8\n\n* Fix build, take 9\n\n* fix: Update audit action\n\n---------\n\nCo-authored-by: Marta Mularczyk <mulmarta@amazon.com>",
+          "timestamp": "2026-01-24T19:51:59+01:00",
+          "tree_id": "079927cd0b72fb699248cff7b4eaf3eba89c359f",
+          "url": "https://github.com/awslabs/mls-rs/commit/93856c231837a545e1e4a9f356cbe1a02f63df39"
+        },
+        "date": 1769280974428,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 530045,
+            "range": "± 12784",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 536821,
+            "range": "± 11949",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 601433,
+            "range": "± 17519",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1285141,
+            "range": "± 25978",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7549181,
+            "range": "± 341482",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2665252,
+            "range": "± 79219",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7117735,
+            "range": "± 97441",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13298772,
+            "range": "± 152156",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 775335,
+            "range": "± 8825",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 867911,
+            "range": "± 9260",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 999410,
+            "range": "± 13276",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 25825,
+            "range": "± 232",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 88547,
+            "range": "± 1454",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 173904,
+            "range": "± 1060",
             "unit": "ns/iter"
           }
         ]
