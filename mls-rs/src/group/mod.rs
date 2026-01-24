@@ -1696,8 +1696,25 @@ where
         &self,
         with_tree_in_extension: bool,
     ) -> Result<MlsMessage, MlsError> {
-        let mut extensions = ExtensionList::new();
+        let exts = ExtensionList::new();
+        self.group_info_message_allowing_ext_commit_with_extensions(with_tree_in_extension, exts)
+            .await
+    }
 
+    /// Create a group info message that can be used for external proposals and commits,
+    /// and that includes a user-specified list of group info extensions.
+    ///
+    /// The returned `GroupInfo` is suitable for one external commit for the current epoch.
+    /// If `with_tree_in_extension` is set to true, the returned `GroupInfo` contains the
+    /// ratchet tree and therefore contains all information needed to join the group. Otherwise,
+    /// the ratchet tree must be obtained separately, e.g. via
+    /// (ExternalClient::export_tree)[crate::external_client::ExternalGroup::export_tree].
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn group_info_message_allowing_ext_commit_with_extensions(
+        &self,
+        with_tree_in_extension: bool,
+        mut extensions: ExtensionList,
+    ) -> Result<MlsMessage, MlsError> {
         extensions.set_from({
             self.key_schedule
                 .get_external_key_pair_ext(&self.cipher_suite_provider)
@@ -3639,6 +3656,43 @@ mod tests {
                     .await
                     .unwrap(),
             )
+            .await
+            .unwrap();
+
+        alice_group.process_message(commit).await.unwrap();
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn can_join_new_group_externally_with_group_info_with_extensions() {
+        use crate::client::test_utils::TestClientBuilder;
+
+        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+
+        let (bob_identity, secret_key) = get_test_signing_identity(TEST_CIPHER_SUITE, b"bob").await;
+
+        let bob = TestClientBuilder::new_for_test()
+            .signing_identity(bob_identity, secret_key, TEST_CIPHER_SUITE)
+            .build();
+
+        let mut new_exts = ExtensionList::new();
+        const EXT_TYPE: ExtensionType = ExtensionType::new(999);
+
+        let extension = Extension::new(EXT_TYPE, vec![]);
+        new_exts.set(extension);
+
+        let group_info_with_exts = alice_group
+            .group_info_message_allowing_ext_commit_with_extensions(false, new_exts)
+            .await
+            .unwrap();
+
+        let group_info = group_info_with_exts.as_group_info().unwrap();
+        assert!(group_info.extensions().has_extension(EXT_TYPE));
+
+        let (_, commit) = bob
+            .external_commit_builder()
+            .unwrap()
+            .with_tree_data(alice_group.export_tree().into_owned())
+            .build(group_info_with_exts)
             .await
             .unwrap();
 
