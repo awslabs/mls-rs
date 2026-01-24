@@ -515,7 +515,7 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
         local_public: &HpkePublicKey,
         info: &[u8],
         aad: Option<&[u8]>,
-    ) -> Result<Vec<u8>, Self::Error> {
+    ) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
         match &self.hpke {
             AwsLcHpke::Classical(hpke) => {
                 hpke.open(ciphertext, local_secret, local_public, info, None, aad)
@@ -707,6 +707,6 @@ fn pq_cipher_suite_test() {
         let (sk, pk) = cs.kem_derive(&[0u8; 64]).unwrap();
         let ct = cs.hpke_seal(&pk, b"info", None, b"very secret").unwrap();
         let pt = cs.hpke_open(&ct, &sk, &pk, b"info", None).unwrap();
-        assert_eq!(pt, b"very secret");
+        assert_eq!(*pt, b"very secret");
     }
 }

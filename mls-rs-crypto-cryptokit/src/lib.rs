@@ -277,7 +277,7 @@ impl CipherSuiteProvider for CryptoKitCipherSuite {
         local_public: &HpkePublicKey,
         info: &[u8],
         aad: Option<&[u8]>,
-    ) -> Result<Vec<u8>, Self::Error> {
+    ) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
         let mut ctx =
             self.hpke_setup_r(&ciphertext.kem_output, local_secret, local_public, info)?;
         ctx.open(aad, &ciphertext.ciphertext)

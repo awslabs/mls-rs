@@ -21,13 +21,19 @@ pub struct EpochRecord {
 
 impl From<mls_rs_core::group::EpochRecord> for EpochRecord {
     fn from(mls_rs_core::group::EpochRecord { id, data }: mls_rs_core::group::EpochRecord) -> Self {
-        Self { id, data }
+        Self {
+            id,
+            data: data.to_vec(),
+        }
     }
 }
 
 impl From<EpochRecord> for mls_rs_core::group::EpochRecord {
     fn from(EpochRecord { id, data }: EpochRecord) -> Self {
-        Self { id, data }
+        Self {
+            id,
+            data: data.into(),
+        }
     }
 }
 
@@ -40,6 +46,7 @@ impl From<EpochRecord> for mls_rs_core::group::EpochRecord {
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 #[cfg_attr(not(mls_build_async), uniffi::export(with_foreign))]
 pub trait GroupStateStorage: Send + Sync + Debug {
+    // Uniffi doesn't support zeroizing
     async fn state(&self, group_id: Vec<u8>) -> Result<Option<Vec<u8>>, Error>;
     async fn epoch(&self, group_id: Vec<u8>, epoch_id: u64) -> Result<Option<Vec<u8>>, Error>;
 
@@ -86,19 +93,25 @@ where
     Err: IntoAnyError,
 {
     async fn state(&self, group_id: Vec<u8>) -> Result<Option<Vec<u8>>, Error> {
-        self.inner()
+        let data = self
+            .inner()
             .await
             .state(&group_id)
             .await
-            .map_err(|err| err.into_any_error().into())
+            .map_err(|err| err.into_any_error())?;
+
+        Ok(data.map(|data| data.to_vec()))
     }
 
     async fn epoch(&self, group_id: Vec<u8>, epoch_id: u64) -> Result<Option<Vec<u8>>, Error> {
-        self.inner()
+        let data = self
+            .inner()
             .await
             .epoch(&group_id, epoch_id)
             .await
-            .map_err(|err| err.into_any_error().into())
+            .map_err(|err| err.into_any_error())?;
+
+        Ok(data.map(|data| data.to_vec()))
     }
 
     async fn write(
@@ -111,7 +124,10 @@ where
         self.inner()
             .await
             .write(
-                mls_rs_core::group::GroupState { id, data },
+                mls_rs_core::group::GroupState {
+                    id,
+                    data: data.into(),
+                },
                 epoch_inserts.into_iter().map(Into::into).collect(),
                 epoch_updates.into_iter().map(Into::into).collect(),
             )
