@@ -7,6 +7,7 @@ use mls_rs::{
     storage_provider::in_memory::InMemoryGroupStateStorage,
 };
 use mls_rs_crypto_openssl::OpensslCryptoProvider;
+use zeroize::Zeroizing;
 
 use self::group_state::{GroupStateStorage, GroupStateStorageAdapter};
 use crate::Error;
@@ -27,12 +28,18 @@ impl From<Arc<dyn GroupStateStorage>> for ClientGroupStorage {
 impl mls_rs_core::group::GroupStateStorage for ClientGroupStorage {
     type Error = Error;
 
-    async fn state(&self, group_id: &[u8]) -> Result<Option<Vec<u8>>, Self::Error> {
-        self.0.state(group_id.to_vec()).await
+    async fn state(&self, group_id: &[u8]) -> Result<Option<Zeroizing<Vec<u8>>>, Self::Error> {
+        let data = self.0.state(group_id.to_vec()).await?;
+        Ok(data.map(Into::into))
     }
 
-    async fn epoch(&self, group_id: &[u8], epoch_id: u64) -> Result<Option<Vec<u8>>, Self::Error> {
-        self.0.epoch(group_id.to_vec(), epoch_id).await
+    async fn epoch(
+        &self,
+        group_id: &[u8],
+        epoch_id: u64,
+    ) -> Result<Option<Zeroizing<Vec<u8>>>, Self::Error> {
+        let data = self.0.epoch(group_id.to_vec(), epoch_id).await?;
+        Ok(data.map(Into::into))
     }
 
     async fn write(
@@ -44,7 +51,7 @@ impl mls_rs_core::group::GroupStateStorage for ClientGroupStorage {
         self.0
             .write(
                 state.id,
-                state.data,
+                state.data.to_vec(),
                 inserts.into_iter().map(Into::into).collect(),
                 updates.into_iter().map(Into::into).collect(),
             )

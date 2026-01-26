@@ -7,6 +7,7 @@ use mls_rs_core::{
     error::IntoAnyError,
 };
 use mls_rs_crypto_traits::{AeadType, KdfType};
+use zeroize::Zeroizing;
 
 use crate::{hpke::HpkeError, kdf::HpkeKdf};
 
@@ -85,8 +86,12 @@ pub struct ContextS<KDF: KdfType, AEAD: AeadType>(pub(super) Context<KDF, AEAD>)
 impl<KDF: KdfType, AEAD: AeadType> HpkeContextS for ContextS<KDF, AEAD> {
     type Error = HpkeError;
 
-    async fn export(&self, exporter_context: &[u8], len: usize) -> Result<Vec<u8>, Self::Error> {
-        self.0.export(exporter_context, len).await
+    async fn export(
+        &self,
+        exporter_context: &[u8],
+        len: usize,
+    ) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
+        self.0.export(exporter_context, len).await.map(Into::into)
     }
 
     /// # Errors
@@ -111,8 +116,12 @@ pub struct ContextR<KDF: KdfType, AEAD: AeadType>(pub(super) Context<KDF, AEAD>)
 impl<KDF: KdfType, AEAD: AeadType> HpkeContextR for ContextR<KDF, AEAD> {
     type Error = HpkeError;
 
-    async fn export(&self, exporter_context: &[u8], len: usize) -> Result<Vec<u8>, Self::Error> {
-        self.0.export(exporter_context, len).await
+    async fn export(
+        &self,
+        exporter_context: &[u8],
+        len: usize,
+    ) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
+        self.0.export(exporter_context, len).await.map(Into::into)
     }
 
     /// # Errors
@@ -127,8 +136,8 @@ impl<KDF: KdfType, AEAD: AeadType> HpkeContextR for ContextR<KDF, AEAD> {
         &mut self,
         aad: Option<&[u8]>,
         ciphertext: &[u8],
-    ) -> Result<Vec<u8>, Self::Error> {
-        self.0.open(aad, ciphertext).await
+    ) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
+        self.0.open(aad, ciphertext).await.map(Into::into)
     }
 }
 

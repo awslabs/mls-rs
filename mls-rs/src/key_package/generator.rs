@@ -258,7 +258,7 @@ mod tests {
                 .await
                 .unwrap();
 
-            assert_eq!(opened, test_data);
+            assert_eq!(*opened, test_data);
 
             let validator =
                 LeafNodeValidator::new_for_test(&cipher_suite_provider, &BasicIdentityProvider);

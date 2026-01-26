@@ -22,6 +22,7 @@ mls-rs-core = { version = "0.25.0", path = "../mls-rs-core" }
 mls-rs-crypto-openssl = { version = "0.19.0", path = "../mls-rs-crypto-openssl" }
 thiserror = "2"
 uniffi = { version = "0.31" }
+zeroize = "1"
 
 [target.'cfg(mls_build_async)'.dependencies]
 tokio = { version = "1.36.0", features = ["sync"] }

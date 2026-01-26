@@ -400,7 +400,7 @@ impl InitSecret {
             .await
             .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
-        Ok((InitSecret(Zeroizing::new(init_secret)), kem_output))
+        Ok((InitSecret(init_secret), kem_output))
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -418,7 +418,6 @@ impl InitSecret {
         context
             .export(EXPORTER_CONTEXT, cipher_suite.kdf_extract_size())
             .await
-            .map(Zeroizing::new)
             .map(InitSecret)
             .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
     }

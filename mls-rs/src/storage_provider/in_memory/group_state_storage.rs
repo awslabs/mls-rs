@@ -17,6 +17,7 @@ use core::{
 use mls_rs_core::group::{EpochRecord, GroupState, GroupStateStorage};
 #[cfg(not(target_has_atomic = "ptr"))]
 use portable_atomic_util::Arc;
+use zeroize::Zeroizing;
 
 use crate::{
     client::MlsError,
@@ -33,7 +34,7 @@ pub(crate) const DEFAULT_EPOCH_RETENTION_LIMIT: usize = 3;
 
 #[derive(Clone)]
 pub(crate) struct InMemoryGroupData {
-    pub(crate) state_data: Vec<u8>,
+    pub(crate) state_data: Zeroizing<Vec<u8>>,
     pub(crate) epoch_data: VecDeque<EpochRecord>,
 }
 
@@ -50,7 +51,7 @@ impl Debug for InMemoryGroupData {
 }
 
 impl InMemoryGroupData {
-    pub fn new(state_data: Vec<u8>) -> InMemoryGroupData {
+    pub fn new(state_data: Zeroizing<Vec<u8>>) -> InMemoryGroupData {
         InMemoryGroupData {
             state_data,
             epoch_data: Default::default(),
@@ -179,14 +180,18 @@ impl GroupStateStorage for InMemoryGroupStateStorage {
             .and_then(|group_data| group_data.epoch_data.back().map(|e| e.id)))
     }
 
-    async fn state(&self, group_id: &[u8]) -> Result<Option<Vec<u8>>, Self::Error> {
+    async fn state(&self, group_id: &[u8]) -> Result<Option<Zeroizing<Vec<u8>>>, Self::Error> {
         Ok(self
             .lock()
             .get(group_id)
             .map(|data| data.state_data.clone()))
     }
 
-    async fn epoch(&self, group_id: &[u8], epoch_id: u64) -> Result<Option<Vec<u8>>, Self::Error> {
+    async fn epoch(
+        &self,
+        group_id: &[u8],
+        epoch_id: u64,
+    ) -> Result<Option<Zeroizing<Vec<u8>>>, Self::Error> {
         Ok(self
             .lock()
             .get(group_id)
@@ -245,13 +250,16 @@ mod tests {
     }
 
     fn test_epoch(epoch_id: u64) -> EpochRecord {
-        EpochRecord::new(epoch_id, format!("epoch {epoch_id}").as_bytes().to_vec())
+        EpochRecord::new(
+            epoch_id,
+            format!("epoch {epoch_id}").as_bytes().to_vec().into(),
+        )
     }
 
     fn test_snapshot(epoch_id: u64) -> GroupState {
         GroupState {
             id: TEST_GROUP.into(),
-            data: format!("snapshot {epoch_id}").as_bytes().to_vec(),
+            data: format!("snapshot {epoch_id}").as_bytes().to_vec().into(),
         }
     }
 

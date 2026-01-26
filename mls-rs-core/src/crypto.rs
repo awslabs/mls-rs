@@ -148,7 +148,11 @@ pub trait HpkeContextS {
     async fn seal(&mut self, aad: Option<&[u8]>, data: &[u8]) -> Result<Vec<u8>, Self::Error>;
 
     /// Export a secret from the context for the given `exporter_context`.
-    async fn export(&self, exporter_context: &[u8], len: usize) -> Result<Vec<u8>, Self::Error>;
+    async fn export(
+        &self,
+        exporter_context: &[u8],
+        len: usize,
+    ) -> Result<Zeroizing<Vec<u8>>, Self::Error>;
 }
 
 /// The HPKE context for receiver outputted by [hpke_setup_r](CipherSuiteProvider::hpke_setup_r).
@@ -166,11 +170,18 @@ pub trait HpkeContextR {
 
     /// Decrypt `ciphertext` using the cipher key of the context with optional `aad`.
     /// This function should internally increment the sequence number.
-    async fn open(&mut self, aad: Option<&[u8]>, ciphertext: &[u8])
-        -> Result<Vec<u8>, Self::Error>;
+    async fn open(
+        &mut self,
+        aad: Option<&[u8]>,
+        ciphertext: &[u8],
+    ) -> Result<Zeroizing<Vec<u8>>, Self::Error>;
 
     /// Export a secret from the context for the given `exporter_context`.
-    async fn export(&self, exporter_context: &[u8], len: usize) -> Result<Vec<u8>, Self::Error>;
+    async fn export(
+        &self,
+        exporter_context: &[u8],
+        len: usize,
+    ) -> Result<Zeroizing<Vec<u8>>, Self::Error>;
 }
 
 /// Byte representation of a signature public key. For ciphersuites using elliptic curves,
@@ -409,7 +420,7 @@ pub trait CipherSuiteProvider: Send + Sync {
         local_public: &HpkePublicKey,
         info: &[u8],
         aad: Option<&[u8]>,
-    ) -> Result<Vec<u8>, Self::Error>;
+    ) -> Result<Zeroizing<Vec<u8>>, Self::Error>;
 
     /// Generate a tuple containing the ciphertext `kem_output` that can
     /// be used as the input to [hpke_setup_r](CipherSuiteProvider::hpke_setup_r),
