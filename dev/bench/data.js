@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1769444548192,
+  "lastUpdate": 1769451219996,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -27307,6 +27307,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 173512,
             "range": "± 1802",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ellen.arteca@gmail.com",
+            "name": "Ellen Arteca",
+            "username": "emarteca"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "20bfeeaa8fad8e2aed5e76981b3fbf2bb1c71b6e",
+          "message": "adding a new API to allow generation of groupinfo with ratchet tree and a set of user-specified extensions (#329)\n\nCo-authored-by: Ellen Arteca <emarteca@google.com>\nCo-authored-by: mulmarta <103590845+mulmarta@users.noreply.github.com>",
+          "timestamp": "2026-01-26T19:09:10+01:00",
+          "tree_id": "af4c25a97993863234c928c57298277504950e07",
+          "url": "https://github.com/awslabs/mls-rs/commit/20bfeeaa8fad8e2aed5e76981b3fbf2bb1c71b6e"
+        },
+        "date": 1769451218563,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 533532,
+            "range": "± 7427",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 539538,
+            "range": "± 7597",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 602916,
+            "range": "± 55630",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1254533,
+            "range": "± 27189",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7489444,
+            "range": "± 20845",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2665207,
+            "range": "± 103661",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7171756,
+            "range": "± 169805",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13353794,
+            "range": "± 108378",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 774903,
+            "range": "± 48855",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 865761,
+            "range": "± 11245",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 1000143,
+            "range": "± 11052",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 26512,
+            "range": "± 313",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 91538,
+            "range": "± 842",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 179173,
+            "range": "± 1591",
             "unit": "ns/iter"
           }
         ]
