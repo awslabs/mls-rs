@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1769280975234,
+  "lastUpdate": 1769423546073,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -26987,6 +26987,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 173904,
             "range": "± 1060",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "103590845+mulmarta@users.noreply.github.com",
+            "name": "mulmarta",
+            "username": "mulmarta"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "754cd7f44eb81023023f6064c46916577213d006",
+          "message": "Enforce RFC rules on branch and reinit (#314)\n\n* wip\n\n* fix: Validate groups membership after branching or reinit\n\n* Next fix for non-std\n\n* Next fix for async\n\n* fix: Update audit action\n\n---------\n\nCo-authored-by: Marta Mularczyk <mulmarta@amazon.com>",
+          "timestamp": "2026-01-26T11:28:38+01:00",
+          "tree_id": "78598c9d6d5c2ab855043b27c3a67ee819c7318b",
+          "url": "https://github.com/awslabs/mls-rs/commit/754cd7f44eb81023023f6064c46916577213d006"
+        },
+        "date": 1769423544677,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 529252,
+            "range": "± 7813",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 537755,
+            "range": "± 8109",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 601851,
+            "range": "± 35177",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1264453,
+            "range": "± 23709",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7525125,
+            "range": "± 27690",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2652560,
+            "range": "± 7613",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7138328,
+            "range": "± 240482",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13279477,
+            "range": "± 123958",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 774135,
+            "range": "± 14010",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 866777,
+            "range": "± 24746",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 1000964,
+            "range": "± 7866",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 25743,
+            "range": "± 1051",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 87546,
+            "range": "± 4659",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 173045,
+            "range": "± 1023",
             "unit": "ns/iter"
           }
         ]
