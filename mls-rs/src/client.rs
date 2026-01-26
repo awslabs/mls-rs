@@ -59,6 +59,8 @@ pub enum MlsError {
     ExtensionError(AnyError),
     #[cfg_attr(feature = "std", error("Cipher suite does not match"))]
     CipherSuiteMismatch,
+    #[cfg_attr(feature = "std", error("Initial epoch must be 1"))]
+    InitialEpochNotOne,
     #[cfg_attr(feature = "std", error("Invalid commit, missing required path"))]
     CommitMissingPath,
     #[cfg_attr(feature = "std", error("plaintext message for incorrect epoch"))]
@@ -356,6 +358,8 @@ pub enum MlsError {
     SelfRemoveAlreadyProposed,
     #[cfg_attr(feature = "std", error("Default value listed"))]
     DefaultValueListed,
+    #[cfg_attr(feature = "std", error("not a subgroup"))]
+    NotASubgroup,
 }
 
 impl IntoAnyError for MlsError {
