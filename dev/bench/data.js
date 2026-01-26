@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1769451219996,
+  "lastUpdate": 1769452670511,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -27415,6 +27415,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 179173,
             "range": "± 1591",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "cebspinetta@gmail.com",
+            "name": "Cristian Spinetta",
+            "username": "cspinetta"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b8b6285accd7a1a964eb5782abc01e5778dbbea2",
+          "message": "fix: Allow schema extension beyond user_version 1 (#331)\n\nChanged schema check from `current_schema != 1` to `current_schema < 1`\nto allow downstream applications to extend the database schema without\ntriggering table recreation errors.\n\nAdded test `extended_schema_version_test` to verify schema extension works.\n\nCo-authored-by: Cristian Spinetta <spinetta@amazon.co.uk>\nCo-authored-by: mulmarta <103590845+mulmarta@users.noreply.github.com>",
+          "timestamp": "2026-01-26T19:33:39+01:00",
+          "tree_id": "9eb51fec97ece8372e58a74a6d00edb82f6eed3c",
+          "url": "https://github.com/awslabs/mls-rs/commit/b8b6285accd7a1a964eb5782abc01e5778dbbea2"
+        },
+        "date": 1769452669509,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 532482,
+            "range": "± 4860",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 539869,
+            "range": "± 4130",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 602512,
+            "range": "± 12510",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1260391,
+            "range": "± 54752",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7595005,
+            "range": "± 33523",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2662530,
+            "range": "± 142995",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7168239,
+            "range": "± 92742",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13268307,
+            "range": "± 144302",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 773943,
+            "range": "± 33178",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 864069,
+            "range": "± 11354",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 1003641,
+            "range": "± 15605",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 25770,
+            "range": "± 1529",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 88034,
+            "range": "± 889",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 171624,
+            "range": "± 3310",
             "unit": "ns/iter"
           }
         ]
