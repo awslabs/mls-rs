@@ -716,7 +716,7 @@ where
             .map_err(|e| MlsError::GroupStorageError(e.into_any_error()))?
             .ok_or(MlsError::GroupNotFound)?;
 
-        let snapshot = Snapshot::mls_decode(&mut &*snapshot)?;
+        let snapshot = Snapshot::mls_decode(&mut &**snapshot)?;
 
         Group::from_snapshot(self.config.clone(), snapshot).await
     }
@@ -740,7 +740,7 @@ where
             .map_err(|e| MlsError::GroupStorageError(e.into_any_error()))?
             .ok_or(MlsError::GroupNotFound)?;
 
-        let mut snapshot = Snapshot::mls_decode(&mut &*snapshot)?;
+        let mut snapshot = Snapshot::mls_decode(&mut &**snapshot)?;
         snapshot.state.public_tree.nodes = tree_data.0.into_owned();
 
         Group::from_snapshot(self.config.clone(), snapshot).await

@@ -219,11 +219,12 @@ impl CipherSuiteProvider for WebCryptoCipherSuite {
         local_public: &HpkePublicKey,
         info: &[u8],
         aad: Option<&[u8]>,
-    ) -> Result<Vec<u8>, Self::Error> {
+    ) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
         self.hpke
             .open(ciphertext, local_secret, local_public, info, None, aad)
             .await
             .map_err(|e| CryptoError::HpkeError(e.into_any_error()))
+            .map(Into::into)
     }
 
     async fn hpke_setup_s(

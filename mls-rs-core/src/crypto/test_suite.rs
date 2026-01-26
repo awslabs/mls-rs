@@ -308,7 +308,7 @@ async fn verify_hpke_test<C: CipherSuiteProvider>(cs: &C, test_cases: HpkeTestCa
             .await
             .unwrap();
 
-        assert_eq!(exported, test.exported);
+        assert_eq!(*exported, test.exported);
     }
 }
 
@@ -327,7 +327,7 @@ async fn test_open_ciphertext<C: CipherSuiteProvider>(
         .await
         .unwrap();
 
-    assert_eq!(&opened, &test.plaintext);
+    assert_eq!(&*opened, &test.plaintext);
 
     let mut context_r = cs
         .hpke_setup_r(&ct.kem_output, secret, public, &test.info)
@@ -335,7 +335,7 @@ async fn test_open_ciphertext<C: CipherSuiteProvider>(
         .unwrap();
 
     let opened = context_r.open(aad, &ct.ciphertext).await.unwrap();
-    assert_eq!(&opened, &test.plaintext);
+    assert_eq!(&*opened, &test.plaintext);
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -402,7 +402,7 @@ async fn generate_hpke_tests<C: CipherSuiteProvider>(cs: &C) -> HpkeTestCases {
             kem_output,
             exporter_context,
             exported_len,
-            exported,
+            exported: exported.to_vec(),
         });
     }
 
@@ -656,15 +656,15 @@ mod hpke_rfc_conformance {
                 // Decrypt
                 let pt = context_r.open(Some(&enc_test_case.aad), &ct).await.unwrap();
 
-                assert_eq!(pt, enc_test_case.plaintext);
+                assert_eq!(*pt, enc_test_case.plaintext);
             }
 
             for test in test_case.exports {
                 let exported_s = context_s.export(&test.exporter_context, test.length).await;
-                assert_eq!(exported_s.unwrap(), test.exported_value);
+                assert_eq!(*exported_s.unwrap(), test.exported_value);
 
                 let exported_r = context_r.export(&test.exporter_context, test.length).await;
-                assert_eq!(exported_r.unwrap(), test.exported_value);
+                assert_eq!(*exported_r.unwrap(), test.exported_value);
             }
         }
     }

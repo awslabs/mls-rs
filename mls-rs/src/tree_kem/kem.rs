@@ -522,7 +522,7 @@ mod tests {
                 .await
                 .unwrap();
 
-            assert_eq!(test_data, opened);
+            assert_eq!(test_data, *opened);
         }
     }
 

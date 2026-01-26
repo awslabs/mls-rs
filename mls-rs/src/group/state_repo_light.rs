@@ -47,7 +47,7 @@ where
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn write_to_storage(&mut self, group_snapshot: Snapshot) -> Result<(), MlsError> {
         let group_state = GroupState {
-            data: group_snapshot.mls_encode_to_vec()?,
+            data: group_snapshot.mls_encode_to_vec()?.into(),
             id: group_snapshot.state.context.group_id,
         };
 

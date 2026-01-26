@@ -356,7 +356,7 @@ mod tests {
 
         let group_state = GroupState {
             id: b"group".into(),
-            data: legacy_snapshot.to_vec(),
+            data: legacy_snapshot.to_vec().into(),
         };
 
         storage
