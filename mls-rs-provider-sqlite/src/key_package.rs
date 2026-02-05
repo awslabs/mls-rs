@@ -43,7 +43,9 @@ impl SqLiteKeyPackageStorage {
                 "INSERT INTO key_package (id, expiration, data) VALUES (?,?,?)",
                 params![
                     id,
-                    i64::try_from(key_package.expiration).map_err(|_| SqLiteDataStorageError::TimestampOverflow(key_package.expiration))?,
+                    i64::try_from(key_package.expiration).map_err(|_| {
+                        SqLiteDataStorageError::TimestampOverflow(key_package.expiration)
+                    })?,
                     key_package
                         .mls_encode_to_vec()
                         .map_err(|e| SqLiteDataStorageError::DataConversionError(e.into()))?
@@ -94,7 +96,8 @@ impl SqLiteKeyPackageStorage {
         connection
             .execute(
                 "DELETE FROM key_package where expiration < ?",
-                params![i64::try_from(time).map_err(|_| SqLiteDataStorageError::TimestampOverflow(time))?],
+                params![i64::try_from(time)
+                    .map_err(|_| SqLiteDataStorageError::TimestampOverflow(time))?],
             )
             .map(|_| ())
             .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))
@@ -122,10 +125,14 @@ impl SqLiteKeyPackageStorage {
         connection
             .query_row(
                 "SELECT count(*) FROM key_package where expiration >= ?",
-                params![i64::try_from(time).map_err(|_| SqLiteDataStorageError::TimestampOverflow(time))?],
-                |row| row.get::<_, i64>(0).and_then(|v| {
-                    usize::try_from(v).map_err(|_| rusqlite::Error::IntegralValueOutOfRange(0, v))
-                }),
+                params![i64::try_from(time)
+                    .map_err(|_| SqLiteDataStorageError::TimestampOverflow(time))?],
+                |row| {
+                    row.get::<_, i64>(0).and_then(|v| {
+                        usize::try_from(v)
+                            .map_err(|_| rusqlite::Error::IntegralValueOutOfRange(0, v))
+                    })
+                },
             )
             .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))
     }
