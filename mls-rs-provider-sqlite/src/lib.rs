@@ -42,6 +42,16 @@ pub enum SqLiteDataStorageError {
     #[error(transparent)]
     /// Stored data is not compatible with the expected data type.
     DataConversionError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    #[error("epoch ID {0} exceeds maximum supported value (i64::MAX)")]
+    /// Epoch ID is too large to store in SQLite.
+    ///
+    /// SQLite uses signed 64-bit integers, limiting epoch IDs to values up to 9,223,372,036,854,775,807.
+    EpochIdOverflow(u64),
+    #[error("timestamp {0} exceeds maximum supported value (i64::MAX)")]
+    /// Timestamp is too large to store in SQLite.
+    ///
+    /// SQLite uses signed 64-bit integers, limiting timestamps to values up to 9,223,372,036,854,775,807.
+    TimestampOverflow(u64),
     #[cfg(any(feature = "sqlcipher", feature = "sqlcipher-bundled"))]
     #[error("invalid key, must use SqlCipherKey::RawKeyWithSalt with plaintext_header_size > 0")]
     /// Invalid SQLCipher key header.
