@@ -14,10 +14,6 @@ use crate::{
     tree_kem::node::LeafIndex,
 };
 
-#[cfg_attr(
-    all(feature = "ffi", not(test)),
-    safer_ffi_gen::ffi_type(clone, opaque)
-)]
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[non_exhaustive]
 pub struct GroupState {
@@ -37,7 +33,6 @@ impl GroupState {
     }
 }
 
-#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl GroupState {
     pub fn member_at_index(&self, index: u32) -> Option<Member> {
         let Ok(leaf_index) = LeafIndex::try_from(index) else {

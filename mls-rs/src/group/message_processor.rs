@@ -96,10 +96,6 @@ pub(crate) fn path_update_required(proposals: &ProposalBundle) -> bool {
         || !proposals.remove_proposals().is_empty()
 }
 
-#[cfg_attr(
-    all(feature = "ffi", not(test)),
-    safer_ffi_gen::ffi_type(clone, opaque)
-)]
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[non_exhaustive]
 pub struct NewEpoch {
@@ -125,7 +121,6 @@ impl NewEpoch {
 }
 
 #[cfg(all(feature = "ffi", not(test)))]
-#[safer_ffi_gen::safer_ffi_gen]
 impl NewEpoch {
     pub fn epoch(&self) -> u64 {
         self.epoch
@@ -144,10 +139,6 @@ impl NewEpoch {
     }
 }
 
-#[cfg_attr(
-    all(feature = "ffi", not(test)),
-    safer_ffi_gen::ffi_type(clone, opaque)
-)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum CommitEffect {
     NewEpoch(Box<NewEpoch>),
@@ -207,10 +198,6 @@ impl MlsDecode for CommitEffect {
     }
 }
 
-#[cfg_attr(
-    all(feature = "ffi", not(test)),
-    safer_ffi_gen::ffi_type(clone, opaque)
-)]
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)]
 /// An event generated as a result of processing a message for a group with
@@ -268,10 +255,6 @@ impl From<KeyPackage> for ReceivedMessage {
     }
 }
 
-#[cfg_attr(
-    all(feature = "ffi", not(test)),
-    safer_ffi_gen::ffi_type(clone, opaque)
-)]
 #[derive(Clone, PartialEq, Eq)]
 /// Description of a MLS application message.
 pub struct ApplicationMessageDescription {
@@ -305,17 +288,12 @@ impl Debug for ApplicationMessageDescription {
     }
 }
 
-#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl ApplicationMessageDescription {
     pub fn data(&self) -> &[u8] {
         self.data.as_bytes()
     }
 }
 
-#[cfg_attr(
-    all(feature = "ffi", not(test)),
-    safer_ffi_gen::ffi_type(clone, opaque)
-)]
 #[derive(Clone, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[non_exhaustive]
 /// Description of a processed MLS commit message.
@@ -375,10 +353,6 @@ impl TryFrom<Sender> for ProposalSender {
 }
 
 #[cfg(feature = "by_ref_proposal")]
-#[cfg_attr(
-    all(feature = "ffi", not(test)),
-    safer_ffi_gen::ffi_type(clone, opaque)
-)]
 #[derive(Clone, MlsEncode, MlsDecode, MlsSize, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
@@ -466,10 +440,6 @@ impl ProposalMessageDescription {
 }
 
 #[cfg(not(feature = "by_ref_proposal"))]
-#[cfg_attr(
-    all(feature = "ffi", not(test)),
-    safer_ffi_gen::ffi_type(clone, opaque)
-)]
 #[derive(Debug, Clone)]
 /// Description of a processed MLS proposal message.
 pub struct ProposalMessageDescription {}
@@ -888,7 +858,6 @@ pub(crate) trait MessageProcessor: Send + Sync {
         feature = "custom_proposal",
         feature = "self_remove_proposal"
     ))]
-    #[cfg_attr(feature = "ffi", safer_ffi_gen::safer_ffi_gen_ignore)]
     fn self_removal_proposal(
         &self,
         provisional_state: &ProvisionalState,

@@ -24,10 +24,6 @@ use mls_rs_core::crypto::HpkePublicKey;
 ///
 /// A custom application level identifier that can be optionally stored
 /// within the `leaf_node_extensions` of a group [Member](crate::group::Member).
-#[cfg_attr(
-    all(feature = "ffi", not(test)),
-    safer_ffi_gen::ffi_type(clone, opaque)
-)]
 #[derive(Clone, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 pub struct ApplicationIdExt {
     /// Application level identifier presented by this extension.
@@ -46,7 +42,6 @@ impl Debug for ApplicationIdExt {
     }
 }
 
-#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl ApplicationIdExt {
     /// Create a new application level identifier extension.
     pub fn new(identifier: Vec<u8>) -> Self {
@@ -70,16 +65,11 @@ impl MlsCodecExtension for ApplicationIdExt {
 ///
 /// Used to provide new members
 /// a copy of the current group state in-band.
-#[cfg_attr(
-    all(feature = "ffi", not(test)),
-    safer_ffi_gen::ffi_type(clone, opaque)
-)]
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 pub struct RatchetTreeExt {
     pub tree_data: ExportedTree<'static>,
 }
 
-#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl RatchetTreeExt {
     /// Required custom extension types.
     #[cfg(feature = "ffi")]
@@ -106,10 +96,6 @@ impl MlsCodecExtension for RatchetTreeExt {
 /// Extension, proposal, and credential types defined by the MLS RFC and
 /// provided are considered required by default and should NOT be used
 /// within this extension.
-#[cfg_attr(
-    all(feature = "ffi", not(test)),
-    safer_ffi_gen::ffi_type(clone, opaque)
-)]
 #[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode, Default)]
 pub struct RequiredCapabilitiesExt {
     pub extensions: Vec<ExtensionType>,
@@ -117,7 +103,6 @@ pub struct RequiredCapabilitiesExt {
     pub credentials: Vec<CredentialType>,
 }
 
-#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl RequiredCapabilitiesExt {
     /// Create a required capabilities extension.
     pub fn new(
@@ -161,10 +146,6 @@ impl MlsCodecExtension for RequiredCapabilitiesExt {
 ///
 /// This proposal type is optionally provided as part of a
 /// [Group Info](crate::group::Group::group_info_message).
-#[cfg_attr(
-    all(feature = "ffi", not(test)),
-    safer_ffi_gen::ffi_type(clone, opaque)
-)]
 #[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 pub struct ExternalPubExt {
     /// Public key to be used for an external commit.
@@ -172,7 +153,6 @@ pub struct ExternalPubExt {
     pub external_pub: HpkePublicKey,
 }
 
-#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl ExternalPubExt {
     /// Get the public key to be used for an external commit.
     #[cfg(feature = "ffi")]
@@ -189,10 +169,6 @@ impl MlsCodecExtension for ExternalPubExt {
 
 /// Enable proposals by an [ExternalClient](crate::external_client::ExternalClient).
 #[cfg(feature = "by_ref_proposal")]
-#[cfg_attr(
-    all(feature = "ffi", not(test)),
-    safer_ffi_gen::ffi_type(clone, opaque)
-)]
 #[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[non_exhaustive]
 pub struct ExternalSendersExt {
@@ -200,7 +176,6 @@ pub struct ExternalSendersExt {
 }
 
 #[cfg(feature = "by_ref_proposal")]
-#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl ExternalSendersExt {
     pub fn new(allowed_senders: Vec<SigningIdentity>) -> Self {
         Self { allowed_senders }

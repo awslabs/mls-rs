@@ -39,9 +39,9 @@ self_remove_proposal = ["mls-rs-core/self_remove_proposal"]
 export_key_generation = []
 gsma_rcs_e2ee_feature = ["mls-rs-core/gsma_rcs_e2ee_feature"]
 
-std = ["mls-rs-core/std", "mls-rs-codec/std", "mls-rs-identity-x509?/std", "hex/std", "futures/std", "itertools/use_std", "safer-ffi-gen?/std", "zeroize/std", "dep:debug_tree", "dep:thiserror", "serde?/std", "subtle/std"]
+std = ["mls-rs-core/std", "mls-rs-codec/std", "mls-rs-identity-x509?/std", "hex/std", "futures/std", "itertools/use_std", "zeroize/std", "dep:debug_tree", "dep:thiserror", "serde?/std", "subtle/std"]
 
-ffi = ["dep:safer-ffi", "dep:safer-ffi-gen", "mls-rs-core/ffi"]
+ffi = ["mls-rs-core/ffi"]
 
 serde = ["mls-rs-core/serde", "zeroize/serde", "dep:serde", "dep:hex"]
 
@@ -76,8 +76,6 @@ mls-rs-crypto-openssl = { path = "../mls-rs-crypto-openssl", optional = true, ve
 # TODO: https://github.com/GoogleChromeLabs/wasm-bindgen-rayon
 rayon = { version = "1", optional = true }
 arbitrary = { version = "1", features = ["derive"], optional = true }
-safer-ffi = { version = "0.1.7", default-features = false, optional = true }
-safer-ffi-gen = { version = "0.9.2", default-features = false, optional = true }
 once_cell = { version = "1.18", optional = true }
 serde = { version = "1.0", default-features = false, features = ["alloc", "derive"], optional = true }
 hex = { version = "^0.4.3", default-features = false, features = ["serde", "alloc"], optional = true }

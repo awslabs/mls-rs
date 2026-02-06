@@ -45,7 +45,6 @@ use crate::group::{
 use super::{validate_tree_and_info_joiner, ExportedTree};
 
 /// A builder that aids with the construction of an external commit.
-#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::ffi_type(opaque))]
 pub struct ExternalCommitBuilder<C: ClientConfig> {
     signer: SignatureSecretKey,
     signing_identity: SigningIdentity,

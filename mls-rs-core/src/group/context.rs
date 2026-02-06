@@ -43,10 +43,6 @@ impl From<Vec<u8>> for ConfirmedTranscriptHash {
 
 #[derive(Clone, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[cfg_attr(
-    all(feature = "ffi", not(test)),
-    safer_ffi_gen::ffi_type(clone, opaque)
-)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct GroupContext {
     pub protocol_version: ProtocolVersion,
@@ -76,7 +72,6 @@ impl Debug for GroupContext {
     }
 }
 
-#[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen)]
 impl GroupContext {
     /// Create a group context for a new MLS group.
     pub fn new(

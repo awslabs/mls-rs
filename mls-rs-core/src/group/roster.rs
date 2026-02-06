@@ -17,10 +17,6 @@ use super::ProposalType;
 
 #[derive(Clone, PartialEq, Eq, Debug, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[cfg_attr(
-    all(feature = "ffi", not(test)),
-    safer_ffi_gen::ffi_type(clone, opaque)
-)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 ///  Capabilities of a MLS client
 pub struct Capabilities {
@@ -31,7 +27,6 @@ pub struct Capabilities {
     pub credentials: Vec<CredentialType>,
 }
 
-#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl Capabilities {
     /// Supported protocol versions
     #[cfg(feature = "ffi")]
@@ -90,10 +85,6 @@ impl Default for Capabilities {
 }
 
 /// A member of a MLS group.
-#[cfg_attr(
-    all(feature = "ffi", not(test)),
-    safer_ffi_gen::ffi_type(clone, opaque)
-)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Member {
@@ -110,7 +101,6 @@ pub struct Member {
     pub extensions: ExtensionList,
 }
 
-#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl Member {
     pub fn new(
         index: u32,

@@ -77,10 +77,6 @@ pub(crate) struct PendingCommit {
     pub(crate) commit_message_hash: MessageHash,
 }
 
-#[cfg_attr(
-    all(feature = "ffi", not(test)),
-    safer_ffi_gen::ffi_type(clone, opaque)
-)]
 #[derive(Clone)]
 pub struct CommitSecrets(pub(crate) PendingCommitSnapshot);
 
@@ -96,10 +92,6 @@ impl CommitSecrets {
     }
 }
 
-#[cfg_attr(
-    all(feature = "ffi", not(test)),
-    safer_ffi_gen::ffi_type(clone, opaque)
-)]
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 /// Result of MLS commit operation using
@@ -130,7 +122,6 @@ pub struct CommitOutput {
     pub contains_update_path: bool,
 }
 
-#[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen)]
 impl CommitOutput {
     /// Commit message to send to other group members.
     #[cfg(feature = "ffi")]
