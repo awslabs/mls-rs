@@ -29,31 +29,26 @@ pub struct Capabilities {
 
 impl Capabilities {
     /// Supported protocol versions
-    #[cfg(feature = "ffi")]
     pub fn protocol_versions(&self) -> &[ProtocolVersion] {
         &self.protocol_versions
     }
 
     /// Supported ciphersuites
-    #[cfg(feature = "ffi")]
     pub fn cipher_suites(&self) -> &[CipherSuite] {
         &self.cipher_suites
     }
 
     /// Supported extensions
-    #[cfg(feature = "ffi")]
     pub fn extensions(&self) -> &[ExtensionType] {
         &self.extensions
     }
 
     /// Supported proposals
-    #[cfg(feature = "ffi")]
     pub fn proposals(&self) -> &[ProposalType] {
         &self.proposals
     }
 
     /// Supported credentials
-    #[cfg(feature = "ffi")]
     pub fn credentials(&self) -> &[CredentialType] {
         &self.credentials
     }
@@ -120,25 +115,21 @@ impl Member {
     ///
     /// This value is consistent for all clients and will not change as the
     /// group evolves.
-    #[cfg(feature = "ffi")]
     pub fn index(&self) -> u32 {
         self.index
     }
 
     /// Current identity public key and credential of this member.
-    #[cfg(feature = "ffi")]
     pub fn signing_identity(&self) -> &SigningIdentity {
         &self.signing_identity
     }
 
     /// Current client [Capabilities] of this member.
-    #[cfg(feature = "ffi")]
     pub fn capabilities(&self) -> &Capabilities {
         &self.capabilities
     }
 
     /// Current leaf node extensions in use by this member.
-    #[cfg(feature = "ffi")]
     pub fn extensions(&self) -> &ExtensionList {
         &self.extensions
     }

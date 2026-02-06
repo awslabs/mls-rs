@@ -41,7 +41,6 @@ gsma_rcs_e2ee_feature = ["mls-rs-core/gsma_rcs_e2ee_feature"]
 
 std = ["mls-rs-core/std", "mls-rs-codec/std", "mls-rs-identity-x509?/std", "hex/std", "futures/std", "itertools/use_std", "zeroize/std", "dep:debug_tree", "dep:thiserror", "serde?/std", "subtle/std"]
 
-ffi = ["mls-rs-core/ffi"]
 
 serde = ["mls-rs-core/serde", "zeroize/serde", "dep:serde", "dep:hex"]
 

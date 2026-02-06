@@ -99,13 +99,11 @@ impl CustomCredential {
     }
 
     /// Unique credential type to identify this custom credential.
-    #[cfg(feature = "ffi")]
     pub fn credential_type(&self) -> CredentialType {
         self.credential_type
     }
 
     /// Opaque data representing this custom credential.
-    #[cfg(feature = "ffi")]
     pub fn data(&self) -> &[u8] {
         &self.data
     }

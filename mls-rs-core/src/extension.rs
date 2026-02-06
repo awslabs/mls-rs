@@ -133,13 +133,11 @@ impl Extension {
     }
 
     /// Extension type of this extension
-    #[cfg(feature = "ffi")]
     pub fn extension_type(&self) -> ExtensionType {
         self.extension_type
     }
 
     /// Data held within this extension
-    #[cfg(feature = "ffi")]
     pub fn extension_data(&self) -> &[u8] {
         &self.extension_data
     }

@@ -47,7 +47,6 @@ impl BasicCredential {
     }
 
     /// Underlying identifier as raw bytes.
-    #[cfg(feature = "ffi")]
     pub fn identifier(&self) -> &[u8] {
         &self.identifier
     }
