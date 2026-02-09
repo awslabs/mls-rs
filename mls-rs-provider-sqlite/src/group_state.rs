@@ -16,6 +16,12 @@ pub(crate) const DEFAULT_EPOCH_RETENTION_LIMIT: u64 = 3;
 
 #[derive(Debug, Clone)]
 /// SQLite Storage for MLS group states.
+///
+/// # Limitations
+///
+/// Epoch IDs are stored as SQLite INTEGER (signed 64-bit), limiting the maximum
+/// epoch ID to [`i64::MAX`] (9,223,372,036,854,775,807). Operations with epoch IDs
+/// exceeding this value will return [`SqLiteDataStorageError::EpochIdOverflow`].
 pub struct SqLiteGroupStateStorage {
     connection: Arc<Mutex<Connection>>,
     max_epoch_retention: u64,
@@ -99,7 +105,11 @@ impl SqLiteGroupStateStorage {
         connection
             .query_row(
                 "SELECT epoch_data FROM epoch where group_id = ? AND epoch_id = ?",
-                params![group_id, epoch_id],
+                params![
+                    group_id,
+                    i64::try_from(epoch_id)
+                        .map_err(|_| SqLiteDataStorageError::EpochIdOverflow(epoch_id))?
+                ],
                 |row| row.get::<_, Vec<u8>>(0),
             )
             .optional()
@@ -113,7 +123,15 @@ impl SqLiteGroupStateStorage {
             .query_row(
                 "SELECT MAX(epoch_id) FROM epoch WHERE group_id = ?",
                 params![group_id],
-                |row| row.get::<_, Option<u64>>(0),
+                |row| {
+                    row.get::<_, Option<i64>>(0).and_then(|opt| {
+                        opt.map(|v| {
+                            u64::try_from(v)
+                                .map_err(|_| rusqlite::Error::IntegralValueOutOfRange(0, v))
+                        })
+                        .transpose()
+                    })
+                },
             )
             .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))
     }
@@ -145,7 +163,12 @@ impl SqLiteGroupStateStorage {
             transaction
                 .execute(
                     "INSERT INTO epoch (group_id, epoch_id, epoch_data) VALUES (?, ?, ?)",
-                    params![group_id, epoch.id, &*epoch.data],
+                    params![
+                        group_id,
+                        i64::try_from(epoch.id)
+                            .map_err(|_| SqLiteDataStorageError::EpochIdOverflow(epoch.id))?,
+                        &*epoch.data
+                    ],
                 )
                 .map(|_| ())
                 .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))?;
@@ -156,7 +179,12 @@ impl SqLiteGroupStateStorage {
             transaction
                 .execute(
                     "UPDATE epoch SET epoch_data = ? WHERE group_id = ? AND epoch_id = ?",
-                    params![&*epoch.data, group_id, epoch.id],
+                    params![
+                        &*epoch.data,
+                        group_id,
+                        i64::try_from(epoch.id)
+                            .map_err(|_| SqLiteDataStorageError::EpochIdOverflow(epoch.id))?
+                    ],
                 )
                 .map(|_| ())
                 .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))
@@ -170,7 +198,12 @@ impl SqLiteGroupStateStorage {
                 transaction
                     .execute(
                         "DELETE FROM epoch WHERE group_id = ? AND epoch_id <= ?",
-                        params![group_id, delete_under],
+                        params![
+                            group_id,
+                            i64::try_from(delete_under).map_err(|_| {
+                                SqLiteDataStorageError::EpochIdOverflow(delete_under)
+                            })?
+                        ],
                     )
                     .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))?;
             }
@@ -218,6 +251,8 @@ impl GroupStateStorage for SqLiteGroupStateStorage {
 
 #[cfg(test)]
 mod tests {
+    use assert_matches::assert_matches;
+
     use crate::{
         SqLiteDataStorageEngine,
         {connection_strategy::MemoryStrategy, test_utils::gen_rand_bytes},
@@ -493,5 +528,22 @@ mod tests {
         test_data.storage.delete_group(&test_data.group_id).unwrap();
 
         assert!(test_data.storage.group_ids().unwrap().is_empty());
+    }
+
+    #[test]
+    fn epoch_id_overflow() {
+        let storage = get_test_storage();
+        let group_id = test_group_id();
+        let snapshot = test_snapshot();
+        let overflow_epoch = EpochRecord {
+            id: u64::MAX,
+            data: gen_rand_bytes(256).into(),
+        };
+
+        let err = storage
+            .update_group_state(&group_id, &snapshot, vec![overflow_epoch], vec![])
+            .unwrap_err();
+
+        assert_matches!(err, SqLiteDataStorageError::EpochIdOverflow(u64::MAX));
     }
 }
