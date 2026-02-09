@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1769453281904,
+  "lastUpdate": 1770657267643,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -27631,6 +27631,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 174491,
             "range": "± 1220",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "103590845+mulmarta@users.noreply.github.com",
+            "name": "mulmarta",
+            "username": "mulmarta"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "508a7f0b8f1ee5924b3200d26f4100f63729be5a",
+          "message": "chore: Document i64::MAX limitation in SQLite storage. Bump rusqlite to 0.37 (#333)\n\n* chore: Document i64::MAX limitation for epoch IDs and timestamps in SQLite storage.\nBump rusqlite to 0.38.\n\n* fix: Attempt to fix audit action\n\n* chore: Apply formatter\n\n* chore: Use rusqlite 0.37\n\n---------\n\nCo-authored-by: Marta Mularczyk <mulmarta@amazon.com>",
+          "timestamp": "2026-02-09T18:05:06+01:00",
+          "tree_id": "ca8bb59e919623793c8149b5cc9efcddc58133fc",
+          "url": "https://github.com/awslabs/mls-rs/commit/508a7f0b8f1ee5924b3200d26f4100f63729be5a"
+        },
+        "date": 1770657265523,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 527368,
+            "range": "± 5327",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 536729,
+            "range": "± 5816",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 598059,
+            "range": "± 16118",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1251127,
+            "range": "± 21845",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7553503,
+            "range": "± 54077",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2637265,
+            "range": "± 78114",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7098456,
+            "range": "± 83586",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13271128,
+            "range": "± 120144",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 775095,
+            "range": "± 47569",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 866459,
+            "range": "± 14512",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 1004048,
+            "range": "± 12773",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 25773,
+            "range": "± 504",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 88090,
+            "range": "± 907",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 174188,
+            "range": "± 1785",
             "unit": "ns/iter"
           }
         ]
