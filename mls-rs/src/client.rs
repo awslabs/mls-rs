@@ -1419,12 +1419,14 @@ mod tests {
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
 
     async fn cannot_list_default_extensions_in_capabilities() {
-        let res = TestClientBuilder::new_for_test()
+        let client = TestClientBuilder::new_for_test()
             .with_random_signing_identity("client", TEST_CIPHER_SUITE)
             .await
             .extension_type(ExtensionType::APPLICATION_ID)
-            .build()
-            .generate_key_package(Default::default(), Default::default(), Default::default())
+            .build();
+        let si = client.signing_identity.clone().unwrap();
+        let res = client
+            .generate_key_package(Default::default(), Default::default(), Default::default(), true, &si)
             .await;
 
         assert_matches!(res, Err(MlsError::DefaultValueListed));
@@ -1433,12 +1435,14 @@ mod tests {
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
 
     async fn cannot_list_default_proposals_in_capabilities() {
-        let res = TestClientBuilder::new_for_test()
+        let client = TestClientBuilder::new_for_test()
             .with_random_signing_identity("client", TEST_CIPHER_SUITE)
             .await
             .custom_proposal_type(ProposalType::ADD)
-            .build()
-            .generate_key_package(Default::default(), Default::default(), Default::default())
+            .build();
+        let si = client.signing_identity.clone().unwrap();
+        let res = client
+            .generate_key_package(Default::default(), Default::default(), Default::default(), true, &si)
             .await;
 
         assert_matches!(res, Err(MlsError::DefaultValueListed));
