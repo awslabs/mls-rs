@@ -428,6 +428,21 @@ impl CachedProposal {
     pub fn to_bytes(&self) -> Result<Vec<u8>, MlsError> {
         Ok(self.mls_encode_to_vec()?)
     }
+
+    /// The proposal content.
+    pub fn proposal(&self) -> &Proposal {
+        &self.proposal
+    }
+
+    /// The proposal reference (hash-based identifier).
+    pub fn proposal_ref(&self) -> &ProposalRef {
+        &self.proposal_ref
+    }
+
+    /// The sender of the proposal.
+    pub fn sender(&self) -> &Sender {
+        &self.sender
+    }
 }
 
 #[cfg(feature = "by_ref_proposal")]

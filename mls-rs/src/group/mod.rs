@@ -106,7 +106,7 @@ pub use roster::*;
 pub(crate) use mls_rs_core::group::ConfirmedTranscriptHash;
 pub(crate) use util::*;
 
-#[cfg(all(feature = "by_ref_proposal", feature = "external_client"))]
+#[cfg(feature = "by_ref_proposal")]
 pub use self::message_processor::CachedProposal;
 
 #[cfg(feature = "private_message")]
@@ -1553,6 +1553,24 @@ where
     #[cfg(feature = "by_ref_proposal")]
     pub fn commit_required(&self) -> bool {
         !self.state.proposals.is_empty()
+    }
+
+    /// Returns all by-reference proposals that have been cached for this group.
+    ///
+    /// The returned [`CachedProposal`] values contain the proposal content,
+    /// sender, and proposal reference.
+    #[cfg(feature = "by_ref_proposal")]
+    pub fn get_cached_proposals(&self) -> Vec<CachedProposal> {
+        self.state
+            .proposals
+            .proposals
+            .iter()
+            .map(|(proposal_ref, cached)| CachedProposal {
+                proposal: cached.proposal.clone(),
+                proposal_ref: proposal_ref.clone(),
+                sender: cached.sender,
+            })
+            .collect()
     }
 
     /// Process an inbound message for this group.
@@ -6135,6 +6153,60 @@ mod tests {
         group.apply_pending_commit().await.unwrap();
 
         assert!(!group.commit_required());
+    }
+
+    #[cfg(feature = "by_ref_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn cached_proposals_returns_pending_proposals() {
+        let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+
+        assert!(group.get_cached_proposals().is_empty());
+
+        group
+            .propose_group_context_extensions(ExtensionList::new(), vec![])
+            .await
+            .unwrap();
+
+        let cached = group.get_cached_proposals();
+        assert_eq!(cached.len(), 1);
+        assert!(matches!(cached[0].proposal(), Proposal::GroupContextExtensions(_)));
+        assert!(matches!(cached[0].sender(), Sender::Member(_)));
+
+        group.commit(vec![]).await.unwrap();
+        group.apply_pending_commit().await.unwrap();
+
+        assert!(group.get_cached_proposals().is_empty());
+    }
+
+    #[cfg(feature = "by_ref_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn cached_proposals_returns_independent_copies() {
+        let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+
+        group
+            .propose_group_context_extensions(ExtensionList::new(), vec![])
+            .await
+            .unwrap();
+
+        let mut cached1 = group.get_cached_proposals();
+        let cached2 = group.get_cached_proposals();
+
+        assert_eq!(cached1.len(), 1);
+        assert_eq!(cached2.len(), 1);
+        assert_eq!(cached1[0].proposal_ref(), cached2[0].proposal_ref());
+
+        cached1.clear();
+        assert!(cached1.is_empty());
+        assert_eq!(cached2.len(), 1);
+
+        let cached3 = group.get_cached_proposals();
+        assert_eq!(cached3.len(), 1);
+        assert_eq!(cached2[0].proposal_ref(), cached3[0].proposal_ref());
+
+        group.commit(vec![]).await.unwrap();
+        group.apply_pending_commit().await.unwrap();
+
+        assert!(group.get_cached_proposals().is_empty());
     }
 
     // Testing with std is sufficient. Non-std creates incompatible storage and a lot of special cases.
