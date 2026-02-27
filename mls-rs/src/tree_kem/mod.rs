@@ -115,7 +115,16 @@ impl TreeKemPublic {
 
         #[cfg(not(feature = "tree_index"))]
         for (leaf_index, leaf) in tree.nodes.non_empty_leaves() {
-            index_insert(&tree.nodes, leaf, leaf_index, identity_provider, extensions).await?;
+            index_insert(
+                &tree.nodes,
+                leaf,
+                leaf_index,
+                identity_provider,
+                extensions,
+                #[cfg(test)]
+                true,
+            )
+            .await?;
         }
 
         Ok(tree)
@@ -138,6 +147,8 @@ impl TreeKemPublic {
                     leaf_index,
                     identity_provider,
                     extensions,
+                    #[cfg(test)]
+                    true,
                 )
                 .await?;
             }
@@ -320,6 +331,8 @@ impl TreeKemPublic {
             sender,
             &identity_provider,
             extensions,
+            #[cfg(test)]
+            true,
         )
         .await?;
 
@@ -327,6 +340,44 @@ impl TreeKemPublic {
         // in the local tree
         self.update_parent_hashes(sender, true, cipher_suite_provider)
             .await?;
+
+        Ok(())
+    }
+
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub(crate) async fn update_committer_leaf<IP: IdentityProvider>(
+        &mut self,
+        identity_provider: &IP,
+        extensions: &ExtensionList,
+        leaf_index: LeafIndex,
+        #[cfg(feature = "tree_index")] old_leaf: &LeafNode,
+        #[cfg(test)] perform_validation: bool,
+    ) -> Result<(), MlsError> {
+        #[cfg(feature = "tree_index")]
+        {
+            let old_identity = identity_provider
+                .identity(&old_leaf.signing_identity, extensions)
+                .await
+                .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?;
+
+            self.index.remove(old_leaf, &old_identity);
+        }
+
+        let new_leaf = self.nodes.borrow_as_leaf(leaf_index)?;
+
+        index_insert(
+            #[cfg(feature = "tree_index")]
+            &mut self.index,
+            #[cfg(not(feature = "tree_index"))]
+            &self.nodes,
+            new_leaf,
+            leaf_index,
+            identity_provider,
+            extensions,
+            #[cfg(test)]
+            perform_validation,
+        )
+        .await?;
 
         Ok(())
     }
@@ -474,11 +525,28 @@ impl TreeKemPublic {
         // all updates.
         for (index, old_leaf, new_leaf, i) in partial_updates.into_iter() {
             #[cfg(feature = "tree_index")]
-            let res =
-                index_insert(&mut self.index, &new_leaf, index, id_provider, extensions).await;
+            let res = index_insert(
+                &mut self.index,
+                &new_leaf,
+                index,
+                id_provider,
+                extensions,
+                #[cfg(test)]
+                true,
+            )
+            .await;
 
             #[cfg(not(feature = "tree_index"))]
-            let res = index_insert(&self.nodes, &new_leaf, index, id_provider, extensions).await;
+            let res = index_insert(
+                &self.nodes,
+                &new_leaf,
+                index,
+                id_provider,
+                extensions,
+                #[cfg(test)]
+                true,
+            )
+            .await;
 
             let err = res.is_err();
 
@@ -492,12 +560,28 @@ impl TreeKemPublic {
                 updated_indices.push(index);
             } else {
                 #[cfg(feature = "tree_index")]
-                let res =
-                    index_insert(&mut self.index, &old_leaf, index, id_provider, extensions).await;
+                let res = index_insert(
+                    &mut self.index,
+                    &old_leaf,
+                    index,
+                    id_provider,
+                    extensions,
+                    #[cfg(test)]
+                    true,
+                )
+                .await;
 
                 #[cfg(not(feature = "tree_index"))]
-                let res =
-                    index_insert(&self.nodes, &old_leaf, index, id_provider, extensions).await;
+                let res = index_insert(
+                    &self.nodes,
+                    &old_leaf,
+                    index,
+                    id_provider,
+                    extensions,
+                    #[cfg(test)]
+                    true,
+                )
+                .await;
 
                 if res.is_ok() {
                     self.nodes.insert_leaf(index, old_leaf);
@@ -660,10 +744,28 @@ impl TreeKemPublic {
             .next_empty_leaf(start.unwrap_or(LeafIndex::unchecked(0)));
 
         #[cfg(feature = "tree_index")]
-        index_insert(&mut self.index, &leaf, index, id_provider, extensions).await?;
+        index_insert(
+            &mut self.index,
+            &leaf,
+            index,
+            id_provider,
+            extensions,
+            #[cfg(test)]
+            true,
+        )
+        .await?;
 
         #[cfg(not(feature = "tree_index"))]
-        index_insert(&self.nodes, &leaf, index, id_provider, extensions).await?;
+        index_insert(
+            &self.nodes,
+            &leaf,
+            index,
+            id_provider,
+            extensions,
+            #[cfg(test)]
+            true,
+        )
+        .await?;
 
         self.nodes.insert_leaf(index, leaf);
         self.update_unmerged(index)?;

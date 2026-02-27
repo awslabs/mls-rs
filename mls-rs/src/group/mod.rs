@@ -4414,6 +4414,8 @@ mod tests {
             Some(sk.clone())
         };
 
+        groups[0].commit_modifiers.skip_committer_self_update_validation = true;
+
         let commit_output = groups[0].commit(vec![]).await.unwrap();
 
         let res = groups[2]
@@ -4434,6 +4436,8 @@ mod tests {
             leaf.capabilities.credentials = vec![2.into()];
             Some(sk.clone())
         };
+
+        groups[0].commit_modifiers.skip_committer_self_update_validation = true;
 
         let commit_output = groups[0].commit(vec![]).await.unwrap();
 
@@ -4463,6 +4467,8 @@ mod tests {
             Some(sk.clone())
         };
 
+        groups[0].commit_modifiers.skip_committer_self_update_validation = true;
+
         let commit_output = groups[0].commit(vec![]).await.unwrap();
 
         let res = groups[2]
@@ -4470,6 +4476,50 @@ mod tests {
             .await;
 
         assert_matches!(res, Err(MlsError::RequiredCredentialNotFound(_)));
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn committer_leaf_has_unsupported_credential_rejected_at_commit_time() {
+        let mut groups =
+            get_test_groups_with_features(3, Default::default(), Default::default()).await;
+
+        for group in groups.iter_mut() {
+            group.config.0.identity_provider.allow_any_custom = true;
+        }
+
+        groups[0].commit_modifiers.modify_leaf = |leaf, sk| {
+            leaf.signing_identity.credential = Credential::Custom(CustomCredential::new(
+                CredentialType::new(43),
+                leaf.signing_identity
+                    .credential
+                    .as_basic()
+                    .unwrap()
+                    .identifier
+                    .to_vec(),
+            ));
+
+            Some(sk.clone())
+        };
+
+        let res = groups[0].commit(vec![]).await;
+
+        assert_matches!(res, Err(MlsError::CredentialTypeOfNewLeafIsUnsupported));
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn committer_leaf_not_supporting_credential_used_in_another_leaf_rejected_at_commit_time()
+    {
+        let mut groups =
+            get_test_groups_with_features(3, Default::default(), Default::default()).await;
+
+        groups[0].commit_modifiers.modify_leaf = |leaf, sk| {
+            leaf.capabilities.credentials = vec![2.into()];
+            Some(sk.clone())
+        };
+
+        let res = groups[0].commit(vec![]).await;
+
+        assert_matches!(res, Err(MlsError::InUseCredentialTypeUnsupportedByNewLeaf));
     }
 
     #[cfg(feature = "by_ref_proposal")]
@@ -6248,5 +6298,58 @@ mod tests {
         .await;
 
         assert_matches!(res, Err(MlsError::InUseCredentialTypeUnsupportedByNewLeaf));
+    }
+
+    #[cfg(feature = "custom_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn custom_proposal_commit_succeeds_after_capability_update() {
+        use crate::client_builder::ClientBuilder;
+
+        let test_proposal_type = ProposalType::from(65001);
+
+        let (signing_identity, secret_key) =
+            get_test_signing_identity(TEST_CIPHER_SUITE, b"alice").await;
+
+        let client = ClientBuilder::new()
+            .crypto_provider(TestCryptoProvider::new())
+            .identity_provider(BasicIdentityProvider::new())
+            .signing_identity(signing_identity, secret_key, TEST_CIPHER_SUITE)
+            .build();
+
+        let mut group = client
+            .create_group(Default::default(), Default::default(), None)
+            .await
+            .unwrap();
+
+        let group_id = group.group_id().to_vec();
+
+        let proposal = CustomProposal::new(test_proposal_type, vec![]);
+        let res = group
+            .commit_builder()
+            .custom_proposal(proposal)
+            .build()
+            .await;
+        assert!(res.is_err());
+
+        group.write_to_storage().await.unwrap();
+
+        let new_client = client
+            .to_builder(None)
+            .custom_proposal_type(test_proposal_type)
+            .build();
+
+        let mut group = new_client.load_group(&group_id).await.unwrap();
+
+        group.commit(vec![]).await.unwrap();
+        group.apply_pending_commit().await.unwrap();
+
+        let proposal = CustomProposal::new(test_proposal_type, vec![]);
+        let res = group
+            .commit_builder()
+            .custom_proposal(proposal)
+            .build()
+            .await;
+
+        assert!(!res.is_err());
     }
 }

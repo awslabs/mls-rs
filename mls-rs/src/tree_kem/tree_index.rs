@@ -59,13 +59,20 @@ pub(super) async fn index_insert<I: IdentityProvider>(
     new_leaf_idx: LeafIndex,
     id_provider: &I,
     extensions: &ExtensionList,
+    #[cfg(test)] perform_validation: bool,
 ) -> Result<(), MlsError> {
     let new_id = id_provider
         .identity(&new_leaf.signing_identity, extensions)
         .await
         .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?;
 
-    tree_index.insert(new_leaf_idx, new_leaf, new_id)
+    tree_index.insert(
+        new_leaf_idx,
+        new_leaf,
+        new_id,
+        #[cfg(test)]
+        perform_validation,
+    )
 }
 
 #[cfg(not(feature = "tree_index"))]
@@ -76,7 +83,13 @@ pub(super) async fn index_insert<I: IdentityProvider>(
     new_leaf_idx: LeafIndex,
     id_provider: &I,
     extensions: &ExtensionList,
+    #[cfg(test)] perform_validation: bool,
 ) -> Result<(), MlsError> {
+    #[cfg(test)]
+    if !perform_validation {
+        return Ok(());
+    }
+
     let new_id = id_provider
         .identity(&new_leaf.signing_identity, extensions)
         .await
@@ -136,35 +149,44 @@ impl TreeIndex {
         index: LeafIndex,
         leaf_node: &LeafNode,
         identity: Vec<u8>,
+        #[cfg(test)] perform_validation: bool,
     ) -> Result<(), MlsError> {
         let old_leaf_count = self.credential_signature_key.len();
 
         let pub_key = leaf_node.signing_identity.signature_key.clone();
         let credential_entry = self.credential_signature_key.entry(pub_key);
 
-        if let LargeMapEntry::Occupied(entry) = credential_entry {
-            return Err(MlsError::DuplicateLeafData(**entry.get()));
-        }
-
         let hpke_entry = self.hpke_key.entry(leaf_node.public_key.clone());
 
-        if let LargeMapEntry::Occupied(entry) = hpke_entry {
-            return Err(MlsError::DuplicateLeafData(**entry.get()));
-        }
-
         let identity_entry = self.identities.entry(Identifier(identity));
-        if let LargeMapEntry::Occupied(entry) = identity_entry {
-            return Err(MlsError::DuplicateLeafData(**entry.get()));
-        }
 
-        let in_use_cred_type_unsupported_by_new_leaf = self
-            .credential_type_counters
-            .iter()
-            .filter_map(|(cred_type, counters)| Some(*cred_type).filter(|_| counters.used > 0))
-            .find(|cred_type| !leaf_node.capabilities.credentials.contains(cred_type));
+        #[cfg(test)]
+        let do_validation = perform_validation;
+        #[cfg(not(test))]
+        let do_validation = true;
 
-        if in_use_cred_type_unsupported_by_new_leaf.is_some() {
-            return Err(MlsError::InUseCredentialTypeUnsupportedByNewLeaf);
+        if do_validation {
+            if let LargeMapEntry::Occupied(entry) = &credential_entry {
+                return Err(MlsError::DuplicateLeafData(**entry.get()));
+            }
+
+            if let LargeMapEntry::Occupied(entry) = &hpke_entry {
+                return Err(MlsError::DuplicateLeafData(**entry.get()));
+            }
+
+            if let LargeMapEntry::Occupied(entry) = &identity_entry {
+                return Err(MlsError::DuplicateLeafData(**entry.get()));
+            }
+
+            let in_use_cred_type_unsupported_by_new_leaf = self
+                .credential_type_counters
+                .iter()
+                .filter_map(|(cred_type, counters)| Some(*cred_type).filter(|_| counters.used > 0))
+                .find(|cred_type| !leaf_node.capabilities.credentials.contains(cred_type));
+
+            if in_use_cred_type_unsupported_by_new_leaf.is_some() {
+                return Err(MlsError::InUseCredentialTypeUnsupportedByNewLeaf);
+            }
         }
 
         let new_leaf_cred_type = leaf_node.signing_identity.credential.credential_type();
@@ -174,8 +196,10 @@ impl TreeIndex {
             .entry(new_leaf_cred_type)
             .or_default();
 
-        if cred_type_counters.supported != old_leaf_count as u32 {
-            return Err(MlsError::CredentialTypeOfNewLeafIsUnsupported);
+        if do_validation {
+            if cred_type_counters.supported != old_leaf_count as u32 {
+                return Err(MlsError::CredentialTypeOfNewLeafIsUnsupported);
+            }
         }
 
         cred_type_counters.used += 1;
@@ -340,6 +364,7 @@ mod tests {
                     d.index,
                     &d.leaf_node,
                     get_test_client_identity(&d.leaf_node),
+                    true,
                 )
                 .unwrap()
         });
@@ -382,6 +407,7 @@ mod tests {
             test_data[1].index,
             &new_key_package,
             get_test_client_identity(&new_key_package),
+            true,
         );
 
         assert_matches!(res, Err(MlsError::DuplicateLeafData(index))
@@ -403,6 +429,7 @@ mod tests {
             test_data[1].index,
             &new_leaf_node,
             get_test_client_identity(&new_leaf_node),
+            true,
         );
 
         assert_matches!(res, Err(MlsError::DuplicateLeafData(index))
@@ -471,13 +498,13 @@ mod tests {
         let mut test_index = TreeIndex::new();
 
         test_index
-            .insert(test_data_1.index, &test_data_1.leaf_node, vec![0])
+            .insert(test_data_1.index, &test_data_1.leaf_node, vec![0], true)
             .unwrap();
 
         assert_eq!(test_index.count_supporting_proposal(test_proposal_id), 1);
 
         test_index
-            .insert(test_data_2.index, &test_data_2.leaf_node, vec![1])
+            .insert(test_data_2.index, &test_data_2.leaf_node, vec![1], true)
             .unwrap();
 
         assert_eq!(test_index.count_supporting_proposal(test_proposal_id), 2);
