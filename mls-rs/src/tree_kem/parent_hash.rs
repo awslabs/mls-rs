@@ -243,7 +243,7 @@ impl TreeKemPublic {
                     return Ok(());
                 };
 
-                ps = ps_parent.clone();
+                ps = ps_parent;
             }
 
             // Check is n's parent_hash field matches the parent hash of p with co-path child s.
