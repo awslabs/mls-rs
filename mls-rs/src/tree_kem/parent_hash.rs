@@ -188,15 +188,13 @@ impl TreeKemPublic {
         let nodes_to_validate = self
             .nodes
             .non_empty_parents()
-            .filter_map(|(node_index, node)|
-            { 
+            .filter_map(|(node_index, node)| {
                 if node.parent_hash.is_empty() {
                     None
                 } else {
                     Some(node_index)
                 }
-            }
-            );
+            });
 
         #[cfg(feature = "std")]
         let mut nodes_to_validate = nodes_to_validate.collect::<HashSet<_>>();
@@ -292,13 +290,11 @@ impl TreeKemPublic {
                 let p_unmerged_in_c_subtree = p_unmerged_in_c_subtree.collect::<BTreeSet<_>>();
 
                 // If p is validated for the second time, the check fails ("all non-blank parent nodes are covered by exactly one such chain").
-                if c_resolution.remove(&n)
-                    && c_resolution == p_unmerged_in_c_subtree
-                {
+                if c_resolution.remove(&n) && c_resolution == p_unmerged_in_c_subtree {
                     let removed = nodes_to_validate.remove(&ps.parent);
                     if !removed && !p_parent.parent_hash.is_empty() {
-                        // Removal from nodes_to_validate can fail if either 
-                        // 1. the node was already validated, or 
+                        // Removal from nodes_to_validate can fail if either
+                        // 1. the node was already validated, or
                         // 2. the node was never in the list to be validated
                         // Nodes without a parent hash do not have their parent hash
                         // validated, and so we do not throw an error if removal fails but

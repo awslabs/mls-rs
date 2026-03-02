@@ -3901,8 +3901,7 @@ mod tests {
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn creating_large_group_with_intermediate_node_with_blank_parent_hash_works(
-    )  {
+    async fn creating_large_group_with_intermediate_node_with_blank_parent_hash_works() {
         let mut test_group = test_group_custom(
             TEST_PROTOCOL_VERSION,
             TEST_CIPHER_SUITE,
@@ -3928,7 +3927,7 @@ mod tests {
             .remove_member(1)
             .unwrap()
             .build()
-            .await  
+            .await
             .unwrap();
 
         test_group.process_pending_commit().await.unwrap();
