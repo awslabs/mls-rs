@@ -99,7 +99,7 @@ macro_rules! generate_kotlin_tests {
             configure_kotlin_env()?;
             let target_dir = env!("CARGO_TARGET_TMPDIR");
             let script_path = format!("tests/{}.kts", stringify!($scenario));
-            uniffi_bindgen::bindings::kotlin::run_script(
+            uniffi_bindgen::bindings::kotlin_test::run_script(
                 &target_dir,
                 "mls-rs-uniffi",
                 &script_path,

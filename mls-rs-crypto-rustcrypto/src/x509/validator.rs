@@ -219,6 +219,8 @@ impl X509CredentialValidator for X509Validator {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use assert_matches::assert_matches;
     use mls_rs_core::time::MlsTime;
     use mls_rs_identity_x509::{CertificateChain, X509CredentialValidator};
@@ -244,9 +246,10 @@ mod tests {
 
         let validator = X509Validator::new(vec![load_test_ca()]).unwrap();
 
-        validator
-            .validate_chain(&chain, Some(MlsTime::now()))
-            .unwrap();
+        // July 6, 2024 00:00:00 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1720224000));
+
+        validator.validate_chain(&chain, Some(time)).unwrap();
     }
 
     #[test]
@@ -254,11 +257,11 @@ mod tests {
         let chain = load_test_cert_chain();
         let chain = chain[0..chain.len() - 1].to_vec().into();
 
-        let validator = X509Validator::new(vec![load_test_ca()]).unwrap();
+        // July 6, 2024 00:00:00 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1720224000));
 
-        validator
-            .validate_chain(&chain, Some(MlsTime::now()))
-            .unwrap();
+        let validator = X509Validator::new(vec![load_test_ca()]).unwrap();
+        validator.validate_chain(&chain, Some(time)).unwrap();
     }
 
     #[test]
@@ -268,9 +271,10 @@ mod tests {
         let mut validator = X509Validator::new(vec![load_test_ca()]).unwrap();
         validator.set_pinned_cert(Some(chain.get(1).unwrap().clone()));
 
-        validator
-            .validate_chain(&chain, Some(MlsTime::now()))
-            .unwrap();
+        // July 6, 2024 00:00:00 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1720224000));
+
+        validator.validate_chain(&chain, Some(time)).unwrap();
     }
 
     #[test]
@@ -280,7 +284,10 @@ mod tests {
 
         let chain = vec![load_test_ca()].into();
 
-        X509CredentialValidator::validate_chain(&validator, &chain, Some(MlsTime::now())).unwrap();
+        // July 6, 2024 00:00:00 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1720224000));
+
+        X509CredentialValidator::validate_chain(&validator, &chain, Some(time)).unwrap();
     }
 
     #[test]
@@ -290,7 +297,10 @@ mod tests {
 
         let chain = vec![load_test_p384_ca()].into();
 
-        X509CredentialValidator::validate_chain(&validator, &chain, Some(MlsTime::now())).unwrap();
+        // February 4, 2025 00:00:00 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1738627200));
+
+        X509CredentialValidator::validate_chain(&validator, &chain, Some(time)).unwrap();
     }
 
     #[test]
@@ -300,7 +310,10 @@ mod tests {
 
         let chain = vec![load_test_ca(), load_another_ca()].into();
 
-        let res = X509CredentialValidator::validate_chain(&validator, &chain, Some(MlsTime::now()));
+        // July 6, 2024 00:00:00 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1720224000));
+
+        let res = X509CredentialValidator::validate_chain(&validator, &chain, Some(time));
 
         assert_matches!(res, Err(X509Error::SelfSignedWrongLength(2)))
     }
@@ -312,7 +325,10 @@ mod tests {
         let mut validator = X509Validator::new(vec![load_test_ca()]).unwrap();
         validator.set_pinned_cert(Some(load_another_ca()));
 
-        let res = validator.validate_chain(&chain, Some(MlsTime::now()));
+        // July 6, 2024 00:00:00 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1720224000));
+
+        let res = validator.validate_chain(&chain, Some(time));
 
         assert_matches!(res, Err(X509Error::PinnedCertNotFound));
     }
@@ -340,7 +356,10 @@ mod tests {
         let validator = X509Validator::new(vec![]).unwrap();
         let empty: Vec<Vec<u8>> = Vec::new();
 
-        let res = validator.validate_chain(&CertificateChain::from(empty), Some(MlsTime::now()));
+        // July 6, 2024 00:00:00 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1720224000));
+
+        let res = validator.validate_chain(&CertificateChain::from(empty), Some(time));
 
         assert_matches!(res, Err(X509Error::EmptyCertificateChain));
     }
@@ -350,7 +369,10 @@ mod tests {
         let chain = load_test_invalid_chain();
         let validator = X509Validator::new(vec![load_test_ca()]).unwrap();
 
-        let res = validator.validate_chain(&chain, Some(MlsTime::now()));
+        // July 6, 2024 00:00:00 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1720224000));
+
+        let res = validator.validate_chain(&chain, Some(time));
 
         assert_matches!(
             res,
@@ -362,7 +384,11 @@ mod tests {
     fn will_fail_on_invalid_ca() {
         let chain = load_test_invalid_ca_chain();
         let validator = X509Validator::new(vec![load_another_ca()]).unwrap();
-        let res = validator.validate_chain(&chain, Some(MlsTime::now()));
+
+        // July 6, 2024 00:00:00 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1720224000));
+
+        let res = validator.validate_chain(&chain, Some(time));
 
         assert_matches!(
             res,
@@ -406,6 +432,12 @@ mod tests {
 
         let validator = X509Validator::new(vec![load_test_ca()]).unwrap();
 
-        assert_eq!(validator.validate_chain(&chain, None).unwrap(), expected)
+        // February 4, 2025 00:00:00 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1738627200));
+
+        assert_eq!(
+            validator.validate_chain(&chain, Some(time)).unwrap(),
+            expected
+        )
     }
 }

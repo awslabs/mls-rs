@@ -42,6 +42,16 @@ pub enum SqLiteDataStorageError {
     #[error(transparent)]
     /// Stored data is not compatible with the expected data type.
     DataConversionError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    #[error("epoch ID {0} exceeds maximum supported value (i64::MAX)")]
+    /// Epoch ID is too large to store in SQLite.
+    ///
+    /// SQLite uses signed 64-bit integers, limiting epoch IDs to values up to 9,223,372,036,854,775,807.
+    EpochIdOverflow(u64),
+    #[error("timestamp {0} exceeds maximum supported value (i64::MAX)")]
+    /// Timestamp is too large to store in SQLite.
+    ///
+    /// SQLite uses signed 64-bit integers, limiting timestamps to values up to 9,223,372,036,854,775,807.
+    TimestampOverflow(u64),
     #[cfg(any(feature = "sqlcipher", feature = "sqlcipher-bundled"))]
     #[error("invalid key, must use SqlCipherKey::RawKeyWithSalt with plaintext_header_size > 0")]
     /// Invalid SQLCipher key header.
@@ -124,7 +134,7 @@ where
                 .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))?;
         }
 
-        if current_schema != 1 {
+        if current_schema < 1 {
             create_tables_v1(&connection)?;
         }
 
@@ -237,5 +247,66 @@ mod tests {
             .unwrap();
 
         assert_eq!(journal_mode, "truncate");
+    }
+
+    #[test]
+    pub fn extended_schema_version_test() {
+        // Test that downstream applications can extend the schema beyond version 1
+        // without breaking mls-rs connection creation
+        let temp = tempdir().unwrap();
+        let database = SqLiteDataStorageEngine::new(FileConnectionStrategy::new(
+            &temp.path().join("extended_schema_test.sqlite"),
+        ))
+        .unwrap();
+
+        // Initialize database (creates v1 schema)
+        let connection = database.create_connection().unwrap();
+
+        // Simulate downstream application extending schema
+        connection
+            .execute_batch(
+                "BEGIN;
+                CREATE TABLE custom_table (
+                    id INTEGER PRIMARY KEY,
+                    data TEXT NOT NULL
+                );
+                PRAGMA user_version = 2;
+                COMMIT;",
+            )
+            .unwrap();
+
+        drop(connection);
+
+        // Create new connection - should not try to recreate tables
+        let connection2 = database.create_connection().unwrap();
+
+        // Verify user_version is still 2
+        let current_schema = connection2
+            .pragma_query_value(None, "user_version", |rows| rows.get::<_, u32>(0))
+            .unwrap();
+
+        assert_eq!(current_schema, 2);
+
+        // Verify both mls-rs tables and custom table exist
+        let mls_table_exists: bool = connection2
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='mls_group'",
+                [],
+                |row| row.get(0),
+            )
+            .map(|count: i32| count > 0)
+            .unwrap();
+
+        let custom_table_exists: bool = connection2
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='custom_table'",
+                [],
+                |row| row.get(0),
+            )
+            .map(|count: i32| count > 0)
+            .unwrap();
+
+        assert!(mls_table_exists);
+        assert!(custom_table_exists);
     }
 }

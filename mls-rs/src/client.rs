@@ -59,6 +59,8 @@ pub enum MlsError {
     ExtensionError(AnyError),
     #[cfg_attr(feature = "std", error("Cipher suite does not match"))]
     CipherSuiteMismatch,
+    #[cfg_attr(feature = "std", error("Initial epoch must be 1"))]
+    InitialEpochNotOne,
     #[cfg_attr(feature = "std", error("Invalid commit, missing required path"))]
     CommitMissingPath,
     #[cfg_attr(feature = "std", error("plaintext message for incorrect epoch"))]
@@ -356,6 +358,8 @@ pub enum MlsError {
     SelfRemoveAlreadyProposed,
     #[cfg_attr(feature = "std", error("Default value listed"))]
     DefaultValueListed,
+    #[cfg_attr(feature = "std", error("not a subgroup"))]
+    NotASubgroup,
 }
 
 impl IntoAnyError for MlsError {
@@ -712,7 +716,7 @@ where
             .map_err(|e| MlsError::GroupStorageError(e.into_any_error()))?
             .ok_or(MlsError::GroupNotFound)?;
 
-        let snapshot = Snapshot::mls_decode(&mut &*snapshot)?;
+        let snapshot = Snapshot::mls_decode(&mut &**snapshot)?;
 
         Group::from_snapshot(self.config.clone(), snapshot).await
     }
@@ -736,7 +740,7 @@ where
             .map_err(|e| MlsError::GroupStorageError(e.into_any_error()))?
             .ok_or(MlsError::GroupNotFound)?;
 
-        let mut snapshot = Snapshot::mls_decode(&mut &*snapshot)?;
+        let mut snapshot = Snapshot::mls_decode(&mut &**snapshot)?;
         snapshot.state.public_tree.nodes = tree_data.0.into_owned();
 
         Group::from_snapshot(self.config.clone(), snapshot).await

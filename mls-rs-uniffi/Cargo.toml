@@ -1,6 +1,6 @@
 [package]
 name = "mls-rs-uniffi"
-version = "0.10.0"
+version = "0.12.0"
 edition = "2021"
 description = "An UniFFI-compatible implementation of Messaging Layer Security (RFC 9420)"
 homepage = "https://github.com/awslabs/mls-rs"
@@ -17,17 +17,19 @@ name = "mls_rs_uniffi"
 [dependencies]
 async-trait = "0.1.77"
 maybe-async = "0.2.10"
-mls-rs = { version = "0.51.0", path = "../mls-rs" }
-mls-rs-core = { version = "0.24.0", path = "../mls-rs-core" }
-mls-rs-crypto-openssl = { version = "0.18.0", path = "../mls-rs-crypto-openssl" }
+mls-rs = { version = "0.53.0", path = "../mls-rs" }
+mls-rs-core = { version = "0.25.0", path = "../mls-rs-core" }
+mls-rs-crypto-openssl = { version = "0.19.0", path = "../mls-rs-crypto-openssl" }
 thiserror = "2"
-uniffi = { git = "https://github.com/mozilla/uniffi-rs/", rev = "eeb785c", version = "0.27.0" }
+uniffi = { version = "0.31" }
+zeroize = "1"
 
 [target.'cfg(mls_build_async)'.dependencies]
 tokio = { version = "1.36.0", features = ["sync"] }
 
 [dev-dependencies]
-uniffi_bindgen = { git = "https://github.com/mozilla/uniffi-rs/", rev = "eeb785c", version = "0.27.0" }
+uniffi_bindgen = { version = "0.31.0", features = ["bindgen-tests"] }
+uniffi_testing = { version = "0.31.0" }
 anyhow = "1"
 
 [lints.rust]
