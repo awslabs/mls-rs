@@ -17,7 +17,7 @@ mod swift {
     /// Needed because of the min system reqs for HPKE in CryptoKit.
     /// See https://developer.apple.com/documentation/cryptokit/hpke
     const MIN_IOS_DEPLOYMENT_TARGET: &str = "17.0";
-    const MIN_OSX_DEPLOYMENT_TARGET: &str = "14.0";
+    const MIN_OSX_DEPLOYMENT_TARGET: &str = "26.0";
 
     #[derive(Debug, Deserialize)]
     struct SwiftTargetInfo {
