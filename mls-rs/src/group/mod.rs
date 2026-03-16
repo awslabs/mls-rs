@@ -3918,6 +3918,48 @@ mod tests {
         );
     }
 
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn creating_large_group_with_intermediate_node_with_blank_parent_hash_works() {
+        let mut test_group = test_group_custom(
+            TEST_PROTOCOL_VERSION,
+            TEST_CIPHER_SUITE,
+            Default::default(),
+            None,
+            Some(CommitOptions::new().with_ratchet_tree_extension(true)),
+        )
+        .await;
+
+        let (_, _) = test_group.join("b").await;
+        let (_, _) = test_group.join("c").await;
+        let (_, _) = test_group.join("d").await;
+        let (_, _) = test_group.join("e").await;
+        let (_, _) = test_group.join("f").await;
+        let (_, _) = test_group.join("g").await;
+        let (_, _) = test_group.join("h").await;
+        let (_, _) = test_group.join("i").await;
+        let (_, _) = test_group.join("j").await;
+        let (_, _) = test_group.join("k").await;
+
+        test_group
+            .commit_builder()
+            .remove_member(1)
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+
+        test_group.process_pending_commit().await.unwrap();
+
+        let (_, _) = test_group.join("l").await;
+        let (_, _) = test_group.join("m").await;
+        let (_, _) = test_group.join("n").await;
+        let (_, _) = test_group.join("o").await;
+        let (_, _) = test_group.join("p").await;
+        let (_, _) = test_group.join("q").await;
+        let (_, _) = test_group.join("r").await;
+    }
+
     #[cfg(feature = "private_message")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn member_can_see_sender_creds() {
