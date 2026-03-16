@@ -14,6 +14,12 @@ use crate::SqLiteDataStorageError;
 
 #[derive(Debug, Clone)]
 /// SQLite storage for MLS Key Packages.
+///
+/// # Limitations
+///
+/// Expiration timestamps are stored as SQLite INTEGER (signed 64-bit), limiting
+/// the maximum timestamp to [`i64::MAX`] (9,223,372,036,854,775,807). Operations
+/// with timestamps exceeding this value will return [`SqLiteDataStorageError::TimestampOverflow`].
 pub struct SqLiteKeyPackageStorage {
     connection: Arc<Mutex<Connection>>,
 }
@@ -37,7 +43,9 @@ impl SqLiteKeyPackageStorage {
                 "INSERT INTO key_package (id, expiration, data) VALUES (?,?,?)",
                 params![
                     id,
-                    key_package.expiration,
+                    i64::try_from(key_package.expiration).map_err(|_| {
+                        SqLiteDataStorageError::TimestampOverflow(key_package.expiration)
+                    })?,
                     key_package
                         .mls_encode_to_vec()
                         .map_err(|e| SqLiteDataStorageError::DataConversionError(e.into()))?
@@ -88,7 +96,8 @@ impl SqLiteKeyPackageStorage {
         connection
             .execute(
                 "DELETE FROM key_package where expiration < ?",
-                params![time],
+                params![i64::try_from(time)
+                    .map_err(|_| SqLiteDataStorageError::TimestampOverflow(time))?],
             )
             .map(|_| ())
             .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))
@@ -100,7 +109,9 @@ impl SqLiteKeyPackageStorage {
 
         connection
             .query_row("SELECT count(*) FROM key_package", params![], |row| {
-                row.get(0)
+                row.get::<_, i64>(0).and_then(|v| {
+                    usize::try_from(v).map_err(|_| rusqlite::Error::IntegralValueOutOfRange(0, v))
+                })
             })
             .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))
     }
@@ -114,8 +125,14 @@ impl SqLiteKeyPackageStorage {
         connection
             .query_row(
                 "SELECT count(*) FROM key_package where expiration >= ?",
-                params![time],
-                |row| row.get(0),
+                params![i64::try_from(time)
+                    .map_err(|_| SqLiteDataStorageError::TimestampOverflow(time))?],
+                |row| {
+                    row.get::<_, i64>(0).and_then(|v| {
+                        usize::try_from(v)
+                            .map_err(|_| rusqlite::Error::IntegralValueOutOfRange(0, v))
+                    })
+                },
             )
             .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))
     }
@@ -276,5 +293,21 @@ mod tests {
         assert_eq!(storage.count_at_time(2).unwrap(), 1);
         assert_eq!(storage.count_at_time(1).unwrap(), 2);
         assert_eq!(storage.count_at_time(0).unwrap(), 2);
+    }
+
+    #[test]
+    fn timestamp_overflow() {
+        let mut storage = test_storage();
+        let (id, mut kp) = test_key_package();
+        kp.expiration = u64::MAX;
+
+        let err = storage.insert(&id, kp).unwrap_err();
+        assert_matches!(err, SqLiteDataStorageError::TimestampOverflow(u64::MAX));
+
+        let err = storage.delete_expired_by_time(u64::MAX).unwrap_err();
+        assert_matches!(err, SqLiteDataStorageError::TimestampOverflow(u64::MAX));
+
+        let err = storage.count_at_time(u64::MAX).unwrap_err();
+        assert_matches!(err, SqLiteDataStorageError::TimestampOverflow(u64::MAX));
     }
 }
