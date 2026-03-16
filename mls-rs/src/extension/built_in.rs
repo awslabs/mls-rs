@@ -72,7 +72,6 @@ pub struct RatchetTreeExt {
 
 impl RatchetTreeExt {
     /// Required custom extension types.
-    #[cfg(feature = "ffi")]
     pub fn tree_data(&self) -> &ExportedTree<'static> {
         &self.tree_data
     }
