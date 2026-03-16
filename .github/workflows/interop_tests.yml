@@ -38,7 +38,7 @@ jobs:
           cp -r ../../mls-rs/test_harness_integration/configs mls-rs-configs
           go env -w GOPROXY=direct
           go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.33.0
-          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.4.0
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.3.0
           export GOPATH=$HOME/go
           export GOBIN=$GOPATH/bin
           export PATH=$PATH:$GOROOT:$GOPATH:$GOBIN
