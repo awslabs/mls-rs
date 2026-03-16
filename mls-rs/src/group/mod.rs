@@ -6212,7 +6212,10 @@ mod tests {
 
         let cached = group.get_cached_proposals();
         assert_eq!(cached.len(), 1);
-        assert!(matches!(cached[0].proposal(), Proposal::GroupContextExtensions(_)));
+        assert!(matches!(
+            cached[0].proposal(),
+            Proposal::GroupContextExtensions(_)
+        ));
         assert!(matches!(cached[0].sender(), Sender::Member(_)));
 
         group.commit(vec![]).await.unwrap();
