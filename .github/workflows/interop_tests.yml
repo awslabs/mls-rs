@@ -1,5 +1,5 @@
 name: Interop Tests
-on: [push, pull_request]
+on: [pull_request]
 env:
   CARGO_TERM_COLOR: always
   SSH_AUTH_SOCK: /tmp/ssh_agent.sock
@@ -21,6 +21,10 @@ jobs:
           repository: mlswg/mls-implementations
           ref: 7066309c555bfc11fbc74f8288a8563c927637b2
           path: interop
+      - name: Patch go.mod
+        working-directory: interop
+        run: |
+          sed -i 's|google.golang.org/grpc v1.56.3|google.golang.org/grpc v1.64.0|' go.mod
       - uses: actions/setup-go@v5
         with:
           go-version: '1.22'
@@ -41,6 +45,7 @@ jobs:
           protoc --go_out=proto --go_opt=paths=source_relative --go-grpc_out=proto --go-grpc_opt=paths=source_relative -I proto mls_client.proto
           GOFLAGS=-mod=mod go generate ./...
           cd test-runner
+          go mod tidy
           go build
       - name: Test interop; full feature set with itself
         run: |
