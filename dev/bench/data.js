@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1773664217273,
+  "lastUpdate": 1773672860545,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -27955,6 +27955,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 175666,
             "range": "± 1414",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "beurdouche@users.noreply.github.com",
+            "name": "Benjamin Beurdouche",
+            "username": "beurdouche"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3b36206e1bf7e38bf75230b8bcc7e93356feb02f",
+          "message": "Remove safer-ffi (#334)\n\n* Remove safer-ffi\n\n* Remove the ffi feature from mls-rs-core\n\n* Bump all versions after mls-rs-core feature change\n\n* Remove another (feature = \"ffi\")\n\n* Remove ffi dependency for mls-rs\n\n---------\n\nCo-authored-by: mulmarta <103590845+mulmarta@users.noreply.github.com>",
+          "timestamp": "2026-03-16T15:49:56+01:00",
+          "tree_id": "b018f7e139383befe26d26f01fb5414e6948c04f",
+          "url": "https://github.com/awslabs/mls-rs/commit/3b36206e1bf7e38bf75230b8bcc7e93356feb02f"
+        },
+        "date": 1773672859718,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 531778,
+            "range": "± 7130",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 537849,
+            "range": "± 9869",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 601379,
+            "range": "± 4169",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1279963,
+            "range": "± 28368",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7495405,
+            "range": "± 32807",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2670746,
+            "range": "± 103747",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7158665,
+            "range": "± 98160",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13291833,
+            "range": "± 304724",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 776756,
+            "range": "± 5981",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 864823,
+            "range": "± 7729",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 997126,
+            "range": "± 9883",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 25981,
+            "range": "± 206",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 88302,
+            "range": "± 1523",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 173853,
+            "range": "± 1237",
             "unit": "ns/iter"
           }
         ]
