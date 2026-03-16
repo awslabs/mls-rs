@@ -38,7 +38,6 @@ use alloc::boxed::Box;
 
 #[derive(Debug)]
 #[cfg_attr(feature = "std", derive(thiserror::Error))]
-#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::enum_to_error_code)]
 #[non_exhaustive]
 pub enum MlsError {
     #[cfg_attr(feature = "std", error(transparent))]
@@ -391,7 +390,6 @@ impl From<ExtensionError> for MlsError {
 /// and underlying identities used to join groups and generate key packages.
 /// Applications may decide to create one or many clients depending on their
 /// specific needs.
-#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::ffi_type(opaque))]
 #[derive(Clone, Debug)]
 pub struct Client<C> {
     pub(crate) config: C,
@@ -408,7 +406,6 @@ impl Client<()> {
     }
 }
 
-#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl<C> Client<C>
 where
     C: ClientConfig + Clone,
@@ -427,7 +424,6 @@ where
         }
     }
 
-    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     pub fn to_builder(&self, timestamp: Option<MlsTime>) -> ClientBuilder<MakeConfig<C>> {
         ClientBuilder::from_config(recreate_config(
             self.config.clone(),
@@ -452,7 +448,6 @@ where
     ///
     /// A key package message may only be used once.
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     pub async fn generate_key_package_message(
         &self,
         key_package_extensions: ExtensionList,
@@ -524,7 +519,6 @@ where
     /// instead of this function because it guarantees that group_id values
     /// are globally unique.
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     pub async fn create_group_with_id(
         &self,
         group_id: Vec<u8>,
@@ -554,7 +548,6 @@ where
     /// [CipherSuiteProvider](crate::CipherSuiteProvider)
     /// that was used to build the client.
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     pub async fn create_group(
         &self,
         group_context_extensions: ExtensionList,
@@ -587,7 +580,6 @@ where
     /// be exported from a group using the
     /// [export tree function](crate::group::Group::export_tree).
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     pub async fn join_group(
         &self,
         tree_data: Option<ExportedTree<'_>>,
@@ -753,7 +745,6 @@ where
     /// welcome message can be used by [join_group](Client::join_group).
     #[cfg(feature = "by_ref_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     pub async fn external_add_proposal(
         &self,
         group_info: &MlsMessage,
@@ -832,7 +823,6 @@ where
         self.signer.as_ref().ok_or(MlsError::SignerNotFound)
     }
 
-    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     pub fn signing_identity(&self) -> Result<(&SigningIdentity, CipherSuite), MlsError> {
         self.signing_identity
             .as_ref()
@@ -841,26 +831,22 @@ where
     }
 
     /// The [KeyPackageStorage] that this client was configured to use.
-    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     pub fn key_package_store(&self) -> <C as ClientConfig>::KeyPackageRepository {
         self.config.key_package_repo()
     }
 
     /// The [PreSharedKeyStorage](crate::PreSharedKeyStorage) that
     /// this client was configured to use.
-    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     pub fn secret_store(&self) -> <C as ClientConfig>::PskStore {
         self.config.secret_store()
     }
 
     /// The [GroupStateStorage] that this client was configured to use.
-    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     pub fn group_state_storage(&self) -> <C as ClientConfig>::GroupStateStorage {
         self.config.group_state_storage()
     }
 
     /// The [IdentityProvider](crate::IdentityProvider) that this client was configured to use.
-    #[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen_ignore)]
     pub fn identity_provider(&self) -> <C as ClientConfig>::IdentityProvider {
         self.config.identity_provider()
     }

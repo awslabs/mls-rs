@@ -14,10 +14,6 @@ use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 ///
 /// Extension lists require that each type of extension has at most one entry.
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[cfg_attr(
-    all(feature = "ffi", not(test)),
-    safer_ffi_gen::ffi_type(clone, opaque)
-)]
 #[derive(Debug, Clone, Default, MlsSize, MlsEncode, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ExtensionList(Vec<Extension>);

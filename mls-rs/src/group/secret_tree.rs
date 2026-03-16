@@ -312,10 +312,6 @@ pub enum KeyType {
     Application,
 }
 
-#[cfg_attr(
-    all(feature = "ffi", not(test)),
-    safer_ffi_gen::ffi_type(clone, opaque)
-)]
 #[derive(Clone, PartialEq, Eq, MlsEncode, MlsDecode, MlsSize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 /// AEAD key derived by the MLS secret tree.
@@ -337,7 +333,6 @@ impl Debug for MessageKeyData {
     }
 }
 
-#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl MessageKeyData {
     /// AEAD nonce.
     #[cfg_attr(not(feature = "secret_tree_access"), allow(dead_code))]
