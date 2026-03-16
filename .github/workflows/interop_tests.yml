@@ -1,5 +1,5 @@
 name: Interop Tests
-on: [pull_request]
+on: [push, pull_request]
 env:
   CARGO_TERM_COLOR: always
   SSH_AUTH_SOCK: /tmp/ssh_agent.sock
