@@ -615,12 +615,10 @@ impl<T> ProposalInfo<T> {
         }
     }
 
-    #[cfg(all(feature = "ffi", not(test)))]
     pub fn sender(&self) -> &Sender {
         &self.sender
     }
 
-    #[cfg(all(feature = "ffi", not(test)))]
     pub fn source(&self) -> &ProposalSource {
         &self.source
     }
@@ -670,8 +668,6 @@ impl<T> ProposalInfo<T> {
         }
     }
 }
-
-#[cfg(all(feature = "ffi", not(test)))]
 
 pub trait Proposable: Sized {
     const TYPE: ProposalType;

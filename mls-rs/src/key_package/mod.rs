@@ -88,12 +88,10 @@ struct KeyPackageData<'a> {
 }
 
 impl KeyPackage {
-    #[cfg(feature = "ffi")]
     pub fn version(&self) -> ProtocolVersion {
         self.version
     }
 
-    #[cfg(feature = "ffi")]
     pub fn cipher_suite(&self) -> CipherSuite {
         self.cipher_suite
     }

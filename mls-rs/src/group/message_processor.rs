@@ -120,7 +120,6 @@ impl NewEpoch {
     }
 }
 
-#[cfg(all(feature = "ffi", not(test)))]
 impl NewEpoch {
     pub fn epoch(&self) -> u64 {
         self.epoch

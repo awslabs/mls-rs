@@ -49,7 +49,6 @@ impl ApplicationIdExt {
     }
 
     /// Get the application level identifier presented by this extension.
-    #[cfg(feature = "ffi")]
     pub fn identifier(&self) -> &[u8] {
         &self.identifier
     }
@@ -117,19 +116,16 @@ impl RequiredCapabilitiesExt {
     }
 
     /// Required custom extension types.
-    #[cfg(feature = "ffi")]
     pub fn extensions(&self) -> &[ExtensionType] {
         &self.extensions
     }
 
     /// Required custom proposal types.
-    #[cfg(feature = "ffi")]
     pub fn proposals(&self) -> &[ProposalType] {
         &self.proposals
     }
 
     /// Required custom credential types.
-    #[cfg(feature = "ffi")]
     pub fn credentials(&self) -> &[CredentialType] {
         &self.credentials
     }
@@ -154,7 +150,6 @@ pub struct ExternalPubExt {
 
 impl ExternalPubExt {
     /// Get the public key to be used for an external commit.
-    #[cfg(feature = "ffi")]
     pub fn external_pub(&self) -> &HpkePublicKey {
         &self.external_pub
     }
@@ -180,7 +175,6 @@ impl ExternalSendersExt {
         Self { allowed_senders }
     }
 
-    #[cfg(feature = "ffi")]
     pub fn allowed_senders(&self) -> &[SigningIdentity] {
         &self.allowed_senders
     }

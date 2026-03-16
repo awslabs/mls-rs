@@ -124,13 +124,11 @@ pub struct CommitOutput {
 
 impl CommitOutput {
     /// Commit message to send to other group members.
-    #[cfg(feature = "ffi")]
     pub fn commit_message(&self) -> &MlsMessage {
         &self.commit_message
     }
 
     /// Welcome message to send to new group members.
-    #[cfg(feature = "ffi")]
     pub fn welcome_messages(&self) -> &[MlsMessage] {
         &self.welcome_messages
     }
@@ -138,7 +136,6 @@ impl CommitOutput {
     /// Ratchet tree that can be sent out of band if
     /// `ratchet_tree_extension` is not used according to
     /// [`MlsRules::commit_options`].
-    #[cfg(feature = "ffi")]
     pub fn ratchet_tree(&self) -> Option<&ExportedTree<'static>> {
         self.ratchet_tree.as_ref()
     }
@@ -146,13 +143,12 @@ impl CommitOutput {
     /// A group info that can be provided to new members in order to enable external commit
     /// functionality. This value is set if [`MlsRules::commit_options`] returns
     /// `allow_external_commit` set to true.
-    #[cfg(feature = "ffi")]
     pub fn external_commit_group_info(&self) -> Option<&MlsMessage> {
         self.external_commit_group_info.as_ref()
     }
 
     /// Proposals that were received in the prior epoch but not included in the following commit.
-    #[cfg(all(feature = "ffi", feature = "by_ref_proposal"))]
+    #[cfg(feature = "by_ref_proposal")]
     pub fn unused_proposals(&self) -> &[crate::mls_rules::ProposalInfo<Proposal>] {
         &self.unused_proposals
     }

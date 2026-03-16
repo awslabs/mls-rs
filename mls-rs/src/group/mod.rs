@@ -240,7 +240,6 @@ impl NewMemberInfo {
 
     /// Group info extensions found within the Welcome message used to join
     /// the group.
-    #[cfg(feature = "ffi")]
     pub fn group_info_extensions(&self) -> &ExtensionList {
         &self.group_info_extensions
     }

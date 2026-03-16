@@ -26,7 +26,6 @@ pub struct GroupState {
     pub(crate) confirmation_tag: ConfirmationTag,
 }
 
-#[cfg(all(feature = "ffi", not(test)))]
 impl GroupState {
     pub fn context(&self) -> &GroupContext {
         &self.context
