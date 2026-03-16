@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1773660996014,
+  "lastUpdate": 1773664217273,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -27847,6 +27847,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 174922,
             "range": "± 1129",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "103590845+mulmarta@users.noreply.github.com",
+            "name": "mulmarta",
+            "username": "mulmarta"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3f71bbe436d0b15852e78273edef5e735648aee0",
+          "message": "Fix go build for interop tests (#344)\n\n* fix: Fix go version in interop tests\n\n* fix: Fix go version in interop tests\n\n* fix: Fix go version in interop tests\n\n* fix: Fix go version in interop tests\n\n* fix: Fix go version in interop tests",
+          "timestamp": "2026-03-16T13:26:40+01:00",
+          "tree_id": "a5271ca440591a5fcfeea7de8b6a95bffa6c5f73",
+          "url": "https://github.com/awslabs/mls-rs/commit/3f71bbe436d0b15852e78273edef5e735648aee0"
+        },
+        "date": 1773664215798,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 528245,
+            "range": "± 4082",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 536169,
+            "range": "± 6860",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 598650,
+            "range": "± 16794",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1255077,
+            "range": "± 29577",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 9387925,
+            "range": "± 46858",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2668399,
+            "range": "± 25225",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7139900,
+            "range": "± 85017",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13282716,
+            "range": "± 138302",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 774124,
+            "range": "± 5272",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 867224,
+            "range": "± 5985",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 1006816,
+            "range": "± 6513",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 26068,
+            "range": "± 741",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 89701,
+            "range": "± 963",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 175666,
+            "range": "± 1414",
             "unit": "ns/iter"
           }
         ]
