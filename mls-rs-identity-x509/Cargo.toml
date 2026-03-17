@@ -22,9 +22,9 @@ thiserror = { version = "2", optional = true }
 async-trait = "0.1.74"
 
 [dev-dependencies]
-mockall = "0.13"
+mockall = "0.14"
 assert_matches = "1"
-rand = "0.8"
+rand = "0.9"
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wasm-bindgen-test = { version = "0.3" }

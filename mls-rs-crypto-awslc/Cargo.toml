@@ -15,8 +15,8 @@ post-quantum = ["aws-lc-rs/unstable", "mls-rs-core/post-quantum"]
 default = ["non-fips"]
 
 [dependencies]
-aws-lc-rs = { version = "=1.14.1", default-features = false, features = ["alloc"] }
-aws-lc-sys = { version = "=0.32", optional = true }
+aws-lc-rs = { version = "=1.16.1", default-features = false, features = ["alloc"] }
+aws-lc-sys = { version = "=0.38.0", optional = true }
 aws-lc-fips-sys = { version = "=0.13", optional = true }
 mls-rs-core = { path = "../mls-rs-core", version = "0.26.0" }
 mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", version = "0.20.0" }
