@@ -10,7 +10,7 @@ fn bench(c: &mut Criterion) {
     let group_states = load_group_states().pop().unwrap();
 
     let mut bytes = vec![0; 1000000];
-    rand::thread_rng().fill_bytes(&mut bytes);
+    rand::rng().fill_bytes(&mut bytes);
 
     let bytes = &bytes;
     let mut n = 100;

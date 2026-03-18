@@ -65,7 +65,7 @@ pub(crate) mod test_utils {
 
     use alloc::vec;
     use mls_rs_core::{crypto::SignaturePublicKey, error::IntoAnyError, identity::SigningIdentity};
-    use rand::{thread_rng, Rng};
+    use rand::{rng, Rng};
 
     use crate::{CertificateChain, DerCertificate};
 
@@ -83,7 +83,7 @@ pub(crate) mod test_utils {
         (0..3)
             .map(|_| {
                 let mut data = [0u8; 32];
-                thread_rng().fill(&mut data);
+                rng().fill(&mut data);
                 DerCertificate::from(data.to_vec())
             })
             .collect::<CertificateChain>()

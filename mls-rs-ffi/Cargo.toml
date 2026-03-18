@@ -25,7 +25,7 @@ secret_tree_access = ["mls-rs/secret_tree_access"]
 export_key_generation = ["mls-rs/export_key_generation"]
 
 [dependencies]
-mls-rs = { path = "../mls-rs", version = "0.53.0" }
+mls-rs = { path = "../mls-rs", version = "0.54.0" }
 mls-rs-crypto-openssl = { path = "../mls-rs-crypto-openssl", version = "0.20.0", optional = true }
 mls-rs-identity-x509 = { path = "../mls-rs-identity-x509", version = "0.20.0", optional = true }
 mls-rs-provider-sqlite = { path = "../mls-rs-provider-sqlite", version = "0.21.0", default-features = false, optional = true }

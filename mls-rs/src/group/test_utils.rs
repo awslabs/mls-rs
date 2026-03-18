@@ -411,7 +411,7 @@ pub(crate) async fn get_test_groups_with_features(
 
 pub fn random_bytes(count: usize) -> Vec<u8> {
     let mut buf = vec![0; count];
-    rand::thread_rng().fill_bytes(&mut buf);
+    rand::rng().fill_bytes(&mut buf);
     buf
 }
 
