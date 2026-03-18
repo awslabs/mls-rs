@@ -6,7 +6,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
-mls-rs = { version = "0.53.0", path = "..", default-features = false, features = ["std", "external_client"]}
+mls-rs = { version = "0.54.0", path = "..", default-features = false, features = ["std", "external_client"]}
 tonic = "0.14"
 tonic-prost = "0.14"
 prost = "0.14"
