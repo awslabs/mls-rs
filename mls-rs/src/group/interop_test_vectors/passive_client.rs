@@ -607,8 +607,8 @@ pub async fn generate_passive_client_random_tests() -> Vec<TestCase> {
         let mut next_free_idx = 11;
         for _ in 0..100 {
             // We keep the passive client and another member to send
-            let num_removed = rng.gen_range(0..groups.len() - 2);
-            let num_added = rng.gen_range(1..30);
+            let num_removed = rng.random_range(0..groups.len() - 2);
+            let num_added = rng.random_range(1..30);
 
             let mut members = (0..groups.len())
                 .filter(|i| groups[*i].current_member_index() != passive_client_index)

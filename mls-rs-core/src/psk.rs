@@ -68,10 +68,6 @@ impl Deref for PreSharedKey {
 
 #[derive(Clone, Eq, Hash, Ord, PartialOrd, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[cfg_attr(
-    all(feature = "ffi", not(test)),
-    safer_ffi_gen::ffi_type(clone, opaque)
-)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 /// An external pre-shared key identifier.
 pub struct ExternalPskId(
@@ -88,7 +84,6 @@ impl Debug for ExternalPskId {
     }
 }
 
-#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl ExternalPskId {
     pub fn new(id_data: Vec<u8>) -> Self {
         Self(id_data)

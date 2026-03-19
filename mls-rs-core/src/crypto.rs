@@ -21,10 +21,6 @@ pub mod test_suite;
 #[derive(Clone, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(
-    all(feature = "ffi", not(test)),
-    safer_ffi_gen::ffi_type(clone, opaque)
-)]
 /// Ciphertext produced by [`CipherSuiteProvider::hpke_seal`]
 pub struct HpkeCiphertext {
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
@@ -45,10 +41,6 @@ impl Debug for HpkeCiphertext {
 /// the public key should be represented in the uncompressed format.
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord, MlsSize, MlsDecode, MlsEncode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[cfg_attr(
-    all(feature = "ffi", not(test)),
-    safer_ffi_gen::ffi_type(clone, opaque)
-)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HpkePublicKey(
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
@@ -93,10 +85,6 @@ impl AsRef<[u8]> for HpkePublicKey {
 /// Byte representation of an HPKE secret key.
 #[derive(Clone, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode, ZeroizeOnDrop)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[cfg_attr(
-    all(feature = "ffi", not(test)),
-    safer_ffi_gen::ffi_type(clone, opaque)
-)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HpkeSecretKey(
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
@@ -188,7 +176,6 @@ pub trait HpkeContextR {
 /// the public key should be represented in the uncompressed format.
 #[derive(Clone, PartialEq, Eq, Hash, Ord, PartialOrd, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::ffi_type(opaque))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SignaturePublicKey(
     #[mls_codec(with = "mls_rs_codec::byte_vec")]
@@ -204,7 +191,6 @@ impl Debug for SignaturePublicKey {
     }
 }
 
-#[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen)]
 impl SignaturePublicKey {
     pub fn new(bytes: Vec<u8>) -> Self {
         bytes.into()
@@ -246,10 +232,6 @@ impl From<SignaturePublicKey> for Vec<u8> {
 }
 
 /// Byte representation of a signature key.
-#[cfg_attr(
-    all(feature = "ffi", not(test)),
-    ::safer_ffi_gen::ffi_type(clone, opaque)
-)]
 #[derive(Clone, PartialEq, Eq, ZeroizeOnDrop, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SignatureSecretKey {
@@ -264,7 +246,6 @@ impl Debug for SignatureSecretKey {
     }
 }
 
-#[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen)]
 impl SignatureSecretKey {
     pub fn new(bytes: Vec<u8>) -> Self {
         bytes.into()

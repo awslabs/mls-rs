@@ -17,10 +17,6 @@ use super::ProposalType;
 
 #[derive(Clone, PartialEq, Eq, Debug, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[cfg_attr(
-    all(feature = "ffi", not(test)),
-    safer_ffi_gen::ffi_type(clone, opaque)
-)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 ///  Capabilities of a MLS client
 pub struct Capabilities {
@@ -31,34 +27,28 @@ pub struct Capabilities {
     pub credentials: Vec<CredentialType>,
 }
 
-#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl Capabilities {
     /// Supported protocol versions
-    #[cfg(feature = "ffi")]
     pub fn protocol_versions(&self) -> &[ProtocolVersion] {
         &self.protocol_versions
     }
 
     /// Supported ciphersuites
-    #[cfg(feature = "ffi")]
     pub fn cipher_suites(&self) -> &[CipherSuite] {
         &self.cipher_suites
     }
 
     /// Supported extensions
-    #[cfg(feature = "ffi")]
     pub fn extensions(&self) -> &[ExtensionType] {
         &self.extensions
     }
 
     /// Supported proposals
-    #[cfg(feature = "ffi")]
     pub fn proposals(&self) -> &[ProposalType] {
         &self.proposals
     }
 
     /// Supported credentials
-    #[cfg(feature = "ffi")]
     pub fn credentials(&self) -> &[CredentialType] {
         &self.credentials
     }
@@ -90,10 +80,6 @@ impl Default for Capabilities {
 }
 
 /// A member of a MLS group.
-#[cfg_attr(
-    all(feature = "ffi", not(test)),
-    safer_ffi_gen::ffi_type(clone, opaque)
-)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Member {
@@ -110,7 +96,6 @@ pub struct Member {
     pub extensions: ExtensionList,
 }
 
-#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl Member {
     pub fn new(
         index: u32,
@@ -130,25 +115,21 @@ impl Member {
     ///
     /// This value is consistent for all clients and will not change as the
     /// group evolves.
-    #[cfg(feature = "ffi")]
     pub fn index(&self) -> u32 {
         self.index
     }
 
     /// Current identity public key and credential of this member.
-    #[cfg(feature = "ffi")]
     pub fn signing_identity(&self) -> &SigningIdentity {
         &self.signing_identity
     }
 
     /// Current client [Capabilities] of this member.
-    #[cfg(feature = "ffi")]
     pub fn capabilities(&self) -> &Capabilities {
         &self.capabilities
     }
 
     /// Current leaf node extensions in use by this member.
-    #[cfg(feature = "ffi")]
     pub fn extensions(&self) -> &ExtensionList {
         &self.extensions
     }
