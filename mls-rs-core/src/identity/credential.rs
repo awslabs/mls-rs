@@ -21,12 +21,10 @@ use super::CertificateChain;
     Debug, PartialEq, Eq, Hash, Clone, Copy, PartialOrd, Ord, MlsSize, MlsEncode, MlsDecode,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::ffi_type)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(transparent)]
 pub struct CredentialType(u16);
 
-#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl CredentialType {
     /// Basic identity.
     pub const BASIC: CredentialType = CredentialType(1);
@@ -60,10 +58,6 @@ impl Deref for CredentialType {
 
 #[derive(Clone, MlsSize, MlsEncode, MlsDecode, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[cfg_attr(
-    all(feature = "ffi", not(test)),
-    safer_ffi_gen::ffi_type(clone, opaque)
-)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 /// Custom user created credential type.
 ///
@@ -90,7 +84,6 @@ impl Debug for CustomCredential {
     }
 }
 
-#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl CustomCredential {
     /// Create a new custom credential with opaque data.
     ///
@@ -106,13 +99,11 @@ impl CustomCredential {
     }
 
     /// Unique credential type to identify this custom credential.
-    #[cfg(feature = "ffi")]
     pub fn credential_type(&self) -> CredentialType {
         self.credential_type
     }
 
     /// Opaque data representing this custom credential.
-    #[cfg(feature = "ffi")]
     pub fn data(&self) -> &[u8] {
         &self.data
     }
@@ -121,10 +112,6 @@ impl CustomCredential {
 /// A MLS credential used to authenticate a group member.
 #[derive(Clone, Debug, PartialEq, Ord, PartialOrd, Eq, Hash)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[cfg_attr(
-    all(feature = "ffi", not(test)),
-    safer_ffi_gen::ffi_type(clone, opaque)
-)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub enum Credential {

@@ -17,9 +17,9 @@ name = "mls_rs_uniffi"
 [dependencies]
 async-trait = "0.1.77"
 maybe-async = "0.2.10"
-mls-rs = { version = "0.53.0", path = "../mls-rs" }
-mls-rs-core = { version = "0.25.0", path = "../mls-rs-core" }
-mls-rs-crypto-openssl = { version = "0.19.0", path = "../mls-rs-crypto-openssl" }
+mls-rs = { version = "0.54.0", path = "../mls-rs" }
+mls-rs-core = { version = "0.26.0", path = "../mls-rs-core" }
+mls-rs-crypto-openssl = { version = "0.20.0", path = "../mls-rs-crypto-openssl" }
 thiserror = "2"
 uniffi = { version = "0.31" }
 zeroize = "1"

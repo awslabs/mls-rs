@@ -26,7 +26,6 @@ use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 /// | 7  | DHKEMP384   | AES 256 | SHA 512 | P384             |
 #[derive(Debug, Copy, Clone, Eq, PartialEq, MlsSize, MlsEncode, MlsDecode, PartialOrd, Ord)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::ffi_type)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(transparent)]
 pub struct CipherSuite(u16);

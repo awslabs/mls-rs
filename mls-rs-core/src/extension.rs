@@ -21,12 +21,10 @@ pub use list::*;
     Debug, PartialEq, Eq, Hash, Clone, Copy, PartialOrd, Ord, MlsSize, MlsEncode, MlsDecode,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::ffi_type)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(transparent)]
 pub struct ExtensionType(u16);
 
-#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl ExtensionType {
     pub const APPLICATION_ID: ExtensionType = ExtensionType(1);
     pub const RATCHET_TREE: ExtensionType = ExtensionType(2);
@@ -98,10 +96,6 @@ impl IntoAnyError for ExtensionError {
 
 #[derive(Clone, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[cfg_attr(
-    all(feature = "ffi", not(test)),
-    safer_ffi_gen::ffi_type(clone, opaque)
-)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 /// An MLS protocol [extension](https://messaginglayersecurity.rocks/mls-protocol/draft-ietf-mls-protocol.html#name-extensions).
@@ -129,7 +123,6 @@ impl Debug for Extension {
     }
 }
 
-#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl Extension {
     /// Create an extension with specified type and data properties.
     pub fn new(extension_type: ExtensionType, extension_data: Vec<u8>) -> Extension {
@@ -140,13 +133,11 @@ impl Extension {
     }
 
     /// Extension type of this extension
-    #[cfg(feature = "ffi")]
     pub fn extension_type(&self) -> ExtensionType {
         self.extension_type
     }
 
     /// Data held within this extension
-    #[cfg(feature = "ffi")]
     pub fn extension_data(&self) -> &[u8] {
         &self.extension_data
     }

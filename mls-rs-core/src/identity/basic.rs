@@ -14,10 +14,6 @@ use super::{Credential, CredentialType, MlsCredential};
 
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[cfg_attr(
-    all(feature = "ffi", not(test)),
-    safer_ffi_gen::ffi_type(clone, opaque)
-)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 /// Bare assertion of an identity without any additional information.
 ///
@@ -44,7 +40,6 @@ impl Debug for BasicCredential {
     }
 }
 
-#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl BasicCredential {
     /// Create a new basic credential with raw bytes.
     pub fn new(identifier: Vec<u8>) -> BasicCredential {
@@ -52,7 +47,6 @@ impl BasicCredential {
     }
 
     /// Underlying identifier as raw bytes.
-    #[cfg(feature = "ffi")]
     pub fn identifier(&self) -> &[u8] {
         &self.identifier
     }

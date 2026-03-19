@@ -16,7 +16,7 @@ use mls_rs::ProtocolVersion;
 use mls_rs::{CipherSuite, Group};
 use mls_rs::{Client, CryptoProvider};
 use mls_rs_core::crypto::CipherSuiteProvider;
-use rand::prelude::SliceRandom;
+use rand::prelude::IndexedMutRandom;
 use rand::RngCore;
 
 use mls_rs::test_utils::{all_process_message, get_test_basic_credential};
@@ -330,7 +330,7 @@ async fn test_remove_proposals(
 
     // Remove people from the group one at a time
     while groups.len() > 1 {
-        let removed_and_committer = (0..groups.len()).choose_multiple(&mut rand::thread_rng(), 2);
+        let removed_and_committer = (0..groups.len()).choose_multiple(&mut rand::rng(), 2);
 
         let to_remove = removed_and_committer[0];
         let committer = removed_and_committer[1];
@@ -396,7 +396,7 @@ async fn test_application_messages(
     // Loop through each participant and send application messages
     for i in 0..groups.len() {
         let mut test_message = vec![0; 1024];
-        rand::thread_rng().fill_bytes(&mut test_message);
+        rand::rng().fill_bytes(&mut test_message);
 
         for _ in 0..message_count {
             // Encrypt the application message
@@ -544,7 +544,7 @@ async fn external_commits_work(
     let mut groups = vec![creator_group];
 
     for client in &others {
-        let existing_group = groups.choose_mut(&mut rand::thread_rng()).unwrap();
+        let existing_group = groups.choose_mut(&mut rand::rng()).unwrap();
 
         let group_info = existing_group
             .group_info_message_allowing_ext_commit(true)
