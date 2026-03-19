@@ -1545,7 +1545,6 @@ where
     /// The returned [`CachedProposal`] values contain the proposal content,
     /// sender, and proposal reference.
     #[cfg(feature = "by_ref_proposal")]
-    #[cfg_attr(feature = "ffi", safer_ffi_gen::safer_ffi_gen_ignore)]
     pub fn get_cached_proposals(&self) -> Vec<CachedProposal> {
         self.state
             .proposals
