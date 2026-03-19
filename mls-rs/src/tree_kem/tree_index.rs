@@ -196,10 +196,8 @@ impl TreeIndex {
             .entry(new_leaf_cred_type)
             .or_default();
 
-        if do_validation {
-            if cred_type_counters.supported != old_leaf_count as u32 {
-                return Err(MlsError::CredentialTypeOfNewLeafIsUnsupported);
-            }
+        if do_validation && cred_type_counters.supported != old_leaf_count as u32 {
+            return Err(MlsError::CredentialTypeOfNewLeafIsUnsupported);
         }
 
         cred_type_counters.used += 1;
@@ -283,6 +281,10 @@ impl TreeIndex {
             }
         });
 
+        // Remove zero entries to maintain consistency with freshly built indexes
+        self.credential_type_counters
+            .retain(|_, counters| counters.supported > 0 || counters.used > 0);
+
         #[cfg(feature = "custom_proposal")]
         {
             let proposal_type_iter = leaf_node.capabilities.proposals.iter();
@@ -298,7 +300,10 @@ impl TreeIndex {
                 if let Some(supported) = self.proposal_type_counter.get_mut(proposal_type) {
                     *supported -= 1;
                 }
-            })
+            });
+
+            // Remove zero entries to maintain consistency with freshly built indexes
+            self.proposal_type_counter.retain(|_, &mut count| count > 0);
         }
     }
 

@@ -4440,7 +4440,9 @@ mod tests {
             Some(sk.clone())
         };
 
-        groups[0].commit_modifiers.skip_committer_self_update_validation = true;
+        groups[0]
+            .commit_modifiers
+            .skip_committer_self_update_validation = true;
 
         let commit_output = groups[0].commit(vec![]).await.unwrap();
 
@@ -4463,7 +4465,9 @@ mod tests {
             Some(sk.clone())
         };
 
-        groups[0].commit_modifiers.skip_committer_self_update_validation = true;
+        groups[0]
+            .commit_modifiers
+            .skip_committer_self_update_validation = true;
 
         let commit_output = groups[0].commit(vec![]).await.unwrap();
 
@@ -4493,7 +4497,9 @@ mod tests {
             Some(sk.clone())
         };
 
-        groups[0].commit_modifiers.skip_committer_self_update_validation = true;
+        groups[0]
+            .commit_modifiers
+            .skip_committer_self_update_validation = true;
 
         let commit_output = groups[0].commit(vec![]).await.unwrap();
 
@@ -6376,6 +6382,6 @@ mod tests {
             .build()
             .await;
 
-        assert!(!res.is_err());
+        assert!(res.is_ok());
     }
 }

@@ -1817,5 +1817,4 @@ mod tests {
 
         assert!(group.state.public_tree.equal_internals(&rebuilt));
     }
-
 }
