@@ -250,10 +250,6 @@ pub struct SelfRemoveProposal {}
 #[cfg(feature = "custom_proposal")]
 #[derive(Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[cfg_attr(
-    all(feature = "ffi", not(test)),
-    safer_ffi_gen::ffi_type(clone, opaque)
-)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 /// A user defined custom proposal.
 ///
@@ -275,7 +271,6 @@ impl Debug for CustomProposal {
 }
 
 #[cfg(feature = "custom_proposal")]
-#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::safer_ffi_gen)]
 impl CustomProposal {
     /// Create a custom proposal.
     ///

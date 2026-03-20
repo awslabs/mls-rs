@@ -13,7 +13,6 @@ use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
     Clone, Copy, Eq, Hash, PartialOrd, Ord, PartialEq, MlsSize, MlsEncode, MlsDecode, Debug,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[cfg_attr(all(feature = "ffi", not(test)), safer_ffi_gen::ffi_type)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(transparent)]
 pub struct ProposalType(u16);

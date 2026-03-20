@@ -9,14 +9,9 @@ use crate::{client::MlsError, tree_kem::node::NodeVec};
 
 use super::Roster;
 
-#[cfg_attr(
-    all(feature = "ffi", not(test)),
-    safer_ffi_gen::ffi_type(clone, opaque)
-)]
 #[derive(Debug, MlsSize, MlsEncode, MlsDecode, PartialEq, Clone)]
 pub struct ExportedTree<'a>(pub(crate) Cow<'a, NodeVec>);
 
-#[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen)]
 impl<'a> ExportedTree<'a> {
     pub(crate) fn new(node_data: NodeVec) -> Self {
         Self(Cow::Owned(node_data))
@@ -45,7 +40,6 @@ impl<'a> ExportedTree<'a> {
     }
 }
 
-#[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::safer_ffi_gen)]
 impl ExportedTree<'static> {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, MlsError> {
         Self::mls_decode(&mut &*bytes).map_err(Into::into)

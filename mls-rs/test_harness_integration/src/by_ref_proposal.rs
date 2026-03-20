@@ -36,6 +36,7 @@ pub(crate) mod inner {
     use super::ByRefProposalSender;
 
     impl MlsClientImpl {
+        #[allow(clippy::result_large_err)]
         pub(crate) async fn send_proposal<F>(
             &self,
             index: u32,
@@ -61,6 +62,7 @@ pub(crate) mod inner {
 
     #[tonic::async_trait]
     impl ByRefProposalSender<GroupContextExtensionsProposalRequest> for MlsClientImpl {
+        #[allow(clippy::result_large_err)]
         async fn propose(
             &self,
             request: Request<GroupContextExtensionsProposalRequest>,
@@ -80,6 +82,7 @@ pub(crate) mod inner {
 
     #[tonic::async_trait]
     impl ByRefProposalSender<ReInitProposalRequest> for MlsClientImpl {
+        #[allow(clippy::result_large_err)]
         async fn propose(
             &self,
             request: Request<ReInitProposalRequest>,
@@ -104,6 +107,7 @@ pub(crate) mod inner {
     #[cfg(feature = "psk")]
     #[tonic::async_trait]
     impl ByRefProposalSender<ResumptionPskProposalRequest> for MlsClientImpl {
+        #[allow(clippy::result_large_err)]
         async fn propose(
             &self,
             request: Request<ResumptionPskProposalRequest>,
@@ -135,6 +139,7 @@ pub(crate) mod inner {
     #[cfg(feature = "psk")]
     #[tonic::async_trait]
     impl ByRefProposalSender<ExternalPskProposalRequest> for MlsClientImpl {
+        #[allow(clippy::result_large_err)]
         async fn propose(
             &self,
             request: Request<ExternalPskProposalRequest>,
@@ -162,6 +167,7 @@ pub(crate) mod inner {
 
     #[tonic::async_trait]
     impl ByRefProposalSender<RemoveProposalRequest> for MlsClientImpl {
+        #[allow(clippy::result_large_err)]
         async fn propose(
             &self,
             request: Request<RemoveProposalRequest>,
@@ -180,6 +186,7 @@ pub(crate) mod inner {
 
     #[tonic::async_trait]
     impl ByRefProposalSender<UpdateProposalRequest> for MlsClientImpl {
+        #[allow(clippy::result_large_err)]
         async fn propose(
             &self,
             request: Request<UpdateProposalRequest>,
@@ -195,6 +202,7 @@ pub(crate) mod inner {
 
     #[tonic::async_trait]
     impl ByRefProposalSender<AddProposalRequest> for MlsClientImpl {
+        #[allow(clippy::result_large_err)]
         async fn propose(
             &self,
             request: Request<AddProposalRequest>,
@@ -211,6 +219,7 @@ pub(crate) mod inner {
 
     #[tonic::async_trait]
     impl ByRefProposalSender<AddExternalSignerRequest> for MlsClientImpl {
+        #[allow(clippy::result_large_err)]
         async fn propose(
             &self,
             request: Request<AddExternalSignerRequest>,

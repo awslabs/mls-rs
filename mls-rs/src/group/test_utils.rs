@@ -411,7 +411,7 @@ pub(crate) async fn get_test_groups_with_features(
 
 pub fn random_bytes(count: usize) -> Vec<u8> {
     let mut buf = vec![0; count];
-    rand::thread_rng().fill_bytes(&mut buf);
+    rand::rng().fill_bytes(&mut buf);
     buf
 }
 
@@ -499,7 +499,6 @@ impl MessageProcessor for GroupWithoutKeySchedule {
         feature = "custom_proposal",
         feature = "self_remove_proposal"
     ))]
-    #[cfg_attr(feature = "ffi", safer_ffi_gen::safer_ffi_gen_ignore)]
     fn self_removal_proposal(
         &self,
         provisional_state: &ProvisionalState,
