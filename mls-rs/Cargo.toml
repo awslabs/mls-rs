@@ -68,7 +68,7 @@ maybe-async = { version = "0.2.10" }
 subtle = { version = "2.6.1", default-features = false, features = ["i128"] }
 
 # Optional dependencies
-mls-rs-provider-sqlite = { path = "../mls-rs-provider-sqlite", version = "0.21.0", default-features = false, optional = true }
+mls-rs-provider-sqlite = { path = "../mls-rs-provider-sqlite", version = "0.22.0", default-features = false, optional = true }
 mls-rs-crypto-openssl = { path = "../mls-rs-crypto-openssl", optional = true, version = "0.20.0" }
 
 # TODO: https://github.com/GoogleChromeLabs/wasm-bindgen-rayon
