@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1774351544296,
+  "lastUpdate": 1774366188592,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -28387,6 +28387,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 174887,
             "range": "± 1198",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "trebacz.kacper@gmail.com",
+            "name": "Kacper Trębacz",
+            "username": "trebacz626"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "191a511fd15937a13f8c5b43c5a09254623964d5",
+          "message": "Add get_cached_proposals() method to Group and ExternalGroup (#341)\n\n* Add get_cached_proposals() method to Group and ExternalGroup\n\n* fix: Exclude get_cached_proposals from FFI generation\n\n* Fix formatting\n\n* remove ffi cfg flag\n\n---------\n\nCo-authored-by: Kacper Trebacz <kactre@amazon.pl>\nCo-authored-by: mulmarta <103590845+mulmarta@users.noreply.github.com>",
+          "timestamp": "2026-03-24T16:26:06+01:00",
+          "tree_id": "d601e77cde55854f99b70476003904079c6a72b9",
+          "url": "https://github.com/awslabs/mls-rs/commit/191a511fd15937a13f8c5b43c5a09254623964d5"
+        },
+        "date": 1774366187136,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 513348,
+            "range": "± 10514",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 524731,
+            "range": "± 9760",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 589522,
+            "range": "± 22091",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1436820,
+            "range": "± 41650",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 8894951,
+            "range": "± 126603",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2921353,
+            "range": "± 199365",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 8400561,
+            "range": "± 201040",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 15620812,
+            "range": "± 311998",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 816465,
+            "range": "± 8251",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 980805,
+            "range": "± 25468",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 1133642,
+            "range": "± 45622",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 24977,
+            "range": "± 670",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 86923,
+            "range": "± 1231",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 167924,
+            "range": "± 2168",
             "unit": "ns/iter"
           }
         ]
