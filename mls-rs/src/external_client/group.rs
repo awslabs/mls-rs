@@ -520,6 +520,24 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         self.state.proposals.clear()
     }
 
+    /// Returns all by-reference proposals that have been cached for this group.
+    ///
+    /// The returned [`CachedProposal`] values contain the proposal content,
+    /// sender, and proposal reference.
+    #[cfg(feature = "by_ref_proposal")]
+    pub fn get_cached_proposals(&self) -> Vec<CachedProposal> {
+        self.state
+            .proposals
+            .proposals
+            .iter()
+            .map(|(proposal_ref, cached)| CachedProposal {
+                proposal: cached.proposal.clone(),
+                proposal_ref: proposal_ref.clone(),
+                sender: cached.sender,
+            })
+            .collect()
+    }
+
     #[inline(always)]
     pub(crate) fn group_state(&self) -> &GroupState {
         &self.state
@@ -1329,6 +1347,55 @@ mod tests {
             .process_incoming_message(commit_output.commit_message)
             .await
             .unwrap();
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn external_group_cached_proposals_returns_pending_proposals() {
+        let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut server = make_external_group(&alice).await;
+
+        assert!(server.get_cached_proposals().is_empty());
+
+        let proposal = alice.propose_update(vec![]).await.unwrap();
+        server.process_incoming_message(proposal).await.unwrap();
+
+        let cached = server.get_cached_proposals();
+        assert_eq!(cached.len(), 1);
+        assert!(matches!(cached[0].proposal(), Proposal::Update(_)));
+        assert!(!cached[0].proposal_ref().is_empty());
+
+        let commit_output = alice.commit(vec![]).await.unwrap();
+        alice.apply_pending_commit().await.unwrap();
+        server
+            .process_incoming_message(commit_output.commit_message)
+            .await
+            .unwrap();
+
+        assert!(server.get_cached_proposals().is_empty());
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn external_group_cached_proposals_returns_independent_copies() {
+        let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut server = make_external_group(&alice).await;
+
+        let proposal = alice.propose_update(vec![]).await.unwrap();
+        server.process_incoming_message(proposal).await.unwrap();
+
+        let mut cached1 = server.get_cached_proposals();
+        let cached2 = server.get_cached_proposals();
+
+        assert_eq!(cached1.len(), 1);
+        assert_eq!(cached2.len(), 1);
+        assert_eq!(cached1[0].proposal_ref(), cached2[0].proposal_ref());
+
+        cached1.clear();
+        assert!(cached1.is_empty());
+        assert_eq!(cached2.len(), 1);
+
+        let cached3 = server.get_cached_proposals();
+        assert_eq!(cached3.len(), 1);
+        assert_eq!(cached2[0].proposal_ref(), cached3[0].proposal_ref());
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
