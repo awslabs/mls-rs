@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1774366188592,
+  "lastUpdate": 1774366207374,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -28495,6 +28495,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 167924,
             "range": "± 2168",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "trebacz.kacper@gmail.com",
+            "name": "Kacper Trębacz",
+            "username": "trebacz626"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b2bb06c77b5116a35fc6b2dc35902f22bb3d5c78",
+          "message": "fix: Maintain tree index consistency after committer self-update (#339)\n\n* fix: Maintain tree index consistency after committer self-update\n\n* fix: remove zeroed entries from tree index counters\n\n---------\n\nCo-authored-by: Kacper Trebacz <kactre@amazon.pl>\nCo-authored-by: mulmarta <103590845+mulmarta@users.noreply.github.com>",
+          "timestamp": "2026-03-24T16:26:23+01:00",
+          "tree_id": "5d1748315eb114c86e1d22bc0679e8638da3d0f6",
+          "url": "https://github.com/awslabs/mls-rs/commit/b2bb06c77b5116a35fc6b2dc35902f22bb3d5c78"
+        },
+        "date": 1774366205805,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 510932,
+            "range": "± 18518",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 521009,
+            "range": "± 14771",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 587465,
+            "range": "± 17901",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1444667,
+            "range": "± 51167",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 8852769,
+            "range": "± 193900",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2851847,
+            "range": "± 81963",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 8046618,
+            "range": "± 161818",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 15173653,
+            "range": "± 251206",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 790004,
+            "range": "± 9583",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 920574,
+            "range": "± 34550",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 1148532,
+            "range": "± 73046",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 24644,
+            "range": "± 499",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 85729,
+            "range": "± 1682",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 168278,
+            "range": "± 3059",
             "unit": "ns/iter"
           }
         ]
