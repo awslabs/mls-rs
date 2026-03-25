@@ -386,6 +386,62 @@ public func kem_public_key_validate(kemID: UInt16,
     }
 }
 
+// Internal helper for sender setup (base or PSK mode)
+@available(iOS 17.0, macOS 14.0, watchOS 10.0, tvOS 17.0, *)
+func hpke_setup_s_impl(kemID: KemId, pubRaw: Data, info: Data, pskParams: (SymmetricKey, Data)?) -> HPKE.Sender? {
+    switch kemID {
+    case .DhKemP256Sha256Aes128:
+        do {
+            let pub = try P256.KeyAgreement.PublicKey(pubRaw, kem: kemID.hpkeKem)
+            if let (psk, pskId) = pskParams {
+                return try HPKE.Sender(recipientKey: pub, ciphersuite: kemID.hpkeCipherSuite, info: info, presharedKey: psk, presharedKeyIdentifier: pskId)
+            } else {
+                return try HPKE.Sender(recipientKey: pub, ciphersuite: kemID.hpkeCipherSuite, info: info)
+            }
+        } catch {
+            return nil
+        }
+
+    case .DhKemP384Sha384Aes256:
+        do {
+            let pub = try P384.KeyAgreement.PublicKey(pubRaw, kem: kemID.hpkeKem)
+            if let (psk, pskId) = pskParams {
+                return try HPKE.Sender(recipientKey: pub, ciphersuite: kemID.hpkeCipherSuite, info: info, presharedKey: psk, presharedKeyIdentifier: pskId)
+            } else {
+                return try HPKE.Sender(recipientKey: pub, ciphersuite: kemID.hpkeCipherSuite, info: info)
+            }
+        } catch {
+            return nil
+        }
+
+    case .DhKemP521Sha512Aes256:
+        do {
+            let pub = try P521.KeyAgreement.PublicKey(pubRaw, kem: kemID.hpkeKem)
+            if let (psk, pskId) = pskParams {
+                return try HPKE.Sender(recipientKey: pub, ciphersuite: kemID.hpkeCipherSuite, info: info, presharedKey: psk, presharedKeyIdentifier: pskId)
+            } else {
+                return try HPKE.Sender(recipientKey: pub, ciphersuite: kemID.hpkeCipherSuite, info: info)
+            }
+        } catch {
+            return nil
+        }
+
+    case .DhKemX25519Sha256Aes128:
+        fallthrough
+    case .DhKemX25519Sha256ChaChaPoly:
+        do {
+            let pub = try Curve25519.KeyAgreement.PublicKey(pubRaw, kem: kemID.hpkeKem)
+            if let (psk, pskId) = pskParams {
+                return try HPKE.Sender(recipientKey: pub, ciphersuite: kemID.hpkeCipherSuite, info: info, presharedKey: psk, presharedKeyIdentifier: pskId)
+            } else {
+                return try HPKE.Sender(recipientKey: pub, ciphersuite: kemID.hpkeCipherSuite, info: info)
+            }
+        } catch {
+            return nil
+        }
+    }
+}
+
 // fn hpke_setup_s(
 //     &self,
 //     remote_key: &HpkePublicKey,
@@ -401,46 +457,37 @@ public func hpke_setup_s(kemID: UInt16,
 {
     let pubRaw = dataFromRawParts(ptr: pubPtr, len: pubLen)
     let info = dataFromRawParts(ptr: infoPtr, len: infoLen)
-    
     let kemID = KemId(rawValue: kemID)!
-    var maybe_sender: HPKE.Sender? = nil
-    switch kemID {
-    case .DhKemP256Sha256Aes128:
-        do {
-            let pub = try P256.KeyAgreement.PublicKey(pubRaw, kem: kemID.hpkeKem)
-            maybe_sender = try HPKE.Sender(recipientKey: pub, ciphersuite: kemID.hpkeCipherSuite, info: info)
-        } catch {
-            return nil
-        }
 
-    case .DhKemP384Sha384Aes256:
-        do {
-            let pub = try P384.KeyAgreement.PublicKey(pubRaw, kem: kemID.hpkeKem)
-            maybe_sender = try HPKE.Sender(recipientKey: pub, ciphersuite: kemID.hpkeCipherSuite, info: info)
-        } catch {
-            return nil
-        }
+    guard let sender = hpke_setup_s_impl(kemID: kemID, pubRaw: pubRaw, info: info, pskParams: nil) else { return nil }
+    guard copyToOutput(from: sender.encapsulatedKey, ptr: encPtr, lenPtr: encLen) == 1 else { return nil }
+    return exportPointer(SenderWrapper(sender))
+}
 
-    case .DhKemP521Sha512Aes256:
-        do {
-            let pub = try P521.KeyAgreement.PublicKey(pubRaw, kem: kemID.hpkeKem)
-            maybe_sender = try HPKE.Sender(recipientKey: pub, ciphersuite: kemID.hpkeCipherSuite, info: info)
-        } catch {
-            return nil
-        }
+// fn hpke_setup_s_psk(
+//     &self,
+//     remote_key: &HpkePublicKey,
+//     info: &[u8],
+//     psk: &[u8],
+//     psk_id: &[u8]
+// ) -> Result<(Vec<u8>, Self::HpkeContextS), Self::Error>;
+@_cdecl("hpke_setup_s_psk")
+@available(iOS 17.0, macOS 14.0, watchOS 10.0, tvOS 17.0, *)
+public func hpke_setup_s_psk(kemID: UInt16,
+    pubPtr: UnsafePointer<UInt8>, pubLen: UInt64,
+    infoPtr: UnsafePointer<UInt8>, infoLen: UInt64,
+    pskPtr: UnsafePointer<UInt8>, pskLen: UInt64,
+    pskIdPtr: UnsafePointer<UInt8>, pskIdLen: UInt64,
+    encPtr: UnsafeMutablePointer<UInt8>, encLen: UnsafeMutablePointer<UInt64>
+) -> UnsafeMutableRawPointer?
+{
+    let pubRaw = dataFromRawParts(ptr: pubPtr, len: pubLen)
+    let info = dataFromRawParts(ptr: infoPtr, len: infoLen)
+    let psk = SymmetricKey(data: dataFromRawParts(ptr: pskPtr, len: pskLen))
+    let pskId = dataFromRawParts(ptr: pskIdPtr, len: pskIdLen)
+    let kemID = KemId(rawValue: kemID)!
 
-    case .DhKemX25519Sha256Aes128:
-        fallthrough
-    case .DhKemX25519Sha256ChaChaPoly:
-        do {
-            let pub = try Curve25519.KeyAgreement.PublicKey(pubRaw, kem: kemID.hpkeKem)
-            maybe_sender = try HPKE.Sender(recipientKey: pub, ciphersuite: kemID.hpkeCipherSuite, info: info)
-        } catch {
-            return nil
-        }
-    }
-    
-    let sender = maybe_sender!
+    guard let sender = hpke_setup_s_impl(kemID: kemID, pubRaw: pubRaw, info: info, pskParams: (psk, pskId)) else { return nil }
     guard copyToOutput(from: sender.encapsulatedKey, ptr: encPtr, lenPtr: encLen) == 1 else { return nil }
     return exportPointer(SenderWrapper(sender))
 }
@@ -507,6 +554,62 @@ public func hpke_drop_s(
     let _: SenderWrapper? = importAndDropPointer(senderPtr)
 }
 
+// Internal helper for recipient setup (base or PSK mode)
+@available(iOS 17.0, macOS 14.0, watchOS 10.0, tvOS 17.0, *)
+func hpke_setup_r_impl(kemID: KemId, enc: Data, privRaw: Data, info: Data, pskParams: (SymmetricKey, Data)?) -> HPKE.Recipient? {
+    switch kemID {
+    case .DhKemP256Sha256Aes128:
+        do {
+            let priv = try P256.KeyAgreement.PrivateKey(rawRepresentation: privRaw)
+            if let (psk, pskId) = pskParams {
+                return try HPKE.Recipient(privateKey: priv, ciphersuite: kemID.hpkeCipherSuite, info: info, encapsulatedKey: enc, presharedKey: psk, presharedKeyIdentifier: pskId)
+            } else {
+                return try HPKE.Recipient(privateKey: priv, ciphersuite: kemID.hpkeCipherSuite, info: info, encapsulatedKey: enc)
+            }
+        } catch {
+            return nil
+        }
+
+    case .DhKemP384Sha384Aes256:
+        do {
+            let priv = try P384.KeyAgreement.PrivateKey(rawRepresentation: privRaw)
+            if let (psk, pskId) = pskParams {
+                return try HPKE.Recipient(privateKey: priv, ciphersuite: kemID.hpkeCipherSuite, info: info, encapsulatedKey: enc, presharedKey: psk, presharedKeyIdentifier: pskId)
+            } else {
+                return try HPKE.Recipient(privateKey: priv, ciphersuite: kemID.hpkeCipherSuite, info: info, encapsulatedKey: enc)
+            }
+        } catch {
+            return nil
+        }
+
+    case .DhKemP521Sha512Aes256:
+        do {
+            let priv = try P521.KeyAgreement.PrivateKey(rawRepresentation: privRaw)
+            if let (psk, pskId) = pskParams {
+                return try HPKE.Recipient(privateKey: priv, ciphersuite: kemID.hpkeCipherSuite, info: info, encapsulatedKey: enc, presharedKey: psk, presharedKeyIdentifier: pskId)
+            } else {
+                return try HPKE.Recipient(privateKey: priv, ciphersuite: kemID.hpkeCipherSuite, info: info, encapsulatedKey: enc)
+            }
+        } catch {
+            return nil
+        }
+
+    case .DhKemX25519Sha256Aes128:
+        fallthrough
+    case .DhKemX25519Sha256ChaChaPoly:
+        do {
+            let priv = try Curve25519.KeyAgreement.PrivateKey(rawRepresentation: privRaw)
+            if let (psk, pskId) = pskParams {
+                return try HPKE.Recipient(privateKey: priv, ciphersuite: kemID.hpkeCipherSuite, info: info, encapsulatedKey: enc, presharedKey: psk, presharedKeyIdentifier: pskId)
+            } else {
+                return try HPKE.Recipient(privateKey: priv, ciphersuite: kemID.hpkeCipherSuite, info: info, encapsulatedKey: enc)
+            }
+        } catch {
+            return nil
+        }
+    }
+}
+
 // fn hpke_setup_r(
 //     &self,
 //     kem_output: &[u8],
@@ -525,50 +628,40 @@ public func hpke_setup_r(kemID: UInt16,
     let enc = dataFromRawParts(ptr: encPtr, len: encLen)
     let privRaw = dataFromRawParts(ptr: privPtr, len: privLen)
     let info = dataFromRawParts(ptr: infoPtr, len: infoLen)
-    
     let kemID = KemId(rawValue: kemID)!
-    var maybe_recipient: HPKE.Recipient? = nil
-    switch kemID {
-    case .DhKemP256Sha256Aes128:
-        do {
-            let priv = try P256.KeyAgreement.PrivateKey(rawRepresentation: privRaw)
-            maybe_recipient = 
-                try HPKE.Recipient(privateKey: priv, ciphersuite: kemID.hpkeCipherSuite, info: info, encapsulatedKey: enc)
-        } catch {
-            return nil
-        }
 
-    case .DhKemP384Sha384Aes256:
-        do {
-            let priv = try P384.KeyAgreement.PrivateKey(rawRepresentation: privRaw)
-            maybe_recipient = 
-                try HPKE.Recipient(privateKey: priv, ciphersuite: kemID.hpkeCipherSuite, info: info, encapsulatedKey: enc)
-        } catch {
-            return nil
-        }
+    guard let recipient = hpke_setup_r_impl(kemID: kemID, enc: enc, privRaw: privRaw, info: info, pskParams: nil) else { return nil }
+    return exportPointer(RecipientWrapper(recipient))
+}
 
-    case .DhKemP521Sha512Aes256:
-        do {
-            let priv = try P521.KeyAgreement.PrivateKey(rawRepresentation: privRaw)
-            maybe_recipient = 
-                try HPKE.Recipient(privateKey: priv, ciphersuite: kemID.hpkeCipherSuite, info: info, encapsulatedKey: enc)
-        } catch {
-            return nil
-        }
+// fn hpke_setup_r_psk(
+//     &self,
+//     kem_output: &[u8],
+//     local_secret: &HpkeSecretKey,
+//     local_public: &HpkePublicKey,
+//     info: &[u8],
+//     psk: &[u8],
+//     psk_id: &[u8]
+// ) -> Result<Self::HpkeContextR, Self::Error>;
+@_cdecl("hpke_setup_r_psk")
+@available(iOS 17.0, macOS 14.0, watchOS 10.0, tvOS 17.0, *)
+public func hpke_setup_r_psk(kemID: UInt16,
+    encPtr: UnsafePointer<UInt8>, encLen: UInt64,
+    privPtr: UnsafePointer<UInt8>, privLen: UInt64,
+    infoPtr: UnsafePointer<UInt8>, infoLen: UInt64,
+    pskPtr: UnsafePointer<UInt8>, pskLen: UInt64,
+    pskIdPtr: UnsafePointer<UInt8>, pskIdLen: UInt64
+) -> UnsafeMutableRawPointer?
+{
+    let enc = dataFromRawParts(ptr: encPtr, len: encLen)
+    let privRaw = dataFromRawParts(ptr: privPtr, len: privLen)
+    let info = dataFromRawParts(ptr: infoPtr, len: infoLen)
+    let psk = SymmetricKey(data: dataFromRawParts(ptr: pskPtr, len: pskLen))
+    let pskId = dataFromRawParts(ptr: pskIdPtr, len: pskIdLen)
+    let kemID = KemId(rawValue: kemID)!
 
-    case .DhKemX25519Sha256Aes128:
-        fallthrough
-    case .DhKemX25519Sha256ChaChaPoly:
-        do {
-            let priv = try Curve25519.KeyAgreement.PrivateKey(rawRepresentation: privRaw)
-            maybe_recipient = 
-                try HPKE.Recipient(privateKey: priv, ciphersuite: kemID.hpkeCipherSuite, info: info, encapsulatedKey: enc)
-        } catch {
-            return nil
-        }
-    }
-    
-    return exportPointer(RecipientWrapper(maybe_recipient!))
+    guard let recipient = hpke_setup_r_impl(kemID: kemID, enc: enc, privRaw: privRaw, info: info, pskParams: (psk, pskId)) else { return nil }
+    return exportPointer(RecipientWrapper(recipient))
 }
 
 // fn hpke_open_r(

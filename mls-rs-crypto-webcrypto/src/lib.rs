@@ -15,12 +15,13 @@ use mls_rs_core::{
         HpkeSecretKey, SignaturePublicKey, SignatureSecretKey,
     },
     error::{AnyError, IntoAnyError},
+    psk::PskBundle,
 };
 
 use mls_rs_crypto_hpke::{
     context::{ContextR, ContextS},
     dhkem::DhKem,
-    hpke::Hpke,
+    hpke::{Hpke, Psk},
 };
 
 use mls_rs_crypto_traits::{AeadType, KdfType, KemId};
@@ -212,6 +213,26 @@ impl CipherSuiteProvider for WebCryptoCipherSuite {
             .map_err(|e| CryptoError::HpkeError(e.into_any_error()))
     }
 
+    async fn hpke_seal_psk(
+        &self,
+        remote_key: &HpkePublicKey,
+        info: &[u8],
+        aad: Option<&[u8]>,
+        pt: &[u8],
+        psk: PskBundle,
+    ) -> Result<HpkeCiphertext, Self::Error> {
+        self.hpke
+            .seal(
+                remote_key,
+                info,
+                Some(Psk::new(psk.psk_id.as_ref(), psk.psk.as_ref())),
+                aad,
+                pt,
+            )
+            .await
+            .map_err(|e| CryptoError::HpkeError(e.into_any_error()))
+    }
+
     async fn hpke_open(
         &self,
         ciphertext: &HpkeCiphertext,
@@ -222,6 +243,29 @@ impl CipherSuiteProvider for WebCryptoCipherSuite {
     ) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
         self.hpke
             .open(ciphertext, local_secret, local_public, info, None, aad)
+            .await
+            .map_err(|e| CryptoError::HpkeError(e.into_any_error()))
+            .map(Into::into)
+    }
+
+    async fn hpke_open_psk(
+        &self,
+        ciphertext: &HpkeCiphertext,
+        local_secret: &HpkeSecretKey,
+        local_public: &HpkePublicKey,
+        info: &[u8],
+        aad: Option<&[u8]>,
+        psk: PskBundle,
+    ) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
+        self.hpke
+            .open(
+                ciphertext,
+                local_secret,
+                local_public,
+                info,
+                Some(Psk::new(psk.psk_id.as_ref(), psk.psk.as_ref())),
+                aad,
+            )
             .await
             .map_err(|e| CryptoError::HpkeError(e.into_any_error()))
             .map(Into::into)

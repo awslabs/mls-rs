@@ -110,6 +110,32 @@ impl From<Vec<u8>> for ExternalPskId {
     }
 }
 
+/// A pre-shared key value bundled with its identifier, for use with PSK-mode
+/// HPKE (RFC 9180).
+///
+/// Use [`PskBundle::new`] when no identifier is needed (empty `psk_id`),
+/// or [`PskBundle::new_with_id`] to set an explicit identifier.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PskBundle {
+    pub psk: PreSharedKey,
+    pub psk_id: ExternalPskId,
+}
+
+impl PskBundle {
+    /// Create a [`PskBundle`] with the given PSK value and an empty identifier.
+    pub fn new(psk: PreSharedKey) -> Self {
+        Self {
+            psk,
+            psk_id: ExternalPskId::new(Vec::new()),
+        }
+    }
+
+    /// Create a [`PskBundle`] with the given PSK value and identifier.
+    pub fn new_with_id(psk: PreSharedKey, psk_id: ExternalPskId) -> Self {
+        Self { psk, psk_id }
+    }
+}
+
 /// Storage trait to maintain a set of pre-shared key values.
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 #[cfg_attr(mls_build_async, maybe_async::must_be_async)]

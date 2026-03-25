@@ -26,7 +26,7 @@ use mac::{Hash, HashError};
 use mls_rs_crypto_hpke::{
     context::{ContextR, ContextS},
     dhkem::DhKem,
-    hpke::{Hpke, HpkeError},
+    hpke::{Hpke, HpkeError, Psk},
 };
 use mls_rs_crypto_traits::{AeadType, KdfType, KemId, KemType};
 use rand_core::{OsRng, RngCore};
@@ -37,6 +37,7 @@ use mls_rs_core::{
         HpkeSecretKey, SignaturePublicKey, SignatureSecretKey,
     },
     error::{AnyError, IntoAnyError},
+    psk::PskBundle,
 };
 use zeroize::Zeroizing;
 
@@ -292,6 +293,26 @@ where
         Ok(self.hpke.seal(remote_key, info, None, aad, pt).await?)
     }
 
+    async fn hpke_seal_psk(
+        &self,
+        remote_key: &HpkePublicKey,
+        info: &[u8],
+        aad: Option<&[u8]>,
+        pt: &[u8],
+        psk: PskBundle,
+    ) -> Result<HpkeCiphertext, Self::Error> {
+        Ok(self
+            .hpke
+            .seal(
+                remote_key,
+                info,
+                Some(Psk::new(psk.psk_id.as_ref(), psk.psk.as_ref())),
+                aad,
+                pt,
+            )
+            .await?)
+    }
+
     async fn hpke_open(
         &self,
         ciphertext: &HpkeCiphertext,
@@ -303,6 +324,28 @@ where
         Ok(self
             .hpke
             .open(ciphertext, local_secret, local_public, info, None, aad)
+            .await?)
+    }
+
+    async fn hpke_open_psk(
+        &self,
+        ciphertext: &HpkeCiphertext,
+        local_secret: &HpkeSecretKey,
+        local_public: &HpkePublicKey,
+        info: &[u8],
+        aad: Option<&[u8]>,
+        psk: PskBundle,
+    ) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
+        Ok(self
+            .hpke
+            .open(
+                ciphertext,
+                local_secret,
+                local_public,
+                info,
+                Some(Psk::new(psk.psk_id.as_ref(), psk.psk.as_ref())),
+                aad,
+            )
             .await?)
     }
 
