@@ -2619,8 +2619,7 @@ mod tests {
     #[cfg(any(feature = "psk", feature = "std"))]
     use crate::client::Client;
 
-    #[cfg(feature = "psk")]
-    use crate::psk::PreSharedKey;
+    use crate::psk::{ExternalPskId, PreSharedKey};
 
     #[cfg(any(feature = "by_ref_proposal", feature = "private_message"))]
     use crate::group::test_utils::random_bytes;

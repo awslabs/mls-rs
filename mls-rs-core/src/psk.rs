@@ -154,3 +154,31 @@ pub trait PreSharedKeyStorage: Send + Sync {
         self.get(id).await.map(|key| key.is_some())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloc::vec;
+
+    #[test]
+    fn psk_bundle_new_creates_empty_id() {
+        let psk_data = vec![1u8; 32];
+        let psk = PreSharedKey::new(psk_data.clone());
+        let bundle = PskBundle::new(psk);
+
+        assert_eq!(bundle.psk.raw_value(), &psk_data);
+        assert!(bundle.psk_id.is_empty());
+    }
+
+    #[test]
+    fn psk_bundle_new_with_id_sets_both_fields() {
+        let psk_data = vec![2u8; 32];
+        let psk_id_data = vec![3u8; 16];
+        let psk = PreSharedKey::new(psk_data.clone());
+        let psk_id = ExternalPskId::new(psk_id_data.clone());
+        let bundle = PskBundle::new_with_id(psk, psk_id);
+
+        assert_eq!(bundle.psk.raw_value(), &psk_data);
+        assert_eq!(bundle.psk_id.as_ref(), &psk_id_data);
+    }
+}
