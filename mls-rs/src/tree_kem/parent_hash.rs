@@ -190,8 +190,11 @@ impl TreeKemPublic {
             .non_empty_parents()
             .filter_map(|(node_index, node)| {
                 if node.parent_hash.is_empty() {
-                    None
+                dbg!("empty parent hash: {:?}", node_index);
+                None
                 } else {
+                    dbg!(node_index);
+                    dbg!(node);
                     Some(node_index)
                 }
             });
@@ -204,7 +207,9 @@ impl TreeKemPublic {
         let num_leaves = self.total_leaf_count();
 
         // For each leaf l, validate all non-blank nodes on the chain from l up the tree.
-        for (leaf_index, _) in self.nodes.non_empty_leaves() {
+        for (leaf_index, sad) in self.nodes.non_empty_leaves() {
+            dbg!("leaf_index: {:?}", leaf_index);
+            dbg!("sad: {:?}", sad);
             self.validate_chain(
                 leaf_index,
                 num_leaves,
@@ -219,6 +224,10 @@ impl TreeKemPublic {
         if nodes_to_validate.is_empty() {
             Ok(())
         } else {
+            dbg!("ew unvalidated");
+            for n in nodes_to_validate {
+                dbg!(n);
+            }
             Err(MlsError::ParentHashMismatch)
         }
     }
@@ -234,15 +243,19 @@ impl TreeKemPublic {
         #[cfg(not(feature = "std"))] nodes_to_validate: &mut BTreeSet<u32>,
     ) -> Result<(), MlsError> {
         let mut n = NodeIndex::from(leaf_index);
+        dbg!("validating: {:?}", n);
 
         while let Some(mut ps) = n.parent_sibling(&num_leaves) {
             // Find the first non-blank ancestor p of n and p's co-path child s.
             while self.nodes.is_blank(ps.parent)? {
                 // If we reached the root, we're done with this chain.
                 let Some(ps_parent) = ps.parent.parent_sibling(&num_leaves) else {
+                    dbg!("returning early: {?}", &ps);
+                    dbg!("returning early oh no: {:?}", ps.parent);
                     return Ok(());
                 };
 
+                dbg!("skipping blank: {:?}, taking {:?}", ps, &ps_parent);
                 ps = ps_parent;
             }
 
@@ -263,6 +276,9 @@ impl TreeKemPublic {
             )
             .await?;
 
+            dbg!("calculated: {:?}", &calculated);
+            dbg!("get_parent_hash: {:?}", n_node.get_parent_hash());
+            dbg!("n_node: {:?}", n_node);
             if n_node.get_parent_hash() == Some(calculated) {
                 // Check that "n is in the resolution of c, and the intersection of p's unmerged_leaves with the subtree
                 // under c is equal to the resolution of c with n removed".
@@ -307,6 +323,9 @@ impl TreeKemPublic {
                 } else {
                     return Err(MlsError::ParentHashMismatch);
                 }
+            } else if n_node.get_parent_hash().is_none() {
+                dbg!("empty parent hash bro: {:?}", n);
+                break;
             } else {
                 // If n's parent_hash field doesn't match, we're done with this chain.
                 break;
