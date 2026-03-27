@@ -337,12 +337,6 @@ impl TreeKemPublic {
                 #[cfg(not(feature = "std"))]
                 let p_unmerged_in_c_subtree = p_unmerged_in_c_subtree.collect::<BTreeSet<_>>();
 
-                if let Some(Node::Parent(c_parent)) = self.nodes.borrow_node(c)? {
-                    for l in &c_parent.unmerged_leaves {
-                        p_unmerged_in_c_subtree.remove(&NodeIndex::from(*l));
-                    }
-                }
-
                 // If p is validated for the second time, the check fails ("all non-blank parent nodes are covered by exactly one such chain").
                 if c_resolution.remove(&n) && c_resolution == p_unmerged_in_c_subtree {
                     let removed = nodes_to_validate.remove(&ps.parent);
