@@ -205,6 +205,38 @@ impl TreeKemPublic {
         let mut nodes_to_validate = nodes_to_validate.collect::<BTreeSet<_>>();
 
         let num_leaves = self.total_leaf_count();
+        let total_nodes = if num_leaves == 0 { 0 } else { num_leaves * 2 - 1 };
+
+        println!("INCOMING TREE");
+        for i in 0..total_nodes {
+            let idx = NodeIndex::from(i);
+
+            // Get the parent index for context
+            let parent_str = match idx.parent_sibling(&num_leaves) {
+                Some(ps) => format!("{:?}", ps.parent),
+                None => "ROOT".to_string(),
+            };
+
+            match self.nodes.borrow_node(idx) {
+                Ok(Some(node)) => {
+                    let node_type = match node {
+                        Node::Parent(_) => "Parent",
+                        Node::Leaf(_) => "Leaf",
+                    };
+                    println!(
+                        "Node {:<3} (Parent: {:<4}) -> [{}]",
+                        i,
+                        parent_str,
+                        node_type,
+                        // node
+                    );
+                }
+                _ => {
+                    println!("Node {:<3} (Parent: {:<4}) -> BLANK", i, parent_str);
+                }
+            }
+        }
+        println!("DONE TREE");
 
         // For each leaf l, validate all non-blank nodes on the chain from l up the tree.
         for (leaf_index, sad) in self.nodes.non_empty_leaves() {
@@ -301,9 +333,15 @@ impl TreeKemPublic {
                     .map(|x| *x * 2);
 
                 #[cfg(feature = "std")]
-                let p_unmerged_in_c_subtree = p_unmerged_in_c_subtree.collect::<HashSet<_>>();
+                let mut p_unmerged_in_c_subtree = p_unmerged_in_c_subtree.collect::<HashSet<_>>();
                 #[cfg(not(feature = "std"))]
                 let p_unmerged_in_c_subtree = p_unmerged_in_c_subtree.collect::<BTreeSet<_>>();
+
+                if let Some(Node::Parent(c_parent)) = self.nodes.borrow_node(c)? {
+                    for l in &c_parent.unmerged_leaves {
+                        p_unmerged_in_c_subtree.remove(&NodeIndex::from(*l));
+                    }
+                }
 
                 // If p is validated for the second time, the check fails ("all non-blank parent nodes are covered by exactly one such chain").
                 if c_resolution.remove(&n) && c_resolution == p_unmerged_in_c_subtree {
