@@ -3945,7 +3945,8 @@ mod tests {
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn even_larger_group_fails_with_parent_hash_mismatch_blank_intermediate_nonblank_grandparent() {
+    async fn even_larger_group_fails_with_parent_hash_mismatch_blank_intermediate_nonblank_grandparent(
+    ) {
         let mut test_group = test_group_custom(
             TEST_PROTOCOL_VERSION,
             TEST_CIPHER_SUITE,
