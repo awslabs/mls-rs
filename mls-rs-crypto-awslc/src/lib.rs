@@ -30,6 +30,7 @@ use mls_rs_core::{
         HpkeSecretKey, SignaturePublicKey, SignatureSecretKey,
     },
     error::{AnyError, IntoAnyError},
+    psk::PskBundle,
 };
 
 pub use ecdsa::AwsLcEcdsa;
@@ -38,7 +39,7 @@ pub use kem::ecdh::Ecdh;
 use mls_rs_crypto_hpke::{
     context::{ContextR, ContextS},
     dhkem::DhKem,
-    hpke::{Hpke, HpkeError},
+    hpke::{Hpke, HpkeError, Psk},
 };
 use mls_rs_crypto_traits::{AeadId, AeadType, Curve, Hash, KdfId, KdfType, KemId};
 use thiserror::Error;
@@ -508,6 +509,26 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
         .map_err(Into::into)
     }
 
+    async fn hpke_seal_psk(
+        &self,
+        remote_key: &HpkePublicKey,
+        info: &[u8],
+        aad: Option<&[u8]>,
+        pt: &[u8],
+        psk: PskBundle,
+    ) -> Result<HpkeCiphertext, Self::Error> {
+        let psk_val = Some(Psk::new(psk.psk_id.as_ref(), psk.psk.as_ref()));
+        match &self.hpke {
+            AwsLcHpke::Classical(hpke) => hpke.seal(remote_key, info, psk_val, aad, pt),
+            #[cfg(feature = "post-quantum")]
+            AwsLcHpke::PostQuantum(hpke) => hpke.seal(remote_key, info, psk_val, aad, pt),
+            #[cfg(feature = "post-quantum")]
+            AwsLcHpke::Combined(hpke) => hpke.seal(remote_key, info, psk_val, aad, pt),
+        }
+        .await
+        .map_err(Into::into)
+    }
+
     async fn hpke_open(
         &self,
         ciphertext: &HpkeCiphertext,
@@ -527,6 +548,33 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
             #[cfg(feature = "post-quantum")]
             AwsLcHpke::Combined(hpke) => {
                 hpke.open(ciphertext, local_secret, local_public, info, None, aad)
+            }
+        }
+        .await
+        .map_err(Into::into)
+    }
+
+    async fn hpke_open_psk(
+        &self,
+        ciphertext: &HpkeCiphertext,
+        local_secret: &HpkeSecretKey,
+        local_public: &HpkePublicKey,
+        info: &[u8],
+        aad: Option<&[u8]>,
+        psk: PskBundle,
+    ) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
+        let psk_val = Some(Psk::new(psk.psk_id.as_ref(), psk.psk.as_ref()));
+        match &self.hpke {
+            AwsLcHpke::Classical(hpke) => {
+                hpke.open(ciphertext, local_secret, local_public, info, psk_val, aad)
+            }
+            #[cfg(feature = "post-quantum")]
+            AwsLcHpke::PostQuantum(hpke) => {
+                hpke.open(ciphertext, local_secret, local_public, info, psk_val, aad)
+            }
+            #[cfg(feature = "post-quantum")]
+            AwsLcHpke::Combined(hpke) => {
+                hpke.open(ciphertext, local_secret, local_public, info, psk_val, aad)
             }
         }
         .await

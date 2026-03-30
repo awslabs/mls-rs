@@ -17,6 +17,7 @@ use mls_rs_core::{
         HpkeContextS, HpkePublicKey, HpkeSecretKey, SignaturePublicKey, SignatureSecretKey,
     },
     error::IntoAnyError,
+    psk::PskBundle,
 };
 use mls_rs_crypto_traits::{AeadType, KdfType};
 use zeroize::Zeroizing;
@@ -270,6 +271,26 @@ impl CipherSuiteProvider for CryptoKitCipherSuite {
         })
     }
 
+    fn hpke_seal_psk(
+        &self,
+        remote_key: &HpkePublicKey,
+        info: &[u8],
+        aad: Option<&[u8]>,
+        pt: &[u8],
+        psk: PskBundle,
+    ) -> Result<HpkeCiphertext, Self::Error> {
+        let (kem_output, mut ctx) =
+            self.kem
+                .hpke_setup_s_psk(remote_key, info, psk.psk.as_ref(), psk.psk_id.as_ref())?;
+        let ciphertext = ctx
+            .seal(aad, pt)
+            .map_err(<KemError as Into<CryptoKitError>>::into)?;
+        Ok(HpkeCiphertext {
+            kem_output,
+            ciphertext,
+        })
+    }
+
     fn hpke_open(
         &self,
         ciphertext: &HpkeCiphertext,
@@ -280,6 +301,27 @@ impl CipherSuiteProvider for CryptoKitCipherSuite {
     ) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
         let mut ctx =
             self.hpke_setup_r(&ciphertext.kem_output, local_secret, local_public, info)?;
+        ctx.open(aad, &ciphertext.ciphertext)
+            .map_err(<KemError as Into<CryptoKitError>>::into)
+    }
+
+    fn hpke_open_psk(
+        &self,
+        ciphertext: &HpkeCiphertext,
+        local_secret: &HpkeSecretKey,
+        local_public: &HpkePublicKey,
+        info: &[u8],
+        aad: Option<&[u8]>,
+        psk: PskBundle,
+    ) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
+        let mut ctx = self.kem.hpke_setup_r_psk(
+            &ciphertext.kem_output,
+            local_secret,
+            local_public,
+            info,
+            psk.psk.as_ref(),
+            psk.psk_id.as_ref(),
+        )?;
         ctx.open(aad, &ciphertext.ciphertext)
             .map_err(<KemError as Into<CryptoKitError>>::into)
     }
