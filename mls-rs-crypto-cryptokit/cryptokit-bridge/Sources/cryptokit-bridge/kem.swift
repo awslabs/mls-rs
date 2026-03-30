@@ -399,6 +399,7 @@ func hpke_setup_s_impl(kemID: KemId, pubRaw: Data, info: Data, pskParams: (Symme
                 return try HPKE.Sender(recipientKey: pub, ciphersuite: kemID.hpkeCipherSuite, info: info)
             }
         } catch {
+            print("[hpke_setup_s_impl] ERROR kem=\(kemID) psk=\(pskParams != nil): \(error)")
             return nil
         }
 
@@ -411,6 +412,7 @@ func hpke_setup_s_impl(kemID: KemId, pubRaw: Data, info: Data, pskParams: (Symme
                 return try HPKE.Sender(recipientKey: pub, ciphersuite: kemID.hpkeCipherSuite, info: info)
             }
         } catch {
+            print("[hpke_setup_s_impl] ERROR kem=\(kemID) psk=\(pskParams != nil): \(error)")
             return nil
         }
 
@@ -423,6 +425,7 @@ func hpke_setup_s_impl(kemID: KemId, pubRaw: Data, info: Data, pskParams: (Symme
                 return try HPKE.Sender(recipientKey: pub, ciphersuite: kemID.hpkeCipherSuite, info: info)
             }
         } catch {
+            print("[hpke_setup_s_impl] ERROR kem=\(kemID) psk=\(pskParams != nil): \(error)")
             return nil
         }
 
@@ -437,6 +440,7 @@ func hpke_setup_s_impl(kemID: KemId, pubRaw: Data, info: Data, pskParams: (Symme
                 return try HPKE.Sender(recipientKey: pub, ciphersuite: kemID.hpkeCipherSuite, info: info)
             }
         } catch {
+            print("[hpke_setup_s_impl] ERROR kem=\(kemID) psk=\(pskParams != nil): \(error)")
             return nil
         }
     }
@@ -567,6 +571,7 @@ func hpke_setup_r_impl(kemID: KemId, enc: Data, privRaw: Data, info: Data, pskPa
                 return try HPKE.Recipient(privateKey: priv, ciphersuite: kemID.hpkeCipherSuite, info: info, encapsulatedKey: enc)
             }
         } catch {
+            print("[hpke_setup_r_impl] ERROR kem=\(kemID) psk=\(pskParams != nil) encLen=\(enc.count) privLen=\(privRaw.count) infoLen=\(info.count): \(error)")
             return nil
         }
 
@@ -579,6 +584,7 @@ func hpke_setup_r_impl(kemID: KemId, enc: Data, privRaw: Data, info: Data, pskPa
                 return try HPKE.Recipient(privateKey: priv, ciphersuite: kemID.hpkeCipherSuite, info: info, encapsulatedKey: enc)
             }
         } catch {
+            print("[hpke_setup_r_impl] ERROR kem=\(kemID) psk=\(pskParams != nil) encLen=\(enc.count) privLen=\(privRaw.count) infoLen=\(info.count): \(error)")
             return nil
         }
 
@@ -591,6 +597,7 @@ func hpke_setup_r_impl(kemID: KemId, enc: Data, privRaw: Data, info: Data, pskPa
                 return try HPKE.Recipient(privateKey: priv, ciphersuite: kemID.hpkeCipherSuite, info: info, encapsulatedKey: enc)
             }
         } catch {
+            print("[hpke_setup_r_impl] ERROR kem=\(kemID) psk=\(pskParams != nil) encLen=\(enc.count) privLen=\(privRaw.count) infoLen=\(info.count): \(error)")
             return nil
         }
 
@@ -605,6 +612,7 @@ func hpke_setup_r_impl(kemID: KemId, enc: Data, privRaw: Data, info: Data, pskPa
                 return try HPKE.Recipient(privateKey: priv, ciphersuite: kemID.hpkeCipherSuite, info: info, encapsulatedKey: enc)
             }
         } catch {
+            print("[hpke_setup_r_impl] ERROR kem=\(kemID) psk=\(pskParams != nil) encLen=\(enc.count) privLen=\(privRaw.count) infoLen=\(info.count): \(error)")
             return nil
         }
     }
