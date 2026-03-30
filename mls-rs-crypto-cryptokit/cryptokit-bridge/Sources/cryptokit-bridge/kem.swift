@@ -561,43 +561,49 @@ public func hpke_drop_s(
 // Internal helper for recipient setup (base or PSK mode)
 @available(iOS 17.0, macOS 14.0, watchOS 10.0, tvOS 17.0, *)
 func hpke_setup_r_impl(kemID: KemId, enc: Data, privRaw: Data, info: Data, pskParams: (SymmetricKey, Data)?) -> HPKE.Recipient? {
+    // Left-pad the private key to the expected length if it's shorter (e.g., leading-zero stripped by another provider)
+    var privKey = privRaw
+    if privKey.count < kemID.nsk {
+        privKey = Data(repeating: 0, count: kemID.nsk - privKey.count) + privKey
+    }
+
     switch kemID {
     case .DhKemP256Sha256Aes128:
         do {
-            let priv = try P256.KeyAgreement.PrivateKey(rawRepresentation: privRaw)
+            let priv = try P256.KeyAgreement.PrivateKey(rawRepresentation: privKey)
             if let (psk, pskId) = pskParams {
                 return try HPKE.Recipient(privateKey: priv, ciphersuite: kemID.hpkeCipherSuite, info: info, encapsulatedKey: enc, presharedKey: psk, presharedKeyIdentifier: pskId)
             } else {
                 return try HPKE.Recipient(privateKey: priv, ciphersuite: kemID.hpkeCipherSuite, info: info, encapsulatedKey: enc)
             }
         } catch {
-            print("[hpke_setup_r_impl] ERROR kem=\(kemID) psk=\(pskParams != nil) encLen=\(enc.count) privLen=\(privRaw.count) infoLen=\(info.count): \(error)")
+            print("[hpke_setup_r_impl] ERROR kem=\(kemID) psk=\(pskParams != nil) encLen=\(enc.count) privLen=\(privKey.count) infoLen=\(info.count): \(error)")
             return nil
         }
 
     case .DhKemP384Sha384Aes256:
         do {
-            let priv = try P384.KeyAgreement.PrivateKey(rawRepresentation: privRaw)
+            let priv = try P384.KeyAgreement.PrivateKey(rawRepresentation: privKey)
             if let (psk, pskId) = pskParams {
                 return try HPKE.Recipient(privateKey: priv, ciphersuite: kemID.hpkeCipherSuite, info: info, encapsulatedKey: enc, presharedKey: psk, presharedKeyIdentifier: pskId)
             } else {
                 return try HPKE.Recipient(privateKey: priv, ciphersuite: kemID.hpkeCipherSuite, info: info, encapsulatedKey: enc)
             }
         } catch {
-            print("[hpke_setup_r_impl] ERROR kem=\(kemID) psk=\(pskParams != nil) encLen=\(enc.count) privLen=\(privRaw.count) infoLen=\(info.count): \(error)")
+            print("[hpke_setup_r_impl] ERROR kem=\(kemID) psk=\(pskParams != nil) encLen=\(enc.count) privLen=\(privKey.count) infoLen=\(info.count): \(error)")
             return nil
         }
 
     case .DhKemP521Sha512Aes256:
         do {
-            let priv = try P521.KeyAgreement.PrivateKey(rawRepresentation: privRaw)
+            let priv = try P521.KeyAgreement.PrivateKey(rawRepresentation: privKey)
             if let (psk, pskId) = pskParams {
                 return try HPKE.Recipient(privateKey: priv, ciphersuite: kemID.hpkeCipherSuite, info: info, encapsulatedKey: enc, presharedKey: psk, presharedKeyIdentifier: pskId)
             } else {
                 return try HPKE.Recipient(privateKey: priv, ciphersuite: kemID.hpkeCipherSuite, info: info, encapsulatedKey: enc)
             }
         } catch {
-            print("[hpke_setup_r_impl] ERROR kem=\(kemID) psk=\(pskParams != nil) encLen=\(enc.count) privLen=\(privRaw.count) infoLen=\(info.count): \(error)")
+            print("[hpke_setup_r_impl] ERROR kem=\(kemID) psk=\(pskParams != nil) encLen=\(enc.count) privLen=\(privKey.count) infoLen=\(info.count): \(error)")
             return nil
         }
 
@@ -605,14 +611,14 @@ func hpke_setup_r_impl(kemID: KemId, enc: Data, privRaw: Data, info: Data, pskPa
         fallthrough
     case .DhKemX25519Sha256ChaChaPoly:
         do {
-            let priv = try Curve25519.KeyAgreement.PrivateKey(rawRepresentation: privRaw)
+            let priv = try Curve25519.KeyAgreement.PrivateKey(rawRepresentation: privKey)
             if let (psk, pskId) = pskParams {
                 return try HPKE.Recipient(privateKey: priv, ciphersuite: kemID.hpkeCipherSuite, info: info, encapsulatedKey: enc, presharedKey: psk, presharedKeyIdentifier: pskId)
             } else {
                 return try HPKE.Recipient(privateKey: priv, ciphersuite: kemID.hpkeCipherSuite, info: info, encapsulatedKey: enc)
             }
         } catch {
-            print("[hpke_setup_r_impl] ERROR kem=\(kemID) psk=\(pskParams != nil) encLen=\(enc.count) privLen=\(privRaw.count) infoLen=\(info.count): \(error)")
+            print("[hpke_setup_r_impl] ERROR kem=\(kemID) psk=\(pskParams != nil) encLen=\(enc.count) privLen=\(privKey.count) infoLen=\(info.count): \(error)")
             return nil
         }
     }
