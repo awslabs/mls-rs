@@ -30,7 +30,7 @@ use thiserror::Error;
 
 use mls_rs_core::{
     crypto::{
-        CipherSuite, CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkePublicKey,
+        CipherSuite, CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkePsk, HpkePublicKey,
         HpkeSecretKey, SignaturePublicKey, SignatureSecretKey,
     },
     error::{AnyError, IntoAnyError},
@@ -274,6 +274,17 @@ where
         Ok(self.hpke.seal(remote_key, info, None, aad, pt).await?)
     }
 
+    async fn hpke_seal_psk(
+        &self,
+        remote_key: &HpkePublicKey,
+        info: &[u8],
+        aad: Option<&[u8]>,
+        pt: &[u8],
+        psk: HpkePsk<'_>,
+    ) -> Result<HpkeCiphertext, Self::Error> {
+        Ok(self.hpke.seal(remote_key, info, Some(psk), aad, pt).await?)
+    }
+
     async fn hpke_open(
         &self,
         ciphertext: &HpkeCiphertext,
@@ -285,6 +296,21 @@ where
         Ok(self
             .hpke
             .open(ciphertext, local_secret, local_public, info, None, aad)
+            .await?)
+    }
+
+    async fn hpke_open_psk(
+        &self,
+        ciphertext: &HpkeCiphertext,
+        local_secret: &HpkeSecretKey,
+        local_public: &HpkePublicKey,
+        info: &[u8],
+        aad: Option<&[u8]>,
+        psk: HpkePsk<'_>,
+    ) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
+        Ok(self
+            .hpke
+            .open(ciphertext, local_secret, local_public, info, Some(psk), aad)
             .await?)
     }
 

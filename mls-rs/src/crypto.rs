@@ -5,8 +5,8 @@
 pub(crate) use mls_rs_core::crypto::CipherSuiteProvider;
 
 pub use mls_rs_core::crypto::{
-    HpkeCiphertext, HpkeContextR, HpkeContextS, HpkePublicKey, HpkeSecretKey, SignaturePublicKey,
-    SignatureSecretKey,
+    HpkeCiphertext, HpkeContextR, HpkeContextS, HpkePsk, HpkePublicKey, HpkeSecretKey,
+    SignaturePublicKey, SignatureSecretKey,
 };
 
 pub use mls_rs_core::secret::Secret;
