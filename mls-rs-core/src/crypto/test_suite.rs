@@ -6,10 +6,10 @@ use alloc::vec::Vec;
 use itertools::Itertools;
 
 use crate::crypto::HpkeContextR;
-use crate::psk::{ExternalPskId, PreSharedKey, PskBundle};
 
 use super::{
-    CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkeContextS, HpkePublicKey, HpkeSecretKey,
+    CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkeContextS, HpkePsk, HpkePublicKey,
+    HpkeSecretKey,
 };
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "std"))]
@@ -378,10 +378,7 @@ async fn verify_hpke_psk_test<C: CipherSuiteProvider>(cs: &C, test_cases: Vec<Hp
         let secret: HpkeSecretKey = test.secret.into();
         let public: HpkePublicKey = test.public.into();
         let aad = (!test.aad.is_empty()).then_some(test.aad.as_slice());
-        let psk_bundle = PskBundle::new_with_id(
-            PreSharedKey::new(test.psk.clone()),
-            ExternalPskId::new(test.psk_id.clone()),
-        );
+        let psk_bundle = HpkePsk::new(&test.psk_id, &test.psk);
 
         let ct = HpkeCiphertext {
             kem_output: test.kem_output,
@@ -418,10 +415,7 @@ async fn generate_hpke_psk_tests<C: CipherSuiteProvider>(cs: &C) -> Vec<HpkePskT
 
         let psk = cs.random_bytes_vec(32).unwrap();
         let psk_id = cs.random_bytes_vec(16).unwrap();
-        let psk_bundle = PskBundle::new_with_id(
-            PreSharedKey::new(psk.clone()),
-            ExternalPskId::new(psk_id.clone()),
-        );
+        let psk_bundle = HpkePsk::new(&psk_id, &psk);
 
         let sealed = cs
             .hpke_seal_psk(&public, &info, aad_opt, &plaintext, psk_bundle)

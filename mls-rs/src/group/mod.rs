@@ -18,7 +18,7 @@ use zeroize::Zeroizing;
 use crate::cipher_suite::CipherSuite;
 use crate::client::MlsError;
 use crate::client_config::ClientConfig;
-use crate::crypto::{HpkeCiphertext, SignatureSecretKey};
+use crate::crypto::{HpkeCiphertext, HpkePsk, SignatureSecretKey};
 #[cfg(feature = "last_resort_key_package_ext")]
 use crate::extension::LastResortKeyPackageExt;
 use crate::extension::RatchetTreeExt;
@@ -27,7 +27,6 @@ use crate::key_package::{KeyPackage, KeyPackageGeneration, KeyPackageRef};
 use crate::protocol_version::ProtocolVersion;
 use crate::psk::secret::PskSecret;
 use crate::psk::PreSharedKeyID;
-use crate::psk::PskBundle;
 use crate::signer::Signable;
 use crate::tree_kem::hpke_encryption::HpkeEncryptable;
 use crate::tree_kem::kem::TreeKem;
@@ -631,7 +630,7 @@ where
         context_info: &[u8],
         associated_data: Option<&[u8]>,
         plaintext: &[u8],
-        psk: PskBundle,
+        psk: HpkePsk<'_>,
     ) -> Result<HpkeCiphertext, MlsError> {
         let member_leaf_node = self
             .group_state()
@@ -687,7 +686,7 @@ where
         context_info: &[u8],
         associated_data: Option<&[u8]>,
         plaintext: &[u8],
-        psk: PskBundle,
+        psk: HpkePsk<'_>,
     ) -> Result<HpkeCiphertext, MlsError> {
         self.hpke_encrypt_psk_to_recipient_with_generic_context(
             recipient_index,
@@ -738,7 +737,7 @@ where
         context: &[u8],
         associated_data: Option<&[u8]>,
         plaintext: &[u8],
-        psk: PskBundle,
+        psk: HpkePsk<'_>,
     ) -> Result<HpkeCiphertext, MlsError> {
         let component_operation_label = ComponentOperationLabel::new(component_id, context);
         self.hpke_encrypt_psk_to_recipient_with_generic_context(
@@ -782,7 +781,7 @@ where
         context_info: &[u8],
         associated_data: Option<&[u8]>,
         hpke_ciphertext: HpkeCiphertext,
-        psk: PskBundle,
+        psk: HpkePsk<'_>,
     ) -> Result<Zeroizing<Vec<u8>>, MlsError> {
         let self_private_key = &self.private_tree.secret_keys[0]
             .as_ref()
@@ -836,7 +835,7 @@ where
         context_info: &[u8],
         associated_data: Option<&[u8]>,
         hpke_ciphertext: HpkeCiphertext,
-        psk: PskBundle,
+        psk: HpkePsk<'_>,
     ) -> Result<Zeroizing<Vec<u8>>, MlsError> {
         self.hpke_decrypt_psk_for_current_member_with_generic_context(
             context_info,
@@ -880,7 +879,7 @@ where
         context: &[u8],
         associated_data: Option<&[u8]>,
         hpke_ciphertext: HpkeCiphertext,
-        psk: PskBundle,
+        psk: HpkePsk<'_>,
     ) -> Result<Zeroizing<Vec<u8>>, MlsError> {
         let component_operation_label = ComponentOperationLabel::new(component_id, context);
         self.hpke_decrypt_psk_for_current_member_with_generic_context(
@@ -2619,7 +2618,7 @@ mod tests {
     #[cfg(any(feature = "psk", feature = "std"))]
     use crate::client::Client;
 
-    use crate::psk::{ExternalPskId, PreSharedKey};
+    use crate::psk::PreSharedKey;
 
     #[cfg(any(feature = "by_ref_proposal", feature = "private_message"))]
     use crate::group::test_utils::random_bytes;
@@ -2925,8 +2924,8 @@ mod tests {
             sender_index.try_into().unwrap(),
         ];
         let plaintext = b"message";
-        let psk = PreSharedKey::from(vec![0xABu8; 32]);
-        let psk_id = ExternalPskId::new(b"test-psk-id".to_vec());
+        let psk = vec![0xABu8; 32];
+        let psk_id = b"test-psk-id";
 
         let hpke_ciphertext = bob_group
             .hpke_encrypt_psk_to_recipient(
@@ -2934,7 +2933,7 @@ mod tests {
                 &context_info,
                 None,
                 plaintext,
-                PskBundle::new_with_id(psk.clone(), psk_id.clone()),
+                HpkePsk::new(psk_id, &psk),
             )
             .await
             .unwrap();
@@ -2944,7 +2943,7 @@ mod tests {
                 &context_info,
                 None,
                 hpke_ciphertext,
-                PskBundle::new_with_id(psk, psk_id),
+                HpkePsk::new(psk_id, &psk),
             )
             .await
             .unwrap();
@@ -2965,8 +2964,8 @@ mod tests {
             sender_index.try_into().unwrap(),
         ];
         let plaintext = b"message";
-        let psk = PreSharedKey::from(vec![0xCDu8; 32]);
-        let psk_id = ExternalPskId::new(b"safe-psk-id".to_vec());
+        let psk = vec![0xCDu8; 32];
+        let psk_id = b"safe-psk-id";
 
         let hpke_ciphertext = bob_group
             .safe_encrypt_with_context_and_psk_to_recipient(
@@ -2975,7 +2974,7 @@ mod tests {
                 &context_info,
                 None,
                 plaintext,
-                PskBundle::new_with_id(psk.clone(), psk_id.clone()),
+                HpkePsk::new(psk_id, &psk),
             )
             .await
             .unwrap();
@@ -2986,7 +2985,7 @@ mod tests {
                 &context_info,
                 None,
                 hpke_ciphertext,
-                PskBundle::new_with_id(psk, psk_id),
+                HpkePsk::new(psk_id, &psk),
             )
             .await
             .unwrap();
@@ -3011,8 +3010,8 @@ mod tests {
             sender_index.try_into().unwrap(),
         ];
         let plaintext = b"message";
-        let psk = PreSharedKey::from(vec![0xEFu8; 32]);
-        let psk_id = ExternalPskId::new(b"test-psk-id".to_vec());
+        let psk = vec![0xEFu8; 32];
+        let psk_id = b"test-psk-id";
 
         let hpke_ciphertext = bob
             .hpke_encrypt_psk_to_recipient(
@@ -3020,7 +3019,7 @@ mod tests {
                 &context_info,
                 None,
                 plaintext,
-                PskBundle::new_with_id(psk.clone(), psk_id.clone()),
+                HpkePsk::new(psk_id, &psk),
             )
             .await
             .unwrap();
@@ -3030,7 +3029,7 @@ mod tests {
                 &context_info,
                 None,
                 hpke_ciphertext,
-                PskBundle::new_with_id(psk, psk_id),
+                HpkePsk::new(psk_id, &psk),
             )
             .await;
 
@@ -3050,9 +3049,9 @@ mod tests {
             sender_index.try_into().unwrap(),
         ];
         let plaintext = b"message";
-        let psk = PreSharedKey::from(vec![0xABu8; 32]);
-        let wrong_psk = PreSharedKey::from(vec![0xFFu8; 32]);
-        let psk_id = ExternalPskId::new(b"test-psk-id".to_vec());
+        let psk = vec![0xABu8; 32];
+        let wrong_psk = vec![0xFFu8; 32];
+        let psk_id = b"test-psk-id";
 
         let hpke_ciphertext = bob_group
             .hpke_encrypt_psk_to_recipient(
@@ -3060,7 +3059,7 @@ mod tests {
                 &context_info,
                 None,
                 plaintext,
-                PskBundle::new_with_id(psk, psk_id.clone()),
+                HpkePsk::new(psk_id, &psk),
             )
             .await
             .unwrap();
@@ -3070,7 +3069,7 @@ mod tests {
                 &context_info,
                 None,
                 hpke_ciphertext,
-                PskBundle::new_with_id(wrong_psk, psk_id),
+                HpkePsk::new(psk_id, &wrong_psk),
             )
             .await;
 
@@ -3087,8 +3086,8 @@ mod tests {
         let context_info = b"context";
         let plaintext = b"message";
         let aad = b"associated data";
-        let psk = PreSharedKey::from(vec![0xABu8; 32]);
-        let psk_id = ExternalPskId::new(b"aad-test-psk-id".to_vec());
+        let psk = vec![0xABu8; 32];
+        let psk_id = b"aad-test-psk-id";
 
         let hpke_ciphertext = bob_group
             .hpke_encrypt_psk_to_recipient(
@@ -3096,7 +3095,7 @@ mod tests {
                 context_info,
                 Some(aad),
                 plaintext,
-                PskBundle::new_with_id(psk.clone(), psk_id.clone()),
+                HpkePsk::new(psk_id, &psk),
             )
             .await
             .unwrap();
@@ -3106,7 +3105,7 @@ mod tests {
                 context_info,
                 Some(aad),
                 hpke_ciphertext,
-                PskBundle::new_with_id(psk, psk_id),
+                HpkePsk::new(psk_id, &psk),
             )
             .await
             .unwrap();
@@ -3125,8 +3124,8 @@ mod tests {
         let plaintext = b"message";
         let aad = b"associated data";
         let wrong_aad = b"wrong associated data";
-        let psk = PreSharedKey::from(vec![0xABu8; 32]);
-        let psk_id = ExternalPskId::new(b"aad-test-psk-id".to_vec());
+        let psk = vec![0xABu8; 32];
+        let psk_id = b"aad-test-psk-id";
 
         let hpke_ciphertext = bob_group
             .hpke_encrypt_psk_to_recipient(
@@ -3134,7 +3133,7 @@ mod tests {
                 context_info,
                 Some(aad),
                 plaintext,
-                PskBundle::new_with_id(psk.clone(), psk_id.clone()),
+                HpkePsk::new(psk_id, &psk),
             )
             .await
             .unwrap();
@@ -3144,7 +3143,7 @@ mod tests {
                 context_info,
                 Some(wrong_aad),
                 hpke_ciphertext,
-                PskBundle::new_with_id(psk, psk_id),
+                HpkePsk::new(psk_id, &psk),
             )
             .await;
 
@@ -3160,9 +3159,9 @@ mod tests {
 
         let context_info = b"context";
         let plaintext = b"message";
-        let psk = PreSharedKey::from(vec![0xABu8; 32]);
-        let psk_id = ExternalPskId::new(b"correct-psk-id".to_vec());
-        let wrong_psk_id = ExternalPskId::new(b"wrong-psk-id".to_vec());
+        let psk = vec![0xABu8; 32];
+        let psk_id = b"correct-psk-id";
+        let wrong_psk_id = b"wrong-psk-id";
 
         let hpke_ciphertext = bob_group
             .hpke_encrypt_psk_to_recipient(
@@ -3170,7 +3169,7 @@ mod tests {
                 context_info,
                 None,
                 plaintext,
-                PskBundle::new_with_id(psk.clone(), psk_id),
+                HpkePsk::new(psk_id, &psk),
             )
             .await
             .unwrap();
@@ -3180,7 +3179,7 @@ mod tests {
                 context_info,
                 None,
                 hpke_ciphertext,
-                PskBundle::new_with_id(psk, wrong_psk_id),
+                HpkePsk::new(wrong_psk_id, &psk),
             )
             .await;
 
@@ -3196,9 +3195,9 @@ mod tests {
 
         let context_info = b"context";
         let plaintext = b"message";
-        let psk = PreSharedKey::from(vec![0xCDu8; 32]);
-        let wrong_psk = PreSharedKey::from(vec![0xFFu8; 32]);
-        let psk_id = ExternalPskId::new(b"safe-psk-id".to_vec());
+        let psk = vec![0xCDu8; 32];
+        let wrong_psk = vec![0xFFu8; 32];
+        let psk_id = b"safe-psk-id";
 
         let hpke_ciphertext = bob_group
             .safe_encrypt_with_context_and_psk_to_recipient(
@@ -3207,7 +3206,7 @@ mod tests {
                 context_info,
                 None,
                 plaintext,
-                PskBundle::new_with_id(psk, psk_id.clone()),
+                HpkePsk::new(psk_id, &psk),
             )
             .await
             .unwrap();
@@ -3218,7 +3217,7 @@ mod tests {
                 context_info,
                 None,
                 hpke_ciphertext,
-                PskBundle::new_with_id(wrong_psk, psk_id),
+                HpkePsk::new(psk_id, &wrong_psk),
             )
             .await;
 
@@ -3235,8 +3234,8 @@ mod tests {
 
         let context_info = b"context";
         let plaintext = b"message";
-        let psk = PreSharedKey::from(vec![0xCDu8; 32]);
-        let psk_id = ExternalPskId::new(b"safe-psk-id".to_vec());
+        let psk = vec![0xCDu8; 32];
+        let psk_id = b"safe-psk-id";
 
         let hpke_ciphertext = bob_group
             .safe_encrypt_with_context_and_psk_to_recipient(
@@ -3245,7 +3244,7 @@ mod tests {
                 context_info,
                 None,
                 plaintext,
-                PskBundle::new_with_id(psk.clone(), psk_id.clone()),
+                HpkePsk::new(psk_id, &psk),
             )
             .await
             .unwrap();
@@ -3256,7 +3255,7 @@ mod tests {
                 context_info,
                 None,
                 hpke_ciphertext,
-                PskBundle::new_with_id(psk, psk_id),
+                HpkePsk::new(psk_id, &psk),
             )
             .await;
 

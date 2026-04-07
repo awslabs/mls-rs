@@ -16,7 +16,7 @@ use aead::Aead;
 use mls_rs_crypto_hpke::{
     context::{ContextR, ContextS},
     dhkem::DhKem,
-    hpke::{Hpke, HpkeError, Psk},
+    hpke::{Hpke, HpkeError},
 };
 use mls_rs_crypto_traits::{AeadType, KdfType, KemId, KemType};
 
@@ -30,11 +30,10 @@ use thiserror::Error;
 
 use mls_rs_core::{
     crypto::{
-        CipherSuite, CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkePublicKey,
+        CipherSuite, CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkePsk, HpkePublicKey,
         HpkeSecretKey, SignaturePublicKey, SignatureSecretKey,
     },
     error::{AnyError, IntoAnyError},
-    psk::PskBundle,
 };
 
 pub use openssl;
@@ -281,18 +280,9 @@ where
         info: &[u8],
         aad: Option<&[u8]>,
         pt: &[u8],
-        psk: PskBundle,
+        psk: HpkePsk<'_>,
     ) -> Result<HpkeCiphertext, Self::Error> {
-        Ok(self
-            .hpke
-            .seal(
-                remote_key,
-                info,
-                Some(Psk::new(psk.psk_id.as_ref(), psk.psk.as_ref())),
-                aad,
-                pt,
-            )
-            .await?)
+        Ok(self.hpke.seal(remote_key, info, Some(psk), aad, pt).await?)
     }
 
     async fn hpke_open(
@@ -316,18 +306,11 @@ where
         local_public: &HpkePublicKey,
         info: &[u8],
         aad: Option<&[u8]>,
-        psk: PskBundle,
+        psk: HpkePsk<'_>,
     ) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
         Ok(self
             .hpke
-            .open(
-                ciphertext,
-                local_secret,
-                local_public,
-                info,
-                Some(Psk::new(psk.psk_id.as_ref(), psk.psk.as_ref())),
-                aad,
-            )
+            .open(ciphertext, local_secret, local_public, info, Some(psk), aad)
             .await?)
     }
 

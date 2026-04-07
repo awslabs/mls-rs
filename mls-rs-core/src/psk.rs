@@ -110,32 +110,6 @@ impl From<Vec<u8>> for ExternalPskId {
     }
 }
 
-/// A pre-shared key value bundled with its identifier, for use with PSK-mode
-/// HPKE (RFC 9180).
-///
-/// Use [`PskBundle::new`] when no identifier is needed (empty `psk_id`),
-/// or [`PskBundle::new_with_id`] to set an explicit identifier.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PskBundle {
-    pub psk: PreSharedKey,
-    pub psk_id: ExternalPskId,
-}
-
-impl PskBundle {
-    /// Create a [`PskBundle`] with the given PSK value and an empty identifier.
-    pub fn new(psk: PreSharedKey) -> Self {
-        Self {
-            psk,
-            psk_id: ExternalPskId::new(Vec::new()),
-        }
-    }
-
-    /// Create a [`PskBundle`] with the given PSK value and identifier.
-    pub fn new_with_id(psk: PreSharedKey, psk_id: ExternalPskId) -> Self {
-        Self { psk, psk_id }
-    }
-}
-
 /// Storage trait to maintain a set of pre-shared key values.
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 #[cfg_attr(mls_build_async, maybe_async::must_be_async)]
@@ -152,33 +126,5 @@ pub trait PreSharedKeyStorage: Send + Sync {
     /// Determines if a PSK is located within the store
     async fn contains(&self, id: &ExternalPskId) -> Result<bool, Self::Error> {
         self.get(id).await.map(|key| key.is_some())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use alloc::vec;
-
-    #[test]
-    fn psk_bundle_new_creates_empty_id() {
-        let psk_data = vec![1u8; 32];
-        let psk = PreSharedKey::new(psk_data.clone());
-        let bundle = PskBundle::new(psk);
-
-        assert_eq!(bundle.psk.raw_value(), &psk_data);
-        assert!(bundle.psk_id.is_empty());
-    }
-
-    #[test]
-    fn psk_bundle_new_with_id_sets_both_fields() {
-        let psk_data = vec![2u8; 32];
-        let psk_id_data = vec![3u8; 16];
-        let psk = PreSharedKey::new(psk_data.clone());
-        let psk_id = ExternalPskId::new(psk_id_data.clone());
-        let bundle = PskBundle::new_with_id(psk, psk_id);
-
-        assert_eq!(bundle.psk.raw_value(), &psk_data);
-        assert_eq!(bundle.psk_id.as_ref(), &psk_id_data);
     }
 }

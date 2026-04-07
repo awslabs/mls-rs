@@ -26,7 +26,7 @@ use mls_rs_core::error::IntoAnyError;
 pub(crate) mod resolver;
 pub(crate) mod secret;
 
-pub use mls_rs_core::psk::{ExternalPskId, PreSharedKey, PskBundle};
+pub use mls_rs_core::psk::{ExternalPskId, PreSharedKey};
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq, PartialOrd, Ord, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
