@@ -16,7 +16,7 @@ jobs:
     - uses: nanasess/setup-chromedriver@v2
     - uses: jetli/wasm-pack-action@v0.4.0
       with:
-        version: 'v0.13.1'
+        version: 'latest'
     - name: WASM mls-rs-crypto-rustcrypto
       working-directory: mls-rs-crypto-rustcrypto
       run: wasm-pack test --headless --chrome --release --features browser
@@ -29,4 +29,3 @@ jobs:
     - name: WASM mls-rs-crypto-webcrypto
       working-directory: mls-rs-crypto-webcrypto
       run: wasm-pack test --headless --chrome --release
-
