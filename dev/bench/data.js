@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1774366207374,
+  "lastUpdate": 1776354107333,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -28603,6 +28603,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 168278,
             "range": "± 3059",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "trebacz.kacper@gmail.com",
+            "name": "Kacper Trębacz",
+            "username": "trebacz626"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "152b116c404de18847ced6142a207abc625e6509",
+          "message": "Add PSK-mode HPKE encrypt/decrypt API (#351)\n\n* Add PSK-mode HPKE encrypt/decrypt API\n\n* add coverage, fix import hidden behind feature flag\n\n* modify crypto_provider.json\n\n* debug logs for swift\n\n* openssl vs mac compatability fix\n\n* remove debug logs\n\n* Move Psk struct from mls-rs-crypto-hpke to mls-rs-core and rename to HpkePsk\n\n---------\n\nCo-authored-by: Kacper Trebacz <kactre@amazon.pl>",
+          "timestamp": "2026-04-16T17:37:43+02:00",
+          "tree_id": "0e845216570104e953a018a1ebd41cb7e790b890",
+          "url": "https://github.com/awslabs/mls-rs/commit/152b116c404de18847ced6142a207abc625e6509"
+        },
+        "date": 1776354106258,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 549703,
+            "range": "± 6391",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 557999,
+            "range": "± 32550",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 627019,
+            "range": "± 12151",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1350701,
+            "range": "± 35250",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 10208693,
+            "range": "± 43239",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2752172,
+            "range": "± 15937",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7384382,
+            "range": "± 138413",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13580642,
+            "range": "± 192028",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 817649,
+            "range": "± 4336",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 921366,
+            "range": "± 12161",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 1061989,
+            "range": "± 12989",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 26835,
+            "range": "± 271",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 91275,
+            "range": "± 1592",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 178773,
+            "range": "± 4025",
             "unit": "ns/iter"
           }
         ]
