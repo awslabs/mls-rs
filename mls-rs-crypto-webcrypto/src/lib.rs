@@ -11,7 +11,7 @@ mod key_type;
 
 use mls_rs_core::{
     crypto::{
-        CipherSuite, CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkePublicKey,
+        CipherSuite, CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkePsk, HpkePublicKey,
         HpkeSecretKey, SignaturePublicKey, SignatureSecretKey,
     },
     error::{AnyError, IntoAnyError},
@@ -212,6 +212,20 @@ impl CipherSuiteProvider for WebCryptoCipherSuite {
             .map_err(|e| CryptoError::HpkeError(e.into_any_error()))
     }
 
+    async fn hpke_seal_psk(
+        &self,
+        remote_key: &HpkePublicKey,
+        info: &[u8],
+        aad: Option<&[u8]>,
+        pt: &[u8],
+        psk: HpkePsk<'_>,
+    ) -> Result<HpkeCiphertext, Self::Error> {
+        self.hpke
+            .seal(remote_key, info, Some(psk), aad, pt)
+            .await
+            .map_err(|e| CryptoError::HpkeError(e.into_any_error()))
+    }
+
     async fn hpke_open(
         &self,
         ciphertext: &HpkeCiphertext,
@@ -222,6 +236,22 @@ impl CipherSuiteProvider for WebCryptoCipherSuite {
     ) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
         self.hpke
             .open(ciphertext, local_secret, local_public, info, None, aad)
+            .await
+            .map_err(|e| CryptoError::HpkeError(e.into_any_error()))
+            .map(Into::into)
+    }
+
+    async fn hpke_open_psk(
+        &self,
+        ciphertext: &HpkeCiphertext,
+        local_secret: &HpkeSecretKey,
+        local_public: &HpkePublicKey,
+        info: &[u8],
+        aad: Option<&[u8]>,
+        psk: HpkePsk<'_>,
+    ) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
+        self.hpke
+            .open(ciphertext, local_secret, local_public, info, Some(psk), aad)
             .await
             .map_err(|e| CryptoError::HpkeError(e.into_any_error()))
             .map(Into::into)

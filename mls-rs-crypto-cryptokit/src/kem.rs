@@ -150,6 +150,35 @@ extern "C" {
     ) -> u64;
 
     fn hpke_drop_r(recipient_ptr: *mut Recipient);
+
+    // PSK-mode HPKE
+    fn hpke_setup_s_psk(
+        kem_id: u16,
+        pub_ptr: *const u8,
+        pub_len: u64,
+        info_ptr: *const u8,
+        info_len: u64,
+        psk_ptr: *const u8,
+        psk_len: u64,
+        psk_id_ptr: *const u8,
+        psk_id_len: u64,
+        enc_ptr: *mut u8,
+        enc_len: *mut u64,
+    ) -> *mut Sender;
+
+    fn hpke_setup_r_psk(
+        kem_id: u16,
+        enc_ptr: *const u8,
+        enc_len: u64,
+        priv_ptr: *const u8,
+        priv_len: u64,
+        info_ptr: *const u8,
+        info_len: u64,
+        psk_ptr: *const u8,
+        psk_len: u64,
+        psk_id_ptr: *const u8,
+        psk_id_len: u64,
+    ) -> *mut Recipient;
 }
 
 pub struct HpkeContextS(*mut Sender);
@@ -416,6 +445,71 @@ impl Kem {
                 local_secret.len() as u64,
                 info.as_ptr(),
                 info.len() as u64,
+            )
+        };
+
+        if recipient_ptr.is_null() {
+            return Err(KemError::CryptoKitError);
+        }
+
+        Ok(HpkeContextR(recipient_ptr))
+    }
+
+    pub fn hpke_setup_s_psk(
+        &self,
+        remote_key: &HpkePublicKey,
+        info: &[u8],
+        psk: &[u8],
+        psk_id: &[u8],
+    ) -> Result<(Vec<u8>, HpkeContextS), KemError> {
+        let mut enc_buf = vec![0u8; Self::DEFAULT_BUFFER_SIZE];
+        let mut enc_len = enc_buf.len() as u64;
+        let sender_ptr = unsafe {
+            hpke_setup_s_psk(
+                self.0 as u16,
+                remote_key.as_ptr(),
+                remote_key.len() as u64,
+                info.as_ptr(),
+                info.len() as u64,
+                psk.as_ptr(),
+                psk.len() as u64,
+                psk_id.as_ptr(),
+                psk_id.len() as u64,
+                enc_buf.as_mut_ptr(),
+                &mut enc_len,
+            )
+        };
+
+        if sender_ptr.is_null() {
+            return Err(KemError::CryptoKitError);
+        }
+
+        enc_buf.truncate(enc_len as usize);
+        Ok((enc_buf, HpkeContextS(sender_ptr)))
+    }
+
+    pub fn hpke_setup_r_psk(
+        &self,
+        kem_output: &[u8],
+        local_secret: &HpkeSecretKey,
+        _local_public: &HpkePublicKey,
+        info: &[u8],
+        psk: &[u8],
+        psk_id: &[u8],
+    ) -> Result<HpkeContextR, KemError> {
+        let recipient_ptr = unsafe {
+            hpke_setup_r_psk(
+                self.0 as u16,
+                kem_output.as_ptr(),
+                kem_output.len() as u64,
+                local_secret.as_ptr(),
+                local_secret.len() as u64,
+                info.as_ptr(),
+                info.len() as u64,
+                psk.as_ptr(),
+                psk.len() as u64,
+                psk_id.as_ptr(),
+                psk_id.len() as u64,
             )
         };
 

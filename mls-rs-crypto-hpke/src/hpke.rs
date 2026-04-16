@@ -8,7 +8,8 @@ use crate::alloc::borrow::ToOwned;
 
 use mls_rs_core::{
     crypto::{
-        HpkeCiphertext, HpkeContextR, HpkeContextS, HpkeModeId, HpkePublicKey, HpkeSecretKey,
+        HpkeCiphertext, HpkeContextR, HpkeContextS, HpkeModeId, HpkePsk, HpkePublicKey,
+        HpkeSecretKey,
     },
     error::{AnyError, IntoAnyError},
 };
@@ -73,18 +74,6 @@ pub struct Hpke<KEM: KemType, KDF: KdfType, AEAD: AeadType> {
     kem_kdf: HpkeKdf<KDF>,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Default)]
-pub struct Psk<'a> {
-    id: &'a [u8],
-    value: &'a [u8],
-}
-
-impl<'a> Psk<'a> {
-    pub fn new(id: &'a [u8], value: &'a [u8]) -> Self {
-        Self { id, value }
-    }
-}
-
 impl<KEM, KDF, AEAD> Hpke<KEM, KDF, AEAD>
 where
     KEM: KemType,
@@ -123,7 +112,7 @@ where
         &self,
         remote_key: &HpkePublicKey,
         info: &[u8],
-        psk: Option<Psk<'_>>,
+        psk: Option<HpkePsk<'_>>,
         aad: Option<&[u8]>,
         pt: &[u8],
     ) -> Result<HpkeCiphertext, HpkeError> {
@@ -145,7 +134,7 @@ where
         local_secret: &HpkeSecretKey,
         local_public: &HpkePublicKey,
         info: &[u8],
-        psk: Option<Psk<'_>>,
+        psk: Option<HpkePsk<'_>>,
         aad: Option<&[u8]>,
     ) -> Result<Zeroizing<Vec<u8>>, HpkeError> {
         let mut hpke_ctx = self
@@ -171,7 +160,7 @@ where
         &self,
         remote_key: &HpkePublicKey,
         info: &[u8],
-        psk: Option<Psk<'_>>,
+        psk: Option<HpkePsk<'_>>,
     ) -> Result<(Vec<u8>, ContextS<KDF, AEAD>), HpkeError> {
         let mode = self.base_mode(&psk);
 
@@ -200,7 +189,7 @@ where
         local_secret: &HpkeSecretKey,
         local_public: &HpkePublicKey,
         info: &[u8],
-        psk: Option<Psk<'_>>,
+        psk: Option<HpkePsk<'_>>,
     ) -> Result<ContextR<KDF, AEAD>, HpkeError> {
         let mode = self.base_mode(&psk);
 
@@ -249,7 +238,7 @@ where
         mode: HpkeModeId,
         shared_secret: &[u8],
         info: &[u8],
-        psk: Option<Psk<'_>>,
+        psk: Option<HpkePsk<'_>>,
     ) -> Result<Context<KDF, AEAD>, HpkeError> {
         self.check_psk(psk.as_ref())?;
 
@@ -319,7 +308,7 @@ where
         ))
     }
 
-    fn check_psk(&self, psk: Option<&Psk>) -> Result<(), HpkeError> {
+    fn check_psk(&self, psk: Option<&HpkePsk>) -> Result<(), HpkeError> {
         if let Some(psk) = &psk {
             if psk.value.len() < 32 {
                 return Err(HpkeError::InsufficientPskLength);
@@ -330,7 +319,7 @@ where
     }
 
     #[inline(always)]
-    fn base_mode(&self, psk: &Option<Psk>) -> HpkeModeId {
+    fn base_mode(&self, psk: &Option<HpkePsk>) -> HpkeModeId {
         if psk.is_some() {
             HpkeModeId::Psk
         } else {
