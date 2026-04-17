@@ -18,7 +18,7 @@ use zeroize::Zeroizing;
 use crate::cipher_suite::CipherSuite;
 use crate::client::MlsError;
 use crate::client_config::ClientConfig;
-use crate::crypto::{HpkeCiphertext, SignatureSecretKey};
+use crate::crypto::{HpkeCiphertext, HpkePsk, SignatureSecretKey};
 #[cfg(feature = "last_resort_key_package_ext")]
 use crate::extension::LastResortKeyPackageExt;
 use crate::extension::RatchetTreeExt;
@@ -623,6 +623,32 @@ where
         Ok(hpke_ciphertext)
     }
 
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn hpke_encrypt_psk_to_recipient_with_generic_context(
+        &self,
+        recipient_index: u32,
+        context_info: &[u8],
+        associated_data: Option<&[u8]>,
+        plaintext: &[u8],
+        psk: HpkePsk<'_>,
+    ) -> Result<HpkeCiphertext, MlsError> {
+        let member_leaf_node = self
+            .group_state()
+            .public_tree
+            .get_leaf_node(LeafIndex::try_from(recipient_index)?)?;
+        let member_public_key = &member_leaf_node.public_key;
+        self.cipher_suite_provider
+            .hpke_seal_psk(
+                member_public_key,
+                context_info,
+                associated_data,
+                plaintext,
+                psk,
+            )
+            .await
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
+    }
+
     /// HPKE encrypts a message to the member at the specified `recipient_index` in the group.
     ///
     /// Takes `context_info`, `associated_data`, and `plaintext`.
@@ -643,6 +669,31 @@ where
             context_info,
             associated_data,
             plaintext,
+        )
+        .await
+    }
+
+    /// HPKE encrypts a message to the member at the specified `recipient_index` using
+    /// PSK mode, binding the ciphertext to knowledge of `psk`.
+    ///
+    /// Takes `context_info`, `psk`, `associated_data`, and `plaintext`.
+    /// Returns `ciphertext` and `kem_output` inside `HpkeCiphertext`.
+    #[cfg(feature = "non_domain_separated_hpke_encrypt_decrypt")]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn hpke_encrypt_psk_to_recipient(
+        &self,
+        recipient_index: u32,
+        context_info: &[u8],
+        associated_data: Option<&[u8]>,
+        plaintext: &[u8],
+        psk: HpkePsk<'_>,
+    ) -> Result<HpkeCiphertext, MlsError> {
+        self.hpke_encrypt_psk_to_recipient_with_generic_context(
+            recipient_index,
+            context_info,
+            associated_data,
+            plaintext,
+            psk,
         )
         .await
     }
@@ -672,6 +723,33 @@ where
         .await
     }
 
+    /// HPKE encrypts a message to the member at the specified `recipient_index` using
+    /// PSK mode with domain separation.
+    ///
+    /// Takes a `component_id` and `context` to construct a `ComponentOperationLabel` for
+    /// domain separation, plus `psk`, `associated_data`, and `plaintext`.
+    /// Returns `ciphertext` and `kem_output` inside `HpkeCiphertext`.
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn safe_encrypt_with_context_and_psk_to_recipient(
+        &self,
+        recipient_index: u32,
+        component_id: ComponentID,
+        context: &[u8],
+        associated_data: Option<&[u8]>,
+        plaintext: &[u8],
+        psk: HpkePsk<'_>,
+    ) -> Result<HpkeCiphertext, MlsError> {
+        let component_operation_label = ComponentOperationLabel::new(component_id, context);
+        self.hpke_encrypt_psk_to_recipient_with_generic_context(
+            recipient_index,
+            &component_operation_label.get_bytes()?,
+            associated_data,
+            plaintext,
+            psk,
+        )
+        .await
+    }
+
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn hpke_decrypt_for_current_member_with_generic_context(
         &self,
@@ -692,6 +770,33 @@ where
                 self_public_key,
                 context_info,
                 associated_data,
+            )
+            .await
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
+    }
+
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn hpke_decrypt_psk_for_current_member_with_generic_context(
+        &self,
+        context_info: &[u8],
+        associated_data: Option<&[u8]>,
+        hpke_ciphertext: HpkeCiphertext,
+        psk: HpkePsk<'_>,
+    ) -> Result<Zeroizing<Vec<u8>>, MlsError> {
+        let self_private_key = &self.private_tree.secret_keys[0]
+            .as_ref()
+            .ok_or(MlsError::InvalidTreeKemPrivateKey)?;
+
+        let self_public_key = &self.current_user_leaf_node()?.public_key;
+
+        self.cipher_suite_provider
+            .hpke_open_psk(
+                &hpke_ciphertext,
+                self_private_key,
+                self_public_key,
+                context_info,
+                associated_data,
+                psk,
             )
             .await
             .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
@@ -719,6 +824,28 @@ where
         .await
     }
 
+    /// HPKE decrypts a PSK-mode message sent to the current member.
+    ///
+    /// Takes `HpkeCiphertext` generated by [`hpke_encrypt_psk_to_recipient`](Group::hpke_encrypt_psk_to_recipient)
+    /// intended for the current member, along with the same `psk` used during encryption.
+    #[cfg(feature = "non_domain_separated_hpke_encrypt_decrypt")]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn hpke_decrypt_psk_for_current_member(
+        &self,
+        context_info: &[u8],
+        associated_data: Option<&[u8]>,
+        hpke_ciphertext: HpkeCiphertext,
+        psk: HpkePsk<'_>,
+    ) -> Result<Zeroizing<Vec<u8>>, MlsError> {
+        self.hpke_decrypt_psk_for_current_member_with_generic_context(
+            context_info,
+            associated_data,
+            hpke_ciphertext,
+            psk,
+        )
+        .await
+    }
+
     /// HPKE decrypts a message sent to the current member.
     ///
     /// Takes `HpkeCiphertext` generated by `hpke_encrypt_to_recipient` intended for the
@@ -736,6 +863,30 @@ where
             &component_operation_label.get_bytes()?,
             associated_data,
             hpke_ciphertext,
+        )
+        .await
+    }
+
+    /// HPKE decrypts a PSK-mode message sent to the current member with domain separation.
+    ///
+    /// Takes `HpkeCiphertext` generated by
+    /// [`safe_encrypt_with_context_and_psk_to_recipient`](Group::safe_encrypt_with_context_and_psk_to_recipient)
+    /// intended for the current member, along with the same `psk` used during encryption.
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn safe_decrypt_with_context_and_psk_for_current_member(
+        &self,
+        component_id: ComponentID,
+        context: &[u8],
+        associated_data: Option<&[u8]>,
+        hpke_ciphertext: HpkeCiphertext,
+        psk: HpkePsk<'_>,
+    ) -> Result<Zeroizing<Vec<u8>>, MlsError> {
+        let component_operation_label = ComponentOperationLabel::new(component_id, context);
+        self.hpke_decrypt_psk_for_current_member_with_generic_context(
+            &component_operation_label.get_bytes()?,
+            associated_data,
+            hpke_ciphertext,
+            psk,
         )
         .await
     }
@@ -2467,7 +2618,6 @@ mod tests {
     #[cfg(any(feature = "psk", feature = "std"))]
     use crate::client::Client;
 
-    #[cfg(feature = "psk")]
     use crate::psk::PreSharedKey;
 
     #[cfg(any(feature = "by_ref_proposal", feature = "private_message"))]
@@ -2759,6 +2909,357 @@ mod tests {
             .unwrap();
 
         assert_eq!(plaintext.to_vec(), *hpke_decrypted);
+    }
+
+    #[cfg(feature = "non_domain_separated_hpke_encrypt_decrypt")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_hpke_psk_encrypt_decrypt() {
+        let (alice_group, bob_group) =
+            test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, true).await;
+        let receiver_index = alice_group.current_member_index();
+        let sender_index = bob_group.current_member_index();
+
+        let context_info: Vec<u8> = vec![
+            receiver_index.try_into().unwrap(),
+            sender_index.try_into().unwrap(),
+        ];
+        let plaintext = b"message";
+        let psk = vec![0xABu8; 32];
+        let psk_id = b"test-psk-id";
+
+        let hpke_ciphertext = bob_group
+            .hpke_encrypt_psk_to_recipient(
+                receiver_index,
+                &context_info,
+                None,
+                plaintext,
+                HpkePsk::new(psk_id, &psk),
+            )
+            .await
+            .unwrap();
+
+        let hpke_decrypted = alice_group
+            .hpke_decrypt_psk_for_current_member(
+                &context_info,
+                None,
+                hpke_ciphertext,
+                HpkePsk::new(psk_id, &psk),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(plaintext.to_vec(), *hpke_decrypted);
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_safe_context_hpke_psk_encrypt_decrypt() {
+        let component_id: ComponentID = 42;
+        let (alice_group, bob_group) =
+            test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, true).await;
+        let receiver_index = alice_group.current_member_index();
+        let sender_index = bob_group.current_member_index();
+
+        let context_info: Vec<u8> = vec![
+            receiver_index.try_into().unwrap(),
+            sender_index.try_into().unwrap(),
+        ];
+        let plaintext = b"message";
+        let psk = vec![0xCDu8; 32];
+        let psk_id = b"safe-psk-id";
+
+        let hpke_ciphertext = bob_group
+            .safe_encrypt_with_context_and_psk_to_recipient(
+                receiver_index,
+                component_id,
+                &context_info,
+                None,
+                plaintext,
+                HpkePsk::new(psk_id, &psk),
+            )
+            .await
+            .unwrap();
+
+        let hpke_decrypted = alice_group
+            .safe_decrypt_with_context_and_psk_for_current_member(
+                component_id,
+                &context_info,
+                None,
+                hpke_ciphertext,
+                HpkePsk::new(psk_id, &psk),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(plaintext.to_vec(), *hpke_decrypted);
+    }
+
+    #[cfg(feature = "non_domain_separated_hpke_encrypt_decrypt")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_hpke_psk_non_recipient_cant_decrypt() {
+        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (mut bob, _) = alice.join("bob").await;
+        let (carol, commit) = alice.join("carol").await;
+
+        bob.process_incoming_message(commit).await.unwrap();
+
+        let receiver_index = alice.current_member_index();
+        let sender_index = bob.current_member_index();
+
+        let context_info: Vec<u8> = vec![
+            receiver_index.try_into().unwrap(),
+            sender_index.try_into().unwrap(),
+        ];
+        let plaintext = b"message";
+        let psk = vec![0xEFu8; 32];
+        let psk_id = b"test-psk-id";
+
+        let hpke_ciphertext = bob
+            .hpke_encrypt_psk_to_recipient(
+                receiver_index,
+                &context_info,
+                None,
+                plaintext,
+                HpkePsk::new(psk_id, &psk),
+            )
+            .await
+            .unwrap();
+
+        let hpke_decrypted = carol
+            .hpke_decrypt_psk_for_current_member(
+                &context_info,
+                None,
+                hpke_ciphertext,
+                HpkePsk::new(psk_id, &psk),
+            )
+            .await;
+
+        assert_matches!(hpke_decrypted, Err(MlsError::CryptoProviderError(_)));
+    }
+
+    #[cfg(feature = "non_domain_separated_hpke_encrypt_decrypt")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_hpke_psk_wrong_psk_cant_decrypt() {
+        let (alice_group, bob_group) =
+            test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, true).await;
+        let receiver_index = alice_group.current_member_index();
+        let sender_index = bob_group.current_member_index();
+
+        let context_info: Vec<u8> = vec![
+            receiver_index.try_into().unwrap(),
+            sender_index.try_into().unwrap(),
+        ];
+        let plaintext = b"message";
+        let psk = vec![0xABu8; 32];
+        let wrong_psk = vec![0xFFu8; 32];
+        let psk_id = b"test-psk-id";
+
+        let hpke_ciphertext = bob_group
+            .hpke_encrypt_psk_to_recipient(
+                receiver_index,
+                &context_info,
+                None,
+                plaintext,
+                HpkePsk::new(psk_id, &psk),
+            )
+            .await
+            .unwrap();
+
+        let hpke_decrypted = alice_group
+            .hpke_decrypt_psk_for_current_member(
+                &context_info,
+                None,
+                hpke_ciphertext,
+                HpkePsk::new(psk_id, &wrong_psk),
+            )
+            .await;
+
+        assert_matches!(hpke_decrypted, Err(MlsError::CryptoProviderError(_)));
+    }
+
+    #[cfg(feature = "non_domain_separated_hpke_encrypt_decrypt")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_hpke_psk_with_aad_encrypt_decrypt() {
+        let (alice_group, bob_group) =
+            test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, true).await;
+        let receiver_index = alice_group.current_member_index();
+
+        let context_info = b"context";
+        let plaintext = b"message";
+        let aad = b"associated data";
+        let psk = vec![0xABu8; 32];
+        let psk_id = b"aad-test-psk-id";
+
+        let hpke_ciphertext = bob_group
+            .hpke_encrypt_psk_to_recipient(
+                receiver_index,
+                context_info,
+                Some(aad),
+                plaintext,
+                HpkePsk::new(psk_id, &psk),
+            )
+            .await
+            .unwrap();
+
+        let hpke_decrypted = alice_group
+            .hpke_decrypt_psk_for_current_member(
+                context_info,
+                Some(aad),
+                hpke_ciphertext,
+                HpkePsk::new(psk_id, &psk),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(plaintext.to_vec(), *hpke_decrypted);
+    }
+
+    #[cfg(feature = "non_domain_separated_hpke_encrypt_decrypt")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_hpke_psk_wrong_aad_cant_decrypt() {
+        let (alice_group, bob_group) =
+            test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, true).await;
+        let receiver_index = alice_group.current_member_index();
+
+        let context_info = b"context";
+        let plaintext = b"message";
+        let aad = b"associated data";
+        let wrong_aad = b"wrong associated data";
+        let psk = vec![0xABu8; 32];
+        let psk_id = b"aad-test-psk-id";
+
+        let hpke_ciphertext = bob_group
+            .hpke_encrypt_psk_to_recipient(
+                receiver_index,
+                context_info,
+                Some(aad),
+                plaintext,
+                HpkePsk::new(psk_id, &psk),
+            )
+            .await
+            .unwrap();
+
+        let hpke_decrypted = alice_group
+            .hpke_decrypt_psk_for_current_member(
+                context_info,
+                Some(wrong_aad),
+                hpke_ciphertext,
+                HpkePsk::new(psk_id, &psk),
+            )
+            .await;
+
+        assert_matches!(hpke_decrypted, Err(MlsError::CryptoProviderError(_)));
+    }
+
+    #[cfg(feature = "non_domain_separated_hpke_encrypt_decrypt")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_hpke_psk_wrong_psk_id_cant_decrypt() {
+        let (alice_group, bob_group) =
+            test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, true).await;
+        let receiver_index = alice_group.current_member_index();
+
+        let context_info = b"context";
+        let plaintext = b"message";
+        let psk = vec![0xABu8; 32];
+        let psk_id = b"correct-psk-id";
+        let wrong_psk_id = b"wrong-psk-id";
+
+        let hpke_ciphertext = bob_group
+            .hpke_encrypt_psk_to_recipient(
+                receiver_index,
+                context_info,
+                None,
+                plaintext,
+                HpkePsk::new(psk_id, &psk),
+            )
+            .await
+            .unwrap();
+
+        let hpke_decrypted = alice_group
+            .hpke_decrypt_psk_for_current_member(
+                context_info,
+                None,
+                hpke_ciphertext,
+                HpkePsk::new(wrong_psk_id, &psk),
+            )
+            .await;
+
+        assert_matches!(hpke_decrypted, Err(MlsError::CryptoProviderError(_)));
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_safe_context_hpke_psk_wrong_psk_cant_decrypt() {
+        let component_id: ComponentID = 42;
+        let (alice_group, bob_group) =
+            test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, true).await;
+        let receiver_index = alice_group.current_member_index();
+
+        let context_info = b"context";
+        let plaintext = b"message";
+        let psk = vec![0xCDu8; 32];
+        let wrong_psk = vec![0xFFu8; 32];
+        let psk_id = b"safe-psk-id";
+
+        let hpke_ciphertext = bob_group
+            .safe_encrypt_with_context_and_psk_to_recipient(
+                receiver_index,
+                component_id,
+                context_info,
+                None,
+                plaintext,
+                HpkePsk::new(psk_id, &psk),
+            )
+            .await
+            .unwrap();
+
+        let hpke_decrypted = alice_group
+            .safe_decrypt_with_context_and_psk_for_current_member(
+                component_id,
+                context_info,
+                None,
+                hpke_ciphertext,
+                HpkePsk::new(psk_id, &wrong_psk),
+            )
+            .await;
+
+        assert_matches!(hpke_decrypted, Err(MlsError::CryptoProviderError(_)));
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_safe_context_hpke_psk_wrong_component_id_cant_decrypt() {
+        let component_id: ComponentID = 42;
+        let wrong_component_id: ComponentID = 99;
+        let (alice_group, bob_group) =
+            test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, true).await;
+        let receiver_index = alice_group.current_member_index();
+
+        let context_info = b"context";
+        let plaintext = b"message";
+        let psk = vec![0xCDu8; 32];
+        let psk_id = b"safe-psk-id";
+
+        let hpke_ciphertext = bob_group
+            .safe_encrypt_with_context_and_psk_to_recipient(
+                receiver_index,
+                component_id,
+                context_info,
+                None,
+                plaintext,
+                HpkePsk::new(psk_id, &psk),
+            )
+            .await
+            .unwrap();
+
+        let hpke_decrypted = alice_group
+            .safe_decrypt_with_context_and_psk_for_current_member(
+                wrong_component_id,
+                context_info,
+                None,
+                hpke_ciphertext,
+                HpkePsk::new(psk_id, &psk),
+            )
+            .await;
+
+        assert_matches!(hpke_decrypted, Err(MlsError::CryptoProviderError(_)));
     }
 
     #[cfg(feature = "non_domain_separated_hpke_encrypt_decrypt")]

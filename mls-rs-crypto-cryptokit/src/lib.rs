@@ -14,7 +14,8 @@ use sig::{Signature, SignatureError};
 use mls_rs_core::{
     crypto::{
         CipherSuite, CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkeContextR,
-        HpkeContextS, HpkePublicKey, HpkeSecretKey, SignaturePublicKey, SignatureSecretKey,
+        HpkeContextS, HpkePsk, HpkePublicKey, HpkeSecretKey, SignaturePublicKey,
+        SignatureSecretKey,
     },
     error::IntoAnyError,
 };
@@ -270,6 +271,26 @@ impl CipherSuiteProvider for CryptoKitCipherSuite {
         })
     }
 
+    fn hpke_seal_psk(
+        &self,
+        remote_key: &HpkePublicKey,
+        info: &[u8],
+        aad: Option<&[u8]>,
+        pt: &[u8],
+        psk: HpkePsk<'_>,
+    ) -> Result<HpkeCiphertext, Self::Error> {
+        let (kem_output, mut ctx) = self
+            .kem
+            .hpke_setup_s_psk(remote_key, info, psk.value, psk.id)?;
+        let ciphertext = ctx
+            .seal(aad, pt)
+            .map_err(<KemError as Into<CryptoKitError>>::into)?;
+        Ok(HpkeCiphertext {
+            kem_output,
+            ciphertext,
+        })
+    }
+
     fn hpke_open(
         &self,
         ciphertext: &HpkeCiphertext,
@@ -280,6 +301,27 @@ impl CipherSuiteProvider for CryptoKitCipherSuite {
     ) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
         let mut ctx =
             self.hpke_setup_r(&ciphertext.kem_output, local_secret, local_public, info)?;
+        ctx.open(aad, &ciphertext.ciphertext)
+            .map_err(<KemError as Into<CryptoKitError>>::into)
+    }
+
+    fn hpke_open_psk(
+        &self,
+        ciphertext: &HpkeCiphertext,
+        local_secret: &HpkeSecretKey,
+        local_public: &HpkePublicKey,
+        info: &[u8],
+        aad: Option<&[u8]>,
+        psk: HpkePsk<'_>,
+    ) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
+        let mut ctx = self.kem.hpke_setup_r_psk(
+            &ciphertext.kem_output,
+            local_secret,
+            local_public,
+            info,
+            psk.value,
+            psk.id,
+        )?;
         ctx.open(aad, &ciphertext.ciphertext)
             .map_err(<KemError as Into<CryptoKitError>>::into)
     }

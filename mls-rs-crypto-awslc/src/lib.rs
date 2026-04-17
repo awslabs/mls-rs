@@ -26,7 +26,7 @@ use aws_lc_rs::error::{KeyRejected, Unspecified};
 use crate::aws_lc_sys_impl::SHA256;
 use mls_rs_core::{
     crypto::{
-        CipherSuite, CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkePublicKey,
+        CipherSuite, CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkePsk, HpkePublicKey,
         HpkeSecretKey, SignaturePublicKey, SignatureSecretKey,
     },
     error::{AnyError, IntoAnyError},
@@ -508,6 +508,26 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
         .map_err(Into::into)
     }
 
+    async fn hpke_seal_psk(
+        &self,
+        remote_key: &HpkePublicKey,
+        info: &[u8],
+        aad: Option<&[u8]>,
+        pt: &[u8],
+        psk: HpkePsk<'_>,
+    ) -> Result<HpkeCiphertext, Self::Error> {
+        let psk_val = Some(psk);
+        match &self.hpke {
+            AwsLcHpke::Classical(hpke) => hpke.seal(remote_key, info, psk_val, aad, pt),
+            #[cfg(feature = "post-quantum")]
+            AwsLcHpke::PostQuantum(hpke) => hpke.seal(remote_key, info, psk_val, aad, pt),
+            #[cfg(feature = "post-quantum")]
+            AwsLcHpke::Combined(hpke) => hpke.seal(remote_key, info, psk_val, aad, pt),
+        }
+        .await
+        .map_err(Into::into)
+    }
+
     async fn hpke_open(
         &self,
         ciphertext: &HpkeCiphertext,
@@ -527,6 +547,33 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
             #[cfg(feature = "post-quantum")]
             AwsLcHpke::Combined(hpke) => {
                 hpke.open(ciphertext, local_secret, local_public, info, None, aad)
+            }
+        }
+        .await
+        .map_err(Into::into)
+    }
+
+    async fn hpke_open_psk(
+        &self,
+        ciphertext: &HpkeCiphertext,
+        local_secret: &HpkeSecretKey,
+        local_public: &HpkePublicKey,
+        info: &[u8],
+        aad: Option<&[u8]>,
+        psk: HpkePsk<'_>,
+    ) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
+        let psk_val = Some(psk);
+        match &self.hpke {
+            AwsLcHpke::Classical(hpke) => {
+                hpke.open(ciphertext, local_secret, local_public, info, psk_val, aad)
+            }
+            #[cfg(feature = "post-quantum")]
+            AwsLcHpke::PostQuantum(hpke) => {
+                hpke.open(ciphertext, local_secret, local_public, info, psk_val, aad)
+            }
+            #[cfg(feature = "post-quantum")]
+            AwsLcHpke::Combined(hpke) => {
+                hpke.open(ciphertext, local_secret, local_public, info, psk_val, aad)
             }
         }
         .await
