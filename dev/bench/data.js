@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1776354107333,
+  "lastUpdate": 1776765646812,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -28711,6 +28711,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 178773,
             "range": "± 4025",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ellen.arteca@gmail.com",
+            "name": "Ellen Arteca",
+            "username": "emarteca"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "df0a608bb4105c93c4c76b6e696dc0882b7567b8",
+          "message": "Bug in parent hash validation: skipping sibling tree hash recomputation for blank ancestors of nodes with changed unmerged_leaves (#352)\n\n* test currently failing bc of blank intermediate and nonblank grandparent causing grandparent to go unvalidated\n\n* adding logging, will be removed later\n\n* logging the tree structure\n\n* oops deleting broken debug attempt\n\n* Fix bug in different_unmerged\n\n* removing all the debugging; formatting samirs fix\n\n---------\n\nCo-authored-by: Ellen Arteca <emarteca@google.com>\nCo-authored-by: Samir Menon <menon.samir@gmail.com>",
+          "timestamp": "2026-04-21T11:56:46+02:00",
+          "tree_id": "3a7c1ee00bf597d46c02128f4c25446c93efd0cd",
+          "url": "https://github.com/awslabs/mls-rs/commit/df0a608bb4105c93c4c76b6e696dc0882b7567b8"
+        },
+        "date": 1776765645948,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 547056,
+            "range": "± 5994",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 553927,
+            "range": "± 4570",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 625299,
+            "range": "± 15892",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1347361,
+            "range": "± 20502",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 8257345,
+            "range": "± 237811",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2743036,
+            "range": "± 81857",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7429739,
+            "range": "± 118335",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13705527,
+            "range": "± 183364",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 811265,
+            "range": "± 3162",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 910248,
+            "range": "± 14167",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 1051034,
+            "range": "± 5950",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 26938,
+            "range": "± 265",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 92483,
+            "range": "± 1522",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 181354,
+            "range": "± 8871",
             "unit": "ns/iter"
           }
         ]
