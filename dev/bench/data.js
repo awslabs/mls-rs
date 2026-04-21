@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1776765646812,
+  "lastUpdate": 1776779288338,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -28819,6 +28819,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 181354,
             "range": "± 8871",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "103590845+mulmarta@users.noreply.github.com",
+            "name": "mulmarta",
+            "username": "mulmarta"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a0eb41def0cf227034bde19b7c11e62ab2a74a03",
+          "message": "chore: Update aws-lc-sys to 0.40.0 and aws-lc-fips-sys to 0.13.14 (#353)\n\n* chore: Bump version of aws-lc\n\n* chore: Bump wasm pack in CI\n\n* chore: Use latest wasm pack\n\n* chore: Bump aws-lc-sys\n\n* chore: Bump all versions after mls-rs-core added required methods for crypto provider\n\n---------\n\nCo-authored-by: Kacper Trębacz <trebacz.kacper@gmail.com>",
+          "timestamp": "2026-04-21T15:44:20+02:00",
+          "tree_id": "31a2f9fa828bd85916804ae62ae6ee612c9716fd",
+          "url": "https://github.com/awslabs/mls-rs/commit/a0eb41def0cf227034bde19b7c11e62ab2a74a03"
+        },
+        "date": 1776779286956,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 517036,
+            "range": "± 16129",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 524204,
+            "range": "± 11920",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 589870,
+            "range": "± 23555",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1499583,
+            "range": "± 72641",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 9293051,
+            "range": "± 241608",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 3011256,
+            "range": "± 186858",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 9416584,
+            "range": "± 420461",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 16463738,
+            "range": "± 1186469",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 824687,
+            "range": "± 13096",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 982847,
+            "range": "± 57127",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 1134091,
+            "range": "± 73140",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 25718,
+            "range": "± 1047",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 88205,
+            "range": "± 2264",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 175019,
+            "range": "± 4817",
             "unit": "ns/iter"
           }
         ]
