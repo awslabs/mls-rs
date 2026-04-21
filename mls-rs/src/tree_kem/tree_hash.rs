@@ -163,11 +163,22 @@ impl TreeKemPublic {
         Ok(&unmerged[start..end])
     }
 
+    // "Does the descendant have an entry in unmerged_leaves that is not in the ancestor's unmerged_leaves?"
     fn different_unmerged(&self, ancestor: u32, descendant: u32) -> Result<bool, MlsError> {
-        Ok(!self.nodes.is_blank(ancestor)?
-            && !self.nodes.is_blank(descendant)?
-            && self.unmerged_in_subtree(ancestor, descendant)?
-                != self.nodes.borrow_as_parent(descendant)?.unmerged_leaves)
+        // A blank descendant has no unmerged_leaves, so there's nothing to compare.
+        if self.nodes.is_blank(descendant)? {
+            return Ok(false);
+        }
+
+        // `ancestor_unmerged` is the unmerged_leaves of the ancestor, or an empty list if the ancestor is blank.
+        let ancestor_unmerged = if self.nodes.is_blank(ancestor)? {
+            &[][..]
+        } else {
+            self.unmerged_in_subtree(ancestor, descendant)?
+        };
+
+        // If the descendant has unmerged leaves that are not inherited from the ancestor, return true.
+        Ok(ancestor_unmerged != self.nodes.borrow_as_parent(descendant)?.unmerged_leaves)
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
