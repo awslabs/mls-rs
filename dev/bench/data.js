@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1776797610850,
+  "lastUpdate": 1776872501767,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -29035,6 +29035,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 179391,
             "range": "± 2464",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "alexeytyurin74@gmail.com",
+            "name": "Aleksei Tiurin",
+            "username": "alex-tiurin"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e96b484e1bc5e90161d532b192b71f696e1a06b9",
+          "message": "fix: add missing .await in SecretKeyRatchet::get_message_key (#355)\n\nProblem: in the #[cfg(not(feature = \"out_of_order\"))] branch,\nnext_message_key() was called without .await. Under mls_build_async\nall async fns return a Future, so applying ? directly to an unawaited\nFuture is a type error (E0277: Try not implemented for impl Future).\nThe bug is invisible with default features because rfc_compliant pulls\nin out_of_order, selecting the correctly-awaited branch instead.\n\nReproduce:\n  RUSTFLAGS=\"--cfg mls_build_async\" cargo check \\\n    -p mls-rs --no-default-features --features \"std,private_message\"\n\nFix: add .await before ? to match the pattern already used in the\nout_of_order branch.\n\nMade-with: Cursor\n\nCo-authored-by: Aleksei Tiurin <aleksei.tiurin@exness.com>",
+          "timestamp": "2026-04-22T17:38:11+02:00",
+          "tree_id": "2bdd0911f480adf7f95d9e482028172db5e42255",
+          "url": "https://github.com/awslabs/mls-rs/commit/e96b484e1bc5e90161d532b192b71f696e1a06b9"
+        },
+        "date": 1776872500893,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 531280,
+            "range": "± 33028",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 539974,
+            "range": "± 9142",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 601130,
+            "range": "± 7768",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1289029,
+            "range": "± 24042",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 7593339,
+            "range": "± 128095",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2692489,
+            "range": "± 48127",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7240829,
+            "range": "± 107636",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13494427,
+            "range": "± 105116",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 780827,
+            "range": "± 7799",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 868456,
+            "range": "± 8373",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 1001165,
+            "range": "± 14361",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 25932,
+            "range": "± 258",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 89106,
+            "range": "± 1599",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 176548,
+            "range": "± 1604",
             "unit": "ns/iter"
           }
         ]
