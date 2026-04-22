@@ -463,7 +463,7 @@ impl SecretKeyRatchet {
 
         #[cfg(not(feature = "out_of_order"))]
         while self.generation < generation {
-            self.next_message_key(cipher_suite_provider)?;
+            self.next_message_key(cipher_suite_provider).await?;
         }
 
         #[cfg(feature = "out_of_order")]
