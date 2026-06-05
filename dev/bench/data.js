@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1776872501767,
+  "lastUpdate": 1780669449619,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -29143,6 +29143,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 176548,
             "range": "± 1604",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "103590845+mulmarta@users.noreply.github.com",
+            "name": "mulmarta",
+            "username": "mulmarta"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6614253d15a3122d242c53a6e0afeed009be2381",
+          "message": "feat: Add public API for examining ratchet trees (#357)\n\n* feat: Add public API for examining ratchet trees\n\n* fix: Use mul_generator2 instead of deprecated mul_generator\n\n* chore: Set version to 0.55.1",
+          "timestamp": "2026-06-05T16:20:09+02:00",
+          "tree_id": "4ac7c1ca0c2cf0d720e742f900febf7b5169a2a1",
+          "url": "https://github.com/awslabs/mls-rs/commit/6614253d15a3122d242c53a6e0afeed009be2381"
+        },
+        "date": 1780669448644,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 548270,
+            "range": "± 10211",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 554449,
+            "range": "± 5869",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 626801,
+            "range": "± 16801",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1351927,
+            "range": "± 26951",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 8281678,
+            "range": "± 16747",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2741219,
+            "range": "± 18385",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7505187,
+            "range": "± 126061",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13793996,
+            "range": "± 159525",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 819431,
+            "range": "± 19741",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 921644,
+            "range": "± 8399",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 1064581,
+            "range": "± 11083",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 26894,
+            "range": "± 461",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 92532,
+            "range": "± 1956",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 180341,
+            "range": "± 1406",
             "unit": "ns/iter"
           }
         ]
