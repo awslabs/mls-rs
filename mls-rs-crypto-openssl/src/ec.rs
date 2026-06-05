@@ -152,7 +152,7 @@ fn private_key_from_bytes_nist(
     let mut pk_val = EcPoint::new(&group)?;
 
     if with_public {
-        pk_val.mul_generator(&group, &sk_val, &ctx)?;
+        pk_val.mul_generator2(&group, &sk_val, &mut ctx)?;
     }
 
     let key = EcKey::from_private_components(&group, &sk_val, &pk_val)?;
