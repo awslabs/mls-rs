@@ -106,11 +106,19 @@ mod tests {
         let common_name = if ca { "RootCA" } else { "Leaf" };
         let alt_name = if ca { "rootca.org" } else { "leaf.org" };
 
+        let mut subject = vec![
+            SubjectComponent::CommonName(common_name.to_string()),
+            SubjectComponent::CountryName("CH".to_string()),
+        ];
+
+        if !ca {
+            subject.push(SubjectComponent::State("Zurich".to_string()));
+            subject.push(SubjectComponent::Locality("Zurich".to_string()));
+            subject.push(SubjectComponent::OrganizationName("Test Org".to_string()));
+        }
+
         let params = CertificateRequestParameters {
-            subject: vec![
-                SubjectComponent::CommonName(common_name.to_string()),
-                SubjectComponent::CountryName("CH".to_string()),
-            ],
+            subject,
             subject_alt_names: vec![SubjectAltName::Dns(alt_name.to_string())],
             is_ca: ca,
         };

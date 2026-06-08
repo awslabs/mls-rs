@@ -512,7 +512,7 @@ pub(crate) mod test_utils {
     use mls_rs_identity_x509::{CertificateChain, DerCertificate};
 
     pub fn load_test_ca() -> DerCertificate {
-        DerCertificate::from(include_bytes!("../test_data/x509/ca.der").to_vec())
+        DerCertificate::from(include_bytes!("../test_data/x509/root_ca/cert.der").to_vec())
     }
 
     pub fn load_another_ca() -> DerCertificate {
@@ -528,9 +528,9 @@ pub(crate) mod test_utils {
     }
 
     pub fn load_test_cert_chain() -> CertificateChain {
-        let entry0 = include_bytes!("../test_data/x509/leaf.der").to_vec();
-        let entry1 = include_bytes!("../test_data/x509/intermediate.der").to_vec();
-        let entry2 = include_bytes!("../test_data/x509/ca.der").to_vec();
+        let entry0 = include_bytes!("../test_data/x509/leaf/cert.der").to_vec();
+        let entry1 = include_bytes!("../test_data/x509/intermediate_ca/cert.der").to_vec();
+        let entry2 = include_bytes!("../test_data/x509/root_ca/cert.der").to_vec();
 
         CertificateChain::from_iter(
             [entry0, entry1, entry2]
@@ -548,14 +548,14 @@ pub(crate) mod test_utils {
 
     pub fn load_test_invalid_chain() -> CertificateChain {
         let entry0 = include_bytes!("../test_data/x509/github_leaf.der").to_vec();
-        let entry1 = include_bytes!("../test_data/x509/intermediate.der").to_vec();
+        let entry1 = include_bytes!("../test_data/x509/intermediate_ca/cert.der").to_vec();
 
         CertificateChain::from_iter([entry0, entry1].into_iter().map(DerCertificate::from))
     }
 
     pub fn load_test_invalid_ca_chain() -> CertificateChain {
-        let entry0 = include_bytes!("../test_data/x509/leaf.der").to_vec();
-        let entry1 = include_bytes!("../test_data/x509/intermediate.der").to_vec();
+        let entry0 = include_bytes!("../test_data/x509/leaf/cert.der").to_vec();
+        let entry1 = include_bytes!("../test_data/x509/intermediate_ca/cert.der").to_vec();
         let entry2 = include_bytes!("../test_data/x509/another_ca.der").to_vec();
 
         CertificateChain::from_iter(
@@ -626,8 +626,8 @@ mod tests {
         let validator = X509Validator::new(vec![load_test_ca()]).unwrap();
         let system_validator = X509Validator::new(vec![]).unwrap().with_system_ca();
 
-        // July 6, 2024 00:00:00 UTC
-        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1720224000));
+        // June 8, 2026 09:19:21 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1780910361));
 
         validator.validate_chain(&chain, Some(time)).unwrap();
 
@@ -657,9 +657,8 @@ mod tests {
         let plain_validator = X509Validator::new(vec![load_test_ca()]).unwrap();
         let system_validator = X509Validator::new(vec![]).unwrap().with_system_ca();
 
-        // Some time in late 2022 (almost 53 years since 1970)
-        let cert_valid_time =
-            MlsTime::from_duration_since_epoch(Duration::from_secs(53 * 365 * 24 * 3600));
+        // June 1, 2026 00:00:00 UTC (within the leaf cert's validity window)
+        let cert_valid_time = MlsTime::from_duration_since_epoch(Duration::from_secs(1780272000));
 
         system_validator
             .validate_chain(&chain, Some(cert_valid_time))
@@ -703,12 +702,11 @@ mod tests {
 
         let validator = X509Validator::new(vec![load_test_ca()]).unwrap();
 
-        let res = validator.validate_chain(
-            &chain,
-            Some(MlsTime::from_duration_since_epoch(Duration::from_secs(
-                1798761600,
-            ))),
-        );
+        // Jan 1, 2200 00:00:00 UTC
+        let past_expiration_time =
+            MlsTime::from_duration_since_epoch(Duration::from_secs(7258118400));
+
+        let res = validator.validate_chain(&chain, Some(past_expiration_time));
 
         assert_matches!(res, Err(X509Error::ChainValidationFailure(_)));
     }
@@ -728,8 +726,8 @@ mod tests {
 
         let validator = X509Validator::new(vec![load_test_ca()]).unwrap();
 
-        // July 6, 2024 00:00:00 UTC
-        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1720224000));
+        // June 8, 2026 09:19:21 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1780910361));
 
         assert_eq!(
             validator.validate_chain(&chain, Some(time)).unwrap(),
@@ -744,7 +742,11 @@ mod tests {
         let mut expected_name_builder = X509Name::builder().unwrap();
 
         expected_name_builder
-            .append_entry_by_text("CN", "CA")
+            .append_entry_by_text("CN", "RootCA")
+            .unwrap();
+
+        expected_name_builder
+            .append_entry_by_text("C", "CH")
             .unwrap();
 
         let expected_name = expected_name_builder.build().to_der().unwrap();
@@ -757,14 +759,14 @@ mod tests {
 
     #[test]
     fn subject_parser_components() {
-        let test_cert = load_github_leaf();
+        let test_cert = load_test_cert_chain().remove(0);
 
         let expected = vec![
-            SubjectComponent::CountryName(String::from("US")),
-            SubjectComponent::State(String::from("California")),
-            SubjectComponent::Locality(String::from("San Francisco")),
-            SubjectComponent::OrganizationName(String::from("GitHub, Inc.")),
-            SubjectComponent::CommonName(String::from("github.com")),
+            SubjectComponent::CommonName(String::from("Leaf")),
+            SubjectComponent::CountryName(String::from("CH")),
+            SubjectComponent::State(String::from("Zurich")),
+            SubjectComponent::Locality(String::from("Zurich")),
+            SubjectComponent::OrganizationName(String::from("Test Org")),
         ];
 
         assert_eq!(
@@ -824,11 +826,19 @@ mod tests {
         let common_name = if ca { "RootCA" } else { "Leaf" };
         let alt_name = if ca { "rootca.org" } else { "leaf.org" };
 
+        let mut subject = vec![
+            SubjectComponent::CommonName(common_name.to_string()),
+            SubjectComponent::CountryName("CH".to_string()),
+        ];
+
+        if !ca {
+            subject.push(SubjectComponent::State("Zurich".to_string()));
+            subject.push(SubjectComponent::Locality("Zurich".to_string()));
+            subject.push(SubjectComponent::OrganizationName("Test Org".to_string()));
+        }
+
         let params = CertificateRequestParameters {
-            subject: vec![
-                SubjectComponent::CommonName(common_name.to_string()),
-                SubjectComponent::CountryName("CH".to_string()),
-            ],
+            subject,
             subject_alt_names: vec![SubjectAltName::Dns(alt_name.to_string())],
             is_ca: ca,
         };
