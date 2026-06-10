@@ -71,8 +71,14 @@ impl KemType for MlKemKem {
     type Error = AwsLcCryptoError;
 
     fn kem_id(&self) -> u16 {
-        // TODO not set by any RFC
-        15
+        // Private-range KEM IDs matching the corresponding MLS cipher suite values
+        // (draft-mls-pq). These must be consistent with any other provider that
+        // implements the same suites (e.g. mls-rs-crypto-cryptokit).
+        match self.ml_kem {
+            MlKem::MlKem512 => 0xFDEB,
+            MlKem::MlKem768 => 0xFDEA,
+            MlKem::MlKem1024 => 0xFDEC,
+        }
     }
 
     fn encap(&self, remote_key: &HpkePublicKey) -> Result<KemResult, Self::Error> {

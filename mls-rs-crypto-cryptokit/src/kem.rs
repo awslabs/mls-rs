@@ -23,6 +23,8 @@ pub enum KemError {
     InvalidPublicKey,
     #[cfg_attr(feature = "std", error("CryptoKit error"))]
     CryptoKitError,
+    #[cfg_attr(feature = "std", error("operation not supported by this provider"))]
+    NotSupported,
 }
 
 impl IntoAnyError for KemError {

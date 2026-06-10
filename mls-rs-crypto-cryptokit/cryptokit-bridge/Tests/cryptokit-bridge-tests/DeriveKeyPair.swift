@@ -4,7 +4,7 @@ import CryptoKit
 @testable import cryptokit_bridge
 
 class DeriveKeyPairTests: XCTestCase {
-    static var allTests = [
+    static let allTests = [
         ("testX25519", testX25519),
         ("testNIST", testNIST),
     ]

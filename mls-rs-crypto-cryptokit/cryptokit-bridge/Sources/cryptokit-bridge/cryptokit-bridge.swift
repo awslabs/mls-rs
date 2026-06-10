@@ -2,11 +2,8 @@ import Foundation
 import CryptoKit
 
 // Convenience methods for C FFI
-func dataFromRawParts(ptr: UnsafePointer<UInt8>, len: UInt64) -> Data {
-    if len == 0 {
-        return Data()
-    }
-
+func dataFromRawParts(ptr: UnsafePointer<UInt8>?, len: UInt64) -> Data {
+    guard let ptr, len > 0 else { return Data() }
     return Data(buffer: UnsafeBufferPointer(start: ptr, count: Int(len)))
 }
 

@@ -11,6 +11,8 @@ license = "Apache-2.0 OR MIT"
 [features]
 default = ["std"]
 std = ["dep:thiserror", "mls-rs-core/std", "mls-rs-crypto-traits/std"]
+post-quantum = ["dep:mls-rs-crypto-hpke", "mls-rs-core/post-quantum"]
+awslc-interop = ["dep:mls-rs-crypto-awslc", "post-quantum"]
 
 [build-dependencies]
 # For parsing Swift outputs to build and link the bridge library
@@ -26,6 +28,8 @@ mls-rs-core = { path = "../mls-rs-core", version = "0.27.0", features = ["test_s
 maybe-async = "0.2.10"
 mls-rs-core = { path = "../mls-rs-core", default-features = false, version = "0.27.0" }
 mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", default-features = false, version = "0.22.0" }
+mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", default-features = false, version = "0.21.0", optional = true }
+mls-rs-crypto-awslc = { path = "../mls-rs-crypto-awslc", default-features = false, version = "0.25.0", features = ["non-fips", "post-quantum"], optional = true }
 thiserror = { version = "2", optional = true }
 zeroize = { version = "1", default-features = false, features = ["alloc", "zeroize_derive"] }
 
