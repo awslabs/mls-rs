@@ -12,13 +12,12 @@ jobs:
     steps:
       - name: Send notification to Slack
         id: slack
-        uses: slackapi/slack-github-action@v1.18.0
+        uses: slackapi/slack-github-action@v2
         with:
+          webhook-url: ${{secrets.SLACK_WEBHOOK_URL}}
+          webhook-type: incoming-webhook
           payload: |
             {
               "pr_link": "${{ github.event.pull_request.html_url || github.event.head_commit.url }}",
               "user_alias": "${{github.event.pull_request.user.login}}"
             }
-        env:
-          SLACK_WEBHOOK_URL: ${{secrets.SLACK_WEBHOOK_URL}}
-          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK

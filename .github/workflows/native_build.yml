@@ -17,7 +17,7 @@ jobs:
     env:
       AWS_LC_FIPS_SYS_EXTERNAL_BINDGEN: '1'
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
       - uses: arduino/setup-protoc@v2
         with:
           version: "25.x"
@@ -31,7 +31,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: ilammy/setup-nasm@v1
         if: runner.os == 'Windows'
-      - uses: actions/setup-go@v4
+      - uses: actions/setup-go@v5
         with:
           go-version: '>=1.18'
       - uses: seanmiddleditch/gha-setup-ninja@master
@@ -73,7 +73,7 @@ jobs:
       fail-fast: false
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
       - uses: arduino/setup-protoc@v2
         with:
           version: "25.x"
@@ -86,7 +86,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: ilammy/setup-nasm@v1
         if: runner.os == 'Windows'
-      - uses: actions/setup-go@v4
+      - uses: actions/setup-go@v5
         with:
           go-version: '>=1.18'
       - uses: seanmiddleditch/gha-setup-ninja@master
@@ -112,7 +112,7 @@ jobs:
     env:
       AWS_LC_FIPS_SYS_EXTERNAL_BINDGEN: '1'
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
       - uses: arduino/setup-protoc@v2
         with:
           version: "25.x"
@@ -124,7 +124,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: actions/setup-go@v4
+      - uses: actions/setup-go@v5
         with:
           go-version: '>=1.18'
       - uses: seanmiddleditch/gha-setup-ninja@master
@@ -143,7 +143,7 @@ jobs:
     # version.  And we require v14 in order to build the CryptoKit provider.
     runs-on: macos-14
     steps: 
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
       - uses: arduino/setup-protoc@v2
         with:
           version: "25.x"
@@ -162,7 +162,7 @@ jobs:
   CodeCoverage:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           rustflags: ''
@@ -181,7 +181,7 @@ jobs:
           cargo test --features "test_util"
           cargo llvm-cov report --lcov --output-path lcov.info
       - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v5
         with:
           files: lcov.info
         env:

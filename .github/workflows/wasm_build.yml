@@ -9,24 +9,21 @@ jobs:
   BuildAndTest:
     runs-on: [ubuntu-latest]
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
         rustflags: ''
-    - uses: browser-actions/setup-chrome@v1
-      with:
-        chrome-version: stable
-      id: setup-chrome
-    - run: chromedriver --version
-    - uses: jetli/wasm-pack-action@v0.4.0
-      with:
-        version: 'latest'
+    - name: Install wasm-pack
+      run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
     - name: WASM mls-rs-crypto-rustcrypto
       working-directory: mls-rs-crypto-rustcrypto
       run: wasm-pack test --headless --chrome --release --features browser
-    - name: WASM mls-rs
+    - name: WASM mls-rs (lib)
       working-directory: mls-rs
-      run: wasm-pack test --headless --chrome --release --lib --test '*' --features test_util
+      run: wasm-pack test --headless --chrome --release --lib --features test_util
+    - name: WASM mls-rs (integration tests)
+      working-directory: mls-rs
+      run: wasm-pack test --headless --chrome --release --test '*' --features test_util
     - name: WASM mls-rs-identity-x509
       working-directory: mls-rs-identity-x509
       run: wasm-pack test --headless --chrome --release
