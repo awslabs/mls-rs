@@ -23,7 +23,7 @@ mod test_utils {
     use mls_rs_identity_x509::{CertificateChain, DerCertificate};
 
     pub fn load_test_ca() -> DerCertificate {
-        DerCertificate::from(include_bytes!("../test_data/x509/ca.der").to_vec())
+        DerCertificate::from(include_bytes!("../test_data/x509/root_ca/cert.der").to_vec())
     }
 
     pub fn load_github_leaf() -> DerCertificate {
@@ -51,9 +51,9 @@ mod test_utils {
     }
 
     pub fn load_test_cert_chain() -> CertificateChain {
-        let entry0 = include_bytes!("../test_data/x509/leaf.der").to_vec();
-        let entry1 = include_bytes!("../test_data/x509/intermediate.der").to_vec();
-        let entry2 = include_bytes!("../test_data/x509/ca.der").to_vec();
+        let entry0 = include_bytes!("../test_data/x509/leaf/cert.der").to_vec();
+        let entry1 = include_bytes!("../test_data/x509/intermediate_ca/cert.der").to_vec();
+        let entry2 = include_bytes!("../test_data/x509/root_ca/cert.der").to_vec();
 
         CertificateChain::from_iter(
             [entry0, entry1, entry2]
@@ -64,14 +64,14 @@ mod test_utils {
 
     pub fn load_test_invalid_chain() -> CertificateChain {
         let entry0 = include_bytes!("../test_data/x509/github_leaf.der").to_vec();
-        let entry1 = include_bytes!("../test_data/x509/intermediate.der").to_vec();
+        let entry1 = include_bytes!("../test_data/x509/intermediate_ca/cert.der").to_vec();
 
         CertificateChain::from_iter([entry0, entry1].into_iter().map(DerCertificate::from))
     }
 
     pub fn load_test_invalid_ca_chain() -> CertificateChain {
-        let entry0 = include_bytes!("../test_data/x509/leaf.der").to_vec();
-        let entry1 = include_bytes!("../test_data/x509/intermediate.der").to_vec();
+        let entry0 = include_bytes!("../test_data/x509/leaf/cert.der").to_vec();
+        let entry1 = include_bytes!("../test_data/x509/intermediate_ca/cert.der").to_vec();
         let entry2 = include_bytes!("../test_data/x509/another_ca.der").to_vec();
 
         CertificateChain::from_iter(

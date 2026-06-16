@@ -1,5 +1,7 @@
 name: Native
 on: [push, pull_request]
+permissions:
+  contents: read
 env:
   CARGO_TERM_COLOR: always
   SSH_AUTH_SOCK: /tmp/ssh_agent.sock
@@ -17,7 +19,7 @@ jobs:
     env:
       AWS_LC_FIPS_SYS_EXTERNAL_BINDGEN: '1'
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
       - uses: arduino/setup-protoc@v2
         with:
           version: "25.x"
@@ -31,7 +33,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: ilammy/setup-nasm@v1
         if: runner.os == 'Windows'
-      - uses: actions/setup-go@v4
+      - uses: actions/setup-go@v5
         with:
           go-version: '>=1.18'
       - uses: seanmiddleditch/gha-setup-ninja@master
@@ -53,16 +55,25 @@ jobs:
       - run: |
           sudo apt-get install -y libsqlite3-dev
         if: runner.os == 'Linux'
+        # TODO uniffi produces a warning with the newest version, failing tests. remove this when uniffi fixes this
+      - uses: fwilhe2/setup-kotlin@main
+        with:
+          version: 1.9.24
+
       - name: Test Full RFC Compliance
-        
+
         # Don't test AWS LC on all features as it makes it build both FIPS and non-FIPS versions
-        run: cargo test --all-features --verbose --workspace --exclude mls-rs-crypto-awslc
+        run:
+          cargo test --all-features --verbose --workspace --exclude
+          mls-rs-crypto-awslc
       - name: Test AWS-LC provider
         run: |
           cargo test --verbose -p mls-rs-crypto-awslc --features post-quantum
           cargo test --verbose -p mls-rs-crypto-awslc --features post-quantum,fips --no-default-features
       - name: Test Bare Bones
-        run: cargo test --no-default-features --features std,test_util,non-fips  --verbose --workspace
+        run:
+          cargo test --no-default-features --features
+          std,test_util,non-fips  --verbose --workspace
       - name: Examples
         working-directory: mls-rs
         run: cargo run --example basic_usage
@@ -73,20 +84,20 @@ jobs:
       fail-fast: false
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
       - uses: arduino/setup-protoc@v2
         with:
           version: "25.x"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          rustflags: '--cfg mls_build_async'
+          rustflags: "--cfg mls_build_async"
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: ilammy/setup-nasm@v1
         if: runner.os == 'Windows'
-      - uses: actions/setup-go@v4
+      - uses: actions/setup-go@v5
         with:
           go-version: '>=1.18'
       - uses: seanmiddleditch/gha-setup-ninja@master
@@ -108,11 +119,11 @@ jobs:
         run: cargo test --no-default-features --lib --test '*' --features std,test_util --verbose -p mls-rs
   LintAndFormatting:
     runs-on: ubuntu-latest
-     # TODO remove after AWS-LC FIPS bindings for Kyber are fixed
+      # TODO remove after AWS-LC FIPS bindings for Kyber are fixed
     env:
       AWS_LC_FIPS_SYS_EXTERNAL_BINDGEN: '1'
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
       - uses: arduino/setup-protoc@v2
         with:
           version: "25.x"
@@ -124,7 +135,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: actions/setup-go@v4
+      - uses: actions/setup-go@v5
         with:
           go-version: '>=1.18'
       - uses: seanmiddleditch/gha-setup-ninja@master
@@ -134,7 +145,8 @@ jobs:
       - name: Rust Fmt
         run: cargo fmt --all -- --check
       - name: Clippy Full RFC Compliance
-        run: cargo clippy --all-targets --all-features --workspace -- -D warnings
+        run:
+          cargo clippy --all-targets --all-features --workspace -- -D warnings
       - name: Clippy Bare Bones
         run: cargo clippy --all-targets --no-default-features --features std,test_util,non-fips --workspace -- -D warnings
   LintAndFormattingMacOS:
@@ -142,8 +154,8 @@ jobs:
     # apparently if you do that, sometimes you get an older (not latest)
     # version.  And we require v14 in order to build the CryptoKit provider.
     runs-on: macos-14
-    steps: 
-      - uses: actions/checkout@v3
+    steps:
+      - uses: actions/checkout@v6
       - uses: arduino/setup-protoc@v2
         with:
           version: "25.x"
@@ -162,7 +174,7 @@ jobs:
   CodeCoverage:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           rustflags: ''
@@ -170,6 +182,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      # TODO uniffi produces a warning with the newest version, failing tests. remove this when uniffi fixes this
+      - uses: fwilhe2/setup-kotlin@main
+        with:
+          version: 1.9.24
       - name: Setup code coverage
         run: cargo install cargo-llvm-cov
       - name: Run code coverage
@@ -181,7 +197,7 @@ jobs:
           cargo test --features "test_util"
           cargo llvm-cov report --lcov --output-path lcov.info
       - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v5
         with:
           files: lcov.info
         env:
