@@ -214,8 +214,7 @@ impl mls_rs_identity_x509::X509CertificateReader for X509Reader {
             .entries()
             .filter_map(|e| {
                 e.data()
-                    .as_utf8()
-                    .map(|v| v.to_string())
+                    .to_string()
                     .ok()
                     .and_then(|data| match e.object().nid() {
                         Nid::COMMONNAME => Some(SubjectComponent::CommonName(data)),

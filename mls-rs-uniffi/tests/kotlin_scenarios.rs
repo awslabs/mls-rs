@@ -104,7 +104,9 @@ macro_rules! generate_kotlin_tests {
                 "mls-rs-uniffi",
                 &script_path,
                 vec![],
-                &uniffi_bindgen::bindings::RunScriptOptions::default(),
+                &uniffi_bindgen::bindings::RunScriptOptions {
+                    show_compiler_messages: false,
+                },
             )
             .map_err(Into::into)
         }
