@@ -226,7 +226,7 @@ pub(crate) async fn find_key_package_generation<'a, K: KeyPackageStorage>(
 // Since PriorEpoch doesn't store old credentials we don't know who
 // sent this. Reject the message instead of mis-attributing it to whoever
 // has the sender's original index.
-#[cfg(feature = "prior_epoch_membership_key")]
+#[cfg(feature = "prior_epoch")]
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 pub(crate) async fn validate_sender_signature_key_from_prior_epoch(
     public_tree: &TreeKemPublic,
