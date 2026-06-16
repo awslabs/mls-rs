@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781623615659,
+  "lastUpdate": 1781627517810,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -29359,6 +29359,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 185916,
             "range": "± 1129",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ellen.arteca@gmail.com",
+            "name": "Ellen Arteca",
+            "username": "emarteca"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "61737916706ba85cbf4c07ff3f0aa6a52aaff00f",
+          "message": "Validate that sender from prior epoch is still in the tree; do not return aliased sender if leaf index is reused (#361)\n\n* Validate that sender from prior epoch is still in the tree\n\n* forgot feature flag\n\n* fix\n\n---------\n\nCo-authored-by: Ellen Arteca <emarteca@google.com>",
+          "timestamp": "2026-06-16T18:28:08+02:00",
+          "tree_id": "6ccdc41f1f52d3ca7e7594434bcda91a3b84909b",
+          "url": "https://github.com/awslabs/mls-rs/commit/61737916706ba85cbf4c07ff3f0aa6a52aaff00f"
+        },
+        "date": 1781627516932,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 545621,
+            "range": "± 5702",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 556505,
+            "range": "± 25205",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 627678,
+            "range": "± 12255",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1422171,
+            "range": "± 7839",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 11778458,
+            "range": "± 24088",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2738368,
+            "range": "± 23382",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7493155,
+            "range": "± 84676",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13842700,
+            "range": "± 170445",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 817776,
+            "range": "± 14112",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 916944,
+            "range": "± 8629",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 1057183,
+            "range": "± 15727",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 28068,
+            "range": "± 334",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 96621,
+            "range": "± 1209",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 187914,
+            "range": "± 1404",
             "unit": "ns/iter"
           }
         ]
