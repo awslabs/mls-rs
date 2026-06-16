@@ -1452,6 +1452,8 @@ where
                     SignaturePublicKeysContainer::List(&epoch.signature_public_keys),
                 )
                 .await?;
+
+                #[cfg(feature = "prior_epoch_membership_key")]
                 validate_sender_signature_key_from_prior_epoch(
                     &self.state.public_tree,
                     &epoch.signature_public_keys,
