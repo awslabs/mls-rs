@@ -220,6 +220,35 @@ pub(crate) async fn find_key_package_generation<'a, K: KeyPackageStorage>(
     Err(MlsError::WelcomeKeyPackageNotFound)
 }
 
+// Check the signature key of the prior sender: if it is not the same
+// as the message sender then it means the leaf index got reused and
+// the original sender isn't in the group anymore.
+// Since PriorEpoch doesn't store old credentials we don't know who
+// sent this. Reject the message instead of mis-attributing it to whoever
+// has the sender's original index.
+#[cfg(feature = "prior_epoch_membership_key")]
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+pub(crate) async fn validate_sender_signature_key_from_prior_epoch(
+    public_tree: &TreeKemPublic,
+    prior_epoch_signature_keys: &[Option<crate::crypto::SignaturePublicKey>],
+    sender: &Sender,
+) -> Result<(), MlsError> {
+    if let Sender::Member(i) = sender {
+        let old_pk = prior_epoch_signature_keys
+            .get(*i as usize)
+            .cloned()
+            .flatten();
+        let cur_pk = LeafIndex::try_from(*i)
+            .ok()
+            .and_then(|li| public_tree.get_leaf_node(li).ok())
+            .map(|l| l.signing_identity.signature_key.clone());
+        if old_pk != cur_pk {
+            return Err(MlsError::MemberNotFound);
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn cipher_suite_provider<P>(
     crypto: P,
     cipher_suite: CipherSuite,

@@ -1452,6 +1452,12 @@ where
                     SignaturePublicKeysContainer::List(&epoch.signature_public_keys),
                 )
                 .await?;
+                validate_sender_signature_key_from_prior_epoch(
+                    &self.state.public_tree,
+                    &epoch.signature_public_keys,
+                    &auth_content.content.sender,
+                )
+                .await?;
 
                 Ok(auth_content)
             }
@@ -1598,6 +1604,14 @@ where
                     &content,
                     #[cfg(feature = "by_ref_proposal")]
                     &[],
+                )
+                .await?;
+
+                #[cfg(feature = "prior_epoch_membership_key")]
+                validate_sender_signature_key_from_prior_epoch(
+                    &self.state.public_tree,
+                    &epoch.signature_public_keys,
+                    &content.content.sender,
                 )
                 .await?;
 
@@ -3563,6 +3577,49 @@ mod tests {
 
         let auth_content = bob.validate_public_message(&res).await;
         assert_matches!(auth_content, Err(MlsError::UnexpectedMessageType));
+    }
+
+    #[cfg(all(feature = "prior_epoch", feature = "prior_epoch_membership_key"))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_messages_from_prior_epoch_aliased_key_not_processed() {
+        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (mut bob, _) = alice.join("bob").await;
+
+        let encrypted_message = bob
+            .encrypt_application_message(b"test", vec![])
+            .await
+            .unwrap();
+
+        let custom_proposal = CustomProposal::new(TEST_CUSTOM_PROPOSAL_TYPE, vec![0, 1, 2]);
+        let proposal = bob
+            .propose_custom(custom_proposal.clone(), vec![1, 2, 3])
+            .await
+            .unwrap();
+
+        // now remove bob and add carol
+        alice
+            .commit_builder()
+            .remove_member(1)
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+        alice.apply_pending_commit().await.unwrap();
+
+        alice.join("carol").await;
+
+        // test that alice can no longer process the message
+        // from bob
+        let decrypt_result = alice.process_incoming_message(encrypted_message).await;
+        assert_matches!(decrypt_result, Err(MlsError::MemberNotFound));
+
+        let validate_custom_proposal_result = alice
+            .validate_custom_proposal(&proposal, Some(TEST_CUSTOM_PROPOSAL_TYPE))
+            .await;
+        assert_matches!(
+            validate_custom_proposal_result,
+            Err(MlsError::MemberNotFound)
+        );
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
