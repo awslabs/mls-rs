@@ -85,7 +85,7 @@ impl X509CertificateReader for X509Reader {
 mod tests {
     use mls_rs_identity_x509::{SubjectAltName, SubjectComponent, X509CertificateReader};
     use spki::der::{
-        asn1::{SetOfVec, Utf8StringRef},
+        asn1::{PrintableStringRef, SetOfVec, Utf8StringRef},
         oid::db::rfc4519,
         Any, Encode,
     };
@@ -100,16 +100,23 @@ mod tests {
     fn subject_parser_bytes() {
         let test_cert = load_test_ca();
 
-        let expected_type_and_value = AttributeTypeAndValue {
+        let cn_type_and_value = AttributeTypeAndValue {
             oid: rfc4519::CN,
-            value: Any::from(Utf8StringRef::new("CA").unwrap()),
+            value: Any::from(Utf8StringRef::new("RootCA").unwrap()),
         };
 
-        let expected_rdn = RelativeDistinguishedName::from(
-            SetOfVec::try_from(vec![expected_type_and_value]).unwrap(),
-        );
+        let cn_rdn =
+            RelativeDistinguishedName::from(SetOfVec::try_from(vec![cn_type_and_value]).unwrap());
 
-        let expected_name = vec![expected_rdn].to_der().unwrap();
+        let c_type_and_value = AttributeTypeAndValue {
+            oid: rfc4519::C,
+            value: Any::from(PrintableStringRef::new("CH").unwrap()),
+        };
+
+        let c_rdn =
+            RelativeDistinguishedName::from(SetOfVec::try_from(vec![c_type_and_value]).unwrap());
+
+        let expected_name = vec![cn_rdn, c_rdn].to_der().unwrap();
 
         assert_eq!(
             X509Reader::new().subject_bytes(&test_cert).unwrap(),
@@ -119,14 +126,14 @@ mod tests {
 
     #[test]
     fn subject_parser_components() {
-        let test_cert = load_github_leaf();
+        let test_cert = crate::x509::util::test_utils::load_test_cert_chain().remove(0);
 
         let expected = vec![
-            SubjectComponent::CountryName(String::from("US")),
-            SubjectComponent::State(String::from("California")),
-            SubjectComponent::Locality(String::from("San Francisco")),
-            SubjectComponent::OrganizationName(String::from("GitHub, Inc.")),
-            SubjectComponent::CommonName(String::from("github.com")),
+            SubjectComponent::CommonName(String::from("Leaf")),
+            SubjectComponent::CountryName(String::from("CH")),
+            SubjectComponent::State(String::from("Zurich")),
+            SubjectComponent::Locality(String::from("Zurich")),
+            SubjectComponent::OrganizationName(String::from("Test Org")),
         ];
 
         assert_eq!(

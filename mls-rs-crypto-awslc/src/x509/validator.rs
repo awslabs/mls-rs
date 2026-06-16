@@ -157,8 +157,8 @@ mod tests {
 
         let validator = CertificateValidator::new_der(&[load_test_ca()]).unwrap();
 
-        // July 6, 2024 00:00:00 UTC
-        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1720224000));
+        // June 8, 2026 09:19:21 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1780910361));
 
         validator.validate_chain(&chain, Some(time)).unwrap();
     }
@@ -168,8 +168,8 @@ mod tests {
         let validator = CertificateValidator::new_der(&[]).unwrap();
         let empty: Vec<Vec<u8>> = Vec::new();
 
-        // July 6, 2024 00:00:00 UTC
-        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1720224000));
+        // June 8, 2026 09:19:21 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1780910361));
 
         let res = validator.validate_chain(&CertificateChain::from(empty), Some(time));
 
@@ -181,8 +181,8 @@ mod tests {
         let chain = load_test_invalid_chain();
         let validator = CertificateValidator::new_der(&[load_test_ca()]).unwrap();
 
-        // July 6, 2024 00:00:00 UTC
-        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1720224000));
+        // June 8, 2026 09:19:21 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1780910361));
 
         let res = validator.validate_chain(&chain, Some(time));
 
@@ -194,8 +194,8 @@ mod tests {
         let chain = load_test_invalid_ca_chain();
         let validator = CertificateValidator::new_der(&[load_another_ca()]).unwrap();
 
-        // July 6, 2024 00:00:00 UTC
-        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1720224000));
+        // June 8, 2026 09:19:21 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1780910361));
 
         let res = validator.validate_chain(&chain, Some(time));
 
@@ -211,7 +211,7 @@ mod tests {
         let res = validator.validate_chain(
             &chain,
             Some(MlsTime::from_duration_since_epoch(Duration::from_secs(
-                1798761600,
+                7258118400,
             ))),
         );
 

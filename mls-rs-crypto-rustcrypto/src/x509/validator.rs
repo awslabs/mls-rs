@@ -246,8 +246,8 @@ mod tests {
 
         let validator = X509Validator::new(vec![load_test_ca()]).unwrap();
 
-        // July 6, 2024 00:00:00 UTC
-        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1720224000));
+        // June 8, 2026 09:19:21 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1780910361));
 
         validator.validate_chain(&chain, Some(time)).unwrap();
     }
@@ -257,8 +257,8 @@ mod tests {
         let chain = load_test_cert_chain();
         let chain = chain[0..chain.len() - 1].to_vec().into();
 
-        // July 6, 2024 00:00:00 UTC
-        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1720224000));
+        // June 8, 2026 09:19:21 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1780910361));
 
         let validator = X509Validator::new(vec![load_test_ca()]).unwrap();
         validator.validate_chain(&chain, Some(time)).unwrap();
@@ -271,8 +271,8 @@ mod tests {
         let mut validator = X509Validator::new(vec![load_test_ca()]).unwrap();
         validator.set_pinned_cert(Some(chain.get(1).unwrap().clone()));
 
-        // July 6, 2024 00:00:00 UTC
-        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1720224000));
+        // June 8, 2026 09:19:21 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1780910361));
 
         validator.validate_chain(&chain, Some(time)).unwrap();
     }
@@ -284,8 +284,8 @@ mod tests {
 
         let chain = vec![load_test_ca()].into();
 
-        // July 6, 2024 00:00:00 UTC
-        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1720224000));
+        // June 8, 2026 09:19:21 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1780910361));
 
         X509CredentialValidator::validate_chain(&validator, &chain, Some(time)).unwrap();
     }
@@ -310,8 +310,8 @@ mod tests {
 
         let chain = vec![load_test_ca(), load_another_ca()].into();
 
-        // July 6, 2024 00:00:00 UTC
-        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1720224000));
+        // June 8, 2026 09:19:21 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1780910361));
 
         let res = X509CredentialValidator::validate_chain(&validator, &chain, Some(time));
 
@@ -325,8 +325,8 @@ mod tests {
         let mut validator = X509Validator::new(vec![load_test_ca()]).unwrap();
         validator.set_pinned_cert(Some(load_another_ca()));
 
-        // July 6, 2024 00:00:00 UTC
-        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1720224000));
+        // June 8, 2026 09:19:21 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1780910361));
 
         let res = validator.validate_chain(&chain, Some(time));
 
@@ -356,8 +356,8 @@ mod tests {
         let validator = X509Validator::new(vec![]).unwrap();
         let empty: Vec<Vec<u8>> = Vec::new();
 
-        // July 6, 2024 00:00:00 UTC
-        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1720224000));
+        // June 8, 2026 09:19:21 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1780910361));
 
         let res = validator.validate_chain(&CertificateChain::from(empty), Some(time));
 
@@ -367,16 +367,16 @@ mod tests {
     #[test]
     fn will_fail_on_invalid_chain() {
         let chain = load_test_invalid_chain();
-        let validator = X509Validator::new(vec![load_test_ca()]).unwrap();
+        let validator = X509Validator::new(vec![load_another_ca()]).unwrap();
 
-        // July 6, 2024 00:00:00 UTC
-        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1720224000));
+        // June 8, 2026 09:19:21 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1780910361));
 
         let res = validator.validate_chain(&chain, Some(time));
 
         assert_matches!(
             res,
-            Err(X509Error::EcSignerError(EcSignerError::InvalidSignature))
+            Err(X509Error::EcSignerError(EcSignerError::EcError(_)))
         );
     }
 
@@ -385,14 +385,14 @@ mod tests {
         let chain = load_test_invalid_ca_chain();
         let validator = X509Validator::new(vec![load_another_ca()]).unwrap();
 
-        // July 6, 2024 00:00:00 UTC
-        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1720224000));
+        // June 8, 2026 09:19:21 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1780910361));
 
         let res = validator.validate_chain(&chain, Some(time));
 
         assert_matches!(
             res,
-            Err(X509Error::EcSignerError(EcSignerError::InvalidSignature))
+            Err(X509Error::EcSignerError(EcSignerError::EcError(_)))
         );
     }
 
@@ -402,7 +402,7 @@ mod tests {
 
         let validator = X509Validator::new(vec![load_test_ca()]).unwrap();
 
-        let res = validator.validate_chain(&chain, Some(MlsTime::from(1798761600)));
+        let res = validator.validate_chain(&chain, Some(MlsTime::from(7258118400)));
 
         let Err(X509Error::ValidityError {
             timestamp,
@@ -412,9 +412,9 @@ mod tests {
         else {
             panic!("Expected validity error, got: {res:?}");
         };
-        assert_eq!(timestamp, MlsTime::from(1798761600));
-        assert_eq!(not_before, MlsTime::from(1673273683));
-        assert_eq!(not_after, MlsTime::from(1767968040));
+        assert_eq!(timestamp, MlsTime::from(7258118400));
+        assert_eq!(not_before, MlsTime::from(1674656456));
+        assert_eq!(not_after, MlsTime::from(4828256456));
     }
 
     #[test]
@@ -432,8 +432,8 @@ mod tests {
 
         let validator = X509Validator::new(vec![load_test_ca()]).unwrap();
 
-        // February 4, 2025 00:00:00 UTC
-        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1738627200));
+        // June 8, 2026 09:19:21 UTC
+        let time = MlsTime::from_duration_since_epoch(Duration::from_secs(1780910361));
 
         assert_eq!(
             validator.validate_chain(&chain, Some(time)).unwrap(),
