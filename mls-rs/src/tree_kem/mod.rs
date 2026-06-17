@@ -37,6 +37,7 @@ use crate::group::proposal::SelfRemoveProposal;
 use crate::group::{proposal::RemoveProposal, proposal_filter::bundle::Proposable};
 
 use crate::group::proposal_filter::ProposalBundle;
+use crate::tree_kem::node::{Node, MAX_LEAF_INDEX};
 use crate::tree_kem::tree_hash::TreeHashes;
 
 mod capabilities;
@@ -102,6 +103,21 @@ impl TreeKemPublic {
     where
         IP: IdentityProvider,
     {
+        // RFC 9420 7.3: "Leaf nodes occupy the even-numbered indices, while parent nodes
+        // occupy the odd-numbered indices.". Validate this.
+        //
+        // Also validate odd length and the LeafIndex cap here.
+        if nodes.len() % 2 == 0 || nodes.len() > 2 * (MAX_LEAF_INDEX as usize) + 1 {
+            return Err(MlsError::InvalidTreeIndex);
+        }
+        if nodes.iter().enumerate().any(|(i, n)| {
+            matches!(
+                (i & 1, n),
+                (0, Some(Node::Parent(_))) | (1, Some(Node::Leaf(_)))
+            )
+        }) {
+            return Err(MlsError::ExpectedNode);
+        }
         let tree = TreeKemPublic {
             nodes,
             ..Default::default()
