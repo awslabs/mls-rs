@@ -3579,6 +3579,100 @@ mod tests {
         assert_matches!(auth_content, Err(MlsError::UnexpectedMessageType));
     }
 
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_malformed_tree_not_accepted() {
+        use crate::tree_kem::parent_hash::ParentHash;
+
+        let mut alice = test_group_custom(
+            TEST_PROTOCOL_VERSION,
+            TEST_CIPHER_SUITE,
+            Default::default(),
+            None,
+            Some(
+                CommitOptions::new()
+                    .with_allow_external_commit(true)
+                    .with_ratchet_tree_extension(false),
+            ),
+        )
+        .await;
+        let (mut bob, _) = alice.join("bob").await;
+        let (mut carol, _) = alice.join("carol").await;
+        let (mut dan, _) = alice.join("dan").await;
+        let (mut frank, _) = alice.join("frank").await;
+        let (mut john, _) = alice.join("john").await;
+        let (mut kate, _) = alice.join("kate").await;
+
+        alice
+            .commit_builder()
+            .remove_member(5)
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+        alice.apply_pending_commit().await.unwrap();
+        alice
+            .commit_builder()
+            .remove_member(3)
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+        alice.apply_pending_commit().await.unwrap();
+
+        let (ethan_client, ethan_key_package) =
+            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "ethan").await;
+
+        let commit_output = alice
+            .commit_builder()
+            .add_member(ethan_key_package)
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+        alice.apply_pending_commit().unwrap();
+
+        let mut exported_tree = commit_output.ratchet_tree.unwrap();
+
+        let mut nodes = exported_tree.0.to_mut();
+        assert_eq!(nodes[10], None);
+
+        // now set this blank node to be a parent
+        nodes[10] = Some(Node::Parent(Parent {
+            public_key: alice.cipher_suite_provider().kem_generate().unwrap().1,
+            parent_hash: ParentHash::empty(),
+            unmerged_leaves: vec![],
+        }));
+
+        // Group from ethan's perspective
+        let (mut ethan_group, _) = Group::join(
+            &commit_output.welcome_messages[0],
+            Some(exported_tree),
+            ethan_client.config,
+            ethan_client.signer.unwrap(),
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(ethan_group.context().tree_hash, alice.context().tree_hash);
+
+        // but ethan has a group with an invalid node
+
+        let alice_tree = alice.export_tree();
+        let ethan_tree = ethan_group.export_tree();
+
+        let mismatched = alice_tree
+            .0
+            .iter()
+            .zip(ethan_tree.0.iter())
+            .any(|(a_n, e_n)| e_n.is_some() && a_n.is_none());
+        assert_eq!(mismatched, true);
+
+        // ethan can commit even with a messed up tree
+        ethan_group.commit_builder().build().await.unwrap();
+        ethan_group.apply_pending_commit().unwrap();
+    }
+
     #[cfg(all(feature = "prior_epoch", feature = "prior_epoch_membership_key"))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_messages_from_prior_epoch_aliased_key_not_processed() {
