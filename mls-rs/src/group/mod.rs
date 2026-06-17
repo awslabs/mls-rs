@@ -3629,7 +3629,7 @@ mod tests {
             .build()
             .await
             .unwrap();
-        alice.apply_pending_commit().unwrap();
+        alice.apply_pending_commit().await.unwrap();
 
         let mut exported_tree = commit_output.ratchet_tree.unwrap();
 
@@ -3639,7 +3639,12 @@ mod tests {
         // now set this blank node to be a parent
         // this is illegal since even-numbered nodes are parents
         nodes[10] = Some(Node::Parent(Parent {
-            public_key: alice.cipher_suite_provider().kem_generate().unwrap().1,
+            public_key: alice
+                .cipher_suite_provider()
+                .kem_generate()
+                .await
+                .unwrap()
+                .1,
             parent_hash: ParentHash::empty(),
             unmerged_leaves: vec![],
         }));
