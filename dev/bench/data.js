@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781627517810,
+  "lastUpdate": 1781711805204,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -29467,6 +29467,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 187914,
             "range": "± 1404",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ellen.arteca@gmail.com",
+            "name": "Ellen Arteca",
+            "username": "emarteca"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0ec79562c966f08c4e40aacb2c3aa2841a161fcb",
+          "message": "Fixing acceptance of null parent hash where there should not be null parent hash (#360)\n\nCo-authored-by: Ellen Arteca <emarteca@google.com>\nCo-authored-by: mulmarta <mulmarta@amazon.ch>",
+          "timestamp": "2026-06-17T17:52:58+02:00",
+          "tree_id": "9fd1268eae90fe2c4d7c2267bf94f3e774d8c1c4",
+          "url": "https://github.com/awslabs/mls-rs/commit/0ec79562c966f08c4e40aacb2c3aa2841a161fcb"
+        },
+        "date": 1781711803848,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 424305,
+            "range": "± 10120",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 430043,
+            "range": "± 7481",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 486598,
+            "range": "± 6777",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1076141,
+            "range": "± 18656",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 6973661,
+            "range": "± 17354",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2105119,
+            "range": "± 13205",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 5755552,
+            "range": "± 58332",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 10728832,
+            "range": "± 105563",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 633893,
+            "range": "± 3740",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 713745,
+            "range": "± 8693",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 827402,
+            "range": "± 4337",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 22067,
+            "range": "± 261",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 76427,
+            "range": "± 1110",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 148688,
+            "range": "± 946",
             "unit": "ns/iter"
           }
         ]
