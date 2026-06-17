@@ -3579,6 +3579,90 @@ mod tests {
         assert_matches!(auth_content, Err(MlsError::UnexpectedMessageType));
     }
 
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_malformed_tree_not_accepted() {
+        use crate::tree_kem::parent_hash::ParentHash;
+
+        let mut alice = test_group_custom(
+            TEST_PROTOCOL_VERSION,
+            TEST_CIPHER_SUITE,
+            Default::default(),
+            None,
+            Some(
+                CommitOptions::new()
+                    .with_allow_external_commit(true)
+                    .with_ratchet_tree_extension(false),
+            ),
+        )
+        .await;
+        let _ = alice.join("bob").await;
+        let _ = alice.join("carol").await;
+        let _ = alice.join("dan").await;
+        let _ = alice.join("frank").await;
+        let _ = alice.join("john").await;
+        let _ = alice.join("kate").await;
+
+        alice
+            .commit_builder()
+            .remove_member(5)
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+        alice.apply_pending_commit().await.unwrap();
+        alice
+            .commit_builder()
+            .remove_member(3)
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+        alice.apply_pending_commit().await.unwrap();
+
+        let (ethan_client, ethan_key_package) =
+            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "ethan").await;
+
+        let commit_output = alice
+            .commit_builder()
+            .add_member(ethan_key_package)
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+        alice.apply_pending_commit().await.unwrap();
+
+        let mut exported_tree = commit_output.ratchet_tree.unwrap();
+
+        let nodes = exported_tree.0.to_mut();
+        assert_eq!(nodes[10], None);
+
+        // now set this blank node to be a parent
+        // this is illegal since even-numbered nodes are parents
+        nodes[10] = Some(Node::Parent(Parent {
+            public_key: alice
+                .cipher_suite_provider()
+                .kem_generate()
+                .await
+                .unwrap()
+                .1,
+            parent_hash: ParentHash::empty(),
+            unmerged_leaves: vec![],
+        }));
+
+        // Group from ethan's perspective
+        let attempt_to_join = Group::join(
+            &commit_output.welcome_messages[0],
+            Some(exported_tree),
+            ethan_client.config,
+            ethan_client.signer.unwrap(),
+            None,
+        )
+        .await
+        .map(|_| ());
+
+        assert_matches!(attempt_to_join, Err(MlsError::ExpectedNode));
+    }
+
     #[cfg(all(feature = "prior_epoch", feature = "prior_epoch_membership_key"))]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_messages_from_prior_epoch_aliased_key_not_processed() {
