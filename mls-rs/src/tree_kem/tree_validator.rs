@@ -272,6 +272,28 @@ mod tests {
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_forced_null_parent_hash_fails_to_validate() {
+        for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
+            let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
+
+            let mut test_tree = get_valid_tree(cipher_suite).await;
+
+            // force a null parent hash
+            test_tree.nodes.borrow_as_parent_mut(1).unwrap().parent_hash = ParentHash::from(vec![]);
+
+            let mut context = get_test_group_context(1, cipher_suite).await;
+            context.tree_hash = test_tree.tree_hash(&cipher_suite_provider).await.unwrap();
+
+            let validator =
+                TreeValidator::new(&cipher_suite_provider, &context, &BasicIdentityProvider);
+
+            // check that invalidly set null parent hash fails to validate
+            let res = validator.validate(&mut test_tree, None).await;
+            assert_matches!(res, Err(MlsError::ParentHashMismatch));
+        }
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_tree_hash_mismatch() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let mut test_tree = get_valid_tree(cipher_suite).await;
