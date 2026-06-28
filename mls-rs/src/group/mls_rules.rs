@@ -12,7 +12,11 @@ use crate::{
 
 use alloc::boxed::Box;
 use core::convert::Infallible;
-use mls_rs_core::{error::IntoAnyError, group::Member, identity::SigningIdentity};
+use mls_rs_core::{
+    error::IntoAnyError,
+    group::{Member, ProposalType},
+    identity::SigningIdentity,
+};
 
 use super::GroupContext;
 
@@ -184,6 +188,23 @@ pub trait MlsRules: Send + Sync {
         current_roster: &Roster,
         current_context: &GroupContext,
     ) -> Result<EncryptionOptions, Self::Error>;
+
+    /// Returns whether a commit containing a custom proposal of the given type must include an
+    /// update path.
+    ///
+    /// Per RFC 9420 §12.4, a proposal type "requires a path" when it changes group membership in a
+    /// way that needs the forward secrecy and post-compromise security guarantees an UpdatePath
+    /// provides. The standard proposal types that do *not* require a path are Add, PSK, and
+    /// ReInit. For custom proposal types, this method lets the application decide.
+    ///
+    /// This is called during commit creation and validation for every custom proposal in the
+    /// commit. If any custom proposal returns `true`, a generated commit will include, or
+    /// a received commit will require an update path.
+    ///
+    /// The default implementation returns `true` (conservative: always require a path).
+    fn custom_proposal_requires_update_path(&self, _custom_proposal_type: ProposalType) -> bool {
+        true
+    }
 }
 
 macro_rules! delegate_mls_rules {
@@ -223,6 +244,13 @@ macro_rules! delegate_mls_rules {
             ) -> Result<EncryptionOptions, Self::Error> {
                 (**self).encryption_options(roster, context)
             }
+
+            fn custom_proposal_requires_update_path(
+                &self,
+                custom_proposal_type: ProposalType,
+            ) -> bool {
+                (**self).custom_proposal_requires_update_path(custom_proposal_type)
+            }
         }
     };
 }
@@ -236,6 +264,7 @@ delegate_mls_rules!(&T);
 pub struct DefaultMlsRules {
     pub commit_options: CommitOptions,
     pub encryption_options: EncryptionOptions,
+    pub custom_proposals_that_require_update_path: Vec<ProposalType>,
 }
 
 impl DefaultMlsRules {
@@ -249,15 +278,25 @@ impl DefaultMlsRules {
     pub fn with_commit_options(self, commit_options: CommitOptions) -> Self {
         Self {
             commit_options,
-            encryption_options: self.encryption_options,
+            ..self
         }
     }
 
     /// Set encryption options.
     pub fn with_encryption_options(self, encryption_options: EncryptionOptions) -> Self {
         Self {
-            commit_options: self.commit_options,
             encryption_options,
+            ..self
+        }
+    }
+
+    pub fn with_custom_proposals_that_require_update_path(
+        self,
+        custom_proposals_that_require_update_path: Vec<ProposalType>,
+    ) -> Self {
+        Self {
+            custom_proposals_that_require_update_path,
+            ..self
         }
     }
 }
@@ -293,5 +332,10 @@ impl MlsRules for DefaultMlsRules {
         _: &GroupContext,
     ) -> Result<EncryptionOptions, Self::Error> {
         Ok(self.encryption_options)
+    }
+
+    fn custom_proposal_requires_update_path(&self, custom_proposal_type: ProposalType) -> bool {
+        self.custom_proposals_that_require_update_path
+            .contains(&custom_proposal_type)
     }
 }

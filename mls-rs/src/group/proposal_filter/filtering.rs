@@ -514,12 +514,26 @@ fn filter_out_external_init(
     Ok(proposals)
 }
 
+// Validate that a given sender is allowed to propose a proposal of the given type,
+// considering whether the proposal is by-value, by-reference, or locally injected.
+// Returns Ok(()) if allowed, or Err(InvalidProposalTypeForSender) otherwise.
 pub(crate) fn proposer_can_propose(
     proposer: Sender,
     proposal_type: ProposalType,
     source: &ProposalSource,
 ) -> Result<(), MlsError> {
     let can_propose = match (proposer, source) {
+        // Local proposals are injected by MlsRules::filter_proposals and are not transmitted
+        // on the wire. The proposer-can-propose rules enforced here apply to wire proposals;
+        // for local proposals, validation is the application's responsibility via
+        // [`MlsRules::filter_proposals`](crate::group::mls_rules::MlsRules::filter_proposals).
+        //
+        // The exception: a NewMemberProposal sender may only locally inject an Add,
+        // because that is the only proposal type this sender is allowed to produce per the spec.
+        (Sender::NewMemberProposal, ProposalSource::Local) => {
+            matches!(proposal_type, ProposalType::ADD)
+        }
+        (_, ProposalSource::Local) => true,
         (Sender::Member(_), ProposalSource::ByValue) => matches!(
             proposal_type,
             ProposalType::ADD
@@ -528,23 +542,6 @@ pub(crate) fn proposer_can_propose(
                 | ProposalType::RE_INIT
                 | ProposalType::GROUP_CONTEXT_EXTENSIONS
         ),
-        (Sender::Member(_), ProposalSource::Local) => {
-            let can_propose = matches!(
-                proposal_type,
-                ProposalType::ADD
-                    | ProposalType::REMOVE
-                    | ProposalType::PSK
-                    | ProposalType::RE_INIT
-                    | ProposalType::GROUP_CONTEXT_EXTENSIONS
-            );
-            #[cfg(all(
-                feature = "by_ref_proposal",
-                feature = "custom_proposal",
-                feature = "self_remove_proposal"
-            ))]
-            let can_propose = can_propose || matches!(proposal_type, ProposalType::SELF_REMOVE);
-            can_propose
-        }
         (Sender::Member(_), ProposalSource::ByReference(_)) => {
             let can_propose = matches!(
                 proposal_type,
@@ -574,12 +571,12 @@ pub(crate) fn proposer_can_propose(
                 | ProposalType::PSK
                 | ProposalType::GROUP_CONTEXT_EXTENSIONS
         ),
-        (Sender::NewMemberCommit, ProposalSource::ByValue | ProposalSource::Local) => matches!(
+        (Sender::NewMemberCommit, ProposalSource::ByValue) => matches!(
             proposal_type,
             ProposalType::REMOVE | ProposalType::PSK | ProposalType::EXTERNAL_INIT
         ),
         (Sender::NewMemberCommit, ProposalSource::ByReference(_)) => false,
-        (Sender::NewMemberProposal, ProposalSource::ByValue | ProposalSource::Local) => false,
+        (Sender::NewMemberProposal, ProposalSource::ByValue) => false,
         (Sender::NewMemberProposal, ProposalSource::ByReference(_)) => {
             matches!(proposal_type, ProposalType::ADD)
         }
