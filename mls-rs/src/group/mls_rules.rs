@@ -211,6 +211,7 @@ pub trait MlsRules: Send + Sync {
 
 macro_rules! delegate_mls_rules {
     ($implementer:ty) => {
+        #[cfg_attr(coverage_nightly, coverage(off))]
         #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
         #[cfg_attr(mls_build_async, maybe_async::must_be_async)]
         impl<T: MlsRules + ?Sized> MlsRules for $implementer {
