@@ -77,6 +77,8 @@ fn has_non_local_proposal<T: Proposable>(proposals: &[ProposalInfo<T>]) -> bool 
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
+
     use super::*;
     use crate::group::{
         framing::Sender,
