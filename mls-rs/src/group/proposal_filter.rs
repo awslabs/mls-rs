@@ -31,7 +31,11 @@ use crate::{group::proposal_filter::bundle::Proposable, MlsRules};
 // add
 // psk
 // reinit
-pub(crate) fn path_update_required<R: MlsRules>(proposals: &ProposalBundle, mls_rules: &R) -> bool {
+pub(crate) fn path_update_required<R: MlsRules>(
+    proposals: &ProposalBundle,
+    #[cfg(feature = "custom_proposal")] mls_rules: &R,
+    #[cfg(not(feature = "custom_proposal"))] _mls_rules: &R,
+) -> bool {
     #[cfg(feature = "custom_proposal")]
     // Check if update path is required due to custom proposals, according to custom rules.
     if proposals
