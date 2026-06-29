@@ -708,6 +708,8 @@ pub(super) fn filter_out_unsupported_custom_proposals(
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
+
     use super::*;
     use crate::group::{proposal_ref::ProposalRef, ProposalType, Sender};
     use assert_matches::assert_matches;
