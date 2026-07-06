@@ -101,6 +101,12 @@ pub enum ExternalReceivedMessage {
     KeyPackage(KeyPackage),
 }
 
+struct GeneratedProposal {
+    proposal_ref: ProposalRef,
+    proposal: MlsMessage,
+    sender: Sender,
+}
+
 /// A handle to an observed group that can track plaintext control messages
 /// and the resulting group state.
 #[derive(Clone)]
@@ -466,6 +472,40 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         proposal: Proposal,
         authenticated_data: Vec<u8>,
     ) -> Result<MlsMessage, MlsError> {
+        let generated = self.generate_proposal(proposal.clone(), authenticated_data)?;
+
+        self.state
+            .proposals
+            .insert(generated.proposal_ref, proposal, generated.sender);
+
+        Ok(generated.proposal)
+    }
+
+    /// Generate a proposal message without storing it in the local proposal cache.
+    ///
+    /// The resulting [`MlsMessage`] is intended to be cached externally by the
+    /// caller and injected back into this group via
+    /// [`insert_proposal`](ExternalGroup::insert_proposal) before the next
+    /// commit is processed.
+    #[cfg(feature = "by_ref_proposal")]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn propose_without_caching(
+        &self,
+        proposal: Proposal,
+        authenticated_data: Vec<u8>,
+    ) -> Result<MlsMessage, MlsError> {
+        Ok(self
+            .generate_proposal(proposal.clone(), authenticated_data)?
+            .proposal)
+    }
+
+    #[cfg(feature = "by_ref_proposal")]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn generate_proposal(
+        &self,
+        proposal: Proposal,
+        authenticated_data: Vec<u8>,
+    ) -> Result<GeneratedProposal, MlsError> {
         let (signer, signing_identity) =
             self.signing_data.as_ref().ok_or(MlsError::SignerNotFound)?;
 
@@ -488,7 +528,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             &self.cipher_suite_provider,
             &self.state.context,
             sender,
-            Content::Proposal(Box::new(proposal.clone())),
+            Content::Proposal(Box::new(proposal)),
             signer,
             WireFormat::PublicMessage,
             authenticated_data,
@@ -504,14 +544,16 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             membership_tag: None,
         };
 
-        let message = MlsMessage::new(
+        let proposal = MlsMessage::new(
             self.group_context().version(),
             MlsMessagePayload::Plain(plaintext),
         );
 
-        self.state.proposals.insert(proposal_ref, proposal, sender);
-
-        Ok(message)
+        Ok(GeneratedProposal {
+            proposal_ref,
+            proposal,
+            sender,
+        })
     }
 
     /// Delete all sent and received proposals cached for commit.
