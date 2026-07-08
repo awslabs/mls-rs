@@ -101,6 +101,7 @@ pub enum ExternalReceivedMessage {
     KeyPackage(KeyPackage),
 }
 
+#[cfg(feature = "by_ref_proposal")]
 struct GeneratedProposal {
     proposal_ref: ProposalRef,
     proposal: MlsMessage,
