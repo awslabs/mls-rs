@@ -60,7 +60,7 @@ pub struct ConfigProperties {
 
 impl LeafNode {
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn generate<CSP>(
+    pub(crate) async fn generate<CSP>(
         cipher_suite_provider: &CSP,
         properties: ConfigProperties,
         signing_identity: SigningIdentity,
@@ -98,7 +98,7 @@ impl LeafNode {
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn update<P: CipherSuiteProvider>(
+    pub(crate) async fn update<P: CipherSuiteProvider>(
         &mut self,
         cipher_suite_provider: &P,
         group_id: &[u8],
@@ -139,7 +139,7 @@ impl LeafNode {
 
     #[allow(clippy::too_many_arguments)]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn commit<P: CipherSuiteProvider>(
+    pub(crate) async fn commit<P: CipherSuiteProvider>(
         &mut self,
         cipher_suite_provider: &P,
         group_id: &[u8],
