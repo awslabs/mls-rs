@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781713624157,
+  "lastUpdate": 1784664618160,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -29683,6 +29683,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 188627,
             "range": "± 1616",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mulmarta@amazon.ch",
+            "name": "mulmarta",
+            "username": "mulmarta"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "688d8d6bd07d8fbfb1a92e8b7cff06b2bf07a412",
+          "message": "feat(proposal rules): Allow applications to decide if a custom proposal requires path  (#364)\n\n* feat(proposal rules): Allow applications to define rules for whether custom proposals require update paths\n\n* fix(ci): Downgrade slack pr notifier\n\n* fix: Fix non-std build\n\n* fix: Fix non-std build\n\n* fix: Fix non-std build\n\n* chore: Remove redundant test\n\n* chore: Improve coverage\n\n* Fix no-std build",
+          "timestamp": "2026-07-21T22:06:09+02:00",
+          "tree_id": "c3548ced21f9595824f10d9f5dfddebda91f827a",
+          "url": "https://github.com/awslabs/mls-rs/commit/688d8d6bd07d8fbfb1a92e8b7cff06b2bf07a412"
+        },
+        "date": 1784664615562,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 533678,
+            "range": "± 11261",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 541028,
+            "range": "± 5680",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 607784,
+            "range": "± 23795",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1355681,
+            "range": "± 24984",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 8316717,
+            "range": "± 52379",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2758627,
+            "range": "± 120611",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7514074,
+            "range": "± 168435",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13952175,
+            "range": "± 225226",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 784387,
+            "range": "± 15755",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 874761,
+            "range": "± 7242",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 1016484,
+            "range": "± 16555",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 27474,
+            "range": "± 330",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 95466,
+            "range": "± 1225",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 186750,
+            "range": "± 1427",
             "unit": "ns/iter"
           }
         ]
