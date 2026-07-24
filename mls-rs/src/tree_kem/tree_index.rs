@@ -181,7 +181,7 @@ impl TreeIndex {
             let in_use_cred_type_unsupported_by_new_leaf = self
                 .credential_type_counters
                 .iter()
-                .filter_map(|(cred_type, counters)| Some(*cred_type).filter(|_| counters.used > 0))
+                .filter_map(|(cred_type, counters)| (counters.used > 0).then_some(*cred_type))
                 .find(|cred_type| !leaf_node.capabilities.credentials.contains(cred_type));
 
             if in_use_cred_type_unsupported_by_new_leaf.is_some() {

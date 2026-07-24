@@ -152,7 +152,7 @@ fn discriminant_for_variant(
         let str = format!(
             "{}{}",
             lit_int.base10_digits(),
-            &repr_ident.clone().expect("Expected a repr(u*) to be provided or for the variant's discriminant to be defined with suffixed literals.")
+            repr_ident.clone().expect("Expected a repr(u*) to be provided or for the variant's discriminant to be defined with suffixed literals.")
         );
         Literal::from_str(&str)
             .map(|l| quote! {#l})
