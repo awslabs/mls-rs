@@ -7,7 +7,7 @@ use crate::client_builder::{recreate_config, BaseConfig, ClientBuilder, MakeConf
 use crate::client_config::ClientConfig;
 use crate::group::framing::MlsMessage;
 
-use crate::group::{cipher_suite_provider, validate_group_info_joiner, GroupInfo};
+use crate::group::{cipher_suite_provider, validate_group_info_joiner, GroupBuilder, GroupInfo};
 use crate::group::{
     framing::MlsMessagePayload, snapshot::Snapshot, ExportedTree, Group, NewMemberInfo,
 };
@@ -507,11 +507,24 @@ where
         Ok(key_pkg_gen)
     }
 
+    /// Create a [`GroupBuilder`] pre-filled with this client's cipher suite,
+    /// signing identity, and signer. Use the builder's `with_*` methods to
+    /// customize the group before calling [`GroupBuilder::build`].
+    pub fn group_builder(&self) -> Result<GroupBuilder<C>, MlsError> {
+        let (signing_identity, cipher_suite) = self.signing_identity()?;
+
+        Ok(GroupBuilder::new(
+            self.config.clone(),
+            cipher_suite,
+            signing_identity.clone(),
+            self.signer()?.clone(),
+        ))
+    }
+
     /// Create a group with a specific group_id.
     ///
-    /// This function behaves the same way as
-    /// [create_group](Client::create_group) except that it
-    /// specifies a specific unique group identifier to be used.
+    /// This is a convenience wrapper around [`group_builder`](Client::group_builder).
+    /// For more control over group parameters, use the builder directly.
     ///
     /// # Warning
     ///
@@ -526,27 +539,25 @@ where
         leaf_node_extensions: ExtensionList,
         timestamp: Option<MlsTime>,
     ) -> Result<Group<C>, MlsError> {
-        let (signing_identity, cipher_suite) = self.signing_identity()?;
+        let mut builder = self
+            .group_builder()?
+            .with_group_id(group_id)
+            .with_group_context_extensions(group_context_extensions)
+            .with_leaf_node_extensions(leaf_node_extensions);
 
-        Group::new(
-            self.config.clone(),
-            Some(group_id),
-            cipher_suite,
-            self.version,
-            signing_identity.clone(),
-            group_context_extensions,
-            leaf_node_extensions,
-            self.signer()?.clone(),
-            timestamp,
-        )
-        .await
+        if let Some(time) = timestamp {
+            builder = builder.with_now_time(time)
+        }
+
+        builder.build().await
     }
 
-    /// Create a MLS group.
+    /// Create an MLS group with a random group ID.
     ///
-    /// The `cipher_suite` provided must be supported by the
-    /// [CipherSuiteProvider](crate::CipherSuiteProvider)
-    /// that was used to build the client.
+    /// This is a convenience wrapper around [`group_builder`](Client::group_builder).
+    /// For more control over group parameters, use the builder directly.
+    ///
+    /// The cipher suite used is the one configured on this client.
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn create_group(
         &self,
@@ -554,20 +565,16 @@ where
         leaf_node_extensions: ExtensionList,
         timestamp: Option<MlsTime>,
     ) -> Result<Group<C>, MlsError> {
-        let (signing_identity, cipher_suite) = self.signing_identity()?;
+        let mut builder = self
+            .group_builder()?
+            .with_group_context_extensions(group_context_extensions)
+            .with_leaf_node_extensions(leaf_node_extensions);
 
-        Group::new(
-            self.config.clone(),
-            None,
-            cipher_suite,
-            self.version,
-            signing_identity.clone(),
-            group_context_extensions,
-            leaf_node_extensions,
-            self.signer()?.clone(),
-            timestamp,
-        )
-        .await
+        if let Some(time) = timestamp {
+            builder = builder.with_now_time(time)
+        }
+
+        builder.build().await
     }
 
     /// Join a MLS group via a welcome message created by a

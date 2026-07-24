@@ -9,7 +9,6 @@ use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
 #[cfg(feature = "last_resort_key_package_ext")]
 use mls_rs_core::extension::MlsExtension;
-use mls_rs_core::identity::MemberValidationContext;
 use mls_rs_core::secret::Secret;
 use mls_rs_core::time::MlsTime;
 use snapshot::PendingCommitSnapshot;
@@ -30,7 +29,6 @@ use crate::psk::PreSharedKeyID;
 use crate::signer::Signable;
 use crate::tree_kem::hpke_encryption::HpkeEncryptable;
 use crate::tree_kem::kem::TreeKem;
-use crate::tree_kem::leaf_node_validator::{LeafNodeValidator, ValidationContext};
 use crate::tree_kem::path_secret::PathSecret;
 pub use crate::tree_kem::Capabilities;
 use crate::tree_kem::{math as tree_math, ValidatedUpdatePath};
@@ -110,6 +108,7 @@ pub use self::message_processor::CachedProposal;
 #[cfg(feature = "private_message")]
 mod ciphertext_processor;
 
+mod builder;
 mod commit;
 pub mod component_operation;
 pub(crate) mod confirmation_tag;
@@ -163,6 +162,7 @@ mod exported_tree;
 
 pub use crate::tree_kem::leaf_node::LeafNode;
 pub use crate::tree_kem::node::{LeafIndex, Node, NodeIndex, NodeVec, Parent};
+pub use builder::GroupBuilder;
 pub use exported_tree::ExportedTree;
 
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
@@ -282,121 +282,6 @@ impl<C> Group<C>
 where
     C: ClientConfig + Clone,
 {
-    #[allow(clippy::too_many_arguments)]
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub(crate) async fn new(
-        config: C,
-        group_id: Option<Vec<u8>>,
-        cipher_suite: CipherSuite,
-        protocol_version: ProtocolVersion,
-        signing_identity: SigningIdentity,
-        group_context_extensions: ExtensionList,
-        leaf_node_extensions: ExtensionList,
-        signer: SignatureSecretKey,
-        maybe_now_time: Option<MlsTime>,
-    ) -> Result<Self, MlsError> {
-        let cipher_suite_provider = cipher_suite_provider(config.crypto_provider(), cipher_suite)?;
-
-        let (leaf_node, leaf_node_secret) = LeafNode::generate(
-            &cipher_suite_provider,
-            config.leaf_properties(leaf_node_extensions),
-            signing_identity,
-            &signer,
-            config.lifetime(maybe_now_time),
-        )
-        .await?;
-
-        let (mut public_tree, private_tree) = TreeKemPublic::derive(
-            leaf_node,
-            leaf_node_secret,
-            &config.identity_provider(),
-            &group_context_extensions,
-        )
-        .await?;
-
-        let tree_hash = public_tree.tree_hash(&cipher_suite_provider).await?;
-
-        let group_id = group_id.map(Ok).unwrap_or_else(|| {
-            cipher_suite_provider
-                .random_bytes_vec(cipher_suite_provider.kdf_extract_size())
-                .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
-        })?;
-
-        let context = GroupContext::new(
-            protocol_version,
-            cipher_suite,
-            group_id,
-            tree_hash,
-            group_context_extensions,
-        );
-
-        let identity_provider = config.identity_provider();
-
-        let member_validation_context = MemberValidationContext::ForNewGroup {
-            current_context: &context,
-        };
-
-        let leaf_node_validator = LeafNodeValidator::new(
-            &cipher_suite_provider,
-            &identity_provider,
-            member_validation_context,
-        );
-
-        leaf_node_validator
-            .check_if_valid(
-                public_tree.get_leaf_node(LeafIndex::unchecked(0))?,
-                ValidationContext::Add(maybe_now_time),
-            )
-            .await?;
-
-        let state_repo = GroupStateRepository::new(
-            #[cfg(feature = "prior_epoch")]
-            context.group_id.clone(),
-            config.group_state_storage(),
-            config.key_package_repo(),
-            None,
-        )?;
-
-        let key_schedule_result = KeySchedule::from_random_epoch_secret(
-            &cipher_suite_provider,
-            #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
-            public_tree.total_leaf_count(),
-        )
-        .await?;
-
-        let confirmation_tag = ConfirmationTag::create(
-            &key_schedule_result.confirmation_key,
-            &vec![].into(),
-            &cipher_suite_provider,
-        )
-        .await?;
-
-        let interim_hash = InterimTranscriptHash::create(
-            &cipher_suite_provider,
-            &vec![].into(),
-            &confirmation_tag,
-        )
-        .await?;
-
-        Ok(Self {
-            config,
-            state: GroupState::new(context, public_tree, interim_hash, confirmation_tag),
-            private_tree,
-            key_schedule: key_schedule_result.key_schedule,
-            #[cfg(feature = "by_ref_proposal")]
-            pending_updates: Default::default(),
-            pending_commit: Default::default(),
-            #[cfg(test)]
-            commit_modifiers: Default::default(),
-            epoch_secrets: key_schedule_result.epoch_secrets,
-            state_repo,
-            cipher_suite_provider,
-            #[cfg(feature = "psk")]
-            previous_psk: None,
-            signer,
-        })
-    }
-
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn join(
         welcome: &MlsMessage,
@@ -3954,11 +3839,10 @@ mod tests {
         test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "alice")
             .await
             .0
-            .create_group(
-                core::iter::once(required_caps.into_extension().unwrap()).collect(),
-                Default::default(),
-                None,
-            )
+            .group_builder()
+            .unwrap()
+            .with_group_context_extensions(vec![required_caps.into_extension().unwrap()].into())
+            .build()
             .await
     }
 
@@ -4024,11 +3908,10 @@ mod tests {
             test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "alice")
                 .await
                 .0
-                .create_group(
-                    core::iter::once(ext_senders).collect(),
-                    Default::default(),
-                    None,
-                )
+                .group_builder()
+                .unwrap()
+                .with_group_context_extension(ext_senders)
+                .build()
                 .await
                 .map(|_| ());
 
@@ -5297,7 +5180,10 @@ mod tests {
             .with_random_signing_identity("alice", TEST_CIPHER_SUITE)
             .await
             .build()
-            .create_group(vec![ext_senders].into(), Default::default(), None)
+            .group_builder()
+            .unwrap()
+            .with_group_context_extension(ext_senders)
+            .build()
             .await
             .unwrap();
 
@@ -5362,11 +5248,10 @@ mod tests {
             .with_random_signing_identity("alice", TEST_CIPHER_SUITE)
             .await
             .build()
-            .create_group(
-                core::iter::once(ext_senders).collect(),
-                Default::default(),
-                None,
-            )
+            .group_builder()
+            .unwrap()
+            .with_group_context_extension(ext_senders)
+            .build()
             .await
             .unwrap();
 
@@ -5398,7 +5283,9 @@ mod tests {
             .with_random_signing_identity("alice", TEST_CIPHER_SUITE)
             .await
             .build()
-            .create_group(Default::default(), Default::default(), None)
+            .group_builder()
+            .unwrap()
+            .build()
             .await
             .unwrap();
 
@@ -5909,12 +5796,12 @@ mod tests {
     async fn invalid_update_does_not_prevent_other_updates() {
         const EXTENSION_TYPE: ExtensionType = ExtensionType::new(33);
 
-        let group_extensions = ExtensionList::from(vec![RequiredCapabilitiesExt {
+        let group_extension = RequiredCapabilitiesExt {
             extensions: vec![EXTENSION_TYPE],
             ..Default::default()
         }
         .into_extension()
-        .unwrap()]);
+        .unwrap();
 
         // Alice creates a group requiring support for an extension
         let mut alice = TestClientBuilder::new_for_test()
@@ -5922,7 +5809,10 @@ mod tests {
             .await
             .extension_type(EXTENSION_TYPE)
             .build()
-            .create_group(group_extensions.clone(), Default::default(), None)
+            .group_builder()
+            .unwrap()
+            .with_group_context_extension(group_extension)
+            .build()
             .await
             .unwrap();
 
@@ -6557,11 +6447,10 @@ mod tests {
         current_time += 10;
 
         let mut alice_group = alice
-            .create_group(
-                Default::default(),
-                Default::default(),
-                Some(current_time.into()),
-            )
+            .group_builder()
+            .unwrap()
+            .with_now_time(current_time.into())
+            .build()
             .await
             .unwrap();
 
@@ -6617,7 +6506,9 @@ mod tests {
 
         let mut alice = client_with_custom_rules(b"alice", mls_rules.clone())
             .await
-            .create_group(Default::default(), Default::default(), None)
+            .group_builder()
+            .unwrap()
+            .build()
             .await
             .unwrap();
 
@@ -6652,7 +6543,9 @@ mod tests {
 
         let mut alice = client_with_custom_rules(b"alice", mls_rules.clone())
             .await
-            .create_group(Default::default(), Default::default(), None)
+            .group_builder()
+            .unwrap()
+            .build()
             .await
             .unwrap();
 
@@ -6805,10 +6698,7 @@ mod tests {
         .await;
 
         let mut alice = TestGroup {
-            group: alice
-                .create_group(Default::default(), Default::default(), None)
-                .await
-                .unwrap(),
+            group: alice.group_builder().unwrap().build().await.unwrap(),
         };
 
         let mut bob = alice.join("bob").await.0;
@@ -7060,20 +6950,16 @@ mod tests {
             .signing_identity(signing_identity, secret_key, TEST_CIPHER_SUITE)
             .build();
 
-        let mut group = client
-            .create_group(Default::default(), Default::default(), None)
-            .await
-            .unwrap();
-
+        let mut group = client.group_builder().unwrap().build().await.unwrap();
         let group_id = group.group_id().to_vec();
-
         let proposal = CustomProposal::new(test_proposal_type, vec![]);
-        let res = group
+
+        group
             .commit_builder()
             .custom_proposal(proposal)
             .build()
-            .await;
-        assert!(res.is_err());
+            .await
+            .unwrap_err();
 
         group.write_to_storage().await.unwrap();
 
@@ -7088,12 +6974,12 @@ mod tests {
         group.apply_pending_commit().await.unwrap();
 
         let proposal = CustomProposal::new(test_proposal_type, vec![]);
-        let res = group
+
+        group
             .commit_builder()
             .custom_proposal(proposal)
             .build()
-            .await;
-
-        assert!(res.is_ok());
+            .await
+            .unwrap();
     }
 }
