@@ -454,7 +454,8 @@ mod tests {
             {
                 println!(
                     "Mismatched curve public key import : key curve {:?}, import curve {:?}",
-                    &curve, &other_curve
+                    curve,
+                    other_curve
                 );
 
                 let public_key = get_test_public_keys().get_key_from_curve(curve);
