@@ -46,6 +46,8 @@ use self::mls_rules::{EncryptionOptions, MlsRules};
 
 #[cfg(feature = "psk")]
 pub use self::resumption::ReinitClient;
+#[cfg(feature = "psk")]
+use alloc::vec;
 
 #[cfg(feature = "psk")]
 use crate::psk::{
