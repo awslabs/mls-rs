@@ -37,11 +37,11 @@ impl<C> Group<C>
 where
     C: ClientConfig + Clone,
 {
-    fn branch_group_creator(
+    fn branch_group_builder(
         &self,
         timestamp: Option<MlsTime>,
         group_id: Vec<u8>,
-    ) -> Result<GroupCreator<C>, MlsError> {
+    ) -> Result<ResumptionGroupBuilder<C>, MlsError> {
         let mut builder = GroupBuilder::new(
             self.config.clone(),
             self.cipher_suite(),
@@ -56,7 +56,7 @@ where
             builder = builder.with_now_time(time);
         }
 
-        Ok(GroupCreator {
+        Ok(ResumptionGroupBuilder {
             builder,
             psk_input: self.resumption_psk_input(ResumptionPSKUsage::Branch)?,
             typ: GroupCreationType::Branch,
@@ -80,7 +80,7 @@ where
         new_key_packages: Vec<MlsMessage>,
         timestamp: Option<MlsTime>,
     ) -> Result<(Group<C>, Vec<MlsMessage>), MlsError> {
-        self.branch_group_creator(timestamp, sub_group_id)?
+        self.branch_group_builder(timestamp, sub_group_id)?
             .create(
                 new_key_packages,
                 self.current_user_leaf_node()?.ungreased_extensions(),
@@ -97,7 +97,7 @@ where
         tree_data: Option<ExportedTree<'_>>,
         timestamp: Option<MlsTime>,
     ) -> Result<(Group<C>, NewMemberInfo), MlsError> {
-        self.branch_group_creator(timestamp, vec![])?
+        self.branch_group_builder(timestamp, vec![])?
             .join(welcome, tree_data, false, self.roster())
             .await
     }
@@ -179,7 +179,7 @@ impl<C: ClientConfig + Clone> ReinitClient<C> {
             .await
     }
 
-    fn group_creator(self, timestamp: Option<MlsTime>) -> GroupCreator<C> {
+    fn group_builder(self, timestamp: Option<MlsTime>) -> ResumptionGroupBuilder<C> {
         let mut builder = GroupBuilder::new(
             self.client.config,
             self.reinit.cipher_suite,
@@ -194,7 +194,7 @@ impl<C: ClientConfig + Clone> ReinitClient<C> {
             builder = builder.with_now_time(time);
         }
 
-        GroupCreator {
+        ResumptionGroupBuilder {
             builder,
             psk_input: self.psk_input,
             typ: GroupCreationType::Reinit,
@@ -217,7 +217,7 @@ impl<C: ClientConfig + Clone> ReinitClient<C> {
     ) -> Result<(Group<C>, Vec<MlsMessage>), MlsError> {
         let old_public_tree = core::mem::take(&mut self.old_public_tree);
 
-        self.group_creator(timestamp)
+        self.group_builder(timestamp)
             .create(
                 new_key_packages,
                 new_leaf_node_extensions,
@@ -236,19 +236,19 @@ impl<C: ClientConfig + Clone> ReinitClient<C> {
     ) -> Result<(Group<C>, NewMemberInfo), MlsError> {
         let old_public_tree = core::mem::take(&mut self.old_public_tree);
 
-        self.group_creator(timestamp)
+        self.group_builder(timestamp)
             .join(welcome, tree_data, true, old_public_tree.roster())
             .await
     }
 }
 
-struct GroupCreator<C> {
+struct ResumptionGroupBuilder<C> {
     builder: GroupBuilder<C>,
     psk_input: PskSecretInput,
     typ: GroupCreationType,
 }
 
-impl<C: ClientConfig + Clone> GroupCreator<C> {
+impl<C: ClientConfig + Clone> ResumptionGroupBuilder<C> {
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn create(
         self,

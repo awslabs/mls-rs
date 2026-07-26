@@ -2472,6 +2472,8 @@ pub(crate) mod test_utils;
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
+
     use crate::{
         client::test_utils::{
             test_client_with_key_pkg, TestClientBuilder, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION,
