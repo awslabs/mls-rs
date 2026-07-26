@@ -2,6 +2,8 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
+use alloc::{vec, vec::Vec};
+
 use mls_rs_core::{
     crypto::{CipherSuite, CipherSuiteProvider, SignatureSecretKey},
     error::IntoAnyError,
@@ -53,7 +55,7 @@ impl<C> GroupBuilder<C> {
     ///
     /// Most callers should use [`Client::group_builder`](crate::Client::group_builder) instead,
     /// which fills these from the client's configuration.
-    pub fn new(
+    pub(crate) fn new(
         config: C,
         cipher_suite: CipherSuite,
         signing_identity: SigningIdentity,
