@@ -197,15 +197,7 @@ async fn test_create(
         .unwrap();
 
     // Alice creates a group and adds bob
-    let mut alice_group = alice
-        .create_group_with_id(
-            b"group".to_vec(),
-            Default::default(),
-            Default::default(),
-            None,
-        )
-        .await
-        .unwrap();
+    let mut alice_group = alice.group_builder().unwrap().build().await.unwrap();
 
     let welcome = &alice_group
         .commit_builder()
@@ -522,16 +514,7 @@ async fn external_commits_work(
     _encrypt_controls: bool,
 ) {
     let creator = generate_client(cipher_suite, protocol_version, 0, false).await;
-
-    let creator_group = creator
-        .create_group_with_id(
-            b"group".to_vec(),
-            Default::default(),
-            Default::default(),
-            None,
-        )
-        .await
-        .unwrap();
+    let creator_group = creator.group_builder().unwrap().build().await.unwrap();
 
     const PARTICIPANT_COUNT: usize = 10;
 
@@ -640,10 +623,7 @@ async fn reinit_works() {
     let bob1 = generate_client(suite1, version, 2, Default::default()).await;
 
     // Create a group with 2 parties
-    let mut alice_group = alice1
-        .create_group(Default::default(), Default::default(), None)
-        .await
-        .unwrap();
+    let mut alice_group = alice1.group_builder().unwrap().build().await.unwrap();
     let kp = bob1
         .generate_key_package_message(Default::default(), Default::default(), None)
         .await
@@ -905,10 +885,7 @@ async fn can_process_external_commit_if_pending_commit() {
     let alice = generate_default_client(0).await;
     let bob = generate_default_client(1).await;
 
-    let mut alice_group = alice
-        .create_group(Default::default(), Default::default(), None)
-        .await
-        .unwrap();
+    let mut alice_group = alice.group_builder().unwrap().build().await.unwrap();
 
     alice_group
         .commit_builder()

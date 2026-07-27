@@ -1583,10 +1583,7 @@ mod tests {
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn member_identity_is_validated_against_new_extensions() {
         let alice = client_with_test_extension(b"alice").await;
-        let mut alice = alice
-            .create_group(ExtensionList::new(), Default::default(), None)
-            .await
-            .unwrap();
+        let mut alice = alice.group_builder().unwrap().build().await.unwrap();
 
         let bob = client_with_test_extension(b"bob").await;
         let bob_kp = bob
@@ -1630,10 +1627,7 @@ mod tests {
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn server_identity_is_validated_against_new_extensions() {
         let alice = client_with_test_extension(b"alice").await;
-        let mut alice = alice
-            .create_group(ExtensionList::new(), Default::default(), None)
-            .await
-            .unwrap();
+        let mut alice = alice.group_builder().unwrap().build().await.unwrap();
 
         let mut extension_list = ExtensionList::new();
         let extension = TestExtension { foo: b'a' };

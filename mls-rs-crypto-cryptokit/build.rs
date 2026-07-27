@@ -42,7 +42,7 @@ mod swift {
     fn get_target_info() -> SwiftTarget {
         let target = get_target_triple();
         let swift_target_info_str = Command::new("swift")
-            .args(["-print-target-info", &format!("--target={}", &target)])
+            .args(["-print-target-info", &format!("--target={}", target)])
             .output()
             .unwrap()
             .stdout;
