@@ -569,13 +569,8 @@ pub async fn generate_passive_client_random_tests() -> Vec<TestCase> {
         )
         .await;
 
-        let creator_group = creator
-            .create_group(Default::default(), Default::default(), None)
-            .await
-            .unwrap();
-
+        let creator_group = creator.group_builder().unwrap().build().await.unwrap();
         let mut groups = vec![creator_group];
-
         let mut new_clients = Vec::new();
 
         for i in 0..10 {

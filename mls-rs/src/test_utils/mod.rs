@@ -121,11 +121,7 @@ pub async fn get_test_groups<C: CryptoProvider + Clone>(
     )
     .await;
 
-    let mut creator_group = creator
-        .create_group(Default::default(), Default::default(), None)
-        .await
-        .unwrap();
-
+    let mut creator_group = creator.group_builder().unwrap().build().await.unwrap();
     let mut receiver_clients = Vec::new();
     let mut commit_builder = creator_group.commit_builder();
 
