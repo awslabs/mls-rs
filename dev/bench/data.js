@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784664618160,
+  "lastUpdate": 1785171922571,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -29791,6 +29791,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 186750,
             "range": "± 1427",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mulmarta@amazon.ch",
+            "name": "mulmarta",
+            "username": "mulmarta"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "09761fa06bdaec01b03e83ed2d7722ad7241d9d2",
+          "message": "feat: implement fluent GroupBuilder for group creation (#367)\n\n* feat: implement fluent GroupBuilder for group creation\n\n* chore: apply clippy suggestions\n\n* chore: bump mls-rs version to 0.55.3\n\n* fix non-std build\n\n* rename GroupCreator in resumption.rs to GroupBuilder for consistency\n\n* fix '--features psk' build\n\n* apply clippy suggestion\n\n* run 'cargo fmt'",
+          "timestamp": "2026-07-27T19:01:48+02:00",
+          "tree_id": "65f12dc0a8a062222f170bb0996a690a8ade9b67",
+          "url": "https://github.com/awslabs/mls-rs/commit/09761fa06bdaec01b03e83ed2d7722ad7241d9d2"
+        },
+        "date": 1785171921083,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 423013,
+            "range": "± 14142",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 431125,
+            "range": "± 6119",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 488131,
+            "range": "± 10812",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1077222,
+            "range": "± 18578",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 6732169,
+            "range": "± 60228",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2106128,
+            "range": "± 12779",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 5797606,
+            "range": "± 73364",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 10766428,
+            "range": "± 179267",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 632008,
+            "range": "± 3944",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 714536,
+            "range": "± 3784",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 825383,
+            "range": "± 6554",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 22316,
+            "range": "± 168",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 77191,
+            "range": "± 828",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 150074,
+            "range": "± 947",
             "unit": "ns/iter"
           }
         ]
