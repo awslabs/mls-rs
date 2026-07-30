@@ -44,6 +44,8 @@ pub struct GroupBuilder<C> {
     pub(crate) group_context_extensions: ExtensionList,
     pub(crate) leaf_node_extensions: ExtensionList,
     pub(crate) now_time: Option<MlsTime>,
+    #[cfg(feature = "custom_start_epoch")]
+    pub(crate) start_epoch: u64,
     pub(crate) config: C,
     pub(crate) cipher_suite: CipherSuite,
     pub(crate) signing_identity: SigningIdentity,
@@ -67,6 +69,8 @@ impl<C> GroupBuilder<C> {
             group_context_extensions: Default::default(),
             leaf_node_extensions: Default::default(),
             now_time: None,
+            #[cfg(feature = "custom_start_epoch")]
+            start_epoch: 0,
             config,
             cipher_suite,
             signing_identity,
@@ -116,13 +120,30 @@ impl<C> GroupBuilder<C> {
         self.now_time = Some(now_time);
         self
     }
+
+    /// Set the epoch the newly created group starts from.
+    ///
+    /// By default a group starts at epoch 0, as mandated by RFC 9420. Setting a
+    /// non-zero value here makes the group start at the given epoch instead, which
+    /// allows an application to keep epoch numbers non-overlapping across group
+    /// resets (see mls-rs issue #327).
+    ///
+    /// This is **not** RFC 9420 compliant and only affects the group created
+    /// locally by this builder; it does not apply to groups joined via a Welcome,
+    /// external commit, or to branch/re-init subgroups (whose Welcome epoch must
+    /// be 1).
+    #[cfg(feature = "custom_start_epoch")]
+    pub fn with_start_epoch(mut self, start_epoch: u64) -> Self {
+        self.start_epoch = start_epoch;
+        self
+    }
 }
 
 impl<C: ClientConfig + Clone> GroupBuilder<C> {
     /// Consume the builder and create the new [`Group`].
     ///
     /// This generates the initial ratchet tree, key schedule, and group context
-    /// for epoch 0 of the group.
+    /// for the starting epoch of the group.
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn build(self) -> Result<Group<C>, MlsError> {
         let cipher_suite_provider =
@@ -160,6 +181,12 @@ impl<C: ClientConfig + Clone> GroupBuilder<C> {
             tree_hash,
             self.group_context_extensions,
         );
+
+        #[cfg(feature = "custom_start_epoch")]
+        let context = GroupContext {
+            epoch: self.start_epoch,
+            ..context
+        };
 
         let identity_provider = self.config.identity_provider();
 
