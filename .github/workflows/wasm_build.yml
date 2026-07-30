@@ -1,5 +1,5 @@
 name: WASM
-on: [pull_request]
+on: [pull_request, push]
 env:
   CARGO_TERM_COLOR: always
   SSH_AUTH_SOCK: /tmp/ssh_agent.sock
@@ -12,19 +12,22 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          rustflags: ''
+          rustflags: ""
       - name: Install wasm-pack
-        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+        run:
+          curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
       - name: WASM mls-rs-crypto-rustcrypto
         working-directory: mls-rs-crypto-rustcrypto
         run: wasm-pack test --headless --chrome --release --features browser
       - name: WASM mls-rs (lib)
         working-directory: mls-rs
-        run: wasm-pack test --headless --chrome --release --lib --features
+        run:
+          wasm-pack test --headless --chrome --release --lib --features
           test_util
       - name: WASM mls-rs (integration tests)
         working-directory: mls-rs
-        run: wasm-pack test --headless --chrome --release --test '*' --features
+        run:
+          wasm-pack test --headless --chrome --release --test '*' --features
           test_util
       - name: WASM mls-rs-identity-x509
         working-directory: mls-rs-identity-x509
