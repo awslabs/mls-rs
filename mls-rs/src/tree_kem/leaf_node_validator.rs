@@ -242,7 +242,7 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
 }
 
 impl LeafNode {
-    pub fn validate_no_default_values_listed(&self) -> Result<(), MlsError> {
+    pub(crate) fn validate_no_default_values_listed(&self) -> Result<(), MlsError> {
         // The following proposal and extension types are considered "default" and
         // MUST NOT be listed
         self.capabilities
