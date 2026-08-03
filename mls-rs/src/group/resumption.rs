@@ -242,6 +242,8 @@ impl<C: ClientConfig + Clone> ReinitClient<C> {
     }
 }
 
+// The wrapped builder must keep its default start epoch of 0: a branch/re-init
+// subgroup's Welcome epoch must be 1 (enforced in `join`).
 struct ResumptionGroupBuilder<C> {
     builder: GroupBuilder<C>,
     psk_input: PskSecretInput,
