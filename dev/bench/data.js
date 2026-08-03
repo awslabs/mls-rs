@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1785423164004,
+  "lastUpdate": 1785750573009,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -30007,6 +30007,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 191188,
             "range": "± 3013",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "41150558+gildas-amazon@users.noreply.github.com",
+            "name": "gildas-amazon",
+            "username": "gildas-amazon"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d0471824036b70b053e023dcb162a5ee0eeb2473",
+          "message": "feat: allow creating groups with an arbitrary start epoch (#327) (#366)\n\nAdd a `custom_start_epoch` cargo feature that lets a locally created\ngroup start at a configured epoch instead of 0. The epoch is set via\nthe new `GroupBuilder::with_start_epoch` option and applied to the\ninitial GroupContext in `GroupBuilder::build`.\n\nThis is not RFC 9420 compliant (which mandates epoch 0) and is gated\nbehind the feature. It only affects groups created locally; groups\njoined via Welcome or external commit adopt their epoch as usual, and\nbranch/re-init subgroups still start at epoch 0 (their Welcome epoch\nmust be 1), since the resumption paths never set the option.\n\nCo-authored-by: mulmarta <mulmarta@amazon.ch>",
+          "timestamp": "2026-08-03T11:45:47+02:00",
+          "tree_id": "68cb9d1f03d646201724cfbe4de531d99e5e7db7",
+          "url": "https://github.com/awslabs/mls-rs/commit/d0471824036b70b053e023dcb162a5ee0eeb2473"
+        },
+        "date": 1785750572122,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 529593,
+            "range": "± 5303",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 538374,
+            "range": "± 5500",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 604654,
+            "range": "± 10462",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1329174,
+            "range": "± 25395",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 8147750,
+            "range": "± 66996",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2689620,
+            "range": "± 84798",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7340418,
+            "range": "± 77256",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13644233,
+            "range": "± 129729",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 777872,
+            "range": "± 7808",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 871185,
+            "range": "± 8679",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 1025263,
+            "range": "± 51582",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 27738,
+            "range": "± 576",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 95904,
+            "range": "± 2350",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 196475,
+            "range": "± 4131",
             "unit": "ns/iter"
           }
         ]
