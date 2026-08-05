@@ -549,6 +549,7 @@ impl MlsMessage {
     /// path. This is the leaf a new member joins with when the commit is an external commit.
     /// If this is not a plaintext, not a commit or a commit without an update path, this
     /// returns `None`.
+    #[allow(unreachable_patterns)]
     pub fn commit_path_leaf_node(&self) -> Option<&LeafNode> {
         match &self.payload {
             MlsMessagePayload::Plain(plaintext) => match &plaintext.content.content {
