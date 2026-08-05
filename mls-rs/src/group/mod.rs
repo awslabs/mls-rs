@@ -161,7 +161,7 @@ mod interop_test_vectors;
 
 mod exported_tree;
 
-pub use crate::tree_kem::leaf_node::LeafNode;
+pub use crate::tree_kem::leaf_node::{LeafNode, LeafNodeSource};
 pub use crate::tree_kem::node::{LeafIndex, Node, NodeIndex, NodeVec, Parent};
 pub use builder::GroupBuilder;
 pub use exported_tree::ExportedTree;
@@ -2588,6 +2588,32 @@ mod tests {
 
             assert_eq!(*group.private_tree.self_index, group.current_member_index());
         }
+    }
+
+    #[cfg(feature = "custom_start_epoch")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_create_group_with_start_epoch() {
+        const START_EPOCH: u64 = 42;
+
+        let mut group = TestClientBuilder::new_for_test()
+            .with_random_signing_identity("alice", TEST_CIPHER_SUITE)
+            .await
+            .build()
+            .group_builder()
+            .unwrap()
+            .with_start_epoch(START_EPOCH)
+            .build()
+            .await
+            .unwrap();
+
+        // The group starts at the configured epoch instead of 0.
+        assert_eq!(group.current_epoch(), START_EPOCH);
+
+        // The group is functional from the custom epoch: a commit advances it normally.
+        let commit = group.commit(Vec::new()).await.unwrap();
+        group.apply_pending_commit().await.unwrap();
+        assert_eq!(group.current_epoch(), START_EPOCH + 1);
+        assert_eq!(commit.commit_message.epoch(), Some(START_EPOCH));
     }
 
     #[cfg(feature = "private_message")]
