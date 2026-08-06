@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1785750573009,
+  "lastUpdate": 1786057224117,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -30115,6 +30115,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 196475,
             "range": "± 4131",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "93408277+7331@users.noreply.github.com",
+            "name": "niels",
+            "username": "7331"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4e56ee6fa80a2c1317ddf0178aa977ff3b7316c8",
+          "message": "feat: Expose the UpdatePath leaf node of a commit on MlsMessage (#369)\n\n* feat: Expose the UpdatePath leaf node of a commit on MlsMessage\n\nA member joining via Add proposal is reachable through proposals_by_value(),\nbut a member joining via external commit is only in the commit's UpdatePath,\nwhich had no public accessor.\n\n* fix: allow unreachable_patterns in commit_path_leaf_node for reduced feature sets\n\n---------\n\nCo-authored-by: 7331 <7331niels@gmail.com>\nCo-authored-by: mulmarta <mulmarta@amazon.ch>",
+          "timestamp": "2026-08-06T19:21:26+02:00",
+          "tree_id": "346590250db13340e4dd2e3c3f0aa3764d912a05",
+          "url": "https://github.com/awslabs/mls-rs/commit/4e56ee6fa80a2c1317ddf0178aa977ff3b7316c8"
+        },
+        "date": 1786057223212,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 525733,
+            "range": "± 14808",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 532999,
+            "range": "± 9403",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 598214,
+            "range": "± 6403",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1327104,
+            "range": "± 27303",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 8213881,
+            "range": "± 44073",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2704274,
+            "range": "± 65933",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7364023,
+            "range": "± 83980",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13629728,
+            "range": "± 112182",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 780025,
+            "range": "± 8403",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 869046,
+            "range": "± 5805",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 1004685,
+            "range": "± 32233",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 27513,
+            "range": "± 455",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 93997,
+            "range": "± 742",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 185120,
+            "range": "± 1923",
             "unit": "ns/iter"
           }
         ]
