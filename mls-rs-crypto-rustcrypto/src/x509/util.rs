@@ -28,6 +28,7 @@ use x509_cert::{
     },
     name::{RdnSequence, RelativeDistinguishedName},
     request::ExtensionReq,
+    Certificate,
 };
 
 use x509_cert::{
@@ -114,6 +115,67 @@ pub(super) fn ca_key_usage() -> Result<Extension, X509Error> {
             KeyUsage(KeyUsages::KeyCertSign | KeyUsages::CRLSign).to_der()?,
         )?,
     })
+}
+
+/// Verifies `cert` is authorized to act as a CA with `subordinate_ca_count` CA certificates
+/// below it in the path, per RFC 5280 §6.1.4(k)/(n): `BasicConstraints.ca` must be true; if a
+/// `KeyUsage` extension is present, `KeyCertSign` must be set (a cert with no `KeyUsage`
+/// extension at all is not restricted, matching OpenSSL's `X509_check_purpose`); and any
+/// `path_len_constraint` must not be exceeded.
+pub(super) fn verify_ca_extensions(
+    cert: &Certificate,
+    subordinate_ca_count: usize,
+) -> Result<(), X509Error> {
+    let basic_constraints = cert
+        .tbs_certificate
+        .extensions
+        .as_ref()
+        .and_then(|extensions| {
+            extensions
+                .iter()
+                .find(|extension| extension.extn_id == BasicConstraints::OID)
+        })
+        .map(|extension| BasicConstraints::from_der(extension.extn_value.as_bytes()))
+        .transpose()?;
+
+    let Some(basic_constraints) = basic_constraints else {
+        return Err(X509Error::InvalidCaExtensions);
+    };
+
+    if !basic_constraints.ca {
+        return Err(X509Error::InvalidCaExtensions);
+    }
+
+    let key_usage = cert
+        .tbs_certificate
+        .extensions
+        .as_ref()
+        .and_then(|extensions| {
+            extensions
+                .iter()
+                .find(|extension| extension.extn_id == KeyUsage::OID)
+        })
+        .map(|extension| KeyUsage::from_der(extension.extn_value.as_bytes()))
+        .transpose()?;
+
+    // RFC 5280 §6.1.4(n): "If a key usage extension is present, verify that the keyCertSign
+    // bit is set." A missing KeyUsage extension is not itself a failure.
+    if let Some(key_usage) = key_usage {
+        if !key_usage.0.contains(KeyUsages::KeyCertSign) {
+            return Err(X509Error::InvalidCaExtensions);
+        }
+    }
+
+    if let Some(path_len_constraint) = basic_constraints.path_len_constraint {
+        if subordinate_ca_count > path_len_constraint as usize {
+            return Err(X509Error::PathLenConstraintExceeded {
+                path_len_constraint,
+                subordinate_ca_count,
+            });
+        }
+    }
+
+    Ok(())
 }
 
 pub fn general_names_to_alt_names(
@@ -258,17 +320,17 @@ pub(crate) mod test_utils {
     use mls_rs_identity_x509::{CertificateChain, DerCertificate};
 
     pub fn load_test_ca() -> DerCertificate {
-        DerCertificate::from(include_bytes!("../../test_data/x509/ca.der").to_vec())
+        DerCertificate::from(include_bytes!("../../test_data/x509/root_ca/cert.der").to_vec())
     }
 
     pub fn load_test_p384_ca() -> DerCertificate {
-        DerCertificate::from(include_bytes!("../../test_data/x509/p384_ca.der").to_vec())
+        DerCertificate::from(include_bytes!("../../test_data/x509/root_ca_p384/cert.der").to_vec())
     }
 
     pub fn load_test_cert_chain() -> CertificateChain {
-        let entry0 = include_bytes!("../../test_data/x509/leaf.der").to_vec();
-        let entry1 = include_bytes!("../../test_data/x509/intermediate.der").to_vec();
-        let entry2 = include_bytes!("../../test_data/x509/ca.der").to_vec();
+        let entry0 = include_bytes!("../../test_data/x509/leaf/cert.der").to_vec();
+        let entry1 = include_bytes!("../../test_data/x509/intermediate_ca/cert.der").to_vec();
+        let entry2 = include_bytes!("../../test_data/x509/root_ca/cert.der").to_vec();
 
         CertificateChain::from_iter(
             [entry0, entry1, entry2]
@@ -278,15 +340,15 @@ pub(crate) mod test_utils {
     }
 
     pub fn load_test_invalid_chain() -> CertificateChain {
-        let entry0 = include_bytes!("../../test_data/x509/leaf.der").to_vec();
-        let entry1 = include_bytes!("../../test_data/x509/ca.der").to_vec();
+        let entry0 = include_bytes!("../../test_data/x509/leaf/cert.der").to_vec();
+        let entry1 = include_bytes!("../../test_data/x509/another_ca.der").to_vec();
 
         CertificateChain::from_iter([entry0, entry1].into_iter().map(DerCertificate::from))
     }
 
     pub fn load_test_invalid_ca_chain() -> CertificateChain {
-        let entry0 = include_bytes!("../../test_data/x509/leaf.der").to_vec();
-        let entry1 = include_bytes!("../../test_data/x509/intermediate.der").to_vec();
+        let entry0 = include_bytes!("../../test_data/x509/leaf/cert.der").to_vec();
+        let entry1 = include_bytes!("../../test_data/x509/intermediate_ca/cert.der").to_vec();
         let entry2 = include_bytes!("../../test_data/x509/another_ca.der").to_vec();
 
         CertificateChain::from_iter(
@@ -306,5 +368,128 @@ pub(crate) mod test_utils {
 
     pub fn load_ip_cert() -> DerCertificate {
         DerCertificate::from(include_bytes!("../../test_data/x509/cert_ip.der").to_vec())
+    }
+
+    /// A self-signed CA certificate with `BasicConstraints.cA = false`.
+    ///
+    /// `openssl x509 -inform DER -in cert.der -noout -subject -issuer -ext basicConstraints,keyUsage`:
+    /// ```text
+    /// subject=CN=CAMissingBasicConstraints, C=CH
+    /// issuer=CN=CAMissingBasicConstraints, C=CH
+    /// X509v3 Basic Constraints: critical
+    ///     CA:FALSE
+    /// ```
+    pub fn load_ca_missing_basic_constraints() -> DerCertificate {
+        DerCertificate::from(
+            include_bytes!("../../test_data/x509/ca_missing_basic_constraints/cert.der").to_vec(),
+        )
+    }
+
+    /// A chain of `[leaf, ca]` where `ca` has `BasicConstraints.cA = false`.
+    ///
+    /// `openssl x509 -inform DER -in cert.der -noout -subject -issuer -ext basicConstraints,keyUsage`
+    /// for `leaf_of_ca_missing_basic_constraints/cert.der`:
+    /// ```text
+    /// subject=CN=LeafOfCaMissingBasicConstraints, C=CH
+    /// issuer=CN=CAMissingBasicConstraints, C=CH
+    /// X509v3 Basic Constraints: critical
+    ///     CA:FALSE
+    /// ```
+    pub fn load_chain_with_ca_missing_basic_constraints() -> CertificateChain {
+        let leaf =
+            include_bytes!("../../test_data/x509/leaf_of_ca_missing_basic_constraints/cert.der")
+                .to_vec();
+        let ca =
+            include_bytes!("../../test_data/x509/ca_missing_basic_constraints/cert.der").to_vec();
+
+        CertificateChain::from_iter([leaf, ca].into_iter().map(DerCertificate::from))
+    }
+
+    /// A chain of `[leaf, intermediate, root_ca]` where `intermediate` has a `KeyUsage`
+    /// extension present but without `keyCertSign` set (per RFC 5280 §6.1.4(n) / OpenSSL, a
+    /// *missing* `KeyUsage` extension would not be a violation, so this fixture deliberately
+    /// includes one with only `digitalSignature`).
+    ///
+    /// `openssl x509 -inform DER -in cert.der -noout -subject -issuer -ext basicConstraints,keyUsage`
+    /// for `intermediate_ca_missing_key_usage/cert.der`:
+    /// ```text
+    /// subject=CN=IntermediateCAMissingKeyUsage, C=CH
+    /// issuer=CN=RootCA, C=CH
+    /// X509v3 Basic Constraints: critical
+    ///     CA:TRUE
+    /// X509v3 Key Usage: critical
+    ///     Digital Signature
+    /// ```
+    /// and for `leaf_of_intermediate_missing_key_usage/cert.der`:
+    /// ```text
+    /// subject=CN=LeafOfIntermediateMissingKeyUsage, C=CH
+    /// issuer=CN=IntermediateCAMissingKeyUsage, C=CH
+    /// X509v3 Basic Constraints: critical
+    ///     CA:FALSE
+    /// ```
+    pub fn load_chain_with_intermediate_missing_key_usage() -> CertificateChain {
+        let leaf =
+            include_bytes!("../../test_data/x509/leaf_of_intermediate_missing_key_usage/cert.der")
+                .to_vec();
+        let intermediate =
+            include_bytes!("../../test_data/x509/intermediate_ca_missing_key_usage/cert.der")
+                .to_vec();
+        let root = include_bytes!("../../test_data/x509/root_ca/cert.der").to_vec();
+
+        CertificateChain::from_iter(
+            [leaf, intermediate, root]
+                .into_iter()
+                .map(DerCertificate::from),
+        )
+    }
+
+    /// A root CA certificate with `BasicConstraints { cA: true, path_len_constraint: Some(0) }`.
+    ///
+    /// `openssl x509 -inform DER -in cert.der -noout -subject -issuer -ext basicConstraints,keyUsage`:
+    /// ```text
+    /// subject=CN=RootCAPathLen0, C=CH
+    /// issuer=CN=RootCAPathLen0, C=CH
+    /// X509v3 Basic Constraints: critical
+    ///     CA:TRUE, pathlen:0
+    /// X509v3 Key Usage: critical
+    ///     Certificate Sign, CRL Sign
+    /// ```
+    pub fn load_root_ca_path_len_0() -> DerCertificate {
+        DerCertificate::from(
+            include_bytes!("../../test_data/x509/root_ca_pathlen0/cert.der").to_vec(),
+        )
+    }
+
+    /// A chain of `[leaf, intermediate, root]` where `root` has `path_len_constraint = Some(0)`
+    /// but the chain presents one intermediate CA below it, violating the constraint.
+    ///
+    /// `openssl x509 -inform DER -in cert.der -noout -subject -issuer -ext basicConstraints,keyUsage`
+    /// for `intermediate_ca_for_pathlen0/cert.der`:
+    /// ```text
+    /// subject=CN=IntermediateCAForPathLen0, C=CH
+    /// issuer=CN=RootCAPathLen0, C=CH
+    /// X509v3 Basic Constraints: critical
+    ///     CA:TRUE
+    /// X509v3 Key Usage: critical
+    ///     Certificate Sign, CRL Sign
+    /// ```
+    /// and for `leaf_of_pathlen0_chain/cert.der`:
+    /// ```text
+    /// subject=CN=LeafOfPathLen0Chain, C=CH
+    /// issuer=CN=IntermediateCAForPathLen0, C=CH
+    /// X509v3 Basic Constraints: critical
+    ///     CA:FALSE
+    /// ```
+    pub fn load_chain_violating_path_len_0() -> CertificateChain {
+        let leaf = include_bytes!("../../test_data/x509/leaf_of_pathlen0_chain/cert.der").to_vec();
+        let intermediate =
+            include_bytes!("../../test_data/x509/intermediate_ca_for_pathlen0/cert.der").to_vec();
+        let root = include_bytes!("../../test_data/x509/root_ca_pathlen0/cert.der").to_vec();
+
+        CertificateChain::from_iter(
+            [leaf, intermediate, root]
+                .into_iter()
+                .map(DerCertificate::from),
+        )
     }
 }

@@ -60,7 +60,7 @@ pub struct ConfigProperties {
 
 impl LeafNode {
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn generate<CSP>(
+    pub(crate) async fn generate<CSP>(
         cipher_suite_provider: &CSP,
         properties: ConfigProperties,
         signing_identity: SigningIdentity,
@@ -97,8 +97,10 @@ impl LeafNode {
         Ok((leaf_node, secret_key))
     }
 
+    // Used to generate test leaves
+    #[cfg(any(feature = "by_ref_proposal", test))]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn update<P: CipherSuiteProvider>(
+    pub(crate) async fn update<P: CipherSuiteProvider>(
         &mut self,
         cipher_suite_provider: &P,
         group_id: &[u8],
@@ -139,7 +141,7 @@ impl LeafNode {
 
     #[allow(clippy::too_many_arguments)]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub async fn commit<P: CipherSuiteProvider>(
+    pub(crate) async fn commit<P: CipherSuiteProvider>(
         &mut self,
         cipher_suite_provider: &P,
         group_id: &[u8],
@@ -543,6 +545,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn test_node_update_meta_changes() {
         let cipher_suite = TEST_CIPHER_SUITE;

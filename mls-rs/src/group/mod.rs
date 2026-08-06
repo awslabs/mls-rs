@@ -2,14 +2,12 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt::{self, Debug};
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::error::IntoAnyError;
 #[cfg(feature = "last_resort_key_package_ext")]
 use mls_rs_core::extension::MlsExtension;
-use mls_rs_core::identity::MemberValidationContext;
 use mls_rs_core::secret::Secret;
 use mls_rs_core::time::MlsTime;
 use snapshot::PendingCommitSnapshot;
@@ -18,7 +16,7 @@ use zeroize::Zeroizing;
 use crate::cipher_suite::CipherSuite;
 use crate::client::MlsError;
 use crate::client_config::ClientConfig;
-use crate::crypto::{HpkeCiphertext, SignatureSecretKey};
+use crate::crypto::{HpkeCiphertext, HpkePsk, SignatureSecretKey};
 #[cfg(feature = "last_resort_key_package_ext")]
 use crate::extension::LastResortKeyPackageExt;
 use crate::extension::RatchetTreeExt;
@@ -30,9 +28,6 @@ use crate::psk::PreSharedKeyID;
 use crate::signer::Signable;
 use crate::tree_kem::hpke_encryption::HpkeEncryptable;
 use crate::tree_kem::kem::TreeKem;
-use crate::tree_kem::leaf_node::LeafNode;
-use crate::tree_kem::leaf_node_validator::{LeafNodeValidator, ValidationContext};
-use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::path_secret::PathSecret;
 pub use crate::tree_kem::Capabilities;
 use crate::tree_kem::{math as tree_math, ValidatedUpdatePath};
@@ -51,6 +46,8 @@ use self::mls_rules::{EncryptionOptions, MlsRules};
 
 #[cfg(feature = "psk")]
 pub use self::resumption::ReinitClient;
+#[cfg(feature = "psk")]
+use alloc::vec;
 
 #[cfg(feature = "psk")]
 use crate::psk::{
@@ -106,12 +103,13 @@ pub use roster::*;
 pub(crate) use mls_rs_core::group::ConfirmedTranscriptHash;
 pub(crate) use util::*;
 
-#[cfg(all(feature = "by_ref_proposal", feature = "external_client"))]
+#[cfg(feature = "by_ref_proposal")]
 pub use self::message_processor::CachedProposal;
 
 #[cfg(feature = "private_message")]
 mod ciphertext_processor;
 
+mod builder;
 mod commit;
 pub mod component_operation;
 pub(crate) mod confirmation_tag;
@@ -163,6 +161,9 @@ mod interop_test_vectors;
 
 mod exported_tree;
 
+pub use crate::tree_kem::leaf_node::{LeafNode, LeafNodeSource};
+pub use crate::tree_kem::node::{LeafIndex, Node, NodeIndex, NodeVec, Parent};
+pub use builder::GroupBuilder;
 pub use exported_tree::ExportedTree;
 
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
@@ -282,121 +283,6 @@ impl<C> Group<C>
 where
     C: ClientConfig + Clone,
 {
-    #[allow(clippy::too_many_arguments)]
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    pub(crate) async fn new(
-        config: C,
-        group_id: Option<Vec<u8>>,
-        cipher_suite: CipherSuite,
-        protocol_version: ProtocolVersion,
-        signing_identity: SigningIdentity,
-        group_context_extensions: ExtensionList,
-        leaf_node_extensions: ExtensionList,
-        signer: SignatureSecretKey,
-        maybe_now_time: Option<MlsTime>,
-    ) -> Result<Self, MlsError> {
-        let cipher_suite_provider = cipher_suite_provider(config.crypto_provider(), cipher_suite)?;
-
-        let (leaf_node, leaf_node_secret) = LeafNode::generate(
-            &cipher_suite_provider,
-            config.leaf_properties(leaf_node_extensions),
-            signing_identity,
-            &signer,
-            config.lifetime(maybe_now_time),
-        )
-        .await?;
-
-        let (mut public_tree, private_tree) = TreeKemPublic::derive(
-            leaf_node,
-            leaf_node_secret,
-            &config.identity_provider(),
-            &group_context_extensions,
-        )
-        .await?;
-
-        let tree_hash = public_tree.tree_hash(&cipher_suite_provider).await?;
-
-        let group_id = group_id.map(Ok).unwrap_or_else(|| {
-            cipher_suite_provider
-                .random_bytes_vec(cipher_suite_provider.kdf_extract_size())
-                .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
-        })?;
-
-        let context = GroupContext::new(
-            protocol_version,
-            cipher_suite,
-            group_id,
-            tree_hash,
-            group_context_extensions,
-        );
-
-        let identity_provider = config.identity_provider();
-
-        let member_validation_context = MemberValidationContext::ForNewGroup {
-            current_context: &context,
-        };
-
-        let leaf_node_validator = LeafNodeValidator::new(
-            &cipher_suite_provider,
-            &identity_provider,
-            member_validation_context,
-        );
-
-        leaf_node_validator
-            .check_if_valid(
-                public_tree.get_leaf_node(LeafIndex::unchecked(0))?,
-                ValidationContext::Add(maybe_now_time),
-            )
-            .await?;
-
-        let state_repo = GroupStateRepository::new(
-            #[cfg(feature = "prior_epoch")]
-            context.group_id.clone(),
-            config.group_state_storage(),
-            config.key_package_repo(),
-            None,
-        )?;
-
-        let key_schedule_result = KeySchedule::from_random_epoch_secret(
-            &cipher_suite_provider,
-            #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
-            public_tree.total_leaf_count(),
-        )
-        .await?;
-
-        let confirmation_tag = ConfirmationTag::create(
-            &key_schedule_result.confirmation_key,
-            &vec![].into(),
-            &cipher_suite_provider,
-        )
-        .await?;
-
-        let interim_hash = InterimTranscriptHash::create(
-            &cipher_suite_provider,
-            &vec![].into(),
-            &confirmation_tag,
-        )
-        .await?;
-
-        Ok(Self {
-            config,
-            state: GroupState::new(context, public_tree, interim_hash, confirmation_tag),
-            private_tree,
-            key_schedule: key_schedule_result.key_schedule,
-            #[cfg(feature = "by_ref_proposal")]
-            pending_updates: Default::default(),
-            pending_commit: Default::default(),
-            #[cfg(test)]
-            commit_modifiers: Default::default(),
-            epoch_secrets: key_schedule_result.epoch_secrets,
-            state_repo,
-            cipher_suite_provider,
-            #[cfg(feature = "psk")]
-            previous_psk: None,
-            signer,
-        })
-    }
-
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub(crate) async fn join(
         welcome: &MlsMessage,
@@ -623,6 +509,32 @@ where
         Ok(hpke_ciphertext)
     }
 
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn hpke_encrypt_psk_to_recipient_with_generic_context(
+        &self,
+        recipient_index: u32,
+        context_info: &[u8],
+        associated_data: Option<&[u8]>,
+        plaintext: &[u8],
+        psk: HpkePsk<'_>,
+    ) -> Result<HpkeCiphertext, MlsError> {
+        let member_leaf_node = self
+            .group_state()
+            .public_tree
+            .get_leaf_node(LeafIndex::try_from(recipient_index)?)?;
+        let member_public_key = &member_leaf_node.public_key;
+        self.cipher_suite_provider
+            .hpke_seal_psk(
+                member_public_key,
+                context_info,
+                associated_data,
+                plaintext,
+                psk,
+            )
+            .await
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
+    }
+
     /// HPKE encrypts a message to the member at the specified `recipient_index` in the group.
     ///
     /// Takes `context_info`, `associated_data`, and `plaintext`.
@@ -643,6 +555,31 @@ where
             context_info,
             associated_data,
             plaintext,
+        )
+        .await
+    }
+
+    /// HPKE encrypts a message to the member at the specified `recipient_index` using
+    /// PSK mode, binding the ciphertext to knowledge of `psk`.
+    ///
+    /// Takes `context_info`, `psk`, `associated_data`, and `plaintext`.
+    /// Returns `ciphertext` and `kem_output` inside `HpkeCiphertext`.
+    #[cfg(feature = "non_domain_separated_hpke_encrypt_decrypt")]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn hpke_encrypt_psk_to_recipient(
+        &self,
+        recipient_index: u32,
+        context_info: &[u8],
+        associated_data: Option<&[u8]>,
+        plaintext: &[u8],
+        psk: HpkePsk<'_>,
+    ) -> Result<HpkeCiphertext, MlsError> {
+        self.hpke_encrypt_psk_to_recipient_with_generic_context(
+            recipient_index,
+            context_info,
+            associated_data,
+            plaintext,
+            psk,
         )
         .await
     }
@@ -672,6 +609,33 @@ where
         .await
     }
 
+    /// HPKE encrypts a message to the member at the specified `recipient_index` using
+    /// PSK mode with domain separation.
+    ///
+    /// Takes a `component_id` and `context` to construct a `ComponentOperationLabel` for
+    /// domain separation, plus `psk`, `associated_data`, and `plaintext`.
+    /// Returns `ciphertext` and `kem_output` inside `HpkeCiphertext`.
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn safe_encrypt_with_context_and_psk_to_recipient(
+        &self,
+        recipient_index: u32,
+        component_id: ComponentID,
+        context: &[u8],
+        associated_data: Option<&[u8]>,
+        plaintext: &[u8],
+        psk: HpkePsk<'_>,
+    ) -> Result<HpkeCiphertext, MlsError> {
+        let component_operation_label = ComponentOperationLabel::new(component_id, context);
+        self.hpke_encrypt_psk_to_recipient_with_generic_context(
+            recipient_index,
+            &component_operation_label.get_bytes()?,
+            associated_data,
+            plaintext,
+            psk,
+        )
+        .await
+    }
+
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn hpke_decrypt_for_current_member_with_generic_context(
         &self,
@@ -692,6 +656,33 @@ where
                 self_public_key,
                 context_info,
                 associated_data,
+            )
+            .await
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
+    }
+
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn hpke_decrypt_psk_for_current_member_with_generic_context(
+        &self,
+        context_info: &[u8],
+        associated_data: Option<&[u8]>,
+        hpke_ciphertext: HpkeCiphertext,
+        psk: HpkePsk<'_>,
+    ) -> Result<Zeroizing<Vec<u8>>, MlsError> {
+        let self_private_key = &self.private_tree.secret_keys[0]
+            .as_ref()
+            .ok_or(MlsError::InvalidTreeKemPrivateKey)?;
+
+        let self_public_key = &self.current_user_leaf_node()?.public_key;
+
+        self.cipher_suite_provider
+            .hpke_open_psk(
+                &hpke_ciphertext,
+                self_private_key,
+                self_public_key,
+                context_info,
+                associated_data,
+                psk,
             )
             .await
             .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
@@ -719,6 +710,28 @@ where
         .await
     }
 
+    /// HPKE decrypts a PSK-mode message sent to the current member.
+    ///
+    /// Takes `HpkeCiphertext` generated by [`hpke_encrypt_psk_to_recipient`](Group::hpke_encrypt_psk_to_recipient)
+    /// intended for the current member, along with the same `psk` used during encryption.
+    #[cfg(feature = "non_domain_separated_hpke_encrypt_decrypt")]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn hpke_decrypt_psk_for_current_member(
+        &self,
+        context_info: &[u8],
+        associated_data: Option<&[u8]>,
+        hpke_ciphertext: HpkeCiphertext,
+        psk: HpkePsk<'_>,
+    ) -> Result<Zeroizing<Vec<u8>>, MlsError> {
+        self.hpke_decrypt_psk_for_current_member_with_generic_context(
+            context_info,
+            associated_data,
+            hpke_ciphertext,
+            psk,
+        )
+        .await
+    }
+
     /// HPKE decrypts a message sent to the current member.
     ///
     /// Takes `HpkeCiphertext` generated by `hpke_encrypt_to_recipient` intended for the
@@ -736,6 +749,30 @@ where
             &component_operation_label.get_bytes()?,
             associated_data,
             hpke_ciphertext,
+        )
+        .await
+    }
+
+    /// HPKE decrypts a PSK-mode message sent to the current member with domain separation.
+    ///
+    /// Takes `HpkeCiphertext` generated by
+    /// [`safe_encrypt_with_context_and_psk_to_recipient`](Group::safe_encrypt_with_context_and_psk_to_recipient)
+    /// intended for the current member, along with the same `psk` used during encryption.
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    pub async fn safe_decrypt_with_context_and_psk_for_current_member(
+        &self,
+        component_id: ComponentID,
+        context: &[u8],
+        associated_data: Option<&[u8]>,
+        hpke_ciphertext: HpkeCiphertext,
+        psk: HpkePsk<'_>,
+    ) -> Result<Zeroizing<Vec<u8>>, MlsError> {
+        let component_operation_label = ComponentOperationLabel::new(component_id, context);
+        self.hpke_decrypt_psk_for_current_member_with_generic_context(
+            &component_operation_label.get_bytes()?,
+            associated_data,
+            hpke_ciphertext,
+            psk,
         )
         .await
     }
@@ -1302,6 +1339,13 @@ where
                 )
                 .await?;
 
+                validate_sender_signature_key_from_prior_epoch(
+                    &self.state.public_tree,
+                    &epoch.signature_public_keys,
+                    &auth_content.content.sender,
+                )
+                .await?;
+
                 Ok(auth_content)
             }
 
@@ -1450,6 +1494,13 @@ where
                 )
                 .await?;
 
+                validate_sender_signature_key_from_prior_epoch(
+                    &self.state.public_tree,
+                    &epoch.signature_public_keys,
+                    &content.content.sender,
+                )
+                .await?;
+
                 Ok(content)
             }
 
@@ -1538,6 +1589,24 @@ where
     #[cfg(feature = "by_ref_proposal")]
     pub fn commit_required(&self) -> bool {
         !self.state.proposals.is_empty()
+    }
+
+    /// Returns all by-reference proposals that have been cached for this group.
+    ///
+    /// The returned [`CachedProposal`] values contain the proposal content,
+    /// sender, and proposal reference.
+    #[cfg(feature = "by_ref_proposal")]
+    pub fn get_cached_proposals(&self) -> Vec<CachedProposal> {
+        self.state
+            .proposals
+            .proposals
+            .iter()
+            .map(|(proposal_ref, cached)| CachedProposal {
+                proposal: cached.proposal.clone(),
+                proposal_ref: proposal_ref.clone(),
+                sender: cached.sender,
+            })
+            .collect()
     }
 
     /// Process an inbound message for this group.
@@ -2405,6 +2474,8 @@ pub(crate) mod test_utils;
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
+
     use crate::{
         client::test_utils::{
             test_client_with_key_pkg, TestClientBuilder, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION,
@@ -2449,7 +2520,6 @@ mod tests {
     #[cfg(any(feature = "psk", feature = "std"))]
     use crate::client::Client;
 
-    #[cfg(feature = "psk")]
     use crate::psk::PreSharedKey;
 
     #[cfg(any(feature = "by_ref_proposal", feature = "private_message"))]
@@ -2518,6 +2588,32 @@ mod tests {
 
             assert_eq!(*group.private_tree.self_index, group.current_member_index());
         }
+    }
+
+    #[cfg(feature = "custom_start_epoch")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_create_group_with_start_epoch() {
+        const START_EPOCH: u64 = 42;
+
+        let mut group = TestClientBuilder::new_for_test()
+            .with_random_signing_identity("alice", TEST_CIPHER_SUITE)
+            .await
+            .build()
+            .group_builder()
+            .unwrap()
+            .with_start_epoch(START_EPOCH)
+            .build()
+            .await
+            .unwrap();
+
+        // The group starts at the configured epoch instead of 0.
+        assert_eq!(group.current_epoch(), START_EPOCH);
+
+        // The group is functional from the custom epoch: a commit advances it normally.
+        let commit = group.commit(Vec::new()).await.unwrap();
+        group.apply_pending_commit().await.unwrap();
+        assert_eq!(group.current_epoch(), START_EPOCH + 1);
+        assert_eq!(commit.commit_message.epoch(), Some(START_EPOCH));
     }
 
     #[cfg(feature = "private_message")]
@@ -2741,6 +2837,357 @@ mod tests {
             .unwrap();
 
         assert_eq!(plaintext.to_vec(), *hpke_decrypted);
+    }
+
+    #[cfg(feature = "non_domain_separated_hpke_encrypt_decrypt")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_hpke_psk_encrypt_decrypt() {
+        let (alice_group, bob_group) =
+            test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, true).await;
+        let receiver_index = alice_group.current_member_index();
+        let sender_index = bob_group.current_member_index();
+
+        let context_info: Vec<u8> = vec![
+            receiver_index.try_into().unwrap(),
+            sender_index.try_into().unwrap(),
+        ];
+        let plaintext = b"message";
+        let psk = vec![0xABu8; 32];
+        let psk_id = b"test-psk-id";
+
+        let hpke_ciphertext = bob_group
+            .hpke_encrypt_psk_to_recipient(
+                receiver_index,
+                &context_info,
+                None,
+                plaintext,
+                HpkePsk::new(psk_id, &psk),
+            )
+            .await
+            .unwrap();
+
+        let hpke_decrypted = alice_group
+            .hpke_decrypt_psk_for_current_member(
+                &context_info,
+                None,
+                hpke_ciphertext,
+                HpkePsk::new(psk_id, &psk),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(plaintext.to_vec(), *hpke_decrypted);
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_safe_context_hpke_psk_encrypt_decrypt() {
+        let component_id: ComponentID = 42;
+        let (alice_group, bob_group) =
+            test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, true).await;
+        let receiver_index = alice_group.current_member_index();
+        let sender_index = bob_group.current_member_index();
+
+        let context_info: Vec<u8> = vec![
+            receiver_index.try_into().unwrap(),
+            sender_index.try_into().unwrap(),
+        ];
+        let plaintext = b"message";
+        let psk = vec![0xCDu8; 32];
+        let psk_id = b"safe-psk-id";
+
+        let hpke_ciphertext = bob_group
+            .safe_encrypt_with_context_and_psk_to_recipient(
+                receiver_index,
+                component_id,
+                &context_info,
+                None,
+                plaintext,
+                HpkePsk::new(psk_id, &psk),
+            )
+            .await
+            .unwrap();
+
+        let hpke_decrypted = alice_group
+            .safe_decrypt_with_context_and_psk_for_current_member(
+                component_id,
+                &context_info,
+                None,
+                hpke_ciphertext,
+                HpkePsk::new(psk_id, &psk),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(plaintext.to_vec(), *hpke_decrypted);
+    }
+
+    #[cfg(feature = "non_domain_separated_hpke_encrypt_decrypt")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_hpke_psk_non_recipient_cant_decrypt() {
+        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (mut bob, _) = alice.join("bob").await;
+        let (carol, commit) = alice.join("carol").await;
+
+        bob.process_incoming_message(commit).await.unwrap();
+
+        let receiver_index = alice.current_member_index();
+        let sender_index = bob.current_member_index();
+
+        let context_info: Vec<u8> = vec![
+            receiver_index.try_into().unwrap(),
+            sender_index.try_into().unwrap(),
+        ];
+        let plaintext = b"message";
+        let psk = vec![0xEFu8; 32];
+        let psk_id = b"test-psk-id";
+
+        let hpke_ciphertext = bob
+            .hpke_encrypt_psk_to_recipient(
+                receiver_index,
+                &context_info,
+                None,
+                plaintext,
+                HpkePsk::new(psk_id, &psk),
+            )
+            .await
+            .unwrap();
+
+        let hpke_decrypted = carol
+            .hpke_decrypt_psk_for_current_member(
+                &context_info,
+                None,
+                hpke_ciphertext,
+                HpkePsk::new(psk_id, &psk),
+            )
+            .await;
+
+        assert_matches!(hpke_decrypted, Err(MlsError::CryptoProviderError(_)));
+    }
+
+    #[cfg(feature = "non_domain_separated_hpke_encrypt_decrypt")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_hpke_psk_wrong_psk_cant_decrypt() {
+        let (alice_group, bob_group) =
+            test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, true).await;
+        let receiver_index = alice_group.current_member_index();
+        let sender_index = bob_group.current_member_index();
+
+        let context_info: Vec<u8> = vec![
+            receiver_index.try_into().unwrap(),
+            sender_index.try_into().unwrap(),
+        ];
+        let plaintext = b"message";
+        let psk = vec![0xABu8; 32];
+        let wrong_psk = vec![0xFFu8; 32];
+        let psk_id = b"test-psk-id";
+
+        let hpke_ciphertext = bob_group
+            .hpke_encrypt_psk_to_recipient(
+                receiver_index,
+                &context_info,
+                None,
+                plaintext,
+                HpkePsk::new(psk_id, &psk),
+            )
+            .await
+            .unwrap();
+
+        let hpke_decrypted = alice_group
+            .hpke_decrypt_psk_for_current_member(
+                &context_info,
+                None,
+                hpke_ciphertext,
+                HpkePsk::new(psk_id, &wrong_psk),
+            )
+            .await;
+
+        assert_matches!(hpke_decrypted, Err(MlsError::CryptoProviderError(_)));
+    }
+
+    #[cfg(feature = "non_domain_separated_hpke_encrypt_decrypt")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_hpke_psk_with_aad_encrypt_decrypt() {
+        let (alice_group, bob_group) =
+            test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, true).await;
+        let receiver_index = alice_group.current_member_index();
+
+        let context_info = b"context";
+        let plaintext = b"message";
+        let aad = b"associated data";
+        let psk = vec![0xABu8; 32];
+        let psk_id = b"aad-test-psk-id";
+
+        let hpke_ciphertext = bob_group
+            .hpke_encrypt_psk_to_recipient(
+                receiver_index,
+                context_info,
+                Some(aad),
+                plaintext,
+                HpkePsk::new(psk_id, &psk),
+            )
+            .await
+            .unwrap();
+
+        let hpke_decrypted = alice_group
+            .hpke_decrypt_psk_for_current_member(
+                context_info,
+                Some(aad),
+                hpke_ciphertext,
+                HpkePsk::new(psk_id, &psk),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(plaintext.to_vec(), *hpke_decrypted);
+    }
+
+    #[cfg(feature = "non_domain_separated_hpke_encrypt_decrypt")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_hpke_psk_wrong_aad_cant_decrypt() {
+        let (alice_group, bob_group) =
+            test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, true).await;
+        let receiver_index = alice_group.current_member_index();
+
+        let context_info = b"context";
+        let plaintext = b"message";
+        let aad = b"associated data";
+        let wrong_aad = b"wrong associated data";
+        let psk = vec![0xABu8; 32];
+        let psk_id = b"aad-test-psk-id";
+
+        let hpke_ciphertext = bob_group
+            .hpke_encrypt_psk_to_recipient(
+                receiver_index,
+                context_info,
+                Some(aad),
+                plaintext,
+                HpkePsk::new(psk_id, &psk),
+            )
+            .await
+            .unwrap();
+
+        let hpke_decrypted = alice_group
+            .hpke_decrypt_psk_for_current_member(
+                context_info,
+                Some(wrong_aad),
+                hpke_ciphertext,
+                HpkePsk::new(psk_id, &psk),
+            )
+            .await;
+
+        assert_matches!(hpke_decrypted, Err(MlsError::CryptoProviderError(_)));
+    }
+
+    #[cfg(feature = "non_domain_separated_hpke_encrypt_decrypt")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_hpke_psk_wrong_psk_id_cant_decrypt() {
+        let (alice_group, bob_group) =
+            test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, true).await;
+        let receiver_index = alice_group.current_member_index();
+
+        let context_info = b"context";
+        let plaintext = b"message";
+        let psk = vec![0xABu8; 32];
+        let psk_id = b"correct-psk-id";
+        let wrong_psk_id = b"wrong-psk-id";
+
+        let hpke_ciphertext = bob_group
+            .hpke_encrypt_psk_to_recipient(
+                receiver_index,
+                context_info,
+                None,
+                plaintext,
+                HpkePsk::new(psk_id, &psk),
+            )
+            .await
+            .unwrap();
+
+        let hpke_decrypted = alice_group
+            .hpke_decrypt_psk_for_current_member(
+                context_info,
+                None,
+                hpke_ciphertext,
+                HpkePsk::new(wrong_psk_id, &psk),
+            )
+            .await;
+
+        assert_matches!(hpke_decrypted, Err(MlsError::CryptoProviderError(_)));
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_safe_context_hpke_psk_wrong_psk_cant_decrypt() {
+        let component_id: ComponentID = 42;
+        let (alice_group, bob_group) =
+            test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, true).await;
+        let receiver_index = alice_group.current_member_index();
+
+        let context_info = b"context";
+        let plaintext = b"message";
+        let psk = vec![0xCDu8; 32];
+        let wrong_psk = vec![0xFFu8; 32];
+        let psk_id = b"safe-psk-id";
+
+        let hpke_ciphertext = bob_group
+            .safe_encrypt_with_context_and_psk_to_recipient(
+                receiver_index,
+                component_id,
+                context_info,
+                None,
+                plaintext,
+                HpkePsk::new(psk_id, &psk),
+            )
+            .await
+            .unwrap();
+
+        let hpke_decrypted = alice_group
+            .safe_decrypt_with_context_and_psk_for_current_member(
+                component_id,
+                context_info,
+                None,
+                hpke_ciphertext,
+                HpkePsk::new(psk_id, &wrong_psk),
+            )
+            .await;
+
+        assert_matches!(hpke_decrypted, Err(MlsError::CryptoProviderError(_)));
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_safe_context_hpke_psk_wrong_component_id_cant_decrypt() {
+        let component_id: ComponentID = 42;
+        let wrong_component_id: ComponentID = 99;
+        let (alice_group, bob_group) =
+            test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, true).await;
+        let receiver_index = alice_group.current_member_index();
+
+        let context_info = b"context";
+        let plaintext = b"message";
+        let psk = vec![0xCDu8; 32];
+        let psk_id = b"safe-psk-id";
+
+        let hpke_ciphertext = bob_group
+            .safe_encrypt_with_context_and_psk_to_recipient(
+                receiver_index,
+                component_id,
+                context_info,
+                None,
+                plaintext,
+                HpkePsk::new(psk_id, &psk),
+            )
+            .await
+            .unwrap();
+
+        let hpke_decrypted = alice_group
+            .safe_decrypt_with_context_and_psk_for_current_member(
+                wrong_component_id,
+                context_info,
+                None,
+                hpke_ciphertext,
+                HpkePsk::new(psk_id, &psk),
+            )
+            .await;
+
+        assert_matches!(hpke_decrypted, Err(MlsError::CryptoProviderError(_)));
     }
 
     #[cfg(feature = "non_domain_separated_hpke_encrypt_decrypt")]
@@ -3046,6 +3493,133 @@ mod tests {
         assert_matches!(auth_content, Err(MlsError::UnexpectedMessageType));
     }
 
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_malformed_tree_not_accepted() {
+        use crate::tree_kem::parent_hash::ParentHash;
+
+        let mut alice = test_group_custom(
+            TEST_PROTOCOL_VERSION,
+            TEST_CIPHER_SUITE,
+            Default::default(),
+            None,
+            Some(
+                CommitOptions::new()
+                    .with_allow_external_commit(true)
+                    .with_ratchet_tree_extension(false),
+            ),
+        )
+        .await;
+        let _ = alice.join("bob").await;
+        let _ = alice.join("carol").await;
+        let _ = alice.join("dan").await;
+        let _ = alice.join("frank").await;
+        let _ = alice.join("john").await;
+        let _ = alice.join("kate").await;
+
+        alice
+            .commit_builder()
+            .remove_member(5)
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+        alice.apply_pending_commit().await.unwrap();
+        alice
+            .commit_builder()
+            .remove_member(3)
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+        alice.apply_pending_commit().await.unwrap();
+
+        let (ethan_client, ethan_key_package) =
+            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "ethan").await;
+
+        let commit_output = alice
+            .commit_builder()
+            .add_member(ethan_key_package)
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+        alice.apply_pending_commit().await.unwrap();
+
+        let mut exported_tree = commit_output.ratchet_tree.unwrap();
+
+        let nodes = exported_tree.0.to_mut();
+        assert_eq!(nodes[10], None);
+
+        // now set this blank node to be a parent
+        // this is illegal since even-numbered nodes are parents
+        nodes[10] = Some(Node::Parent(Parent {
+            public_key: alice
+                .cipher_suite_provider()
+                .kem_generate()
+                .await
+                .unwrap()
+                .1,
+            parent_hash: ParentHash::empty(),
+            unmerged_leaves: vec![],
+        }));
+
+        // Group from ethan's perspective
+        let attempt_to_join = Group::join(
+            &commit_output.welcome_messages[0],
+            Some(exported_tree),
+            ethan_client.config,
+            ethan_client.signer.unwrap(),
+            None,
+        )
+        .await
+        .map(|_| ());
+
+        assert_matches!(attempt_to_join, Err(MlsError::ExpectedNode));
+    }
+
+    #[cfg(all(feature = "prior_epoch", feature = "prior_epoch_membership_key"))]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn test_messages_from_prior_epoch_aliased_key_not_processed() {
+        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (mut bob, _) = alice.join("bob").await;
+
+        let encrypted_message = bob
+            .encrypt_application_message(b"test", vec![])
+            .await
+            .unwrap();
+
+        let custom_proposal = CustomProposal::new(TEST_CUSTOM_PROPOSAL_TYPE, vec![0, 1, 2]);
+        let proposal = bob
+            .propose_custom(custom_proposal.clone(), vec![1, 2, 3])
+            .await
+            .unwrap();
+
+        // now remove bob and add carol
+        alice
+            .commit_builder()
+            .remove_member(1)
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+        alice.apply_pending_commit().await.unwrap();
+
+        alice.join("carol").await;
+
+        // test that alice can no longer process the message
+        // from bob
+        let decrypt_result = alice.process_incoming_message(encrypted_message).await;
+        assert_matches!(decrypt_result, Err(MlsError::MemberNotFound));
+
+        let validate_custom_proposal_result = alice
+            .validate_custom_proposal(&proposal, Some(TEST_CUSTOM_PROPOSAL_TYPE))
+            .await;
+        assert_matches!(
+            validate_custom_proposal_result,
+            Err(MlsError::MemberNotFound)
+        );
+    }
+
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn test_two_member_group(
         protocol_version: ProtocolVersion,
@@ -3294,11 +3868,10 @@ mod tests {
         test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "alice")
             .await
             .0
-            .create_group(
-                core::iter::once(required_caps.into_extension().unwrap()).collect(),
-                Default::default(),
-                None,
-            )
+            .group_builder()
+            .unwrap()
+            .with_group_context_extensions(vec![required_caps.into_extension().unwrap()].into())
+            .build()
             .await
     }
 
@@ -3364,11 +3937,10 @@ mod tests {
             test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "alice")
                 .await
                 .0
-                .create_group(
-                    core::iter::once(ext_senders).collect(),
-                    Default::default(),
-                    None,
-                )
+                .group_builder()
+                .unwrap()
+                .with_group_context_extension(ext_senders)
+                .build()
                 .await
                 .map(|_| ());
 
@@ -3925,6 +4497,55 @@ mod tests {
         let (_, _) = test_group.join("r").await;
     }
 
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn even_larger_group_fails_with_parent_hash_mismatch_blank_intermediate_nonblank_grandparent(
+    ) {
+        let mut test_group = test_group_custom(
+            TEST_PROTOCOL_VERSION,
+            TEST_CIPHER_SUITE,
+            Default::default(),
+            None,
+            Some(CommitOptions::new().with_ratchet_tree_extension(true)),
+        )
+        .await;
+
+        let (_, _) = test_group.join("b").await;
+        let (_, _) = test_group.join("c").await;
+        let (_, _) = test_group.join("d").await;
+        let (_, _) = test_group.join("e").await;
+        let (_, _) = test_group.join("f").await;
+        let (_, _) = test_group.join("g").await;
+        test_group
+            .commit_builder()
+            .remove_member(1)
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+        test_group.process_pending_commit().await.unwrap();
+        let (_, _) = test_group.join("h").await;
+        let (_, _) = test_group.join("i").await;
+        let (_, _) = test_group.join("j").await;
+        let (_, _) = test_group.join("k").await;
+        let (_, _) = test_group.join("l").await;
+        let (_, _) = test_group.join("m").await;
+        test_group
+            .commit_builder()
+            .remove_member(2)
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+        test_group.process_pending_commit().await.unwrap();
+        let (_, _) = test_group.join("n").await;
+        let (_, _) = test_group.join("o").await;
+        let (_, _) = test_group.join("p").await;
+        let (_, _) = test_group.join("q").await;
+        let (_, _) = test_group.join("r").await;
+        let (_, _) = test_group.join("s").await;
+    }
+
     #[cfg(feature = "private_message")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn member_can_see_sender_creds() {
@@ -4440,6 +5061,10 @@ mod tests {
             Some(sk.clone())
         };
 
+        groups[0]
+            .commit_modifiers
+            .skip_committer_self_update_validation = true;
+
         let commit_output = groups[0].commit(vec![]).await.unwrap();
 
         let res = groups[2]
@@ -4460,6 +5085,10 @@ mod tests {
             leaf.capabilities.credentials = vec![2.into()];
             Some(sk.clone())
         };
+
+        groups[0]
+            .commit_modifiers
+            .skip_committer_self_update_validation = true;
 
         let commit_output = groups[0].commit(vec![]).await.unwrap();
 
@@ -4489,6 +5118,10 @@ mod tests {
             Some(sk.clone())
         };
 
+        groups[0]
+            .commit_modifiers
+            .skip_committer_self_update_validation = true;
+
         let commit_output = groups[0].commit(vec![]).await.unwrap();
 
         let res = groups[2]
@@ -4496,6 +5129,50 @@ mod tests {
             .await;
 
         assert_matches!(res, Err(MlsError::RequiredCredentialNotFound(_)));
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn committer_leaf_has_unsupported_credential_rejected_at_commit_time() {
+        let mut groups =
+            get_test_groups_with_features(3, Default::default(), Default::default()).await;
+
+        for group in groups.iter_mut() {
+            group.config.0.identity_provider.allow_any_custom = true;
+        }
+
+        groups[0].commit_modifiers.modify_leaf = |leaf, sk| {
+            leaf.signing_identity.credential = Credential::Custom(CustomCredential::new(
+                CredentialType::new(43),
+                leaf.signing_identity
+                    .credential
+                    .as_basic()
+                    .unwrap()
+                    .identifier
+                    .to_vec(),
+            ));
+
+            Some(sk.clone())
+        };
+
+        let res = groups[0].commit(vec![]).await;
+
+        assert_matches!(res, Err(MlsError::CredentialTypeOfNewLeafIsUnsupported));
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn committer_leaf_not_supporting_credential_used_in_another_leaf_rejected_at_commit_time()
+    {
+        let mut groups =
+            get_test_groups_with_features(3, Default::default(), Default::default()).await;
+
+        groups[0].commit_modifiers.modify_leaf = |leaf, sk| {
+            leaf.capabilities.credentials = vec![2.into()];
+            Some(sk.clone())
+        };
+
+        let res = groups[0].commit(vec![]).await;
+
+        assert_matches!(res, Err(MlsError::InUseCredentialTypeUnsupportedByNewLeaf));
     }
 
     #[cfg(feature = "by_ref_proposal")]
@@ -4532,7 +5209,10 @@ mod tests {
             .with_random_signing_identity("alice", TEST_CIPHER_SUITE)
             .await
             .build()
-            .create_group(vec![ext_senders].into(), Default::default(), None)
+            .group_builder()
+            .unwrap()
+            .with_group_context_extension(ext_senders)
+            .build()
             .await
             .unwrap();
 
@@ -4597,11 +5277,10 @@ mod tests {
             .with_random_signing_identity("alice", TEST_CIPHER_SUITE)
             .await
             .build()
-            .create_group(
-                core::iter::once(ext_senders).collect(),
-                Default::default(),
-                None,
-            )
+            .group_builder()
+            .unwrap()
+            .with_group_context_extension(ext_senders)
+            .build()
             .await
             .unwrap();
 
@@ -4633,7 +5312,9 @@ mod tests {
             .with_random_signing_identity("alice", TEST_CIPHER_SUITE)
             .await
             .build()
-            .create_group(Default::default(), Default::default(), None)
+            .group_builder()
+            .unwrap()
+            .build()
             .await
             .unwrap();
 
@@ -5144,12 +5825,12 @@ mod tests {
     async fn invalid_update_does_not_prevent_other_updates() {
         const EXTENSION_TYPE: ExtensionType = ExtensionType::new(33);
 
-        let group_extensions = ExtensionList::from(vec![RequiredCapabilitiesExt {
+        let group_extension = RequiredCapabilitiesExt {
             extensions: vec![EXTENSION_TYPE],
             ..Default::default()
         }
         .into_extension()
-        .unwrap()]);
+        .unwrap();
 
         // Alice creates a group requiring support for an extension
         let mut alice = TestClientBuilder::new_for_test()
@@ -5157,7 +5838,10 @@ mod tests {
             .await
             .extension_type(EXTENSION_TYPE)
             .build()
-            .create_group(group_extensions.clone(), Default::default(), None)
+            .group_builder()
+            .unwrap()
+            .with_group_context_extension(group_extension)
+            .build()
             .await
             .unwrap();
 
@@ -5792,11 +6476,10 @@ mod tests {
         current_time += 10;
 
         let mut alice_group = alice
-            .create_group(
-                Default::default(),
-                Default::default(),
-                Some(current_time.into()),
-            )
+            .group_builder()
+            .unwrap()
+            .with_now_time(current_time.into())
+            .build()
             .await
             .unwrap();
 
@@ -5832,60 +6515,6 @@ mod tests {
 
     #[cfg(feature = "custom_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn custom_proposal_may_enforce_path() {
-        test_custom_proposal_mls_rules(true).await;
-    }
-
-    #[cfg(feature = "custom_proposal")]
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn custom_proposal_need_not_enforce_path() {
-        test_custom_proposal_mls_rules(false).await;
-    }
-
-    #[cfg(feature = "custom_proposal")]
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn test_custom_proposal_mls_rules(path_required_for_custom: bool) {
-        let mls_rules = CustomMlsRules {
-            path_required_for_custom,
-            external_joiner_can_send_custom: true,
-        };
-
-        let mut alice = client_with_custom_rules(b"alice", mls_rules.clone())
-            .await
-            .create_group(Default::default(), Default::default(), None)
-            .await
-            .unwrap();
-
-        let alice_pub_before = alice.current_user_leaf_node().unwrap().public_key.clone();
-
-        let kp = client_with_custom_rules(b"bob", mls_rules)
-            .await
-            .generate_key_package_message(Default::default(), Default::default(), None)
-            .await
-            .unwrap();
-
-        alice
-            .commit_builder()
-            .custom_proposal(CustomProposal::new(TEST_CUSTOM_PROPOSAL_TYPE, vec![]))
-            .add_member(kp)
-            .unwrap()
-            .build()
-            .await
-            .unwrap();
-
-        alice.apply_pending_commit().await.unwrap();
-
-        let alice_pub_after = &alice.current_user_leaf_node().unwrap().public_key;
-
-        if path_required_for_custom {
-            assert_ne!(alice_pub_after, &alice_pub_before);
-        } else {
-            assert_eq!(alice_pub_after, &alice_pub_before);
-        }
-    }
-
-    #[cfg(feature = "custom_proposal")]
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn custom_proposal_by_value_in_external_join_may_be_allowed() {
         test_custom_proposal_by_value_in_external_join(true).await
     }
@@ -5906,7 +6535,9 @@ mod tests {
 
         let mut alice = client_with_custom_rules(b"alice", mls_rules.clone())
             .await
-            .create_group(Default::default(), Default::default(), None)
+            .group_builder()
+            .unwrap()
+            .build()
             .await
             .unwrap();
 
@@ -5941,7 +6572,9 @@ mod tests {
 
         let mut alice = client_with_custom_rules(b"alice", mls_rules.clone())
             .await
-            .create_group(Default::default(), Default::default(), None)
+            .group_builder()
+            .unwrap()
+            .build()
             .await
             .unwrap();
 
@@ -6094,10 +6727,7 @@ mod tests {
         .await;
 
         let mut alice = TestGroup {
-            group: alice
-                .create_group(Default::default(), Default::default(), None)
-                .await
-                .unwrap(),
+            group: alice.group_builder().unwrap().build().await.unwrap(),
         };
 
         let mut bob = alice.join("bob").await.0;
@@ -6161,6 +6791,63 @@ mod tests {
         group.apply_pending_commit().await.unwrap();
 
         assert!(!group.commit_required());
+    }
+
+    #[cfg(feature = "by_ref_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn cached_proposals_returns_pending_proposals() {
+        let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+
+        assert!(group.get_cached_proposals().is_empty());
+
+        group
+            .propose_group_context_extensions(ExtensionList::new(), vec![])
+            .await
+            .unwrap();
+
+        let cached = group.get_cached_proposals();
+        assert_eq!(cached.len(), 1);
+        assert!(matches!(
+            cached[0].proposal(),
+            Proposal::GroupContextExtensions(_)
+        ));
+        assert!(matches!(cached[0].sender(), Sender::Member(_)));
+
+        group.commit(vec![]).await.unwrap();
+        group.apply_pending_commit().await.unwrap();
+
+        assert!(group.get_cached_proposals().is_empty());
+    }
+
+    #[cfg(feature = "by_ref_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn cached_proposals_returns_independent_copies() {
+        let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+
+        group
+            .propose_group_context_extensions(ExtensionList::new(), vec![])
+            .await
+            .unwrap();
+
+        let mut cached1 = group.get_cached_proposals();
+        let cached2 = group.get_cached_proposals();
+
+        assert_eq!(cached1.len(), 1);
+        assert_eq!(cached2.len(), 1);
+        assert_eq!(cached1[0].proposal_ref(), cached2[0].proposal_ref());
+
+        cached1.clear();
+        assert!(cached1.is_empty());
+        assert_eq!(cached2.len(), 1);
+
+        let cached3 = group.get_cached_proposals();
+        assert_eq!(cached3.len(), 1);
+        assert_eq!(cached2[0].proposal_ref(), cached3[0].proposal_ref());
+
+        group.commit(vec![]).await.unwrap();
+        group.apply_pending_commit().await.unwrap();
+
+        assert!(group.get_cached_proposals().is_empty());
     }
 
     // Testing with std is sufficient. Non-std creates incompatible storage and a lot of special cases.
@@ -6274,5 +6961,54 @@ mod tests {
         .await;
 
         assert_matches!(res, Err(MlsError::InUseCredentialTypeUnsupportedByNewLeaf));
+    }
+
+    #[cfg(feature = "custom_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn custom_proposal_commit_succeeds_after_capability_update() {
+        use crate::client_builder::ClientBuilder;
+
+        let test_proposal_type = ProposalType::from(65001);
+
+        let (signing_identity, secret_key) =
+            get_test_signing_identity(TEST_CIPHER_SUITE, b"alice").await;
+
+        let client = ClientBuilder::new()
+            .crypto_provider(TestCryptoProvider::new())
+            .identity_provider(BasicIdentityProvider::new())
+            .signing_identity(signing_identity, secret_key, TEST_CIPHER_SUITE)
+            .build();
+
+        let mut group = client.group_builder().unwrap().build().await.unwrap();
+        let group_id = group.group_id().to_vec();
+        let proposal = CustomProposal::new(test_proposal_type, vec![]);
+
+        group
+            .commit_builder()
+            .custom_proposal(proposal)
+            .build()
+            .await
+            .unwrap_err();
+
+        group.write_to_storage().await.unwrap();
+
+        let new_client = client
+            .to_builder(None)
+            .custom_proposal_type(test_proposal_type)
+            .build();
+
+        let mut group = new_client.load_group(&group_id).await.unwrap();
+
+        group.commit(vec![]).await.unwrap();
+        group.apply_pending_commit().await.unwrap();
+
+        let proposal = CustomProposal::new(test_proposal_type, vec![]);
+
+        group
+            .commit_builder()
+            .custom_proposal(proposal)
+            .build()
+            .await
+            .unwrap();
     }
 }

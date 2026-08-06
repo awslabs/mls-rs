@@ -1,9 +1,8 @@
 {
   "goog:chromeOptions": {
     "args": [
-      "--disable-timeouts-for-profiling",
-      "--disable-new-content-rendering-timeout",
-      "--timeout 100000"
+      "--disable-dev-shm-usage",
+      "--disable-gpu"
     ]
   }
 }

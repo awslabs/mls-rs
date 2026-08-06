@@ -5,6 +5,7 @@
 use core::ops::{Deref, DerefMut};
 
 use alloc::format;
+use alloc::vec;
 use rand::RngCore;
 
 use super::*;

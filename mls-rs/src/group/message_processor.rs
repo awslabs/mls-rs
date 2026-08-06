@@ -24,6 +24,7 @@ use super::{
 };
 use crate::{
     client::MlsError,
+    group::proposal_filter::path_update_required,
     key_package::validate_key_package_properties,
     time::MlsTime,
     tree_kem::{
@@ -66,34 +67,6 @@ pub(crate) struct ProvisionalState {
     pub(crate) external_init_index: Option<LeafIndex>,
     pub(crate) indexes_of_added_kpkgs: Vec<LeafIndex>,
     pub(crate) unused_proposals: Vec<ProposalInfo<Proposal>>,
-}
-
-//By default, the path field of a Commit MUST be populated. The path field MAY be omitted if
-//(a) it covers at least one proposal and (b) none of the proposals covered by the Commit are
-//of "path required" types. A proposal type requires a path if it cannot change the group
-//membership in a way that requires the forward secrecy and post-compromise security guarantees
-//that an UpdatePath provides. The only proposal types defined in this document that do not
-//require a path are:
-
-// add
-// psk
-// reinit
-pub(crate) fn path_update_required(proposals: &ProposalBundle) -> bool {
-    let res = !proposals.external_init_proposals().is_empty();
-
-    #[cfg(feature = "by_ref_proposal")]
-    let res = res || !proposals.update_proposals().is_empty();
-
-    #[cfg(all(
-        feature = "by_ref_proposal",
-        feature = "custom_proposal",
-        feature = "self_remove_proposal"
-    ))]
-    let res = res || !proposals.self_removes.is_empty();
-
-    res || proposals.length() == 0
-        || proposals.group_context_extensions_proposal().is_some()
-        || !proposals.remove_proposals().is_empty()
 }
 
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
@@ -400,6 +373,21 @@ impl CachedProposal {
     /// Serialize the proposal
     pub fn to_bytes(&self) -> Result<Vec<u8>, MlsError> {
         Ok(self.mls_encode_to_vec()?)
+    }
+
+    /// The proposal content.
+    pub fn proposal(&self) -> &Proposal {
+        &self.proposal
+    }
+
+    /// The proposal reference (hash-based identifier).
+    pub fn proposal_ref(&self) -> &ProposalRef {
+        &self.proposal_ref
+    }
+
+    /// The sender of the proposal.
+    pub fn sender(&self) -> &Sender {
+        &self.sender
     }
 }
 
@@ -727,7 +715,9 @@ pub(crate) trait MessageProcessor: Send + Sync {
 
         //Verify that the path value is populated if the proposals vector contains any Update
         // or Remove proposals, or if it's empty. Otherwise, the path value MAY be omitted.
-        if path_update_required(&provisional_state.applied_proposals) && commit.path.is_none() {
+        if path_update_required(&provisional_state.applied_proposals, &self.mls_rules())
+            && commit.path.is_none()
+        {
             return Err(MlsError::CommitMissingPath);
         }
 

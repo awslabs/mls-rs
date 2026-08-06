@@ -63,7 +63,10 @@ mod tests {
         ecdsa::AwsLcEcdsa,
         x509::{
             component::X509Name,
-            test_utils::{load_github_leaf, load_ip_cert, load_test_ca, test_leaf, test_leaf_key},
+            test_utils::{
+                load_github_leaf, load_ip_cert, load_test_ca, load_test_cert_chain, test_leaf,
+                test_leaf_key,
+            },
         },
     };
 
@@ -88,10 +91,13 @@ mod tests {
     fn subject_parser_bytes() {
         let test_cert = load_test_ca();
 
-        let expected = X509Name::new_components(&[SubjectComponent::CommonName("CA".to_string())])
-            .unwrap()
-            .to_der()
-            .unwrap();
+        let expected = X509Name::new_components(&[
+            SubjectComponent::CommonName("RootCA".to_string()),
+            SubjectComponent::CountryName("CH".to_string()),
+        ])
+        .unwrap()
+        .to_der()
+        .unwrap();
 
         assert_eq!(
             CertificateParser.subject_bytes(&test_cert).unwrap(),
@@ -101,14 +107,14 @@ mod tests {
 
     #[test]
     fn subject_parser_components() {
-        let test_cert = load_github_leaf();
+        let test_cert = load_test_cert_chain().remove(0);
 
         let expected = vec![
-            SubjectComponent::CountryName(String::from("US")),
-            SubjectComponent::State(String::from("California")),
-            SubjectComponent::Locality(String::from("San Francisco")),
-            SubjectComponent::OrganizationName(String::from("GitHub, Inc.")),
-            SubjectComponent::CommonName(String::from("github.com")),
+            SubjectComponent::CommonName(String::from("Leaf")),
+            SubjectComponent::CountryName(String::from("CH")),
+            SubjectComponent::State(String::from("Zurich")),
+            SubjectComponent::Locality(String::from("Zurich")),
+            SubjectComponent::OrganizationName(String::from("Test Org")),
         ];
 
         assert_eq!(
