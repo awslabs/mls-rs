@@ -2,6 +2,12 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
+//! X.509 support for MLS credentials (RustCrypto backend).
+//!
+//! This module is experimental: It is not a general-purpose X.509 library and
+//! should not be relied on outside of that use case. It has not been confirmed
+//! or tested to be fully compliant with RFC 5280.
+
 use std::net::AddrParseError;
 
 use mls_rs_core::time::MlsTime;
@@ -73,6 +79,14 @@ pub enum X509Error {
         timestamp: MlsTime,
         not_before: MlsTime,
         not_after: MlsTime,
+    },
+    #[cfg_attr(
+        feature = "std",
+        error("CA path length constraint of {path_len_constraint} exceeded by certification path containing {subordinate_ca_count} subordinate CA certificate(s)")
+    )]
+    PathLenConstraintExceeded {
+        path_len_constraint: u8,
+        subordinate_ca_count: usize,
     },
     #[cfg_attr(feature = "std", error("unsupported signing algorithm with OID {0}"))]
     UnsupportedAlgorithm(ObjectIdentifier),
