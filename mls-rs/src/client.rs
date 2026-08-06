@@ -1141,6 +1141,33 @@ mod tests {
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn external_commit_path_leaf_node_is_readable_from_the_message() {
+        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+
+        alice_group.commit(vec![]).await.unwrap();
+        alice_group.apply_pending_commit().await.unwrap();
+
+        let group_info_msg = alice_group
+            .group_info_message_allowing_ext_commit(true)
+            .await
+            .unwrap();
+
+        assert!(group_info_msg.commit_path_leaf_node().is_none());
+
+        let (bob_identity, secret_key) = get_test_signing_identity(TEST_CIPHER_SUITE, b"bob").await;
+
+        let bob = TestClientBuilder::new_for_test()
+            .signing_identity(bob_identity.clone(), secret_key, TEST_CIPHER_SUITE)
+            .build();
+
+        let (_, external_commit) = bob.commit_external(group_info_msg).await.unwrap();
+
+        let leaf_node = external_commit.commit_path_leaf_node().unwrap();
+
+        assert_eq!(leaf_node.signing_identity, bob_identity);
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn creating_an_external_commit_requires_a_group_info_message() {
         let (alice_identity, secret_key) =
             get_test_signing_identity(TEST_CIPHER_SUITE, b"alice").await;
