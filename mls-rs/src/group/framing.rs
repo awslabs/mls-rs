@@ -4,7 +4,11 @@
 
 use core::ops::Deref;
 
-use crate::{client::MlsError, tree_kem::node::LeafIndex, KeyPackage, KeyPackageRef};
+use crate::{
+    client::MlsError,
+    tree_kem::{leaf_node::LeafNode, node::LeafIndex},
+    KeyPackage, KeyPackageRef,
+};
 
 use super::{Commit, FramedContentAuthData, GroupInfo, MembershipTag, Welcome};
 
@@ -538,6 +542,21 @@ impl MlsMessage {
                 _ => Vec::new(),
             },
             _ => Vec::new(),
+        }
+    }
+
+    /// If this is a plaintext commit message, return the leaf node carried in its update
+    /// path. This is the leaf a new member joins with when the commit is an external commit.
+    /// If this is not a plaintext, not a commit or a commit without an update path, this
+    /// returns `None`.
+    #[allow(unreachable_patterns)]
+    pub fn commit_path_leaf_node(&self) -> Option<&LeafNode> {
+        match &self.payload {
+            MlsMessagePayload::Plain(plaintext) => match &plaintext.content.content {
+                Content::Commit(commit) => commit.path.as_ref().map(|path| &path.leaf_node),
+                _ => None,
+            },
+            _ => None,
         }
     }
 
