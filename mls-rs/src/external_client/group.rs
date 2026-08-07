@@ -558,6 +558,17 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             .map_err(Into::into)
     }
 
+    /// Get a zero-copy, borrowed view of the current ratchet tree used within the group.
+    ///
+    /// Unlike [`export_tree`](Self::export_tree), this does not serialize the tree and
+    /// is suitable for inspecting tree structure (e.g. via
+    /// [`ExportedTree::nodes`](crate::group::ExportedTree::nodes)) without a
+    /// serialize/deserialize round trip.
+    #[inline(always)]
+    pub fn exported_tree(&self) -> ExportedTree<'_> {
+        ExportedTree::new_borrowed(&self.group_state().public_tree.nodes)
+    }
+
     /// Get the current roster of the group.
     #[inline(always)]
     pub fn roster(&self) -> Roster<'_> {
@@ -897,6 +908,7 @@ mod tests {
         identity::{test_utils::get_test_signing_identity, SigningIdentity},
         key_package::test_utils::{test_key_package, test_key_package_message},
         protocol_version::ProtocolVersion,
+        tree_kem::node::LeafIndex,
         ExtensionList, MlsMessage,
     };
     use assert_matches::assert_matches;
@@ -1396,6 +1408,61 @@ mod tests {
         let cached3 = server.get_cached_proposals();
         assert_eq!(cached3.len(), 1);
         assert_eq!(cached2[0].proposal_ref(), cached3[0].proposal_ref());
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn external_group_exported_tree_matches_export_tree_bytes() {
+        let mut alice = test_group_two_members(
+            TEST_PROTOCOL_VERSION,
+            TEST_CIPHER_SUITE,
+            #[cfg(feature = "by_ref_proposal")]
+            None,
+        )
+        .await;
+
+        let mut server = make_external_group(&alice).await;
+
+        // Add carol so bob is not the last leaf; removing the last leaf
+        // shrinks the tree instead of leaving a blank in place.
+        let (_, add_commit) = alice.join("carol").await;
+        server.process_incoming_message(add_commit).await.unwrap();
+
+        // Remove bob to create a blank leaf, giving the tree a mix of
+        // occupied and blank nodes.
+        let commit_output = alice
+            .commit_builder()
+            .remove_member(1)
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+        alice.process_pending_commit().await.unwrap();
+
+        server
+            .process_incoming_message(commit_output.commit_message)
+            .await
+            .unwrap();
+
+        let borrowed = server.exported_tree();
+
+        // Zero-copy accessor should agree with the byte-encoding accessor.
+        let expected_bytes = server.export_tree().unwrap();
+        assert_eq!(borrowed.to_bytes().unwrap(), expected_bytes);
+
+        // Bob's leaf (index 1) is now blank; Alice's (index 0) and carol's
+        // (index 2) are still occupied.
+        assert!(borrowed
+            .get_leaf(LeafIndex::unchecked(1))
+            .unwrap()
+            .is_none());
+        assert!(borrowed
+            .get_leaf(LeafIndex::unchecked(0))
+            .unwrap()
+            .is_some());
+        assert!(borrowed
+            .get_leaf(LeafIndex::unchecked(2))
+            .unwrap()
+            .is_some());
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
