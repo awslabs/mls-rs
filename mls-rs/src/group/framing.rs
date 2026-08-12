@@ -560,6 +560,21 @@ impl MlsMessage {
         }
     }
 
+    /// If this is a plaintext commit message, return the references of all proposals
+    /// committed by reference. Each reference identifies a proposal that was previously
+    /// sent as its own message. If this is not a plaintext or not a commit, this returns
+    /// an empty list.
+    #[cfg(feature = "by_ref_proposal")]
+    pub fn proposals_by_reference(&self) -> Vec<&ProposalRef> {
+        match &self.payload {
+            MlsMessagePayload::Plain(plaintext) => match &plaintext.content.content {
+                Content::Commit(commit) => Self::find_reference_proposals(commit),
+                _ => Vec::new(),
+            },
+            _ => Vec::new(),
+        }
+    }
+
     /// If this is a welcome message, return key package references of all members who can
     /// join using this message.
     pub fn welcome_key_package_references(&self) -> Vec<&KeyPackageRef> {
@@ -624,6 +639,18 @@ impl MlsMessage {
             .iter()
             .filter_map(|p| match p {
                 ProposalOrRef::Proposal(p) => Some(p.as_ref()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[cfg(feature = "by_ref_proposal")]
+    fn find_reference_proposals(commit: &Commit) -> Vec<&ProposalRef> {
+        commit
+            .proposals
+            .iter()
+            .filter_map(|p| match p {
+                ProposalOrRef::Reference(r) => Some(r),
                 _ => None,
             })
             .collect()
