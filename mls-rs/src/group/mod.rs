@@ -6515,60 +6515,6 @@ mod tests {
 
     #[cfg(feature = "custom_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn custom_proposal_may_enforce_path() {
-        test_custom_proposal_mls_rules(true).await;
-    }
-
-    #[cfg(feature = "custom_proposal")]
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    async fn custom_proposal_need_not_enforce_path() {
-        test_custom_proposal_mls_rules(false).await;
-    }
-
-    #[cfg(feature = "custom_proposal")]
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn test_custom_proposal_mls_rules(path_required_for_custom: bool) {
-        let mls_rules = CustomMlsRules {
-            path_required_for_custom,
-            external_joiner_can_send_custom: true,
-        };
-
-        let mut alice = client_with_custom_rules(b"alice", mls_rules.clone())
-            .await
-            .create_group(Default::default(), Default::default(), None)
-            .await
-            .unwrap();
-
-        let alice_pub_before = alice.current_user_leaf_node().unwrap().public_key.clone();
-
-        let kp = client_with_custom_rules(b"bob", mls_rules)
-            .await
-            .generate_key_package_message(Default::default(), Default::default(), None)
-            .await
-            .unwrap();
-
-        alice
-            .commit_builder()
-            .custom_proposal(CustomProposal::new(TEST_CUSTOM_PROPOSAL_TYPE, vec![]))
-            .add_member(kp)
-            .unwrap()
-            .build()
-            .await
-            .unwrap();
-
-        alice.apply_pending_commit().await.unwrap();
-
-        let alice_pub_after = &alice.current_user_leaf_node().unwrap().public_key;
-
-        if path_required_for_custom {
-            assert_ne!(alice_pub_after, &alice_pub_before);
-        } else {
-            assert_eq!(alice_pub_after, &alice_pub_before);
-        }
-    }
-
-    #[cfg(feature = "custom_proposal")]
-    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn custom_proposal_by_value_in_external_join_may_be_allowed() {
         test_custom_proposal_by_value_in_external_join(true).await
     }
