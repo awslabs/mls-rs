@@ -41,7 +41,7 @@ pub(crate) fn path_update_required<R: MlsRules>(
     if proposals
         .custom_proposals
         .iter()
-        .any(|p| mls_rules.custom_proposal_requires_update_path(p.proposal.proposal_type()))
+        .any(|p| mls_rules.custom_proposal_requires_update_path(&p.proposal))
     {
         return true;
     }
