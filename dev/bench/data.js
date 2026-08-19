@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787159880530,
+  "lastUpdate": 1787165020788,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -30439,6 +30439,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 183768,
             "range": "± 5487",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mulmarta@amazon.ch",
+            "name": "mulmarta",
+            "username": "mulmarta"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8f1b43f447a792ff9307f1c2c7f54da63914870e",
+          "message": "Reapply \"chore: pass custom proposal to custom_proposal_requires_update_path\" (#383)\n\n* Revert \"Rever breaking change (#382)\"\n\nThis reverts commit 39c3eb4c892adad470d0efc6507538287da260e2.\n\n* chore: bump mls-rs version to 0.55.6\n\n* chore: pass custom proposal to custom_proposal_requires_update_path",
+          "timestamp": "2026-08-19T19:54:57+02:00",
+          "tree_id": "5e7d4a5fad85d3e3f7429fb2af6903271040934f",
+          "url": "https://github.com/awslabs/mls-rs/commit/8f1b43f447a792ff9307f1c2c7f54da63914870e"
+        },
+        "date": 1787165018504,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 545633,
+            "range": "± 17835",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 556103,
+            "range": "± 7228",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 630449,
+            "range": "± 8025",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1426380,
+            "range": "± 9390",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 11771652,
+            "range": "± 40795",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2734935,
+            "range": "± 16298",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7422141,
+            "range": "± 63948",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13810393,
+            "range": "± 157708",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 817420,
+            "range": "± 3803",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 919134,
+            "range": "± 6059",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 1057348,
+            "range": "± 38415",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 28044,
+            "range": "± 544",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 96533,
+            "range": "± 2225",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 189029,
+            "range": "± 1437",
             "unit": "ns/iter"
           }
         ]
