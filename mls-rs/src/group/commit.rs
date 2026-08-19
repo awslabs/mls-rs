@@ -14,7 +14,6 @@ use crate::{
     client::MlsError,
     client_config::ClientConfig,
     extension::RatchetTreeExt,
-    group::proposal_filter::path_update_required,
     identity::SigningIdentity,
     protocol_version::ProtocolVersion,
     signer::Signable,
@@ -42,7 +41,7 @@ use super::{
     framing::{Content, MlsMessage, MlsMessagePayload, Sender},
     key_schedule::{KeySchedule, WelcomeSecret},
     message_hash::MessageHash,
-    message_processor::MessageProcessor,
+    message_processor::{path_update_required, MessageProcessor},
     message_signature::AuthenticatedContent,
     mls_rules::CommitDirection,
     proposal::{Proposal, ProposalOrRef},
@@ -573,7 +572,7 @@ where
             .map_err(|e| MlsError::MlsRulesError(e.into_any_error()))?;
 
         let perform_path_update = commit_options.path_required
-            || path_update_required(&provisional_state.applied_proposals, &mls_rules);
+            || path_update_required(&provisional_state.applied_proposals);
 
         let (update_path, path_secrets, commit_secret) = if perform_path_update {
             // If populating the path field: Create an UpdatePath using the new tree. Any new
