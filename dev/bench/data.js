@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786126197245,
+  "lastUpdate": 1787159880530,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -30331,6 +30331,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 185734,
             "range": "± 1196",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mulmarta@amazon.ch",
+            "name": "mulmarta",
+            "username": "mulmarta"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "39c3eb4c892adad470d0efc6507538287da260e2",
+          "message": "Rever breaking change (#382)\n\n* Revert \"feat(proposal rules): Allow applications to decide if a custom proposal requires path (#364)\"\n\nThis reverts commit 688d8d6bd07d8fbfb1a92e8b7cff06b2bf07a412.\n\n* bump version to 0.55.4",
+          "timestamp": "2026-08-19T18:26:44+02:00",
+          "tree_id": "9cae865ebc9ef00e30f8b08d4f8b23ed3f996004",
+          "url": "https://github.com/awslabs/mls-rs/commit/39c3eb4c892adad470d0efc6507538287da260e2"
+        },
+        "date": 1787159878800,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 535600,
+            "range": "± 5969",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 541909,
+            "range": "± 10027",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 613903,
+            "range": "± 26173",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1371612,
+            "range": "± 30231",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 8175187,
+            "range": "± 31374",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2738125,
+            "range": "± 12721",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7463916,
+            "range": "± 72598",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13890797,
+            "range": "± 102706",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 792886,
+            "range": "± 4664",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 887466,
+            "range": "± 9619",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 1019679,
+            "range": "± 18726",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 27065,
+            "range": "± 281",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 93135,
+            "range": "± 908",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 183768,
+            "range": "± 5487",
             "unit": "ns/iter"
           }
         ]
