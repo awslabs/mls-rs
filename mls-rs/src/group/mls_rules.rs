@@ -20,6 +20,9 @@ use mls_rs_core::{
     identity::SigningIdentity,
 };
 
+#[cfg(feature = "custom_proposal")]
+use crate::group::proposal::CustomProposal;
+
 use super::GroupContext;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -204,7 +207,8 @@ pub trait MlsRules: Send + Sync {
     /// a received commit will require an update path.
     ///
     /// The default implementation returns `true` (conservative: always require a path).
-    fn custom_proposal_requires_update_path(&self, _custom_proposal_type: ProposalType) -> bool {
+    #[cfg(feature = "custom_proposal")]
+    fn custom_proposal_requires_update_path(&self, _proposal: &CustomProposal) -> bool {
         true
     }
 }
@@ -248,11 +252,9 @@ macro_rules! delegate_mls_rules {
                 (**self).encryption_options(roster, context)
             }
 
-            fn custom_proposal_requires_update_path(
-                &self,
-                custom_proposal_type: ProposalType,
-            ) -> bool {
-                (**self).custom_proposal_requires_update_path(custom_proposal_type)
+            #[cfg(feature = "custom_proposal")]
+            fn custom_proposal_requires_update_path(&self, proposal: &CustomProposal) -> bool {
+                (**self).custom_proposal_requires_update_path(proposal)
             }
         }
     };
@@ -337,8 +339,9 @@ impl MlsRules for DefaultMlsRules {
         Ok(self.encryption_options)
     }
 
-    fn custom_proposal_requires_update_path(&self, custom_proposal_type: ProposalType) -> bool {
+    #[cfg(feature = "custom_proposal")]
+    fn custom_proposal_requires_update_path(&self, proposal: &CustomProposal) -> bool {
         self.custom_proposals_that_require_update_path
-            .contains(&custom_proposal_type)
+            .contains(&proposal.proposal_type())
     }
 }
