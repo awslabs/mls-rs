@@ -232,7 +232,7 @@ impl ClientBuilder<EmptyConfig> {
 impl ClientBuilder<BaseSqlConfig> {
     /// Create a new client builder with SQLite storage providers.
     pub fn new_sqlite<CS: ConnectionStrategy>(
-        storage: SqLiteDataStorageEngine<CS>,
+        storage: SqLiteDataStorageEngine,
     ) -> Result<Self, SqLiteDataStorageError> {
         Ok(Self(Config(ConfigInner {
             settings: Default::default(),

@@ -10,7 +10,7 @@ use std::{
 };
 use zeroize::Zeroizing;
 
-use crate::SqLiteDataStorageError;
+use crate::{SharedConnection, SqLiteDataStorageError};
 
 pub(crate) const DEFAULT_EPOCH_RETENTION_LIMIT: u64 = 3;
 
@@ -28,9 +28,9 @@ pub struct SqLiteGroupStateStorage {
 }
 
 impl SqLiteGroupStateStorage {
-    pub(crate) fn new(connection: Connection) -> SqLiteGroupStateStorage {
+    pub(crate) fn new(connection: SharedConnection) -> SqLiteGroupStateStorage {
         SqLiteGroupStateStorage {
-            connection: Arc::new(Mutex::new(connection)),
+            connection,
             max_epoch_retention: DEFAULT_EPOCH_RETENTION_LIMIT,
         }
     }
