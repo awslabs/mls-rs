@@ -931,6 +931,11 @@ mod tests {
     use assert_matches::assert_matches;
 
     #[cfg(feature = "by_ref_proposal")]
+    use crate::crypto::test_utils::test_cipher_suite_provider;
+    #[cfg(feature = "by_ref_proposal")]
+    use crate::key_package::test_utils::test_key_package_message;
+
+    #[cfg(feature = "by_ref_proposal")]
     use crate::group::message_processor::ProposalMessageDescription;
     #[cfg(feature = "by_ref_proposal")]
     use crate::group::proposal::Proposal;
@@ -1165,6 +1170,65 @@ mod tests {
         let leaf_node = external_commit.commit_path_leaf_node().unwrap();
 
         assert_eq!(leaf_node.signing_identity, bob_identity);
+    }
+
+    #[cfg(feature = "by_ref_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn commit_proposals_by_reference_are_readable_from_the_message() {
+        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+
+        let bob_key_package =
+            test_key_package_message(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
+
+        // A proposal sent as its own message is not a commit, so nothing is reported.
+        let proposal_message = alice_group
+            .group
+            .propose_add(bob_key_package, vec![])
+            .await
+            .unwrap();
+
+        assert!(proposal_message.proposals_by_reference().is_empty());
+
+        // Committing with the proposal cached carries it by reference, not by value.
+        let commit_output = alice_group.group.commit(vec![]).await.unwrap();
+
+        assert!(commit_output.commit_message.proposals_by_value().is_empty());
+
+        let refs = commit_output.commit_message.proposals_by_reference();
+        assert_eq!(refs.len(), 1);
+
+        // The reference is the hash the proposal message itself resolves to.
+        let cipher_suite = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+
+        let expected = proposal_message
+            .into_proposal_reference(&cipher_suite)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(refs[0].as_slice(), expected.as_slice());
+
+        // A commit carrying its proposals inline reports them by value only.
+        alice_group.apply_pending_commit().await.unwrap();
+
+        let carol_key_package =
+            test_key_package_message(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "carol").await;
+
+        let commit_output = alice_group
+            .group
+            .commit_builder()
+            .add_member(carol_key_package)
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+
+        assert!(commit_output
+            .commit_message
+            .proposals_by_reference()
+            .is_empty());
+
+        assert_eq!(commit_output.commit_message.proposals_by_value().len(), 1);
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
