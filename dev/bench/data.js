@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787165020788,
+  "lastUpdate": 1789667846563,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -30547,6 +30547,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 189029,
             "range": "± 1437",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "93408277+7331@users.noreply.github.com",
+            "name": "niels",
+            "username": "7331"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e26b852e353135e704b5be63b263e63271f1cea1",
+          "message": "feat: Expose the leaf slot count of an ExportedTree (#381)",
+          "timestamp": "2026-09-17T19:43:48+02:00",
+          "tree_id": "b10ca47dd9566c0cb257a41b06006c0c45c54de8",
+          "url": "https://github.com/awslabs/mls-rs/commit/e26b852e353135e704b5be63b263e63271f1cea1"
+        },
+        "date": 1789667844597,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 425404,
+            "range": "± 6463",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 429779,
+            "range": "± 6618",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 488244,
+            "range": "± 9661",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1081300,
+            "range": "± 24406",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 8221873,
+            "range": "± 40465",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2118103,
+            "range": "± 66572",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 5793863,
+            "range": "± 74421",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 10738141,
+            "range": "± 173430",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 632741,
+            "range": "± 2789",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 714797,
+            "range": "± 42424",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 830833,
+            "range": "± 9831",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 22465,
+            "range": "± 340",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 77222,
+            "range": "± 832",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 149813,
+            "range": "± 3290",
             "unit": "ns/iter"
           }
         ]
