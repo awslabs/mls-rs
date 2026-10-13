@@ -96,6 +96,15 @@ impl<'a> ExportedTree<'a> {
         Ok(parent)
     }
 
+    /// Returns the number of leaf slots in the tree, counting blanks.
+    ///
+    /// Leaf indices run from `0` to `total_leaf_count() - 1`, so this is the
+    /// bound for [`get_leaf`](Self::get_leaf). Use [`roster`](Self::roster)
+    /// to iterate the occupied leaves only.
+    pub fn total_leaf_count(&self) -> u32 {
+        self.0.total_leaf_count()
+    }
+
     /// Returns the leaf node at the given `LeafIndex`, or `None` if the
     /// leaf slot is blank. Returns an error if the index is out of range.
     pub fn get_leaf(&self, index: LeafIndex) -> Result<Option<&LeafNode>, MlsError> {
@@ -151,6 +160,13 @@ mod tests {
         let tree = ExportedTree::new(nodes.clone());
 
         assert_eq!(tree.nodes().len(), nodes.len());
+
+        // Four leaf slots (node indices 0, 2, 4, 6), one of them blank, so
+        // the count exceeds the roster by exactly the blank at leaf index 1.
+        assert_eq!(tree.total_leaf_count(), 4);
+        assert!(tree.get_leaf(LeafIndex::unchecked(3)).unwrap().is_some());
+        assert!(tree.get_leaf(LeafIndex::unchecked(4)).is_err());
+        assert_eq!(tree.roster().members_iter().count(), 3);
 
         let leaf_a = tree.get_leaf(LeafIndex::unchecked(0)).unwrap().unwrap();
         assert_eq!(leaf_a, nodes[0].as_leaf().unwrap());
