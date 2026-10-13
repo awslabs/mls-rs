@@ -275,7 +275,8 @@ where
                 .kdf
                 .labeled_expand(&secret, b"key", &key_schedule_context, aead.key_size())
                 .await
-                .map_err(|e| HpkeError::KdfError(e.into_any_error()))?;
+                .map_err(|e| HpkeError::KdfError(e.into_any_error()))?
+                .into();
 
             let base_nonce = self
                 .kdf
@@ -299,7 +300,8 @@ where
             .kdf
             .labeled_expand(&secret, b"exp", &key_schedule_context, len)
             .await
-            .map_err(|e| HpkeError::KdfError(e.into_any_error()))?;
+            .map_err(|e| HpkeError::KdfError(e.into_any_error()))?
+            .into();
 
         Ok(Context::new(
             encryption_context,
