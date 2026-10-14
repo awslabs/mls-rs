@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1789673296472,
+  "lastUpdate": 1792002289314,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -30763,6 +30763,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 118968,
             "range": "± 6781",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mulmarta@amazon.ch",
+            "name": "mulmarta",
+            "username": "mulmarta"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "41a1a8cfb578c4313d101353411b907aca146626",
+          "message": "fix: Zeroize aead_key and exporter_secret (#398)\n\n* fix: Zeroize aead_key and exporter_secret\n\n* chore: set version of mls-rs-crypto-hpke to 0.21.1",
+          "timestamp": "2026-10-14T20:00:56+02:00",
+          "tree_id": "49ab9320a006205baa2b4d3914d6d500b7dcc648",
+          "url": "https://github.com/awslabs/mls-rs/commit/41a1a8cfb578c4313d101353411b907aca146626"
+        },
+        "date": 1792002288117,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 492930,
+            "range": "± 10969",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 501306,
+            "range": "± 6663",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 565477,
+            "range": "± 10949",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1197029,
+            "range": "± 12229",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 8932012,
+            "range": "± 100990",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2528802,
+            "range": "± 24809",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 6949557,
+            "range": "± 147677",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 12839645,
+            "range": "± 178616",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 745199,
+            "range": "± 6247",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 864492,
+            "range": "± 9824",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 1027989,
+            "range": "± 26742",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 25345,
+            "range": "± 269",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 88649,
+            "range": "± 1009",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 171553,
+            "range": "± 2172",
             "unit": "ns/iter"
           }
         ]
