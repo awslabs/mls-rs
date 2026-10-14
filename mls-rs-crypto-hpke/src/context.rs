@@ -17,7 +17,7 @@ use core::fmt::{self, Debug};
 /// A type representing an HPKE context
 #[derive(Clone)]
 pub(super) struct Context<KDF: KdfType, AEAD: AeadType> {
-    exporter_secret: Vec<u8>,
+    exporter_secret: Zeroizing<Vec<u8>>,
     encryption_context: Option<EncryptionContext<AEAD>>,
     kdf: HpkeKdf<KDF>,
 }
@@ -35,7 +35,7 @@ impl<KDF: KdfType, AEAD: AeadType> Context<KDF, AEAD> {
     #[inline]
     pub(super) fn new(
         encryption_context: Option<EncryptionContext<AEAD>>,
-        exporter_secret: Vec<u8>,
+        exporter_secret: Zeroizing<Vec<u8>>,
         kdf: HpkeKdf<KDF>,
     ) -> Self {
         Self {
@@ -146,7 +146,7 @@ pub(super) struct EncryptionContext<AEAD: AeadType> {
     base_nonce: Vec<u8>,
     seq_number: u64,
     aead: AEAD,
-    aead_key: Vec<u8>,
+    aead_key: Zeroizing<Vec<u8>>,
 }
 
 impl<AEAD: AeadType + Debug> Debug for EncryptionContext<AEAD> {
@@ -163,7 +163,11 @@ impl<AEAD: AeadType + Debug> Debug for EncryptionContext<AEAD> {
 }
 
 impl<AEAD: AeadType> EncryptionContext<AEAD> {
-    pub fn new(base_nonce: Vec<u8>, aead: AEAD, aead_key: Vec<u8>) -> Result<Self, HpkeError> {
+    pub fn new(
+        base_nonce: Vec<u8>,
+        aead: AEAD,
+        aead_key: Zeroizing<Vec<u8>>,
+    ) -> Result<Self, HpkeError> {
         (base_nonce.len() == aead.nonce_size())
             .then_some(())
             .ok_or(HpkeError::IncorrectNonceLen(
