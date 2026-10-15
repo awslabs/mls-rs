@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792057150229,
+  "lastUpdate": 1792078819010,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -30979,6 +30979,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 102968,
             "range": "± 1256",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "muscariello@ieee.org",
+            "name": "Luca Muscariello",
+            "username": "muscariello"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "44a4097d0b852e48ad7e822e63cb22e0ac36f232",
+          "message": "chore(crypto-awslc): update aws-lc-rs to 1.18.1 (#396)\n\nBump aws-lc-rs to 1.18.1, aws-lc-sys to 0.45.0 and aws-lc-fips-sys\nto 0.14.2. The exact aws-lc-rs =1.16.3 pin prevents downstream crates\nfrom upgrading rustls to 0.23.45 (fix for RUSTSEC-2026-0285), which\nrequires aws-lc-rs ^1.18.\n\nSigned-off-by: Luca Muscariello <muscariello@ieee.org>",
+          "timestamp": "2026-10-15T17:33:55+02:00",
+          "tree_id": "45330a084452fa797cdecc41cae629515e524dc4",
+          "url": "https://github.com/awslabs/mls-rs/commit/44a4097d0b852e48ad7e822e63cb22e0ac36f232"
+        },
+        "date": 1792078817796,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 533183,
+            "range": "± 42754",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 537840,
+            "range": "± 5410",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 595149,
+            "range": "± 5201",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1191978,
+            "range": "± 29799",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 6859025,
+            "range": "± 32054",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2688478,
+            "range": "± 80204",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7312038,
+            "range": "± 139571",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13544583,
+            "range": "± 124249",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 783606,
+            "range": "± 50750",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 873211,
+            "range": "± 14649",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 1000558,
+            "range": "± 9044",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 24027,
+            "range": "± 317",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 82104,
+            "range": "± 4283",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 160793,
+            "range": "± 1011",
             "unit": "ns/iter"
           }
         ]
