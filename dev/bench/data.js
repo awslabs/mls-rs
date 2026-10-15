@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792002289314,
+  "lastUpdate": 1792057150229,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -30871,6 +30871,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 171553,
             "range": "± 2172",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mtthman@amazon.com",
+            "name": "Matthew Ma",
+            "username": "PlasmaIntec"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ebf3d32d9f5d7fe956ecb518653860a3cd2d13f9",
+          "message": "fix(crypto-awslc): gate GHP RandomOracle behind sync-only cfg (#399)\n\n* fix(crypto-awslc): gate GHP RandomOracle behind sync-only cfg\n\nThe `ghp` module in `mls-rs-crypto-hpke` is gated behind\n`#[cfg(not(mls_build_async))]`, but `mls-rs-crypto-awslc` imports\n`RandomOracle` from it unconditionally. This causes a compile error\nwhen `mls_build_async` is set:\n\n  error[E0432]: unresolved import `mls_rs_crypto_hpke::kem_combiner::ghp`\n\nGate the import and `RandomOracle` impl on `AwsLcHmac` behind the same\n`#[cfg(not(mls_build_async))]` to align with the hpke crate's async\nconstraints. All other AwsLcHmac functionality remains available in\nboth sync and async modes.\n\n* chore(crypto-awslc): bump version to 0.25.1",
+          "timestamp": "2026-10-15T11:35:46+02:00",
+          "tree_id": "da3eb09a81ea6869901a554dc95b05a816f9bbc8",
+          "url": "https://github.com/awslabs/mls-rs/commit/ebf3d32d9f5d7fe956ecb518653860a3cd2d13f9"
+        },
+        "date": 1792057148814,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 309244,
+            "range": "± 22342",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 307112,
+            "range": "± 10726",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 338267,
+            "range": "± 13808",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 697976,
+            "range": "± 56383",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 4288654,
+            "range": "± 302512",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1507493,
+            "range": "± 64358",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 4216058,
+            "range": "± 107805",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 7946719,
+            "range": "± 179776",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 439191,
+            "range": "± 17629",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 514406,
+            "range": "± 16445",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 612014,
+            "range": "± 13739",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 15678,
+            "range": "± 675",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 53353,
+            "range": "± 915",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 102968,
+            "range": "± 1256",
             "unit": "ns/iter"
           }
         ]
