@@ -6,8 +6,12 @@ use connection_strategy::ConnectionStrategy;
 use group_state::SqLiteGroupStateStorage;
 use psk::SqLitePreSharedKeyStorage;
 use rusqlite::Connection;
+use std::sync::{Arc, Mutex};
 use storage::{SqLiteApplicationStorage, SqLiteKeyPackageStorage};
 use thiserror::Error;
+
+/// A connection shared by every storage handed out by one engine.
+pub(crate) type SharedConnection = Arc<Mutex<Connection>>;
 
 mod application;
 mod group_state;
@@ -64,6 +68,75 @@ impl mls_rs_core::error::IntoAnyError for SqLiteDataStorageError {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
+/// Value assigned to a SQLite pragma.
+pub enum PragmaValue {
+    /// Textual value, e.g. `WAL` for `journal_mode`.
+    Text(String),
+    /// Integer value, e.g. `5000` for `busy_timeout`.
+    Integer(i64),
+    /// Floating point value.
+    Real(f64),
+}
+
+impl From<&str> for PragmaValue {
+    fn from(value: &str) -> Self {
+        PragmaValue::Text(value.to_string())
+    }
+}
+
+impl From<String> for PragmaValue {
+    fn from(value: String) -> Self {
+        PragmaValue::Text(value)
+    }
+}
+
+impl From<i64> for PragmaValue {
+    fn from(value: i64) -> Self {
+        PragmaValue::Integer(value)
+    }
+}
+
+impl From<i32> for PragmaValue {
+    fn from(value: i32) -> Self {
+        PragmaValue::Integer(value.into())
+    }
+}
+
+impl From<u32> for PragmaValue {
+    fn from(value: u32) -> Self {
+        PragmaValue::Integer(value.into())
+    }
+}
+
+impl From<bool> for PragmaValue {
+    fn from(value: bool) -> Self {
+        PragmaValue::Integer(value.into())
+    }
+}
+
+impl From<f64> for PragmaValue {
+    fn from(value: f64) -> Self {
+        PragmaValue::Real(value)
+    }
+}
+
+impl From<JournalMode> for PragmaValue {
+    fn from(value: JournalMode) -> Self {
+        PragmaValue::Text(value.as_str().to_string())
+    }
+}
+
+impl rusqlite::ToSql for PragmaValue {
+    fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
+        match self {
+            PragmaValue::Text(value) => value.to_sql(),
+            PragmaValue::Integer(value) => value.to_sql(),
+            PragmaValue::Real(value) => value.to_sql(),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum JournalMode {
     Delete,
@@ -90,49 +163,98 @@ impl JournalMode {
 }
 
 #[derive(Clone, Debug)]
-/// SQLite data storage engine.
-pub struct SqLiteDataStorageEngine<CS>
+/// Builder for [`SqLiteDataStorageEngine`].
+///
+/// Collects the connection strategy and pragmas, then opens the single
+/// connection the engine hands to all of its storages.
+pub struct SqLiteDataStorageEngineBuilder<CS>
 where
     CS: ConnectionStrategy,
 {
     connection_strategy: CS,
-    journal_mode: Option<JournalMode>,
+    pragmas: Vec<(String, PragmaValue)>,
 }
 
-impl<CS> SqLiteDataStorageEngine<CS>
+impl<CS> SqLiteDataStorageEngineBuilder<CS>
 where
     CS: ConnectionStrategy,
 {
-    pub fn new(
-        connection_strategy: CS,
-    ) -> Result<SqLiteDataStorageEngine<CS>, SqLiteDataStorageError> {
-        Ok(SqLiteDataStorageEngine {
+    pub fn new(connection_strategy: CS) -> SqLiteDataStorageEngineBuilder<CS> {
+        SqLiteDataStorageEngineBuilder {
             connection_strategy,
-            journal_mode: None,
-        })
+            pragmas: Vec::new(),
+        }
+    }
+
+    /// Set a pragma to apply to the connection.
+    ///
+    /// Pragmas are applied in the order they are added, before the schema is
+    /// created, so ordering-sensitive pragmas can be sequenced as needed.
+    /// Adding the same pragma name twice keeps both entries, meaning the last
+    /// one wins at connection time.
+    pub fn with_pragma<V: Into<PragmaValue>>(mut self, name: &str, value: V) -> Self {
+        self.pragmas.push((name.to_string(), value.into()));
+        self
+    }
+
+    /// Set several pragmas at once, applied in iteration order after any
+    /// pragmas already added.
+    pub fn with_pragmas<N, V, I>(mut self, pragmas: I) -> Self
+    where
+        N: AsRef<str>,
+        V: Into<PragmaValue>,
+        I: IntoIterator<Item = (N, V)>,
+    {
+        self.pragmas.extend(
+            pragmas
+                .into_iter()
+                .map(|(name, value)| (name.as_ref().to_string(), value.into())),
+        );
+
+        self
+    }
+
+    /// Pragmas applied to the connection, in application order.
+    pub fn pragmas(&self) -> &[(String, PragmaValue)] {
+        &self.pragmas
     }
 
     /// A `journal_mode` of `None` means the SQLite default is used.
-    pub fn with_journal_mode(self, journal_mode: Option<JournalMode>) -> Self {
-        Self {
-            journal_mode,
-            ..self
+    ///
+    /// Convenience wrapper over [`with_pragma`](Self::with_pragma) that
+    /// replaces any previously set `journal_mode`, keeping its position in the
+    /// pragma order.
+    pub fn with_journal_mode(mut self, journal_mode: Option<JournalMode>) -> Self {
+        let existing = self
+            .pragmas
+            .iter()
+            .position(|(name, _)| name.eq_ignore_ascii_case("journal_mode"));
+
+        match (existing, journal_mode) {
+            (Some(index), Some(mode)) => self.pragmas[index].1 = mode.into(),
+            (Some(index), None) => {
+                self.pragmas.remove(index);
+            }
+            (None, Some(mode)) => self.pragmas.push(("journal_mode".to_string(), mode.into())),
+            (None, None) => (),
         }
+
+        self
     }
 
     fn create_connection(&self) -> Result<Connection, SqLiteDataStorageError> {
         let connection = self.connection_strategy.make_connection()?;
 
+        for (name, value) in &self.pragmas {
+            connection
+                .pragma_update(None, name, value)
+                .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))?;
+        }
+
         // Run SQL to establish the schema
         let current_schema = connection
             .pragma_query_value(None, "user_version", |rows| rows.get::<_, u32>(0))
             .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))?;
-
-        if let Some(journal_mode) = &self.journal_mode {
-            connection
-                .pragma_update(None, "journal_mode", journal_mode.as_str())
-                .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))?;
-        }
 
         if current_schema < 1 {
             create_tables_v1(&connection)?;
@@ -141,28 +263,63 @@ where
         Ok(connection)
     }
 
+    /// Opens the connection and applies the configured pragmas, creating the
+    /// schema if the database is new.
+    pub fn build(self) -> Result<SqLiteDataStorageEngine, SqLiteDataStorageError> {
+        Ok(SqLiteDataStorageEngine {
+            connection: Arc::new(Mutex::new(self.create_connection()?)),
+        })
+    }
+}
+
+#[derive(Clone, Debug)]
+/// SQLite data storage engine.
+///
+/// All storages returned by one engine share the single connection opened by
+/// [`SqLiteDataStorageEngineBuilder::build`], so the database file is only
+/// opened once. This is what keeps the engine usable with
+/// `locking_mode = EXCLUSIVE`, which a second connection to the same file would
+/// otherwise fail against with `SQLITE_BUSY`.
+pub struct SqLiteDataStorageEngine {
+    connection: SharedConnection,
+}
+
+impl SqLiteDataStorageEngine {
+    pub fn new<CS: ConnectionStrategy>(
+        connection_strategy: CS,
+    ) -> Result<Self, SqLiteDataStorageError> {
+        Self::builder(connection_strategy).build()
+    }
+
+    /// Start configuring an engine that connects using `connection_strategy`.
+    pub fn builder<CS: ConnectionStrategy>(
+        connection_strategy: CS,
+    ) -> SqLiteDataStorageEngineBuilder<CS> {
+        SqLiteDataStorageEngineBuilder::new(connection_strategy)
+    }
+
     /// Returns a struct that implements the `GroupStateStorage` trait for use in MLS.
     pub fn group_state_storage(&self) -> Result<SqLiteGroupStateStorage, SqLiteDataStorageError> {
-        Ok(SqLiteGroupStateStorage::new(self.create_connection()?))
+        Ok(SqLiteGroupStateStorage::new(self.connection.clone()))
     }
 
     /// Returns a struct that implements the `KeyPackageStorage` trait for use in MLS.
     pub fn key_package_storage(&self) -> Result<SqLiteKeyPackageStorage, SqLiteDataStorageError> {
-        Ok(SqLiteKeyPackageStorage::new(self.create_connection()?))
+        Ok(SqLiteKeyPackageStorage::new(self.connection.clone()))
     }
 
     /// Returns a struct that implements the `PreSharedKeyStorage` trait for use in MLS.
     pub fn pre_shared_key_storage(
         &self,
     ) -> Result<SqLitePreSharedKeyStorage, SqLiteDataStorageError> {
-        Ok(SqLitePreSharedKeyStorage::new(self.create_connection()?))
+        Ok(SqLitePreSharedKeyStorage::new(self.connection.clone()))
     }
 
     /// Returns a key value store that can be used to store application specific data.
     pub fn application_data_storage(
         &self,
     ) -> Result<SqLiteApplicationStorage, SqLiteDataStorageError> {
-        Ok(SqLiteApplicationStorage::new(self.create_connection()?))
+        Ok(SqLiteApplicationStorage::new(self.connection.clone()))
     }
 }
 
@@ -212,7 +369,7 @@ mod tests {
 
     #[test]
     pub fn user_version_test() {
-        let database = SqLiteDataStorageEngine::new(MemoryStrategy).unwrap();
+        let database = SqLiteDataStorageEngine::builder(MemoryStrategy);
 
         let _connection = database.create_connection().unwrap();
 
@@ -232,10 +389,9 @@ mod tests {
         let temp = tempdir().unwrap();
 
         // Connect with journal_mode other than the default of MEMORY
-        let database = SqLiteDataStorageEngine::new(FileConnectionStrategy::new(
+        let database = SqLiteDataStorageEngine::builder(FileConnectionStrategy::new(
             &temp.path().join("test_db.sqlite"),
-        ))
-        .unwrap();
+        ));
 
         let connection = database
             .with_journal_mode(Some(crate::JournalMode::Truncate))
@@ -250,14 +406,93 @@ mod tests {
     }
 
     #[test]
+    pub fn arbitrary_pragmas_applied_in_order() {
+        let temp = tempdir().unwrap();
+
+        let database = SqLiteDataStorageEngine::builder(FileConnectionStrategy::new(
+            &temp.path().join("pragma_db.sqlite"),
+        ))
+        .with_pragma("busy_timeout", 4321)
+        // Last write of a repeated pragma wins, proving order is preserved.
+        .with_pragma("journal_mode", crate::JournalMode::Memory)
+        .with_pragmas([("journal_mode", crate::JournalMode::Truncate)]);
+
+        assert_eq!(
+            database
+                .pragmas()
+                .iter()
+                .map(|(name, _)| name.as_str())
+                .collect::<Vec<_>>(),
+            ["busy_timeout", "journal_mode", "journal_mode"]
+        );
+
+        let connection = database.create_connection().unwrap();
+
+        assert_eq!(
+            connection
+                .pragma_query_value(None, "busy_timeout", |rows| rows.get::<_, i64>(0))
+                .unwrap(),
+            4321
+        );
+
+        assert_eq!(
+            connection
+                .pragma_query_value(None, "journal_mode", |rows| rows.get::<_, String>(0))
+                .unwrap(),
+            "truncate"
+        );
+    }
+
+    #[test]
+    pub fn journal_mode_replaces_existing_pragma() {
+        let database = SqLiteDataStorageEngine::builder(MemoryStrategy)
+            .with_journal_mode(Some(crate::JournalMode::Wal))
+            .with_pragma("busy_timeout", 1000)
+            .with_journal_mode(Some(crate::JournalMode::Memory));
+
+        assert_eq!(
+            database
+                .pragmas()
+                .iter()
+                .map(|(name, value)| (name.as_str(), value.clone()))
+                .collect::<Vec<_>>(),
+            [
+                (
+                    "journal_mode",
+                    crate::PragmaValue::Text("MEMORY".to_string())
+                ),
+                ("busy_timeout", crate::PragmaValue::Integer(1000)),
+            ]
+        );
+
+        let database = database.with_journal_mode(None);
+
+        assert_eq!(
+            database.pragmas(),
+            [(
+                "busy_timeout".to_string(),
+                crate::PragmaValue::Integer(1000)
+            )]
+        );
+    }
+
+    #[test]
+    pub fn invalid_pragma_name_is_rejected() {
+        let res = SqLiteDataStorageEngine::builder(MemoryStrategy)
+            .with_pragma("journal_mode; DROP TABLE kvs", "WAL")
+            .create_connection();
+
+        assert!(res.is_err());
+    }
+
+    #[test]
     pub fn extended_schema_version_test() {
         // Test that downstream applications can extend the schema beyond version 1
         // without breaking mls-rs connection creation
         let temp = tempdir().unwrap();
-        let database = SqLiteDataStorageEngine::new(FileConnectionStrategy::new(
+        let database = SqLiteDataStorageEngine::builder(FileConnectionStrategy::new(
             &temp.path().join("extended_schema_test.sqlite"),
-        ))
-        .unwrap();
+        ));
 
         // Initialize database (creates v1 schema)
         let connection = database.create_connection().unwrap();

@@ -2,7 +2,7 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use crate::SqLiteDataStorageError;
+use crate::{SharedConnection, SqLiteDataStorageError};
 use mls_rs_core::psk::{ExternalPskId, PreSharedKey, PreSharedKeyStorage};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::{
@@ -17,10 +17,8 @@ pub struct SqLitePreSharedKeyStorage {
 }
 
 impl SqLitePreSharedKeyStorage {
-    pub(crate) fn new(connection: Connection) -> SqLitePreSharedKeyStorage {
-        SqLitePreSharedKeyStorage {
-            connection: Arc::new(Mutex::new(connection)),
-        }
+    pub(crate) fn new(connection: SharedConnection) -> SqLitePreSharedKeyStorage {
+        SqLitePreSharedKeyStorage { connection }
     }
 
     /// Insert a pre-shared key into storage.
