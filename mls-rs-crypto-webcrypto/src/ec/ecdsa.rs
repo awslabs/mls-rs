@@ -87,10 +87,7 @@ impl EcSigner {
         let params = EcdsaParams::new(key_type.algorithm(), &self.hash.into());
         let data = Uint8Array::from(data);
 
-        let signature = self
-            .der_to_wasm_signature(signature)
-            .map_err(|e| CryptoError::DerError(format!("{:?}", e)))?;
-
+        let signature = self.der_to_wasm_signature(signature)?;
         let signature = Uint8Array::from(signature.as_slice());
 
         let valid = crypto.verify_with_object_and_buffer_source_and_buffer_source(
@@ -110,11 +107,16 @@ impl EcSigner {
     // as r and s in RFC 4754), each in big-endian byte arrays, with their length the bit size
     // of the curve rounded up to a whole number of bytes. These values are concatenated together
     // in this order.
-    fn der_to_wasm_signature(&self, signature: &[u8]) -> Result<Vec<u8>, der::Error> {
-        let signature = DerSignature::from_der(signature)?;
+    fn der_to_wasm_signature(&self, signature: &[u8]) -> Result<Vec<u8>, CryptoError> {
+        let signature =
+            DerSignature::from_der(signature).map_err(|e| CryptoError::DerError(e.to_string()))?;
 
         let r = signature.r.as_bytes();
         let s = signature.s.as_bytes();
+
+        if r.len() > self.curve_bytesize || s.len() > self.curve_bytesize {
+            return Err(CryptoError::InvalidSignature);
+        }
 
         let padding_r = vec![0u8; self.curve_bytesize - r.len()];
         let padding_s = vec![0u8; self.curve_bytesize - s.len()];
@@ -161,4 +163,38 @@ async fn s_shorter_than_curve_bitlength() {
         .verify(&public.into(), &[], &signature)
         .await
         .unwrap();
+}
+
+#[cfg(test)]
+#[wasm_bindgen_test::wasm_bindgen_test]
+async fn s_longer_than_curve_bitlength() {
+    let signer = EcSigner::new(CipherSuite::P256_AES128).unwrap();
+    let (_, public) = signer.generate().await.unwrap();
+
+    let invalid_signature = DerSignature {
+        r: Uint::new(&vec![0x11u8; signer.curve_bytesize]).unwrap(),
+        s: Uint::new(&vec![0x01u8; signer.curve_bytesize + 1]).unwrap(),
+    }
+    .to_der()
+    .unwrap();
+
+    let res = signer.verify(&public, b"data", &invalid_signature).await;
+    assert!(matches!(res, Err(CryptoError::InvalidSignature)));
+}
+
+#[cfg(test)]
+#[wasm_bindgen_test::wasm_bindgen_test]
+async fn r_longer_than_curve_bitlength() {
+    let signer = EcSigner::new(CipherSuite::P256_AES128).unwrap();
+    let (_, public) = signer.generate().await.unwrap();
+
+    let invalid_signature = DerSignature {
+        r: Uint::new(&vec![0x01u8; signer.curve_bytesize + 1]).unwrap(),
+        s: Uint::new(&vec![0x11u8; signer.curve_bytesize]).unwrap(),
+    }
+    .to_der()
+    .unwrap();
+
+    let res = signer.verify(&public, b"data", &invalid_signature).await;
+    assert!(matches!(res, Err(CryptoError::InvalidSignature)));
 }
