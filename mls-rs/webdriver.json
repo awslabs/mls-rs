@@ -1,4 +1,7 @@
 {
+  "timeouts": {
+    "script": 180000
+  },
   "goog:chromeOptions": {
     "args": [
       "--disable-dev-shm-usage",
