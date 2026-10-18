@@ -4,6 +4,7 @@
 
 use aws_lc_rs::hmac;
 use mls_rs_core::crypto::CipherSuite;
+#[cfg(not(mls_build_async))]
 use mls_rs_crypto_hpke::kem_combiner::ghp::RandomOracle;
 
 use crate::AwsLcCryptoError;
@@ -33,6 +34,7 @@ impl AwsLcHmac {
     }
 }
 
+#[cfg(not(mls_build_async))]
 impl RandomOracle for AwsLcHmac {
     type Error = AwsLcCryptoError;
 

@@ -28,11 +28,11 @@ impl<DH: DhType, KDF: KdfType + Clone, AEAD: AeadType + Clone> TestHpke
         exporter_secret: Vec<u8>,
     ) -> (Self::ContextS, Self::ContextR) {
         let encryption_context =
-            EncryptionContext::new(base_nonce, self.aead.clone().unwrap(), key).unwrap();
+            EncryptionContext::new(base_nonce, self.aead.clone().unwrap(), key.into()).unwrap();
 
         let context = Context::new(
             Some(encryption_context),
-            exporter_secret.clone(),
+            exporter_secret.clone().into(),
             self.kdf.clone(),
         );
 
