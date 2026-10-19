@@ -196,7 +196,14 @@ pub fn private_key_from_bytes(
 pub fn private_key_to_bytes(key: &EcPrivateKey) -> Result<Vec<u8>, ErrorStack> {
     if let Ok(ec_key) = key.ec_key() {
         Ok(ec_key.private_key().to_vec())
-    } else if [Some(Curve::X25519), Some(Curve::X448)].contains(&curve_from_private_key(key)) {
+    } else if [
+        Some(Curve::Ed25519),
+        Some(Curve::Ed448),
+        Some(Curve::X25519),
+        Some(Curve::X448),
+    ]
+    .contains(&curve_from_private_key(key))
+    {
         key.raw_private_key()
     } else {
         Ok([key.raw_private_key()?, key.raw_public_key()?].concat())
