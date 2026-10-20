@@ -508,9 +508,11 @@ impl MlsMessage {
     }
 
     /// Deserialize a message from transport.
+    ///
+    /// Returns an error if `bytes` holds data past the end of the message.
     #[inline(never)]
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, MlsError> {
-        Self::mls_decode(&mut &*bytes).map_err(Into::into)
+        Self::mls_decode_exhaustive(bytes).map_err(Into::into)
     }
 
     /// Serialize a message for transport.
@@ -901,5 +903,22 @@ mod tests {
             test_key_package_message(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "something").await;
 
         assert_eq!(key_package.description(), MlsMessageDescription::KeyPackage);
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn from_bytes_rejects_trailing_data() {
+        let message =
+            test_key_package_message(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "trailing").await;
+
+        let mut bytes = message.to_bytes().unwrap();
+
+        assert_eq!(MlsMessage::from_bytes(&bytes).unwrap(), message);
+
+        bytes.push(0);
+
+        assert_matches!(
+            MlsMessage::from_bytes(&bytes),
+            Err(MlsError::SerializationError(_))
+        );
     }
 }
