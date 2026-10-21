@@ -71,6 +71,15 @@ impl PreSharedKeyStorage for SqLitePreSharedKeyStorage {
         self.get(id)
             .map_err(|e| SqLiteDataStorageError::DataConversionError(e.into()))
     }
+
+    async fn insert(
+        &mut self,
+        psk_id: ExternalPskId,
+        psk: PreSharedKey,
+    ) -> Result<(), Self::Error> {
+        SqLitePreSharedKeyStorage::insert(self, psk_id.as_ref(), &psk)
+            .map_err(|e| SqLiteDataStorageError::DataConversionError(e.into()))
+    }
 }
 
 #[cfg(test)]
