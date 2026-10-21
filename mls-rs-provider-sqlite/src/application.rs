@@ -9,7 +9,7 @@ use std::{
 
 use rusqlite::{params, Connection, OptionalExtension};
 
-use crate::SqLiteDataStorageError;
+use crate::{SharedConnection, SqLiteDataStorageError};
 
 const INSERT_SQL: &str =
     "INSERT INTO kvs (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value WHERE value != excluded.value";
@@ -21,10 +21,8 @@ pub struct SqLiteApplicationStorage {
 }
 
 impl SqLiteApplicationStorage {
-    pub(crate) fn new(connection: Connection) -> SqLiteApplicationStorage {
-        SqLiteApplicationStorage {
-            connection: Arc::new(Mutex::new(connection)),
-        }
+    pub(crate) fn new(connection: SharedConnection) -> SqLiteApplicationStorage {
+        SqLiteApplicationStorage { connection }
     }
 
     /// Insert `value` into storage indexed by `key`.

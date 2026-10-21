@@ -10,7 +10,7 @@ use mls_rs_core::{
 use rusqlite::{params, Connection, OptionalExtension};
 use std::sync::{Arc, Mutex};
 
-use crate::SqLiteDataStorageError;
+use crate::{SharedConnection, SqLiteDataStorageError};
 
 #[derive(Debug, Clone)]
 /// SQLite storage for MLS Key Packages.
@@ -25,10 +25,8 @@ pub struct SqLiteKeyPackageStorage {
 }
 
 impl SqLiteKeyPackageStorage {
-    pub(crate) fn new(connection: Connection) -> SqLiteKeyPackageStorage {
-        SqLiteKeyPackageStorage {
-            connection: Arc::new(Mutex::new(connection)),
-        }
+    pub(crate) fn new(connection: SharedConnection) -> SqLiteKeyPackageStorage {
+        SqLiteKeyPackageStorage { connection }
     }
 
     fn insert(
