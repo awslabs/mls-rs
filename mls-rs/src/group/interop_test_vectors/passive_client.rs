@@ -304,8 +304,16 @@ pub async fn generate_passive_client_proposal_tests() -> Vec<TestCase> {
             continue;
         };
 
-        let mut groups =
-            get_test_groups(VERSION, cs.cipher_suite(), 7, None, false, &crypto_provider).await;
+        let mut groups = get_test_groups(
+            VERSION,
+            cs.cipher_suite(),
+            7,
+            None,
+            false,
+            &crypto_provider,
+            Some(eternal_lifetime()),
+        )
+        .await;
 
         let mut partial_test_case = invite_passive_client(&mut groups, true, &cs).await;
 
@@ -525,6 +533,7 @@ pub async fn generate_passive_client_welcome_tests() -> Vec<TestCase> {
                     Some(options),
                     false,
                     &crypto_provider,
+                    Some(eternal_lifetime()),
                 )
                 .await;
 
