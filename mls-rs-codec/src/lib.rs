@@ -52,6 +52,8 @@ pub enum Error {
     Utf8,
     #[cfg_attr(feature = "std", error("Invalid content"))]
     InvalidContent,
+    #[cfg_attr(feature = "std", error("Unexpected trailing data"))]
+    UnexpectedTrailingData,
     #[cfg_attr(feature = "std", error("mls codec error: {0}"))]
     Custom(u8),
 }
@@ -122,11 +124,64 @@ where
 /// Trait to support deserialzing to a type using MLS encoding.
 pub trait MlsDecode: Sized {
     fn mls_decode(reader: &mut &[u8]) -> Result<Self, Error>;
+
+    /// Decode a value spanning all of `bytes`, rejecting any trailing data.
+    ///
+    /// [`mls_decode`](MlsDecode::mls_decode) only reads a prefix, which is what a field of a
+    /// larger structure needs but lets distinct inputs decode to the same top level value.
+    #[inline]
+    fn mls_decode_exhaustive(mut bytes: &[u8]) -> Result<Self, Error> {
+        let value = Self::mls_decode(&mut bytes)?;
+
+        bytes
+            .is_empty()
+            .then_some(value)
+            .ok_or(Error::UnexpectedTrailingData)
+    }
 }
 
 impl<T: MlsDecode> MlsDecode for Box<T> {
     #[inline]
     fn mls_decode(reader: &mut &[u8]) -> Result<Self, Error> {
         T::mls_decode(reader).map(Box::new)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{Error, MlsDecode, MlsEncode};
+    use alloc::{vec, vec::Vec};
+    use assert_matches::assert_matches;
+
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::wasm_bindgen_test as test;
+
+    #[test]
+    fn exhaustive_decode_accepts_exact_input() {
+        let serialized = vec![1u8, 2, 3].mls_encode_to_vec().unwrap();
+
+        assert_eq!(
+            Vec::<u8>::mls_decode_exhaustive(&serialized).unwrap(),
+            vec![1u8, 2, 3]
+        );
+    }
+
+    #[test]
+    fn exhaustive_decode_rejects_trailing_data() {
+        let mut serialized = vec![1u8, 2, 3].mls_encode_to_vec().unwrap();
+        serialized.push(0);
+
+        assert_matches!(
+            Vec::<u8>::mls_decode_exhaustive(&serialized),
+            Err(Error::UnexpectedTrailingData)
+        );
+    }
+
+    #[test]
+    fn exhaustive_decode_rejects_truncated_input() {
+        assert_matches!(
+            Vec::<u8>::mls_decode_exhaustive(&[2, 3]),
+            Err(Error::UnexpectedEOF)
+        );
     }
 }
