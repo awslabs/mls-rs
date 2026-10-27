@@ -2,12 +2,10 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use hmac::{
-    digest::{crypto_common::BlockSizeUser, FixedOutputReset},
-    Mac, SimpleHmac,
-};
+use aead::KeyInit;
+use hmac::{digest::FixedOutputReset, Mac, SimpleHmac};
 use mls_rs_core::crypto::CipherSuite;
-use sha2::{Digest, Sha256, Sha384, Sha512};
+use sha2::{digest::block_api::SmallBlockSizeUser, Digest, Sha256, Sha384, Sha512};
 
 use alloc::vec::Vec;
 
@@ -71,7 +69,7 @@ impl Hash {
     }
 }
 
-fn generic_generate_tag<D: Digest + BlockSizeUser + FixedOutputReset>(
+fn generic_generate_tag<D: Digest + SmallBlockSizeUser + FixedOutputReset>(
     mut hmac: SimpleHmac<D>,
     data: &[u8],
 ) -> Result<Vec<u8>, HashError> {

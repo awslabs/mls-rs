@@ -35,7 +35,7 @@ pub enum X509Error {
     #[cfg_attr(feature = "std", error(transparent))]
     EcError(EcError),
     #[cfg_attr(feature = "std", error(transparent))]
-    RandError(rand_core::Error),
+    RandError(getrandom::Error),
     #[cfg_attr(feature = "std", error(transparent))]
     EcX509Error(EcX509Error),
     #[cfg_attr(feature = "std", error(transparent))]
@@ -122,8 +122,8 @@ impl From<EcError> for X509Error {
     }
 }
 
-impl From<rand_core::Error> for X509Error {
-    fn from(e: rand_core::Error) -> Self {
+impl From<getrandom::Error> for X509Error {
+    fn from(e: getrandom::Error) -> Self {
         X509Error::RandError(e)
     }
 }

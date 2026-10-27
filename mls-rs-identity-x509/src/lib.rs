@@ -83,7 +83,7 @@ pub(crate) mod test_utils {
         (0..3)
             .map(|_| {
                 let mut data = [0u8; 32];
-                rng().fill(&mut data);
+                rng().fill_bytes(&mut data);
                 DerCertificate::from(data.to_vec())
             })
             .collect::<CertificateChain>()

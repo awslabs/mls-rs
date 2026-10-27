@@ -22,7 +22,7 @@ async-trait = "0.1.74"
 tempfile = "3"
 assert_matches = "1"
 anyhow = "1"
-rand = "0.9"
+rand = "0.10"
 
 [features]
 default = ["sqlcipher-bundled"]

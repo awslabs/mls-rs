@@ -13,7 +13,7 @@ use mls_rs_core::{
     psk::ExternalPskId,
     time::MlsTime,
 };
-use rand::{seq::IteratorRandom, Rng, SeedableRng};
+use rand::{seq::IteratorRandom, RngExt, SeedableRng};
 
 use crate::{
     client_builder::{ClientBuilder, MlsConfig},
@@ -616,7 +616,7 @@ pub async fn generate_passive_client_random_tests() -> Vec<TestCase> {
 
             let mut members = (0..groups.len())
                 .filter(|i| groups[*i].current_member_index() != passive_client_index)
-                .choose_multiple(&mut rng, num_removed + 1);
+                .sample(&mut rng, num_removed + 1);
 
             let sender = members.pop().unwrap();
 
