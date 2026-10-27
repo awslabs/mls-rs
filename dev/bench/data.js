@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793107873024,
+  "lastUpdate": 1793108272603,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -31411,6 +31411,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 103211,
             "range": "± 7894",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mulmarta@amazon.ch",
+            "name": "mulmarta",
+            "username": "mulmarta"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "034d5a3a6ec59d4e5c06ff0a5ea0893268d5d0f3",
+          "message": "test: Use eternal lifetimes in passive vectors (#404)",
+          "timestamp": "2026-10-27T14:34:13+01:00",
+          "tree_id": "bc4c0913483ef1f1a5ea6692ca15f789746fe0b5",
+          "url": "https://github.com/awslabs/mls-rs/commit/034d5a3a6ec59d4e5c06ff0a5ea0893268d5d0f3"
+        },
+        "date": 1793108271355,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 528087,
+            "range": "± 7357",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 535934,
+            "range": "± 20571",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 594519,
+            "range": "± 41823",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1197264,
+            "range": "± 24716",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 6933095,
+            "range": "± 45917",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2677489,
+            "range": "± 40841",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7279659,
+            "range": "± 237139",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13458942,
+            "range": "± 108910",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 785435,
+            "range": "± 12857",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 879740,
+            "range": "± 16521",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 1014189,
+            "range": "± 23077",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 24084,
+            "range": "± 314",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 82470,
+            "range": "± 971",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 161974,
+            "range": "± 1420",
             "unit": "ns/iter"
           }
         ]
