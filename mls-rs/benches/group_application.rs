@@ -4,7 +4,7 @@
 
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput};
 use mls_rs::test_utils::benchmarks::{load_group_states, BENCH_CIPHER_SUITE};
-use rand::RngCore;
+use rand::Rng;
 
 fn bench(c: &mut Criterion) {
     let group_states = load_group_states().pop().unwrap();
