@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792436997277,
+  "lastUpdate": 1793107873024,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -31303,6 +31303,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 160835,
             "range": "± 987",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "93408277+7331@users.noreply.github.com",
+            "name": "niels",
+            "username": "7331"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d7afe686986a575e2beeb24d133406152f10bad1",
+          "message": "feat: Reject trailing data in MlsMessage::from_bytes (#387)\n\nMlsDecode::mls_decode reads a prefix of its reader and leaves the rest\nbehind, so MlsMessage::from_bytes accepted a valid message followed by\narbitrary bytes and silently dropped them. Distinct byte strings therefore\ndecoded to the same message.\n\nAdd MlsDecode::mls_decode_exhaustive, which decodes from a slice and fails\nwith the new Error::UnexpectedTrailingData if any byte is left over, and use\nit in MlsMessage::from_bytes.",
+          "timestamp": "2026-10-27T14:27:36+01:00",
+          "tree_id": "4cb03592160b62f371f0b7dede607c1522f7474c",
+          "url": "https://github.com/awslabs/mls-rs/commit/d7afe686986a575e2beeb24d133406152f10bad1"
+        },
+        "date": 1793107871918,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 300484,
+            "range": "± 13320",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 299691,
+            "range": "± 17768",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 330825,
+            "range": "± 14920",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 684829,
+            "range": "± 30987",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 4185196,
+            "range": "± 100963",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1451818,
+            "range": "± 34768",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 4118127,
+            "range": "± 73933",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 7622455,
+            "range": "± 177144",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 417652,
+            "range": "± 7777",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 507159,
+            "range": "± 10629",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 610126,
+            "range": "± 24430",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 14606,
+            "range": "± 756",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 51558,
+            "range": "± 6477",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 103211,
+            "range": "± 7894",
             "unit": "ns/iter"
           }
         ]
