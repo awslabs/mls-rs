@@ -52,7 +52,7 @@ pub enum EcError {
     #[cfg_attr(feature = "std", error("p256 signature error: {0:?}"))]
     SignatureError(p256::ecdsa::Error),
     #[cfg_attr(feature = "std", error("rand error: {0:?}"))]
-    RandCoreError(getrandom::Error),
+    GetrandomError(getrandom::Error),
     #[cfg_attr(feature = "std", error("ecdh key type mismatch"))]
     EcdhKeyTypeMismatch,
     #[cfg_attr(feature = "std", error("ec key is not an ecdh key"))]
@@ -73,7 +73,7 @@ impl From<p256::ecdsa::Error> for EcError {
 
 impl From<getrandom::Error> for EcError {
     fn from(value: getrandom::Error) -> Self {
-        EcError::RandCoreError(value)
+        EcError::GetrandomError(value)
     }
 }
 
