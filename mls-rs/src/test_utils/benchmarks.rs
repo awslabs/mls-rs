@@ -75,6 +75,7 @@ async fn generate_test_cases() -> Vec<MlsMessage> {
             None,
             false,
             &MlsCryptoProvider::new(),
+            None,
         )
         .await
         .pop()

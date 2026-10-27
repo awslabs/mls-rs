@@ -108,6 +108,7 @@ pub async fn get_test_groups<C: CryptoProvider + Clone>(
     commit_options: Option<CommitOptions>,
     encrypt_controls: bool,
     crypto: &C,
+    lifetime: Option<Lifetime>,
 ) -> Vec<Group<impl MlsConfig>> {
     // Create the group with Alice as the group initiator
     let creator = generate_basic_client(
@@ -117,7 +118,7 @@ pub async fn get_test_groups<C: CryptoProvider + Clone>(
         commit_options,
         encrypt_controls,
         crypto,
-        None,
+        lifetime,
     )
     .await;
 

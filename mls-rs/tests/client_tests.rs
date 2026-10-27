@@ -79,19 +79,18 @@ pub async fn get_test_groups(
         None,
         encrypt_controls,
         &TestCryptoProvider::default(),
+        None,
     )
     .await
 }
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 pub async fn get_default_test_groups(num_participants: usize) -> Vec<Group<impl MlsConfig>> {
-    mls_rs::test_utils::get_test_groups(
+    get_test_groups(
         ProtocolVersion::MLS_10,
         TestCryptoProvider::all_supported_cipher_suites()[0],
         num_participants,
-        None,
         false,
-        &TestCryptoProvider::default(),
     )
     .await
 }
@@ -844,6 +843,7 @@ async fn external_info_from_commit_allows_to_join() {
         Some(CommitOptions::new().with_allow_external_commit(true)),
         false,
         &TestCryptoProvider::default(),
+        None,
     )
     .await
     .remove(0);
