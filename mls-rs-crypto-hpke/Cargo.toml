@@ -1,6 +1,6 @@
 [package]
 name = "mls-rs-crypto-hpke"
-version = "0.21.1"
+version = "0.22.0"
 edition = "2021"
 description = "HPKE implementation based on mls-rs-crypto-traits used by mls-rs"
 homepage = "https://github.com/awslabs/mls-rs"
@@ -32,7 +32,7 @@ mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", features = ["mock"], 
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wasm-bindgen-test = { version = "0.3" }
-getrandom = { version = "0.2", features = ["js"] }
+getrandom = { version = "0.4", features = ["wasm_js"] }
 
 [target.'cfg(mls_build_async)'.dependencies]
 async-trait = "0.1.74"

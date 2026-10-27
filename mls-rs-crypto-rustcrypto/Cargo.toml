@@ -1,6 +1,6 @@
 [package]
 name = "mls-rs-crypto-rustcrypto"
-version = "0.22.1"
+version = "0.23.0"
 edition = "2021"
 description = "RustCrypto based CryptoProvider for mls-rs"
 homepage = "https://github.com/awslabs/mls-rs"
@@ -25,7 +25,7 @@ std = [
 
 [dependencies]
 mls-rs-core = { path = "../mls-rs-core", default-features = false, version = "0.27.0" }
-mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", default-features = false, version = "0.21.0" }
+mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", default-features = false, version = "0.22.0" }
 mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", default-features = false, version = "0.22.0" }
 
 thiserror = { version = "2", optional = true }
@@ -37,7 +37,6 @@ getrandom = { version = "0.4", default-features = false, features = ["sys_rng"] 
 # AEAD
 aes-gcm = { version = "0.11", features = ["zeroize"] }
 chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc", "getrandom"] }
-generic-array = { version = "0.14", default-features = false }
 aead = { version = "0.6", default-features = false, features = ["alloc", "getrandom"] }
 
 # Hash
@@ -53,7 +52,7 @@ ed25519-dalek = { version = "3", default-features = false, features = ["alloc", 
 sec1 = { version = "0.8", default-features = false, features = ["alloc"] }
 
 # X509 feature
-mls-rs-identity-x509 = { path = "../mls-rs-identity-x509", optional = true, version = "0.21.0" }
+mls-rs-identity-x509 = { path = "../mls-rs-identity-x509", optional = true, version = "0.22.0" }
 x509-cert = { version = "0.2", optional = true, features = ["std"] }
 spki = { version = "0.7", optional = true, features = ["std", "alloc"] }
 maybe-async = "0.2.10"
@@ -64,7 +63,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "^1.0" }
 assert_matches = "1.5.0"
 mls-rs-core = { path = "../mls-rs-core", version = "0.27.0", features = ["test_suite"] }
-mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", default-features = false, version = "0.21.0", features = ["test_utils"] }
+mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", default-features = false, version = "0.22.0", features = ["test_utils"] }
 
 [target.'cfg(mls_build_async)'.dependencies]
 async-trait = "0.1.74"

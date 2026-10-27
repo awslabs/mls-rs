@@ -6,25 +6,27 @@ jobs:
   BuildAndTest:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
-    - uses: actions-rust-lang/setup-rust-toolchain@v1
-      with:
-        rustflags: ''
-        toolchain: stable,nightly
-        target: thumbv6m-none-eabi
-        components: clippy
-    - uses: Swatinem/rust-cache@v2
-      with:
-        save-if: ${{ github.ref == 'refs/heads/main' }}
-    - name: Clippy
-      run: cargo +stable clippy --no-default-features -p mls-rs -- -D warnings
-    - name: Test
-      run: cargo +stable test --no-default-features --features test_util --verbose -p mls-rs --lib --test '*'
-    - name: Test Full RFC Compliance
-      run: cargo +stable test --no-default-features --features rfc_compliant,test_util --verbose -p mls-rs
-    - name: Build MLS Embedded
-      run: cargo +nightly build --package mls-rs --lib --no-default-features --target thumbv6m-none-eabi
-    - name: Build MLS Embedded Full RFC Compliance
-      run: cargo +nightly build --package mls-rs --lib --no-default-features --features rfc_compliant --target thumbv6m-none-eabi
-    - name: Build rust crypto embedded
-      run: cargo +nightly build --package mls-rs-crypto-rustcrypto --no-default-features --features "getrandom/custom" --target thumbv6m-none-eabi
+      - uses: actions/checkout@v6
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ""
+          toolchain: stable,nightly
+          target: thumbv6m-none-eabi
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Clippy
+        run: cargo +stable clippy --no-default-features -p mls-rs -- -D warnings
+      - name: Test
+        run: cargo +stable test --no-default-features --features test_util --verbose -p mls-rs --lib --test '*'
+      - name: Test Full RFC Compliance
+        run: cargo +stable test --no-default-features --features rfc_compliant,test_util --verbose -p mls-rs
+      - name: Build MLS Embedded
+        run: cargo +nightly build --package mls-rs --lib --no-default-features --target thumbv6m-none-eabi
+      - name: Build MLS Embedded Full RFC Compliance
+        run: cargo +nightly build --package mls-rs --lib --no-default-features --features rfc_compliant --target thumbv6m-none-eabi
+      - name: Build rust crypto embedded
+        env:
+          RUSTFLAGS: '--cfg getrandom_backend="custom"'
+        run: cargo +nightly build --package mls-rs-crypto-rustcrypto --no-default-features --target thumbv6m-none-eabi
