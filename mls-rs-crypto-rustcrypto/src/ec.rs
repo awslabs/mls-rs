@@ -16,8 +16,8 @@ use core::array::TryFromSliceError;
 
 use core::fmt::{self, Debug};
 use ed25519_dalek::Signer;
-use p256::elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint};
-use rand_core::OsRng;
+use getrandom::{rand_core::UnwrapErr, SysRng};
+use p256::elliptic_curve::{sec1::ToSec1Point, Generate};
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum EcPublicKey {
@@ -52,7 +52,7 @@ pub enum EcError {
     #[cfg_attr(feature = "std", error("p256 signature error: {0:?}"))]
     SignatureError(p256::ecdsa::Error),
     #[cfg_attr(feature = "std", error("rand error: {0:?}"))]
-    RandCoreError(rand_core::Error),
+    RandCoreError(getrandom::Error),
     #[cfg_attr(feature = "std", error("ecdh key type mismatch"))]
     EcdhKeyTypeMismatch,
     #[cfg_attr(feature = "std", error("ec key is not an ecdh key"))]
@@ -71,8 +71,8 @@ impl From<p256::ecdsa::Error> for EcError {
     }
 }
 
-impl From<rand_core::Error> for EcError {
-    fn from(value: rand_core::Error) -> Self {
+impl From<getrandom::Error> for EcError {
+    fn from(value: getrandom::Error) -> Self {
         EcError::RandCoreError(value)
     }
 }
@@ -96,17 +96,9 @@ impl core::fmt::Debug for EcPrivateKey {
 
 pub fn pub_key_from_uncompressed(bytes: &[u8], curve: Curve) -> Result<EcPublicKey, EcError> {
     match curve {
-        Curve::P256 => {
-            let encoded_point =
-                p256::EncodedPoint::from_bytes(bytes).map_err(|_| EcError::EcKeyInvalidKeyData)?;
-
-            let key_option: Option<p256::PublicKey> =
-                p256::PublicKey::from_encoded_point(&encoded_point).into();
-
-            let key = key_option.ok_or_else(|| EcError::EcKeyInvalidKeyData)?;
-
-            Ok(EcPublicKey::P256(key))
-        }
+        Curve::P256 => Ok(EcPublicKey::P256(
+            p256::PublicKey::from_sec1_bytes(bytes).map_err(|_| EcError::EcKeyInvalidKeyData)?,
+        )),
         Curve::X25519 => {
             let array: [u8; 32] = bytes.try_into()?;
             Ok(EcPublicKey::X25519(x25519_dalek::PublicKey::from(array)))
@@ -114,17 +106,9 @@ pub fn pub_key_from_uncompressed(bytes: &[u8], curve: Curve) -> Result<EcPublicK
         Curve::Ed25519 => Ok(EcPublicKey::Ed25519(
             ed25519_dalek::VerifyingKey::from_bytes(bytes.try_into()?)?,
         )),
-        Curve::P384 => {
-            let encoded_point =
-                p384::EncodedPoint::from_bytes(bytes).map_err(|_| EcError::EcKeyInvalidKeyData)?;
-
-            let key_option: Option<p384::PublicKey> =
-                p384::PublicKey::from_encoded_point(&encoded_point).into();
-
-            let key = key_option.ok_or_else(|| EcError::EcKeyInvalidKeyData)?;
-
-            Ok(EcPublicKey::P384(key))
-        }
+        Curve::P384 => Ok(EcPublicKey::P384(
+            p384::PublicKey::from_sec1_bytes(bytes).map_err(|_| EcError::EcKeyInvalidKeyData)?,
+        )),
         _ => Err(EcError::UnsupportedCurve),
     }
 }
@@ -133,21 +117,29 @@ pub fn pub_key_to_uncompressed(key: &EcPublicKey) -> Result<Vec<u8>, EcError> {
     match key {
         EcPublicKey::X25519(key) => Ok(key.to_bytes().to_vec()),
         EcPublicKey::Ed25519(key) => Ok(key.to_bytes().to_vec()),
-        EcPublicKey::P256(key) => Ok(key.as_affine().to_encoded_point(false).as_bytes().to_vec()),
-        EcPublicKey::P384(key) => Ok(key.as_affine().to_encoded_point(false).as_bytes().to_vec()),
+        EcPublicKey::P256(key) => Ok(key.as_affine().to_sec1_bytes().to_vec()),
+        EcPublicKey::P384(key) => Ok(key.as_affine().to_sec1_bytes().to_vec()),
     }
 }
 
 pub fn generate_private_key(curve: Curve) -> Result<EcPrivateKey, EcError> {
+    // The key constructors below take an infallible `CryptoRng`, so RNG failure panics
+    // rather than surfacing as an error.
+    let mut rng = UnwrapErr(SysRng);
+
     match curve {
-        Curve::P256 => Ok(EcPrivateKey::P256(p256::SecretKey::random(&mut OsRng))),
+        Curve::P256 => Ok(EcPrivateKey::P256(p256::SecretKey::generate_from_rng(
+            &mut rng,
+        ))),
         Curve::X25519 => Ok(EcPrivateKey::X25519(
-            x25519_dalek::StaticSecret::random_from_rng(OsRng),
+            x25519_dalek::StaticSecret::random_from_rng(&mut rng),
         )),
         Curve::Ed25519 => Ok(EcPrivateKey::Ed25519(ed25519_dalek::SigningKey::generate(
-            &mut OsRng,
+            &mut rng,
         ))),
-        Curve::P384 => Ok(EcPrivateKey::P384(p384::SecretKey::random(&mut OsRng))),
+        Curve::P384 => Ok(EcPrivateKey::P384(p384::SecretKey::generate_from_rng(
+            &mut rng,
+        ))),
         _ => Err(EcError::UnsupportedCurve),
     }
 }

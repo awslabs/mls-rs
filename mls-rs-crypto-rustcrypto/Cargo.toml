@@ -11,18 +11,13 @@ license = "Apache-2.0 OR MIT"
 [features]
 x509 = ["std", "mls-rs-identity-x509", "x509-cert", "spki", "mls-rs-core/x509"]
 default = ["std"]
-browser = ["getrandom/js"]
+browser = ["getrandom/wasm_js"]
 
 std = [
     "mls-rs-core/std",
     "mls-rs-crypto-hpke/std",
     "mls-rs-crypto-traits/std",
     "getrandom/std",
-    "rand_core/std",
-    "aead/std",
-    "sha2/std",
-    "hmac/std",
-    "hkdf/std",
     "p256/std",
     "sec1/std",
     "dep:thiserror"
@@ -37,26 +32,24 @@ thiserror = { version = "2", optional = true }
 zeroize = { version = "1", default-features = false, features = ["alloc", "zeroize_derive"] }
 
 # Random
-getrandom = { version = "0.2", default-features = false, optional = true }
-rand_core = { version = "0.6", default-features = false, features = ["alloc"] }
+getrandom = { version = "0.4", default-features = false, features = ["sys_rng"] }
 
 # AEAD
-aes-gcm = { version = "0.10", features = ["zeroize"] }
-chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc", "getrandom"] }
+aes-gcm = { version = "0.11", features = ["zeroize"] }
+chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc", "getrandom"] }
 generic-array = { version = "0.14", default-features = false }
-aead = { version = "0.5", default-features = false, features = ["alloc", "getrandom"] }
+aead = { version = "0.6", default-features = false, features = ["alloc", "getrandom"] }
 
 # Hash
-sha2 = { version = "0.10", default-features = false }
-
-hmac = { version = "0.12", default-features = false, features = ["reset"] }
-hkdf = { version = "0.12", default-features = false }
+sha2 = { version = "0.11", default-features = false }
+hmac = { version = "0.13", default-features = false }
+hkdf = { version = "0.13", default-features = false }
 
 # KEM
-p256 = { version = "0.13", default-features = false, features = ["alloc", "ecdh", "ecdsa", "pem"] }
-p384 = { version = "0.13", default-features = false, features = ["alloc", "ecdh", "ecdsa", "pem"] }
-x25519-dalek = { version = "2", default-features = false, features = ["alloc", "static_secrets"] }
-ed25519-dalek = { version = "2", default-features = false, features = ["alloc", "rand_core"] }
+p256 = { version = "0.14", default-features = false, features = ["alloc", "ecdh", "ecdsa", "pem"] }
+p384 = { version = "0.14", default-features = false, features = ["alloc", "ecdh", "ecdsa", "pem"] }
+x25519-dalek = { version = "3", default-features = false, features = ["static_secrets"] }
+ed25519-dalek = { version = "3", default-features = false, features = ["alloc", "rand_core"] }
 sec1 = { version = "0.8", default-features = false, features = ["alloc"] }
 
 # X509 feature
