@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793231321213,
+  "lastUpdate": 1793640151189,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -31843,6 +31843,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 160325,
             "range": "± 1368",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mulmarta@amazon.ch",
+            "name": "mulmarta",
+            "username": "mulmarta"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6c819eface1e8b00a3241412d1b7e21c162df515",
+          "message": "chore: Add a more complete basic example (#322)\n\n* chore: Add insert method to PSK storage trait\n\n* feat: Add a more complete basic example\n\n---------\n\nCo-authored-by: Tom Leavy <tomleavy@amazon.com>",
+          "timestamp": "2026-11-02T12:18:41-05:00",
+          "tree_id": "034002cb69f63ec13fa362d9acbd11d87527a2a9",
+          "url": "https://github.com/awslabs/mls-rs/commit/6c819eface1e8b00a3241412d1b7e21c162df515"
+        },
+        "date": 1793640149698,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 538128,
+            "range": "± 9353",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 546105,
+            "range": "± 7995",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 599856,
+            "range": "± 17179",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1234316,
+            "range": "± 25386",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 9423559,
+            "range": "± 112325",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2674462,
+            "range": "± 75501",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 7309011,
+            "range": "± 72632",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 13636133,
+            "range": "± 99323",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 794542,
+            "range": "± 50159",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 910522,
+            "range": "± 12871",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 1031775,
+            "range": "± 90084",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 24388,
+            "range": "± 398",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 83394,
+            "range": "± 1206",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 163144,
+            "range": "± 4220",
             "unit": "ns/iter"
           }
         ]
