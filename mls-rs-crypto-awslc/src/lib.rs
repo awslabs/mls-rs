@@ -498,13 +498,12 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
         pt: &[u8],
     ) -> Result<HpkeCiphertext, Self::Error> {
         match &self.hpke {
-            AwsLcHpke::Classical(hpke) => hpke.seal(remote_key, info, None, aad, pt),
+            AwsLcHpke::Classical(hpke) => hpke.seal(remote_key, info, None, aad, pt).await,
             #[cfg(feature = "post-quantum")]
-            AwsLcHpke::PostQuantum(hpke) => hpke.seal(remote_key, info, None, aad, pt),
+            AwsLcHpke::PostQuantum(hpke) => hpke.seal(remote_key, info, None, aad, pt).await,
             #[cfg(feature = "post-quantum")]
-            AwsLcHpke::Combined(hpke) => hpke.seal(remote_key, info, None, aad, pt),
+            AwsLcHpke::Combined(hpke) => hpke.seal(remote_key, info, None, aad, pt).await,
         }
-        .await
         .map_err(Into::into)
     }
 
@@ -518,13 +517,12 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
     ) -> Result<HpkeCiphertext, Self::Error> {
         let psk_val = Some(psk);
         match &self.hpke {
-            AwsLcHpke::Classical(hpke) => hpke.seal(remote_key, info, psk_val, aad, pt),
+            AwsLcHpke::Classical(hpke) => hpke.seal(remote_key, info, psk_val, aad, pt).await,
             #[cfg(feature = "post-quantum")]
-            AwsLcHpke::PostQuantum(hpke) => hpke.seal(remote_key, info, psk_val, aad, pt),
+            AwsLcHpke::PostQuantum(hpke) => hpke.seal(remote_key, info, psk_val, aad, pt).await,
             #[cfg(feature = "post-quantum")]
-            AwsLcHpke::Combined(hpke) => hpke.seal(remote_key, info, psk_val, aad, pt),
+            AwsLcHpke::Combined(hpke) => hpke.seal(remote_key, info, psk_val, aad, pt).await,
         }
-        .await
         .map_err(Into::into)
     }
 
@@ -539,17 +537,19 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
         match &self.hpke {
             AwsLcHpke::Classical(hpke) => {
                 hpke.open(ciphertext, local_secret, local_public, info, None, aad)
+                    .await
             }
             #[cfg(feature = "post-quantum")]
             AwsLcHpke::PostQuantum(hpke) => {
                 hpke.open(ciphertext, local_secret, local_public, info, None, aad)
+                    .await
             }
             #[cfg(feature = "post-quantum")]
             AwsLcHpke::Combined(hpke) => {
                 hpke.open(ciphertext, local_secret, local_public, info, None, aad)
+                    .await
             }
         }
-        .await
         .map_err(Into::into)
     }
 
@@ -566,17 +566,19 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
         match &self.hpke {
             AwsLcHpke::Classical(hpke) => {
                 hpke.open(ciphertext, local_secret, local_public, info, psk_val, aad)
+                    .await
             }
             #[cfg(feature = "post-quantum")]
             AwsLcHpke::PostQuantum(hpke) => {
                 hpke.open(ciphertext, local_secret, local_public, info, psk_val, aad)
+                    .await
             }
             #[cfg(feature = "post-quantum")]
             AwsLcHpke::Combined(hpke) => {
                 hpke.open(ciphertext, local_secret, local_public, info, psk_val, aad)
+                    .await
             }
         }
-        .await
         .map_err(Into::into)
     }
 
@@ -586,13 +588,12 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
         info: &[u8],
     ) -> Result<(Vec<u8>, Self::HpkeContextS), Self::Error> {
         match &self.hpke {
-            AwsLcHpke::Classical(hpke) => hpke.setup_sender(remote_key, info, None),
+            AwsLcHpke::Classical(hpke) => hpke.setup_sender(remote_key, info, None).await,
             #[cfg(feature = "post-quantum")]
-            AwsLcHpke::PostQuantum(hpke) => hpke.setup_sender(remote_key, info, None),
+            AwsLcHpke::PostQuantum(hpke) => hpke.setup_sender(remote_key, info, None).await,
             #[cfg(feature = "post-quantum")]
-            AwsLcHpke::Combined(hpke) => hpke.setup_sender(remote_key, info, None),
+            AwsLcHpke::Combined(hpke) => hpke.setup_sender(remote_key, info, None).await,
         }
-        .await
         .map_err(Into::into)
     }
 
@@ -606,41 +607,41 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
         match &self.hpke {
             AwsLcHpke::Classical(hpke) => {
                 hpke.setup_receiver(kem_output, local_secret, local_public, info, None)
+                    .await
             }
             #[cfg(feature = "post-quantum")]
             AwsLcHpke::PostQuantum(hpke) => {
                 hpke.setup_receiver(kem_output, local_secret, local_public, info, None)
+                    .await
             }
             #[cfg(feature = "post-quantum")]
             AwsLcHpke::Combined(hpke) => {
                 hpke.setup_receiver(kem_output, local_secret, local_public, info, None)
+                    .await
             }
         }
-        .await
         .map_err(Into::into)
     }
 
     async fn kem_derive(&self, ikm: &[u8]) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
         match &self.hpke {
-            AwsLcHpke::Classical(hpke) => hpke.derive(ikm),
+            AwsLcHpke::Classical(hpke) => hpke.derive(ikm).await,
             #[cfg(feature = "post-quantum")]
-            AwsLcHpke::PostQuantum(hpke) => hpke.derive(ikm),
+            AwsLcHpke::PostQuantum(hpke) => hpke.derive(ikm).await,
             #[cfg(feature = "post-quantum")]
-            AwsLcHpke::Combined(hpke) => hpke.derive(ikm),
+            AwsLcHpke::Combined(hpke) => hpke.derive(ikm).await,
         }
-        .await
         .map_err(Into::into)
     }
 
     async fn kem_generate(&self) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
         match &self.hpke {
-            AwsLcHpke::Classical(hpke) => hpke.generate(),
+            AwsLcHpke::Classical(hpke) => hpke.generate().await,
             #[cfg(feature = "post-quantum")]
-            AwsLcHpke::PostQuantum(hpke) => hpke.generate(),
+            AwsLcHpke::PostQuantum(hpke) => hpke.generate().await,
             #[cfg(feature = "post-quantum")]
-            AwsLcHpke::Combined(hpke) => hpke.generate(),
+            AwsLcHpke::Combined(hpke) => hpke.generate().await,
         }
-        .await
         .map_err(Into::into)
     }
 

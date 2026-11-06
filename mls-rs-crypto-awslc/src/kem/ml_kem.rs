@@ -67,6 +67,12 @@ impl MlKem {
     }
 }
 
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(all(target_arch = "wasm32", mls_build_async), maybe_async::must_be_async(?Send))]
+#[cfg_attr(
+    all(not(target_arch = "wasm32"), mls_build_async),
+    maybe_async::must_be_async
+)]
 impl KemType for MlKemKem {
     type Error = AwsLcCryptoError;
 
@@ -75,7 +81,7 @@ impl KemType for MlKemKem {
         15
     }
 
-    fn encap(&self, remote_key: &HpkePublicKey) -> Result<KemResult, Self::Error> {
+    async fn encap(&self, remote_key: &HpkePublicKey) -> Result<KemResult, Self::Error> {
         let remote_key = EncapsulationKey::new(self.ml_kem.algorithm(), remote_key)?;
         let (enc, shared_secret) = remote_key.encapsulate()?;
 
@@ -85,7 +91,7 @@ impl KemType for MlKemKem {
         })
     }
 
-    fn decap(
+    async fn decap(
         &self,
         enc: &[u8],
         secret_key: &HpkeSecretKey,
@@ -123,7 +129,7 @@ impl KemType for MlKemKem {
             .ok_or(Unspecified.into())
     }
 
-    fn generate_deterministic(
+    async fn generate_deterministic(
         &self,
         ikm: &[u8],
     ) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
@@ -134,7 +140,10 @@ impl KemType for MlKemKem {
         if ikm.len() == self.seed_length_for_derive() {
             Ok(unsafe { kem_derive(nid, ikm, secret_key_size, public_key_size) }?)
         } else {
-            let ikm = self.kdf.expand(ikm, &[], self.seed_length_for_derive())?;
+            let ikm = self
+                .kdf
+                .expand(ikm, &[], self.seed_length_for_derive())
+                .await?;
             Ok(unsafe { kem_derive(nid, &ikm, secret_key_size, public_key_size) }?)
         }
     }
@@ -147,11 +156,11 @@ impl KemType for MlKemKem {
         64
     }
 
-    fn generate(&self) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
+    async fn generate(&self) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
         let mut out = vec![0u8; self.seed_length_for_derive()];
         aws_lc_rs::rand::fill(&mut out)?;
 
-        self.generate_deterministic(&out)
+        self.generate_deterministic(&out).await
     }
 }
 
@@ -216,7 +225,7 @@ unsafe fn kem_derive(
         .ok_or(Unspecified)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(mls_build_async)))]
 mod tests {
     use mls_rs_core::crypto::CipherSuite;
     use mls_rs_crypto_traits::KemType;
