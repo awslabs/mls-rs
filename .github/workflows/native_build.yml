@@ -188,6 +188,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      # kotlinc 1.9.24 cannot parse a Java 25 version string, which is the
+      # runner image default.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
       # TODO uniffi produces a warning with the newest version, failing tests. remove this when uniffi fixes this
       - uses: fwilhe2/setup-kotlin@main
         with:
