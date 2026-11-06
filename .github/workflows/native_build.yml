@@ -55,7 +55,13 @@ jobs:
       - run: |
           sudo apt-get install -y libsqlite3-dev
         if: runner.os == 'Linux'
-        # TODO uniffi produces a warning with the newest version, failing tests. remove this when uniffi fixes this
+      # kotlinc 1.9.24 cannot parse a Java 25 version string, which is the
+      # runner image default.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      # TODO uniffi produces a warning with the newest version, failing tests. remove this when uniffi fixes this
       - uses: fwilhe2/setup-kotlin@main
         with:
           version: 1.9.24
