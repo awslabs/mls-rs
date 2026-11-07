@@ -8,6 +8,8 @@ mod ecdsa;
 mod hmac;
 mod kdf;
 mod kem;
+#[cfg(feature = "post-quantum")]
+mod ml_dsa;
 
 pub mod x509;
 

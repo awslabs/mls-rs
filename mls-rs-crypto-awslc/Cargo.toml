@@ -34,6 +34,7 @@ futures-test = "0.3.25"
 serde = { version = "1.0", features = ["derive"] }
 hex = { version = "0.4", features = ["serde"] }
 serde_json = "1.0"
+wycheproof = { version = "0.7", default-features = false, features = ["mldsa_sign", "mldsa_verify"] }
 
 [target.'cfg(mls_build_async)'.dependencies]
 async-trait = "0.1.74"
