@@ -25,6 +25,8 @@ pub enum Curve {
     X448,
     /// Edwards-curve Digital Signature Algorithm Curve448
     Ed448,
+    /// ML-DSA-44 (FIPS 204; draft-ietf-mls-pq-ciphersuites-07 §2). Not an elliptic curve.
+    MlDsa44,
 }
 
 impl Curve {
@@ -39,6 +41,7 @@ impl Curve {
             Curve::Ed25519 => 64,
             Curve::X448 => 56,
             Curve::Ed448 => 114,
+            Curve::MlDsa44 => 32,
         }
     }
 
@@ -47,6 +50,7 @@ impl Curve {
         match self {
             Curve::P256 | Curve::P384 | Curve::P521 => 2 * self.secret_key_size() + 1,
             Curve::X25519 | Curve::Ed25519 | Curve::X448 | Curve::Ed448 => self.secret_key_size(),
+            Curve::MlDsa44 => 1312,
         }
     }
 
@@ -74,5 +78,16 @@ impl Curve {
             Curve::P521 => SamplingMethod::HpkeWithBitmask(0x01),
             _ => SamplingMethod::HpkeWithoutBitmask,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Curve;
+
+    #[test]
+    fn ml_dsa_44_key_sizes() {
+        assert_eq!(Curve::MlDsa44.secret_key_size(), 32);
+        assert_eq!(Curve::MlDsa44.public_key_size(), 1312);
     }
 }
