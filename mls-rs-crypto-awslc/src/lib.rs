@@ -8,6 +8,8 @@ mod ecdsa;
 mod hmac;
 mod kdf;
 mod kem;
+#[cfg(feature = "post-quantum")]
+mod random;
 
 pub mod x509;
 
@@ -58,6 +60,9 @@ pub use self::kdf::Sha3;
 
 #[cfg(feature = "post-quantum")]
 pub use self::kdf::shake::AwsLcShake256;
+
+#[cfg(feature = "post-quantum")]
+pub use self::random::AwsLcRandom;
 
 pub use self::kdf::AwsLcHash;
 
