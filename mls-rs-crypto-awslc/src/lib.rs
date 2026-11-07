@@ -9,6 +9,8 @@ mod hmac;
 mod kdf;
 mod kem;
 #[cfg(feature = "post-quantum")]
+mod ml_dsa;
+#[cfg(feature = "post-quantum")]
 mod random;
 
 pub mod x509;
