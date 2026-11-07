@@ -61,6 +61,14 @@ impl From<mls_rs_core::mls_rs_codec::Error> for Error {
     }
 }
 
+/// A CSPRNG for seed-format KEM secret keys (`random(Nseed)`, draft-ietf-hpke-pq §3).
+#[cfg_attr(test, mockall::automock(type Error = mls_rs_crypto_traits::mock::TestError;))]
+pub trait SeedRng: Send + Sync {
+    type Error: IntoAnyError + Send + Sync;
+
+    fn fill(&self, out: &mut [u8]) -> Result<(), Self::Error>;
+}
+
 pub trait FixedLengthKemType: KemType {
     fn public_key_size(&self) -> usize;
     fn secret_key_size(&self) -> usize;
