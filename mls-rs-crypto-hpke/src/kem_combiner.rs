@@ -3,6 +3,7 @@ use mls_rs_crypto_traits::KemType;
 
 #[cfg(not(mls_build_async))]
 pub mod byte_vec_codecs;
+pub mod cg;
 #[cfg(not(mls_build_async))]
 pub mod ghp;
 #[cfg(not(mls_build_async))]
