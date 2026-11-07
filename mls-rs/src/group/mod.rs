@@ -5456,6 +5456,55 @@ mod tests {
         assert!(res.is_err());
     }
 
+    #[cfg(feature = "std")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn commit_with_consistent_truncated_path_fails() {
+        std::thread_local! {
+            static ORIGINAL_ROOT: core::cell::RefCell<Option<crate::tree_kem::node::Node>> =
+                const { core::cell::RefCell::new(None) };
+        }
+
+        const ROOT: usize = 3;
+
+        let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 4).await;
+
+        let commit_output = groups[0].commit(vec![]).await.unwrap();
+        groups[0].apply_pending_commit().await.unwrap();
+
+        for group in groups.iter_mut().skip(1) {
+            group
+                .process_message(commit_output.commit_message.clone())
+                .await
+                .unwrap();
+        }
+
+        let root = groups[0].state.public_tree.nodes[ROOT].clone();
+        assert!(root.is_some());
+        ORIGINAL_ROOT.with(|r| *r.borrow_mut() = root);
+
+        // Restoring the old root before parent hashes are computed keeps them consistent
+        // with the receiver's view after applying the truncated path.
+        groups[0].commit_modifiers.modify_tree = |tree| {
+            tree.nodes[ROOT] = ORIGINAL_ROOT.with(|r| r.borrow().clone());
+        };
+
+        // Drop the root's node from the update path, leaving one node instead of two.
+        groups[0].commit_modifiers.modify_path = |mut path| {
+            path.pop();
+            path
+        };
+
+        // Leaf 0 forges the commit: validation sees a short but parent-hash-consistent path.
+        let commit_output = groups[0].commit(vec![]).await.unwrap();
+
+        // Leaf 2's LCA with leaf 0 is the root, which the truncated path omits.
+        let res = groups[2]
+            .process_message(commit_output.commit_message)
+            .await;
+
+        assert!(res.is_err());
+    }
+
     #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
     async fn update_proposal_can_change_credential() {
