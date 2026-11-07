@@ -56,6 +56,9 @@ pub use self::kem::ml_kem::{MlKem, MlKemKem};
 #[cfg(feature = "post-quantum")]
 pub use self::kdf::Sha3;
 
+#[cfg(feature = "post-quantum")]
+pub use self::kdf::shake::AwsLcShake256;
+
 pub use self::kdf::AwsLcHash;
 
 #[derive(Clone)]
