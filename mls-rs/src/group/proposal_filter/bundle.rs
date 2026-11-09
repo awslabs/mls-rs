@@ -25,7 +25,7 @@ use crate::{
 use crate::group::SelfRemoveProposal;
 
 #[cfg(feature = "by_ref_proposal")]
-use crate::group::{proposal_cache::CachedProposal, LeafIndex, ProposalRef, UpdateProposal};
+use crate::group::{proposal_cache::CachedProposal, ProposalRef, UpdateProposal};
 
 #[cfg(feature = "psk")]
 use crate::group::PreSharedKeyProposal;
@@ -44,8 +44,6 @@ pub struct ProposalBundle {
     pub(crate) additions: Vec<ProposalInfo<AddProposal>>,
     #[cfg(feature = "by_ref_proposal")]
     pub(crate) updates: Vec<ProposalInfo<UpdateProposal>>,
-    #[cfg(feature = "by_ref_proposal")]
-    pub(crate) update_senders: Vec<LeafIndex>,
     pub(crate) removals: Vec<ProposalInfo<RemoveProposal>>,
     #[cfg(feature = "psk")]
     pub(crate) psks: Vec<ProposalInfo<PreSharedKeyProposal>>,
@@ -391,12 +389,6 @@ impl ProposalBundle {
     #[cfg(feature = "by_ref_proposal")]
     pub fn update_proposals(&self) -> &[ProposalInfo<UpdateProposal>] {
         &self.updates
-    }
-
-    /// Senders of update proposals in the bundle.
-    #[cfg(feature = "by_ref_proposal")]
-    pub fn update_proposal_senders(&self) -> &[LeafIndex] {
-        &self.update_senders
     }
 
     /// Remove proposals in the bundle.

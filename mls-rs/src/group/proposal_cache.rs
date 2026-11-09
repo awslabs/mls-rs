@@ -887,6 +887,7 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 true,
+                vec![],
             )
             .await
             .unwrap();
@@ -3319,8 +3320,6 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(effects.applied_proposals.update_senders, vec![alice, bob]);
-
         assert_eq!(
             effects
                 .applied_proposals
@@ -3391,8 +3390,6 @@ mod tests {
         .receive([pk1_to_pk2_ref, remove_pk2_ref])
         .await
         .unwrap();
-
-        assert_eq!(effects.applied_proposals.update_senders, vec![alice]);
 
         assert_eq!(
             effects

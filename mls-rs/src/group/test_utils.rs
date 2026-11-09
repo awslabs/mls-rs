@@ -38,6 +38,12 @@ pub(crate) struct TestGroup {
     pub group: Group<TestClientConfig>,
 }
 
+impl Debug for TestGroup {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TestGroup").finish()
+    }
+}
+
 impl Deref for TestGroup {
     type Target = Group<TestClientConfig>;
 

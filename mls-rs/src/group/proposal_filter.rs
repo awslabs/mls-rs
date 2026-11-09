@@ -203,7 +203,6 @@ mod tests {
             sender: member_sender(),
             source: ProposalSource::ByValue,
         });
-        bundle.update_senders.push(LeafIndex::unchecked(0));
 
         assert!(path_update_required(&bundle, &DefaultMlsRules::new()));
     }

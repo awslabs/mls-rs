@@ -463,6 +463,7 @@ impl TreeKemPublic {
         id_provider: &I,
         cipher_suite_provider: &CP,
         filter: bool,
+        update_senders: Vec<LeafIndex>,
     ) -> Result<Vec<LeafIndex>, MlsError>
     where
         I: IdentityProvider,
@@ -506,7 +507,7 @@ impl TreeKemPublic {
 
         // Remove from the tree old leaves from updates
         let mut partial_updates = vec![];
-        let senders = proposal_bundle.update_senders.iter().copied();
+        let senders = update_senders.iter().copied();
 
         for (i, (p, index)) in proposal_bundle.updates.iter().zip(senders).enumerate() {
             let new_leaf = p.proposal.leaf_node.clone();
@@ -632,7 +633,6 @@ impl TreeKemPublic {
         } else {
             for i in bad_indices.into_iter().rev() {
                 proposal_bundle.remove::<UpdateProposal>(i);
-                proposal_bundle.update_senders.remove(i);
             }
         }
 
@@ -834,7 +834,6 @@ impl TreeKemPublic {
 
         let mut bundle = ProposalBundle::default();
         bundle.add(p, Sender::Member(*leaf_index), ProposalSource::ByValue);
-        bundle.update_senders = vec![leaf_index];
 
         self.batch_edit(
             &mut bundle,
@@ -842,6 +841,7 @@ impl TreeKemPublic {
             identity_provider,
             cipher_suite_provider,
             true,
+            vec![leaf_index],
         )
         .await?;
 
@@ -879,6 +879,7 @@ impl TreeKemPublic {
             identity_provider,
             cipher_suite_provider,
             true,
+            vec![],
         )
         .await?;
 
@@ -1637,8 +1638,6 @@ mod tests {
 
         bundle.add(update, Sender::Member(1), ProposalSource::ByReference(pref));
 
-        bundle.update_senders = vec![LeafIndex::unchecked(1)];
-
         let remove = RemoveProposal {
             to_remove: LeafIndex::unchecked(2),
         };
@@ -1653,6 +1652,7 @@ mod tests {
             &BasicIdentityProvider,
             &cipher_suite_provider,
             true,
+            vec![LeafIndex::unchecked(1)],
         )
         .await
         .unwrap();
