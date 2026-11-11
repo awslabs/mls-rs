@@ -206,32 +206,29 @@ where
             member_validation_context,
         );
 
-        // One entry per update proposal, in order, so the index is the proposal's position.
-        let validated: Vec<Option<LeafIndex>> = wrap_iter(proposals.update_proposals())
-            .filter_map(|p| async move {
+        // `wrap_iter` needs an owned collection
+        let proposed_updates = core::mem::take(&mut proposals.updates);
+        let mut update_senders = Vec::new();
+
+        let validated: Vec<_> = wrap_iter(proposed_updates)
+            .map(|p| async {
                 let res = self
-                    .validate_update_proposal(leaf_node_validator, p, new_extensions, commit_time)
+                    .validate_update_proposal(leaf_node_validator, &p, new_extensions, commit_time)
                     .await;
 
-                Some(apply_strategy_with_return(
-                    strategy,
-                    p.is_by_reference(),
-                    res,
-                ))
+                let sender_index = apply_strategy_with_return(strategy, p.is_by_reference(), res)?;
+
+                Ok::<_, MlsError>((sender_index, p))
             })
             .try_collect()
             .await?;
 
-        let mut update_senders = Vec::new();
-
-        for (i, sender) in validated.into_iter().enumerate().rev() {
-            match sender {
-                Some(sender) => update_senders.push(sender),
-                None => proposals.remove::<UpdateProposal>(i),
+        for (sender_index, proposal) in validated {
+            if let Some(sender_index) = sender_index {
+                update_senders.push(sender_index);
+                proposals.updates.push(proposal);
             }
         }
-
-        update_senders.reverse();
 
         let bad_indices: Vec<_> = wrap_iter(proposals.add_proposals())
             .enumerate()
