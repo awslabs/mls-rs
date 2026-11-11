@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793640151189,
+  "lastUpdate": 1794416284739,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -31951,6 +31951,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 163144,
             "range": "± 4220",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mulmarta@amazon.ch",
+            "name": "mulmarta",
+            "username": "mulmarta"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d632a1b9cf7a546c146dada9c63d16e74ebc2dc9",
+          "message": " fix: Reject too short update paths (#409)\n\n* fix: Reject too short update paths\n\n* chore(ci): Use java 21 for kotlinc\n\n* chore(ci): Use java 21 for kotlinc\n\n* fix(ci): Use latest macos",
+          "timestamp": "2026-11-11T17:15:11+01:00",
+          "tree_id": "b39e8b86e3bd25e7cc6078859352ddf9bd79f4ed",
+          "url": "https://github.com/awslabs/mls-rs/commit/d632a1b9cf7a546c146dada9c63d16e74ebc2dc9"
+        },
+        "date": 1794416283340,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 203734,
+            "range": "± 14241",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 207246,
+            "range": "± 6369",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 239930,
+            "range": "± 10240",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 590170,
+            "range": "± 12533",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 3903283,
+            "range": "± 137448",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1101130,
+            "range": "± 28583",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 3095217,
+            "range": "± 42319",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 5509241,
+            "range": "± 165652",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 333528,
+            "range": "± 7660",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 402823,
+            "range": "± 11860",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 501797,
+            "range": "± 29038",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 13970,
+            "range": "± 344",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 50981,
+            "range": "± 1528",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 102501,
+            "range": "± 5196",
             "unit": "ns/iter"
           }
         ]
