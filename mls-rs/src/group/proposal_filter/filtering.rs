@@ -211,14 +211,15 @@ where
         let mut update_senders = Vec::new();
 
         let validated: Vec<_> = wrap_iter(proposed_updates)
-            .map(|p| async {
+            .filter_map(|p| async move {
                 let res = self
                     .validate_update_proposal(leaf_node_validator, &p, new_extensions, commit_time)
                     .await;
 
-                let sender_index = apply_strategy_with_return(strategy, p.is_by_reference(), res)?;
-
-                Ok::<_, MlsError>((sender_index, p))
+                Some(
+                    apply_strategy_with_return(strategy, p.is_by_reference(), res)
+                        .map(|sender_index| (sender_index, p)),
+                )
             })
             .try_collect()
             .await?;
@@ -921,7 +922,6 @@ mod tests {
         );
     }
 
-    /// Returns a 3-member group and one update proposal per member, in leaf order.
     #[cfg(feature = "by_ref_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn group_with_update_proposals() -> (TestGroup, [Proposal; 3]) {

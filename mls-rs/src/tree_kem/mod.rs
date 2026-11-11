@@ -1733,7 +1733,7 @@ mod tests {
                 &mut bundle,
                 &Default::default(),
                 &BasicIdentityProvider,
-                &test_cipher_suite_provider(TEST_CIPHER_SUITE).await,
+                &test_cipher_suite_provider(TEST_CIPHER_SUITE),
                 true,
                 vec![LeafIndex::unchecked(1)],
             )
