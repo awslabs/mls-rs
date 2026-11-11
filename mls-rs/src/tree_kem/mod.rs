@@ -463,6 +463,7 @@ impl TreeKemPublic {
         id_provider: &I,
         cipher_suite_provider: &CP,
         filter: bool,
+        update_senders: Vec<LeafIndex>,
     ) -> Result<Vec<LeafIndex>, MlsError>
     where
         I: IdentityProvider,
@@ -505,10 +506,10 @@ impl TreeKemPublic {
         }
 
         // Remove from the tree old leaves from updates
-        let mut partial_updates = vec![];
-        let senders = proposal_bundle.update_senders.iter().copied();
+        let mut updates_info = vec![];
+        let mut updates = vec![];
 
-        for (i, (p, index)) in proposal_bundle.updates.iter().zip(senders).enumerate() {
+        for (p, index) in proposal_bundle.updates.drain(..).zip(update_senders) {
             let new_leaf = p.proposal.leaf_node.clone();
 
             match self.nodes.blank_leaf_node(index) {
@@ -520,15 +521,18 @@ impl TreeKemPublic {
                     #[cfg(feature = "tree_index")]
                     self.index.remove(&old_leaf, &old_id);
 
-                    partial_updates.push((index, old_leaf, new_leaf, i));
+                    updates_info.push((index, old_leaf, new_leaf));
+                    updates.push(p);
                 }
-                _ => {
-                    if !filter || !p.is_by_reference() {
-                        return Err(MlsError::UpdatingNonExistingMember);
-                    }
+                _ if !filter || !p.is_by_reference() => {
+                    return Err(MlsError::UpdatingNonExistingMember)
                 }
+                _ => (),
             }
         }
+
+        // Keeps `updates_info` index-aligned with the retained proposals.
+        proposal_bundle.updates = updates;
 
         #[cfg(feature = "tree_index")]
         let index_clone = self.index.clone();
@@ -539,7 +543,7 @@ impl TreeKemPublic {
 
         // Apply updates one by one. If there's an update which we can't apply or revert, we revert
         // all updates.
-        for (index, old_leaf, new_leaf, i) in partial_updates.into_iter() {
+        for (i, (index, old_leaf, new_leaf)) in updates_info.into_iter().enumerate() {
             #[cfg(feature = "tree_index")]
             let res = index_insert(
                 &mut self.index,
@@ -632,7 +636,6 @@ impl TreeKemPublic {
         } else {
             for i in bad_indices.into_iter().rev() {
                 proposal_bundle.remove::<UpdateProposal>(i);
-                proposal_bundle.update_senders.remove(i);
             }
         }
 
@@ -834,7 +837,6 @@ impl TreeKemPublic {
 
         let mut bundle = ProposalBundle::default();
         bundle.add(p, Sender::Member(*leaf_index), ProposalSource::ByValue);
-        bundle.update_senders = vec![leaf_index];
 
         self.batch_edit(
             &mut bundle,
@@ -842,6 +844,7 @@ impl TreeKemPublic {
             identity_provider,
             cipher_suite_provider,
             true,
+            vec![leaf_index],
         )
         .await?;
 
@@ -879,6 +882,7 @@ impl TreeKemPublic {
             identity_provider,
             cipher_suite_provider,
             true,
+            vec![],
         )
         .await?;
 
@@ -1637,8 +1641,6 @@ mod tests {
 
         bundle.add(update, Sender::Member(1), ProposalSource::ByReference(pref));
 
-        bundle.update_senders = vec![LeafIndex::unchecked(1)];
-
         let remove = RemoveProposal {
             to_remove: LeafIndex::unchecked(2),
         };
@@ -1653,6 +1655,7 @@ mod tests {
             &BasicIdentityProvider,
             &cipher_suite_provider,
             true,
+            vec![LeafIndex::unchecked(1)],
         )
         .await
         .unwrap();
@@ -1660,6 +1663,86 @@ mod tests {
         assert_eq!(bundle.add_proposals().len(), 1);
         assert_eq!(bundle.remove_proposals().len(), 1);
         assert_eq!(bundle.update_proposals().len(), 1);
+    }
+
+    #[cfg(feature = "by_ref_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn batch_edit_filters_out_invalid_proposals() {
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+
+        let mut tree = get_test_tree(TEST_CIPHER_SUITE).await.public;
+        let leaf_nodes = get_test_leaf_nodes(TEST_CIPHER_SUITE).await;
+
+        tree.add_leaves(leaf_nodes, &BasicIdentityProvider, &cipher_suite_provider)
+            .await
+            .unwrap();
+
+        let kp = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "D").await;
+        let add = Proposal::Add(Box::new(kp.into()));
+
+        let remove = Proposal::Remove(RemoveProposal {
+            to_remove: LeafIndex::unchecked(2),
+        });
+
+        let update = Proposal::Update(UpdateProposal {
+            leaf_node: get_basic_test_node(TEST_CIPHER_SUITE, "A").await,
+        });
+
+        let fake_source = ProposalSource::ByReference(ProposalRef::new_fake(vec![]));
+
+        // Two adds
+        let mut bundle = ProposalBundle::default();
+        bundle.add(add.clone(), Sender::Member(0), fake_source.clone());
+        bundle.add(add.clone(), Sender::Member(0), fake_source.clone());
+        test_batch_edit(&tree, bundle, 1, 0, 0).await;
+
+        // Two updates
+        let mut bundle = ProposalBundle::default();
+        bundle.add(update.clone(), Sender::Member(1), fake_source.clone());
+        bundle.add(update.clone(), Sender::Member(1), fake_source.clone());
+        test_batch_edit(&tree, bundle, 0, 1, 0).await;
+
+        // Two removes
+        let mut bundle = ProposalBundle::default();
+        bundle.add(remove.clone(), Sender::Member(1), fake_source.clone());
+        bundle.add(remove.clone(), Sender::Member(1), fake_source.clone());
+        test_batch_edit(&tree, bundle, 0, 0, 1).await;
+
+        // Two of everything
+        let mut bundle = ProposalBundle::default();
+        bundle.add(add.clone(), Sender::Member(0), fake_source.clone());
+        bundle.add(add, Sender::Member(0), fake_source.clone());
+        bundle.add(remove.clone(), Sender::Member(0), fake_source.clone());
+        bundle.add(remove, Sender::Member(0), fake_source.clone());
+        bundle.add(update.clone(), Sender::Member(1), fake_source.clone());
+        bundle.add(update, Sender::Member(1), fake_source);
+        test_batch_edit(&tree, bundle, 1, 1, 1).await;
+    }
+
+    #[cfg(feature = "by_ref_proposal")]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn test_batch_edit(
+        tree: &TreeKemPublic,
+        mut bundle: ProposalBundle,
+        expected_adds: usize,
+        expected_updates: usize,
+        expected_removes: usize,
+    ) {
+        tree.clone()
+            .batch_edit(
+                &mut bundle,
+                &Default::default(),
+                &BasicIdentityProvider,
+                &test_cipher_suite_provider(TEST_CIPHER_SUITE),
+                true,
+                vec![LeafIndex::unchecked(1)],
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(bundle.add_proposals().len(), expected_adds);
+        assert_eq!(bundle.remove_proposals().len(), expected_removes);
+        assert_eq!(bundle.update_proposals().len(), expected_updates);
     }
 
     #[cfg(feature = "custom_proposal")]

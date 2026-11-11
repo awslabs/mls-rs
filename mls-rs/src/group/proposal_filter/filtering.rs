@@ -60,6 +60,14 @@ use {crate::iter::ParallelIteratorExt, rayon::prelude::*};
 #[cfg(mls_build_async)]
 use futures::{StreamExt, TryStreamExt};
 
+/// An `UpdateProposal` names no leaf, so the leaf it replaces comes from its sender.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct ProposalBundleWithUpdateSenders {
+    pub(crate) proposals: ProposalBundle,
+    /// Index-aligned with `proposals.updates`.
+    pub(crate) update_senders: Vec<LeafIndex>,
+}
+
 impl<C, P, CSP> ProposalApplier<'_, C, P, CSP>
 where
     C: IdentityProvider,
@@ -75,17 +83,7 @@ where
         commit_time: Option<MlsTime>,
     ) -> Result<ApplyProposalsOutput, MlsError> {
         let proposals = filter_out_invalid_proposers(strategy, proposals)?;
-
-        let mut proposals: ProposalBundle =
-            filter_out_update_for_committer(strategy, commit_sender, proposals)?;
-
-        // We ignore the strategy here because the check above ensures all updates are from members
-        proposals.update_senders = proposals
-            .updates
-            .iter()
-            .map(leaf_index_of_update_sender)
-            .collect::<Result<_, _>>()?;
-
+        let proposals = filter_out_update_for_committer(strategy, commit_sender, proposals)?;
         let mut proposals = filter_out_removal_of_committer(strategy, commit_sender, proposals)?;
 
         filter_out_invalid_psks(
@@ -156,7 +154,10 @@ where
         new_extensions: &ExtensionList,
         commit_time: Option<MlsTime>,
     ) -> Result<ApplyProposalsOutput, MlsError> {
-        let mut applied_proposals = self
+        let ProposalBundleWithUpdateSenders {
+            proposals: mut applied_proposals,
+            update_senders,
+        } = self
             .validate_new_nodes(strategy, proposals, new_extensions, commit_time)
             .await?;
 
@@ -169,6 +170,7 @@ where
                 self.identity_provider,
                 self.cipher_suite_provider,
                 strategy.is_ignore(),
+                update_senders,
             )
             .await?;
 
@@ -192,7 +194,7 @@ where
         mut proposals: ProposalBundle,
         new_extensions: &ExtensionList,
         commit_time: Option<MlsTime>,
-    ) -> Result<ProposalBundle, MlsError> {
+    ) -> Result<ProposalBundleWithUpdateSenders, MlsError> {
         let member_validation_context = MemberValidationContext::ForCommit {
             current_context: self.original_context,
             new_extensions,
@@ -204,54 +206,30 @@ where
             member_validation_context,
         );
 
-        let bad_indices: Vec<_> = wrap_iter(proposals.update_proposals())
-            .zip(wrap_iter(proposals.update_proposal_senders()))
-            .enumerate()
-            .filter_map(|(i, (p, &sender_index))| async move {
-                let res = {
-                    let leaf = &p.proposal.leaf_node;
+        // `wrap_iter` needs an owned collection
+        let proposed_updates = core::mem::take(&mut proposals.updates);
+        let mut update_senders = Vec::new();
 
-                    let res = leaf_node_validator
-                        .check_if_valid(
-                            leaf,
-                            ValidationContext::Update((
-                                &self.original_context.group_id,
-                                *sender_index,
-                                commit_time,
-                            )),
-                        )
-                        .await;
+        let validated: Vec<_> = wrap_iter(proposed_updates)
+            .filter_map(|p| async move {
+                let res = self
+                    .validate_update_proposal(leaf_node_validator, &p, new_extensions, commit_time)
+                    .await;
 
-                    let old_leaf = match self.original_tree.get_leaf_node(sender_index) {
-                        Ok(leaf) => leaf,
-                        Err(e) => return Some(Err(e)),
-                    };
-
-                    let valid_successor = self
-                        .identity_provider
-                        .valid_successor(
-                            &old_leaf.signing_identity,
-                            &leaf.signing_identity,
-                            new_extensions,
-                        )
-                        .await
-                        .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))
-                        .and_then(|valid| valid.then_some(()).ok_or(MlsError::InvalidSuccessor));
-
-                    res.and(valid_successor)
-                };
-
-                apply_strategy(strategy, p.is_by_reference(), res)
-                    .map(|b| (!b).then_some(i))
-                    .transpose()
+                Some(
+                    apply_strategy_with_return(strategy, p.is_by_reference(), res)
+                        .map(|sender_index| (sender_index, p)),
+                )
             })
             .try_collect()
             .await?;
 
-        bad_indices.into_iter().rev().for_each(|i| {
-            proposals.remove::<UpdateProposal>(i);
-            proposals.update_senders.remove(i);
-        });
+        for (sender_index, proposal) in validated {
+            if let Some(sender_index) = sender_index {
+                update_senders.push(sender_index);
+                proposals.updates.push(proposal);
+            }
+        }
 
         let bad_indices: Vec<_> = wrap_iter(proposals.add_proposals())
             .enumerate()
@@ -272,7 +250,49 @@ where
             .rev()
             .for_each(|i| proposals.remove::<AddProposal>(i));
 
-        Ok(proposals)
+        Ok(ProposalBundleWithUpdateSenders {
+            proposals,
+            update_senders,
+        })
+    }
+
+    /// Returns the leaf index the update replaces, taken from the proposal's sender.
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn validate_update_proposal(
+        &self,
+        leaf_node_validator: &LeafNodeValidator<'_, C, CSP>,
+        proposal_info: &ProposalInfo<UpdateProposal>,
+        new_extensions: &ExtensionList,
+        commit_time: Option<MlsTime>,
+    ) -> Result<LeafIndex, MlsError> {
+        let leaf = &proposal_info.proposal.leaf_node;
+        let sender_index = leaf_index_of_update_sender(proposal_info)?;
+
+        leaf_node_validator
+            .check_if_valid(
+                leaf,
+                ValidationContext::Update((
+                    &self.original_context.group_id,
+                    *sender_index,
+                    commit_time,
+                )),
+            )
+            .await?;
+
+        let old_leaf = self.original_tree.get_leaf_node(sender_index)?;
+
+        self.identity_provider
+            .valid_successor(
+                &old_leaf.signing_identity,
+                &leaf.signing_identity,
+                new_extensions,
+            )
+            .await
+            .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?
+            .then_some(())
+            .ok_or(MlsError::InvalidSuccessor)?;
+
+        Ok(sender_index)
     }
 }
 
@@ -312,8 +332,19 @@ pub(crate) fn apply_strategy(
     by_ref: bool,
     r: Result<(), MlsError>,
 ) -> Result<bool, MlsError> {
-    r.map(|_| true)
-        .or_else(|error| strategy.ignore(by_ref).then_some(false).ok_or(error))
+    apply_strategy_with_return(strategy, by_ref, r).map(|opt| opt.is_some())
+}
+
+pub(crate) fn apply_strategy_with_return<T>(
+    strategy: FilterStrategy,
+    by_ref: bool,
+    r: Result<T, MlsError>,
+) -> Result<Option<T>, MlsError> {
+    match r {
+        Ok(x) => Ok(Some(x)),
+        Err(_) if strategy.ignore(by_ref) => Ok(None),
+        Err(error) => Err(error),
+    }
 }
 
 #[cfg(all(
@@ -606,7 +637,6 @@ pub(crate) fn filter_out_invalid_proposers(
 
         if !apply_strategy(strategy, p.is_by_reference(), res)? {
             proposals.remove::<UpdateProposal>(i);
-            proposals.update_senders.remove(i);
         }
     }
 
@@ -711,8 +741,24 @@ mod tests {
     use alloc::vec;
 
     use super::*;
-    use crate::group::{proposal_ref::ProposalRef, ProposalType, Sender};
+    use crate::{
+        client::test_utils::TEST_CIPHER_SUITE,
+        group::{proposal_ref::ProposalRef, ProposalType, Sender},
+    };
     use assert_matches::assert_matches;
+
+    #[cfg(feature = "by_ref_proposal")]
+    use crate::{
+        client::test_utils::TEST_PROTOCOL_VERSION,
+        group::{
+            message_processor::MessageProcessor,
+            test_utils::{test_n_member_group, TestGroup},
+            Proposal,
+        },
+        key_package::test_utils::test_key_package,
+    };
+    #[cfg(feature = "by_ref_proposal")]
+    use alloc::boxed::Box;
 
     fn by_ref_source() -> ProposalSource {
         ProposalSource::ByReference(ProposalRef::new_fake(vec![1, 2, 3]))
@@ -874,5 +920,139 @@ mod tests {
             &by_ref_source(),
             &[ProposalType::ADD],
         );
+    }
+
+    #[cfg(feature = "by_ref_proposal")]
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn group_with_update_proposals() -> (TestGroup, [Proposal; 3]) {
+        let [mut alice, mut bob, mut carl] =
+            test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 3)
+                .await
+                .try_into()
+                .unwrap();
+
+        let updates = [
+            alice.update_proposal().await,
+            bob.update_proposal().await,
+            carl.update_proposal().await,
+        ];
+
+        (alice, updates)
+    }
+
+    #[cfg(feature = "by_ref_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn validate_new_nodes_with_invalid_update() {
+        let (alice, [alice_update, bob_update, carl_update]) = group_with_update_proposals().await;
+
+        let applier = ProposalApplier {
+            original_tree: alice.current_epoch_tree(),
+            cipher_suite_provider: alice.cipher_suite_provider(),
+            original_context: alice.context(),
+            external_leaf: None,
+            identity_provider: &alice.identity_provider(),
+            psk_storage: &alice.psk_storage(),
+        };
+
+        // Bob's leaf is signed for leaf 1, so claiming leaf 2 makes the proposal invalid.
+        let mut bundle = ProposalBundle::default();
+        bundle.add(alice_update, Sender::Member(0), by_ref_source());
+        bundle.add(bob_update, Sender::Member(2), by_ref_source());
+        bundle.add(carl_update.clone(), Sender::Member(2), by_ref_source());
+
+        let result_bundle = applier
+            .validate_new_nodes(
+                FilterStrategy::IgnoreByRef,
+                bundle.clone(),
+                &Default::default(),
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            result_bundle.update_senders,
+            vec![LeafIndex::unchecked(0), LeafIndex::unchecked(2)]
+        );
+
+        assert_matches!(
+            &carl_update,
+            Proposal::Update(carl) if result_bundle.proposals.updates[1].proposal == *carl
+        );
+
+        let res = applier
+            .validate_new_nodes(
+                FilterStrategy::IgnoreNone,
+                bundle,
+                &Default::default(),
+                None,
+            )
+            .await;
+
+        assert_matches!(res, Err(MlsError::InvalidSignature));
+    }
+
+    #[cfg(feature = "by_ref_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn validate_new_nodes_with_invalid_add() {
+        let (alice, _) = group_with_update_proposals().await;
+
+        let applier = ProposalApplier {
+            original_tree: alice.current_epoch_tree(),
+            cipher_suite_provider: alice.cipher_suite_provider(),
+            original_context: alice.context(),
+            external_leaf: None,
+            identity_provider: &alice.identity_provider(),
+            psk_storage: &alice.psk_storage(),
+        };
+
+        let valid_kp = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "dave").await;
+
+        let mut invalid_kp =
+            test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "mallory").await;
+
+        invalid_kp.signature = vec![1, 2, 3];
+
+        let mut bundle = ProposalBundle::default();
+
+        bundle.add(
+            Proposal::Add(Box::new(AddProposal::from(invalid_kp))),
+            Sender::Member(0),
+            by_ref_source(),
+        );
+
+        bundle.add(
+            Proposal::Add(Box::new(AddProposal::from(valid_kp.clone()))),
+            Sender::Member(0),
+            by_ref_source(),
+        );
+
+        let result_bundle = applier
+            .validate_new_nodes(
+                FilterStrategy::IgnoreByRef,
+                bundle.clone(),
+                &Default::default(),
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result_bundle.proposals.additions.len(), 1);
+
+        assert_eq!(
+            result_bundle.proposals.additions[0].proposal.key_package,
+            valid_kp
+        );
+
+        let res = applier
+            .validate_new_nodes(
+                FilterStrategy::IgnoreNone,
+                bundle,
+                &Default::default(),
+                None,
+            )
+            .await;
+
+        assert_matches!(res, Err(MlsError::InvalidSignature));
     }
 }
