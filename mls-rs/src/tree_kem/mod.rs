@@ -1719,6 +1719,7 @@ mod tests {
         test_batch_edit(&tree, bundle, 1, 1, 1).await;
     }
 
+    #[cfg(feature = "by_ref_proposal")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     async fn test_batch_edit(
         tree: &TreeKemPublic,

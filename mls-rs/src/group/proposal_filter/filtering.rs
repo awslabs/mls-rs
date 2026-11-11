@@ -945,7 +945,7 @@ mod tests {
 
     #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    fn validate_new_nodes_with_invalid_update() {
+    async fn validate_new_nodes_with_invalid_update() {
         let (alice, [alice_update, bob_update, carl_update]) = group_with_update_proposals().await;
 
         let applier = ProposalApplier {
@@ -997,7 +997,7 @@ mod tests {
 
     #[cfg(feature = "by_ref_proposal")]
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
-    fn validate_new_nodes_with_invalid_add() {
+    async fn validate_new_nodes_with_invalid_add() {
         let (alice, _) = group_with_update_proposals().await;
 
         let applier = ProposalApplier {
