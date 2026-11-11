@@ -2,7 +2,7 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-use alloc::{vec, vec::Vec};
+use alloc::vec::Vec;
 use mls_rs_codec::{MlsDecode, MlsEncode, MlsSize};
 use mls_rs_core::{
     error::IntoAnyError,
@@ -95,22 +95,28 @@ pub(crate) async fn validate_update_path<C: IdentityProvider, CSP: CipherSuitePr
 
     // Unfilter the update path
     let filtered = state.public_tree.nodes.filtered(sender)?;
-    let mut unfiltered_nodes = vec![];
-    let mut i = 0;
 
-    for n in path.nodes {
-        while *filtered.get(i).ok_or(MlsError::WrongPathLen)? {
-            unfiltered_nodes.push(None);
-            i += 1;
-        }
+    let mut supplied = path.nodes.into_iter();
 
-        unfiltered_nodes.push(Some(n));
-        i += 1;
+    let nodes = filtered
+        .into_iter()
+        .map(|f| {
+            if f {
+                Ok(None)
+            } else {
+                supplied.next().ok_or(MlsError::WrongPathLen).map(Some)
+            }
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // A longer path carries nodes with no direct path position to apply them to.
+    if supplied.next().is_some() {
+        return Err(MlsError::WrongPathLen);
     }
 
     Ok(ValidatedUpdatePath {
         leaf_node: path.leaf_node,
-        nodes: unfiltered_nodes,
+        nodes,
     })
 }
 
@@ -284,5 +290,26 @@ mod tests {
         .await;
 
         assert_matches!(validated, Err(MlsError::SameHpkeKey(_)));
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn validating_path_fails_with_too_few_nodes() {
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+        let mut update_path = test_update_path(TEST_CIPHER_SUITE, "creator").await;
+        update_path.nodes.pop();
+        let state = test_provisional_state(TEST_CIPHER_SUITE).await;
+
+        let validated = validate_update_path(
+            &BasicIdentityProvider,
+            &cipher_suite_provider,
+            update_path,
+            &state,
+            LeafIndex::unchecked(0),
+            None,
+            &state.group_context,
+        )
+        .await;
+
+        assert_matches!(validated, Err(MlsError::WrongPathLen));
     }
 }
