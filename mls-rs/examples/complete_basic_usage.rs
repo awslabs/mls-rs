@@ -21,7 +21,8 @@ use mls_rs::{
     },
     mls_rules::{CommitOptions, DefaultMlsRules, EncryptionOptions},
     psk::{ExternalPskId, PreSharedKey},
-    CipherSuite, CipherSuiteProvider, Client, CryptoProvider, PreSharedKeyStorage,
+    storage_provider::in_memory::InMemoryPreSharedKeyStorage,
+    CipherSuite, CipherSuiteProvider, Client, CryptoProvider,
 };
 
 const CIPHERSUITE: CipherSuite = CipherSuite::CURVE25519_AES128;
@@ -35,26 +36,32 @@ fn create_identity(name: &str) -> (SigningIdentity, SignatureSecretKey) {
     (signing_identity, secret)
 }
 
-fn create_client(name: &str) -> Client<impl MlsConfig> {
+/// The returned storage shares its contents with the one the client holds, so PSKs
+/// inserted into it afterwards are visible to the client.
+fn create_client(name: &str) -> (Client<impl MlsConfig>, InMemoryPreSharedKeyStorage) {
     let (signing_identity, secret_key) = create_identity(name);
+    let psk_store = InMemoryPreSharedKeyStorage::default();
 
-    Client::builder()
+    let client = Client::builder()
         .crypto_provider(mls_rs_crypto_openssl::OpensslCryptoProvider::default())
         .identity_provider(BasicIdentityProvider)
+        .psk_store(psk_store.clone())
         .mls_rules(
             DefaultMlsRules::new()
                 .with_encryption_options(EncryptionOptions::new(true, PaddingMode::StepFunction))
                 .with_commit_options(CommitOptions::new().with_path_required(true)),
         )
         .signing_identity(signing_identity, secret_key, CIPHERSUITE)
-        .build()
+        .build();
+
+    (client, psk_store)
 }
 
 fn main() -> Result<(), MlsError> {
     // 🔐 Create three MLS clients with unique identities
-    let ann = create_client("📡");
-    let carl = create_client("🚗");
-    let lara = create_client("💻");
+    let (ann, _) = create_client("📡");
+    let (carl, mut carl_psks) = create_client("🚗");
+    let (lara, mut lara_psks) = create_client("💻");
 
     let lara_kp =
         lara.generate_key_package_message(Default::default(), Default::default(), None)?;
@@ -124,13 +131,8 @@ fn main() -> Result<(), MlsError> {
     let psk = PreSharedKey::new(b"shared secret value".to_vec());
 
     // 💾 Both clients store the PSK in their secret stores
-    lara.secret_store()
-        .insert(psk_id.clone(), psk.clone())
-        .unwrap();
-
-    carl.secret_store()
-        .insert(psk_id.clone(), psk.clone())
-        .unwrap();
+    lara_psks.insert(psk_id.clone(), psk.clone());
+    carl_psks.insert(psk_id.clone(), psk.clone());
 
     // 🔄 Lara commits the PSK to the group
     let commit_output = lara_group
@@ -142,7 +144,7 @@ fn main() -> Result<(), MlsError> {
     carl_group.process_incoming_message(commit_output.commit_message)?;
 
     // 🧟‍♀️ Zoe joins via external commit (no invitation needed!)
-    let zoe = create_client("🧟‍♀️");
+    let (zoe, _) = create_client("🧟‍♀️");
     let group_info = carl_group.group_info_message_allowing_ext_commit(true)?;
     let (mut zoe_group, external_commit) = zoe.commit_external(group_info)?;
     carl_group.process_incoming_message(external_commit)?;
