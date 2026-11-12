@@ -1,3 +1,5 @@
+#![cfg(not(mls_build_async))]
+
 use mls_rs_core::crypto::{CipherSuite, CipherSuiteProvider};
 use mls_rs_crypto_awslc::{AwsLcCipherSuiteBuilder, AwsLcHash, AwsLcHmac};
 use mls_rs_crypto_traits::{AeadId, Curve, KdfId};

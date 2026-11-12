@@ -34,18 +34,22 @@ pub enum Error {
 
 impl IntoAnyError for Error {}
 
+#[cfg(not(mls_build_async))]
 fn kem_error<E: IntoAnyError>(e: E) -> Error {
     Error::KemError(e.into_any_error())
 }
 
+#[cfg(not(mls_build_async))]
 fn prg_error<E: IntoAnyError>(e: E) -> Error {
     Error::PrgError(e.into_any_error())
 }
 
+#[cfg(not(mls_build_async))]
 fn codec_error<E: IntoAnyError>(e: E) -> Error {
     Error::ByteVecCodecError(e.into_any_error())
 }
 
+#[cfg(not(mls_build_async))]
 fn ro_error<E: IntoAnyError>(e: E) -> Error {
     Error::RandomOracleError(e.into_any_error())
 }
