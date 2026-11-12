@@ -73,9 +73,4 @@ impl PreSharedKeyStorage for InMemoryPreSharedKeyStorage {
     async fn get(&self, id: &ExternalPskId) -> Result<Option<PreSharedKey>, Self::Error> {
         Ok(self.get(id))
     }
-
-    async fn insert(&mut self, id: ExternalPskId, psk: PreSharedKey) -> Result<(), Self::Error> {
-        self.insert(id, psk);
-        Ok(())
-    }
 }
