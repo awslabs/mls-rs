@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794494326826,
+  "lastUpdate": 1794496812312,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -32275,6 +32275,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 120685,
             "range": "± 2525",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "sinshuma@gmail.com",
+            "name": "Xinshu Ma",
+            "username": "sus0pid"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f03c6b81ad531d6393bbd81422c2b2d4b4a46f50",
+          "message": "fix(crypto-awslc): build post-quantum KEMs under mls_build_async (#413)\n\n* fix(crypto-awslc): build post-quantum KEMs under mls_build_async\n\nWith `--cfg mls_build_async`, enabling the `post-quantum` feature of\nmls-rs-crypto-awslc failed to compile (18 errors):\n\n- `impl KemType for MlKemKem` lacked the `maybe_async` attributes used by\n  every other `KemType` impl, so its methods did not match the async trait.\n- The `match &self.hpke { .. }.await` dispatches in `CipherSuiteProvider`\n  awaited after the match, which only type-checks when every arm returns\n  the same future type. With the PQ variants enabled the arms return\n  distinct opaque futures, so the `.await` now happens inside each arm.\n\nTests in this crate are sync-only by convention; gate the `ml_kem` unit\ntests and the `cipher_suite_builder` integration test accordingly (they\nstill run in the sync build).\n\nAdd the async `post-quantum` AWS-LC test run to the AsyncBuildAndTest CI\njob so this does not regress. Doctests are excluded (`--lib --test '*'`)\nas in the existing async steps, since rustdoc does not see RUSTFLAGS.\n\nAddresses #325.\n\n* fix(crypto-hpke): gate sync-only combiner error helpers\n\n`kem_error`, `prg_error`, `codec_error` and `ro_error` are only used by\nthe `ghp` module, which is compiled out under `mls_build_async`. Gate the\nhelpers the same way so async builds no longer emit four dead-code\nwarnings (the warnings reported in #325).\n\nAddresses #325.",
+          "timestamp": "2026-11-12T16:13:38+01:00",
+          "tree_id": "48355764a57c1ef36741f0ade5ed04705fde0999",
+          "url": "https://github.com/awslabs/mls-rs/commit/f03c6b81ad531d6393bbd81422c2b2d4b4a46f50"
+        },
+        "date": 1794496811036,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 311329,
+            "range": "± 2684",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 317670,
+            "range": "± 18604",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 362778,
+            "range": "± 3806",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 843117,
+            "range": "± 7083",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 5511024,
+            "range": "± 69890",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 1714543,
+            "range": "± 27725",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 4710041,
+            "range": "± 49494",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 8715799,
+            "range": "± 93853",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 526074,
+            "range": "± 1898",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 615927,
+            "range": "± 38355",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 710352,
+            "range": "± 5354",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 17567,
+            "range": "± 379",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 62428,
+            "range": "± 699",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 121505,
+            "range": "± 1002",
             "unit": "ns/iter"
           }
         ]
