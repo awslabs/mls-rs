@@ -27,7 +27,7 @@ struct Params {
     signed: usize,
 }
 
-const PARAMS: [Params; 1] = [
+const PARAMS: [Params; 2] = [
     Params {
         curve: Curve::MlDsa44,
         name: "ML-DSA-44",
@@ -40,6 +40,19 @@ const PARAMS: [Params; 1] = [
         valid_seeds: 25,
         invalid_seeds: 3,
         signed: 71,
+    },
+    Params {
+        curve: Curve::MlDsa65,
+        name: "ML-DSA-65",
+        public_key_len: 1952,
+        signature_len: 3309,
+        expanded_secret_key_len: 4032,
+        verify: mldsa_verify::TestName::MlDsa65Verify,
+        sign_seed: mldsa_sign::TestName::MlDsa65SignSeed,
+        verify_with_context: 7,
+        valid_seeds: 39,
+        invalid_seeds: 3,
+        signed: 81,
     },
 ];
 
@@ -155,6 +168,24 @@ fn key_and_signature_sizes() {
         let sig = cs.sign(&sk, b"message").unwrap();
         assert_eq!(sig.len(), p.signature_len, "{}", p.name);
     }
+}
+
+#[test]
+fn parameter_sets_are_not_interchangeable() {
+    let [p44, p65] = &PARAMS;
+    let (cs44, cs65) = (provider(p44), provider(p65));
+
+    let (sk, pk44) = cs44.signature_key_generate().unwrap();
+    let pk65 = cs65.signature_key_derive_public(&sk).unwrap();
+    assert_ne!(pk44.as_bytes().len(), pk65.as_bytes().len());
+
+    let sig44 = cs44.sign(&sk, b"message").unwrap();
+    let sig65 = cs65.sign(&sk, b"message").unwrap();
+
+    assert!(cs65.verify(&pk65, &sig44, b"message").is_err());
+    assert!(cs44.verify(&pk44, &sig65, b"message").is_err());
+    assert!(cs65.verify(&pk44, &sig44, b"message").is_err());
+    assert!(cs44.verify(&pk65, &sig65, b"message").is_err());
 }
 
 #[test]
