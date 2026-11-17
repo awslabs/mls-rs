@@ -394,9 +394,7 @@ where
     #[cfg(feature = "by_ref_proposal")]
     let mut bad_indices = Vec::new();
 
-    for i in 0..proposals.psk_proposals().len() {
-        let p = &proposals.psks[i];
-
+    for (i, p) in proposals.psk_proposals().iter().enumerate() {
         let valid = matches!(
             p.proposal.psk.key_id,
             JustPreSharedKeyID::External(_)

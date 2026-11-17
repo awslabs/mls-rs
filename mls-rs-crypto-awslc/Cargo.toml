@@ -21,7 +21,7 @@ aws-lc-fips-sys = { version = "=0.14.2", optional = true }
 mls-rs-core = { path = "../mls-rs-core", version = "0.27.0" }
 mls-rs-crypto-hpke = { path = "../mls-rs-crypto-hpke", version = "0.22.0" }
 mls-rs-crypto-traits = { path = "../mls-rs-crypto-traits", version = "0.22.0" }
-mls-rs-identity-x509 = { path = "../mls-rs-identity-x509", version = "0.22.0" }
+mls-rs-identity-x509 = { path = "../mls-rs-identity-x509", version = "0.23.0" }
 thiserror = "2"
 zeroize = { version = "1", features = ["zeroize_derive"] }
 maybe-async = "0.2.10"

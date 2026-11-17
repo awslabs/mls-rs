@@ -644,12 +644,8 @@ impl TreeKemPublic {
         let mut added = vec![];
         let mut bad_indexes = vec![];
 
-        for i in 0..proposal_bundle.additions.len() {
-            let leaf = proposal_bundle.additions[i]
-                .proposal
-                .key_package
-                .leaf_node
-                .clone();
+        for (i, p) in proposal_bundle.additions.iter().enumerate() {
+            let leaf = p.proposal.key_package.leaf_node.clone();
 
             let res = self
                 .add_leaf(leaf, id_provider, extensions, Some(start))
