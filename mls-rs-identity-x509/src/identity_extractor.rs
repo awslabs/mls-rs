@@ -19,7 +19,6 @@ use crate::{
 /// component is not found, then the byte value of the entire subject
 /// is used as a fallback.
 pub struct SubjectIdentityExtractor<R: X509CertificateReader> {
-    offset: usize,
     reader: R,
 }
 
@@ -28,12 +27,8 @@ where
     R: X509CertificateReader,
 {
     /// Create a new identity extractor.
-    ///
-    /// `offset` is used to determine which certificate in a [`CertificateChain`]
-    /// should be used to evaluate identity. A value of 0 indicates to use the
-    /// leaf (first value) of the chain.
-    pub fn new(offset: usize, reader: R) -> Self {
-        Self { offset, reader }
+    pub fn new(reader: R) -> Self {
+        Self { reader }
     }
 
     fn extract_common_name(
@@ -54,7 +49,7 @@ where
         &self,
         certificate_chain: &CertificateChain,
     ) -> Result<Vec<u8>, X509IdentityError> {
-        let cert = get_certificate(certificate_chain, self.offset)?;
+        let cert = get_certificate(certificate_chain)?;
 
         let common_name_value = self.extract_common_name(cert)?;
 
@@ -79,8 +74,8 @@ where
         predecessor: &CertificateChain,
         successor: &CertificateChain,
     ) -> Result<bool, X509IdentityError> {
-        let predecessor_cert = get_certificate(predecessor, 0)?;
-        let successor_cert = get_certificate(successor, 0)?;
+        let predecessor_cert = get_certificate(predecessor)?;
+        let successor_cert = get_certificate(successor)?;
 
         let predecessor_common_name = self.extract_common_name(predecessor_cert)?;
 
@@ -117,11 +112,10 @@ where
 
 fn get_certificate(
     certificate_chain: &CertificateChain,
-    offset: usize,
 ) -> Result<&DerCertificate, X509IdentityError> {
     certificate_chain
-        .get(offset)
-        .ok_or(X509IdentityError::InvalidOffset)
+        .first()
+        .ok_or(X509IdentityError::EmptyCertificateChain)
 }
 
 #[cfg(all(test, feature = "std"))]
@@ -134,13 +128,11 @@ mod tests {
     use alloc::vec;
     use assert_matches::assert_matches;
 
+    use mls_rs_core::identity::CertificateChain;
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    fn test_setup<F>(
-        offset: usize,
-        mut mock_setup: F,
-    ) -> SubjectIdentityExtractor<MockX509CertificateReader>
+    fn test_setup<F>(mut mock_setup: F) -> SubjectIdentityExtractor<MockX509CertificateReader>
     where
         F: FnMut(&mut MockX509CertificateReader),
     {
@@ -149,20 +141,19 @@ mod tests {
         mock_setup(&mut x509_reader);
 
         SubjectIdentityExtractor {
-            offset,
             reader: x509_reader,
         }
     }
 
     #[test]
-    fn invalid_offset_is_rejected() {
-        let subject_extractor = test_setup(4, |subject_extractor| {
+    fn empty_chain_is_rejected() {
+        let subject_extractor = test_setup(|subject_extractor| {
             subject_extractor.expect_subject_bytes().never();
         });
 
         assert_matches!(
-            subject_extractor.identity(&test_certificate_chain()),
-            Err(X509IdentityError::InvalidOffset)
+            subject_extractor.identity(&CertificateChain::from_iter(core::iter::empty())),
+            Err(X509IdentityError::EmptyCertificateChain)
         );
     }
 
@@ -171,9 +162,9 @@ mod tests {
         let test_subject = b"test_name".to_vec();
         let cert_chain = test_certificate_chain();
 
-        let expected_certificate = cert_chain[1].clone();
+        let expected_certificate = cert_chain[0].clone();
 
-        let subject_extractor = test_setup(1, |parser| {
+        let subject_extractor = test_setup(|parser| {
             parser.expect_subject_bytes().never();
 
             parser
@@ -199,9 +190,9 @@ mod tests {
         let test_subject = b"subject".to_vec();
         let cert_chain = test_certificate_chain();
 
-        let expected_certificate = cert_chain[1].clone();
+        let expected_certificate = cert_chain[0].clone();
 
-        let subject_extractor = test_setup(1, |parser| {
+        let subject_extractor = test_setup(|parser| {
             let test_subject = test_subject.clone();
 
             parser
@@ -231,7 +222,7 @@ mod tests {
         // Make sure both chains have the same leaf
         successor[0] = predecessor[0].clone();
 
-        let subject_extractor = test_setup(1, |reader| {
+        let subject_extractor = test_setup(|reader| {
             let predecessor = predecessor[0].clone();
             let successor = successor[0].clone();
 
@@ -269,7 +260,7 @@ mod tests {
         // Make sure both chains have the same leaf
         successor[0] = predecessor[0].clone();
 
-        let subject_extractor = test_setup(1, |reader| {
+        let subject_extractor = test_setup(|reader| {
             let predecessor = predecessor[0].clone();
             let successor = successor[0].clone();
 
@@ -316,7 +307,7 @@ mod tests {
         // Make sure both chains have the same leaf
         successor[0] = predecessor[0].clone();
 
-        let subject_extractor = test_setup(1, |reader| {
+        let subject_extractor = test_setup(|reader| {
             let predecessor = predecessor[0].clone();
             let successor = successor[0].clone();
 
@@ -363,7 +354,7 @@ mod tests {
         // Make sure both chains have the same leaf
         successor[0] = predecessor[0].clone();
 
-        let subject_extractor = test_setup(1, |reader| {
+        let subject_extractor = test_setup(|reader| {
             let predecessor = predecessor[0].clone();
             let successor = successor[0].clone();
 

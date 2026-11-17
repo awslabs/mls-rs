@@ -1,6 +1,6 @@
 [package]
 name = "mls-rs-crypto-rustcrypto"
-version = "0.23.0"
+version = "0.24.0"
 edition = "2021"
 description = "RustCrypto based CryptoProvider for mls-rs"
 homepage = "https://github.com/awslabs/mls-rs"
@@ -52,7 +52,7 @@ ed25519-dalek = { version = "3", default-features = false, features = ["alloc", 
 sec1 = { version = "0.8", default-features = false, features = ["alloc"] }
 
 # X509 feature
-mls-rs-identity-x509 = { path = "../mls-rs-identity-x509", optional = true, version = "0.22.0" }
+mls-rs-identity-x509 = { path = "../mls-rs-identity-x509", optional = true, version = "0.23.0" }
 x509-cert = { version = "0.2", optional = true, features = ["std"] }
 spki = { version = "0.7", optional = true, features = ["std", "alloc"] }
 maybe-async = "0.2.10"
