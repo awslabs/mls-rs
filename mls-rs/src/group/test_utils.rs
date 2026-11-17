@@ -568,4 +568,12 @@ impl MessageProcessor for GroupWithoutKeySchedule {
             .get_unauthenticated_key_generation_from_sender_data(cipher_text)
             .await
     }
+
+    fn on_message_processed(
+        &mut self,
+        _message_epoch: Option<u64>,
+        _res: &Result<Self::OutputType, MlsError>,
+    ) -> Result<(), MlsError> {
+        Ok(())
+    }
 }

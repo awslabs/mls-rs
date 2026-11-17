@@ -1988,7 +1988,8 @@ where
         sender: u32,
         generation: u32,
     ) -> Result<MessageKey, MlsError> {
-        self.epoch_secrets
+        let key = self
+            .epoch_secrets
             .secret_tree
             .message_key_generation(
                 &self.cipher_suite_provider,
@@ -1996,7 +1997,11 @@ where
                 KeyType::Application,
                 generation,
             )
-            .await
+            .await?;
+
+        self.epoch_secrets.secret_tree.commit_pending();
+
+        Ok(key)
     }
 }
 
@@ -2466,6 +2471,36 @@ where
 
     fn cipher_suite_provider(&self) -> &Self::CipherSuiteProvider {
         &self.cipher_suite_provider
+    }
+
+    fn on_message_processed(
+        &mut self,
+        message_epoch: Option<u64>,
+        res: &Result<Self::OutputType, MlsError>,
+    ) -> Result<(), MlsError> {
+        let Some(epoch) = message_epoch else {
+            // Epoch is missing for welcome messages and key packages.
+            return Ok(());
+        };
+
+        let tree = if epoch < self.state.context.epoch {
+            // Missing epochs don't need cleanup.
+            let Some(epoch) = self.state_repo.get_epoch_mut(epoch)? else {
+                return Ok(());
+            };
+
+            &mut epoch.secrets.secret_tree
+        } else {
+            &mut self.epoch_secrets.secret_tree
+        };
+
+        if res.is_ok() {
+            tree.commit_pending()
+        } else {
+            tree.clear_pending()
+        };
+
+        Ok(())
     }
 }
 
@@ -4733,6 +4768,65 @@ mod tests {
         let res = bob_group.process_incoming_message(message).await;
 
         assert_matches!(res, Err(MlsError::KeyMissing(0)));
+    }
+
+    #[cfg(feature = "private_message")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn failed_decrypt_does_not_block_subsequent_messages() {
+        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (mut bob_group, _) = alice_group.join("bob").await;
+
+        let mut bad_message = alice_group
+            .encrypt_application_message(b"foo", Vec::new())
+            .await
+            .unwrap();
+
+        if let MlsMessagePayload::Cipher(ref mut ct) = bad_message.payload {
+            ct.authenticated_data = random_bytes(8);
+        }
+
+        let res = bob_group.process_incoming_message(bad_message).await;
+        assert!(res.is_err());
+
+        let good_message = alice_group
+            .encrypt_application_message(b"bar", Vec::new())
+            .await
+            .unwrap();
+
+        let res = bob_group.process_incoming_message(good_message).await;
+        assert!(res.is_ok(), "{res:?}");
+    }
+
+    #[cfg(feature = "prior_epoch")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn failed_decrypt_from_prior_epoch_does_not_block_subsequent_messages() {
+        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (mut bob_group, _) = alice_group.join("bob").await;
+
+        let mut bad_message = alice_group
+            .encrypt_application_message(b"foo", Vec::new())
+            .await
+            .unwrap();
+
+        if let MlsMessagePayload::Cipher(ref mut ct) = bad_message.payload {
+            ct.authenticated_data = random_bytes(8);
+        }
+
+        let good_message = alice_group
+            .encrypt_application_message(b"bar", Vec::new())
+            .await
+            .unwrap();
+
+        // Advance bob past the epoch the two messages above were encrypted in,
+        // so they are decrypted as prior-epoch ciphertexts below.
+        let (_carol_group, commit) = alice_group.join("carol").await;
+        bob_group.process_incoming_message(commit).await.unwrap();
+
+        let res = bob_group.process_incoming_message(bad_message).await;
+        assert!(res.is_err());
+
+        let res = bob_group.process_incoming_message(good_message).await;
+        assert!(res.is_ok(), "{res:?}");
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]

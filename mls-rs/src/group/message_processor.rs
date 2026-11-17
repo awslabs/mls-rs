@@ -481,6 +481,8 @@ pub(crate) trait MessageProcessor: Send + Sync {
         #[cfg(feature = "by_ref_proposal")] cache_proposal: bool,
         time_sent: Option<MlsTime>,
     ) -> Result<Self::OutputType, MlsError> {
+        let epoch = message.epoch();
+
         #[cfg(all(feature = "export_key_generation", feature = "private_message"))]
         // For encrypted application messages, retrieve the unauthenticated key
         // generation used to decrypt the message and return it with the plaintext. Does
@@ -494,20 +496,34 @@ pub(crate) trait MessageProcessor: Send + Sync {
             _ => None,
         };
 
-        let event_or_content = self
+        let res = match self
             .get_event_from_incoming_message(message, time_sent)
-            .await?;
+            .await
+        {
+            Ok(event_or_content) => {
+                self.process_event_or_content(
+                    event_or_content,
+                    #[cfg(feature = "by_ref_proposal")]
+                    cache_proposal,
+                    #[cfg(all(feature = "export_key_generation", feature = "private_message"))]
+                    unauthn_key_gen_in_app_msg,
+                    time_sent,
+                )
+                .await
+            }
+            Err(error) => Err(error),
+        };
 
-        self.process_event_or_content(
-            event_or_content,
-            #[cfg(feature = "by_ref_proposal")]
-            cache_proposal,
-            #[cfg(all(feature = "export_key_generation", feature = "private_message"))]
-            unauthn_key_gen_in_app_msg,
-            time_sent,
-        )
-        .await
+        self.on_message_processed(epoch, &res)?;
+
+        res
     }
+
+    fn on_message_processed(
+        &mut self,
+        message_epoch: Option<u64>,
+        res: &Result<Self::OutputType, MlsError>,
+    ) -> Result<(), MlsError>;
 
     async fn get_event_from_incoming_message(
         &mut self,
