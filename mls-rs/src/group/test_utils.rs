@@ -569,7 +569,7 @@ impl MessageProcessor for GroupWithoutKeySchedule {
             .await
     }
 
-    fn on_message_processed(
+    async fn on_message_processed(
         &mut self,
         _message_epoch: Option<u64>,
         _res: &Result<Self::OutputType, MlsError>,

@@ -2473,32 +2473,49 @@ where
         &self.cipher_suite_provider
     }
 
-    fn on_message_processed(
+    async fn on_message_processed(
         &mut self,
         message_epoch: Option<u64>,
         res: &Result<Self::OutputType, MlsError>,
     ) -> Result<(), MlsError> {
-        let Some(epoch) = message_epoch else {
-            // Epoch is missing for welcome messages and key packages.
-            return Ok(());
-        };
+        #[cfg(not(feature = "private_message"))]
+        let _ = (message_epoch, res);
 
-        let tree = if epoch < self.state.context.epoch {
-            // Missing epochs don't need cleanup.
-            let Some(epoch) = self.state_repo.get_epoch_mut(epoch)? else {
+        // Only ciphertexts stage a pending secret tree update, so there is nothing
+        // to commit or discard without `private_message`.
+        #[cfg(feature = "private_message")]
+        {
+            let Some(epoch) = message_epoch else {
+                // Epoch is missing for welcome messages and key packages.
                 return Ok(());
             };
 
-            &mut epoch.secrets.secret_tree
-        } else {
-            &mut self.epoch_secrets.secret_tree
-        };
+            // Without `prior_epoch`, a ciphertext from an older epoch is rejected
+            // before a key is ever derived, so `epoch` is always the current one.
+            #[cfg(not(feature = "prior_epoch"))]
+            let _ = epoch;
 
-        if res.is_ok() {
-            tree.commit_pending()
-        } else {
-            tree.clear_pending()
-        };
+            #[cfg(feature = "prior_epoch")]
+            let tree = if epoch < self.state.context.epoch {
+                // Missing epochs don't need cleanup.
+                let Some(epoch) = self.state_repo.get_epoch_mut(epoch).await? else {
+                    return Ok(());
+                };
+
+                &mut epoch.secrets.secret_tree
+            } else {
+                &mut self.epoch_secrets.secret_tree
+            };
+
+            #[cfg(not(feature = "prior_epoch"))]
+            let tree = &mut self.epoch_secrets.secret_tree;
+
+            if res.is_ok() {
+                tree.commit_pending()
+            } else {
+                tree.clear_pending()
+            };
+        }
 
         Ok(())
     }

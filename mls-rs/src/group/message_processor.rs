@@ -514,12 +514,12 @@ pub(crate) trait MessageProcessor: Send + Sync {
             Err(error) => Err(error),
         };
 
-        self.on_message_processed(epoch, &res)?;
+        self.on_message_processed(epoch, &res).await?;
 
         res
     }
 
-    fn on_message_processed(
+    async fn on_message_processed(
         &mut self,
         message_epoch: Option<u64>,
         res: &Result<Self::OutputType, MlsError>,

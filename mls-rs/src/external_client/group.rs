@@ -748,7 +748,7 @@ where
         &self.cipher_suite_provider
     }
 
-    fn on_message_processed(
+    async fn on_message_processed(
         &mut self,
         _message_epoch: Option<u64>,
         _res: &Result<Self::OutputType, MlsError>,

@@ -644,12 +644,8 @@ impl TreeKemPublic {
         let mut added = vec![];
         let mut bad_indexes = vec![];
 
-        for i in 0..proposal_bundle.additions.len() {
-            let leaf = proposal_bundle.additions[i]
-                .proposal
-                .key_package
-                .leaf_node
-                .clone();
+        for (i, addition) in proposal_bundle.additions.iter().enumerate() {
+            let leaf = addition.proposal.key_package.leaf_node.clone();
 
             let res = self
                 .add_leaf(leaf, id_provider, extensions, Some(start))
@@ -658,7 +654,7 @@ impl TreeKemPublic {
             if let Ok(index) = res {
                 start = index;
                 added.push(start);
-            } else if proposal_bundle.additions[i].is_by_value() || !filter {
+            } else if addition.is_by_value() || !filter {
                 res?;
             } else {
                 bad_indexes.push(i);
