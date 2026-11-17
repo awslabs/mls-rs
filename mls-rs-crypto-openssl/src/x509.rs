@@ -497,7 +497,7 @@ pub fn identity_provider_from_certificate(
     .to_der()?;
 
     Ok(X509IdentityProvider::new(
-        SubjectIdentityExtractor::new(0, X509Reader::new()),
+        SubjectIdentityExtractor::new(X509Reader::new()),
         X509Validator::new(vec![certificate.into()])?,
     ))
 }
