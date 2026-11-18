@@ -253,9 +253,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             _ => Err(MlsError::UnexpectedMessageType),
         }?;
 
-        self.group_state_mut()
-            .proposals
-            .insert(proposal_ref, proposal, sender);
+        self.state.proposals.insert(proposal_ref, proposal, sender);
 
         Ok(())
     }
@@ -264,11 +262,9 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     /// with no validation.
     #[cfg(feature = "by_ref_proposal")]
     pub fn insert_proposal(&mut self, proposal: CachedProposal) {
-        self.group_state_mut().proposals.insert(
-            proposal.proposal_ref,
-            proposal.proposal,
-            proposal.sender,
-        )
+        self.state
+            .proposals
+            .insert(proposal.proposal_ref, proposal.proposal, proposal.sender)
     }
 
     /// Create an external proposal to request that a group add a new member
@@ -719,8 +715,9 @@ where
         &self.state
     }
 
-    fn group_state_mut(&mut self) -> &mut GroupState {
-        &mut self.state
+    #[cfg(feature = "by_ref_proposal")]
+    fn cache_proposal(&mut self, proposal_ref: ProposalRef, proposal: Proposal, sender: Sender) {
+        self.state.proposals.insert(proposal_ref, proposal, sender)
     }
 
     fn removal_proposal(

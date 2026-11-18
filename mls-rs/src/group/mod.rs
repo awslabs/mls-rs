@@ -879,6 +879,7 @@ where
         Ok(provisional_private_tree)
     }
 
+    #[cfg(feature = "by_ref_proposal")]
     fn apply_own_update(
         &self,
         provisional_state: &mut ProvisionalState,
@@ -886,7 +887,6 @@ where
     ) -> Result<(), MlsError> {
         let self_index = self.private_tree.self_index;
 
-        #[cfg(feature = "by_ref_proposal")]
         for p in &provisional_state.applied_proposals.updates {
             if p.sender == Sender::Member(*self_index) {
                 let leaf_pk = &p.proposal.leaf_node.public_key;
@@ -2281,6 +2281,7 @@ where
     ) -> Result<(), MlsError> {
         // Update the private tree to create a provisional private tree
         let mut provisional_private_tree = self.provisional_private_tree(provisional_state)?;
+        #[cfg(feature = "by_ref_proposal")]
         self.apply_own_update(provisional_state, &mut provisional_private_tree)?;
 
         provisional_state
@@ -2447,8 +2448,9 @@ where
         &self.state
     }
 
-    fn group_state_mut(&mut self) -> &mut GroupState {
-        &mut self.state
+    #[cfg(feature = "by_ref_proposal")]
+    fn cache_proposal(&mut self, proposal_ref: ProposalRef, proposal: Proposal, sender: Sender) {
+        self.state.proposals.insert(proposal_ref, proposal, sender);
     }
 
     fn removal_proposal(

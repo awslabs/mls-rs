@@ -471,9 +471,12 @@ impl MessageProcessor for GroupWithoutKeySchedule {
         self.inner.group_state()
     }
 
-    #[cfg_attr(coverage_nightly, coverage(off))]
-    fn group_state_mut(&mut self) -> &mut GroupState {
-        self.inner.group_state_mut()
+    #[cfg(feature = "by_ref_proposal")]
+    fn cache_proposal(&mut self, proposal_ref: ProposalRef, proposal: Proposal, sender: Sender) {
+        self.inner
+            .state
+            .proposals
+            .insert(proposal_ref, proposal, sender);
     }
 
     fn mls_rules(&self) -> Self::MlsRules {

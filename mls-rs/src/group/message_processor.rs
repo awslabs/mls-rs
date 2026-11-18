@@ -667,10 +667,8 @@ pub(crate) trait MessageProcessor: Send + Sync {
         )
         .await?;
 
-        let group_state = self.group_state_mut();
-
         if cache_proposal {
-            group_state.proposals.insert(
+            self.cache_proposal(
                 proposal.proposal_ref.clone(),
                 proposal.proposal.clone(),
                 auth_content.content.sender,
@@ -844,7 +842,8 @@ pub(crate) trait MessageProcessor: Send + Sync {
     }
 
     fn group_state(&self) -> &GroupState;
-    fn group_state_mut(&mut self) -> &mut GroupState;
+    #[cfg(feature = "by_ref_proposal")]
+    fn cache_proposal(&mut self, proposal_ref: ProposalRef, proposal: Proposal, sender: Sender);
     fn mls_rules(&self) -> Self::MlsRules;
     fn identity_provider(&self) -> Self::IdentityProvider;
     fn cipher_suite_provider(&self) -> &Self::CipherSuiteProvider;
