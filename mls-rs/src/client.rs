@@ -183,8 +183,6 @@ pub enum MlsError {
         error("requested generation {0} is too far ahead of current generation")
     )]
     InvalidFutureGeneration(u32),
-    #[cfg_attr(feature = "std", error("leaf node has no children"))]
-    LeafNodeNoChildren,
     #[cfg_attr(feature = "std", error("root node has no parent"))]
     LeafNodeNoParent,
     #[cfg_attr(feature = "std", error("index out of range"))]
@@ -359,6 +357,8 @@ pub enum MlsError {
     DefaultValueListed,
     #[cfg_attr(feature = "std", error("not a subgroup"))]
     NotASubgroup,
+    #[cfg_attr(feature = "std", error("transaction in progress"))]
+    TransactionInProgress,
 }
 
 impl IntoAnyError for MlsError {
