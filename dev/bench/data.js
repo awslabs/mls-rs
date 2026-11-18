@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794994046412,
+  "lastUpdate": 1795017025266,
   "repoUrl": "https://github.com/awslabs/mls-rs",
   "entries": {
     "Benchmark": [
@@ -32707,6 +32707,114 @@ window.BENCHMARK_DATA = {
             "name": "group_serialize/CipherSuite(1)/2",
             "value": 100260,
             "range": "± 1117",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mulmarta@amazon.ch",
+            "name": "mulmarta",
+            "username": "mulmarta"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "67fc7e2efbb96188bca9fd67c8a45699c7d71de7",
+          "message": "fix: pending_reinit and key-schedule update ordering (#421)\n\n* fix: Update secret tree and signer at the end\n\n* fix: Set pending_reinit in update_key_schedule\n\n* chore: Replace group_state_mut by cache_proposal\n\n* Fixup\n\n* Fixup\n\n* Fixup",
+          "timestamp": "2026-11-18T16:44:52+01:00",
+          "tree_id": "7219c3f7e982cac762e37d711a3b8cbcb969441b",
+          "url": "https://github.com/awslabs/mls-rs/commit/67fc7e2efbb96188bca9fd67c8a45699c7d71de7"
+        },
+        "date": 1795017023336,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "group_application/CipherSuite(1)/100",
+            "value": 387142,
+            "range": "± 17147",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000",
+            "value": 394179,
+            "range": "± 4115",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/10000",
+            "value": 449532,
+            "range": "± 15705",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/100000",
+            "value": 1024748,
+            "range": "± 24887",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_application/CipherSuite(1)/1000000",
+            "value": 6618770,
+            "range": "± 46003",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/0",
+            "value": 2112042,
+            "range": "± 100686",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/1",
+            "value": 5733611,
+            "range": "± 108030",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_commit/CipherSuite(1)/2",
+            "value": 10621602,
+            "range": "± 878001",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/0",
+            "value": 642891,
+            "range": "± 3197",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/1",
+            "value": 745981,
+            "range": "± 4385",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_receive_commit/CipherSuite(1)/2",
+            "value": 857273,
+            "range": "± 12889",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/0",
+            "value": 22039,
+            "range": "± 354",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/1",
+            "value": 77436,
+            "range": "± 1290",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_serialize/CipherSuite(1)/2",
+            "value": 152836,
+            "range": "± 1126",
             "unit": "ns/iter"
           }
         ]
