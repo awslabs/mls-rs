@@ -424,8 +424,7 @@ pub fn random_bytes(count: usize) -> Vec<u8> {
 
 pub(crate) struct GroupWithoutKeySchedule {
     inner: Group<TestClientConfig>,
-    pub secrets: Option<(TreeKemPrivate, PathSecret)>,
-    pub provisional_public_state: Option<ProvisionalState>,
+    pub provisional_state: Option<ProvisionalState>,
 }
 
 impl Deref for GroupWithoutKeySchedule {
@@ -450,8 +449,7 @@ impl GroupWithoutKeySchedule {
     pub async fn new(cs: CipherSuite) -> Self {
         Self {
             inner: test_group(TEST_PROTOCOL_VERSION, cs).await.group,
-            secrets: None,
-            provisional_public_state: None,
+            provisional_state: None,
         }
     }
 }
@@ -473,9 +471,12 @@ impl MessageProcessor for GroupWithoutKeySchedule {
         self.inner.group_state()
     }
 
-    #[cfg_attr(coverage_nightly, coverage(off))]
-    fn group_state_mut(&mut self) -> &mut GroupState {
-        self.inner.group_state_mut()
+    #[cfg(feature = "by_ref_proposal")]
+    fn cache_proposal(&mut self, proposal_ref: ProposalRef, proposal: Proposal, sender: Sender) {
+        self.inner
+            .state
+            .proposals
+            .insert(proposal_ref, proposal, sender);
     }
 
     fn mls_rules(&self) -> Self::MlsRules {
@@ -524,7 +525,7 @@ impl MessageProcessor for GroupWithoutKeySchedule {
         sender: LeafIndex,
         update_path: &ValidatedUpdatePath,
         provisional_state: &mut ProvisionalState,
-    ) -> Result<Option<(TreeKemPrivate, PathSecret)>, MlsError> {
+    ) -> Result<(), MlsError> {
         self.inner
             .apply_update_path(sender, update_path, provisional_state)
             .await
@@ -549,13 +550,12 @@ impl MessageProcessor for GroupWithoutKeySchedule {
 
     async fn update_key_schedule(
         &mut self,
-        secrets: Option<(TreeKemPrivate, PathSecret)>,
         _interim_transcript_hash: InterimTranscriptHash,
         _confirmation_tag: &ConfirmationTag,
-        provisional_public_state: ProvisionalState,
+        provisional_state: ProvisionalState,
     ) -> Result<(), MlsError> {
-        self.provisional_public_state = Some(provisional_public_state);
-        self.secrets = secrets;
+        self.provisional_state = Some(provisional_state);
+
         Ok(())
     }
 
