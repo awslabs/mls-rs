@@ -2558,7 +2558,7 @@ mod tests {
             test_utils::{get_test_signing_identity, BasicWithCustomProvider},
         },
         key_package::test_utils::test_key_package_message,
-        mls_rules::CommitOptions,
+        mls_rules::{CommitOptions, DefaultMlsRules},
         tree_kem::{
             leaf_node::{test_utils::get_test_capabilities, ConfigProperties, LeafNodeSource},
             test_utils::{make_leaf, TreeWithSigners},
@@ -2576,9 +2576,6 @@ mod tests {
             proposal_filter::ProposalBundle,
         },
     };
-
-    #[cfg(any(feature = "private_message", feature = "custom_proposal"))]
-    use crate::group::mls_rules::DefaultMlsRules;
 
     #[cfg(feature = "prior_epoch")]
     use crate::group::padding::PaddingMode;
