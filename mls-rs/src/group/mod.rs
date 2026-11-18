@@ -7175,7 +7175,7 @@ mod tests {
         .unwrap();
 
         auth_content.auth.confirmation_tag =
-            Some(ConfirmationTag::empty(&alice.cipher_suite_provider));
+            Some(ConfirmationTag::empty(&alice.cipher_suite_provider).await);
 
         let malled_commit = alice.create_plaintext(auth_content).await.unwrap();
 
