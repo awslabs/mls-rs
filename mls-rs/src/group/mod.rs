@@ -2551,11 +2551,12 @@ mod tests {
             test_client_with_key_pkg, TestClientBuilder, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION,
         },
         client_builder::test_utils::TestClientConfig,
-        crypto::test_utils::test_cipher_suite_provider,
-        crypto::test_utils::TestCryptoProvider,
-        group::proposal_filter::ProposalInfo,
-        identity::basic::BasicIdentityProvider,
-        identity::test_utils::{get_test_signing_identity, BasicWithCustomProvider},
+        crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider},
+        group::{proposal_filter::ProposalInfo, test_utils::test_group_custom_config},
+        identity::{
+            basic::BasicIdentityProvider,
+            test_utils::{get_test_signing_identity, BasicWithCustomProvider},
+        },
         key_package::test_utils::test_key_package_message,
         mls_rules::CommitOptions,
         tree_kem::{
@@ -2583,9 +2584,6 @@ mod tests {
     use crate::group::padding::PaddingMode;
 
     use crate::{extension::RequiredCapabilitiesExt, key_package::test_utils::test_key_package};
-
-    #[cfg(all(feature = "by_ref_proposal", feature = "custom_proposal"))]
-    use super::test_utils::test_group_custom_config;
 
     #[cfg(any(feature = "psk", feature = "std"))]
     use crate::client::Client;
