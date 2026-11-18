@@ -2337,7 +2337,7 @@ where
         &mut self,
         interim_transcript_hash: InterimTranscriptHash,
         confirmation_tag: &ConfirmationTag,
-        provisional_state: ProvisionalState,
+        mut provisional_state: ProvisionalState,
     ) -> Result<(), MlsError> {
         let commit_secret = provisional_state
             .commit_secret
@@ -2409,6 +2409,12 @@ where
         if let Some(signer) = provisional_state.new_signer {
             self.signer = signer;
         }
+
+        self.state.pending_reinit = provisional_state
+            .applied_proposals
+            .reinitializations
+            .pop()
+            .map(|p| p.proposal);
 
         // Clear the proposals list
         #[cfg(feature = "by_ref_proposal")]
@@ -7216,5 +7222,33 @@ mod tests {
 
         let honest_commit = carol.commit(vec![]).await.unwrap().commit_message;
         bob.process_incoming_message(honest_commit).await.unwrap();
+    }
+
+    #[cfg(feature = "rfc_compliant")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn invalid_commits_with_reinit() {
+        let [mut alice, mut bob, mut carol] = three_party_group().await;
+
+        let reinit = bob
+            .propose_reinit(
+                None,
+                TEST_PROTOCOL_VERSION,
+                TEST_CIPHER_SUITE,
+                Default::default(),
+                vec![],
+            )
+            .await
+            .unwrap();
+
+        alice
+            .process_incoming_message(reinit.clone())
+            .await
+            .unwrap();
+
+        send_malled_commit(&mut alice, &mut bob).await;
+
+        bob.clear_proposal_cache();
+        let honest_commit = bob.commit(vec![]).await.unwrap().commit_message;
+        carol.process_incoming_message(honest_commit).await.unwrap();
     }
 }

@@ -689,7 +689,7 @@ where
         &mut self,
         interim_transcript_hash: InterimTranscriptHash,
         confirmation_tag: &ConfirmationTag,
-        provisional_public_state: ProvisionalState,
+        mut provisional_public_state: ProvisionalState,
     ) -> Result<(), MlsError> {
         self.state.context = provisional_public_state.group_context;
         #[cfg(feature = "by_ref_proposal")]
@@ -697,6 +697,12 @@ where
         self.state.interim_transcript_hash = interim_transcript_hash;
         self.state.public_tree = provisional_public_state.public_tree;
         self.state.confirmation_tag = confirmation_tag.clone();
+
+        self.state.pending_reinit = provisional_public_state
+            .applied_proposals
+            .reinitializations
+            .pop()
+            .map(|p| p.proposal);
 
         Ok(())
     }

@@ -774,9 +774,8 @@ pub(crate) trait MessageProcessor: Send + Sync {
         };
 
         let commit_effect =
-            if let Some(reinit) = provisional_state.applied_proposals.reinitializations.pop() {
-                self.group_state_mut().pending_reinit = Some(reinit.proposal.clone());
-                CommitEffect::ReInit(reinit)
+            if let Some(reinit) = provisional_state.applied_proposals.reinitializations.last() {
+                CommitEffect::ReInit(reinit.clone())
             } else if let Some(remove_proposal) = self_removed {
                 let new_epoch = NewEpoch::new(self.group_state().clone(), &provisional_state);
                 CommitEffect::Removed {
