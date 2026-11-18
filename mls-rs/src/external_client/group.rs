@@ -33,7 +33,7 @@ use crate::{
     identity::SigningIdentity,
     protocol_version::ProtocolVersion,
     psk::AlwaysFoundPskStorage,
-    tree_kem::{node::LeafIndex, path_secret::PathSecret, TreeKemPrivate},
+    tree_kem::node::LeafIndex,
     CryptoProvider, KeyPackage, MlsMessage,
 };
 
@@ -687,7 +687,6 @@ where
 
     async fn update_key_schedule(
         &mut self,
-        _secrets: Option<(TreeKemPrivate, PathSecret)>,
         interim_transcript_hash: InterimTranscriptHash,
         confirmation_tag: &ConfirmationTag,
         provisional_public_state: ProvisionalState,

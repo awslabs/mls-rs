@@ -856,7 +856,7 @@ where
     fn provisional_private_tree(
         &self,
         provisional_state: &ProvisionalState,
-    ) -> Result<(TreeKemPrivate, Option<SignatureSecretKey>), MlsError> {
+    ) -> Result<TreeKemPrivate, MlsError> {
         let mut provisional_private_tree = self.private_tree.clone();
         let self_index = provisional_private_tree.self_index;
 
@@ -876,11 +876,15 @@ where
             }
         }
 
-        // Apply own update
-        let new_signer = None;
+        Ok(provisional_private_tree)
+    }
 
-        #[cfg(feature = "by_ref_proposal")]
-        let mut new_signer = new_signer;
+    fn apply_own_update(
+        &self,
+        provisional_state: &mut ProvisionalState,
+        provisional_private_tree: &mut TreeKemPrivate,
+    ) -> Result<(), MlsError> {
+        let self_index = self.private_tree.self_index;
 
         #[cfg(feature = "by_ref_proposal")]
         for p in &provisional_state.applied_proposals.updates {
@@ -898,7 +902,9 @@ where
                     .find_map(|(pk, sk)| (pk == leaf_pk).then_some(sk));
 
                 let new_leaf_sk = new_leaf_sk_and_signer.map(|(sk, _)| sk.clone());
-                new_signer = new_leaf_sk_and_signer.and_then(|(_, sk)| sk.clone());
+
+                provisional_state.new_signer =
+                    new_leaf_sk_and_signer.and_then(|(_, sk)| sk.clone());
 
                 provisional_private_tree
                     .update_leaf(new_leaf_sk.ok_or(MlsError::UpdateErrorNoSecretKey)?);
@@ -907,7 +913,7 @@ where
             }
         }
 
-        Ok((provisional_private_tree, new_signer))
+        Ok(())
     }
 
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
@@ -2272,14 +2278,10 @@ where
         sender: LeafIndex,
         update_path: &ValidatedUpdatePath,
         provisional_state: &mut ProvisionalState,
-    ) -> Result<Option<(TreeKemPrivate, PathSecret)>, MlsError> {
+    ) -> Result<(), MlsError> {
         // Update the private tree to create a provisional private tree
-        let (mut provisional_private_tree, new_signer) =
-            self.provisional_private_tree(provisional_state)?;
-
-        if let Some(signer) = new_signer {
-            self.signer = signer;
-        }
+        let mut provisional_private_tree = self.provisional_private_tree(provisional_state)?;
+        self.apply_own_update(provisional_state, &mut provisional_private_tree)?;
 
         provisional_state
             .public_tree
@@ -2298,10 +2300,10 @@ where
                 return Err(MlsError::CantProcessMessageFromSelf);
             };
 
-            return Ok(Some((
-                legacy_pending.private_tree.clone(),
-                legacy_pending.commit_secret.clone(),
-            )));
+            provisional_state.private_tree = Some(legacy_pending.private_tree.clone());
+            provisional_state.commit_secret = Some(legacy_pending.commit_secret.clone());
+
+            return Ok(());
         }
 
         // Update the tree hash to get context for decryption
@@ -2312,7 +2314,7 @@ where
 
         let context_bytes = provisional_state.group_context.mls_encode_to_vec()?;
 
-        TreeKem::new(
+        let commit_secret = TreeKem::new(
             &mut provisional_state.public_tree,
             &mut provisional_private_tree,
         )
@@ -2323,23 +2325,23 @@ where
             &context_bytes,
             &self.cipher_suite_provider,
         )
-        .await
-        .map(|root_secret| Some((provisional_private_tree, root_secret)))
+        .await?;
+
+        provisional_state.private_tree = Some(provisional_private_tree);
+        provisional_state.commit_secret = Some(commit_secret);
+
+        Ok(())
     }
 
     async fn update_key_schedule(
         &mut self,
-        secrets: Option<(TreeKemPrivate, PathSecret)>,
         interim_transcript_hash: InterimTranscriptHash,
         confirmation_tag: &ConfirmationTag,
         provisional_state: ProvisionalState,
     ) -> Result<(), MlsError> {
-        let commit_secret = if let Some(secrets) = secrets {
-            self.private_tree = secrets.0;
-            secrets.1
-        } else {
-            PathSecret::empty(&self.cipher_suite_provider)
-        };
+        let commit_secret = provisional_state
+            .commit_secret
+            .unwrap_or_else(|| PathSecret::empty(&self.cipher_suite_provider));
 
         // Use the commit_secret, the psk_secret, the provisional GroupContext, and the init secret
         // from the previous epoch (or from the external init) to compute the epoch secret and
@@ -2397,8 +2399,16 @@ where
         self.state.context = provisional_state.group_context;
         self.state.interim_transcript_hash = interim_transcript_hash;
         self.key_schedule = key_schedule_result.key_schedule;
-        self.state.public_tree = provisional_state.public_tree;
         self.state.confirmation_tag = new_confirmation_tag;
+        self.state.public_tree = provisional_state.public_tree;
+
+        if let Some(private_tree) = provisional_state.private_tree {
+            self.private_tree = private_tree;
+        }
+
+        if let Some(signer) = provisional_state.new_signer {
+            self.signer = signer;
+        }
 
         // Clear the proposals list
         #[cfg(feature = "by_ref_proposal")]
@@ -7121,5 +7131,90 @@ mod tests {
             .build()
             .await
             .unwrap();
+    }
+
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn three_party_group() -> [TestGroup; 3] {
+        let mut alice =
+            test_group_custom_config(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, |config| {
+                config.mls_rules(
+                    DefaultMlsRules::new()
+                        .with_commit_options(CommitOptions::new().with_path_required(true)),
+                )
+            })
+            .await;
+
+        let mut bob = alice.join("bob").await.0;
+        let (carol, msg) = alice.join("carol").await;
+        bob.process_incoming_message(msg).await.unwrap();
+
+        [alice, bob, carol]
+    }
+
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn send_malled_commit(alice: &mut TestGroup, bob: &mut TestGroup) {
+        let malled_commit = alice.commit(vec![]).await.unwrap().commit_message;
+
+        let MlsMessagePayload::Plain(malled_commit) = malled_commit.payload else {
+            panic!()
+        };
+
+        let mut auth_content = AuthenticatedContent::new_signed(
+            &alice.cipher_suite_provider,
+            alice.context(),
+            Sender::Member(0),
+            malled_commit.content.content,
+            &alice.signer,
+            WireFormat::PublicMessage,
+            vec![],
+        )
+        .await
+        .unwrap();
+
+        auth_content.auth.confirmation_tag =
+            Some(ConfirmationTag::empty(&alice.cipher_suite_provider));
+
+        let malled_commit = alice.create_plaintext(auth_content).await.unwrap();
+
+        bob.process_incoming_message(MlsMessage {
+            version: TEST_PROTOCOL_VERSION,
+            payload: MlsMessagePayload::Plain(malled_commit),
+        })
+        .await
+        .unwrap_err();
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn invalid_commits() {
+        let [mut alice, mut bob, mut carol] = three_party_group().await;
+        send_malled_commit(&mut alice, &mut bob).await;
+
+        let honest_commit = carol.commit(vec![]).await.unwrap().commit_message;
+        bob.process_incoming_message(honest_commit).await.unwrap();
+    }
+
+    #[cfg(feature = "by_ref_proposal")]
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn invalid_commits_with_updates() {
+        let [mut alice, mut bob, mut carol] = three_party_group().await;
+
+        let (identity, signer) = get_test_signing_identity(TEST_CIPHER_SUITE, b"bob").await;
+
+        let update = bob
+            .propose_update_with_identity(signer, identity, vec![])
+            .await
+            .unwrap();
+
+        alice.process_incoming_message(update).await.unwrap();
+
+        send_malled_commit(&mut alice, &mut bob).await;
+
+        let CommitEffect::NewEpoch(ep) = alice.apply_pending_commit().await.unwrap().effect else {
+            panic!("no new epoch")
+        };
+        assert_matches!(&ep.applied_proposals[0].proposal, Proposal::Update(_));
+
+        let honest_commit = carol.commit(vec![]).await.unwrap().commit_message;
+        bob.process_incoming_message(honest_commit).await.unwrap();
     }
 }

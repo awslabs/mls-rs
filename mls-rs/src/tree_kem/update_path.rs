@@ -196,6 +196,9 @@ mod tests {
             indexes_of_added_kpkgs: vec![],
             external_init_index: None,
             unused_proposals: vec![],
+            private_tree: None,
+            commit_secret: None,
+            new_signer: None,
         }
     }
 

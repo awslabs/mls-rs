@@ -42,6 +42,7 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::fmt::{self, Debug};
 use mls_rs_core::{
+    crypto::SignatureSecretKey,
     identity::{IdentityProvider, MemberValidationContext},
     protocol_version::ProtocolVersion,
     psk::PreSharedKeyStorage,
@@ -67,6 +68,9 @@ pub(crate) struct ProvisionalState {
     pub(crate) external_init_index: Option<LeafIndex>,
     pub(crate) indexes_of_added_kpkgs: Vec<LeafIndex>,
     pub(crate) unused_proposals: Vec<ProposalInfo<Proposal>>,
+    pub(crate) commit_secret: Option<PathSecret>,
+    pub(crate) private_tree: Option<TreeKemPrivate>,
+    pub(crate) new_signer: Option<SignatureSecretKey>,
 }
 
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
@@ -801,13 +805,12 @@ pub(crate) trait MessageProcessor: Send + Sync {
             commit_effect
         };
 
-        let new_secrets = match update_path {
-            Some(update_path) if !is_self_removed => {
+        if let Some(update_path) = update_path {
+            if !is_self_removed {
                 self.apply_update_path(sender, &update_path, &mut provisional_state)
-                    .await
+                    .await?;
             }
-            _ => Ok(None),
-        }?;
+        }
 
         // Update the transcript hash to get the new context.
         provisional_state.group_context.confirmed_transcript_hash = confirmed_transcript_hash;
@@ -824,26 +827,21 @@ pub(crate) trait MessageProcessor: Send + Sync {
             .tree_hash(self.cipher_suite_provider())
             .await?;
 
-        if let Some(confirmation_tag) = &auth_content.auth.confirmation_tag {
-            if !is_self_removed {
-                // Update the key schedule to calculate new private keys
-                self.update_key_schedule(
-                    new_secrets,
-                    interim_transcript_hash,
-                    confirmation_tag,
-                    provisional_state,
-                )
+        let Some(confirmation_tag) = &auth_content.auth.confirmation_tag else {
+            return Err(MlsError::InvalidConfirmationTag);
+        };
+
+        if !is_self_removed {
+            // Update the key schedule to calculate new private keys
+            self.update_key_schedule(interim_transcript_hash, confirmation_tag, provisional_state)
                 .await?;
-            }
-            Ok(CommitMessageDescription {
-                is_external: matches!(auth_content.content.sender, Sender::NewMemberCommit),
-                authenticated_data: auth_content.content.authenticated_data,
-                committer: *sender,
-                effect: commit_effect,
-            })
-        } else {
-            Err(MlsError::InvalidConfirmationTag)
         }
+        Ok(CommitMessageDescription {
+            is_external: matches!(auth_content.content.sender, Sender::NewMemberCommit),
+            authenticated_data: auth_content.content.authenticated_data,
+            committer: *sender,
+            effect: commit_effect,
+        })
     }
 
     fn group_state(&self) -> &GroupState;
@@ -996,7 +994,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
         sender: LeafIndex,
         update_path: &ValidatedUpdatePath,
         provisional_state: &mut ProvisionalState,
-    ) -> Result<Option<(TreeKemPrivate, PathSecret)>, MlsError> {
+    ) -> Result<(), MlsError> {
         provisional_state
             .public_tree
             .apply_update_path(
@@ -1007,12 +1005,10 @@ pub(crate) trait MessageProcessor: Send + Sync {
                 self.cipher_suite_provider(),
             )
             .await
-            .map(|_| None)
     }
 
     async fn update_key_schedule(
         &mut self,
-        secrets: Option<(TreeKemPrivate, PathSecret)>,
         interim_transcript_hash: InterimTranscriptHash,
         confirmation_tag: &ConfirmationTag,
         provisional_public_state: ProvisionalState,

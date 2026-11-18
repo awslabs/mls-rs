@@ -349,6 +349,9 @@ impl GroupState {
             external_init_index: applier_output.external_init_index,
             indexes_of_added_kpkgs: applier_output.indexes_of_added_kpkgs,
             unused_proposals,
+            private_tree: None,
+            commit_secret: None,
+            new_signer: None,
         })
     }
 }
@@ -899,6 +902,9 @@ mod tests {
             indexes_of_added_kpkgs: vec![LeafIndex::unchecked(1)],
             unused_proposals: vec![],
             applied_proposals: bundle,
+            private_tree: None,
+            commit_secret: None,
+            new_signer: None,
         };
 
         TestProposals {

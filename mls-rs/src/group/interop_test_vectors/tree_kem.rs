@@ -171,11 +171,12 @@ async fn tree_kem() {
 
                 // Check that we got the expected commit secret and correctly merged the update path.
                 // This implies that we computed the path secrets correctly.
-                let commit_secret = group.secrets.unwrap().1;
+                let mut provisional_state = group.provisional_state.unwrap();
+                let commit_secret = provisional_state.commit_secret.unwrap();
 
                 assert_eq!(&*commit_secret, &update_path.commit_secret);
 
-                let new_tree = &mut group.provisional_public_state.unwrap().public_tree;
+                let new_tree = &mut provisional_state.public_tree;
                 let new_tree_hash = new_tree.tree_hash(&cs).await.unwrap();
 
                 assert_eq!(&new_tree_hash, &update_path.tree_hash_after);
