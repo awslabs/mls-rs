@@ -33,7 +33,7 @@ use crate::{
     identity::SigningIdentity,
     protocol_version::ProtocolVersion,
     psk::AlwaysFoundPskStorage,
-    tree_kem::{node::LeafIndex, path_secret::PathSecret, TreeKemPrivate},
+    tree_kem::node::LeafIndex,
     CryptoProvider, KeyPackage, MlsMessage,
 };
 
@@ -253,9 +253,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             _ => Err(MlsError::UnexpectedMessageType),
         }?;
 
-        self.group_state_mut()
-            .proposals
-            .insert(proposal_ref, proposal, sender);
+        self.state.proposals.insert(proposal_ref, proposal, sender);
 
         Ok(())
     }
@@ -264,11 +262,9 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     /// with no validation.
     #[cfg(feature = "by_ref_proposal")]
     pub fn insert_proposal(&mut self, proposal: CachedProposal) {
-        self.group_state_mut().proposals.insert(
-            proposal.proposal_ref,
-            proposal.proposal,
-            proposal.sender,
-        )
+        self.state
+            .proposals
+            .insert(proposal.proposal_ref, proposal.proposal, proposal.sender)
     }
 
     /// Create an external proposal to request that a group add a new member
@@ -687,10 +683,9 @@ where
 
     async fn update_key_schedule(
         &mut self,
-        _secrets: Option<(TreeKemPrivate, PathSecret)>,
         interim_transcript_hash: InterimTranscriptHash,
         confirmation_tag: &ConfirmationTag,
-        provisional_public_state: ProvisionalState,
+        mut provisional_public_state: ProvisionalState,
     ) -> Result<(), MlsError> {
         self.state.context = provisional_public_state.group_context;
         #[cfg(feature = "by_ref_proposal")]
@@ -698,6 +693,12 @@ where
         self.state.interim_transcript_hash = interim_transcript_hash;
         self.state.public_tree = provisional_public_state.public_tree;
         self.state.confirmation_tag = confirmation_tag.clone();
+
+        self.state.pending_reinit = provisional_public_state
+            .applied_proposals
+            .reinitializations
+            .pop()
+            .map(|p| p.proposal);
 
         Ok(())
     }
@@ -714,8 +715,9 @@ where
         &self.state
     }
 
-    fn group_state_mut(&mut self) -> &mut GroupState {
-        &mut self.state
+    #[cfg(feature = "by_ref_proposal")]
+    fn cache_proposal(&mut self, proposal_ref: ProposalRef, proposal: Proposal, sender: Sender) {
+        self.state.proposals.insert(proposal_ref, proposal, sender)
     }
 
     fn removal_proposal(
@@ -746,6 +748,14 @@ where
 
     fn cipher_suite_provider(&self) -> &Self::CipherSuiteProvider {
         &self.cipher_suite_provider
+    }
+
+    async fn on_message_processed(
+        &mut self,
+        _message_epoch: Option<u64>,
+        _res: &Result<Self::OutputType, MlsError>,
+    ) -> Result<(), MlsError> {
+        Ok(())
     }
 }
 

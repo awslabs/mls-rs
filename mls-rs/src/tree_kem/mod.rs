@@ -654,7 +654,7 @@ impl TreeKemPublic {
             if let Ok(index) = res {
                 start = index;
                 added.push(start);
-            } else if proposal_bundle.additions[i].is_by_value() || !filter {
+            } else if p.is_by_value() || !filter {
                 res?;
             } else {
                 bad_indexes.push(i);
