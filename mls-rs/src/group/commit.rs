@@ -550,8 +550,9 @@ where
             )
             .await?;
 
-        let (mut provisional_private_tree, _) =
-            self.provisional_private_tree(&provisional_state)?;
+        let mut provisional_private_tree = self.provisional_private_tree(&provisional_state)?;
+        #[cfg(feature = "by_ref_proposal")]
+        self.apply_own_update(&mut provisional_state, &mut provisional_private_tree)?;
 
         if is_external {
             provisional_private_tree.self_index = provisional_state

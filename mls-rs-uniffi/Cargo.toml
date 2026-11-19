@@ -3,7 +3,6 @@ name = "mls-rs-uniffi"
 version = "0.14.0"
 edition = "2021"
 description = "An UniFFI-compatible implementation of Messaging Layer Security (RFC 9420)"
-homepage = "https://github.com/awslabs/mls-rs"
 repository = "https://github.com/awslabs/mls-rs"
 keywords = ["mls", "e2ee", "uniffi"]
 categories = ["cryptography"]

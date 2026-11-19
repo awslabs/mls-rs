@@ -2,6 +2,7 @@
 // Copyright by contributors to this project.
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
+use alloc::vec;
 use alloc::vec::Vec;
 use core::{
     fmt::{self, Debug},
@@ -25,16 +26,6 @@ pub(crate) const MAX_RATCHET_BACK_HISTORY: u32 = 1024;
 enum SecretTreeNode {
     Secret(TreeSecret) = 0u8,
     Ratchet(SecretRatchets) = 1u8,
-}
-
-impl SecretTreeNode {
-    fn into_secret(self) -> Option<TreeSecret> {
-        if let SecretTreeNode::Secret(secret) = self {
-            Some(secret)
-        } else {
-            None
-        }
-    }
 }
 
 #[derive(Clone, PartialEq, MlsEncode, MlsDecode, MlsSize)]
@@ -97,13 +88,47 @@ impl<T: TreeIndex> TreeSecretsVec<T> {
     fn take_node(&mut self, index: &T) -> Option<SecretTreeNode> {
         self.inner.remove(index)
     }
+
+    fn get_node(&self, index: &T) -> Option<&SecretTreeNode> {
+        self.inner.get(index)
+    }
 }
 
-#[derive(Clone, Debug, PartialEq, MlsEncode, MlsDecode, MlsSize)]
+#[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SecretTree<T: TreeIndex> {
     known_secrets: TreeSecretsVec<T>,
     leaf_count: T,
+    /// Tree updates staged by a derivation that hasn't been committed yet. Never
+    /// persisted.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pending: NodeUpdates<T>,
+}
+
+// Implement MLS codec, skipping `pending`
+impl<T: TreeIndex> MlsSize for SecretTree<T> {
+    fn mls_encoded_len(&self) -> usize {
+        self.known_secrets.mls_encoded_len() + self.leaf_count.mls_encoded_len()
+    }
+}
+
+// Implement MLS codec, skipping `pending`
+impl<T: TreeIndex> MlsEncode for SecretTree<T> {
+    fn mls_encode(&self, writer: &mut Vec<u8>) -> Result<(), mls_rs_codec::Error> {
+        self.known_secrets.mls_encode(writer)?;
+        self.leaf_count.mls_encode(writer)
+    }
+}
+
+// Implement MLS codec, skipping `pending`
+impl<T: TreeIndex> MlsDecode for SecretTree<T> {
+    fn mls_decode(reader: &mut &[u8]) -> Result<Self, mls_rs_codec::Error> {
+        Ok(Self {
+            known_secrets: TreeSecretsVec::mls_decode(reader)?,
+            leaf_count: T::mls_decode(reader)?,
+            pending: Default::default(),
+        })
+    }
 }
 
 impl<T: TreeIndex> SecretTree<T> {
@@ -111,6 +136,7 @@ impl<T: TreeIndex> SecretTree<T> {
         SecretTree {
             known_secrets: Default::default(),
             leaf_count: T::zero(),
+            pending: Default::default(),
         }
     }
 }
@@ -123,6 +149,17 @@ pub struct SecretRatchets {
 }
 
 impl SecretRatchets {
+    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+    async fn new<P: CipherSuiteProvider>(
+        cipher_suite: &P,
+        secret: &[u8],
+    ) -> Result<Self, MlsError> {
+        Ok(Self {
+            application: SecretKeyRatchet::new(cipher_suite, secret, KeyType::Application).await?,
+            handshake: SecretKeyRatchet::new(cipher_suite, secret, KeyType::Handshake).await?,
+        })
+    }
+
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn message_key_generation<P: CipherSuiteProvider>(
         &mut self,
@@ -178,68 +215,81 @@ impl<T: TreeIndex> SecretTree<T> {
         Self {
             known_secrets,
             leaf_count,
+            pending: Default::default(),
         }
     }
 
+    /// Derives `leaf_index`'s ratchets without touching the tree, reporting the nodes the
+    /// tree needs to store once the result is committed.
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn consume_node<P: CipherSuiteProvider>(
-        &mut self,
-        cipher_suite_provider: &P,
-        index: &T,
-    ) -> Result<(), MlsError> {
-        let node = self.known_secrets.take_node(index);
-
-        if let Some(secret) = node.and_then(|n| n.into_secret()) {
-            let left_index = index.left().ok_or(MlsError::LeafNodeNoChildren)?;
-            let right_index = index.right().ok_or(MlsError::LeafNodeNoChildren)?;
-
-            let left_secret =
-                kdf_expand_with_label(cipher_suite_provider, &secret, b"tree", b"left", None)
-                    .await?;
-
-            let right_secret =
-                kdf_expand_with_label(cipher_suite_provider, &secret, b"tree", b"right", None)
-                    .await?;
-
-            self.known_secrets
-                .set_node(left_index, SecretTreeNode::Secret(left_secret.into()));
-
-            self.known_secrets
-                .set_node(right_index, SecretTreeNode::Secret(right_secret.into()));
-        }
-
-        Ok(())
-    }
-
-    #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-    async fn take_leaf_ratchet<P: CipherSuiteProvider>(
-        &mut self,
+    async fn leaf_ratchet<P: CipherSuiteProvider>(
+        &self,
         cipher_suite: &P,
         leaf_index: &T,
-    ) -> Result<SecretRatchets, MlsError> {
-        let node_index = leaf_index;
+    ) -> Result<LeafRatchet<T>, MlsError> {
+        if !self.pending.is_empty() {
+            return Err(MlsError::TransactionInProgress);
+        }
 
-        let node = match self.known_secrets.take_node(node_index) {
-            Some(node) => node,
-            None => {
-                // Start at the root node and work your way down consuming any intermediates needed
-                for i in node_index.direct_copath(&self.leaf_count).into_iter().rev() {
-                    self.consume_node(cipher_suite, &i.path).await?;
-                }
+        // If the leaf's secret is known, return its ratchet.
+        if let Some(node) = self.known_secrets.get_node(leaf_index) {
+            let ratchet = match node {
+                // An earlier derivation for this leaf left its ratchets behind.
+                SecretTreeNode::Ratchet(ratchet) => ratchet.clone(),
+                // Expanding another leaf's path, or a one-member tree, leaves a leaf secret.
+                SecretTreeNode::Secret(secret) => SecretRatchets::new(cipher_suite, secret).await?,
+            };
 
+            return Ok(LeafRatchet {
+                ratchet,
+                updates: vec![],
+            });
+        }
+
+        // Else, find the first known secret above the leaf.
+        let copath = leaf_index.direct_copath(&self.leaf_count);
+
+        let (depth, node) = copath
+            .iter()
+            .enumerate()
+            .find_map(|(depth, node)| {
                 self.known_secrets
-                    .take_node(node_index)
-                    .ok_or(MlsError::InvalidLeafConsumption)?
-            }
+                    .get_node(&node.path)
+                    .map(|node| (depth, node))
+            })
+            .ok_or(MlsError::InvalidLeafConsumption)?;
+
+        // The secret of a parent node should never be a ratchet.
+        let SecretTreeNode::Secret(secret) = node else {
+            return Err(MlsError::InvalidLeafConsumption);
         };
 
-        Ok(match node {
-            SecretTreeNode::Ratchet(ratchet) => ratchet,
-            SecretTreeNode::Secret(secret) => SecretRatchets {
-                application: SecretKeyRatchet::new(cipher_suite, &secret, KeyType::Application)
-                    .await?,
-                handshake: SecretKeyRatchet::new(cipher_suite, &secret, KeyType::Handshake).await?,
-            },
+        let mut updates = vec![(copath[depth].path.clone(), None)];
+        let mut secret = secret.clone();
+
+        for node in copath[..=depth].iter().rev() {
+            let left = kdf_expand_with_label(cipher_suite, &secret, b"tree", b"left", None).await?;
+
+            let right =
+                kdf_expand_with_label(cipher_suite, &secret, b"tree", b"right", None).await?;
+
+            let (path_secret, copath_secret) = if node.copath == node.path.left_unchecked() {
+                (right, left)
+            } else {
+                (left, right)
+            };
+
+            updates.push((
+                node.copath.clone(),
+                Some(SecretTreeNode::Secret(copath_secret.into())),
+            ));
+
+            secret = path_secret.into();
+        }
+
+        Ok(LeafRatchet {
+            ratchet: SecretRatchets::new(cipher_suite, &secret).await?,
+            updates,
         })
     }
 
@@ -250,7 +300,13 @@ impl<T: TreeIndex> SecretTree<T> {
         leaf_index: T,
         key_type: KeyType,
     ) -> Result<MessageKeyData, MlsError> {
-        let mut ratchet = self.take_leaf_ratchet(cipher_suite, &leaf_index).await?;
+        let LeafRatchet {
+            mut ratchet,
+            updates,
+        } = self.leaf_ratchet(cipher_suite, &leaf_index).await?;
+
+        self.pending = updates;
+        self.commit_pending();
         let res = ratchet.next_message_key(cipher_suite, key_type).await?;
 
         self.known_secrets
@@ -259,6 +315,11 @@ impl<T: TreeIndex> SecretTree<T> {
         Ok(res)
     }
 
+    /// Derives the key of `generation` and stages the resulting tree update without
+    /// applying it, so a ciphertext that fails to decrypt leaves the key available
+    /// for another attempt. Call [`Self::commit_pending`] once the derived key is
+    /// accepted; a later call to this method without an intervening commit simply
+    /// re-derives and overwrites the still-pending update.
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn message_key_generation<P: CipherSuiteProvider>(
         &mut self,
@@ -267,23 +328,40 @@ impl<T: TreeIndex> SecretTree<T> {
         key_type: KeyType,
         generation: u32,
     ) -> Result<MessageKeyData, MlsError> {
-        let mut ratchet = self.take_leaf_ratchet(cipher_suite, &leaf_index).await?;
+        let LeafRatchet {
+            mut ratchet,
+            mut updates,
+        } = self.leaf_ratchet(cipher_suite, &leaf_index).await?;
 
-        let res = ratchet
+        let message_key_data = ratchet
             .message_key_generation(cipher_suite, generation, key_type)
-            .await;
+            .await?;
 
-        self.known_secrets
-            .set_node(leaf_index, SecretTreeNode::Ratchet(ratchet));
+        updates.push((leaf_index, Some(SecretTreeNode::Ratchet(ratchet))));
+        self.pending = updates;
 
-        res
+        Ok(message_key_data)
+    }
+
+    /// Applies the tree update staged by the most recent [`Self::message_key_generation`]
+    /// call. A no-op if there is no pending update.
+    pub fn commit_pending(&mut self) {
+        for (index, node) in self.pending.drain(..) {
+            match node {
+                Some(node) => self.known_secrets.set_node(index, node),
+                None => {
+                    self.known_secrets.take_node(&index);
+                }
+            }
+        }
+    }
+
+    pub fn clear_pending(&mut self) {
+        self.pending = vec![];
     }
 
     /// Peeks at the next key generation, but does not increment the generation nor
     /// derive keys.
-    ///
-    /// Takes &mut self since take_leaf_ratchet constructs and stores nodes in the
-    /// SecretTree the first time they are requested.
     ///
     /// Called by [`Group::peek_next_key_generation`], which is used by clients to
     /// authenticate the generation to defend against in-group forgery attacks described
@@ -291,20 +369,30 @@ impl<T: TreeIndex> SecretTree<T> {
     #[cfg(feature = "export_key_generation")]
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync, allow(dead_code))]
     pub async fn peek_next_key_generation<P: CipherSuiteProvider>(
-        &mut self,
+        &self,
         cipher_suite: &P,
         leaf_index: T,
         key_type: KeyType,
     ) -> Result<u32, MlsError> {
-        let ratchet = self.take_leaf_ratchet(cipher_suite, &leaf_index).await?;
-        let res = ratchet.peek_next_key_generation(key_type).await;
-
-        self.known_secrets
-            .set_node(leaf_index, SecretTreeNode::Ratchet(ratchet));
-
-        Ok(res)
+        Ok(self
+            .leaf_ratchet(cipher_suite, &leaf_index)
+            .await?
+            .ratchet
+            .peek_next_key_generation(key_type)
+            .await)
     }
 }
+
+struct LeafRatchet<T: TreeIndex> {
+    ratchet: SecretRatchets,
+    /// Node writes needed to commit this derivation: `None` to delete the consumed
+    /// ancestor's secret, `Some` to store each newly derived copath secret. Not yet
+    /// applied to the tree — the caller applies them once the derivation is accepted.
+    updates: NodeUpdates<T>,
+}
+
+/// Nodes a derivation needs to write, where `None` removes a consumed node.
+type NodeUpdates<T> = Vec<(T, Option<SecretTreeNode>)>;
 
 #[derive(Clone, Copy)]
 pub enum KeyType {
@@ -547,7 +635,10 @@ pub(crate) mod test_utils {
     use mls_rs_core::crypto::CipherSuiteProvider;
     use zeroize::Zeroizing;
 
-    use crate::{crypto::test_utils::try_test_cipher_suite_provider, tree_kem::math::TreeIndex};
+    use crate::{
+        crypto::test_utils::try_test_cipher_suite_provider, group::secret_tree::SecretTreeNode,
+        tree_kem::math::TreeIndex,
+    };
 
     use super::{KeyType, SecretKeyRatchet, SecretTree};
 
@@ -557,13 +648,15 @@ pub(crate) mod test_utils {
 
     impl SecretTree<u32> {
         pub(crate) fn get_root_secret(&self) -> Vec<u8> {
-            self.known_secrets
+            match self
+                .known_secrets
                 .clone()
                 .take_node(&self.leaf_count.root())
                 .unwrap()
-                .into_secret()
-                .unwrap()
-                .to_vec()
+            {
+                SecretTreeNode::Secret(s) => s.to_vec(),
+                _ => panic!("ratchet instead of secret"),
+            }
         }
     }
 
@@ -660,12 +753,15 @@ mod tests {
             let mut secrets = Vec::<SecretRatchets>::new();
 
             for i in &leaves_to_check {
-                let secret = test_tree
-                    .take_leaf_ratchet(&test_cipher_suite_provider(cipher_suite), i)
+                let leaf_ratchet = test_tree
+                    .leaf_ratchet(&test_cipher_suite_provider(cipher_suite), i)
                     .await
                     .unwrap();
 
-                secrets.push(secret);
+                test_tree.pending = leaf_ratchet.updates;
+                test_tree.commit_pending();
+                test_tree.known_secrets.take_node(i);
+                secrets.push(leaf_ratchet.ratchet);
             }
 
             // Verify the tree is now completely empty
@@ -851,11 +947,21 @@ mod tests {
         let mut test_tree = get_test_tree(test_secret, 4u32);
         let key_type = KeyType::Application;
 
-        // We receive a ciphertext from leaf 2 (node 4)
+        // We receive a ciphertext from leaf 2 (node 4) that fails to decrypt
         test_tree
             .message_key_generation(&cs, 4, key_type, 0)
             .await
             .unwrap();
+
+        test_tree.clear_pending();
+
+        // The key of the rejected ciphertext is still available
+        test_tree
+            .message_key_generation(&cs, 4, key_type, 0)
+            .await
+            .unwrap();
+
+        test_tree.commit_pending();
 
         // Due to a double hit we receive that ciphertext again
         let res = test_tree.message_key_generation(&cs, 4, key_type, 0).await;
@@ -866,6 +972,37 @@ mod tests {
             .message_key_generation(&cs, 4, key_type, 1)
             .await
             .unwrap();
+
+        test_tree.commit_pending();
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn second_derivation_errors_while_one_is_pending() {
+        let cs = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+        let test_secret = vec![0u8; cs.kdf_extract_size()];
+        let mut test_tree = get_test_tree(test_secret, 4u32);
+        let key_type = KeyType::Application;
+
+        // Derive a key but don't commit or discard it yet.
+        test_tree
+            .message_key_generation(&cs, 4, key_type, 0)
+            .await
+            .unwrap();
+
+        // A second derivation, even for a different leaf, must not proceed while
+        // the first one is still uncommitted.
+        let res = test_tree.message_key_generation(&cs, 6, key_type, 0).await;
+        assert_matches!(res, Err(MlsError::TransactionInProgress));
+
+        // Committing clears the pending state so derivation can proceed again.
+        test_tree.commit_pending();
+
+        test_tree
+            .message_key_generation(&cs, 6, key_type, 0)
+            .await
+            .unwrap();
+
+        test_tree.commit_pending();
     }
 
     #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -892,9 +1029,10 @@ mod tests {
 
         for index in 0..16 {
             let mut ratchets = secret_tree
-                .take_leaf_ratchet(&provider, &(index * 2))
+                .leaf_ratchet(&provider, &(index * 2))
                 .await
-                .unwrap();
+                .unwrap()
+                .ratchet;
 
             let mut application_keys = Vec::new();
 
@@ -1057,6 +1195,8 @@ mod interop_tests {
                         .await
                         .unwrap();
 
+                    tree.commit_pending();
+
                     assert_eq!(key.key.to_vec(), leaf.application_key);
                     assert_eq!(key.nonce.to_vec(), leaf.application_nonce);
 
@@ -1069,6 +1209,8 @@ mod interop_tests {
                         )
                         .await
                         .unwrap();
+
+                    tree.commit_pending();
 
                     assert_eq!(key.key.to_vec(), leaf.handshake_key);
                     assert_eq!(key.nonce.to_vec(), leaf.handshake_nonce);
@@ -1131,9 +1273,13 @@ mod interop_tests {
                                     .message_key_generation(&cs, index, KeyType::Handshake, gen)
                                     .unwrap();
 
+                                tree.commit_pending();
+
                                 let app_key = tree
                                     .message_key_generation(&cs, index, KeyType::Application, gen)
                                     .unwrap();
+
+                                tree.commit_pending();
 
                                 InteropLeaf {
                                     generation: gen,
