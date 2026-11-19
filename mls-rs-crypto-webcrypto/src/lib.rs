@@ -25,7 +25,7 @@ use mls_rs_crypto_hpke::{
 
 use mls_rs_crypto_traits::{AeadType, KdfType, KemId};
 
-use wasm_bindgen::JsValue;
+use wasm_bindgen::{JsCast, JsValue};
 use web_sys::SubtleCrypto;
 use zeroize::Zeroizing;
 
@@ -43,8 +43,8 @@ pub enum CryptoError {
     JsValue(String),
     #[error("Key has wrong length for cipher suite")]
     WrongKeyLength,
-    #[error("Window not found")]
-    WindowNotFound,
+    #[error("WebCrypto API unavailable in this context")]
+    WebCryptoUnavailable,
     #[error("Invalid signature")]
     InvalidSignature,
     #[error("Der encoding error {0}")]
@@ -61,12 +61,23 @@ impl From<JsValue> for CryptoError {
     }
 }
 
+// Read `globalThis.crypto` and dyn-cast to `web_sys::Crypto`. This works in
+// `Window`, `DedicatedWorkerGlobalScope`, `SharedWorkerGlobalScope`, and
+// `ServiceWorkerGlobalScope` per the W3C Web Cryptography API spec, without
+// branching on the global type.
+#[inline]
+fn crypto() -> Result<web_sys::Crypto, CryptoError> {
+    let global = js_sys::global();
+    let crypto_value = js_sys::Reflect::get(&global, &JsValue::from_str("crypto"))
+        .map_err(|_| CryptoError::WebCryptoUnavailable)?;
+    crypto_value
+        .dyn_into::<web_sys::Crypto>()
+        .map_err(|_| CryptoError::WebCryptoUnavailable)
+}
+
 #[inline]
 pub(crate) fn get_crypto() -> Result<SubtleCrypto, CryptoError> {
-    Ok(web_sys::window()
-        .ok_or(CryptoError::WindowNotFound)?
-        .crypto()?
-        .subtle())
+    Ok(crypto()?.subtle())
 }
 
 #[derive(Clone, Default, Debug)]
@@ -302,10 +313,7 @@ impl CipherSuiteProvider for WebCryptoCipherSuite {
     }
 
     fn random_bytes(&self, out: &mut [u8]) -> Result<(), Self::Error> {
-        web_sys::window()
-            .ok_or(CryptoError::WindowNotFound)?
-            .crypto()?
-            .get_random_values_with_u8_array(out)?;
+        crypto()?.get_random_values_with_u8_array(out)?;
 
         Ok(())
     }
