@@ -100,6 +100,11 @@ impl KeyPackage {
         &self.leaf_node.signing_identity
     }
 
+    /// Returns the leaf node's public HPKE encryption key.
+    pub fn leaf_hpke_public_key(&self) -> &HpkePublicKey {
+        &self.leaf_node.public_key
+    }
+
     #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
     pub async fn to_reference<CP: CipherSuiteProvider>(
         &self,
@@ -285,6 +290,16 @@ mod tests {
     #[cfg(not(mls_build_async))]
     fn load_test_cases() -> Vec<TestCase> {
         load_test_case_json!(key_package_ref, TestCase::generate())
+    }
+
+    #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
+    async fn leaf_hpke_public_key_returns_embedded_leaf_key() {
+        let key_package = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "test").await;
+
+        assert_eq!(
+            key_package.leaf_hpke_public_key(),
+            &key_package.leaf_node.public_key
+        );
     }
 
     #[maybe_async::test(not(mls_build_async), async(mls_build_async, crate::futures_test))]
