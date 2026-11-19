@@ -3,6 +3,7 @@ use mls_rs_crypto_traits::KemType;
 
 #[cfg(not(mls_build_async))]
 pub mod byte_vec_codecs;
+pub mod cg;
 #[cfg(not(mls_build_async))]
 pub mod ghp;
 #[cfg(not(mls_build_async))]
@@ -59,6 +60,14 @@ impl From<mls_rs_core::mls_rs_codec::Error> for Error {
     fn from(e: mls_rs_core::mls_rs_codec::Error) -> Self {
         Error::MlsCodecError(e)
     }
+}
+
+/// A CSPRNG for seed-format KEM secret keys (`random(Nseed)`, draft-ietf-hpke-pq §3).
+#[cfg_attr(test, mockall::automock(type Error = mls_rs_crypto_traits::mock::TestError;))]
+pub trait SeedRng: Send + Sync {
+    type Error: IntoAnyError + Send + Sync;
+
+    fn fill(&self, out: &mut [u8]) -> Result<(), Self::Error>;
 }
 
 pub trait FixedLengthKemType: KemType {

@@ -143,10 +143,32 @@ impl Hash for AwsLcHash {
 
 #[cfg(feature = "post-quantum")]
 pub mod shake {
-    use crate::aws_lc_sys_impl::{EVP_Digest, EVP_shake128};
+    use crate::aws_lc_sys_impl::{EVP_Digest, EVP_shake128, EVP_shake256, EVP_MD};
     use crate::{check_int_return, AwsLcCryptoError};
     use mls_rs_crypto_traits::VariableLengthHash;
     use std::{os::raw::c_uint, ptr::null_mut};
+
+    /// One-shot XOF; `EVP_Digest` takes the output length from `out_size`.
+    fn xof(md: *const EVP_MD, input: &[u8], out_len: usize) -> Result<Vec<u8>, AwsLcCryptoError> {
+        let mut output = vec![0u8; out_len];
+
+        let mut len: u32 = out_len
+            .try_into()
+            .map_err(|_| AwsLcCryptoError::CryptoError)?;
+
+        unsafe {
+            check_int_return(EVP_Digest(
+                input.as_ptr().cast(),
+                input.len(),
+                output.as_mut_ptr(),
+                &mut len as *mut c_uint,
+                md,
+                null_mut(),
+            ))?;
+        }
+
+        Ok(output)
+    }
 
     #[derive(Clone, Copy, Debug)]
     pub struct AwsLcShake128;
@@ -155,24 +177,19 @@ pub mod shake {
         type Error = AwsLcCryptoError;
 
         fn hash(&self, input: &[u8], out_len: usize) -> Result<Vec<u8>, Self::Error> {
-            let mut output = vec![0u8; out_len];
+            xof(unsafe { EVP_shake128() }, input, out_len)
+        }
+    }
 
-            let mut len: u32 = out_len
-                .try_into()
-                .map_err(|_| AwsLcCryptoError::CryptoError)?;
+    /// SHAKE256 (FIPS 202 §6.2).
+    #[derive(Clone, Copy, Debug)]
+    pub struct AwsLcShake256;
 
-            unsafe {
-                check_int_return(EVP_Digest(
-                    input.as_ptr().cast(),
-                    input.len(),
-                    output.as_mut_ptr(),
-                    &mut len as *mut c_uint,
-                    EVP_shake128(),
-                    null_mut(),
-                ))?;
-            }
+    impl VariableLengthHash for AwsLcShake256 {
+        type Error = AwsLcCryptoError;
 
-            Ok(output)
+        fn hash(&self, input: &[u8], out_len: usize) -> Result<Vec<u8>, Self::Error> {
+            xof(unsafe { EVP_shake256() }, input, out_len)
         }
     }
 
