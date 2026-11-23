@@ -66,7 +66,7 @@ impl CipherSuite {
     /// MLS_256_DHKEMP384_AES256GCM_SHA384_P384
     pub const P384_AES256: CipherSuite = CipherSuite(7);
 
-    /// So far, there are no official PQ cipher suites
+    /// Private-use codepoints; predate draft-ietf-hpke-pq and don't interoperate with it.
     #[cfg(feature = "post-quantum")]
     pub const ML_KEM_512: CipherSuite = CipherSuite(65001);
     #[cfg(feature = "post-quantum")]
@@ -74,9 +74,15 @@ impl CipherSuite {
     #[cfg(feature = "post-quantum")]
     pub const ML_KEM_1024: CipherSuite = CipherSuite(65003);
 
-    /// So far, there are no official PQ cipher suites
+    /// Private-use codepoint; predates draft-ietf-hpke-pq and doesn't interoperate with its
+    /// MLKEM768-X25519 (0x647a).
     #[cfg(feature = "post-quantum")]
     pub const ML_KEM_768_X25519: CipherSuite = CipherSuite(65100);
+
+    /// MLS_128_MLKEM768X25519_CHACHA20POLY1305_SHA384_MLDSA44
+    /// (draft-ietf-mls-pq-ciphersuites-07 §3.1). Provisional value.
+    #[cfg(feature = "post-quantum")]
+    pub const MLKEM768X25519_CHACHA_MLDSA44: CipherSuite = CipherSuite(0x0020);
 
     /// Ciphersuite from a raw value.
     pub const fn new(value: u16) -> CipherSuite {
@@ -106,4 +112,22 @@ pub enum HpkeModeId {
     Auth = 0x02,
     /// Authenticated variant that authenticates possession of a PSK as well as a KEM private key.
     AuthPsk = 0x03,
+}
+
+#[cfg(all(test, feature = "post-quantum"))]
+mod tests {
+    use super::CipherSuite;
+
+    #[test]
+    fn pq_ciphersuite_values() {
+        assert_eq!(
+            CipherSuite::MLKEM768X25519_CHACHA_MLDSA44.raw_value(),
+            0x0020
+        );
+    }
+
+    #[test]
+    fn pq_ciphersuites_are_not_in_all() {
+        assert!(!CipherSuite::all().any(|cs| cs == CipherSuite::MLKEM768X25519_CHACHA_MLDSA44));
+    }
 }

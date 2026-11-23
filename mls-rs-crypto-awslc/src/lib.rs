@@ -96,6 +96,9 @@ enum AwsLcHpke {
     PostQuantum(Hpke<MlKemKem, AwsLcHkdf, AwsLcAead>),
     #[cfg(feature = "post-quantum")]
     Combined(Hpke<CombinedEcdhMlKemKem, AwsLcHkdf, AwsLcAead>),
+    /// MLKEM768-X25519 (HPKE KEM 0x647a, draft-ietf-hpke-pq-05 §4).
+    #[cfg(feature = "post-quantum")]
+    MlKem768X25519(Hpke<MlKem768X25519Kem, AwsLcHkdf, AwsLcAead>),
 }
 
 impl AwsLcCipherSuite {
@@ -158,6 +161,7 @@ impl AwsLcCryptoProvider {
             CipherSuite::ML_KEM_768,
             CipherSuite::ML_KEM_1024,
             CipherSuite::ML_KEM_768_X25519,
+            CipherSuite::MLKEM768X25519_CHACHA_MLDSA44,
         ]
     }
 }
@@ -302,6 +306,16 @@ impl AwsLcCipherSuiteBuilder {
         Self { hpke, ..self }
     }
 
+    /// MLKEM768-X25519 HPKE (draft-ietf-hpke-pq-05 §4) with the given KDF and AEAD.
+    #[cfg(feature = "post-quantum")]
+    pub fn mlkem768_x25519_hpke(self, kdf: KdfId, aead: AeadId) -> Self {
+        let hpke = mlkem768_x25519_kem().map(|kem| {
+            AwsLcHpke::MlKem768X25519(Hpke::new(kem, AwsLcHkdf(kdf), Some(AwsLcAead(aead))))
+        });
+
+        Self { hpke, ..self }
+    }
+
     pub fn build(self, cipher_suite: CipherSuite) -> Option<AwsLcCipherSuite> {
         let fallback_cs = self.fallback_cipher_suite.unwrap_or(cipher_suite);
         let hpke = self.hpke.or_else(|| classical_hpke(fallback_cs))?;
@@ -342,6 +356,11 @@ impl CryptoProvider for AwsLcCryptoProvider {
         &self,
         cipher_suite: CipherSuite,
     ) -> Option<Self::CipherSuiteProvider> {
+        #[cfg(feature = "post-quantum")]
+        if let Some(cs) = draft_pq_cipher_suite(cipher_suite) {
+            return Some(cs);
+        }
+
         let classical_cs = match cipher_suite {
             #[cfg(feature = "post-quantum")]
             CipherSuite::ML_KEM_1024 => CipherSuite::P384_AES256,
@@ -385,6 +404,36 @@ impl CryptoProvider for AwsLcCryptoProvider {
             hash: AwsLcHash::new(classical_cs)?,
         })
     }
+}
+
+/// The suites of draft-ietf-mls-pq-ciphersuites-07 §3.1, Table 2.
+#[cfg(feature = "post-quantum")]
+fn draft_pq_cipher_suite(cipher_suite: CipherSuite) -> Option<AwsLcCipherSuite> {
+    let (kdf, aead, sha2_cs, signing) = match cipher_suite {
+        CipherSuite::MLKEM768X25519_CHACHA_MLDSA44 => (
+            KdfId::HkdfSha384,
+            AeadId::Chacha20Poly1305,
+            CipherSuite::P384_AES256,
+            Curve::MlDsa44,
+        ),
+        _ => return None,
+    };
+
+    let hpke = AwsLcHpke::MlKem768X25519(Hpke::new(
+        mlkem768_x25519_kem()?,
+        AwsLcHkdf(kdf),
+        Some(AwsLcAead(aead)),
+    ));
+
+    Some(AwsLcCipherSuite {
+        cipher_suite,
+        hpke,
+        aead: AwsLcAead(aead),
+        kdf: AwsLcHkdf(kdf),
+        signing: AwsLcEcdsa(signing),
+        hmac: AwsLcHmac::new(sha2_cs)?,
+        hash: AwsLcHash::new(sha2_cs)?,
+    })
 }
 
 pub fn dhkem(cipher_suite: CipherSuite) -> Option<DhKem<Ecdh, AwsLcHkdf>> {
@@ -516,6 +565,8 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
             AwsLcHpke::PostQuantum(hpke) => hpke.seal(remote_key, info, None, aad, pt).await,
             #[cfg(feature = "post-quantum")]
             AwsLcHpke::Combined(hpke) => hpke.seal(remote_key, info, None, aad, pt).await,
+            #[cfg(feature = "post-quantum")]
+            AwsLcHpke::MlKem768X25519(hpke) => hpke.seal(remote_key, info, None, aad, pt).await,
         }
         .map_err(Into::into)
     }
@@ -535,6 +586,8 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
             AwsLcHpke::PostQuantum(hpke) => hpke.seal(remote_key, info, psk_val, aad, pt).await,
             #[cfg(feature = "post-quantum")]
             AwsLcHpke::Combined(hpke) => hpke.seal(remote_key, info, psk_val, aad, pt).await,
+            #[cfg(feature = "post-quantum")]
+            AwsLcHpke::MlKem768X25519(hpke) => hpke.seal(remote_key, info, psk_val, aad, pt).await,
         }
         .map_err(Into::into)
     }
@@ -559,6 +612,11 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
             }
             #[cfg(feature = "post-quantum")]
             AwsLcHpke::Combined(hpke) => {
+                hpke.open(ciphertext, local_secret, local_public, info, None, aad)
+                    .await
+            }
+            #[cfg(feature = "post-quantum")]
+            AwsLcHpke::MlKem768X25519(hpke) => {
                 hpke.open(ciphertext, local_secret, local_public, info, None, aad)
                     .await
             }
@@ -591,6 +649,11 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
                 hpke.open(ciphertext, local_secret, local_public, info, psk_val, aad)
                     .await
             }
+            #[cfg(feature = "post-quantum")]
+            AwsLcHpke::MlKem768X25519(hpke) => {
+                hpke.open(ciphertext, local_secret, local_public, info, psk_val, aad)
+                    .await
+            }
         }
         .map_err(Into::into)
     }
@@ -606,6 +669,8 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
             AwsLcHpke::PostQuantum(hpke) => hpke.setup_sender(remote_key, info, None).await,
             #[cfg(feature = "post-quantum")]
             AwsLcHpke::Combined(hpke) => hpke.setup_sender(remote_key, info, None).await,
+            #[cfg(feature = "post-quantum")]
+            AwsLcHpke::MlKem768X25519(hpke) => hpke.setup_sender(remote_key, info, None).await,
         }
         .map_err(Into::into)
     }
@@ -632,6 +697,11 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
                 hpke.setup_receiver(kem_output, local_secret, local_public, info, None)
                     .await
             }
+            #[cfg(feature = "post-quantum")]
+            AwsLcHpke::MlKem768X25519(hpke) => {
+                hpke.setup_receiver(kem_output, local_secret, local_public, info, None)
+                    .await
+            }
         }
         .map_err(Into::into)
     }
@@ -643,6 +713,8 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
             AwsLcHpke::PostQuantum(hpke) => hpke.derive(ikm).await,
             #[cfg(feature = "post-quantum")]
             AwsLcHpke::Combined(hpke) => hpke.derive(ikm).await,
+            #[cfg(feature = "post-quantum")]
+            AwsLcHpke::MlKem768X25519(hpke) => hpke.derive(ikm).await,
         }
         .map_err(Into::into)
     }
@@ -654,6 +726,8 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
             AwsLcHpke::PostQuantum(hpke) => hpke.generate().await,
             #[cfg(feature = "post-quantum")]
             AwsLcHpke::Combined(hpke) => hpke.generate().await,
+            #[cfg(feature = "post-quantum")]
+            AwsLcHpke::MlKem768X25519(hpke) => hpke.generate().await,
         }
         .map_err(Into::into)
     }
@@ -665,6 +739,8 @@ impl CipherSuiteProvider for AwsLcCipherSuite {
             AwsLcHpke::PostQuantum(hpke) => hpke.public_key_validate(key),
             #[cfg(feature = "post-quantum")]
             AwsLcHpke::Combined(hpke) => hpke.public_key_validate(key),
+            #[cfg(feature = "post-quantum")]
+            AwsLcHpke::MlKem768X25519(hpke) => hpke.public_key_validate(key),
         }
         .map_err(Into::into)
     }
