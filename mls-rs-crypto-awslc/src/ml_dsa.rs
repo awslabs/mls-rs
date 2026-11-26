@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 //! ML-DSA-44 and ML-DSA-65 (FIPS 204) as used by draft-ietf-mls-pq-ciphersuites-07 §2.
-//! Secret keys are the 32-byte seed ξ (RFC 9881 §6 "seed" format).
+//! Secret keys are the 32-byte seed (RFC 9881 §6 "seed" format).
 
 use aws_lc_rs::signature::{
     KeyPair, PqdsaKeyPair, PqdsaSigningAlgorithm, PqdsaVerificationAlgorithm, UnparsedPublicKey,
@@ -13,7 +13,7 @@ use zeroize::Zeroizing;
 
 use crate::AwsLcCryptoError;
 
-/// The seed ξ (FIPS 204 Alg. 1).
+/// Length of the seed (FIPS 204 Alg. 1).
 const SEED_LEN: usize = 32;
 
 /// Length of the seed-only PKCS#8 prefix (RFC 9881 §6).
@@ -53,7 +53,7 @@ impl MlDsa {
         }
     }
 
-    /// Generate (ξ, pk) with the FIPS-approved `PqdsaKeyPair::generate`.
+    /// Generate (seed, pk) with the FIPS-approved `PqdsaKeyPair::generate`.
     pub(crate) fn generate(&self) -> Result<(Zeroizing<Vec<u8>>, Vec<u8>), AwsLcCryptoError> {
         let key_pair = PqdsaKeyPair::generate(self.signing)?;
         let pkcs8 = key_pair.to_pkcs8v1()?;
@@ -70,7 +70,7 @@ impl MlDsa {
         ))
     }
 
-    /// ML-DSA.KeyGen_internal(ξ) (FIPS 204 Alg. 6).
+    /// ML-DSA.KeyGen_internal(seed) (FIPS 204 Alg. 6).
     fn key_pair(&self, seed: &[u8]) -> Result<PqdsaKeyPair, AwsLcCryptoError> {
         if seed.len() != SEED_LEN {
             return Err(AwsLcCryptoError::InvalidKeyData);
@@ -93,7 +93,7 @@ impl MlDsa {
         Ok(signature)
     }
 
-    /// ML-DSA.Verify(pk, M, σ, ctx = "") (FIPS 204 Alg. 3); raw `pkEncode` keys only.
+    /// ML-DSA.Verify(pk, M, sig, ctx = "") (FIPS 204 Alg. 3); raw `pkEncode` keys only.
     pub(crate) fn verify(
         &self,
         public_key: &[u8],
