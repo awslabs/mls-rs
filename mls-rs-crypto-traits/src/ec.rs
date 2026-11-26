@@ -25,6 +25,10 @@ pub enum Curve {
     X448,
     /// Edwards-curve Digital Signature Algorithm Curve448
     Ed448,
+    /// ML-DSA-44 (FIPS 204; draft-ietf-mls-pq-ciphersuites-07 §2).
+    MlDsa44,
+    /// ML-DSA-65 (FIPS 204; draft-ietf-mls-pq-ciphersuites-07 §2).
+    MlDsa65,
 }
 
 impl Curve {
@@ -39,6 +43,7 @@ impl Curve {
             Curve::Ed25519 => 64,
             Curve::X448 => 56,
             Curve::Ed448 => 114,
+            Curve::MlDsa44 | Curve::MlDsa65 => 32,
         }
     }
 
@@ -47,6 +52,9 @@ impl Curve {
         match self {
             Curve::P256 | Curve::P384 | Curve::P521 => 2 * self.secret_key_size() + 1,
             Curve::X25519 | Curve::Ed25519 | Curve::X448 | Curve::Ed448 => self.secret_key_size(),
+            // RFC 9881 Appendix B, Table 2
+            Curve::MlDsa44 => 1312,
+            Curve::MlDsa65 => 1952,
         }
     }
 
@@ -74,5 +82,22 @@ impl Curve {
             Curve::P521 => SamplingMethod::HpkeWithBitmask(0x01),
             _ => SamplingMethod::HpkeWithoutBitmask,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Curve;
+
+    #[test]
+    fn ml_dsa_44_key_sizes() {
+        assert_eq!(Curve::MlDsa44.secret_key_size(), 32);
+        assert_eq!(Curve::MlDsa44.public_key_size(), 1312);
+    }
+
+    #[test]
+    fn ml_dsa_65_key_sizes() {
+        assert_eq!(Curve::MlDsa65.secret_key_size(), 32);
+        assert_eq!(Curve::MlDsa65.public_key_size(), 1952);
     }
 }

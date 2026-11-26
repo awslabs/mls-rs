@@ -64,6 +64,12 @@ impl AwsLcEcdsa {
     pub fn signature_key_generate(
         &self,
     ) -> Result<(SignatureSecretKey, SignaturePublicKey), AwsLcCryptoError> {
+        #[cfg(feature = "post-quantum")]
+        if let Some(ml_dsa) = crate::ml_dsa::MlDsa::new(self.0) {
+            let (secret, public) = ml_dsa.generate()?;
+            return Ok((secret.to_vec().into(), public.into()));
+        }
+
         let (secret, public) = if self.0 == Curve::Ed25519 {
             ed25519_generate()
         } else {
@@ -127,6 +133,11 @@ impl AwsLcEcdsa {
         &self,
         secret_key: &SignatureSecretKey,
     ) -> Result<SignaturePublicKey, AwsLcCryptoError> {
+        #[cfg(feature = "post-quantum")]
+        if let Some(ml_dsa) = crate::ml_dsa::MlDsa::new(self.0) {
+            return Ok(ml_dsa.public_key(secret_key)?.into());
+        }
+
         let public = if self.0 == Curve::Ed25519 {
             ed25519_public_key(secret_key)
         } else {
@@ -141,6 +152,11 @@ impl AwsLcEcdsa {
         secret_key: &SignatureSecretKey,
         data: &[u8],
     ) -> Result<Vec<u8>, AwsLcCryptoError> {
+        #[cfg(feature = "post-quantum")]
+        if let Some(ml_dsa) = crate::ml_dsa::MlDsa::new(self.0) {
+            return ml_dsa.sign(secret_key, data);
+        }
+
         if self.0 == Curve::Ed25519 {
             ed25519_sign(secret_key, data)
         } else {
@@ -154,6 +170,11 @@ impl AwsLcEcdsa {
         signature: &[u8],
         data: &[u8],
     ) -> Result<(), AwsLcCryptoError> {
+        #[cfg(feature = "post-quantum")]
+        if let Some(ml_dsa) = crate::ml_dsa::MlDsa::new(self.0) {
+            return ml_dsa.verify(public_key, signature, data);
+        }
+
         let public_key = match self.0 {
             Curve::Ed25519 => UnparsedPublicKey::new(&signature::ED25519, public_key.as_ref()),
             Curve::P256 => {

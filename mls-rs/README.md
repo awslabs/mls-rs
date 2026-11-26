@@ -56,10 +56,14 @@ For cipher suite descriptions see the RFC documentation [here](https://www.rfc-e
 | Name        | Cipher Suites | X509 Support    |
 | ----------- | ------------- | --------------- |
 | OpenSSL     | 1-7           | Stable          |
-| AWS-LC      | 1,2,3,5,7     | Stable          |
+| AWS-LC      | 1,2,3,5,7, 0x0020 (PQ) | Stable |
 | Rust Crypto | 1,2,3         | ⚠️ Experimental |
 | Web Crypto  | ⚠️ Experimental 2,5,7 | Unsupported |
 | CryptoKit   | 1,2,3,5,7     | Unsupported     |
+
+0x0020 needs the `post-quantum` feature. It is a post-quantum suite of
+[draft-ietf-mls-pq-ciphersuites](https://datatracker.ietf.org/doc/draft-ietf-mls-pq-ciphersuites/);
+its codepoint is provisional until IANA assigns it.
 
 ## Security Notice
 
