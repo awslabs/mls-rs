@@ -25,9 +25,9 @@ pub enum Curve {
     X448,
     /// Edwards-curve Digital Signature Algorithm Curve448
     Ed448,
-    /// ML-DSA-44 (FIPS 204; draft-ietf-mls-pq-ciphersuites-07 §2). Not an elliptic curve.
+    /// ML-DSA-44 (FIPS 204; draft-ietf-mls-pq-ciphersuites-07 §2).
     MlDsa44,
-    /// ML-DSA-65 (FIPS 204; draft-ietf-mls-pq-ciphersuites-07 §2). Not an elliptic curve.
+    /// ML-DSA-65 (FIPS 204; draft-ietf-mls-pq-ciphersuites-07 §2).
     MlDsa65,
 }
 
@@ -52,6 +52,7 @@ impl Curve {
         match self {
             Curve::P256 | Curve::P384 | Curve::P521 => 2 * self.secret_key_size() + 1,
             Curve::X25519 | Curve::Ed25519 | Curve::X448 | Curve::Ed448 => self.secret_key_size(),
+            // RFC 9881 Appendix B, Table 2
             Curve::MlDsa44 => 1312,
             Curve::MlDsa65 => 1952,
         }
